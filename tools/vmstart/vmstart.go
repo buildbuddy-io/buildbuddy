@@ -102,41 +102,35 @@ func main() {
 		ContainerImage:         *image,
 		ActionWorkingDirectory: emptyActionDir,
 		NumCPUs:                1,
-		MemSizeMB:              100,
+		MemSizeMB:              2500,
 		EnableNetworking:       true,
 		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
+		JailerRoot:             "/tmp/remote_build/",
 	}
 
+	var c *firecracker.FirecrackerContainer
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-
 	if *snapshotID != "" {
-		c, err := firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
 		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/, *remoteInstanceName, parseSnapshotID(*snapshotID)); err != nil {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
-		if err := c.Wait(ctx); err != nil {
-			log.Printf("Wait err: %s", err)
+	} else {
+		c, err = firecracker.NewContainer(env, auth, opts)
+		if err != nil {
+			log.Fatalf("Error creating container: %s", err)
 		}
-		if err := c.Remove(ctx); err != nil {
-			log.Errorf("Error removing container: %s", err)
+		creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
+		if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
+			log.Fatalf("Unable to PullImageIfNecessary: %s", err)
 		}
-		return
-	}
-
-	c, err := firecracker.NewContainer(env, auth, opts)
-	if err != nil {
-		log.Fatalf("Error creating container: %s", err)
-	}
-	creds := container.PullCredentials{Username: *registryUser, Password: *registryPassword}
-	if err := container.PullImageIfNecessary(ctx, env, auth, c, creds, opts.ContainerImage); err != nil {
-		log.Fatalf("Unable to PullImageIfNecessary: %s", err)
-	}
-	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
-		log.Fatalf("Unable to Create container: %s", err)
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			log.Fatalf("Unable to Create container: %s", err)
+		}
 	}
 
 	sigc := make(chan os.Signal, 1)
@@ -160,17 +154,13 @@ func main() {
 		}
 
 		actionInstanceDigest := digest.NewInstanceNameDigest(d, *remoteInstanceName)
-		action := &repb.Action{}
-		if err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), actionInstanceDigest, action); err != nil {
-			log.Fatalf("Error fetching action: %s", err)
-		}
-		log.Infof("Fetched action:\n%s", proto.MarshalTextString(action))
 
-		cmd := &repb.Command{}
-		if err := cachetools.GetBlobAsProto(ctx, env.GetByteStreamClient(), digest.NewInstanceNameDigest(action.GetCommandDigest(), *remoteInstanceName), cmd); err != nil {
-			log.Fatalf("Error fetching command: %s", err)
+		action, cmd, err := cachetools.GetActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
+		if err != nil {
+			log.Fatal(err.Error())
 		}
-		log.Infof("Fetched command:\n%s", proto.MarshalTextString(action))
+		log.Infof("Action:\n%s", proto.MarshalTextString(action))
+		log.Infof("Command:\n%s", proto.MarshalTextString(cmd))
 
 		tree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewInstanceNameDigest(action.GetInputRootDigest(), *remoteInstanceName))
 		if err != nil {

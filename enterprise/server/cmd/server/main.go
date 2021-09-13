@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
@@ -179,6 +180,14 @@ func main() {
 	if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "cache_redis")
 		realEnv.SetCacheRedisClient(redisClient)
+	}
+
+	if configurator.GetAppUsageTrackingEnabled() {
+		ut, err := usage.NewTracker(realEnv, &usage.TrackerOpts{})
+		if err != nil {
+			log.Fatalf("Failed to create usage tracker: %s", err)
+		}
+		realEnv.SetUsageTracker(ut)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {

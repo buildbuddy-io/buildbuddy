@@ -19,7 +19,7 @@ message Key {
 
 message ReadRequest {
   Isolation isolation = 4;
-  string prefix = 1;
+  reserved 1;
   Key key = 2;
   int64 offset = 3;
 }
@@ -30,7 +30,7 @@ message ReadResponse {
 
 message WriteRequest {
   Isolation isolation = 6;
-  string prefix = 1;
+  reserved 1;
   Key key = 2;
   bool finish_write = 3;
   bytes data = 4;
@@ -46,7 +46,7 @@ message WriteResponse {
 
 message ContainsMultiRequest {
   Isolation isolation = 3;
-  string prefix = 1;
+  reserved 1;
   repeated Key key = 2;
 }
 
@@ -65,7 +65,7 @@ message KV {
 
 message GetMultiRequest {
   Isolation isolation = 3;
-  string prefix = 1;
+  reserved 1;
   repeated Key key = 2;
 }
 

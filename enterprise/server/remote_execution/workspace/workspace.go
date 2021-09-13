@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/gobwas/glob"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
@@ -36,7 +38,7 @@ type Workspace struct {
 	rootDir   string
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
-	opts      *Opts
+	Opts      *Opts
 	casFs     *casfs.CASFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
@@ -51,7 +53,8 @@ type Workspace struct {
 type Opts struct {
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output dirs.
-	Preserve bool
+	Preserve    bool
+	CleanInputs string
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -68,7 +71,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	return &Workspace{
 		env:     env,
 		rootDir: rootDir,
-		opts:    opts,
+		Opts:    opts,
 		Inputs:  map[string]*repb.Digest{},
 	}, nil
 }
@@ -124,12 +127,16 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	defer span.End()
 
 	opts := &dirtools.DownloadTreeOpts{}
-	if ws.opts.Preserve {
+	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
+		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
+			return txInfo, err
+		}
+
 		for path, digest := range txInfo.Transfers {
 			ws.Inputs[path] = digest
 		}
@@ -137,6 +144,35 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
+}
+
+func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error {
+	if ws.Opts.CleanInputs == "" {
+		return nil
+	}
+	inputFilesToCleanUp := make(map[string]*repb.Digest)
+	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
+	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
+	if err != nil {
+		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
+	}
+	for path, digest := range ws.Inputs {
+		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
+			inputFilesToCleanUp[path] = digest
+		}
+	}
+	for path, _ := range keep {
+		delete(inputFilesToCleanUp, path)
+	}
+	if len(inputFilesToCleanUp) > 0 {
+		for path, _ := range inputFilesToCleanUp {
+			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
+			}
+			delete(ws.Inputs, path)
+		}
+	}
+	return nil
 }
 
 // UploadOutputs uploads any outputs created by the last executed command
@@ -226,7 +262,7 @@ func (ws *Workspace) Clean() error {
 
 	// If preserving the workspace, only remove outputs and leave other files
 	// as-is.
-	if ws.opts.Preserve {
+	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
 		for _, path := range cmd.GetOutputFiles() {
 			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {

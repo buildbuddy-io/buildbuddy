@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -28,15 +29,14 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName       = "recycle-runner"
-	preserveWorkspacePropertyName   = "preserve-workspace"
-	persistentWorkerPropertyName    = "persistent-workers"
-	persistentWorkerKeyPropertyName = "persistentWorkerKey"
-	WorkflowIDPropertyName          = "workflow-id"
-	workloadIsolationPropertyName   = "workload-isolation-type"
-	enableCASFSPropertyName         = "enable-casfs"
-
-	enableXcodeOverridePropertyName = "enableXcodeOverride"
+	RecycleRunnerPropertyName        = "recycle-runner"
+	preserveWorkspacePropertyName    = "preserve-workspace"
+	cleanWorkspaceInputsPropertyName = "clean-workspace-inputs"
+	persistentWorkerPropertyName     = "persistent-workers"
+	persistentWorkerKeyPropertyName  = "persistentWorkerKey"
+	WorkflowIDPropertyName           = "workflow-id"
+	workloadIsolationPropertyName    = "workload-isolation-type"
+	enableCASFSPropertyName          = "enable-casfs"
 
 	operatingSystemPropertyName = "OSFamily"
 	defaultOperatingSystemName  = "linux"
@@ -58,16 +58,16 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
-	EnableXcodeOverride       bool
 	RecycleRunner             bool
 	EnableCASFS               bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
-	PreserveWorkspace   bool
-	PersistentWorker    bool
-	PersistentWorkerKey string
-	WorkflowID          string
+	PreserveWorkspace    bool
+	CleanWorkspaceInputs string
+	PersistentWorker     bool
+	PersistentWorkerKey  string
+	WorkflowID           string
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -95,10 +95,10 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
-		EnableXcodeOverride:       boolProp(m, enableXcodeOverridePropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableCASFS:               boolProp(m, enableCASFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
@@ -158,7 +158,7 @@ func contains(haystack []ContainerType, needle ContainerType) bool {
 
 // ApplyOverrides modifies the platformProps and command as needed to match the
 // locally configured executor properties.
-func ApplyOverrides(executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
+func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, platformProps *Properties, command *repb.Command) error {
 	if len(executorProps.SupportedIsolationTypes) == 0 {
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
@@ -206,25 +206,25 @@ func ApplyOverrides(executorProps *ExecutorProperties, platformProps *Properties
 			// Environment variables from: https://github.com/bazelbuild/bazel/blob/4ed65b05637cd37f0a6c5e79fdc4dfe0ece3fa68/src/main/java/com/google/devtools/build/lib/rules/apple/AppleConfiguration.java#L43
 			switch v.Name {
 			case "APPLE_SDK_VERSION_OVERRIDE":
-				if platformProps.EnableXcodeOverride {
-					appleSDKVersion = v.Value
-				}
+				appleSDKVersion = v.Value
 			case "APPLE_SDK_PLATFORM":
 				appleSDKPlatform = v.Value
 			case "XCODE_VERSION_OVERRIDE":
-				if versionComponents := strings.Split(v.Value, "."); len(versionComponents) > 1 && platformProps.EnableXcodeOverride {
-					// Just grab the first 2 components of the xcode version i.e. "12.4".
-					xcodeVersion = versionComponents[0] + "." + versionComponents[1]
-				}
+				xcodeVersion = v.Value
 			}
 		}
 
-		developerDir := "/Applications/Xcode.app/Contents/Developer"
-		if executorProps.DefaultXCodeVersion != "" {
-			developerDir = fmt.Sprintf("/Applications/Xcode_%s.app/Contents/Developer", xcodeVersion)
+		developerDir, err := env.GetXCodeLocator().DeveloperDirForVersion(xcodeVersion)
+		if err != nil {
+			return err
 		}
-		sdkRoot := fmt.Sprintf("%s/Platforms/%s.platform/Developer/SDKs/%s%s.sdk", developerDir, appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
 
+		sdkPath := fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s%s.sdk", appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
+		if !env.GetXCodeLocator().IsSDKPathPresentForVersion(sdkPath, xcodeVersion) {
+			sdkPath = fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s.sdk", appleSDKPlatform, appleSDKPlatform)
+		}
+
+		sdkRoot := fmt.Sprintf("%s/%s", developerDir, sdkPath)
 		command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
 			{Name: "SDKROOT", Value: sdkRoot},
 			{Name: "DEVELOPER_DIR", Value: developerDir},

@@ -194,21 +194,6 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 	return c, nil
 }
 
-func (c *DiskCache) WithPrefix(prefix string) interfaces.Cache {
-	newPrefix := filepath.Join(append(filepath.SplitList(c.prefix), prefix)...)
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
-	return &DiskCache{
-		env:               c.env,
-		prefix:            newPrefix,
-		partition:         c.partition,
-		partitions:        c.partitions,
-		partitionMappings: c.partitionMappings,
-	}
-}
-
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {

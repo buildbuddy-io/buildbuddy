@@ -58,6 +58,7 @@ type appConfig struct {
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
+	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
 }
 
 type buildEventProxy struct {
@@ -563,6 +564,10 @@ func (c *Configurator) GetAppGlobalFilterEnabled() bool {
 
 func (c *Configurator) GetAppUsageEnabled() bool {
 	return c.gc.App.UsageEnabled
+}
+
+func (c *Configurator) GetAppUsageTrackingEnabled() bool {
+	return c.gc.App.UsageTrackingEnabled
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

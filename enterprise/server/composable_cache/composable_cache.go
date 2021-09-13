@@ -31,14 +31,6 @@ func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interface
 	}
 }
 
-func (c *composableCache) WithPrefix(prefix string) interfaces.Cache {
-	return &composableCache{
-		inner: c.inner.WithPrefix(prefix),
-		outer: c.outer.WithPrefix(prefix),
-		mode:  c.mode,
-	}
-}
-
 func (c *composableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {

@@ -53,8 +53,21 @@ message ExecResponse {
   bytes stderr = 3;
 }
 
+message InitializeRequest {
+  // The system's date will be set to this timestamp.
+  int64 unix_timestamp_nanoseconds = 1;
+
+  // If true, the arp cache will be cleared.
+  bool clear_arp_cache = 2;
+}
+
+message InitializeResponse {
+  // This page intentionally left empty.
+}
+
 // This service is run inside of a VM. It executes commands sent to it over
 // gRPC in the local environment and returns the results.
 service Exec {
   rpc Exec(ExecRequest) returns (ExecResponse);
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
 }

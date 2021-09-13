@@ -34,6 +34,7 @@ go_library(
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/tracing",
+        "//server/xcode",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_api//option:go_default_library",

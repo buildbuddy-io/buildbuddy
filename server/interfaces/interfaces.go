@@ -154,11 +154,6 @@ func (t CacheType) Prefix() string {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
-	// Returns a new Cache that will store everything under the prefix
-	// specified by "prefix". The prefix specified is concatenated onto the
-	// currently set prefix -- so this is a relative operation, not an
-	// absolute one.
-	WithPrefix(prefix string) Cache
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
@@ -255,6 +250,17 @@ type InvocationSearchService interface {
 
 type UsageService interface {
 	GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error)
+}
+
+type UsageTracker interface {
+	// ObserveInvocation counts the given invocation ID towards usage for the
+	// current collection period and authenticated group ID, only if the
+	// invocation has not yet been observed. It is safe for concurrent access.
+	ObserveInvocation(ctx context.Context, invocationID string) error
+
+	// Increment adds the given usage counts to the current collection period
+	// for the authenticated group ID. It is safe for concurrent access.
+	Increment(ctx context.Context, counts *tables.UsageCounts) error
 }
 
 type ApiService interface {
@@ -500,4 +506,13 @@ type HealthChecker interface {
 	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
 	// signal.
 	Shutdown()
+}
+
+// Locates all XCode versions installed on the host system.
+type XcodeLocator interface {
+	// Returns the developer directory and SDKs for the given XCode version.
+	DeveloperDirForVersion(version string) (string, error)
+
+	// Returns true if the given SDK path is present in the given XCode version.
+	IsSDKPathPresentForVersion(sdkPath, version string) bool
 }
