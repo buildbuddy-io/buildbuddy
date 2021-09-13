@@ -108,10 +108,6 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds, imageRef)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
-
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, badCreds, imageRef)
-
-	require.True(t, status.IsPermissionDeniedError(err), "bad credentials should still be rejected after previous good attempts")
 }
 
 func TestImageCacheAuthenticator(t *testing.T) {
