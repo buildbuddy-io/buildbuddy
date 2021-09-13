@@ -55,7 +55,6 @@ nogo(
 # gazelle:build_file_name BUILD,BUILD.bazel
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
 # gazelle:proto disable
-# gazelle:resolve go github.com/go-redis/redis @com_github_go_redis_redis_v8//:redis
 gazelle(name = "gazelle")
 
 exports_files([
