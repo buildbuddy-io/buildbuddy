@@ -873,6 +873,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:RDBNVkRviHZtvDvId8XSGPu3rmpmSe+wKRcEWNgsfWU=",
         version = "v0.0.0-20190404230743-d7302db945fa",
     )
+    go_repository(
+        name = "com_github_garyburd_redigo",
+        importpath = "github.com/garyburd/redigo",
+        sum = "h1:LofdAjjjqCSXMwLGgOgnE+rdPuvX9DxCqaHwKy7i/ko=",
+        version = "v0.0.0-20150301180006-535138d7bcd7",
+    )
 
     go_repository(
         name = "com_github_ghodss_yaml",
