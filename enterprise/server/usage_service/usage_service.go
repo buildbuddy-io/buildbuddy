@@ -31,28 +31,66 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		return nil, err
 	}
 
-	db := s.env.GetDBHandle()
-
 	// Get the timestamp corresponding to the start of the current month in UTC,
 	// with a month offset so that we return the desired number of months of
 	// usage.
 	now := time.Now().UTC()
 	maxNumHistoricalMonths := maxNumMonthsOfUsageToReturn - 1
-	createdAfter := addCalendarMonths(startOfMonth(now), -maxNumHistoricalMonths)
-	createdBefore := addCalendarMonths(startOfMonth(now), 1)
+	start := addCalendarMonths(startOfMonth(now), -maxNumHistoricalMonths)
+	end := addCalendarMonths(startOfMonth(now), 1)
+
+	usages, err := s.scanUsages(ctx, groupID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	invocationUsages, err := s.scanInvocationUsages(ctx, groupID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the response list from scanned rows, inserting explicit zeroes for
+	// periods with no data.
+	rsp := &usagepb.GetUsageResponse{}
+	for t := start; !(t.After(end) || t.Equal(end)); t = addCalendarMonths(t, 1) {
+		period := fmt.Sprintf("%d-%02d", t.Year(), t.Month())
+
+		var usage *usagepb.Usage
+		if len(usages) > 0 && usages[0].Period == period {
+			usage = usages[0]
+			usages = usages[1:]
+		} else {
+			usage = &usagepb.Usage{Period: period}
+		}
+
+		// Populate invocation count if it exists
+		if len(invocationUsages) > 0 && invocationUsages[0].Period == period {
+			usage.TotalNumBuilds = invocationUsages[0].TotalNumBuilds
+			invocationUsages = invocationUsages[1:]
+		}
+
+		rsp.Usage = append(rsp.Usage, usage)
+	}
+
+	// Return in reverse-chronological order.
+	reverseUsageSlice(rsp.Usage)
+
+	return rsp, nil
+}
+
+func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
+	db := s.env.GetDBHandle()
 
 	rows, err := db.Raw(`
-		SELECT `+db.UTCMonthFromUsecTimestamp("created_at_usec")+` AS period,
-		COUNT(1) AS total_num_builds,
+		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,
 		SUM(total_download_size_bytes) AS total_download_size_bytes
-		FROM Invocations
-		WHERE created_at_usec >= ? AND created_at_usec < ?
+		FROM Usages
+		WHERE period_start_usec >= ? AND period_start_usec < ?
 		AND group_id = ?
 		GROUP BY period
 		ORDER BY period ASC
-	`, timeutil.ToUsec(createdAfter), timeutil.ToUsec(createdBefore), groupID).Rows()
+	`, timeutil.ToUsec(start), timeutil.ToUsec(end), groupID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -66,24 +104,37 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 		}
 		usages = append(usages, usage)
 	}
-	// Build the response list from scanned rows, inserting explicit zeroes for months with no data.
-	rsp := &usagepb.GetUsageResponse{}
-	for t := createdAfter; !(t.Equal(createdBefore) || t.After(createdBefore)); t = addCalendarMonths(t, 1) {
-		period := fmt.Sprintf("%d-%02d", t.Year(), t.Month())
-		if len(usages) > 0 && usages[0].Period == period {
-			rsp.Usage = append(rsp.Usage, usages[0])
-			usages = usages[1:]
-		} else {
-			rsp.Usage = append(rsp.Usage, &usagepb.Usage{
-				Period: period,
-			})
+
+	return usages, nil
+}
+
+func (s *usageService) scanInvocationUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
+	db := s.env.GetDBHandle()
+
+	rows, err := db.Raw(`
+		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
+		COUNT(*) AS total_num_builds
+		FROM InvocationUsages
+		WHERE period_start_usec >= ? AND period_start_usec < ?
+		AND group_id = ?
+		GROUP BY period
+		ORDER BY period ASC
+	`, timeutil.ToUsec(start), timeutil.ToUsec(end), groupID).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	usages := []*usagepb.Usage{}
+	for rows.Next() {
+		usage := &usagepb.Usage{}
+		if err := db.ScanRows(rows, usage); err != nil {
+			return nil, err
 		}
+		usages = append(usages, usage)
 	}
 
-	// Return in reverse-chronological order.
-	reverseUsageSlice(rsp.Usage)
-
-	return rsp, nil
+	return usages, nil
 }
 
 func startOfMonth(t time.Time) time.Time {
