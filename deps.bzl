@@ -1082,8 +1082,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_redsync_redsync_v4",
         importpath = "github.com/go-redsync/redsync/v4",
-        sum = "h1:Z0AaOpoLvzfZwLK+3uCDHcTxOXck2juzumu1EPJwCUI=",
-        version = "v4.4.1",
+        replace = "github.com/bduffany/redsync/v4",
+        sum = "h1:wyBDr+ApDWybbLGMSsepl30KzPAl+HlIQMhJSoLdRKg=",
+        version = "v4.4.1-minimal",
     )
 
     go_repository(
