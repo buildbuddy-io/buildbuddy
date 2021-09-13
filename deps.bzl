@@ -219,6 +219,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:BKNgfYF+WS0pBpmMy2w9k6TqMpxuzL3JI0oWmhZ4JRU=",
         version = "v0.24.3",
     )
+    go_repository(
+        name = "com_github_beevik_etree",
+        importpath = "github.com/beevik/etree",
+        sum = "h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=",
+        version = "v1.1.0",
+    )
 
     go_repository(
         name = "com_github_beorn7_perks",
@@ -585,6 +591,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.11",
     )
     go_repository(
+        name = "com_github_crewjam_httperr",
+        importpath = "github.com/crewjam/httperr",
+        sum = "h1:WXnT88cFG2davqSFqvaFfzkSMC0lqh/8/rKZ+z7tYvI=",
+        version = "v0.0.0-20190612203328-a946449404da",
+    )
+    go_repository(
+        name = "com_github_crewjam_saml",
+        importpath = "github.com/crewjam/saml",
+        sum = "h1:H9u+6CZAESUKHxMyxUbVn0IawYvKZn4nt3d4ccV4O/M=",
+        version = "v0.4.5",
+    )
+
+    go_repository(
         name = "com_github_cyphar_filepath_securejoin",
         importpath = "github.com/cyphar/filepath-securejoin",
         sum = "h1:jCwT2GTP+PY5nBz3c/YL5PAIbusElVrPujOBSCj8xRg=",
@@ -626,6 +645,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/davecgh/go-spew",
         sum = "h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=",
         version = "v1.1.1",
+    )
+    go_repository(
+        name = "com_github_dchest_uniuri",
+        importpath = "github.com/dchest/uniuri",
+        sum = "h1:74lLNRzvsdIlkTgfDSMuaPjBr4cf6k7pwQQANm/yLKU=",
+        version = "v0.0.0-20160212164326-8902c56451e9",
     )
 
     go_repository(
@@ -1913,8 +1938,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_jonboulle_clockwork",
         importpath = "github.com/jonboulle/clockwork",
-        sum = "h1:VKV+ZcuP6l3yW9doeqz6ziZGgcynBVQO+obU0+0hcPo=",
-        version = "v0.1.0",
+        sum = "h1:S/EaQvW6FpWMYAvYvY+OBDvpaM+izu0oiwo5y0MH7U0=",
+        version = "v0.2.1",
     )
     go_repository(
         name = "com_github_josharian_intern",
@@ -2147,6 +2172,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/matryer/is",
         sum = "h1:sosSmIWwkYITGrxZ25ULNDeKiMNzFSr4V/eqBQP0PeE=",
         version = "v1.4.0",
+    )
+    go_repository(
+        name = "com_github_mattermost_xml_roundtrip_validator",
+        importpath = "github.com/mattermost/xml-roundtrip-validator",
+        sum = "h1:qqXczln0qwkVGcpQ+sQuPOVntt2FytYarXXxYSNJkgw=",
+        version = "v0.0.0-20201213122252-bcd7e1b9601e",
     )
 
     go_repository(
@@ -2738,6 +2769,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.20.0",
     )
     go_repository(
+        name = "com_github_russellhaering_goxmldsig",
+        importpath = "github.com/russellhaering/goxmldsig",
+        sum = "h1:lK/zeJie2sqG52ZAlPNn1oBBqsIsEKypUUBGpYYF6lk=",
+        version = "v1.1.0",
+    )
+
+    go_repository(
         name = "com_github_russross_blackfriday_v2",
         importpath = "github.com/russross/blackfriday/v2",
         sum = "h1:lPqVAte+HuHNfhJ/0LC98ESWRz8afy9tM/0RK8m9o+Q=",
@@ -3227,8 +3265,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_zenazn_goji",
         importpath = "github.com/zenazn/goji",
-        sum = "h1:RSQQAbXGArQ0dIDEq+PI6WqN6if+5KHu6x2Cx/GXLTQ=",
-        version = "v0.9.0",
+        sum = "h1:mXV20Aj/BdWrlVzIn1kXFa+Tq62INlUi0cFFlztTaK0=",
+        version = "v0.9.1-0.20160507202103-64eb34159fe5",
     )
 
     go_repository(

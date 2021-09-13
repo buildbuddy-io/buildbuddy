@@ -151,7 +151,7 @@ func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	return tokenString, err
 }
 
-func setCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
+func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -162,11 +162,11 @@ func setCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
 	})
 }
 
-func clearCookie(w http.ResponseWriter, name string) {
-	setCookie(w, name, "", time.Now())
+func ClearCookie(w http.ResponseWriter, name string) {
+	SetCookie(w, name, "", time.Now())
 }
 
-func getCookie(r *http.Request, name string) string {
+func GetCookie(r *http.Request, name string) string {
 	if c, err := r.Cookie(name); err == nil {
 		return c.Value
 	}
@@ -175,13 +175,13 @@ func getCookie(r *http.Request, name string) string {
 
 func setLoginCookie(w http.ResponseWriter, jwt, issuer string) {
 	expiry := time.Now().Add(loginCookieDuration)
-	setCookie(w, jwtCookie, jwt, expiry)
-	setCookie(w, authIssuerCookie, issuer, expiry)
+	SetCookie(w, jwtCookie, jwt, expiry)
+	SetCookie(w, authIssuerCookie, issuer, expiry)
 }
 
 func clearLoginCookie(w http.ResponseWriter) {
-	clearCookie(w, jwtCookie)
-	clearCookie(w, authIssuerCookie)
+	ClearCookie(w, jwtCookie)
+	ClearCookie(w, authIssuerCookie)
 }
 
 type userToken struct {
@@ -459,8 +459,8 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	return nil
 }
 
-func (a *OpenIDAuthenticator) lookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
-	dbHandle := a.env.GetDBHandle()
+func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string) (*tables.User, error) {
+	dbHandle := env.GetDBHandle()
 	if dbHandle == nil {
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
@@ -585,8 +585,8 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 	return groupClaims(akg), nil
 }
 
-func (a *OpenIDAuthenticator) claimsFromSubID(ctx context.Context, subID string) (*Claims, error) {
-	u, err := a.lookupUserFromSubID(ctx, subID)
+func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*Claims, error) {
+	u, err := lookupUserFromSubID(env, ctx, subID)
 	if err != nil {
 		return nil, err
 	}
@@ -693,11 +693,11 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return claims, nil, err
 	}
 
-	jwt := getCookie(r, jwtCookie)
+	jwt := GetCookie(r, jwtCookie)
 	if jwt == "" {
 		return nil, nil, status.PermissionDeniedErrorf("No jwt set")
 	}
-	issuer := getCookie(r, authIssuerCookie)
+	issuer := GetCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
 		return nil, nil, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
@@ -712,7 +712,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
-		claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
+		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 		return claims, ut, err
 	}
 
@@ -731,7 +731,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		}
 		if jwt, ok := newToken.Extra("id_token").(string); ok {
 			setLoginCookie(w, jwt, issuer)
-			claims, err := a.claimsFromSubID(ctx, ut.GetSubID())
+			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 			return claims, ut, err
 		}
 	}
@@ -804,7 +804,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	// Set the "state" cookie which will be returned to us by tha authentication
 	// provider in the URL. We verify that it matches.
 	state := fmt.Sprintf("%d", random.RandUint64())
-	setCookie(w, stateCookie, state, time.Now().Add(tempCookieDuration))
+	SetCookie(w, stateCookie, state, time.Now().Add(tempCookieDuration))
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
@@ -814,11 +814,11 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
-	setCookie(w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
+	SetCookie(w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
 
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
-	setCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
+	SetCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
 	// Redirect to the login provider (and ask for a refresh token).
 	u := auth.authCodeURL(state, authCodeOption...)
@@ -839,8 +839,8 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Verify "state" cookie match.
-	if r.FormValue("state") != getCookie(r, stateCookie) {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookie)))
+	if r.FormValue("state") != GetCookie(r, stateCookie) {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), GetCookie(r, stateCookie)))
 		return
 	}
 
@@ -851,7 +851,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Lookup issuer from the cookie we set in /login.
-	issuer := getCookie(r, authIssuerCookie)
+	issuer := GetCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
@@ -876,7 +876,6 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		redirectWithError(w, r, err)
 		return
-
 	}
 
 	// OK, the token is valid so we will: store the refresh token in our DB
@@ -901,7 +900,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	redirURL := getCookie(r, redirCookie)
+	redirURL := GetCookie(r, redirCookie)
 	if redirURL == "" {
 		redirURL = "/" // default to redirecting home.
 	}

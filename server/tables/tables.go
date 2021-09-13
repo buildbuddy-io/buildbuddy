@@ -178,6 +178,9 @@ type Group struct {
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
 	UseGroupOwnedExecutors bool
+
+	// The SAML IDP Metadata URL for this group.
+	SamlIdpMetadataUrl string
 }
 
 func (g *Group) TableName() string {
