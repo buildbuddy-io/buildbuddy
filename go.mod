@@ -2,7 +2,10 @@ module github.com/buildbuddy-io/buildbuddy
 
 go 1.16
 
-replace github.com/firecracker-microvm/firecracker-go-sdk => github.com/tylerwilliams/firecracker-go-sdk v0.22.1
+replace (
+	github.com/firecracker-microvm/firecracker-go-sdk => github.com/tylerwilliams/firecracker-go-sdk v0.22.1
+	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
+)
 
 require (
 	cloud.google.com/go/storage v1.12.0
@@ -23,7 +26,7 @@ require (
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
-	github.com/go-redsync/redsync/v4 v4.4.1 // indirect
+	github.com/go-redsync/redsync/v4 v4.4.1
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.6
 	github.com/google/go-github v17.0.0+incompatible
