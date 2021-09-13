@@ -17,6 +17,8 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 )
 
 const (
@@ -29,6 +31,7 @@ var (
 	usage1Start            = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	usage1Collection1Start = usage1Start.Add(0 * collectionPeriodDuration)
 	usage1Collection2Start = usage1Start.Add(1 * collectionPeriodDuration)
+	usage1Collection3Start = usage1Start.Add(2 * collectionPeriodDuration)
 )
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
@@ -55,7 +58,62 @@ func usecString(t time.Time) string {
 	return fmt.Sprintf("%d", timeutil.ToUsec(t))
 }
 
-func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *testing.T) {
+func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
+	usages := []*tables.Usage{}
+	dbh := te.GetDBHandle()
+	rows, err := dbh.Raw(`
+		SELECT * From Usages
+		ORDER BY group_id, period_start_usec ASC;
+	`).Rows()
+	require.NoError(t, err)
+
+	for rows.Next() {
+		tu := &tables.Usage{}
+		err := dbh.ScanRows(rows, tu)
+		require.NoError(t, err)
+		// Throw out Model timestamps to simplify assertions.
+		tu.Model = tables.Model{}
+		usages = append(usages, tu)
+	}
+	return usages
+}
+
+func queryAllInvocationUsages(t *testing.T, te *testenv.TestEnv) []*tables.InvocationUsage {
+	usages := []*tables.InvocationUsage{}
+	dbh := te.GetDBHandle()
+	rows, err := dbh.Raw(`
+		SELECT * From InvocationUsages
+		ORDER BY group_id, period_start_usec, invocation_id ASC;
+	`).Rows()
+	require.NoError(t, err)
+
+	for rows.Next() {
+		tu := &tables.InvocationUsage{}
+		err := dbh.ScanRows(rows, tu)
+		require.NoError(t, err)
+		// Throw out Model timestamps to simplify assertions.
+		tu.Model = tables.Model{}
+		usages = append(usages, tu)
+	}
+	return usages
+}
+
+// assertNoFurtherDBAccess makes the test fail if it tries to access the DB
+// after this function is called.
+func assertNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
+	fail := func(db *gorm.DB) {
+		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
+	}
+	dbh := te.GetDBHandle()
+	dbh.Callback().Create().Register("fail", fail)
+	dbh.Callback().Query().Register("fail", fail)
+	dbh.Callback().Update().Register("fail", fail)
+	dbh.Callback().Delete().Register("fail", fail)
+	dbh.Callback().Row().Register("fail", fail)
+	dbh.Callback().Raw().Register("fail", fail)
+}
+
+func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
@@ -108,9 +166,32 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	groupIDs2, err := rdb.SMembers(ctx, groupsKey2).Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"GR1"}, groupIDs2, "groups should equal the groups with usage data")
+
+	// Set clock so that the written collection periods are finalized.
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	// Now flush the data to the DB.
+	err = ut.FlushToDB(context.Background())
+
+	require.NoError(t, err)
+	usages := queryAllUsages(t, te)
+
+	assert.ElementsMatch(t, []*tables.Usage{
+		{
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			GroupID:         "GR1",
+			// We wrote 2 collection periods, so data should be final up to the 3rd
+			// collection period.
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection3Start),
+			UsageCounts: tables.UsageCounts{
+				CasCacheHits:           1001 + 2,
+				ActionCacheHits:        10 + 20,
+				TotalDownloadSizeBytes: 100,
+			},
+		},
+	}, usages, "data flushed to DB should match expected values")
 }
 
-func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T) {
+func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
@@ -148,9 +229,37 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	groupIDs, err := rdb.SMembers(ctx, groupsKey).Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"GR1", "GR2"}, groupIDs, "groups should equal the groups with usage data")
+
+	// Set clock so that the written collection periods are finalized.
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	// Now flush the data to the DB.
+	err = ut.FlushToDB(context.Background())
+
+	require.NoError(t, err)
+	usages := queryAllUsages(t, te)
+	// We only flushed one collection period worth of data for both groups,
+	// so usage rows should be finalized up to the second collection period.
+	assert.ElementsMatch(t, []*tables.Usage{
+		{
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			GroupID:         "GR1",
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			UsageCounts: tables.UsageCounts{
+				CasCacheHits: 1,
+			},
+		},
+		{
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			GroupID:         "GR2",
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			UsageCounts: tables.UsageCounts{
+				CasCacheHits: 10,
+			},
+		},
+	}, usages, "data flushed to DB should match expected values")
 }
 
-func TestUsageTracker_ObserveInvocation_UpdatesRedisState(t *testing.T) {
+func TestUsageTracker_ObserveInvocation_DeduplicatesInvocationsInSingleUsagePeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
@@ -160,19 +269,137 @@ func TestUsageTracker_ObserveInvocation_UpdatesRedisState(t *testing.T) {
 	ut.ObserveInvocation(ctx, "abc-123")
 	ut.ObserveInvocation(ctx, "def-456")
 	ut.ObserveInvocation(ctx, "abc-123")
+	clock.Set(clock.Now().Add(collectionPeriodDuration))
+	ut.ObserveInvocation(ctx, "def-456")
 
 	rdb := te.GetCacheRedisClient()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
-	invocationsKey := "usage/invocations/GR1/" + usecString(usage1Collection1Start)
-	groupsKey := "usage/groups/" + usecString(usage1Collection1Start)
-	require.ElementsMatch(t, []string{invocationsKey, groupsKey}, keys, "redis key should match the expected format")
+	invocationsKey1 := "usage/invocations/GR1/" + usecString(usage1Collection1Start)
+	invocationsKey2 := "usage/invocations/GR1/" + usecString(usage1Collection2Start)
+	groupsKey1 := "usage/groups/" + usecString(usage1Collection1Start)
+	groupsKey2 := "usage/groups/" + usecString(usage1Collection2Start)
+	require.ElementsMatch(
+		t, []string{invocationsKey1, invocationsKey2, groupsKey1, groupsKey2},
+		keys, "redis key should match the expected format")
 
-	invocationIDs, err := rdb.SMembers(ctx, invocationsKey).Result()
+	invocationIDs, err := rdb.SMembers(ctx, invocationsKey1).Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"abc-123", "def-456"}, invocationIDs, "invocation IDs should match what we observed")
 
-	groupIDs, err := rdb.SMembers(ctx, groupsKey).Result()
+	groupIDs, err := rdb.SMembers(ctx, groupsKey1).Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"GR1"}, groupIDs, "groups should equal the groups with usage data")
+
+	// Set clock so that the written collection periods are finalized.
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	// Now flush the data to the DB.
+	err = ut.FlushToDB(context.Background())
+
+	require.NoError(t, err)
+	invs := queryAllInvocationUsages(t, te)
+	assert.Equal(t, []*tables.InvocationUsage{
+		{
+			GroupID:         "GR1",
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			InvocationID:    "abc-123",
+		},
+		{
+			GroupID:         "GR1",
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			InvocationID:    "def-456",
+		},
+	}, invs)
+}
+
+func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
+	clock := testclock.StartingAt(usage1Collection1Start)
+	te := setupEnv(t)
+	ctx := authContext(te, "US1")
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
+	require.NoError(t, err)
+
+	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	require.NoError(t, err)
+	clock.Set(usage1Collection2Start)
+	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 10})
+	require.NoError(t, err)
+	clock.Set(usage1Collection3Start)
+	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 100})
+	require.NoError(t, err)
+
+	// Note: we're at the start of the 3rd collection period when flushing.
+	err = ut.FlushToDB(ctx)
+
+	require.NoError(t, err)
+	usages := queryAllUsages(t, te)
+	// - 1st period should be flushed since it was 2 collection periods ago.
+	// - 2nd period should *not* be flushed; even though it is in the past,
+	//   we allow a bit more time for server jobs to finish writing their usage
+	//   data for that period.
+	// - 3rd period should *not* be flushed since it's the current period.
+	require.Equal(t, []*tables.Usage{
+		{
+			GroupID:         "GR1",
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			UsageCounts: tables.UsageCounts{
+				CasCacheHits: 1,
+			},
+		},
+	}, usages)
+}
+
+func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
+	clock := testclock.StartingAt(usage1Collection1Start)
+	te := setupEnv(t)
+	ctx := authContext(te, "US1")
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
+	require.NoError(t, err)
+
+	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	require.NoError(t, err)
+	err = ut.ObserveInvocation(ctx, "abc-123")
+	require.NoError(t, err)
+
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	require.NotEmpty(t, usages)
+	invocations := queryAllInvocationUsages(t, te)
+	require.NotEmpty(t, invocations)
+
+	// Make the next Flush call fail if it tries to do anything with the DB,
+	// since there was no usage observed.
+	assertNoFurtherDBAccess(t, te)
+
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+}
+
+func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
+	clock := testclock.StartingAt(usage1Collection1Start)
+	te := setupEnv(t)
+	ctx := authContext(te, "US1")
+
+	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
+	require.NoError(t, err)
+
+	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+
+	eg, ctx := errgroup.WithContext(ctx)
+	for i := 0; i < 100; i++ {
+		eg.Go(func() error {
+			ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
+			require.NoError(t, err)
+			return ut.FlushToDB(ctx)
+		})
+	}
+
+	err = eg.Wait()
+	require.NoError(t, err)
 }
