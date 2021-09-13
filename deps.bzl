@@ -873,12 +873,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:RDBNVkRviHZtvDvId8XSGPu3rmpmSe+wKRcEWNgsfWU=",
         version = "v0.0.0-20190404230743-d7302db945fa",
     )
-    go_repository(
-        name = "com_github_garyburd_redigo",
-        importpath = "github.com/garyburd/redigo",
-        sum = "h1:LofdAjjjqCSXMwLGgOgnE+rdPuvX9DxCqaHwKy7i/ko=",
-        version = "v0.0.0-20150301180006-535138d7bcd7",
-    )
 
     go_repository(
         name = "com_github_ghodss_yaml",
@@ -1059,12 +1053,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:myhdWhx5UHvLXZ7maUcP0uYxyijMT+smaNAhARBVc9s=",
         version = "v9.30.0+incompatible",
     )
-    go_repository(
-        name = "com_github_go_redis_redis",
-        importpath = "github.com/go-redis/redis",
-        sum = "h1:K0pv1D7EQUjfyoMql+r/jZqCLizCGKFlFgcHWWmHQjg=",
-        version = "v6.15.9+incompatible",
-    )
 
     go_repository(
         name = "com_github_go_redis_redis_extra_rediscmd_v8",
@@ -1077,12 +1065,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/go-redis/redis/extra/redisotel/v8",
         sum = "h1:0JlrPvtN5SjIe5gTmAsvIAIqn9FEGaVJgGOFg63Djgk=",
         version = "v8.10.0",
-    )
-    go_repository(
-        name = "com_github_go_redis_redis_v7",
-        importpath = "github.com/go-redis/redis/v7",
-        sum = "h1:7obg6wUoj05T0EpY0o8B59S9w5yeMWql7sw2kwNW1x4=",
-        version = "v7.4.0",
     )
 
     go_repository(
@@ -1413,12 +1395,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/golangci/unconvert",
         sum = "h1:zwtduBRr5SSWhqsYNgcuWO2kFlpdOZbP0+yRjmvPGys=",
         version = "v0.0.0-20180507085042-28b1c447d1f4",
-    )
-    go_repository(
-        name = "com_github_gomodule_redigo",
-        importpath = "github.com/gomodule/redigo",
-        sum = "h1:H5XSIre1MB5NbPYFp+i1NBbb5qN1W8Y8YAQoAYbkm8k=",
-        version = "v1.8.2",
     )
 
     go_repository(
