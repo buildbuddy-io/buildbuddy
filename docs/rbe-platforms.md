@@ -77,7 +77,7 @@ Some cloud providers may also allow the use of long-lived tokens, which
 can also be used in remote headers. For example, GCR allows setting a
 username of `_json_key` and then using a service account's
 [JSON-format private key](https://cloud.google.com/iam/docs/creating-managing-service-account-keys)
-as the password.
+as the password:
 
 ```
 --remote_header=x-buildbuddy-container-registry-username=_json_key
