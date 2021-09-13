@@ -48,8 +48,8 @@ flags to your `bazel` command (replace `USERNAME` and `ACCESS_TOKEN` with
 the appropriate credentials for the container registry):
 
 ```
---remote_default_exec_properties=container-registry-username=USERNAME
---remote_default_exec_properties=container-registry-password=ACCESS_TOKEN
+--remote_header=x-buildbuddy-container-registry-username=USERNAME
+--remote_header=x-buildbuddy-container-registry-password=ACCESS_TOKEN
 ```
 
 For the value of `ACCESS_TOKEN`, we recommend generating a short-lived
@@ -60,8 +60,8 @@ the username must be `_dcgcloud_token` and the token can be generated with
 `gcloud auth print-access-token`:
 
 ```
---remote_default_exec_properties=container-registry-username=_dcgcloud_token
---remote_default_exec_properties=container-registry-password="$(gcloud auth print-access-token)"
+--remote_header=x-buildbuddy-container-registry-username=_dcgcloud_token
+--remote_header=x-buildbuddy-container-registry-password="$(gcloud auth print-access-token)"
 ```
 
 For Amazon ECR (Elastic Container Registry), the username must be `AWS`
@@ -69,42 +69,19 @@ and a short-lived token can be generated with `aws ecr get-login-password --regi
 (replace `REGION` with the region matching the ECR image URL):
 
 ```
---remote_default_exec_properties=container-registry-username=AWS
---remote_default_exec_properties=container-registry-password="$(aws ecr get-login-password --region REGION)"
+--remote_header=x-buildbuddy-container-registry-username=AWS
+--remote_header=x-buildbuddy-container-registry-password="$(aws ecr get-login-password --region REGION)"
 ```
 
 Some cloud providers may also allow the use of long-lived tokens, which
-can be set directly in your `platform` definition, rather than at the
-command line. For example, GCR allows setting a username of `_json_key`
-and then using a service account's [JSON-format private key](https://cloud.google.com/iam/docs/creating-managing-service-account-keys)
+can also be used in remote headers. For example, GCR allows setting a
+username of `_json_key` and then using a service account's
+[JSON-format private key](https://cloud.google.com/iam/docs/creating-managing-service-account-keys)
 as the password:
 
-```python
-SERVICE_ACCOUNT_KEY = """
-{
-    "type": "service_account",
-    "project_id": "YOUR_PROJECT_ID",
-    "private_key_id": "...",
-    "private_key": "...",
-    // More fields omitted
-    ...
-}
-"""
-
-platform(
-    name = "docker_image_platform",
-    constraint_values = [
-        "@bazel_tools//platforms:x86_64",
-        "@bazel_tools//platforms:linux",
-        "@bazel_tools//tools/cpp:clang",
-    ],
-    exec_properties = {
-        "OSFamily": "Linux",
-        "container-image": "docker://gcr.io/YOUR:IMAGE",
-        "container-registry-username": "_json_key",
-        "container-registry-password": SERVICE_ACCOUNT_KEY,
-    },
-)
+```
+--remote_header=x-buildbuddy-container-registry-username=_json_key
+--remote_header=x-buildbuddy-container-registry-password="$(cat service-account-keyfile.json)"
 ```
 
 ## Specifying a custom executor pool
