@@ -76,12 +76,3 @@ require (
 	gorm.io/driver/sqlite v1.1.4
 	gorm.io/gorm v1.20.12
 )
-
-// redsync includes support for some Redis versions and drivers that we don't use;
-// exclude these.
-exclude (
-	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/go-redis/redis/v7 v7.4.0
-	github.com/gomodule/redigo v1.8.2
-)
-
