@@ -453,7 +453,7 @@ type Usage struct {
 	//
 	// Consider the following diagram:
 	//
-	// |xxxxxxxxxxxxxxxxxxx|------------------|
+	// [xxxxxxxxxxxxxxxxxxx)------------------)
 	// ^ PeriodStart       ^ FinalBefore      ^ PeriodEnd = PeriodStart + 1hr
 	//
 	// Usage data occuring in the x-marked region cannot be added to this usage
@@ -462,7 +462,7 @@ type Usage struct {
 	// When writing the next collection period's data, the FinalBefore timestamp
 	// is updated as follows:
 	//
-	// |xxxxxxxxxxxxxxxxxxx|xxxxxx|-----------|
+	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
 	//                     ^ FinalBefore (before update) = CollectionPeriodStart
 	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
 	FinalBeforeUsec int64
