@@ -11,3 +11,7 @@ import (
 func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateResponse, error) {
 	return nil, syscallErrStatus(syscall.ENOSYS)
 }
+
+func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRangeRequest) (*vfspb.CopyFileRangeResponse, error) {
+	return nil, syscallErrStatus(syscall.ENOSYS)
+}

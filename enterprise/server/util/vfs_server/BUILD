@@ -22,5 +22,10 @@ go_library(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )

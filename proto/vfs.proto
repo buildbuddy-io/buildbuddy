@@ -63,6 +63,19 @@ message ReleaseRequest {
 
 message ReleaseResponse {}
 
+message CopyFileRangeRequest {
+  uint64 read_handle_id = 1;
+  int64 read_handle_offset = 2;
+  uint64 write_handle_id = 3;
+  int64 write_handle_offset = 4;
+  uint32 num_bytes = 5;
+  uint32 flags = 6;
+}
+
+message CopyFileRangeResponse {
+  uint32 num_bytes_copied = 1;
+}
+
 message GetAttrRequest {
   string path = 1;
 }
@@ -144,6 +157,10 @@ service FileSystem {
   //  left.
   //  Any errors returned here are not visible to the file system user.
   rpc Release(ReleaseRequest) returns (ReleaseResponse);
+
+  // CopyFileRange copies data between two open file handles on the server which
+  // avoids the need to copy data to/from client.
+  rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
 
   rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);
