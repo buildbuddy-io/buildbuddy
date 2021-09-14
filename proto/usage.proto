@@ -31,7 +31,7 @@ message Usage {
   string period = 1;
 
   // The number of invocations.
-  int64 total_num_builds = 2;
+  int64 invocations = 2;
 
   // The number of action cache hits.
   int64 action_cache_hits = 3;

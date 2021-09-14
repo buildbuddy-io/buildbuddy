@@ -43,10 +43,6 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	if err != nil {
 		return nil, err
 	}
-	invocationUsages, err := s.scanInvocationUsages(ctx, groupID, start, end)
-	if err != nil {
-		return nil, err
-	}
 
 	// Build the response list from scanned rows, inserting explicit zeroes for
 	// periods with no data.
@@ -54,21 +50,12 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	for t := start; !(t.After(end) || t.Equal(end)); t = addCalendarMonths(t, 1) {
 		period := fmt.Sprintf("%d-%02d", t.Year(), t.Month())
 
-		var usage *usagepb.Usage
 		if len(usages) > 0 && usages[0].Period == period {
-			usage = usages[0]
+			rsp.Usage = append(rsp.Usage, usages[0])
 			usages = usages[1:]
 		} else {
-			usage = &usagepb.Usage{Period: period}
+			rsp.Usage = append(rsp.Usage, &usagepb.Usage{Period: period})
 		}
-
-		// Populate invocation count if it exists
-		if len(invocationUsages) > 0 && invocationUsages[0].Period == period {
-			usage.TotalNumBuilds = invocationUsages[0].TotalNumBuilds
-			invocationUsages = invocationUsages[1:]
-		}
-
-		rsp.Usage = append(rsp.Usage, usage)
 	}
 
 	// Return in reverse-chronological order.
@@ -82,39 +69,11 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 
 	rows, err := db.Raw(`
 		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
+		SUM(invocations) AS invocations,
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,
 		SUM(total_download_size_bytes) AS total_download_size_bytes
 		FROM Usages
-		WHERE period_start_usec >= ? AND period_start_usec < ?
-		AND group_id = ?
-		GROUP BY period
-		ORDER BY period ASC
-	`, timeutil.ToUsec(start), timeutil.ToUsec(end), groupID).Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	usages := []*usagepb.Usage{}
-	for rows.Next() {
-		usage := &usagepb.Usage{}
-		if err := db.ScanRows(rows, usage); err != nil {
-			return nil, err
-		}
-		usages = append(usages, usage)
-	}
-
-	return usages, nil
-}
-
-func (s *usageService) scanInvocationUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
-	db := s.env.GetDBHandle()
-
-	rows, err := db.Raw(`
-		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
-		COUNT(*) AS total_num_builds
-		FROM InvocationUsages
 		WHERE period_start_usec >= ? AND period_start_usec < ?
 		AND group_id = ?
 		GROUP BY period
