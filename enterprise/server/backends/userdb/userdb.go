@@ -116,10 +116,23 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 }
 
 func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error) {
+	var group *tables.Group
+	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+		g, err := d.getGroupByURLIdentifier(ctx, tx, urlIdentifier)
+		if err != nil {
+			return err
+		}
+		group = g
+		return nil
+	})
+	return group, err
+}
+
+func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *db.DB, urlIdentifier string) (*tables.Group, error) {
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
-	query := d.h.Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.url_identifier = ?`, urlIdentifier)
+	query := tx.Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -508,6 +521,13 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 
 func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
 	groupIDs := make([]string, 0)
+	for _, group := range u.Groups {
+		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.URLIdentifier)
+		if err != nil {
+			return err
+		}
+		groupIDs = append(groupIDs, hydratedGroup.GroupID)
+	}
 
 	if u.Email == "" {
 		return status.FailedPreconditionErrorf("Auth token does not contain an email address")
@@ -518,7 +538,8 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	}
 	emailDomain := emailParts[1]
 
-	if d.env.GetConfigurator().GetAppAddUserToDomainGroup() {
+	// If the user was created via a group - don't add it to a group based on domain.
+	if len(u.Groups) == 0 && d.env.GetConfigurator().GetAppAddUserToDomainGroup() {
 		dg, err := d.getDomainOwnerGroup(ctx, tx, emailDomain)
 		if err != nil {
 			log.Errorf("error in createUser: %s", err)

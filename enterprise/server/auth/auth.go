@@ -192,6 +192,7 @@ type userToken struct {
 	FamilyName string `json:"family_name"`
 	Picture    string `json:"picture"`
 	issuer     string
+	slug       string
 }
 
 func (t *userToken) GetIssuer() string {
@@ -223,9 +224,10 @@ type oidcAuthenticator struct {
 	slug         string
 }
 
-func extractToken(issuer string, idToken *oidc.IDToken) (*userToken, error) {
+func extractToken(issuer string, slug string, idToken *oidc.IDToken) (*userToken, error) {
 	ut := &userToken{
 		issuer: issuer,
+		slug:   slug,
 	}
 	if err := idToken.Claims(ut); err != nil {
 		return nil, err
@@ -256,7 +258,7 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 	if err != nil {
 		return nil, err
 	}
-	return extractToken(a.issuer, validToken)
+	return extractToken(a.issuer, a.slug, validToken)
 }
 
 func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
@@ -780,6 +782,9 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	user.LastName = t.FamilyName
 	user.Email = t.Email
 	user.ImageURL = t.Picture
+	if t.slug != "" {
+		user.Groups = []*tables.Group{{URLIdentifier: &t.slug}}
+	}
 	return nil
 }
 
