@@ -276,7 +276,7 @@ type apiKeyGroupCacheEntry struct {
 type apiKeyGroupCache struct {
 	// Note that even though we base this off an LRU cache, every entry has a hard expiration
 	// time to force a refresh of the underlying data.
-	lru *lru.LRU
+	lru interfaces.LRU
 	ttl time.Duration
 	mu  sync.RWMutex
 }
@@ -293,7 +293,7 @@ func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, 
 
 	config := &lru.Config{
 		MaxSize: apiKeyGroupCacheSize,
-		SizeFn:  func(k, v interface{}) int64 { return 1 },
+		SizeFn:  func(v interface{}) int64 { return 1 },
 	}
 	lru, err := lru.NewLRU(config)
 	if err != nil {
