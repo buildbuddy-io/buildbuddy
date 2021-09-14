@@ -783,7 +783,7 @@ func (r *Env) ExecuteCustomCommand(args ...string) *Command {
 }
 
 func (r *Env) WithUserID(ctx context.Context, userID string) context.Context {
-	ctx = r.testEnv.GetAuthenticator().AuthContextFromAPIKey(ctx, userID)
+	ctx = r.testEnv.GetAPIKeyAuthenticator().AuthContextFromAPIKey(ctx, userID)
 	jwt, _ := testauth.TestJWTForUserID(userID)
 	ctx = metadata.AppendToOutgoingContext(
 		ctx,

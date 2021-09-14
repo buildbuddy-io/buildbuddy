@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -93,7 +94,7 @@ func Gzip(next http.Handler) http.Handler {
 
 func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := env.GetAuthenticator().AuthenticatedHTTPContext(w, r)
+		ctx := env.GetHTTPAuthenticator().AuthenticatedHTTPContext(w, r)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -256,4 +257,18 @@ func ServeGRPCOverHTTPPort(grpcServer *grpc.Server, next http.Handler) http.Hand
 			next.ServeHTTP(w, r)
 		}
 	})
+}
+
+type HandlerFunc func(http.ResponseWriter, *http.Request) error
+
+func (f HandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := f(w, r)
+	if err != nil {
+		redirectWithError(w, r, err)
+	}
+}
+
+func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Warning(err.Error())
+	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 }

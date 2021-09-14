@@ -783,22 +783,20 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	return nil
 }
 
-func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
+func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
 	issuer := r.URL.Query().Get(authIssuerParam)
 	auth := a.getAuthConfig(issuer)
 
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
 		auth = a.getAuthConfigForSlug(slug)
 		if auth == nil {
-			redirectWithError(w, r, status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug))
-			return
+			return status.PermissionDeniedErrorf("No SSO config found for slug: %s", slug)
 		}
 		issuer = auth.getIssuer()
 	}
 
 	if auth == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
-		return
+		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
 	// Set the "state" cookie which will be returned to us by tha authentication
@@ -808,8 +806,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 
 	// Set the redirection URL in a cookie so we can use it after validating
@@ -823,59 +820,49 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	// Redirect to the login provider (and ask for a refresh token).
 	u := auth.authCodeURL(state, authCodeOption...)
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
+	return nil
 }
 
-func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
+func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	clearLoginCookie(w)
-
-	redirURL := r.URL.Query().Get(authRedirectParam)
-	if redirURL == "" {
-		redirURL = "/" // default to redirecting home.
-	}
-	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
+	return status.UnauthenticatedErrorf("Logged out!")
 }
 
-func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 
 	// Verify "state" cookie match.
 	if r.FormValue("state") != GetCookie(r, stateCookie) {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), GetCookie(r, stateCookie)))
-		return
+		return status.PermissionDeniedErrorf("state mismatch: %s != %s", r.FormValue("state"), GetCookie(r, stateCookie))
 	}
 
 	authError := r.URL.Query().Get("error")
 	if authError != "" {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description")))
-		return
+		return status.PermissionDeniedErrorf("Authenticator returned error: %s (%s %s)", authError, r.URL.Query().Get("error_desc"), r.URL.Query().Get("error_description"))
 	}
 
 	// Lookup issuer from the cookie we set in /login.
 	issuer := GetCookie(r, authIssuerCookie)
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer))
-		return
+		return status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
 	code := r.URL.Query().Get("code")
 	oauth2Token, err := auth.exchange(ctx, code, authCodeOption...)
 	if err != nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code))
-		return
+		return status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code)
 	}
 
 	// Extract the ID Token (JWT) from OAuth2 token.
 	jwt, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
-		redirectWithError(w, r, status.PermissionDeniedError("ID Token not present in auth response"))
-		return
+		return status.PermissionDeniedError("ID Token not present in auth response")
 	}
 
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true)
 	if err != nil {
-		redirectWithError(w, r, err)
-		return
+		return err
 	}
 
 	// OK, the token is valid so we will: store the refresh token in our DB
@@ -905,6 +892,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		redirURL = "/" // default to redirecting home.
 	}
 	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
+	return nil
 }
 
 // Parses the JWT's UserInfo from the context without verifying the JWT.
@@ -924,7 +912,84 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 	return nil, status.UnauthenticatedError("User not found")
 }
 
-func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
-	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
+type multiAuthenticator struct {
+	authenticators []interfaces.Authenticator
+}
+
+func NewMultiAuthenticator(authenticators []interfaces.Authenticator) *multiAuthenticator {
+	return &multiAuthenticator{authenticators: authenticators}
+}
+
+func (a *multiAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
+	errors := make([]error, 0)
+	for _, auth := range a.authenticators {
+		if err := auth.FillUser(ctx, user); err != nil {
+			errors = append(errors, err)
+		} else {
+			return nil
+		}
+	}
+	return status.UnauthenticatedErrorf("No user found in any authenticator: (%v)", errors)
+}
+
+func (a *multiAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
+	errors := make([]error, 0)
+	for _, auth := range a.authenticators {
+		if user, err := auth.AuthenticatedUser(ctx); err != nil {
+			errors = append(errors, err)
+		} else {
+			return user, err
+		}
+	}
+	return nil, status.UnauthenticatedErrorf("No user found in any authenticator: (%v)", errors)
+}
+
+type multiHTTPAuthenticator struct {
+	authenticators []interfaces.HTTPAuthenticator
+}
+
+func NewMultiHTTPAuthenticator(authenticators []interfaces.HTTPAuthenticator) *multiHTTPAuthenticator {
+	return &multiHTTPAuthenticator{authenticators: authenticators}
+}
+
+func (a *multiHTTPAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
+	var err error
+	for _, authenticator := range a.authenticators {
+		if err = authenticator.Login(w, r); err == nil {
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return status.NotFoundErrorf("No authenticator registered to handle login path: %s", r.URL.Path)
+}
+
+func (a *multiHTTPAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
+	for _, authenticator := range a.authenticators {
+		authenticator.Logout(w, r)
+	}
+	return status.UnauthenticatedError("Logged out!")
+}
+
+func (a *multiHTTPAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
+	var err error
+	for _, authenticator := range a.authenticators {
+		if err = authenticator.Auth(w, r); err == nil {
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return status.NotFoundErrorf("No authenticator registered to auth path: %s", r.URL.Path)
+}
+
+func (a *multiHTTPAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
+	ctx := r.Context()
+	for _, authenticator := range a.authenticators {
+		ctx = authenticator.AuthenticatedHTTPContext(w, r)
+		r = r.WithContext(ctx)
+	}
+	return ctx
 }

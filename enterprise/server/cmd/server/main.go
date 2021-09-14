@@ -103,16 +103,22 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
 
-	var authenticator interfaces.Authenticator
 	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
 	if err == nil {
-		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
-			log.Info("SAML auth configured.")
-			authenticator = saml.NewSAMLAuthenticator(env, authenticator)
-		}
+		log.Info("OIDC auth configured.")
 		env.SetAuthenticator(authenticator)
+		env.SetHTTPAuthenticator(authenticator)
+		env.SetGRPCAuthenticator(authenticator)
+		env.SetAPIKeyAuthenticator(authenticator)
 	} else {
 		log.Warningf("No authentication will be configured: %s", err)
+	}
+
+	if env.GetConfigurator().GetSAMLConfig().CertFile != "" && authenticator != nil {
+		samlAuth := saml.NewSAMLAuthenticator(env)
+		env.SetAuthenticator(auth.NewMultiAuthenticator([]interfaces.Authenticator{samlAuth, authenticator}))
+		env.SetHTTPAuthenticator(auth.NewMultiHTTPAuthenticator([]interfaces.HTTPAuthenticator{samlAuth, authenticator}))
+		log.Info("SAML auth configured.")
 	}
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())

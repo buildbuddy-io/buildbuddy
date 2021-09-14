@@ -43,6 +43,12 @@ type Env interface {
 	GetHealthChecker() interfaces.HealthChecker
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
+	GetHTTPAuthenticator() interfaces.HTTPAuthenticator
+	SetHTTPAuthenticator(a interfaces.HTTPAuthenticator)
+	GetGRPCAuthenticator() interfaces.GRPCAuthenticator
+	SetGRPCAuthenticator(a interfaces.GRPCAuthenticator)
+	GetAPIKeyAuthenticator() interfaces.APIKeyAuthenticator
+	SetAPIKeyAuthenticator(a interfaces.APIKeyAuthenticator)
 	GetWebhooks() []interfaces.Webhook
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient

@@ -327,7 +327,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 		}
 
-		if auth := e.env.GetAuthenticator(); auth != nil {
+		if auth := e.env.GetAPIKeyAuthenticator(); auth != nil {
 			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
 			if err != nil {
 				return err

@@ -380,10 +380,10 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
-	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
-		mux.Handle("/auth/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
-		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
+	if auth := env.GetHTTPAuthenticator(); auth != nil {
+		mux.Handle("/login/", httpfilters.SetSecurityHeaders(httpfilters.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", httpfilters.SetSecurityHeaders(httpfilters.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(httpfilters.HandlerFunc(auth.Logout)))
 	}
 
 	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {

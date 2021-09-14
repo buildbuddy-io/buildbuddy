@@ -44,6 +44,9 @@ type RealEnv struct {
 	blobstore                        interfaces.Blobstore
 	invocationDB                     interfaces.InvocationDB
 	authenticator                    interfaces.Authenticator
+	httpAuthenticator                interfaces.HTTPAuthenticator
+	grpcAuthenticator                interfaces.GRPCAuthenticator
+	apiKeyAuthenticator              interfaces.APIKeyAuthenticator
 	repoDownloader                   interfaces.RepoDownloader
 	executionService                 interfaces.ExecutionService
 	cache                            interfaces.Cache
@@ -175,6 +178,27 @@ func (r *RealEnv) GetAuthenticator() interfaces.Authenticator {
 }
 func (r *RealEnv) SetAuthenticator(a interfaces.Authenticator) {
 	r.authenticator = a
+}
+
+func (r *RealEnv) GetHTTPAuthenticator() interfaces.HTTPAuthenticator {
+	return r.httpAuthenticator
+}
+func (r *RealEnv) SetHTTPAuthenticator(a interfaces.HTTPAuthenticator) {
+	r.httpAuthenticator = a
+}
+
+func (r *RealEnv) GetGRPCAuthenticator() interfaces.GRPCAuthenticator {
+	return r.grpcAuthenticator
+}
+func (r *RealEnv) SetGRPCAuthenticator(a interfaces.GRPCAuthenticator) {
+	r.grpcAuthenticator = a
+}
+
+func (r *RealEnv) GetAPIKeyAuthenticator() interfaces.APIKeyAuthenticator {
+	return r.apiKeyAuthenticator
+}
+func (r *RealEnv) SetAPIKeyAuthenticator(a interfaces.APIKeyAuthenticator) {
+	r.apiKeyAuthenticator = a
 }
 
 func (r *RealEnv) GetUserDB() interfaces.UserDB {

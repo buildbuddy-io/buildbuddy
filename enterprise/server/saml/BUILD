@@ -13,7 +13,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_crewjam_saml//samlsp",
     ],

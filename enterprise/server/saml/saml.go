@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml/samlsp"
 )
@@ -39,27 +38,23 @@ var (
 type SAMLAuthenticator struct {
 	env           environment.Env
 	samlProviders map[string]*samlsp.Middleware
-	fallback      interfaces.Authenticator
 }
 
-func NewSAMLAuthenticator(env environment.Env, fallback interfaces.Authenticator) *SAMLAuthenticator {
+func NewSAMLAuthenticator(env environment.Env) *SAMLAuthenticator {
 	return &SAMLAuthenticator{
 		env:           env,
 		samlProviders: make(map[string]*samlsp.Middleware),
-		fallback:      fallback,
 	}
 }
 
-func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) error {
 	slug := r.URL.Query().Get(slugParam)
 	if slug == "" {
-		a.fallback.Login(w, r)
-		return
+		return status.FailedPreconditionError("SAML Login attempted without a slug")
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		a.fallback.Login(w, r)
-		return
+		return err
 	}
 	auth.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration))
 	session, err := sp.Session.GetSession(r)
@@ -69,9 +64,10 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 			redirectURL = "/" // default to redirecting home.
 		}
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
-		return
+		return nil
 	}
 	sp.HandleStartAuthFlow(w, r)
+	return nil
 }
 
 func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
@@ -85,7 +81,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			return ctx
 		}
 	}
-	return a.fallback.AuthenticatedHTTPContext(w, r)
+	return ctx
 }
 
 func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -102,15 +98,15 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		user.Email = firstSet(attributes, samlEmailAttributes)
 		return nil
 	}
-	return a.fallback.FillUser(ctx, user)
+	return status.UnauthenticatedError("No SAML User found")
 }
 
-func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	auth.ClearCookie(w, slugCookie)
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
-	a.fallback.Logout(w, r)
+	return status.UnauthenticatedError("Logged out!")
 }
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -118,37 +114,19 @@ func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 		claims, err := auth.ClaimsFromSubID(a.env, ctx, s)
 		return claims, err
 	}
-	return a.fallback.AuthenticatedUser(ctx)
+	return nil, status.UnauthenticatedError("No SAML User found")
 }
 
-func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
+func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	if !strings.HasPrefix(r.URL.Path, "/auth/saml/") {
-		a.fallback.Auth(w, r)
-		return
+		return status.NotFoundErrorf("Auth path does not have SAML prefix %s:", r.URL.Path)
 	}
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
-		log.Warningf("SAML Auth Failed: %s", err)
-		a.fallback.Auth(w, r)
-		return
+		return status.NotFoundErrorf("SAML Auth Failed: %s", err)
 	}
 	sp.ServeHTTP(w, r)
-}
-
-func (a *SAMLAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	return a.fallback.AuthenticatedGRPCContext(ctx)
-}
-
-func (a *SAMLAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return a.fallback.AuthenticateGRPCRequest(ctx)
-}
-
-func (a *SAMLAuthenticator) ParseAPIKeyFromString(s string) string {
-	return a.fallback.ParseAPIKeyFromString(s)
-}
-
-func (a *SAMLAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	return a.fallback.AuthContextFromAPIKey(ctx, apiKey)
+	return nil
 }
 
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
@@ -162,7 +140,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	}
 	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
 	if SAMLConfig.CertFile == "" || SAMLConfig.KeyFile == "" {
-		return nil, status.NotFoundError("No SAML Configured")
+		return nil, status.UnauthenticatedError("No SAML Configured")
 	}
 	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
 	if err != nil {
@@ -223,7 +201,7 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 		return nil, err
 	}
 	if group.SamlIdpMetadataUrl == "" {
-		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
+		return nil, status.UnauthenticatedErrorf("Group %s does not have SAML configured", slug)
 	}
 	metadataUrl, err := url.Parse(group.SamlIdpMetadataUrl)
 	if err != nil {
@@ -235,10 +213,10 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 func (a *SAMLAuthenticator) groupForSlug(ctx context.Context, slug string) (*tables.Group, error) {
 	userDB := a.env.GetUserDB()
 	if userDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
+		return nil, status.UnauthenticatedErrorf("UserDB not found")
 	}
 	if slug == "" {
-		return nil, status.InvalidArgumentError("Slug is required.")
+		return nil, status.UnauthenticatedErrorf("Slug is required.")
 	}
 	return userDB.GetGroupByURLIdentifier(ctx, slug)
 }

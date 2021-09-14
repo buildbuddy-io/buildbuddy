@@ -697,7 +697,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 	if err != nil {
 		return "", err
 	}
-	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
+	ctx = ws.env.GetAPIKeyAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
 		return "", err
 	}

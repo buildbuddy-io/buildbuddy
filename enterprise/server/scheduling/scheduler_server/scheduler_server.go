@@ -693,7 +693,7 @@ func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error)
 		return "", nil
 	}
 
-	auth := s.env.GetAuthenticator()
+	auth := s.env.GetGRPCAuthenticator()
 	if auth == nil {
 		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
 	}

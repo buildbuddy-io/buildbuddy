@@ -542,7 +542,7 @@ func TestNonDefaultPartition(t *testing.T) {
 
 	// Authenticated user on default partition.
 	{
-		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey1)
+		ctx := te.GetAPIKeyAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey1)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
@@ -558,7 +558,7 @@ func TestNonDefaultPartition(t *testing.T) {
 	// Authenticated user with group ID that matches custom partition, but without a matching instance name prefix.
 	// Data should go to the default partition.
 	{
-		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx := te.GetAPIKeyAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
@@ -578,7 +578,7 @@ func TestNonDefaultPartition(t *testing.T) {
 	// partition.
 	// Data should go to the matching partition.
 	{
-		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
+		ctx := te.GetAPIKeyAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey2)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
@@ -723,7 +723,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	}
 
 	{
-		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		ctx := te.GetAPIKeyAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
@@ -739,7 +739,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	}
 
 	{
-		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		ctx := te.GetAPIKeyAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix" /*=instanceName*/)
