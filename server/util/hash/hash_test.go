@@ -5,7 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/stretchr/testify/assert"
-	
 )
 
 func TestHashString(t *testing.T) {
