@@ -428,6 +428,7 @@ func (wf *Workflow) TableName() string {
 }
 
 type UsageCounts struct {
+	Invocations            int64
 	CasCacheHits           int64
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
