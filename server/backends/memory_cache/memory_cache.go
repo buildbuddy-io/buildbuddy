@@ -22,11 +22,8 @@ type MemoryCache struct {
 	prefix string
 }
 
-func sizeFn(key interface{}, value interface{}) int64 {
+func sizeFn(value interface{}) int64 {
 	size := int64(0)
-	if k, ok := key.(string); ok {
-		size += int64(len(k))
-	}
 	if v, ok := value.([]byte); ok {
 		size += int64(len(v))
 	}

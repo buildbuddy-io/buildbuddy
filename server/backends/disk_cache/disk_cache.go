@@ -321,7 +321,7 @@ type fileRecord struct {
 	sizeBytes int64
 }
 
-func sizeFn(key interface{}, value interface{}) int64 {
+func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.(*fileRecord); ok {
 		size += v.sizeBytes
@@ -329,9 +329,9 @@ func sizeFn(key interface{}, value interface{}) int64 {
 	return size
 }
 
-func evictFn(key interface{}, value interface{}) {
-	if k, ok := key.(string); ok {
-		disk.DeleteFile(context.TODO(), k)
+func evictFn(value interface{}) {
+	if v, ok := value.(*fileRecord); ok {
+		disk.DeleteFile(context.TODO(), v.key)
 	}
 }
 

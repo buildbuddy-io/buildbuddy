@@ -9,9 +9,8 @@ import (
 )
 
 // EvictedCallback is used to get a callback when a cache Entry is evicted
-type EvictedCallback func(key interface{}, value interface{})
-type AddedCallback func(key interface{}, value interface{})
-type SizeFn func(key interface{}, value interface{}) int64
+type EvictedCallback func(value interface{})
+type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
 // MaxSize & SizeFn are required.
@@ -20,8 +19,6 @@ type Config struct {
 	SizeFn SizeFn
 	// Optional callback for cache eviction events.
 	OnEvict EvictedCallback
-	// Optional callback for cache add events.
-	OnAdd AddedCallback
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
 	MaxSize int64
@@ -33,7 +30,6 @@ type LRU struct {
 	evictList   *list.List
 	items       map[interface{}]*list.Element
 	onEvict     EvictedCallback
-	onAdd       AddedCallback
 	maxSize     int64
 	currentSize int64
 }
@@ -58,7 +54,6 @@ func NewLRU(config *Config) (interfaces.LRU, error) {
 		evictList:   list.New(),
 		items:       make(map[interface{}]*list.Element),
 		onEvict:     config.OnEvict,
-		onAdd:       config.OnAdd,
 		sizeFn:      config.SizeFn,
 	}
 	return c, nil
@@ -72,7 +67,7 @@ func (c *LRU) Metrics() string {
 func (c *LRU) Purge() {
 	for k, v := range c.items {
 		if c.onEvict != nil {
-			c.onEvict(k, v.Value.(*Entry).value)
+			c.onEvict(v.Value.(*Entry).value)
 		}
 		delete(c.items, k)
 	}
@@ -202,10 +197,7 @@ func (c *LRU) addElement(key, value interface{}) {
 	kv := &Entry{key, value}
 	Entry := c.evictList.PushFront(kv)
 	c.items[key] = Entry
-	c.currentSize += c.sizeFn(key, value)
-	if c.onAdd != nil {
-		c.onAdd(kv.key, kv.value)
-	}
+	c.currentSize += c.sizeFn(value)
 }
 
 // removeElement is used to remove a given list element from the cache
@@ -213,8 +205,8 @@ func (c *LRU) removeElement(e *list.Element) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
 	delete(c.items, kv.key)
-	c.currentSize -= c.sizeFn(kv.key, kv.value)
+	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.key, kv.value)
+		c.onEvict(kv.value)
 	}
 }

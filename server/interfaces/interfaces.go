@@ -506,24 +506,10 @@ type XcodeLocator interface {
 	IsSDKPathPresentForVersion(sdkPath, version string) bool
 }
 
-// If an LRU value implements this function, Evict() will be called when an item
-// is evicted from the cache.
-type EvictorValue interface {
-	Evict()
-}
-
-// If an LRU value implements this function, Size() will be called in order
-// to determine the value's size.
-type SizeValue interface {
-	Size() int64
-}
-
 // LRU implements a Least Recently Used cache.
 type LRU interface {
-	// Inserts a value into the LRU. If the value implements the SizeValue
-	// interface, Size() will be called and used to account for the value's
-	// size in the LRU. If not, 1 will be used. A boolean is returned that
-	// indicates if the value was successfully added.
+	// Inserts a value into the LRU. A boolean is returned that indicates
+	// if the value was successfully added.
 	Add(key, value interface{}) bool
 
 	// Gets a value from the LRU, returns a boolean indicating if the value
@@ -534,9 +520,8 @@ type LRU interface {
 	Contains(key interface{}) bool
 
 	// Removes a value from the LRU, releasing resources associated with
-	// that value. If the value implements the EvictorValue interface,
-	// Evict will be called. Returns a boolean indicating if the value was
-	// successfully removed.
+	// that value. Returns a boolean indicating if the value was sucessfully
+	// removed.
 	Remove(key interface{}) bool
 
 	// Purge Remove()s all items in the LRU.
