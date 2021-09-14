@@ -35,6 +35,7 @@ go_library(
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )

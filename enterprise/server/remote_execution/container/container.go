@@ -213,13 +213,6 @@ func GetPullCredentials(env environment.Env, props *platform.Properties, task *r
 		return PullCredentials{}
 	}
 
-	if cr := task.GetContainerRegistryCredentials(); cr != nil && (cr.Username != "" || cr.Password != "") {
-		return PullCredentials{
-			Username: cr.Username,
-			Password: cr.Password,
-		}
-	}
-
 	if props.ContainerRegistryUsername != "" || props.ContainerRegistryPassword != "" {
 		return PullCredentials{
 			Username: props.ContainerRegistryUsername,

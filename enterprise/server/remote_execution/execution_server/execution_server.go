@@ -303,16 +303,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
 		executionTask.Jwt = jwt
 	}
-	crCreds := &repb.ContainerRegistryCredentials{}
-	// Allow execution worker to auth with the container registry (if necessary)
-	if crUser, ok := ctx.Value("x-buildbuddy-container-registry-username").(string); ok {
-		crCreds.Username = crUser
-	}
-	if crPass, ok := ctx.Value("x-buildbuddy-container-registry-password").(string); ok {
-		crCreds.Password = crPass
-	}
-	if crCreds.Username != "" || crCreds.Password != "" {
-		executionTask.ContainerRegistryCredentials = crCreds
+
+	platformPropOverrides := platform.RemoteHeaderOverrides(ctx)
+	if len(platformPropOverrides) > 0 {
+		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
 	}
 
 	executionTask.QueuedTimestamp = ptypes.TimestampNow()
@@ -330,7 +324,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err != nil {
 		return "", err
 	}
-	for _, property := range command.GetPlatform().GetProperties() {
+
+	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
+	for _, property := range platformProps {
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}

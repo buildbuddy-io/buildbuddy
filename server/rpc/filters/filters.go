@@ -25,9 +25,7 @@ var (
 
 func init() {
 	headerContextKeys = map[string]string{
-		"x-buildbuddy-jwt":                                    "x-buildbuddy-jwt",
-		"x-buildbuddy-container-registry-username":            "x-buildbuddy-container-registry-username",
-		"x-buildbuddy-container-registry-password":            "x-buildbuddy-container-registry-password",
+		"x-buildbuddy-jwt": "x-buildbuddy-jwt",
 		"build.bazel.remote.execution.v2.requestmetadata-bin": "build.bazel.remote.execution.v2.requestmetadata-bin",
 	}
 }

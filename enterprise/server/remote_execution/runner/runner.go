@@ -522,15 +522,20 @@ func (p *Pool) WarmupDefaultImage() {
 	for _, containerType := range executorProps.SupportedIsolationTypes {
 		containerType := containerType
 		image := platform.DefaultContainerImage
-		platProps := platform.ParseProperties(&repb.Platform{
+		plat := &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: image},
 				{Name: "workload-isolation-type", Value: string(containerType)},
 			},
-		})
-		c, err := p.newContainer(egCtx, platProps, &repb.Command{
-			Arguments: []string{"echo", "'warmup'"},
-		})
+		}
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				Arguments: []string{"echo", "'warmup'"},
+				Platform:  plat,
+			},
+		}
+		platProps := platform.ParseProperties(task)
+		c, err := p.newContainer(egCtx, platProps, task.GetCommand())
 		if err != nil {
 			log.Errorf("Error warming up %q: %s", containerType, err)
 			return
@@ -577,7 +582,7 @@ func (p *Pool) WarmupDefaultImage() {
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
-	props := platform.ParseProperties(task.GetCommand().GetPlatform())
+	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err

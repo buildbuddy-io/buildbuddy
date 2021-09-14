@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -9,11 +10,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
+	// overrideHeaderPrefix is a prefix used to override platform props via
+	// remote headers. The property name immediately follows the prefix in the
+	// header key, and the header value is used as the property value.
+	//
+	// Example header:
+	//     x-buildbuddy-platform-container-registry-username: _json_key
+	overrideHeaderPrefix = "x-buildbuddy-platform."
+
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
@@ -22,6 +32,9 @@ const (
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
 	dockerPrefix               = "docker://"
 
+	// NOTE: Clients should set container registry credentials via remote header
+	// platform overrides (and not directly via the platform), since we may
+	// display the platform unredacted in the UI.
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
 
@@ -81,11 +94,14 @@ type ExecutorProperties struct {
 }
 
 // ParseProperties parses the client provided properties into a struct.
-// Before use the returned platform.Properties object *must* have overrides
-// applied via the ApplyOverrides function.
-func ParseProperties(plat *repb.Platform) *Properties {
+// Before use, the returned platform.Properties object *must* have
+// executor-specific overrides applied via the ApplyOverrides function.
+func ParseProperties(task *repb.ExecutionTask) *Properties {
 	m := map[string]string{}
-	for _, prop := range plat.GetProperties() {
+	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
+		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
+	}
+	for _, prop := range task.GetPlatformOverrides().GetProperties() {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
 	}
 	return &Properties{
@@ -103,6 +119,31 @@ func ParseProperties(plat *repb.Platform) *Properties {
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 	}
+}
+
+// RemoteHeaderOverrides returns the platform properties that should override
+// the command's platform properties.
+func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
+	props := []*repb.Platform_Property{}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return props
+	}
+	mdMap := map[string][]string(md)
+	for headerName, headerValues := range mdMap {
+		if !strings.HasPrefix(headerName, overrideHeaderPrefix) {
+			continue
+		}
+		propName := strings.TrimPrefix(headerName, overrideHeaderPrefix)
+		for _, propValue := range headerValues {
+			props = append(props, &repb.Platform_Property{
+				Name:  propName,
+				Value: propValue,
+			})
+		}
+	}
+
+	return props
 }
 
 // GetExecutorProperties returns a struct of properties that the configured
