@@ -288,7 +288,8 @@ type partition struct {
 	useV2Layout  bool
 	mu           sync.RWMutex
 	rootDir      string
-	lru          *lru.LRU
+	maxSizeBytes int64
+	lru          interfaces.LRU
 	fileChannel  chan *fileRecord
 	diskIsMapped bool
 	lastGCTime   time.Time
@@ -300,11 +301,12 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		return nil, err
 	}
 	c := &partition{
-		id:          id,
-		useV2Layout: useV2Layout,
-		lru:         l,
-		rootDir:     rootDir,
-		fileChannel: make(chan *fileRecord),
+		id:           id,
+		useV2Layout:  useV2Layout,
+		maxSizeBytes: maxSizeBytes,
+		lru:          l,
+		rootDir:      rootDir,
+		fileChannel:  make(chan *fileRecord),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -319,7 +321,7 @@ type fileRecord struct {
 	sizeBytes int64
 }
 
-func sizeFn(key interface{}, value interface{}) int64 {
+func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.(*fileRecord); ok {
 		size += v.sizeBytes
@@ -327,9 +329,9 @@ func sizeFn(key interface{}, value interface{}) int64 {
 	return size
 }
 
-func evictFn(key interface{}, value interface{}) {
-	if k, ok := key.(string); ok {
-		disk.DeleteFile(context.TODO(), k)
+func evictFn(value interface{}) {
+	if v, ok := value.(*fileRecord); ok {
+		disk.DeleteFile(context.TODO(), v.key)
 	}
 }
 
@@ -362,15 +364,8 @@ func (p *partition) Statusz(ctx context.Context) string {
 	buf := "<br>"
 	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
 	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
-	percentFull := float64(p.lru.Size()) / float64(p.lru.MaxSize()) * 100.0
-	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.lru.MaxSize(), percentFull)
-	var oldestItem time.Time
-	if _, v, ok := p.lru.GetOldest(); ok {
-		if fr, ok := v.(*fileRecord); ok {
-			oldestItem = time.Unix(0, fr.lastUse)
-		}
-	}
-	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 MST"))
+	percentFull := float64(p.lru.Size()) / float64(p.maxSizeBytes) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.maxSizeBytes, percentFull)
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
 	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
 	return buf
@@ -382,7 +377,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 	if p.lru.Size() < targetSize {
 		return false
 	}
-	_, value, ok := p.lru.RemoveOldest()
+	value, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
 	}
@@ -394,7 +389,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 }
 
 func (p *partition) startJanitor() {
-	targetSize := int64(float64(p.lru.MaxSize()) * janitorCutoffThreshold)
+	targetSize := int64(float64(p.maxSizeBytes) * janitorCutoffThreshold)
 	go func() {
 		for {
 			select {
@@ -477,7 +472,7 @@ func (p *partition) initializeCache() error {
 			p.lru.Add(record.key, record)
 		}
 		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
-		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.lru.MaxSize())
+		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.maxSizeBytes)
 
 		p.diskIsMapped = true
 		p.mu.Unlock()
