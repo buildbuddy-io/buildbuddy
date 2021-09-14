@@ -296,7 +296,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	// Make the next Flush call fail if it tries to do anything with the DB,
 	// since there was no usage observed.
-	assertNoFurtherDBAccess(t, te)
+	requireNoFurtherDBAccess(t, te)
 
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
