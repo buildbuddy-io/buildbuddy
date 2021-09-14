@@ -78,29 +78,9 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	return usages
 }
 
-func queryAllInvocationUsages(t *testing.T, te *testenv.TestEnv) []*tables.InvocationUsage {
-	usages := []*tables.InvocationUsage{}
-	dbh := te.GetDBHandle()
-	rows, err := dbh.Raw(`
-		SELECT * From InvocationUsages
-		ORDER BY group_id, period_start_usec, invocation_id ASC;
-	`).Rows()
-	require.NoError(t, err)
-
-	for rows.Next() {
-		tu := &tables.InvocationUsage{}
-		err := dbh.ScanRows(rows, tu)
-		require.NoError(t, err)
-		// Throw out Model timestamps to simplify assertions.
-		tu.Model = tables.Model{}
-		usages = append(usages, tu)
-	}
-	return usages
-}
-
-// assertNoFurtherDBAccess makes the test fail if it tries to access the DB
-// after this function is called.
-func assertNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
+// requireNoFurtherDBAccess makes the test fail immediately if it tries to
+// access the DB after this function is called.
+func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	fail := func(db *gorm.DB) {
 		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
 	}
@@ -259,59 +239,6 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	}, usages, "data flushed to DB should match expected values")
 }
 
-func TestUsageTracker_ObserveInvocation_DeduplicatesInvocationsInSingleUsagePeriod(t *testing.T) {
-	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
-	ctx := authContext(te, "US1")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
-
-	ut.ObserveInvocation(ctx, "abc-123")
-	ut.ObserveInvocation(ctx, "def-456")
-	ut.ObserveInvocation(ctx, "abc-123")
-	clock.Set(clock.Now().Add(collectionPeriodDuration))
-	ut.ObserveInvocation(ctx, "def-456")
-
-	rdb := te.GetCacheRedisClient()
-	keys, err := rdb.Keys(ctx, "usage/*").Result()
-	require.NoError(t, err)
-	invocationsKey1 := "usage/invocations/GR1/" + usecString(usage1Collection1Start)
-	invocationsKey2 := "usage/invocations/GR1/" + usecString(usage1Collection2Start)
-	groupsKey1 := "usage/groups/" + usecString(usage1Collection1Start)
-	groupsKey2 := "usage/groups/" + usecString(usage1Collection2Start)
-	require.ElementsMatch(
-		t, []string{invocationsKey1, invocationsKey2, groupsKey1, groupsKey2},
-		keys, "redis key should match the expected format")
-
-	invocationIDs, err := rdb.SMembers(ctx, invocationsKey1).Result()
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"abc-123", "def-456"}, invocationIDs, "invocation IDs should match what we observed")
-
-	groupIDs, err := rdb.SMembers(ctx, groupsKey1).Result()
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"GR1"}, groupIDs, "groups should equal the groups with usage data")
-
-	// Set clock so that the written collection periods are finalized.
-	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
-	// Now flush the data to the DB.
-	err = ut.FlushToDB(context.Background())
-
-	require.NoError(t, err)
-	invs := queryAllInvocationUsages(t, te)
-	assert.Equal(t, []*tables.InvocationUsage{
-		{
-			GroupID:         "GR1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			InvocationID:    "abc-123",
-		},
-		{
-			GroupID:         "GR1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			InvocationID:    "def-456",
-		},
-	}, invs)
-}
-
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
@@ -359,8 +286,6 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
 	require.NoError(t, err)
-	err = ut.ObserveInvocation(ctx, "abc-123")
-	require.NoError(t, err)
 
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 	err = ut.FlushToDB(ctx)
@@ -368,12 +293,10 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	usages := queryAllUsages(t, te)
 	require.NotEmpty(t, usages)
-	invocations := queryAllInvocationUsages(t, te)
-	require.NotEmpty(t, invocations)
 
 	// Make the next Flush call fail if it tries to do anything with the DB,
 	// since there was no usage observed.
-	assertNoFurtherDBAccess(t, te)
+	requireNoFurtherDBAccess(t, te)
 
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)

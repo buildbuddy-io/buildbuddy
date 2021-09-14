@@ -52,10 +52,9 @@ const (
 	// flushing fails due to transient errors.
 	redisKeyTTL = 5 * collectionPeriodDuration
 
-	redisUsageKeyPrefix       = "usage/"
-	redisGroupsKeyPrefix      = redisUsageKeyPrefix + "groups/"
-	redisCountsKeyPrefix      = redisUsageKeyPrefix + "counts/"
-	redisInvocationsKeyPrefix = redisUsageKeyPrefix + "invocations/"
+	redisUsageKeyPrefix  = "usage/"
+	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
+	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
 
 	redisUsageLockKey    = "lock.usage"
 	redisUsageLockExpiry = 45 * time.Second
@@ -106,6 +105,7 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 		rdb:        rdb,
 		clock:      clock,
 		flushMutex: flushMutex,
+		stopFlush:  make(chan struct{}),
 	}, nil
 }
 
@@ -127,70 +127,29 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 		return nil
 	}
 
-	c := ut.currentCollectionPeriod()
+	t := ut.currentCollectionPeriod()
 
-	if err := ut.observeGroup(ctx, groupID, c); err != nil {
-		return err
-	}
-
-	uk := countsRedisKey(groupID, c)
 	pipe := ut.rdb.TxPipeline()
+	// Add the group ID to the set of groups with usage
+	groupsKey := groupsRedisKey(t)
+	pipe.SAdd(ctx, groupsKey, groupID)
+	pipe.Expire(ctx, groupsKey, redisKeyTTL)
+	// Increment the hash values
+	countsKey := countsRedisKey(groupID, t)
 	for k, c := range m {
-		pipe.HIncrBy(ctx, uk, k, c)
+		pipe.HIncrBy(ctx, countsKey, k, c)
 	}
-	pipe.Expire(ctx, uk, redisKeyTTL)
+	pipe.Expire(ctx, countsKey, redisKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) error {
-	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
-	if err != nil {
-		return err
-	}
-	if groupID == "" {
-		// Don't track anonymous usage for now.
-		return nil
-	}
-
-	c := ut.currentCollectionPeriod()
-
-	if err := ut.observeGroup(ctx, groupID, c); err != nil {
-		return err
-	}
-
-	ik := invocationsRedisKey(groupID, c)
-	pipe := ut.rdb.TxPipeline()
-	pipe.SAdd(ctx, ik, invocationID)
-	pipe.Expire(ctx, ik, redisKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// observeGroup records that the given group has usage data for the current
-// collection period, so we know which groups to look for when flushing
-// the data for a given period.
-func (ut *tracker) observeGroup(ctx context.Context, groupID string, c collectionPeriod) error {
-	gk := groupsRedisKey(c)
-	pipe := ut.rdb.TxPipeline()
-	pipe.SAdd(ctx, gk, groupID)
-	pipe.Expire(ctx, gk, redisKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return err
-	}
 	return nil
 }
 
 // StartDBFlush starts a goroutine that periodically flushes usage data from
 // Redis to the DB.
 func (ut *tracker) StartDBFlush() {
-	ut.stopFlush = make(chan struct{})
 	go func() {
 		ctx := context.Background()
 		for {
@@ -214,7 +173,8 @@ func (ut *tracker) StopDBFlush() {
 // FlushToDB flushes usage metrics from any finalized collection periods to the
 // DB.
 //
-// Public for testing only.
+// Public for testing only; the server should call StartDBFlush to periodically
+// flush usage.
 func (ut *tracker) FlushToDB(ctx context.Context) error {
 	// redsync.ErrFailed can be safely ignored; it just means that another app
 	// is already trying to flush.
@@ -256,28 +216,6 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 
 		for _, groupID := range groupIDs {
-			// Read invocations, flush to DB, then delete the Redis data for the
-			// invocations.
-			ik := invocationsRedisKey(groupID, c)
-			iids, err := ut.rdb.SMembers(ctx, ik).Result()
-			if err != nil {
-				return err
-			}
-			for _, iid := range iids {
-				iu := &tables.InvocationUsage{
-					GroupID:         groupID,
-					PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
-					InvocationID:    iid,
-				}
-				err := dbh.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(iu).Error
-				if err != nil {
-					return err
-				}
-			}
-			if _, err := ut.rdb.Del(ctx, ik).Result(); err != nil {
-				return err
-			}
-
 			// Read usage counts, flush to DB, then delete the Redis key for the counts.
 			ck := countsRedisKey(groupID, c)
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
@@ -442,10 +380,6 @@ func groupsRedisKey(c collectionPeriod) string {
 
 func countsRedisKey(groupID string, c collectionPeriod) string {
 	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, groupID, c)
-}
-
-func invocationsRedisKey(groupID string, c collectionPeriod) string {
-	return fmt.Sprintf("%s%s/%s", redisInvocationsKeyPrefix, groupID, c)
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {

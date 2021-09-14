@@ -428,6 +428,7 @@ func (wf *Workflow) TableName() string {
 }
 
 type UsageCounts struct {
+	Invocations            int64
 	CasCacheHits           int64
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
@@ -449,6 +450,21 @@ type Usage struct {
 	// usage period is finalized. This is used to guarantee that collection period
 	// data is added to this row in strictly increasing order of collection period
 	// start time.
+	//
+	// Consider the following diagram:
+	//
+	// [xxxxxxxxxxxxxxxxxxx)------------------)
+	// ^ PeriodStart       ^ FinalBefore      ^ PeriodEnd = PeriodStart + 1hr
+	//
+	// Usage data occuring in the x-marked region cannot be added to this usage
+	// row any longer, since the data is finalized.
+	//
+	// When writing the next collection period's data, the FinalBefore timestamp
+	// is updated as follows:
+	//
+	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
+	//                     ^ FinalBefore (before update) = CollectionPeriodStart
+	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
 	FinalBeforeUsec int64
 
 	UsageCounts
@@ -456,26 +472,6 @@ type Usage struct {
 
 func (*Usage) TableName() string {
 	return "Usages"
-}
-
-// InvocationUsage keeps track of usage periods during which invocations
-// occurred.
-type InvocationUsage struct {
-	Model
-
-	GroupID string `gorm:"group_id_period_start_usec_index,priority:1"`
-
-	// PeriodStartUsec is the time at which the usage period started, in
-	// microseconds since the Unix epoch. The unique index prevents recording
-	// usage values more than once for a given usage period. The usage period
-	// duration is implicitly 1 hour.
-	PeriodStartUsec int64 `gorm:"group_id_period_start_usec_index,priority:2"`
-
-	InvocationID string `gorm:"uniqueIndex:invocation_id_index"`
-}
-
-func (*InvocationUsage) TableName() string {
-	return "InvocationUsages"
 }
 
 type PostAutoMigrateLogic func() error
@@ -601,5 +597,4 @@ func init() {
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("UA", &Usage{})
-	registerTable("IU", &InvocationUsage{})
 }
