@@ -82,6 +82,9 @@ message GetGroupResponse {
   // Optional. The domains owned by this group.
   // Ex. "iterationinc.com"
   string owned_domain = 3;
+
+  // True if the group has SSO enabled.
+  bool sso_enabled = 5;
 }
 
 message GetGroupUsersRequest {
