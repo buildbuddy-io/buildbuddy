@@ -127,20 +127,19 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 		return nil
 	}
 
-	period := ut.currentCollectionPeriod()
+	t := ut.currentCollectionPeriod()
 
 	pipe := ut.rdb.TxPipeline()
 	// Add the group ID to the set of groups with usage
-	groupsKey := groupsRedisKey(period)
+	groupsKey := groupsRedisKey(t)
 	pipe.SAdd(ctx, groupsKey, groupID)
 	pipe.Expire(ctx, groupsKey, redisKeyTTL)
 	// Increment the hash values
-	countsKey := countsRedisKey(groupID, period)
+	countsKey := countsRedisKey(groupID, t)
 	for k, c := range m {
 		pipe.HIncrBy(ctx, countsKey, k, c)
 	}
 	pipe.Expire(ctx, countsKey, redisKeyTTL)
-
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
