@@ -33,10 +33,9 @@ const (
 	// flushing fails due to transient errors.
 	redisKeyTTL = 5 * collectionPeriodDuration
 
-	redisUsageKeyPrefix       = "usage/"
-	redisGroupsKeyPrefix      = redisUsageKeyPrefix + "groups/"
-	redisCountsKeyPrefix      = redisUsageKeyPrefix + "counts/"
-	redisInvocationsKeyPrefix = redisUsageKeyPrefix + "invocations/"
+	redisUsageKeyPrefix  = "usage/"
+	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
+	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
 )
 
 type TrackerOpts struct {
@@ -123,10 +122,6 @@ func groupsRedisKey(t time.Time) string {
 
 func countsRedisKey(groupID string, t time.Time) string {
 	return fmt.Sprintf("%s%s/%d", redisCountsKeyPrefix, groupID, collectionPeriodStartUsec(t))
-}
-
-func invocationsRedisKey(groupID string, t time.Time) string {
-	return fmt.Sprintf("%s%s/%d", redisInvocationsKeyPrefix, groupID, collectionPeriodStartUsec(t))
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
