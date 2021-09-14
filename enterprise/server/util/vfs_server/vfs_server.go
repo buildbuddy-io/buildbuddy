@@ -236,6 +236,9 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		if err != nil {
 			return nil, err
 		}
+		p.mu.Lock()
+		delete(p.lazyFiles, request.GetPath())
+		p.mu.Unlock()
 	}
 
 	fh := &fileHandle{}
