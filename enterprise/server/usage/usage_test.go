@@ -149,30 +149,3 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"GR1", "GR2"}, groupIDs, "groups should equal the groups with usage data")
 }
-
-func TestUsageTracker_ObserveInvocation_UpdatesRedisState(t *testing.T) {
-	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
-	ctx := authContext(te, "US1")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
-
-	ut.ObserveInvocation(ctx, "abc-123")
-	ut.ObserveInvocation(ctx, "def-456")
-	ut.ObserveInvocation(ctx, "abc-123")
-
-	rdb := te.GetCacheRedisClient()
-	keys, err := rdb.Keys(ctx, "usage/*").Result()
-	require.NoError(t, err)
-	invocationsKey := "usage/invocations/GR1/" + usecString(usage1Collection1Start)
-	groupsKey := "usage/groups/" + usecString(usage1Collection1Start)
-	require.ElementsMatch(t, []string{invocationsKey, groupsKey}, keys, "redis key should match the expected format")
-
-	invocationIDs, err := rdb.SMembers(ctx, invocationsKey).Result()
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"abc-123", "def-456"}, invocationIDs, "invocation IDs should match what we observed")
-
-	groupIDs, err := rdb.SMembers(ctx, groupsKey).Result()
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"GR1"}, groupIDs, "groups should equal the groups with usage data")
-}

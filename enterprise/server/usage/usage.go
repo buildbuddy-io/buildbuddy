@@ -85,61 +85,25 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 
 	t := ut.clock.Now()
 
-	if err := ut.observeGroup(ctx, groupID, t); err != nil {
-		return err
-	}
-
-	uk := countsRedisKey(groupID, t)
-	pipe := ut.rdb.TxPipeline()
-	for k, c := range m {
-		pipe.HIncrBy(ctx, uk, k, c)
-	}
-	pipe.Expire(ctx, uk, redisKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (ut *tracker) ObserveInvocation(ctx context.Context, invocationID string) error {
-	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
-	if err != nil {
-		return err
-	}
-	if groupID == "" {
-		// Don't track anonymous usage for now.
-		return nil
-	}
-
-	t := ut.clock.Now()
-
-	if err := ut.observeGroup(ctx, groupID, t); err != nil {
-		return err
-	}
-
-	ik := invocationsRedisKey(groupID, t)
-	pipe := ut.rdb.TxPipeline()
-	pipe.SAdd(ctx, ik, invocationID)
-	pipe.Expire(ctx, ik, redisKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// observeGroup records that the given group has usage data for the current
-// collection period, so we know which groups to look for when flushing
-// the data for a given period.
-func (ut *tracker) observeGroup(ctx context.Context, groupID string, t time.Time) error {
 	gk := groupsRedisKey(t)
+	ck := countsRedisKey(groupID, t)
+
 	pipe := ut.rdb.TxPipeline()
+
+	// Add the group ID to the set of groups with usage
 	pipe.SAdd(ctx, gk, groupID)
 	pipe.Expire(ctx, gk, redisKeyTTL)
+
+	// Increment the hash values
+	for k, c := range m {
+		pipe.HIncrBy(ctx, ck, k, c)
+	}
+	pipe.Expire(ctx, ck, redisKeyTTL)
+
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
+
 	return nil
 }
 

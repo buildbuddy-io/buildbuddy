@@ -7,8 +7,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 
@@ -114,6 +116,15 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 	txt := proto.MarshalTextString(invocation)
 	assert.NotContains(t, txt, apiKey, "API key %q should not appear in invocation", apiKey)
 	assert.NotContains(t, txt, "x-buildbuddy-api-key", "All remote headers should be redacted")
+}
+
+type FakeUsageTracker struct {
+	invocations int64
+}
+
+func (t *FakeUsageTracker) Increment(ctx context.Context, usage *tables.UsageCounts) error {
+	t.invocations += usage.Invocations
+	return nil
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
@@ -368,4 +379,32 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")
 	assert.Contains(t, txt, "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
 	assert.Contains(t, txt, "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
+}
+
+func TestHandleEventWithUsageTracking(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ut := &FakeUsageTracker{}
+	te.SetUsageTracker(ut)
+	flags.Set(t, "app.usage_tracking_enabled", "true")
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel := handler.OpenChannel(ctx, "test-invocation-id")
+
+	// Send started event with api key
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), "test-invocation-id", 2)
+	err := channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(1), ut.invocations)
+
+	// Send another started event for good measure; we should still only count 1
+	// invocation since it's the same stream.
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
+	assert.Equal(t, int64(1), ut.invocations)
 }

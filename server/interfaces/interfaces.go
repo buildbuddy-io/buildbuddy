@@ -253,11 +253,6 @@ type UsageService interface {
 }
 
 type UsageTracker interface {
-	// ObserveInvocation counts the given invocation ID towards usage for the
-	// current collection period and authenticated group ID, only if the
-	// invocation has not yet been observed. It is safe for concurrent access.
-	ObserveInvocation(ctx context.Context, invocationID string) error
-
 	// Increment adds the given usage counts to the current collection period
 	// for the authenticated group ID. It is safe for concurrent access.
 	Increment(ctx context.Context, counts *tables.UsageCounts) error

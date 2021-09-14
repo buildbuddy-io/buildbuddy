@@ -209,7 +209,7 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if err := h.recordUsage(actionCache, d, actionCounter); err != nil {
+		if err := h.recordCacheUsage(actionCache, d, actionCounter); err != nil {
 			return err
 		}
 		totalMicroseconds, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds())
@@ -261,34 +261,19 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	}
 }
 
-func (h *HitTracker) recordUsage(actionCache bool, d *repb.Digest, actionCounter counterType) error {
-	if h.usage == nil {
+func (h *HitTracker) recordCacheUsage(actionCache bool, d *repb.Digest, actionCounter counterType) error {
+	if h.usage == nil || actionCounter != Hit {
 		return nil
 	}
-
-	// If we have an invocation ID, record that the invocation occurred.
-	if h.iid != "" {
-		if err := h.usage.ObserveInvocation(h.ctx, h.iid); err != nil {
-			return err
-		}
+	c := &tables.UsageCounts{
+		TotalDownloadSizeBytes: d.GetSizeBytes(),
 	}
-
-	// If this is a download, increment cache usage counts.
-	if actionCounter == Hit {
-		c := &tables.UsageCounts{
-			TotalDownloadSizeBytes: d.GetSizeBytes(),
-		}
-		if actionCache {
-			c.ActionCacheHits = 1
-		} else {
-			c.CasCacheHits = 1
-		}
-		if err := h.usage.Increment(h.ctx, c); err != nil {
-			return err
-		}
+	if actionCache {
+		c.ActionCacheHits = 1
+	} else {
+		c.CasCacheHits = 1
 	}
-
-	return nil
+	return h.usage.Increment(h.ctx, c)
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
