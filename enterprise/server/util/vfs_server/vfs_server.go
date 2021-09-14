@@ -11,7 +11,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -32,6 +31,45 @@ type fileHandle struct {
 	openFlags uint32
 }
 
+type LazyFileProvider interface {
+	Place(relPath, fullPath string) error
+}
+
+type CASLazyFileProvider struct {
+	env                environment.Env
+	ctx                context.Context
+	remoteInstanceName string
+	inputFiles         map[string]*repb.FileNode
+}
+
+func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, inputFiles map[string]*repb.FileNode) *CASLazyFileProvider {
+	return &CASLazyFileProvider{
+		env:                env,
+		ctx:                ctx,
+		remoteInstanceName: remoteInstanceName,
+		inputFiles:         inputFiles,
+	}
+}
+
+func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
+	fileNode, ok := p.inputFiles[relPath]
+	if !ok {
+		return status.NotFoundErrorf("unknown file %q", relPath)
+	}
+	ff := dirtools.NewBatchFileFetcher(p.ctx, p.remoteInstanceName, p.env.GetFileCache(), p.env.GetByteStreamClient(), p.env.GetContentAddressableStorageClient())
+	fileMap := dirtools.FileMap{
+		digest.NewKey(fileNode.GetDigest()): {&dirtools.FilePointer{
+			FullPath:     fullPath,
+			RelativePath: relPath,
+			FileNode:     fileNode,
+		}},
+	}
+	if err := ff.FetchFiles(fileMap, &dirtools.DownloadTreeOpts{}); err != nil {
+		return err
+	}
+	return nil
+}
+
 type Server struct {
 	env           environment.Env
 	workspacePath string
@@ -41,7 +79,8 @@ type Server struct {
 	mu                 sync.Mutex
 	context            context.Context
 	remoteInstanceName string
-	inputFiles         map[string]*repb.FileNode
+	lazyFiles          map[string]struct{}
+	lazyFileProvider   LazyFileProvider
 	nextHandleID       uint64
 	fileHandles        map[uint64]*fileHandle
 }
@@ -50,59 +89,23 @@ func New(env environment.Env, workspacePath string) *Server {
 	return &Server{
 		env:           env,
 		workspacePath: workspacePath,
-		inputFiles:    make(map[string]*repb.FileNode),
+		lazyFiles:     make(map[string]struct{}),
 		fileHandles:   make(map[uint64]*fileHandle),
 		nextHandleID:  1,
 	}
 }
 
-func (p *Server) Prepare(ctx context.Context, fsLayout *container.FileSystemLayout) error {
+func (p *Server) Prepare(lazyFiles []string, lazyFileProvider LazyFileProvider) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	p.remoteInstanceName = fsLayout.RemoteInstanceName
-
-	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
-	if err != nil {
-		return err
-	}
+	p.lazyFileProvider = lazyFileProvider
 
 	dirsToMake := make(map[string]struct{})
-	var walkDir func(dir *repb.Directory, path string) error
-	walkDir = func(dir *repb.Directory, path string) error {
-		dirsToMake[path] = struct{}{}
-		for _, childDirNode := range dir.GetDirectories() {
-			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
-			if !ok {
-				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
-			}
-			if err := walkDir(childDir, filepath.Join(path, childDirNode.GetName())); err != nil {
-				return err
-			}
-		}
-		for _, childFileNode := range dir.GetFiles() {
-			path := filepath.Join(path, childFileNode.GetName())
-			p.inputFiles[path] = childFileNode
-		}
-		for _, symLink := range dir.GetSymlinks() {
-			if err := os.Symlink(symLink.Target, filepath.Join(path, symLink.Name)); err != nil {
-				return err
-			}
-		}
-		return nil
+	for _, lf := range lazyFiles {
+		p.lazyFiles[lf] = struct{}{}
+		dirsToMake[filepath.Dir(lf)] = struct{}{}
 	}
 
-	err = walkDir(fsLayout.Inputs.GetRoot(), "")
-	if err != nil {
-		return err
-	}
-
-	for _, dir := range fsLayout.OutputDirs {
-		dirsToMake[dir] = struct{}{}
-	}
-	for _, file := range fsLayout.OutputFiles {
-		dirsToMake[filepath.Dir(file)] = struct{}{}
-	}
 	for dir := range dirsToMake {
 		dir := filepath.Join(p.workspacePath, dir)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -226,18 +229,11 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	}
 
 	p.mu.Lock()
-	fileNode, ok := p.inputFiles[request.GetPath()]
+	_, isLazyFile := p.lazyFiles[request.GetPath()]
 	p.mu.Unlock()
-	if ok {
-		ff := dirtools.NewBatchFileFetcher(ctx, p.remoteInstanceName, p.env.GetFileCache(), p.env.GetByteStreamClient(), p.env.GetContentAddressableStorageClient())
-		fileMap := dirtools.FileMap{
-			digest.NewKey(fileNode.GetDigest()): {&dirtools.FilePointer{
-				FullPath:     fullPath,
-				RelativePath: request.GetPath(),
-				FileNode:     fileNode,
-			}},
-		}
-		if err := ff.FetchFiles(fileMap, &dirtools.DownloadTreeOpts{}); err != nil {
+	if isLazyFile {
+		err := p.lazyFileProvider.Place(request.GetPath(), fullPath)
+		if err != nil {
 			return nil, err
 		}
 	}

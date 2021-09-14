@@ -10,7 +10,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
         "//proto:vfs_go_proto",
