@@ -418,10 +418,12 @@ func (p *partition) initializeCache() error {
 		start := time.Now()
 		records := make([]*fileRecord, 0)
 		inFlightRecords := make([]*fileRecord, 0)
+		finishedFileChannel := make(chan struct{})
 		go func() {
 			for record := range p.fileChannel {
 				inFlightRecords = append(inFlightRecords, record)
 			}
+			close(finishedFileChannel)
 		}()
 		walkFn := func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -470,14 +472,15 @@ func (p *partition) initializeCache() error {
 		// touched during the loading phase, so we assume they are new
 		// enough to just add to the top of the LRU without sorting.
 		close(p.fileChannel)
+		<-finishedFileChannel
 		for _, record := range inFlightRecords {
 			p.lru.Add(record.key, record)
 		}
-		p.diskIsMapped = true
-		p.mu.Unlock()
-
 		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
 		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.lru.MaxSize())
+
+		p.diskIsMapped = true
+		p.mu.Unlock()
 	}()
 	return nil
 }
