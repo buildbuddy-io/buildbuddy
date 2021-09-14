@@ -86,7 +86,9 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds2, imageRef)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, c.PullCount, "should not need to immediately re-authenticate even if a different short-lived token is provided")
+	assert.Equal(
+		t, 1, c.PullCount,
+		"should not need to immediately re-authenticate even if a different short-lived token is provided, since the group just pulled the image")
 }
 
 func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) {
