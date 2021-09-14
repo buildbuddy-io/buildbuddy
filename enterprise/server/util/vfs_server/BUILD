@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "vfs_server",
-    srcs = ["vfs_server.go"],
+    srcs = [
+        "vfs_server.go",
+        "vfs_server_darwin.go",
+        "vfs_server_linux.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server",
     visibility = ["//visibility:public"],
     deps = [
