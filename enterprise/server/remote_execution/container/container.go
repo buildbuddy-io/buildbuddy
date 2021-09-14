@@ -207,7 +207,7 @@ func (a *ImageCacheAuthenticator) purgeExpiredTokens() {
 // ref. If credentials are not returned, container implementations may still
 // invoke locally available credential helpers (for example, via `docker pull`
 // or `skopeo copy`)
-func GetPullCredentials(env environment.Env, props *platform.Properties, task *repb.ExecutionTask) PullCredentials {
+func GetPullCredentials(env environment.Env, props *platform.Properties) PullCredentials {
 	imageRef := props.ContainerImage
 	if imageRef == "" {
 		return PullCredentials{}

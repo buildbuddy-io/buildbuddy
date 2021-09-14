@@ -21,7 +21,7 @@ const (
 	// header key, and the header value is used as the property value.
 	//
 	// Example header:
-	//     x-buildbuddy-platform-container-registry-username: _json_key
+	//     x-buildbuddy-platform.container-registry-username: _json_key
 	overrideHeaderPrefix = "x-buildbuddy-platform."
 
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
@@ -32,9 +32,6 @@ const (
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
 	dockerPrefix               = "docker://"
 
-	// NOTE: Clients should set container registry credentials via remote header
-	// platform overrides (and not directly via the platform), since we may
-	// display the platform unredacted in the UI.
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
 
