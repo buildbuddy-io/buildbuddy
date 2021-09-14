@@ -84,21 +84,17 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 
 	t := ut.clock.Now()
 
-	gk := groupsRedisKey(t)
-	ck := countsRedisKey(groupID, t)
-
 	pipe := ut.rdb.TxPipeline()
-
 	// Add the group ID to the set of groups with usage
-	pipe.SAdd(ctx, gk, groupID)
-	pipe.Expire(ctx, gk, redisKeyTTL)
-
+	groupsKey := groupsRedisKey(t)
+	pipe.SAdd(ctx, groupsKey, groupID)
+	pipe.Expire(ctx, groupsKey, redisKeyTTL)
 	// Increment the hash values
+	countsKey := countsRedisKey(groupID, t)
 	for k, c := range m {
-		pipe.HIncrBy(ctx, ck, k, c)
+		pipe.HIncrBy(ctx, countsKey, k, c)
 	}
-	pipe.Expire(ctx, ck, redisKeyTTL)
-
+	pipe.Expire(ctx, countsKey, redisKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
 	}
