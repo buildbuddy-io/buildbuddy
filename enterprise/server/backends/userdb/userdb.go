@@ -538,7 +538,8 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	}
 	emailDomain := emailParts[1]
 
-	// If the user was created via a group - don't add it to a group based on domain.
+	// If the user signed up using an authenticator associated with a group (i.e. SAML or OIDC SSO),
+	// don't add it to a group based on domain.
 	if len(u.Groups) == 0 && d.env.GetConfigurator().GetAppAddUserToDomainGroup() {
 		dg, err := d.getDomainOwnerGroup(ctx, tx, emailDomain)
 		if err != nil {

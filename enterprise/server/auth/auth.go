@@ -224,7 +224,7 @@ type oidcAuthenticator struct {
 	slug         string
 }
 
-func extractToken(issuer string, slug string, idToken *oidc.IDToken) (*userToken, error) {
+func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error) {
 	ut := &userToken{
 		issuer: issuer,
 		slug:   slug,
