@@ -17,7 +17,7 @@ import (
 )
 
 type MemoryCache struct {
-	l      *lru.LRU
+	l      interfaces.LRU
 	lock   *sync.RWMutex
 	prefix string
 }

@@ -5,5 +5,8 @@ go_library(
     srcs = ["lru.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/lru",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/status"],
+    deps = [
+        "//server/interfaces",
+        "//server/util/status",
+    ],
 )

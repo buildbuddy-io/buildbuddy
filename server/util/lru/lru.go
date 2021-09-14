@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -44,7 +45,7 @@ type Entry struct {
 }
 
 // NewLRU constructs an LRU based on the specified config.
-func NewLRU(config *Config) (*LRU, error) {
+func NewLRU(config *Config) (interfaces.LRU, error) {
 	if config.MaxSize <= 0 {
 		return nil, errors.New("must provide a positive size")
 	}
@@ -63,6 +64,10 @@ func NewLRU(config *Config) (*LRU, error) {
 	return c, nil
 }
 
+func (c *LRU) Metrics() string {
+	return ""
+}
+
 // Purge is used to completely clear the cache.
 func (c *LRU) Purge() {
 	for k, v := range c.items {
@@ -75,22 +80,21 @@ func (c *LRU) Purge() {
 }
 
 // Add adds a value to the cache.  Returns true if an eviction occurred.
-func (c *LRU) Add(key, value interface{}) (evicted bool) {
+func (c *LRU) Add(key, value interface{}) bool {
 	// Check for existing item
 	if ent, ok := c.items[key]; ok {
 		c.evictList.MoveToFront(ent)
 		ent.Value.(*Entry).value = value
-		return false
+		return true
 	}
 
 	// Add new item
 	c.addElement(key, value)
 
-	evict := c.currentSize > c.maxSize
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
 	}
-	return evict
+	return true
 }
 
 // Get looks up a key's value from the cache.
@@ -139,14 +143,14 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *LRU) RemoveOldest() (key, value interface{}, ok bool) {
+func (c *LRU) RemoveOldest() (value interface{}, ok bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
 		c.removeElement(ent)
 		kv := ent.Value.(*Entry)
-		return kv.key, kv.value, true
+		return kv.value, true
 	}
-	return nil, nil, false
+	return nil, false
 }
 
 // GetOldest returns the oldest Entry
