@@ -78,9 +78,9 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	return usages
 }
 
-// assertNoFurtherDBAccess makes the test fail if it tries to access the DB
-// after this function is called.
-func assertNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
+// requireNoFurtherDBAccess makes the test fail immediately if it tries to
+// access the DB after this function is called.
+func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	fail := func(db *gorm.DB) {
 		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
 	}
