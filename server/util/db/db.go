@@ -113,14 +113,6 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 	return err
 }
 
-func (dbh *DBHandle) Schema(model interface{}) (*schema.Schema, error) {
-	s := dbh.Model(model).Statement
-	if err := s.Parse(model); err != nil {
-		return nil, err
-	}
-	return s.Schema, nil
-}
-
 func runMigrations(dialect string, gdb *gorm.DB) error {
 	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
