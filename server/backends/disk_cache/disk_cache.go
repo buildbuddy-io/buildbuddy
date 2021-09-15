@@ -560,7 +560,7 @@ func (p *partition) contains(ctx context.Context, prefix string, d *repb.Digest)
 	// if necessary and applicable.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.lru.Get(k)
+	ok := p.lru.Contains(k)
 
 	if !ok && !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded

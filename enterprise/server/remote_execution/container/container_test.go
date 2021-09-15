@@ -61,23 +61,34 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
 	ctx := userCtx(t, ta, "US1")
-	goodCreds := container.PullCredentials{
+	goodCreds1 := container.PullCredentials{
 		Username: "user",
-		Password: "secret",
+		Password: "short-lived-token-1",
 	}
-	c := &FakeContainer{RequiredPullCredentials: goodCreds}
+	goodCreds2 := container.PullCredentials{
+		Username: "user",
+		Password: "short-lived-token-2",
+	}
+	c := &FakeContainer{RequiredPullCredentials: goodCreds1}
 
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 
-	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds, imageRef)
+	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds1, imageRef)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should pull the image if credentials are valid")
 
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds, imageRef)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds1, imageRef)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, c.PullCount, "should not need to immediately re-authenticate with the remote registry")
+
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds2, imageRef)
+
+	require.NoError(t, err)
+	assert.Equal(
+		t, 1, c.PullCount,
+		"should not need to immediately re-authenticate even if a different short-lived token is provided, since the group just pulled the image")
 }
 
 func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) {
@@ -108,10 +119,6 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, goodCreds, imageRef)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
-
-	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, badCreds, imageRef)
-
-	require.True(t, status.IsPermissionDeniedError(err), "bad credentials should still be rejected after previous good attempts")
 }
 
 func TestImageCacheAuthenticator(t *testing.T) {
