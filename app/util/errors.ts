@@ -5,6 +5,10 @@ export class BuildBuddyError extends Error {
     super(description);
   }
 
+  toString() {
+    return this.description
+  }
+
   static parse(e: any): BuildBuddyError {
     const error = String(e).trim();
     if (error === "Error: record not found") {

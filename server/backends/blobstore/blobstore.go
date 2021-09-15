@@ -49,7 +49,7 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 		log.Debug("Configuring GCS blobstore")
 		opts := make([]option.ClientOption, 0)
 		if gcsConfig.CredentialsFile != "" {
-			log.Debug("Found GCS credentials file")
+			log.Debugf("Found GCS credentials file: %q", gcsConfig.CredentialsFile)
 			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
 		}
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
@@ -379,7 +379,7 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 
 func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	// HeadBucket call will return 404 or 403
-	log.Debug("Checking if AWS blobstore bucket exists")
+	log.Debugf("Checking if AWS blobstore bucket %q exists", bucketName)
 	if _, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 		aerr := err.(awserr.Error)
 		// AWS returns codes as strings
@@ -387,6 +387,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 		if aerr.Code() != "NotFound" {
 			return err
 		}
+		log.Debugf("AWS blobstore bucket %q does not exists", bucketName)
 
 		log.Infof("Creating storage bucket: %s", bucketName)
 		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
@@ -399,6 +400,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 			Bucket: aws.String(bucketName),
 		})
 	}
+	log.Debugf("AWS blobstore bucket %q already exists", bucketName)
 	return nil
 }
 
