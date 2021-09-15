@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "vfs_server",
@@ -27,4 +27,18 @@ go_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+go_test(
+    name = "vfs_server_test",
+    srcs = ["vfs_server_test.go"],
+    deps = [
+        ":vfs_server",
+        "//proto:vfs_go_proto",
+        "//server/testutil/testenv",
+        "//server/util/status",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//status",
+    ],
 )
