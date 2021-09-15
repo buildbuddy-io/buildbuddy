@@ -491,13 +491,6 @@ func (p *partition) initializeCache() error {
 	return nil
 }
 
-type fileKey struct {
-	rootDir     string
-	digestHash  string
-	userPrefix  string
-	cachePrefix string
-}
-
 func (p *partition) key(ctx context.Context, cachePrefix string, d *repb.Digest) (string, error) {
 	hash, err := digest.Validate(d)
 	if err != nil {
