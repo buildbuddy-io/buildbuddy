@@ -77,7 +77,6 @@ type Server struct {
 	server *grpc.Server
 
 	mu                 sync.Mutex
-	context            context.Context
 	remoteInstanceName string
 	lazyFiles          map[string]struct{}
 	lazyFileProvider   LazyFileProvider
@@ -95,10 +94,13 @@ func New(env environment.Env, workspacePath string) *Server {
 	}
 }
 
+// Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
+// lazyFiles is the list root-relative file paths for any files should be loaded using the specified lazyFileProvider.
 func (p *Server) Prepare(lazyFiles []string, lazyFileProvider LazyFileProvider) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lazyFileProvider = lazyFileProvider
+	p.lazyFiles = make(map[string]struct{})
 
 	dirsToMake := make(map[string]struct{})
 	for _, lf := range lazyFiles {
@@ -219,10 +221,6 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 }
 
 func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
-	p.mu.Lock()
-	ctx = p.context
-	p.mu.Unlock()
-
 	fullPath, err := p.computeFullPath(request.GetPath())
 	if err != nil {
 		return nil, err
@@ -462,10 +460,4 @@ func (p *Server) Stop() {
 	}
 	p.mu.Unlock()
 	p.server.Stop()
-}
-
-func (p *Server) SetExecutionContext(ctx context.Context) {
-	p.mu.Lock()
-	p.context = ctx
-	p.mu.Unlock()
 }

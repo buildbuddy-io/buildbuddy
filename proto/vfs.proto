@@ -1,3 +1,8 @@
+// A Virtual File System API based on the FUSE API.
+// There doesn't appear to be an official reference for the FUSE protocol, but
+// the libfuse docs serve as a good reference:
+// http://libfuse.github.io/doxygen/structfuse__operations.html
+
 syntax = "proto3";
 
 package vfs;
@@ -144,18 +149,29 @@ service FileSystem {
   // API for operating on a single file.
   // Open will return an ID that can be used for the remaining file APIs.
   rpc Open(OpenRequest) returns (OpenResponse);
+
+  // Allocates/dellocates byte ranges on a file referred by file handle.
   // See `man 2 fallocate`.
   rpc Allocate(AllocateRequest) returns (AllocateResponse);
+
+  // Reads data from a file handle.
   rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Writes data to a file handle.
   rpc Write(WriteRequest) returns (WriteResponse);
+
+  // Flushes any buffered modifications to backing storage device.
+  // See `man 2 fsync`.
   rpc Fsync(FsyncRequest) returns (FsyncResponse);
-  // Flush is called whenever a file descriptor is closed. This may be called
-  // more than once if the file descriptor was duplicated. Errors from this op
-  // are returned to the file system user.
+
+  // Flush is called on a file handle whenever a file descriptor is closed in
+  // the client FS. This may be called more than once if the file descriptor was
+  // duplicated. Errors from this op are returned to the file system user.
   rpc Flush(FlushRequest) returns (FlushResponse);
-  //  Release is called when there are no more file descriptor references
-  //  left.
-  //  Any errors returned here are not visible to the file system user.
+
+  //  Release is called on a file handle when there are no more file descriptor
+  //  references left. Any errors returned here are not visible to the file
+  //  system user.
   rpc Release(ReleaseRequest) returns (ReleaseResponse);
 
   // CopyFileRange copies data between two open file handles on the server which
