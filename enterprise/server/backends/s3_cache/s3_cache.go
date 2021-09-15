@@ -28,6 +28,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	bucketWaitTimeout = 10 * time.Second
+)
+
 var (
 	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.CloudCacheTier, "aws_s3")
 )
@@ -111,7 +115,7 @@ func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName stri
 		if _, err := s3c.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
 		defer cancel()
 		return s3c.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),

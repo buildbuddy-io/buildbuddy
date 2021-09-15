@@ -32,9 +32,10 @@ import (
 const (
 	// Prometheus BlobstoreTypeLabel values
 
-	diskLabel  = "disk"
-	gcsLabel   = "gcs"
-	awsS3Label = "aws_s3"
+	diskLabel         = "disk"
+	gcsLabel          = "gcs"
+	awsS3Label        = "aws_s3"
+	bucketWaitTimeout = 10 * time.Second
 )
 
 // Returns whatever blobstore is specified in the config.
@@ -326,15 +327,15 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
 	if awsConfig.CredentialsProfile != "" {
-		log.Debug("AWS blobstore credentials profile found")
+		log.Debugf("AWS blobstore credentials profile found: %q", awsConfig.CredentialsProfile)
 		config.Credentials = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
 	}
 	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
-		log.Debug("AWS blobstore static credentials found")
+		log.Debugf("AWS blobstore static credentials found: %q", awsConfig.StaticCredentialsID)
 		config.Credentials = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
 	}
 	if awsConfig.Endpoint != "" {
-		log.Debug("AWS blobstore endpoint found")
+		log.Debugf("AWS blobstore endpoint found: %q", awsConfig.Endpoint)
 		config.Endpoint = aws.String(awsConfig.Endpoint)
 	}
 	if awsConfig.DisableSSL {
@@ -392,7 +393,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 			return err
 		}
 		log.Debug("Waiting until AWS Bucket exists")
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
 		defer cancel()
 		return a.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),
