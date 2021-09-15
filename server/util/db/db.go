@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
