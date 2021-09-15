@@ -2,7 +2,6 @@ package usage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -36,6 +35,8 @@ const (
 	redisUsageKeyPrefix  = "usage/"
 	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
 	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
+
+	redisTimeKeyFormat = time.RFC3339
 )
 
 type TrackerOpts struct {
@@ -67,11 +68,11 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
+		if perms.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
+			// Don't track anonymous usage for now.
+			return nil
+		}
 		return err
-	}
-	if groupID == "" {
-		// Don't track anonymous usage for now.
-		return nil
 	}
 
 	m, err := countsToMap(counts)
@@ -102,37 +103,36 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 	return nil
 }
 
-func collectionPeriodStartUsec(t time.Time) int64 {
+func collectionPeriodStart(t time.Time) time.Time {
 	utc := t.UTC()
 	// Start of minute
-	start := time.Date(
+	return time.Date(
 		utc.Year(), utc.Month(), utc.Day(),
 		utc.Hour(), utc.Minute(), 0, 0,
 		utc.Location())
-	return timeutil.ToUsec(start)
 }
 
 func groupsRedisKey(t time.Time) string {
-	return fmt.Sprintf("%s%d", redisGroupsKeyPrefix, collectionPeriodStartUsec(t))
+	return fmt.Sprintf("%s%s", redisGroupsKeyPrefix, collectionPeriodStart(t).Format(redisTimeKeyFormat))
 }
 
 func countsRedisKey(groupID string, t time.Time) string {
-	return fmt.Sprintf("%s%s/%d", redisCountsKeyPrefix, groupID, collectionPeriodStartUsec(t))
+	return fmt.Sprintf("%s%s/%s", redisCountsKeyPrefix, groupID, collectionPeriodStart(t).Format(redisTimeKeyFormat))
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
-	b, err := json.Marshal(tu)
-	if err != nil {
-		return nil, err
-	}
 	counts := map[string]int64{}
-	if err := json.Unmarshal(b, &counts); err != nil {
-		return nil, err
+	if tu.ActionCacheHits > 0 {
+		counts["action_cache_hits"] = tu.ActionCacheHits
 	}
-	for k, v := range counts {
-		if v == 0 {
-			delete(counts, k)
-		}
+	if tu.CasCacheHits > 0 {
+		counts["cas_cache_hits"] = tu.CasCacheHits
+	}
+	if tu.Invocations > 0 {
+		counts["invocations"] = tu.Invocations
+	}
+	if tu.TotalDownloadSizeBytes > 0 {
+		counts["total_download_size_bytes"] = tu.TotalDownloadSizeBytes
 	}
 	return counts, nil
 }

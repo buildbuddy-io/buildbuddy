@@ -2,7 +2,6 @@ package usage_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,8 +49,8 @@ func authContext(te *testenv.TestEnv, userID string) context.Context {
 	return te.GetAuthenticator().(*testauth.TestAuthenticator).AuthContextFromAPIKey(context.Background(), userID)
 }
 
-func usecString(t time.Time) string {
-	return fmt.Sprintf("%d", timeutil.ToUsec(t))
+func timeStr(t time.Time) string {
+	return t.Format(time.RFC3339)
 }
 
 func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *testing.T) {
@@ -78,10 +76,10 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	rdb := te.GetCacheRedisClient()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
-	countsKey1 := "usage/counts/GR1/" + usecString(usage1Collection1Start)
-	countsKey2 := "usage/counts/GR1/" + usecString(usage1Collection2Start)
-	groupsKey1 := "usage/groups/" + usecString(usage1Collection1Start)
-	groupsKey2 := "usage/groups/" + usecString(usage1Collection2Start)
+	countsKey1 := "usage/counts/GR1/" + timeStr(usage1Collection1Start)
+	countsKey2 := "usage/counts/GR1/" + timeStr(usage1Collection2Start)
+	groupsKey1 := "usage/groups/" + timeStr(usage1Collection1Start)
+	groupsKey2 := "usage/groups/" + timeStr(usage1Collection2Start)
 	require.ElementsMatch(
 		t, []string{countsKey1, countsKey2, groupsKey1, groupsKey2}, keys,
 		"redis keys should match expected format")
@@ -89,9 +87,9 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"CasCacheHits":           "1001",
-		"ActionCacheHits":        "10",
-		"TotalDownloadSizeBytes": "100",
+		"cas_cache_hits":            "1001",
+		"action_cache_hits":         "10",
+		"total_download_size_bytes": "100",
 	}, counts1, "counts should match what we observed")
 
 	groupIDs1, err := rdb.SMembers(ctx, groupsKey1).Result()
@@ -101,8 +99,8 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	counts2, err := rdb.HGetAll(ctx, countsKey2).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"CasCacheHits":    "2",
-		"ActionCacheHits": "20",
+		"cas_cache_hits":    "2",
+		"action_cache_hits": "20",
 	}, counts2, "counts should match what we observed")
 
 	groupIDs2, err := rdb.SMembers(ctx, groupsKey2).Result()
@@ -126,9 +124,9 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	ctx := context.Background()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
-	countsKey1 := "usage/counts/GR1/" + usecString(usage1Collection1Start)
-	countsKey2 := "usage/counts/GR2/" + usecString(usage1Collection1Start)
-	groupsKey := "usage/groups/" + usecString(usage1Collection1Start)
+	countsKey1 := "usage/counts/GR1/" + timeStr(usage1Collection1Start)
+	countsKey2 := "usage/counts/GR2/" + timeStr(usage1Collection1Start)
+	groupsKey := "usage/groups/" + timeStr(usage1Collection1Start)
 	require.ElementsMatch(
 		t, []string{countsKey1, countsKey2, groupsKey}, keys,
 		"redis keys should match expected format")
@@ -136,13 +134,13 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	counts1, err := rdb.HGetAll(ctx, countsKey1).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"CasCacheHits": "1",
+		"cas_cache_hits": "1",
 	}, counts1, "counts should match what we observed")
 
 	counts2, err := rdb.HGetAll(ctx, countsKey2).Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"CasCacheHits": "10",
+		"cas_cache_hits": "10",
 	}, counts2, "counts should match what we observed")
 
 	groupIDs, err := rdb.SMembers(ctx, groupsKey).Result()
