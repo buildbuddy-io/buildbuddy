@@ -33,8 +33,8 @@ const (
 	VMExecPort = 25415
 	// VMCASFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
 	VMCASFSPort = 25416
-	// HostByteStreamProxyPort is the host gRPC port for the ByteStream service that proxies requests to the real cache.
-	HostByteStreamProxyPort = 25410
+	// HostVFSServerPort is the host gRPC port for the VFS server that handles requests forwarded from the FUSE-based fs.
+	HostVFSServerPort = 25410
 )
 
 // GetContextID returns ths next available vsock context ID.
