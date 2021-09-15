@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	gstatus "google.golang.org/grpc/status"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	gstatus "google.golang.org/grpc/status"
 )
 
 type FakeLazyFileProvider struct {
