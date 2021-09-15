@@ -202,8 +202,6 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 	}()
 
-	dbh := ut.env.GetDBHandle()
-
 	// Loop through collection periods starting from the oldest collection period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a collection period which is not yet "settled".
@@ -217,7 +215,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 
 		for _, groupID := range groupIDs {
-			// Read usage counts, flush to DB, then delete the Redis key for the counts.
+			// Read usage counts from Redis
 			ck := countsRedisKey(groupID, c)
 			h, err := ut.rdb.HGetAll(ctx, ck).Result()
 			if err != nil {
@@ -227,34 +225,11 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-
-			pk := &tables.Usage{
-				GroupID:         groupID,
-				PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
-			}
-			err = dbh.Transaction(ctx, func(tx *db.DB) error {
-				// Create if not exists
-				err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(pk).Error
-				if err != nil {
-					return err
-				}
-				updates, err := usageUpdates(c, counts)
-				if err != nil {
-					return err
-				}
-				// Update if collection period data not already been written
-				return tx.Model(&tables.Usage{}).Where(
-					`group_id = ?
-					AND period_start_usec = ?
-					AND final_before_usec <= ?`,
-					pk.GroupID,
-					pk.PeriodStartUsec,
-					timeutil.ToUsec(c.Start()),
-				).Updates(updates).Error
-			})
-			if err != nil {
+			// Update counts in the DB
+			if err := ut.flushCounts(ctx, groupID, c, counts); err != nil {
 				return err
 			}
+			// Clean up the counts from Redis
 			if _, err := ut.rdb.Del(ctx, ck).Result(); err != nil {
 				return err
 			}
@@ -266,6 +241,34 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collectionPeriod, counts *tables.UsageCounts) error {
+	pk := &tables.Usage{
+		GroupID:         groupID,
+		PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
+	}
+	dbh := ut.env.GetDBHandle()
+	return dbh.Transaction(ctx, func(tx *db.DB) error {
+		// Create if not exists
+		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(pk).Error
+		if err != nil {
+			return err
+		}
+		updates, err := usageUpdates(c, counts)
+		if err != nil {
+			return err
+		}
+		// Update if collection period data not already been written
+		return tx.Model(&tables.Usage{}).Where(
+			`group_id = ?
+			AND period_start_usec = ?
+			AND final_before_usec <= ?`,
+			pk.GroupID,
+			pk.PeriodStartUsec,
+			timeutil.ToUsec(c.Start()),
+		).Updates(updates).Error
+	})
 }
 
 func (ut *tracker) currentCollectionPeriod() collectionPeriod {
