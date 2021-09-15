@@ -17,9 +17,6 @@ cache:
     root_directory: /tmp/buildbuddy-enterprise-cache
 auth:
   enable_anonymous_usage: true
-  saml:
-    cert_file: /Users/siggi/Code/buildbuddy-internal/enterprise/config/dev-ca.crt
-    key_file: /Users/siggi/Code/buildbuddy-internal/enterprise/config/dev-ca.pem
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
