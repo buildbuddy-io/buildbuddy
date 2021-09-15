@@ -27,6 +27,7 @@ const (
 	cookieDuration         = 365 * 24 * time.Hour
 	contextSamlSessionKey  = "saml.session"
 	contextSamlEntityIDKey = "saml.entityID"
+	contextSamlSlugKey     = "saml.slug"
 )
 
 var (
@@ -82,6 +83,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 		if ok {
 			ctx = context.WithValue(ctx, contextSamlSessionKey, sa)
 			ctx = context.WithValue(ctx, contextSamlEntityIDKey, sp.ServiceProvider.EntityID)
+			ctx = context.WithValue(ctx, contextSamlSlugKey, a.getSlugFromRequest(r))
 			return ctx
 		}
 	}
@@ -100,6 +102,9 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		user.FirstName = firstSet(attributes, samlFirstNameAttributes)
 		user.LastName = firstSet(attributes, samlLastNameAttributes)
 		user.Email = firstSet(attributes, samlEmailAttributes)
+		if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
+			user.Groups = []*tables.Group{{URLIdentifier: &slug}}
+		}
 		return nil
 	}
 	return a.fallback.FillUser(ctx, user)
