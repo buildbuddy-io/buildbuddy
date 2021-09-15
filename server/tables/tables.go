@@ -596,5 +596,6 @@ func init() {
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
+	registerTable("WF", &Workflow{})
 	registerTable("UA", &Usage{})
 }
