@@ -250,7 +250,8 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
-		// Create if not exists
+		// Create a row for the corresponding usage period if one doesn't already
+		// exist
 		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(pk).Error
 		if err != nil {
 			return err
@@ -259,7 +260,9 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		if err != nil {
 			return err
 		}
-		// Update if collection period data not already been written
+		// Update the usage row, but only if collection period data has not already
+		// been written (for example, if the previous flush failed to delete the
+		// data from Redis).
 		return tx.Model(&tables.Usage{}).Where(
 			`group_id = ?
 			AND period_start_usec = ?
