@@ -214,13 +214,13 @@ func (c *LRU) removeOldest() {
 	}
 }
 
-func (c *LRU) lookupItem(pk, ck uint64) (*list.Element, bool) {
-	entries, ok := c.items[pk]
+func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
+	entries, ok := c.items[key]
 	if !ok {
 		return nil, false
 	}
 	for _, ent := range entries {
-		if ent.Value.(*Entry).conflictKey == ck {
+		if ent.Value.(*Entry).conflictKey == conflictKey {
 			return ent, true
 		}
 	}
@@ -244,6 +244,7 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 	}
 	if len(entries) == 0 {
 		c.items[key] = nil
+		return
 	}
 
 	deleteIndex := -1
