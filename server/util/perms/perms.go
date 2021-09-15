@@ -261,16 +261,9 @@ func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, proto
 // determined directly from the API key. UI requests should instead use
 // `AuthenticateSelectedGroupID`, since the API key is not available, and the
 // user's selected group ID needs to be taken into account.
-//
-// If there is no authenticated user and anonymous usage is enabled, this will
-// return the empty string for the user ID, and a nil error.
 func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := AuthenticatedUser(ctx, env)
 	if err != nil {
-		if IsAnonymousUserError(err) && env.GetConfigurator().GetAnonymousUsageEnabled() {
-			// Valid anonymous user request.
-			return "", nil
-		}
 		return "", err
 	}
 	groupID := u.GetGroupID()
@@ -280,6 +273,12 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 	return groupID, nil
 }
 
+// IsAnonymousUserError can be used to check whether an error returned by
+// functions which return the authenticated user (such as AuthenticatedUser or
+// AuthenticateSelectedGroupID) is due to an anonymous user accessing the
+// service. This is useful for allowing anonymous users to proceed, in cases
+// where anonymous usage is explicitly enabled in the app config, and we support
+// anonymous usage for the part of the service where this is used.
 func IsAnonymousUserError(err error) bool {
 	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
 }

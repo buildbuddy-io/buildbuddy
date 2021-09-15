@@ -2,7 +2,6 @@ package usage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -55,6 +54,8 @@ const (
 	redisUsageKeyPrefix  = "usage/"
 	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
 	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
+
+	redisTimeKeyFormat = time.RFC3339
 
 	redisUsageLockKey    = "lock.usage"
 	redisUsageLockExpiry = 45 * time.Second
@@ -112,11 +113,11 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
+		if perms.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
+			// Don't track anonymous usage for now.
+			return nil
+		}
 		return err
-	}
-	if groupID == "" {
-		// Don't track anonymous usage for now.
-		return nil
 	}
 
 	m, err := countsToMap(counts)
@@ -237,7 +238,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				updates, err := ut.usageUpdates(c, counts)
+				updates, err := usageUpdates(c, counts)
 				if err != nil {
 					return err
 				}
@@ -265,36 +266,6 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// usageUpdates returns a GORM updates map that finalizes the usage row up to
-// the end of the collection period and increments each field by the
-// corresponding value in counts.
-func (ut *tracker) usageUpdates(c collectionPeriod, counts *tables.UsageCounts) (map[string]interface{}, error) {
-	updates := map[string]interface{}{
-		"final_before_usec": timeutil.ToUsec(c.End()),
-	}
-	m, err := countsToMap(counts)
-	if err != nil {
-		return nil, err
-	}
-	// We need to use SQL expressions here to increment the counts without having
-	// to first read them from the DB. Expressions need to explicitly reference
-	// the SQL column name, which we can look up from the Go field name using the
-	// schema.
-	schema, err := ut.env.GetDBHandle().Schema(&tables.Usage{})
-	if err != nil {
-		return nil, err
-	}
-	for key, count := range m {
-		fieldSchema := schema.LookUpField(key)
-		if fieldSchema == nil {
-			return nil, status.InvalidArgumentErrorf("Failed look get SQL column name for `Usages.%s`", key)
-		}
-		col := fieldSchema.DBName
-		updates[col] = gorm.Expr(fmt.Sprintf("%s + ?", col), count)
-	}
-	return updates, nil
 }
 
 func (ut *tracker) currentCollectionPeriod() collectionPeriod {
@@ -363,7 +334,7 @@ func (c collectionPeriod) UsagePeriod() usagePeriod {
 // String returns a string uniquely identifying this collection period. It can
 // later be reconstructed with parseCollectionPeriod.
 func (c collectionPeriod) String() string {
-	return fmt.Sprintf("%d", timeutil.ToUsec(c.Start()))
+	return c.Start().Format(redisTimeKeyFormat)
 }
 
 // usagePeriod is an interval of time starting at the beginning of each UTC hour
@@ -383,18 +354,18 @@ func countsRedisKey(groupID string, c collectionPeriod) string {
 }
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
-	b, err := json.Marshal(tu)
-	if err != nil {
-		return nil, err
-	}
 	counts := map[string]int64{}
-	if err := json.Unmarshal(b, &counts); err != nil {
-		return nil, err
+	if tu.Invocations > 0 {
+		counts["invocations"] = tu.Invocations
 	}
-	for k, v := range counts {
-		if v == 0 {
-			delete(counts, k)
-		}
+	if tu.CasCacheHits > 0 {
+		counts["cas_cache_hits"] = tu.CasCacheHits
+	}
+	if tu.ActionCacheHits > 0 {
+		counts["action_cache_hits"] = tu.ActionCacheHits
+	}
+	if tu.TotalDownloadSizeBytes > 0 {
+		counts["total_download_size_bytes"] = tu.TotalDownloadSizeBytes
 	}
 	return counts, nil
 }
@@ -410,13 +381,28 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		}
 		hInt64[k] = count
 	}
-	b, err := json.Marshal(hInt64)
+	return &tables.UsageCounts{
+		Invocations:            hInt64["invocations"],
+		CasCacheHits:           hInt64["cas_cache_hits"],
+		ActionCacheHits:        hInt64["action_cache_hits"],
+		TotalDownloadSizeBytes: hInt64["total_download_size_bytes"],
+	}, nil
+}
+
+// usageUpdates returns a GORM updates map that finalizes the usage row up to
+// the end of the collection period and increments each field by the
+// corresponding value in counts.
+func usageUpdates(c collectionPeriod, counts *tables.UsageCounts) (map[string]interface{}, error) {
+	updates := map[string]interface{}{
+		"final_before_usec": timeutil.ToUsec(c.End()),
+	}
+	// Field names used by `countsToMap` match the DB field names.
+	m, err := countsToMap(counts)
 	if err != nil {
 		return nil, err
 	}
-	tu := &tables.UsageCounts{}
-	if err := json.Unmarshal(b, tu); err != nil {
-		return nil, err
+	for col, count := range m {
+		updates[col] = gorm.Expr(fmt.Sprintf("%s + ?", col), count)
 	}
-	return tu, nil
+	return updates, nil
 }
