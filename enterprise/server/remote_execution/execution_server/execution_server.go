@@ -303,6 +303,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
 		executionTask.Jwt = jwt
 	}
+
+	platformPropOverrides := platform.RemoteHeaderOverrides(ctx)
+	if len(platformPropOverrides) > 0 {
+		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
+	}
+
 	executionTask.QueuedTimestamp = ptypes.TimestampNow()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
@@ -315,7 +321,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	os := defaultPlatformOSValue
 	arch := defaultPlatformArchValue
 	platformPool := ""
-	for _, property := range command.GetPlatform().GetProperties() {
+	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
+	for _, property := range platformProps {
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}

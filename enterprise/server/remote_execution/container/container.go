@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -131,10 +130,8 @@ func (p PullCredentials) String() string {
 
 // ImageCacheToken is a claim to be able to access a locally cached image.
 type ImageCacheToken struct {
-	GroupID      string
-	ImageRef     string
-	UserHash     string
-	PasswordHash string
+	GroupID  string
+	ImageRef string
 }
 
 // NewImageCacheToken returns the token representing the authenticated group ID,
@@ -153,10 +150,8 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 		groupID = u.GetGroupID()
 	}
 	return ImageCacheToken{
-		GroupID:      groupID,
-		ImageRef:     imageRef,
-		UserHash:     hash.String(creds.Username),
-		PasswordHash: hash.String(creds.Password),
+		GroupID:  groupID,
+		ImageRef: imageRef,
 	}, nil
 }
 
