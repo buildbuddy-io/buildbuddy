@@ -32,25 +32,31 @@ import (
 const (
 	// Prometheus BlobstoreTypeLabel values
 
-	diskLabel  = "disk"
-	gcsLabel   = "gcs"
-	awsS3Label = "aws_s3"
+	diskLabel         = "disk"
+	gcsLabel          = "gcs"
+	awsS3Label        = "aws_s3"
+	bucketWaitTimeout = 10 * time.Second
 )
 
 // Returns whatever blobstore is specified in the config.
 func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
+	log.Debug("Configuring blobstore")
 	if c.GetStorageDiskRootDir() != "" {
+		log.Debug("Disk blobstore configured")
 		return NewDiskBlobStore(c.GetStorageDiskRootDir())
 	}
 	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
+		log.Debug("Configuring GCS blobstore")
 		opts := make([]option.ClientOption, 0)
 		if gcsConfig.CredentialsFile != "" {
+			log.Debug("Found GCS credentials file")
 			opts = append(opts, option.WithCredentialsFile(gcsConfig.CredentialsFile))
 		}
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
 	}
 
 	if awsConfig := c.GetStorageAWSS3Config(); awsConfig != nil && awsConfig.Bucket != "" {
+		log.Debug("Configuring AWS blobstore")
 		return NewAwsS3BlobStore(awsConfig)
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
@@ -246,6 +252,7 @@ func NewGCSBlobStore(bucketName, projectID string, opts ...option.ClientOption) 
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("GCS blobstore configured")
 	return g, nil
 }
 
@@ -315,31 +322,39 @@ type AwsS3BlobStore struct {
 func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 	ctx := context.Background()
 
-	var creds *credentials.Credentials
-
+	config := &aws.Config{
+		Region: aws.String(awsConfig.Region),
+	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
 	if awsConfig.CredentialsProfile != "" {
-		creds = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
+		log.Debugf("AWS blobstore credentials profile found: %q", awsConfig.CredentialsProfile)
+		config.Credentials = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
 	}
-
 	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
-		creds = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
+		log.Debugf("AWS blobstore static credentials found: %q", awsConfig.StaticCredentialsID)
+		config.Credentials = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
 	}
-
-	sess, err := session.NewSession(&aws.Config{
-		Region:           aws.String(awsConfig.Region),
-		Credentials:      creds,
-		Endpoint:         aws.String(awsConfig.Endpoint),
-		DisableSSL:       aws.Bool(awsConfig.DisableSSL),
-		S3ForcePathStyle: aws.Bool(awsConfig.S3ForcePathStyle),
-	})
-
+	if awsConfig.Endpoint != "" {
+		log.Debugf("AWS blobstore endpoint found: %q", awsConfig.Endpoint)
+		config.Endpoint = aws.String(awsConfig.Endpoint)
+	}
+	if awsConfig.DisableSSL {
+		log.Debug("AWS blobstore disabling SSL")
+		config.DisableSSL = aws.Bool(awsConfig.DisableSSL)
+	}
+	if awsConfig.S3ForcePathStyle {
+		log.Debug("AWS blobstore forcing path style")
+		config.S3ForcePathStyle = aws.Bool(awsConfig.S3ForcePathStyle)
+	}
+	sess, err := session.NewSession(config)
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("AWS blobstore session created")
 
 	// Create S3 service client
 	svc := s3.New(sess)
+	log.Debug("AWS blobstore service client created")
 
 	awsBlobStore := &AwsS3BlobStore{
 		s3:         svc,
@@ -358,11 +373,13 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 			return nil, err
 		}
 	}
+	log.Debug("AWS blobstore configured")
 	return awsBlobStore, nil
 }
 
 func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	// HeadBucket call will return 404 or 403
+	log.Debug("Checking if AWS blobstore bucket exists")
 	if _, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 		aerr := err.(awserr.Error)
 		// AWS returns codes as strings
@@ -375,6 +392,9 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}
+		log.Debug("Waiting until AWS Bucket exists")
+		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
+		defer cancel()
 		return a.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),
 		})

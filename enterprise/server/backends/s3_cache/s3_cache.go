@@ -28,6 +28,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	bucketWaitTimeout = 10 * time.Second
+)
+
 var (
 	cacheLabels = cache_metrics.MakeCacheLabels(cache_metrics.CloudCacheTier, "aws_s3")
 )
@@ -45,24 +49,26 @@ type S3Cache struct {
 func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 	ctx := context.Background()
 
-	var creds *credentials.Credentials
-
+	config := &aws.Config{
+		Region: aws.String(awsConfig.Region),
+	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
 	if awsConfig.CredentialsProfile != "" {
-		creds = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
+		config.Credentials = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
 	}
-
 	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
-		creds = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
+		config.Credentials = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
 	}
-
-	sess, err := session.NewSession(&aws.Config{
-		Region:           aws.String(awsConfig.Region),
-		Credentials:      creds,
-		Endpoint:         aws.String(awsConfig.Endpoint),
-		DisableSSL:       aws.Bool(awsConfig.DisableSSL),
-		S3ForcePathStyle: aws.Bool(awsConfig.S3ForcePathStyle),
-	})
+	if awsConfig.Endpoint != "" {
+		config.Endpoint = aws.String(awsConfig.Endpoint)
+	}
+	if awsConfig.DisableSSL {
+		config.DisableSSL = aws.Bool(awsConfig.DisableSSL)
+	}
+	if awsConfig.S3ForcePathStyle {
+		config.S3ForcePathStyle = aws.Bool(awsConfig.S3ForcePathStyle)
+	}
+	sess, err := session.NewSession(config)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +115,8 @@ func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName stri
 		if _, err := s3c.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}
+		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
+		defer cancel()
 		return s3c.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),
 		})
