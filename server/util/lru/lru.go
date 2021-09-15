@@ -123,7 +123,7 @@ func (c *LRU) Add(key, value interface{}) bool {
 }
 
 // Get looks up a key's value from the cache.
-func (c *LRU) Get(key interface{}) (value interface{}, ok bool) {
+func (c *LRU) Get(key interface{}) (interface{}, bool) {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return nil, false
@@ -135,12 +135,11 @@ func (c *LRU) Get(key interface{}) (value interface{}, ok bool) {
 		}
 		return ent.Value.(*Entry).value, true
 	}
-	return
+	return nil, false
 }
 
-// Contains checks if a key is in the cache, without updating the recent-ness
-// or deleting it for being stale.
-func (c *LRU) Contains(key interface{}) (ok bool) {
+// Contains checks if a key is in the cache.
+func (c *LRU) Contains(key interface{}) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
@@ -157,7 +156,7 @@ func (c *LRU) Contains(key interface{}) (ok bool) {
 
 // Peek returns the key value (or undefined if not found) without updating
 // the "recently used"-ness of the key.
-func (c *LRU) Peek(key interface{}) (value interface{}, ok bool) {
+func (c *LRU) Peek(key interface{}) (interface{}, bool) {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return nil, false
@@ -184,7 +183,7 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *LRU) RemoveOldest() (value interface{}, ok bool) {
+func (c *LRU) RemoveOldest() (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
 		c.removeElement(ent)
@@ -243,6 +242,10 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 	if !ok {
 		return
 	}
+	if len(entries) == 0 {
+		c.items[key] = nil
+	}
+
 	deleteIndex := -1
 	for i, ent := range entries {
 		if ent.Value.(*Entry).conflictKey == conflictKey {
