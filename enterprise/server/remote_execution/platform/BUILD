@@ -11,7 +11,6 @@ go_library(
         "//server/environment",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//metadata",
     ],
 )
