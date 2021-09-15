@@ -36,7 +36,6 @@ const (
 var (
 	path            = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
 	vmExecPort      = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
-	vmCASFSPort     = flag.Uint("vm_casfs_port", vsock.VMCASFSPort, "The vsock port number to listen on for VM CASFS service.")
 	debugMode       = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel        = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -304,7 +303,7 @@ func main() {
 		return server.Serve(listener)
 	})
 	eg.Go(func() error {
-		cmd := exec.CommandContext(ctx, "/vmcasfs", fmt.Sprintf("--port=%d", *vmCASFSPort))
+		cmd := exec.CommandContext(ctx, "/vmcasfs")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

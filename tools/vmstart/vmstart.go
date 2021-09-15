@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
-	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -26,6 +25,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 

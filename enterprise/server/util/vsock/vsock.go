@@ -29,8 +29,11 @@ const (
 	minCID = 3
 	maxCID = math.MaxUint32
 
-	VMExecPort              = 25415
-	VMCASFSPort             = 25416
+	// VMExecPort is the guest gRPC port for the Exec service used to execute commands on the guest.
+	VMExecPort = 25415
+	// VMCASFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
+	VMCASFSPort = 25416
+	// HostByteStreamProxyPort is the host gRPC port for the ByteStream service that proxies requests to the real cache.
 	HostByteStreamProxyPort = 25410
 )
 

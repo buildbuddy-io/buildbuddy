@@ -103,6 +103,9 @@ const (
 	// Workspace slack space is how much extra space will be allocated in the
 	// workspace disk image beyond the size of the existing files.
 	workspaceSlackBytes = 100 * 1e6 // 100MB
+
+	// The path in the guest where CASFS is mounted.
+	guestCASFSMountDir = "/casfs"
 )
 
 var (
@@ -641,7 +644,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
 	if err != nil {
 		return err
 	}
@@ -1037,6 +1040,7 @@ func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *v
 		return nil, err
 	}
 	defer conn.Close()
+
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, req)
 	if err != nil {
@@ -1100,7 +1104,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		WorkingDirectory: "/workspace/",
 	}
 	if c.fsLayout != nil {
-		execRequest.WorkingDirectory = "/casfs/"
+		execRequest.WorkingDirectory = guestCASFSMountDir
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {
 		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{

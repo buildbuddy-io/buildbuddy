@@ -20,8 +20,9 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-var (
-	port = flag.Uint("port", vsock.VMCASFSPort, "The vsock port number to listen on")
+const (
+	// this should match guestCASFSMountDir in firecracker.go
+	mountDir = "/casfs"
 )
 
 type casfsServer struct {
@@ -30,15 +31,15 @@ type casfsServer struct {
 
 	mu sync.Mutex
 	// Context & cancel func for CAS RPS.
-	remoteRPCCtx       context.Context
-	cancelRemoteRPCCtx context.CancelFunc
+	remoteCtx        context.Context
+	cancelRemoteFunc context.CancelFunc
 }
 
 func NewServer() (*casfsServer, error) {
-	if err := os.Mkdir("/casfs", 0755); err != nil {
+	if err := os.Mkdir(mountDir, 0755); err != nil {
 		return nil, err
 	}
-	cfs := casfs.New("/workspace", "/casfs/", &casfs.Options{})
+	cfs := casfs.New("/workspace", mountDir, &casfs.Options{})
 	if err := cfs.Mount(); err != nil {
 		return nil, status.InternalErrorf("Could not mount CASFS: %s", err)
 	}
@@ -61,16 +62,19 @@ func NewServer() (*casfsServer, error) {
 
 func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
 	s.mu.Lock()
-	if s.cancelRemoteRPCCtx != nil {
-		s.cancelRemoteRPCCtx()
+	if s.cancelRemoteFunc != nil {
+		s.cancelRemoteFunc()
 	}
+
+	// This is the context that is used to make RPCs to the host.
+	// It needs to stay alive as long as there's an active command on the VM.
 	rpcCtx, cancel := context.WithCancel(context.Background())
-	s.remoteRPCCtx = rpcCtx
-	s.cancelRemoteRPCCtx = cancel
+	s.remoteCtx = rpcCtx
+	s.cancelRemoteFunc = cancel
 	s.mu.Unlock()
 
 	layout := req.GetFileSystemLayout()
-	ff := dirtools.NewBatchFileFetcher(s.remoteRPCCtx, layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
+	ff := dirtools.NewBatchFileFetcher(s.remoteCtx, layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
 	if err := s.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
 		return nil, err
 	}
@@ -80,11 +84,10 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 
 func (s *casfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest) (*vmfspb.FinishResponse, error) {
 	s.mu.Lock()
-	if s.cancelRemoteRPCCtx != nil {
-		s.cancelRemoteRPCCtx()
+	if s.cancelRemoteFunc != nil {
+		s.cancelRemoteFunc()
 	}
 	s.mu.Unlock()
-	// TODO(vadim): implement
 	return &vmfspb.FinishResponse{}, nil
 }
 
@@ -92,11 +95,11 @@ func main() {
 	flag.Parse()
 
 	ctx := context.Background()
-	listener, err := vsock.NewGuestListener(ctx, uint32(*port))
+	listener, err := vsock.NewGuestListener(ctx, vsock.VMCASFSPort)
 	if err != nil {
 		log.Fatalf("Error listening on vsock port: %s", err)
 	}
-	log.Infof("Starting VM CASFS listener on vsock port: %d", *port)
+	log.Infof("Starting VM CASFS listener on vsock port: %d", vsock.VMCASFSPort)
 	server := grpc.NewServer()
 	vmService, err := NewServer()
 	if err != nil {

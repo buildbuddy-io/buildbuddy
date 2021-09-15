@@ -11,12 +11,17 @@ message FileSystemLayout {
   build.bazel.remote.execution.v2.Tree inputs = 2;
 }
 
+// Set up the FUSE filesystem to reflect the given layout.
+// To processes running the VM, all the files specified in the layout will
+// appear to exist on the VM.
 message PrepareRequest {
   FileSystemLayout file_system_layout = 1;
 }
 
 message PrepareResponse {}
 
+// Indicates that the FUSE filesystem is no longer needed.
+// All remote IO will fail until the next Prepare call.
 message FinishRequest {}
 
 message Stats {
@@ -40,6 +45,7 @@ message FinishResponse {
 service FileSystem {
   // Prepare the filesystem for use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);
+
   // Finish any outstanding work (such as uploading data to the CAS).
   rpc Finish(FinishRequest) returns (FinishResponse);
 }
