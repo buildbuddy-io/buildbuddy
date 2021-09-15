@@ -10,5 +10,6 @@ go_library(
         "//server/util/hash",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_cespare_xxhash_v2//:xxhash",
     ],
 )
