@@ -222,6 +222,7 @@ type RemoteExecutionConfig struct {
 	EnableRemoteExec              bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
 	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
 	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	ForceUserOwnedDarwinExecutors bool   `yaml:"force_user_owned_darwin_executors" usage:"If enabled, users can register their own executors with the scheduler."`
 	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
 }
 

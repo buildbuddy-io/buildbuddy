@@ -442,6 +442,8 @@ type SchedulerServer struct {
 	// If enabled, users may register their own executors.
 	// When enabled, the executor group ID becomes part of the executor key.
 	enableUserOwnedExecutors bool
+	// Force darwin executions to use executors owned by user.
+	forceUserOwnedDarwinExecutors bool
 	// If enabled, executors will be required to present an API key with appropriate capabilities in order to register.
 	requireExecutorAuthorization bool
 
@@ -460,9 +462,11 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 
 	enableUserOwnedExecutors := false
 	requireExecutorAuthorization := false
+	forceUserOwnedDarwinExecutors := false
 	if conf := env.GetConfigurator().GetRemoteExecutionConfig(); conf != nil {
 		enableUserOwnedExecutors = conf.EnableUserOwnedExecutors
 		requireExecutorAuthorization = conf.RequireExecutorAuthorization
+		forceUserOwnedDarwinExecutors = conf.ForceUserOwnedDarwinExecutors
 	}
 
 	if options.RequireExecutorAuthorization {
@@ -493,25 +497,25 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	}
 
 	s := &SchedulerServer{
-		env:                          env,
-		pools:                        make(map[nodePoolKey]*nodePool),
-		rdb:                          env.GetRemoteExecutionRedisClient(),
-		taskRouter:                   taskRouter,
-		schedulerClientCache:         newSchedulerClientCache(),
-		shuttingDown:                 shuttingDown,
-		enableUserOwnedExecutors:     enableUserOwnedExecutors,
-		requireExecutorAuthorization: requireExecutorAuthorization,
-		ownHostPort:                  fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		env:                           env,
+		pools:                         make(map[nodePoolKey]*nodePool),
+		rdb:                           env.GetRemoteExecutionRedisClient(),
+		taskRouter:                    taskRouter,
+		schedulerClientCache:          newSchedulerClientCache(),
+		shuttingDown:                  shuttingDown,
+		enableUserOwnedExecutors:      enableUserOwnedExecutors,
+		forceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
+		requireExecutorAuthorization:  requireExecutorAuthorization,
+		ownHostPort:                   fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
 	return s, nil
 }
 
-func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context) (string, string, error) {
+func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string) (string, string, error) {
 	defaultPool := s.env.GetConfigurator().GetRemoteExecutionConfig().DefaultPoolName
 	if !s.enableUserOwnedExecutors {
 		return "", defaultPool, nil
 	}
-
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		if s.env.GetConfigurator().GetAnonymousUsageEnabled() {
@@ -520,6 +524,9 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context) (
 		return "", "", err
 	}
 	if user.GetUseGroupOwnedExecutors() {
+		return user.GetGroupID(), "", nil
+	}
+	if s.forceUserOwnedDarwinExecutors && os == "darwin" {
 		return user.GetGroupID(), "", nil
 	}
 	return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
