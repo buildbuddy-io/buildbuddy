@@ -14,9 +14,10 @@ require (
 	github.com/bazelbuild/rules_go v0.24.3
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
+	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/containerd/containerd v1.5.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
-	github.com/crewjam/saml v0.4.5 // indirect
+	github.com/crewjam/saml v0.4.5
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.7+incompatible
@@ -27,21 +28,21 @@ require (
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
-	github.com/go-redsync/redsync/v4 v4.4.1
+	github.com/gobwas/glob v0.2.3
 	github.com/golang/protobuf v1.5.2
 	github.com/google/go-cmp v0.5.6
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.2.0
-	github.com/groob/plist v0.0.0-20210519001750-9f754062e6d6 // indirect
+	github.com/groob/plist v0.0.0-20210519001750-9f754062e6d6
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hanwen/go-fuse/v2 v2.1.0
+	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/jhump/protoreflect v1.8.2
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/pgzip v1.2.5
-	github.com/lib/pq v1.5.2 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
@@ -55,6 +56,7 @@ require (
 	github.com/rs/zerolog v1.20.0
 	github.com/sirupsen/logrus v1.8.0
 	github.com/stretchr/testify v1.7.0
+	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.opentelemetry.io/contrib/detectors/gcp v0.22.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.22.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.22.0
