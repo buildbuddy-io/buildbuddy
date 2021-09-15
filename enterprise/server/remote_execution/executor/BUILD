@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/runner",
+        "//enterprise/server/util/vfs_server",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",

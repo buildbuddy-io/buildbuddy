@@ -13,7 +13,7 @@ message FileSystemLayout {
 
 // Set up the FUSE filesystem to reflect the given layout.
 // To processes running the VM, all the files specified in the layout will
-// appear to exist on the VM.
+// appear to exist on the VM
 message PrepareRequest {
   FileSystemLayout file_system_layout = 1;
 }
@@ -32,12 +32,6 @@ message Stats {
 message FinishResponse {
   // Stats for activity since the last Prepare call.
   Stats stats = 1;
-  // Files written to the CAS matching the output_files set in the layout.
-  repeated build.bazel.remote.execution.v2.OutputFile output_files = 2;
-  // Files written to the CAS under any of the directories in the layout
-  // output_directories list.
-  repeated build.bazel.remote.execution.v2.OutputDirectory output_directories =
-      3;
 }
 
 // FileSystem is a service for controlling the FUSE CASFS filesystem inside a

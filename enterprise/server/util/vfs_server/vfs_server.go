@@ -32,6 +32,12 @@ type fileHandle struct {
 }
 
 type LazyFileProvider interface {
+	// GetAllFilePaths should return all file paths that this provider can handle.
+	// The list is only retrieved once during initialization.
+	GetAllFilePaths() []string
+
+	// Place requests that the file in the VFS at path `relPath` should be written to the local filesystem at path
+	// `fullPath`.
 	Place(relPath, fullPath string) error
 }
 
@@ -42,13 +48,41 @@ type CASLazyFileProvider struct {
 	inputFiles         map[string]*repb.FileNode
 }
 
-func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, inputFiles map[string]*repb.FileNode) *CASLazyFileProvider {
+func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
+	_, dirMap, err := dirtools.DirMapFromTree(inputTree)
+	if err != nil {
+		return nil, err
+	}
+
+	inputFiles := make(map[string]*repb.FileNode)
+	var walkDir func(dir *repb.Directory, path string) error
+	walkDir = func(dir *repb.Directory, path string) error {
+		for _, childDirNode := range dir.GetDirectories() {
+			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
+			if !ok {
+				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
+			}
+			if err := walkDir(childDir, filepath.Join(path, childDirNode.GetName())); err != nil {
+				return err
+			}
+		}
+		for _, childFileNode := range dir.GetFiles() {
+			inputFiles[filepath.Join(path, childFileNode.GetName())] = childFileNode
+		}
+		return nil
+	}
+
+	err = walkDir(inputTree.Root, "")
+	if err != nil {
+		return nil, err
+	}
+
 	return &CASLazyFileProvider{
 		env:                env,
 		ctx:                ctx,
 		remoteInstanceName: remoteInstanceName,
 		inputFiles:         inputFiles,
-	}
+	}, nil
 }
 
 func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
@@ -68,6 +102,14 @@ func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
 		return err
 	}
 	return nil
+}
+
+func (p *CASLazyFileProvider) GetAllFilePaths() []string {
+	var paths []string
+	for p := range p.inputFiles {
+		paths = append(paths, p)
+	}
+	return paths
 }
 
 type Server struct {
@@ -95,15 +137,15 @@ func New(env environment.Env, workspacePath string) *Server {
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-// lazyFiles is the list root-relative file paths for any files should be loaded using the specified lazyFileProvider.
-func (p *Server) Prepare(lazyFiles []string, lazyFileProvider LazyFileProvider) error {
+// The list of lazy files is retrieved from the provider during preparation.
+func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lazyFileProvider = lazyFileProvider
 	p.lazyFiles = make(map[string]struct{})
 
 	dirsToMake := make(map[string]struct{})
-	for _, lf := range lazyFiles {
+	for _, lf := range lazyFileProvider.GetAllFilePaths() {
 		p.lazyFiles[lf] = struct{}{}
 		dirsToMake[filepath.Dir(lf)] = struct{}{}
 	}
