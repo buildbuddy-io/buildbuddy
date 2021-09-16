@@ -271,7 +271,7 @@ func (h *HitTracker) recordCacheUsage(actionCache bool, d *repb.Digest, actionCo
 	if actionCache {
 		c.ActionCacheHits = 1
 	} else {
-		c.CasCacheHits = 1
+		c.CASCacheHits = 1
 	}
 	return h.usage.Increment(h.ctx, c)
 }
