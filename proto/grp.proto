@@ -144,7 +144,8 @@ message UpdateGroupUsersRequest {
     // New membership status. If unset, membership status is unaffected.
     MembershipAction membership_action = 2;
 
-    // New role to apply to the group. If unset, role is unaffected.
+    // New role to apply to the user within this group. If unset, role is
+    // unaffected.
     Group.Role role = 3;
   }
 
