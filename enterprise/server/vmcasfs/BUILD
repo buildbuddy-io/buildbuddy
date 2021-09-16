@@ -8,13 +8,12 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/casfs",
         "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/util/vsock",
+        "//proto:vfs_go_proto",
         "//proto:vmcasfs_go_proto",
         "//server/util/log",
         "//server/util/status",
         "@com_github_mdlayher_vsock//:vsock",
-        "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
     ],
 )

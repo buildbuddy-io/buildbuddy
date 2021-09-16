@@ -34,6 +34,14 @@ func (f *FakeLazyFileProvider) Place(relPath, fullPath string) error {
 	return nil
 }
 
+func (f *FakeLazyFileProvider) GetAllFilePaths() []string {
+	var paths []string
+	for p := range f.contents {
+		paths = append(paths, p)
+	}
+	return paths
+}
+
 func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 	s, ok := gstatus.FromError(err)
 	if !ok {
@@ -73,7 +81,7 @@ func TestLazyLoadFile(t *testing.T) {
 	p := &FakeLazyFileProvider{contents: map[string]string{
 		lazyFilePath: lazyFileContents,
 	}}
-	err := server.Prepare([]string{lazyFilePath}, p)
+	err := server.Prepare(p)
 	require.NoError(t, err)
 
 	ctx := context.Background()

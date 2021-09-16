@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -223,10 +224,18 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 	}
 
+	if r.VFSServer != nil {
+		p, err := vfs_server.NewCASLazyFileProvider(s.env, ctx, layout.RemoteInstanceName, layout.Inputs)
+		if err != nil {
+			return finishWithErrFn(err)
+		}
+		if err := r.VFSServer.Prepare(p); err != nil {
+			return finishWithErrFn(err)
+		}
+	}
 	if r.CASFS != nil {
-		fileFetcher := dirtools.NewBatchFileFetcher(ctx, task.GetExecuteRequest().GetInstanceName(), s.env.GetFileCache(), s.env.GetByteStreamClient(), s.env.GetContentAddressableStorageClient())
-		if err := r.CASFS.PrepareForTask(ctx, fileFetcher, task.GetExecutionId(), layout); err != nil {
-			return status.UnavailableErrorf("unable to prepare CASFS layout: %s", err)
+		if err := r.CASFS.PrepareForTask(ctx, task.GetExecutionId(), layout); err != nil {
+			return finishWithErrFn(err)
 		}
 	}
 

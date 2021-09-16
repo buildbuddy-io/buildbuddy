@@ -9,15 +9,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	libVsock "github.com/mdlayher/vsock"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -26,11 +25,11 @@ const (
 )
 
 type casfsServer struct {
-	cfs      *casfs.CASFS
-	bsClient bspb.ByteStreamClient
+	cfs       *casfs.CASFS
+	vfsClient vfspb.FileSystemClient
 
 	mu sync.Mutex
-	// Context & cancel func for CAS RPS.
+	// Context & cancel func for VFS RPCs.
 	remoteCtx        context.Context
 	cancelRemoteFunc context.CancelFunc
 }
@@ -38,10 +37,6 @@ type casfsServer struct {
 func NewServer() (*casfsServer, error) {
 	if err := os.Mkdir(mountDir, 0755); err != nil {
 		return nil, err
-	}
-	cfs := casfs.New("/workspace", mountDir, &casfs.Options{})
-	if err := cfs.Mount(); err != nil {
-		return nil, status.InternalErrorf("Could not mount CASFS: %s", err)
 	}
 
 	vsockDialer := func(ctx context.Context, s string) (net.Conn, error) {
@@ -52,18 +47,25 @@ func NewServer() (*casfsServer, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("Could not dial host: %s", err)
 	}
-	bsClient := bspb.NewByteStreamClient(conn)
+
+	vfsClient := vfspb.NewFileSystemClient(conn)
+
+	cfs := casfs.New(vfsClient, mountDir, &casfs.Options{})
+	if err := cfs.Mount(); err != nil {
+		return nil, status.InternalErrorf("Could not mount CASFS: %s", err)
+	}
 
 	return &casfsServer{
-		cfs:      cfs,
-		bsClient: bsClient,
+		cfs:       cfs,
+		vfsClient: vfsClient,
 	}, nil
 }
 
 func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	s.mu.Lock()
-	if s.cancelRemoteFunc != nil {
-		s.cancelRemoteFunc()
+	reqLayout := req.GetFileSystemLayout()
+	// TODO(vadim): get rid of this struct and use a common proto throughout
+	layout := &container.FileSystemLayout{
+		Inputs: reqLayout.GetInputs(),
 	}
 
 	// This is the context that is used to make RPCs to the host.
@@ -73,9 +75,7 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 	s.cancelRemoteFunc = cancel
 	s.mu.Unlock()
 
-	layout := req.GetFileSystemLayout()
-	ff := dirtools.NewBatchFileFetcher(s.remoteCtx, layout.GetRemoteInstanceName(), nil /* =fileCache */, s.bsClient, nil /* casClient= */)
-	if err := s.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
+	if err := s.cfs.PrepareForTask(s.remoteCtx, "fc" /* =taskID */, layout); err != nil {
 		return nil, err
 	}
 
