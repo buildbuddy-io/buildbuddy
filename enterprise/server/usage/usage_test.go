@@ -61,16 +61,16 @@ func TestUsageTracker_Increment_UpdatesRedisStateAcrossCollectionPeriods(t *test
 	require.NoError(t, err)
 
 	// Increment some counts
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 10})
 	ut.Increment(ctx, &tables.UsageCounts{TotalDownloadSizeBytes: 100})
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1_000})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1_000})
 
 	// Go to the next collection period
 	clock.Set(usage1Collection2Start)
 
 	// Increment some more counts
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 2})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 2})
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 20})
 
 	rdb := te.GetCacheRedisClient()
@@ -117,8 +117,8 @@ func TestUsageTracker_Increment_UpdatesRedisStateForDifferentGroups(t *testing.T
 	require.NoError(t, err)
 
 	// Increment for group 1, then group 2
-	ut.Increment(ctx1, &tables.UsageCounts{CasCacheHits: 1})
-	ut.Increment(ctx2, &tables.UsageCounts{CasCacheHits: 10})
+	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
+	ut.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 10})
 
 	rdb := te.GetCacheRedisClient()
 	ctx := context.Background()

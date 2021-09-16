@@ -125,8 +125,8 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.ActionCacheHits > 0 {
 		counts["action_cache_hits"] = tu.ActionCacheHits
 	}
-	if tu.CasCacheHits > 0 {
-		counts["cas_cache_hits"] = tu.CasCacheHits
+	if tu.CASCacheHits > 0 {
+		counts["cas_cache_hits"] = tu.CASCacheHits
 	}
 	if tu.Invocations > 0 {
 		counts["invocations"] = tu.Invocations
