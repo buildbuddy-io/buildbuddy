@@ -602,7 +602,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 					SELECT * FROM UserGroups
 					WHERE group_group_id = ?
 					AND user_user_id != ?
-				) AS ExistingUserGroups
+				) AS PreExistingUserGroups
 			)
 			`, perms.AdminRole, groupID, groupID, u.UserID,
 		).Error
