@@ -37,7 +37,6 @@ type casfsServer struct {
 func NewServer() (*casfsServer, error) {
 	if err := os.Mkdir(mountDir, 0755); err != nil {
 		return nil, err
-	}
 
 	vsockDialer := func(ctx context.Context, s string) (net.Conn, error) {
 		conn, err := libVsock.Dial(libVsock.Host, vsock.HostVFSServerPort)
