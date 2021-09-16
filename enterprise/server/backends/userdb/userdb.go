@@ -598,11 +598,11 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 			SET role = ?
 			WHERE group_group_id = ?
 			AND NOT EXISTS (
-				SELECT * FROM
-					( SELECT * FROM UserGroups
-						WHERE group_group_id = ?
-						AND user_user_id != ? )
-				AS ExistingUserGroups
+				SELECT * FROM (
+					SELECT * FROM UserGroups
+					WHERE group_group_id = ?
+					AND user_user_id != ?
+				) AS ExistingUserGroups
 			)
 			`, perms.AdminRole, groupID, groupID, u.UserID,
 		).Error
