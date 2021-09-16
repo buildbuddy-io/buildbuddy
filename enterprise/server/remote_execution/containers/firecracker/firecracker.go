@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -794,7 +793,7 @@ func (c *FirecrackerContainer) setupVFSServer() error {
 		return nil
 	}
 
-	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(vsock.HostVFSServerPort)
+	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}

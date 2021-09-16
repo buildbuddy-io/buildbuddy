@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -179,4 +180,10 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	}
 	log.Debugf("Connected after %s", time.Since(connectionStart))
 	return conn, nil
+}
+
+// HostListenSocketPath returns the path to a unix socket on which the host should listen for guest initiated
+// connections for the specified port.
+func HostListenSocketPath(vsockPath string, port int) string {
+	return vsockPath + "_" + strconv.Itoa(port)
 }
