@@ -25,7 +25,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -167,25 +167,15 @@ func main() {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
 
-		execRequest := &vmxpb.ExecRequest{
-			Arguments:        cmd.GetArguments(),
-			WorkingDirectory: "/casfs/",
-			CasfsConfiguration: &vmxpb.CASFSConfiguration{
-				FileSystemLayout: &vmxpb.FileSystemLayout{
-					RemoteInstanceName: *remoteInstanceName,
-					Inputs:             tree,
-				},
-				DebugSkipExecute: true,
+		prepRequest := &vmfspb.PrepareRequest{
+			FileSystemLayout: &vmfspb.FileSystemLayout{
+				RemoteInstanceName: *remoteInstanceName,
+				Inputs:             tree,
 			},
 		}
-		for _, ev := range cmd.GetEnvironmentVariables() {
-			execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
-				Name: ev.GetName(), Value: ev.GetValue(),
-			})
-		}
-		_, err = c.SendExecRequestToGuest(ctx, execRequest)
+		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, prepRequest)
 		if err != nil {
-			log.Fatalf("Error executing command: %s", err)
+			log.Fatalf("Error preparing CASFS: %s", err)
 		}
 	}
 

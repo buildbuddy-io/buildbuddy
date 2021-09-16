@@ -48,7 +48,11 @@ message Group {
 
   enum Role {
     UNKNOWN_ROLE = 0;
+    // Developers cannot perform certain privileged actions such as creating API
+    // keys and viewing usage data, but can perform most other common actions
+    // such as viewing invocation history.
     DEVELOPER_ROLE = 1;
+    // Admins have unrestricted access to any data owned by this group.
     ADMIN_ROLE = 2;
   }
 }
