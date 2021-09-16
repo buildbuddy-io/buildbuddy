@@ -44,7 +44,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 			{Name: testCase.containerImageKey, Value: testCase.imageProp},
 		}}
 
-		platformProps := platform.ParseProperties(plat)
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
@@ -68,7 +68,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 			{Name: "container-image", Value: testCase.imageProp},
 		}}
 
-		platformProps := platform.ParseProperties(plat)
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
@@ -217,7 +217,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		},
 	} {
 		plat := &repb.Platform{Properties: testCase.platformProps}
-		platformProps := platform.ParseProperties(plat)
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		execProps := bare
 		execProps.DefaultXCodeVersion = testCase.defaultXCodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/casfs",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/util/vsock",
         "//proto:remote_execution_go_proto",
         "//proto:vfs_go_proto",
