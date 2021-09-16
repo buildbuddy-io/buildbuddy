@@ -412,12 +412,30 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	if err != nil {
 		return nil, err
 	}
-	oldNewPath, err := p.computeFullPath(request.GetNewPath())
+	newFullPath, err := p.computeFullPath(request.GetNewPath())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := os.Rename(oldFullPath, oldNewPath); err != nil {
+	st, err := os.Lstat(oldFullPath)
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	// If this is a symlink, make sure that moving it does not make it point outside the workspace.
+	if st.Mode()&os.ModeSymlink != 0 {
+		symlinkTarget, err := os.Readlink(oldFullPath)
+		if err != nil {
+			return nil, syscallErrStatus(err)
+		}
+		if !strings.HasPrefix(symlinkTarget, "/") {
+			newAbsTarget := filepath.Clean(filepath.Join(filepath.Dir(newFullPath), symlinkTarget))
+			if !strings.HasPrefix(newAbsTarget, p.workspacePath) {
+				return nil, status.PermissionDeniedErrorf("symlink would point outside the workspace")
+			}
+		}
+	}
+
+	if err := os.Rename(oldFullPath, newFullPath); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 
@@ -464,7 +482,6 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 	}
 
 	// Check that nothing sneaky is going on.
-	// TODO(vadim): check if you could still do something shady by moving a relative symlink to a higher directory
 	if !strings.HasPrefix(filepath.Clean(targetFullPath), p.workspacePath) {
 		return nil, status.PermissionDeniedError("symlink target outside of workspace")
 	}
