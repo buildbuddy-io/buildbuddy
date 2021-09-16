@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,8 +34,8 @@ const (
 	VMExecPort = 25415
 	// VMCASFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
 	VMCASFSPort = 25416
-	// HostByteStreamProxyPort is the host gRPC port for the ByteStream service that proxies requests to the real cache.
-	HostByteStreamProxyPort = 25410
+	// HostVFSServerPort is the host gRPC port for the VFS server that handles requests forwarded from the FUSE-based fs.
+	HostVFSServerPort = 25410
 )
 
 // GetContextID returns ths next available vsock context ID.
@@ -179,4 +180,10 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	}
 	log.Debugf("Connected after %s", time.Since(connectionStart))
 	return conn, nil
+}
+
+// HostListenSocketPath returns the path to a unix socket on which the host should listen for guest initiated
+// connections for the specified port.
+func HostListenSocketPath(vsockPath string, port int) string {
+	return vsockPath + "_" + strconv.Itoa(port)
 }

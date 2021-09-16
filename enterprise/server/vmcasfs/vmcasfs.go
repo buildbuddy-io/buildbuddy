@@ -40,7 +40,7 @@ func NewServer() (*casfsServer, error) {
 	}
 
 	vsockDialer := func(ctx context.Context, s string) (net.Conn, error) {
-		conn, err := libVsock.Dial(libVsock.Host, vsock.HostByteStreamProxyPort)
+		conn, err := libVsock.Dial(libVsock.Host, vsock.HostVFSServerPort)
 		return conn, err
 	}
 	conn, err := grpc.Dial("vsock", grpc.WithContextDialer(vsockDialer), grpc.WithInsecure())
@@ -65,7 +65,9 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 	reqLayout := req.GetFileSystemLayout()
 	// TODO(vadim): get rid of this struct and use a common proto throughout
 	layout := &container.FileSystemLayout{
-		Inputs: reqLayout.GetInputs(),
+		Inputs:      reqLayout.GetInputs(),
+		OutputFiles: reqLayout.GetOutputFiles(),
+		OutputDirs:  reqLayout.GetOutputDirectories(),
 	}
 
 	// This is the context that is used to make RPCs to the host.

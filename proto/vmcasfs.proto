@@ -9,6 +9,10 @@ message FileSystemLayout {
   string remote_instance_name = 1;
   // The layout of the inputs to the command to be executed.
   build.bazel.remote.execution.v2.Tree inputs = 2;
+  // Set of expected output files.
+  repeated string output_files = 3;
+  // Set of expected output directories.
+  repeated string output_directories = 4;
 }
 
 // Set up the FUSE filesystem to reflect the given layout.
