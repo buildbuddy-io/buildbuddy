@@ -17,9 +17,10 @@ import (
 )
 
 type MemoryCache struct {
-	l      interfaces.LRU
-	lock   *sync.RWMutex
-	prefix string
+	l                  interfaces.LRU
+	lock               *sync.RWMutex
+	cacheType          interfaces.CacheType
+	remoteInstanceName string
 }
 
 func sizeFn(value interface{}) int64 {
@@ -50,19 +51,22 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return userPrefix + m.prefix + hash, nil
+
+	var key string
+	if m.cacheType == interfaces.ActionCacheType {
+		key = filepath.Join(userPrefix, m.cacheType.Prefix(), m.remoteInstanceName, hash)
+	} else {
+		key = filepath.Join(userPrefix, m.cacheType.Prefix(), hash)
+	}
+	return key, nil
 }
 
 func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
 	return &MemoryCache{
-		l:      m.l,
-		lock:   m.lock,
-		prefix: newPrefix,
+		l:                  m.l,
+		lock:               m.lock,
+		cacheType:          cacheType,
+		remoteInstanceName: remoteInstanceName,
 	}, nil
 }
 
