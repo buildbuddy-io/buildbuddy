@@ -119,6 +119,7 @@ message GetGroupUsersResponse {
   message GroupUser {
     user_id.DisplayUser user = 1;
     GroupMembershipStatus group_membership_status = 2;
+    Group.Role role = 3;
   }
 
   // Users related to the group that match the request criteria.
@@ -143,7 +144,13 @@ message UpdateGroupUsersRequest {
     }
 
     user_id.UserId user_id = 1;
+
+    // New membership status. If unset, membership status is unaffected.
     MembershipAction membership_action = 2;
+
+    // New role to apply to the user within this group. If unset, role is
+    // unaffected.
+    Group.Role role = 3;
   }
 
   // Updates to apply to group users.
