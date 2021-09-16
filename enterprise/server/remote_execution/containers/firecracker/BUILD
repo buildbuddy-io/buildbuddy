@@ -31,6 +31,7 @@ go_library(
             "//enterprise/server/util/networking",
             "//enterprise/server/util/vsock",
             "//proto:remote_execution_go_proto",
+            "//proto:vmcasfs_go_proto",
             "//proto:vmexec_go_proto",
             "//server/environment",
             "//server/interfaces",
