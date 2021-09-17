@@ -402,7 +402,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	requests := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
 
 	q := query_builder.NewQuery(`
-			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status
+			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
 			FROM Users AS u JOIN UserGroups AS ug`)
 	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, groupID)
 
@@ -426,10 +426,16 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	for rows.Next() {
 		groupUser := &grpb.GetGroupUsersResponse_GroupUser{}
 		user := &tables.User{}
-		if err := rows.Scan(&user.UserID, &user.Email, &user.FirstName, &user.LastName, &groupUser.GroupMembershipStatus); err != nil {
+		var role int32
+		err := rows.Scan(
+			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
+			&groupUser.GroupMembershipStatus, &role,
+		)
+		if err != nil {
 			return nil, err
 		}
 		groupUser.User = user.ToProto()
+		groupUser.Role = perms.RoleToProto(role)
 		requests = append(requests, groupUser)
 	}
 
@@ -438,7 +444,6 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		// TODO: Make this more efficient instead of having one query per update.
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
@@ -463,6 +468,19 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			default:
 				return status.InvalidArgumentError("Invalid membership action")
 			}
+
+			if update.Role != grpb.Group_UNKNOWN_ROLE {
+				err := tx.Exec(`
+					UPDATE UserGroups
+					SET role = ?
+					WHERE user_user_id = ? AND group_group_id = ?
+				`, perms.RoleFromProto(update.Role), update.GetUserId().GetId(), groupID,
+				).Error
+				if err != nil {
+					return err
+				}
+			}
+
 		}
 		return nil
 	})

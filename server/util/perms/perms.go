@@ -13,6 +13,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -116,6 +117,20 @@ func FromACL(acl *aclpb.ACL) (int, error) {
 		p |= OTHERS_WRITE
 	}
 	return p, nil
+}
+
+func RoleToProto(role int32) grpb.Group_Role {
+	if role&AdminRole == AdminRole {
+		return grpb.Group_ADMIN_ROLE
+	}
+	return grpb.Group_DEVELOPER_ROLE
+}
+
+func RoleFromProto(role grpb.Group_Role) int32 {
+	if role == grpb.Group_ADMIN_ROLE {
+		return AdminRole
+	}
+	return DeveloperRole
 }
 
 func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
