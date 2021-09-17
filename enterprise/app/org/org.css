@@ -243,3 +243,56 @@
 .org-join-requests .org-join-request-outcome > :not(:last-child) {
   margin-right: 8px;
 }
+
+.org-members {
+  margin-top: 16px;
+  max-width: 600px;
+}
+
+.org-members .org-members-list-controls {
+  display: flex;
+  align-items: center;
+  padding: 8px 0px;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.org-members .select-all-button {
+  margin-right: auto;
+}
+
+.org-members .org-members-list-item {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding: 8px 16px;
+  min-height: 48px;
+  box-sizing: border-box;
+  gap: 8px;
+  transition: background-color 100ms ease-out;
+}
+
+.org-members .org-members-list-item:first-child {
+  border-top: 1px solid #eee;
+}
+
+.org-members .org-members-list-item:hover {
+  background-color: #fafafa;
+}
+
+.org-members .org-members-list-item.selected {
+  background-color: #bbdefb;
+}
+
+.org-members .org-member-email {
+  font-weight: 600;
+}
+
+.org-members .org-member-role {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 13px;
+  border: 1px solid transparent;
+}

@@ -58,4 +58,7 @@ message FrontendConfig {
 
   // Whether or not the usage page is enabled.
   bool usage_enabled = 15;
+
+  // Whether or not user management is enabled.
+  bool user_management_enabled = 16;
 }

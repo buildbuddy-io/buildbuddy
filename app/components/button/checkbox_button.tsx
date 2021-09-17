@@ -1,19 +1,24 @@
 import React from "react";
 import { OutlinedButton } from "./button";
+import Checkbox from "../checkbox/checkbox";
+
+export type CheckboxButtonProps = JSX.IntrinsicElements["input"] & {
+  checkboxOnLeft?: boolean;
+};
 
 export default function CheckboxButton({
   children,
+  checkboxOnLeft,
   checked,
   onChange,
   className,
   ...props
-}: JSX.IntrinsicElements["input"]) {
+}: CheckboxButtonProps) {
+  const nodes = [<span>{children}</span>, <Checkbox checked={checked} onChange={onChange} {...props} />];
+
   return (
     <OutlinedButton className={`checkbox-button ${className || ""}`}>
-      <label>
-        <span>{children} </span>
-        <input type="checkbox" checked={checked} onChange={onChange} {...props} />
-      </label>
+      <label>{checkboxOnLeft ? nodes.reverse() : nodes}</label>
     </OutlinedButton>
   );
 }

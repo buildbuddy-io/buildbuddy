@@ -139,6 +139,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		SsoEnabled:                 ssoEnabled,
 		GlobalFilterEnabled:        env.GetConfigurator().GetAppGlobalFilterEnabled(),
 		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
+		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,
