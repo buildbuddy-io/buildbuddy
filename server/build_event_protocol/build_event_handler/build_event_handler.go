@@ -318,6 +318,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// If this is the first event, keep track of the project ID and save any notification keywords.
 	if isStartedEvent(&bazelBuildEvent) {
+		isFirstStartedEvent := !e.hasReceivedStartedEvent
 		e.hasReceivedStartedEvent = true
 		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
@@ -350,6 +351,16 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
 		}
+
+		// Since this is the Started event and we just parsed the API key, now is
+		// a good time to record invocation usage for the group. Sanity check that
+		// this is the first started event (to safeguard against overcounting).
+		if ut := e.env.GetUsageTracker(); ut != nil && isFirstStartedEvent {
+			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
+				log.Warningf("Failed to record invocation usage: %s", err)
+			}
+		}
+
 	} else if !e.hasReceivedStartedEvent {
 		e.eventsBeforeStarted = append(e.eventsBeforeStarted, invocationEvent)
 		if len(e.eventsBeforeStarted) > 10 {

@@ -252,6 +252,12 @@ type UsageService interface {
 	GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error)
 }
 
+type UsageTracker interface {
+	// Increment adds the given usage counts to the current collection period
+	// for the authenticated group ID. It is safe for concurrent access.
+	Increment(ctx context.Context, counts *tables.UsageCounts) error
+}
+
 type ApiService interface {
 	apipb.ApiServiceServer
 	http.Handler
