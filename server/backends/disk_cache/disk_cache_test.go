@@ -68,7 +68,13 @@ func TestGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := getTmpDir(t)
 	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,15 +82,14 @@ func TestGetSet(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		ctx := getAnonContext(t, te)
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
-		err := dc.Set(ctx, d, buf)
+		err := c.Set(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := dc.Get(ctx, d)
+		rbuf, err := c.Get(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
