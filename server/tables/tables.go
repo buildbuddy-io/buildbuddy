@@ -434,6 +434,13 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+type UsageCounts struct {
+	Invocations            int64
+	CASCacheHits           int64
+	ActionCacheHits        int64
+	TotalDownloadSizeBytes int64
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.

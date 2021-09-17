@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -90,6 +91,7 @@ func counterName(actionCache bool, ct counterType, iid string) string {
 
 type HitTracker struct {
 	c           interfaces.MetricsCollector
+	usage       interfaces.UsageTracker
 	ctx         context.Context
 	iid         string
 	actionCache bool
@@ -98,6 +100,7 @@ type HitTracker struct {
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
 	return &HitTracker{
 		c:           env.GetMetricsCollector(),
+		usage:       env.GetUsageTracker(),
 		ctx:         ctx,
 		iid:         bazel_request.GetInvocationID(ctx),
 		actionCache: actionCache,
@@ -206,6 +209,9 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
+		if err := h.recordCacheUsage(actionCache, d, actionCounter); err != nil {
+			return err
+		}
 		totalMicroseconds, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds())
 		if err != nil {
 			return err
@@ -253,6 +259,21 @@ func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	return &transferTimer{
 		closeFn: h.makeCloseFunc(false, d, start, Upload, UploadSizeBytes, UploadUsec, UploadThroughputBytesPerSecond),
 	}
+}
+
+func (h *HitTracker) recordCacheUsage(actionCache bool, d *repb.Digest, actionCounter counterType) error {
+	if h.usage == nil || actionCounter != Hit {
+		return nil
+	}
+	c := &tables.UsageCounts{
+		TotalDownloadSizeBytes: d.GetSizeBytes(),
+	}
+	if actionCache {
+		c.ActionCacheHits = 1
+	} else {
+		c.CASCacheHits = 1
+	}
+	return h.usage.Increment(h.ctx, c)
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
