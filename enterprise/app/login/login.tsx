@@ -11,11 +11,13 @@ interface State {
   orgName?: string;
   showSSO: boolean;
   ssoSlug: string;
+  defaultToSSO: boolean;
 }
 
 export default class LoginComponent extends React.Component<{}, State> {
   state: State = {
     showSSO: false,
+    defaultToSSO: false,
     ssoSlug: this.getUrlSlug(),
   };
 
@@ -40,8 +42,8 @@ export default class LoginComponent extends React.Component<{}, State> {
 
   async fetchOrgName() {
     try {
-      const { name } = await rpcService.service.getGroup({ urlIdentifier: this.getUrlSlug() });
-      this.setState({ orgName: name });
+      const { name, ssoEnabled } = await rpcService.service.getGroup({ urlIdentifier: this.getUrlSlug() });
+      this.setState({ orgName: name, defaultToSSO: ssoEnabled });
     } catch (e) {
       // TODO: handle 404 errors better
       router.navigateHome();
@@ -52,7 +54,12 @@ export default class LoginComponent extends React.Component<{}, State> {
     document.title = `Login | BuildBuddy`;
   }
 
-  handleLoginClicked() {
+  handleLoginClicked(event: any) {
+    if (this.state.defaultToSSO) {
+      this.handleSSOClicked(event);
+      return;
+    }
+
     authService.login();
   }
 

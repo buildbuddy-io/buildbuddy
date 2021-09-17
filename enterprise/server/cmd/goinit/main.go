@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -34,7 +35,7 @@ const (
 
 var (
 	path            = flag.String("path", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "The path to use when executing cmd")
-	port            = flag.Uint("port", vsock.DefaultPort, "The vsock port number to listen on")
+	vmExecPort      = flag.Uint("vm_exec_port", vsock.VMExecPort, "The vsock port number to listen on for VM Exec service.")
 	debugMode       = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel        = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
@@ -108,6 +109,30 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 	return nlConn.Close()
 }
 
+func copyFile(src, dest string, mode os.FileMode) error {
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+
+	if err := in.Close(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // This is mostly cribbed from github.com/superfly/init-snapshot
 // which was very helpful <3!
 func main() {
@@ -150,6 +175,8 @@ func main() {
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
+
+	die(copyFile("/vmcasfs", "/mnt/vmcasfs", 0555))
 
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
@@ -262,20 +289,24 @@ func main() {
 		})
 	}
 	eg.Go(func() error {
-		listener, err := vsock.NewGuestListener(ctx, uint32(*port))
+		listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
 		if err != nil {
 			return err
 		}
-		log.Infof("Starting vm exec listener on vsock port: %d", *port)
+		log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
 		server := grpc.NewServer()
-		// TODO(vadim): run this as a standalone binary so we don't need to worry about init() code running before
-		// VM is fully setup.
 		vmService, err := vmexec.NewServer(&reapMutex)
 		if err != nil {
 			return err
 		}
 		vmxpb.RegisterExecServer(server, vmService)
 		return server.Serve(listener)
+	})
+	eg.Go(func() error {
+		cmd := exec.CommandContext(ctx, "/vmcasfs")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	})
 
 	log.Printf("Finished init in %s", time.Since(start))

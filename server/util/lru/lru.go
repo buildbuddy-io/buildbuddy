@@ -4,13 +4,17 @@ import (
 	"container/list"
 	"errors"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 // EvictedCallback is used to get a callback when a cache Entry is evicted
-type EvictedCallback func(key interface{}, value interface{})
-type AddedCallback func(key interface{}, value interface{})
-type SizeFn func(key interface{}, value interface{}) int64
+type EvictedCallback func(value interface{})
+type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
 // MaxSize & SizeFn are required.
@@ -19,8 +23,6 @@ type Config struct {
 	SizeFn SizeFn
 	// Optional callback for cache eviction events.
 	OnEvict EvictedCallback
-	// Optional callback for cache add events.
-	OnAdd AddedCallback
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
 	MaxSize int64
@@ -30,21 +32,21 @@ type Config struct {
 type LRU struct {
 	sizeFn      SizeFn
 	evictList   *list.List
-	items       map[interface{}]*list.Element
+	items       map[uint64][]*list.Element
 	onEvict     EvictedCallback
-	onAdd       AddedCallback
 	maxSize     int64
 	currentSize int64
 }
 
 // Entry is used to hold a value in the evictList
 type Entry struct {
-	key   interface{}
-	value interface{}
+	key         uint64
+	conflictKey uint64
+	value       interface{}
 }
 
 // NewLRU constructs an LRU based on the specified config.
-func NewLRU(config *Config) (*LRU, error) {
+func NewLRU(config *Config) (interfaces.LRU, error) {
 	if config.MaxSize <= 0 {
 		return nil, errors.New("must provide a positive size")
 	}
@@ -55,60 +57,94 @@ func NewLRU(config *Config) (*LRU, error) {
 		currentSize: 0,
 		maxSize:     config.MaxSize,
 		evictList:   list.New(),
-		items:       make(map[interface{}]*list.Element),
+		items:       make(map[uint64][]*list.Element),
 		onEvict:     config.OnEvict,
-		onAdd:       config.OnAdd,
 		sizeFn:      config.SizeFn,
 	}
 	return c, nil
 }
 
+// keyHash returns a primary key, a conflict key, and a bool indicating if keys
+// were succesfully generated or not.
+func (c *LRU) keyHash(key interface{}) (uint64, uint64, bool) {
+	if key == nil {
+		log.Errorf("LRU nil key: %+v", key)
+		return 0, 0, false
+	}
+
+	switch k := key.(type) {
+	case string:
+		return hash.MemHashString(k), xxhash.Sum64String(k), true
+	case []byte:
+		return hash.MemHash(k), xxhash.Sum64(k), true
+	default:
+		log.Errorf("LRU unhashable key: %+v", key)
+		return 0, 0, false
+	}
+}
+
+func (c *LRU) Metrics() string {
+	return ""
+}
+
 // Purge is used to completely clear the cache.
 func (c *LRU) Purge() {
-	for k, v := range c.items {
-		if c.onEvict != nil {
-			c.onEvict(k, v.Value.(*Entry).value)
+	for k, vals := range c.items {
+		for _, v := range vals {
+			if c.onEvict != nil {
+				c.onEvict(v.Value.(*Entry).value)
+			}
 		}
 		delete(c.items, k)
 	}
 	c.evictList.Init()
 }
 
-// Add adds a value to the cache.  Returns true if an eviction occurred.
-func (c *LRU) Add(key, value interface{}) (evicted bool) {
+// Add adds a value to the cache. Returns true if the key was added.
+func (c *LRU) Add(key, value interface{}) bool {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return false
+	}
 	// Check for existing item
-	if ent, ok := c.items[key]; ok {
+	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.evictList.MoveToFront(ent)
 		ent.Value.(*Entry).value = value
-		return false
+		return true
 	}
 
 	// Add new item
-	c.addElement(key, value)
+	c.addItem(pk, ck, value)
 
-	evict := c.currentSize > c.maxSize
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
 	}
-	return evict
+	return true
 }
 
 // Get looks up a key's value from the cache.
-func (c *LRU) Get(key interface{}) (value interface{}, ok bool) {
-	if ent, ok := c.items[key]; ok {
+func (c *LRU) Get(key interface{}) (interface{}, bool) {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return nil, false
+	}
+	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.evictList.MoveToFront(ent)
 		if ent.Value.(*Entry) == nil {
 			return nil, false
 		}
 		return ent.Value.(*Entry).value, true
 	}
-	return
+	return nil, false
 }
 
-// Contains checks if a key is in the cache, without updating the recent-ness
-// or deleting it for being stale.
-func (c *LRU) Contains(key interface{}) (ok bool) {
-	if ent, ok := c.items[key]; ok {
+// Contains checks if a key is in the cache.
+func (c *LRU) Contains(key interface{}) bool {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return false
+	}
+	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.evictList.MoveToFront(ent)
 		if ent.Value.(*Entry) == nil {
 			return false
@@ -120,9 +156,13 @@ func (c *LRU) Contains(key interface{}) (ok bool) {
 
 // Peek returns the key value (or undefined if not found) without updating
 // the "recently used"-ness of the key.
-func (c *LRU) Peek(key interface{}) (value interface{}, ok bool) {
+func (c *LRU) Peek(key interface{}) (interface{}, bool) {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return nil, false
+	}
 	var ent *list.Element
-	if ent, ok = c.items[key]; ok {
+	if ent, ok = c.lookupItem(pk, ck); ok {
 		return ent.Value.(*Entry).value, true
 	}
 	return nil, ok
@@ -131,7 +171,11 @@ func (c *LRU) Peek(key interface{}) (value interface{}, ok bool) {
 // Remove removes the provided key from the cache, returning if the
 // key was contained.
 func (c *LRU) Remove(key interface{}) (present bool) {
-	if ent, ok := c.items[key]; ok {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return false
+	}
+	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.removeElement(ent)
 		return true
 	}
@@ -139,35 +183,14 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *LRU) RemoveOldest() (key, value interface{}, ok bool) {
+func (c *LRU) RemoveOldest() (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
 		c.removeElement(ent)
 		kv := ent.Value.(*Entry)
-		return kv.key, kv.value, true
+		return kv.value, true
 	}
-	return nil, nil, false
-}
-
-// GetOldest returns the oldest Entry
-func (c *LRU) GetOldest() (key, value interface{}, ok bool) {
-	ent := c.evictList.Back()
-	if ent != nil {
-		kv := ent.Value.(*Entry)
-		return kv.key, kv.value, true
-	}
-	return nil, nil, false
-}
-
-// Keys returns a slice of the keys in the cache, from oldest to newest.
-func (c *LRU) Keys() []interface{} {
-	keys := make([]interface{}, len(c.items))
-	i := 0
-	for ent := c.evictList.Back(); ent != nil; ent = ent.Prev() {
-		keys[i] = ent.Value.(*Entry).key
-		i++
-	}
-	return keys
+	return nil, false
 }
 
 // Len returns the number of items in the cache.
@@ -191,16 +214,49 @@ func (c *LRU) removeOldest() {
 	}
 }
 
+func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
+	entries, ok := c.items[key]
+	if !ok {
+		return nil, false
+	}
+	for _, ent := range entries {
+		if ent.Value.(*Entry).conflictKey == conflictKey {
+			return ent, true
+		}
+	}
+	return nil, false
+}
+
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addElement(key, value interface{}) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}) {
 	// Add new item
-	kv := &Entry{key, value}
+	kv := &Entry{key, conflictKey, value}
 	Entry := c.evictList.PushFront(kv)
-	c.items[key] = Entry
-	c.currentSize += c.sizeFn(key, value)
-	if c.onAdd != nil {
-		c.onAdd(kv.key, kv.value)
+	c.items[key] = append(c.items[key], Entry)
+	c.currentSize += c.sizeFn(value)
+}
+
+func (c *LRU) removeItem(key, conflictKey uint64) {
+	entries, ok := c.items[key]
+	if !ok {
+		return
+	}
+	if len(entries) == 0 {
+		c.items[key] = nil
+		return
+	}
+
+	deleteIndex := -1
+	for i, ent := range entries {
+		if ent.Value.(*Entry).conflictKey == conflictKey {
+			deleteIndex = i
+			break
+		}
+	}
+	if deleteIndex != -1 {
+		entries[deleteIndex] = entries[len(entries)-1]
+		c.items[key] = entries[:len(entries)-1]
 	}
 }
 
@@ -208,9 +264,9 @@ func (c *LRU) addElement(key, value interface{}) {
 func (c *LRU) removeElement(e *list.Element) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
-	delete(c.items, kv.key)
-	c.currentSize -= c.sizeFn(kv.key, kv.value)
+	c.removeItem(kv.key, kv.conflictKey)
+	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.key, kv.value)
+		c.onEvict(kv.value)
 	}
 }

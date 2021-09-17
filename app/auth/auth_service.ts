@@ -91,6 +91,7 @@ export class AuthService {
     if (user.groups.length > 0) {
       user.selectedGroup =
         (selectedGroupId && user.groups.find((group) => group.id === selectedGroupId)) ||
+        user.groups.find((group) => group.urlIdentifier) ||
         user.groups.find((group) => group.ownedDomain) ||
         user.groups[0];
     }

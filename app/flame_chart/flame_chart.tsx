@@ -63,7 +63,9 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
   private buildDuration: number;
 
   componentDidMount() {
-    this.buildDuration = Math.max(...this.props.profile.traceEvents.map((event) => (event.ts || 0) + (event.dur || 0)));
+    this.buildDuration = this.props.profile.traceEvents
+      .map((event) => (event.ts || 0) + (event.dur || 0))
+      .reduce((a, b) => Math.max(a, b));
     const rulerWidth = this.rulerRef.current.getBoundingClientRect().width;
     const singlePixelDuration = this.buildDuration / rulerWidth;
 

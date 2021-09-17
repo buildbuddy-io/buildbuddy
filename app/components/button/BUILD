@@ -11,6 +11,7 @@ ts_library(
         "*.tsx",
     ]),
     deps = [
+        "//app/components/checkbox",
         "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",

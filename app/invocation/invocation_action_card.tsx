@@ -276,7 +276,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               {this.state.action ? (
                 <div>
                   <div className="action-section">
-                    <div className="action-property-title">Hash/Size</div>
+                    <div className="action-property-title">Digest hash/size</div>
                     <div>{this.props.search.get("actionDigest")} bytes</div>
                   </div>
                   <div className="action-section">
@@ -284,16 +284,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title">Input Root Hash/Size</div>
-                    <span>
+                    <div className="action-property-title">Input root digest hash/size</div>
+                    <div>
                       {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
-                    </span>
+                    </div>
                   </div>
                   <div className="action-section">
                     <div
                       title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
                       className="action-property-title">
-                      Output Node Properties
+                      Output node properties
                     </div>
                     {this.state.action.outputNodeProperties.length ? (
                       <div>
@@ -333,7 +333,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       {this.displayList(this.state.command.arguments)}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Environment Variables</div>
+                      <div className="action-property-title">Environment variables</div>
                       <div className="action-list">
                         {this.state.command.environmentVariables.map((variable) => (
                           <div>
@@ -341,6 +341,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <span className="prop-value">={variable.value}</span>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Platform properties</div>
+                      <div className="action-list">
+                        {this.state.command.platform.properties.map((property) => (
+                          <div>
+                            <span className="prop-name">{property.name}</span>
+                            <span className="prop-value">={property.value}</span>
+                          </div>
+                        ))}
+                        {!this.state.command.platform.properties.length && <div>(Default)</div>}
                       </div>
                     </div>
                   </div>
@@ -353,11 +365,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                 {this.state.actionResult ? (
                   <div>
                     <div className="action-section">
-                      <div className="action-property-title">Exit Code</div>
+                      <div className="action-property-title">Exit code</div>
                       <div>{this.state.actionResult.exitCode}</div>
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Execution Metadata</div>
+                      <div className="action-property-title">Execution metadata</div>
                       {this.state.actionResult.executionMetadata ? (
                         <div className="action-list">
                           <div className="metadata-title">Worker</div>
@@ -372,7 +384,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       )}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Output Files</div>
+                      <div className="action-property-title">Output files</div>
                       {this.state.actionResult.outputFiles ? (
                         <div className="action-list">
                           {this.state.actionResult.outputFiles.map((file) => (
@@ -392,7 +404,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       )}
                     </div>
                     <div className="action-section">
-                      <div className="action-property-title">Output Directories</div>
+                      <div className="action-property-title">Output directories</div>
                       {this.state.actionResult.outputDirectories.length ? (
                         <div className="action-list">
                           {this.state.actionResult.outputDirectories.map((dir) => (
