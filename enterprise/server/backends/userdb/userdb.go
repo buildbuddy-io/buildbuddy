@@ -364,7 +364,10 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 		if existing != nil {
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
-		return tx.Exec("INSERT INTO UserGroups (user_user_id, group_group_id, membership_status) VALUES(?, ?, ?)", userID, groupID, grpb.GroupMembershipStatus_MEMBER).Error
+		return tx.Exec(
+			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
+			userID, groupID, grpb.GroupMembershipStatus_MEMBER, perms.DefaultRole,
+		).Error
 	})
 }
 
@@ -384,6 +387,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 			return tx.Create(&tables.UserGroup{
 				UserUserID:       userID,
 				GroupGroupID:     groupID,
+				Role:             perms.DefaultRole,
 				MembershipStatus: int32(grpb.GroupMembershipStatus_REQUESTED),
 			}).Error
 		}
@@ -579,7 +583,29 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	}
 
 	for _, groupID := range groupIDs {
-		err := tx.Exec("INSERT INTO UserGroups (user_user_id, group_group_id, membership_status) VALUES(?, ?, ?)", u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER)).Error
+		err := tx.Exec(`
+			INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role)
+			VALUES(?, ?, ?, ?)
+			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), perms.DefaultRole,
+		).Error
+		if err != nil {
+			return err
+		}
+		// Promote from default role to admin if the user is the only one in the
+		// group after joining.
+		err = tx.Exec(`
+			UPDATE UserGroups
+			SET role = ?
+			WHERE group_group_id = ?
+			AND NOT EXISTS (
+				SELECT * FROM (
+					SELECT * FROM UserGroups
+					WHERE group_group_id = ?
+					AND user_user_id != ?
+				) AS PreExistingUserGroups
+			)
+			`, perms.AdminRole, groupID, groupID, u.UserID,
+		).Error
 		if err != nil {
 			return err
 		}

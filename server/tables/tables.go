@@ -191,6 +191,10 @@ type UserGroup struct {
 	UserUserID   string `gorm:"primaryKey"`
 	GroupGroupID string `gorm:"primaryKey"`
 
+	// The user's role within the group.
+	// Constants are defined in the perms package.
+	Role int32
+
 	// The user's membership status.
 	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
 	MembershipStatus int32 `gorm:"index:membership_status_index"`
@@ -451,6 +455,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
 			return nil, err
 		}
+	}
+
+	// Initialize UserGroups.role to Admin if the role column doesn't exist.
+	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
+		postMigrate = append(postMigrate, func() error {
+			// Hard-coding the perms constant here to avoid circular dep on
+			// perms => interfaces => tables.
+			const adminRole = 1
+			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
+		})
 	}
 
 	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
