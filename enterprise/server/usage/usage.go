@@ -110,7 +110,7 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 	}, nil
 }
 
-func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) error {
+func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
 		if perms.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
@@ -120,11 +120,11 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 		return err
 	}
 
-	m, err := countsToMap(counts)
+	counts, err := countsToMap(uc)
 	if err != nil {
 		return err
 	}
-	if len(m) == 0 {
+	if len(counts) == 0 {
 		return nil
 	}
 
@@ -132,13 +132,13 @@ func (ut *tracker) Increment(ctx context.Context, counts *tables.UsageCounts) er
 
 	pipe := ut.rdb.TxPipeline()
 	// Add the group ID to the set of groups with usage
-	groupsKey := groupsRedisKey(t)
-	pipe.SAdd(ctx, groupsKey, groupID)
-	pipe.Expire(ctx, groupsKey, redisKeyTTL)
+	groupsCollectionPeriodKey := groupsRedisKey(t)
+	pipe.SAdd(ctx, groupsCollectionPeriodKey, groupID)
+	pipe.Expire(ctx, groupsCollectionPeriodKey, redisKeyTTL)
 	// Increment the hash values
 	countsKey := countsRedisKey(groupID, t)
-	for k, c := range m {
-		pipe.HIncrBy(ctx, countsKey, k, c)
+	for countField, count := range counts {
+		pipe.HIncrBy(ctx, countsKey, countField, count)
 	}
 	pipe.Expire(ctx, countsKey, redisKeyTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
