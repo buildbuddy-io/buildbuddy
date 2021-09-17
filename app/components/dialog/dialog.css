@@ -1,4 +1,14 @@
+.dialog-wrapper {
+  max-height: 100%;
+}
+
 .dialog-card {
+  max-height: inherit;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+
   max-width: 80vw;
   width: 640px;
   background: white;
