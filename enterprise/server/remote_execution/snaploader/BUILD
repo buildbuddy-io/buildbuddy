@@ -6,14 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
         "//server/environment",
-        "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/util/disk",
-        "//server/util/log",
+        "//server/util/hash",
         "//server/util/status",
-        "@com_github_klauspost_pgzip//:pgzip",
     ],
 )

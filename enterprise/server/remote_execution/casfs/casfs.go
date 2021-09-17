@@ -2,7 +2,6 @@ package casfs
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,15 +14,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	gstatus "google.golang.org/grpc/status"
 )
 
 type CASFS struct {
-	scratchDir string
+	vfsClient  vfspb.FileSystemClient
 	mountDir   string
 	verbose    bool
 	logFUSEOps bool
@@ -34,9 +34,8 @@ type CASFS struct {
 
 	mu             sync.Mutex
 	internalTaskID string
-	fileFetcher    *dirtools.BatchFileFetcher
-	bytesRead      int
-	bytesWritten   int
+	rpcCtx         context.Context
+	cancelRPCCtx   context.CancelFunc
 }
 
 type Options struct {
@@ -46,16 +45,28 @@ type Options struct {
 	LogFUSEOps bool
 }
 
-func New(scratchDir string, mountDir string, options *Options) *CASFS {
+func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *CASFS {
+	// This is so we always have a context/cancel function set. The real context will be set in the PrepareForTask call.
+	rpcCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	cfs := &CASFS{
-		scratchDir: scratchDir,
-		mountDir:   mountDir,
-		verbose:    options.Verbose,
-		logFUSEOps: options.LogFUSEOps,
+		vfsClient:    vfsClient,
+		mountDir:     mountDir,
+		verbose:      options.Verbose,
+		logFUSEOps:   options.LogFUSEOps,
+		rpcCtx:       rpcCtx,
+		cancelRPCCtx: cancel,
 	}
 	root := &Node{cfs: cfs}
 	cfs.root = root
 	return cfs
+}
+
+func (cfs *CASFS) getRPCContext() context.Context {
+	cfs.mu.Lock()
+	defer cfs.mu.Unlock()
+	return cfs.rpcCtx
 }
 
 func (cfs *CASFS) GetMountDir() string {
@@ -88,10 +99,12 @@ func (cfs *CASFS) Mount() error {
 // The passed `fileFetcher` is expected to be configured with appropriate credentials necessary to be able to interact
 // with the CAS for the given task.
 // The passed `taskID` os only used for logging purposes.
-func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.BatchFileFetcher, taskID string, fsLayout *container.FileSystemLayout) error {
+func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *container.FileSystemLayout) error {
 	cfs.mu.Lock()
 	cfs.internalTaskID = taskID
-	cfs.fileFetcher = fileFetcher
+	rpcCtx, cancel := context.WithCancel(context.Background())
+	cfs.rpcCtx = rpcCtx
+	cfs.cancelRPCCtx = cancel
 	cfs.mu.Unlock()
 
 	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
@@ -119,7 +132,7 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 			}
 		}
 		for _, childFileNode := range dir.GetFiles() {
-			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode}
+			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode, isInput: true}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 			if !parentNode.AddChild(childFileNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childFileNode.Name, parentNode.relativePath())
@@ -180,53 +193,26 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, fileFetcher *dirtools.Batc
 	return nil
 }
 
-func (cfs *CASFS) fetchFiles(filesToFetch dirtools.FileMap, opts *dirtools.DownloadTreeOpts) error {
-	cfs.mu.Lock()
-	ff := cfs.fileFetcher
-	taskID := cfs.internalTaskID
-	cfs.mu.Unlock()
-	if ff == nil {
-		return status.FailedPreconditionErrorf("[%s] file fetcher is not set", taskID)
-	}
-	return ff.FetchFiles(filesToFetch, opts)
-}
-
 func (cfs *CASFS) taskID() string {
 	cfs.mu.Lock()
 	defer cfs.mu.Unlock()
 	return cfs.internalTaskID
 }
 
-func (cfs *CASFS) CountReadBytes(n int) {
+func (cfs *CASFS) FinishTask() error {
 	cfs.mu.Lock()
 	defer cfs.mu.Unlock()
-	cfs.bytesRead += n
-}
 
-func (cfs *CASFS) CountWrittenBytes(n int) {
-	cfs.mu.Lock()
-	defer cfs.mu.Unlock()
-	cfs.bytesWritten += n
-}
-
-func (cfs *CASFS) FinishTask() {
-	cfs.mu.Lock()
-	defer cfs.mu.Unlock()
-	cfs.fileFetcher = nil
 	cfs.internalTaskID = "unset"
+	cfs.cancelRPCCtx()
+
+	return nil
 }
 
 func (cfs *CASFS) Unmount() error {
 	if cfs.server == nil {
 		return nil
 	}
-
-	cfs.mu.Lock()
-	readBytes := cfs.bytesRead
-	wroteBytes := cfs.bytesWritten
-	cfs.mu.Unlock()
-
-	log.Infof("[%s] Unmounting. Total read %s, wrote %s.", cfs.taskID(), units.HumanSize(float64(readBytes)), units.HumanSize(float64(wroteBytes)))
 
 	return cfs.server.Unmount()
 }
@@ -241,19 +227,143 @@ type Node struct {
 	// Modifications to inputs are denied.
 	isInput bool
 
-	fileNode      *repb.FileNode
-	symlinkTarget string
+	fileNode *repb.FileNode
 
-	mu              sync.Mutex
-	scratchFilePath string
+	mu            sync.Mutex
+	symlinkTarget string
 }
 
 func (n *Node) relativePath() string {
 	return n.Path(nil)
 }
 
-func (n *Node) computeScratchPath() string {
-	return filepath.Join(n.cfs.scratchDir, n.relativePath())
+type remoteFile struct {
+	ctx       context.Context
+	vfsClient vfspb.FileSystemClient
+	path      string
+	id        uint64
+	node      *Node
+}
+
+// rpcErrToSyscallErrno extracts the syscall errno passed via RPC error status.
+// Returns a generic EIO errno if the error does not contain syscall err info.
+func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
+	if status.IsCanceledError(rpcErr) {
+		return syscall.EINTR
+	}
+
+	s, ok := gstatus.FromError(rpcErr)
+	if !ok {
+		return syscall.EIO
+	}
+	for _, d := range s.Details() {
+		if se, ok := d.(*vfspb.SyscallError); ok {
+			return syscall.Errno(se.Errno)
+		}
+	}
+	return syscall.EIO
+}
+
+func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	allocReq := &vfspb.AllocateRequest{
+		HandleId: f.id,
+		Mode:     mode,
+		Offset:   int64(off),
+		NumBytes: int64(size),
+	}
+	if _, err := f.vfsClient.Allocate(f.ctx, allocReq); err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return fs.OK
+}
+
+func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
+	if _, err := f.vfsClient.Flush(f.ctx, &vfspb.FlushRequest{HandleId: f.id}); err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return fs.OK
+}
+
+func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	if _, err := f.vfsClient.Fsync(f.ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return fs.OK
+}
+
+func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
+	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return fs.OK
+}
+
+type remoteFileReader struct {
+	f        *remoteFile
+	offset   int64
+	numBytes int
+}
+
+func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
+	numBytes := r.numBytes
+	if len(buf) < numBytes {
+		numBytes = len(buf)
+	}
+
+	readReq := &vfspb.ReadRequest{
+		HandleId: r.f.id,
+		Offset:   r.offset,
+		NumBytes: int32(numBytes),
+	}
+	rsp, err := r.f.vfsClient.Read(r.f.ctx, readReq)
+	if err != nil {
+		return nil, fuse.ToStatus(rpcErrToSyscallErrno(err))
+	}
+	return rsp.GetData(), fuse.OK
+}
+
+func (r *remoteFileReader) Size() int {
+	return r.numBytes
+}
+
+func (r *remoteFileReader) Done() {
+}
+
+func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
+	res = &remoteFileReader{f: f, offset: off, numBytes: len(buf)}
+	return
+}
+
+func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
+	writeReq := &vfspb.WriteRequest{
+		HandleId: f.id,
+		Data:     data,
+		Offset:   off,
+	}
+	rsp, err := f.vfsClient.Write(f.ctx, writeReq)
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+	return rsp.GetNumBytes(), 0
+}
+
+func openRemoteFile(ctx context.Context, vfsClient vfspb.FileSystemClient, path string, flags uint32, mode uint32, node *Node) (*remoteFile, error) {
+	req := &vfspb.OpenRequest{
+		Path:  path,
+		Flags: flags,
+		Mode:  mode,
+	}
+	rsp, err := vfsClient.Open(ctx, req)
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+	return &remoteFile{
+		ctx:       ctx,
+		vfsClient: vfsClient,
+		path:      path,
+		id:        rsp.GetHandleId(),
+		node:      node,
+	}, nil
 }
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
@@ -263,64 +373,11 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		return nil, 0, syscall.EPERM
 	}
 
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	relPath := n.relativePath()
-	scratchPath := n.computeScratchPath()
-	if n.scratchFilePath != "" {
-		hash := ""
-		if n.fileNode != nil {
-			hash = fmt.Sprintf(" (%s)", n.fileNode.GetDigest().GetHash())
-		}
-		if n.cfs.verbose {
-			log.Debugf("[%s] Open %q%s: serve from scratch file %q", n.cfs.taskID(), relPath, hash, scratchPath)
-		}
-		fd, err := syscall.Open(scratchPath, int(flags), 0)
-		if err != nil {
-			log.Warningf("[%s] Open %q%s failed: %s", n.cfs.taskID(), scratchPath, hash, err)
-			return nil, 0, syscall.EIO
-		}
-		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
-		return lf, 0, 0
+	rf, err := openRemoteFile(n.cfs.getRPCContext(), n.cfs.vfsClient, n.relativePath(), flags, 0, n)
+	if err != nil {
+		return nil, 0, rpcErrToSyscallErrno(err)
 	}
-
-	if n.fileNode != nil {
-		if n.cfs.verbose {
-			log.Debugf("[%s] Open %q: fetch %s from CAS", n.cfs.taskID(), relPath, n.fileNode.GetDigest().GetHash())
-		}
-
-		fileMap := dirtools.FileMap{
-			digest.NewKey(n.fileNode.GetDigest()): {&dirtools.FilePointer{
-				FullPath:     scratchPath,
-				RelativePath: relPath,
-				FileNode:     n.fileNode,
-			}},
-		}
-
-		if err := os.MkdirAll(filepath.Dir(scratchPath), 0755); err != nil {
-			log.Warningf("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
-			return nil, 0, syscall.EINVAL
-		}
-
-		err := n.cfs.fetchFiles(fileMap, &dirtools.DownloadTreeOpts{})
-		if err != nil {
-			log.Warningf("[%s] Open fetch %q failed: %s", n.cfs.taskID(), n.fileNode.GetDigest().GetHash(), err)
-			return nil, 0, syscall.EIO
-		}
-
-		n.scratchFilePath = scratchPath
-
-		fd, err := syscall.Open(scratchPath, int(flags), 0)
-		if err != nil {
-			log.Warningf("[%s] Open %q failed: %s", n.cfs.taskID(), scratchPath, err)
-			return nil, 0, syscall.EIO
-		}
-		lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
-		return lf, 0, 0
-	}
-
-	return nil, 0, syscall.ENOTSUP
+	return rf, 0, 0
 }
 
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
@@ -328,36 +385,21 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		log.Debugf("[%s] Create %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 	}
 
-	scratchPath := filepath.Join(n.computeScratchPath(), name)
-	if err := os.MkdirAll(filepath.Dir(scratchPath), 0755); err != nil {
-		log.Infof("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
-		return nil, 0, 0, syscall.EINVAL
-	}
-
-	fd, err := syscall.Open(scratchPath, int(flags), mode)
-	if err != nil {
-		log.Warningf("[%s] Could not open %q: %s", n.cfs.taskID(), scratchPath, err)
-		return nil, nil, 0, fs.ToErrno(err)
-	}
-	lf := &instrumentedLoopbackFile{FileHandle: fs.NewLoopbackFile(fd), cfs: n.cfs, fd: fd, fullPath: scratchPath}
-	child := &Node{cfs: n.cfs, parent: n, scratchFilePath: scratchPath}
+	child := &Node{cfs: n.cfs, parent: n}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 	if !n.AddChild(name, inode, false) {
 		log.Warningf("[%s] Could not add child %q to %q, already exists", n.cfs.taskID(), name, n.relativePath())
 		return nil, nil, 0, syscall.EIO
 	}
 
-	st := syscall.Stat_t{}
-	if err := syscall.Fstat(fd, &st); err != nil {
-		closeErr := syscall.Close(fd)
-		if closeErr != nil {
-			log.Warningf("[%s] Could not close file descriptor for %q: %s", n.cfs.taskID(), scratchPath, closeErr)
-		}
-		return nil, nil, 0, fs.ToErrno(err)
+	rf, err := openRemoteFile(n.cfs.getRPCContext(), n.cfs.vfsClient, filepath.Join(n.relativePath(), name), flags, mode, child)
+	if err != nil {
+		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
-	out.FromStat(&st)
 
-	return inode, lf, 0, 0
+	out.Mode = mode
+
+	return inode, rf, 0, 0
 }
 
 func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
@@ -401,10 +443,15 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		}
 	}
 
-	p1 := filepath.Join(n.computeScratchPath(), name)
-	p2 := filepath.Join(n.cfs.scratchDir, newParent.EmbeddedInode().Path(nil), newName)
+	_, err := n.cfs.vfsClient.Rename(n.cfs.getRPCContext(), &vfspb.RenameRequest{
+		OldPath: filepath.Join(n.relativePath(), name),
+		NewPath: filepath.Join(newParent.EmbeddedInode().Path(nil), newName),
+	})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
 
-	return fs.ToErrno(os.Rename(p1, p2))
+	return fs.OK
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -416,17 +463,13 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		}
 		return fs.OK
 	}
-	if n.scratchFilePath != "" {
-		s, err := os.Lstat(n.computeScratchPath())
-		if err != nil {
-			return fs.ToErrno(err)
-		}
-		out.Mode = uint32(s.Mode().Perm())
-		out.Size = uint64(s.Size())
-		return fs.OK
+
+	rsp, err := n.cfs.vfsClient.GetAttr(n.cfs.getRPCContext(), &vfspb.GetAttrRequest{Path: n.relativePath()})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
 	}
-	// Symlink or directory.
-	out.Mode = 0777
+	out.Size = uint64(rsp.GetAttrs().GetSize())
+	out.Mode = rsp.GetAttrs().GetPerm()
 	return fs.OK
 }
 
@@ -437,15 +480,25 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 		return syscall.EPERM
 	}
 
+	req := &vfspb.SetAttrRequest{
+		Path: n.relativePath(),
+	}
 	if m, ok := in.GetMode(); ok {
-		if err := os.Chmod(n.computeScratchPath(), os.FileMode(m)); err != nil {
-			return fs.ToErrno(err)
-		}
+		req.SetPerms = &vfspb.SetAttrRequest_SetPerms{Perms: m}
+	}
+	if s, ok := in.GetSize(); ok {
+		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
 	}
 
-	// TODO(vadim): support setting size
+	rsp, err := n.cfs.vfsClient.SetAttr(n.cfs.getRPCContext(), req)
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
 
-	return n.Getattr(ctx, f, out)
+	out.Size = uint64(rsp.GetAttrs().GetSize())
+	out.Mode = rsp.GetAttrs().GetPerm()
+
+	return fs.OK
 }
 
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
@@ -453,11 +506,10 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 		log.Debugf("Mkdir %q", filepath.Join(n.relativePath(), name))
 	}
 
-	scratchPath := filepath.Join(n.computeScratchPath(), name)
-
-	if err := os.MkdirAll(scratchPath, 0755); err != nil {
-		log.Warningf("[%s] Could not make dirs for %q: %s", n.cfs.taskID(), scratchPath, err)
-		return nil, fs.ToErrno(err)
+	path := filepath.Join(n.relativePath(), name)
+	_, err := n.cfs.vfsClient.Mkdir(n.cfs.getRPCContext(), &vfspb.MkdirRequest{Path: path, Perms: mode})
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
 	}
 
 	child := &Node{cfs: n.cfs, parent: n}
@@ -473,8 +525,11 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if n.cfs.verbose {
 		log.Debugf("[%s] Rmdir %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 	}
-	fullPath := filepath.Join(n.computeScratchPath(), name)
-	return fs.ToErrno(os.Remove(fullPath))
+	_, err := n.cfs.vfsClient.Rmdir(n.cfs.getRPCContext(), &vfspb.RmdirRequest{Path: filepath.Join(n.relativePath(), name)})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	return fs.OK
 }
 
 func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
@@ -508,6 +563,19 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	if n.cfs.verbose {
 		log.Debugf("[%s] Symlink %q -> %q", n.cfs.taskID(), src, target)
 	}
+
+	path := filepath.Join(n.relativePath(), name)
+
+	reqTarget := target
+	if strings.HasPrefix(target, n.cfs.mountDir) {
+		reqTarget = strings.TrimPrefix(target, n.cfs.mountDir)
+	}
+
+	_, err := n.cfs.vfsClient.Symlink(n.cfs.getRPCContext(), &vfspb.SymlinkRequest{Path: path, Target: reqTarget})
+	if err != nil {
+		return nil, rpcErrToSyscallErrno(err)
+	}
+
 	child := &Node{cfs: n.cfs, parent: n, symlinkTarget: target}
 	inode := n.cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 	if !n.AddChild(name, inode, false) {
@@ -522,6 +590,8 @@ func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	if n.cfs.verbose {
 		log.Debugf("[%s] Readlink %q", n.cfs.taskID(), n.relativePath())
 	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	if n.symlinkTarget != "" {
 		return []byte(n.symlinkTarget), 0
 	}
@@ -550,97 +620,16 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return syscall.EPERM
 	}
 
-	if existingNode.scratchFilePath != "" {
-		return fs.ToErrno(os.Remove(existingNode.computeScratchPath()))
+	_, err := n.cfs.vfsClient.Unlink(n.cfs.getRPCContext(), &vfspb.UnlinkRequest{Path: relPath})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
 	}
 
+	n.mu.Lock()
 	if existingNode.symlinkTarget != "" {
-		return fs.OK
+		existingNode.symlinkTarget = ""
 	}
+	n.mu.Unlock()
 
-	return syscall.ENOTSUP
-}
-
-type instrumentedReadResult struct {
-	fuse.ReadResult
-	lf *instrumentedLoopbackFile
-}
-
-func (r *instrumentedReadResult) Bytes(buf []byte) ([]byte, fuse.Status) {
-	b, s := r.ReadResult.Bytes(buf)
-	r.lf.cfs.CountReadBytes(len(b))
-	return b, s
-}
-
-func (r *instrumentedReadResult) Size() int {
-	return r.ReadResult.Size()
-}
-
-func (r *instrumentedReadResult) Done() {
-	r.ReadResult.Done()
-}
-
-type instrumentedLoopbackFile struct {
-	fs.FileHandle
-	cfs      *CASFS
-	fullPath string
-	fd       int
-}
-
-func (f *instrumentedLoopbackFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
-	fa, ok := f.FileHandle.(fs.FileAllocater)
-	if !ok {
-		log.Error("Handle does not implement FileAllocator")
-		return syscall.EINVAL
-	}
-	return fa.Allocate(ctx, off, size, mode)
-}
-
-func (f *instrumentedLoopbackFile) Release(ctx context.Context) syscall.Errno {
-	fr, ok := f.FileHandle.(fs.FileReleaser)
-	if !ok {
-		log.Error("Handle does not implement FileReleaser")
-		return syscall.EINVAL
-	}
-	return fr.Release(ctx)
-}
-
-func (f *instrumentedLoopbackFile) Flush(ctx context.Context) syscall.Errno {
-	ff, ok := f.FileHandle.(fs.FileFlusher)
-	if !ok {
-		log.Error("Handle does not implement FileFlusher")
-		return syscall.EINVAL
-	}
-	return ff.Flush(ctx)
-}
-
-func (f *instrumentedLoopbackFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
-	fs, ok := f.FileHandle.(fs.FileFsyncer)
-	if !ok {
-		log.Error("Handle does not implement FileFsyncer")
-		return syscall.EINVAL
-	}
-	return fs.Fsync(ctx, flags)
-}
-
-func (f *instrumentedLoopbackFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
-	fr, ok := f.FileHandle.(fs.FileReader)
-	if !ok {
-		log.Error("Handle does not implement FileReader")
-		return nil, syscall.EINVAL
-	}
-	res, errno = fr.Read(ctx, buf, off)
-	res = &instrumentedReadResult{res, f}
-	return
-}
-
-func (f *instrumentedLoopbackFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
-	fw, ok := f.FileHandle.(fs.FileWriter)
-	if !ok {
-		log.Error("Handle does not implement FileWriter")
-		return 0, syscall.EINVAL
-	}
-	n, err := fw.Write(ctx, data, off)
-	f.cfs.CountWrittenBytes(len(data))
-	return n, err
+	return fs.OK
 }

@@ -1,24 +1,17 @@
 package snaploader
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
-	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/klauspost/pgzip"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -95,73 +88,13 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	return files
 }
 
-func gzip(uncompressedFileName string) error {
-	start := time.Now()
-	defer func() {
-		log.Debugf("gzip(%q) took %s", uncompressedFileName, time.Since(start))
-	}()
-	compressedFileName := uncompressedFileName + ".gz"
-	if exists, err := disk.FileExists(compressedFileName); err == nil && exists {
-		return status.FailedPreconditionErrorf("%q already exists.", compressedFileName)
-	}
-	reader, err := os.Open(uncompressedFileName)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-	compressedFile, err := os.OpenFile(compressedFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer compressedFile.Close()
-	writer, err := pgzip.NewWriterLevel(compressedFile, pgzip.BestSpeed)
-	if err != nil {
-		return err
-	}
-	defer writer.Close()
-	_, err = io.Copy(writer, reader)
-	return err
-}
-
-func gunzip(compressedFileName string) error {
-	start := time.Now()
-	defer func() {
-		log.Debugf("gunzip(%q) took %s", compressedFileName, time.Since(start))
-	}()
-	if !strings.HasSuffix(compressedFileName, ".gz") {
-		return status.FailedPreconditionErrorf("%q does not end with .gz", compressedFileName)
-	}
-	uncompressedFileName := strings.TrimSuffix(compressedFileName, ".gz")
-	if exists, err := disk.FileExists(uncompressedFileName); err == nil && exists {
-		return status.FailedPreconditionErrorf("%q already exists.", uncompressedFileName)
-	}
-	uncompressedFile, err := os.OpenFile(uncompressedFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer uncompressedFile.Close()
-	fileReader, err := os.Open(compressedFileName)
-	if err != nil {
-		return err
-	}
-	defer fileReader.Close()
-	reader, err := pgzip.NewReader(fileReader)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-	_, err = io.Copy(uncompressedFile, reader)
-	return err
-}
-
 type Loader struct {
 	ctx              context.Context
 	env              environment.Env
 	instanceName     string
 	workingDirectory string
 	snapshotDigest   *repb.Digest
-
-	tree *repb.Tree
+	manifest         *manifestData
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
@@ -173,118 +106,112 @@ func New(ctx context.Context, env environment.Env, workingDirectory, instanceNam
 		workingDirectory: workingDirectory,
 		instanceName:     instanceName,
 		snapshotDigest:   snapshotDigest,
-
-		tree: &repb.Tree{},
-	}
-	if err := l.loadTree(); err != nil {
-		return nil, err
 	}
 	return l, nil
 }
 
-// loadTree is called in New and downloads the snapshot index or returns an
-// error.
-func (l *Loader) loadTree() error {
-	acClient := l.env.GetActionCacheClient()
-	adInstanceDigest := digest.NewInstanceNameDigest(l.snapshotDigest, l.instanceName)
-	actionResult, err := cachetools.GetActionResult(l.ctx, acClient, adInstanceDigest)
+func (l *Loader) unpackManifest() error {
+	if l.env.GetFileCache() == nil {
+		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
+	}
+	manifestDigest := &repb.Digest{
+		Hash:      hash.String(l.snapshotDigest.GetHash() + ManifestFileName),
+		SizeBytes: int64(101),
+	}
+	tmpDir, err := os.MkdirTemp(l.workingDirectory, "manifest-dir-*")
 	if err != nil {
 		return err
 	}
-	outs := actionResult.GetOutputDirectories()
-	if len(outs) != 1 {
-		return status.FailedPreconditionErrorf("No files found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
+	defer os.RemoveAll(tmpDir)
+
+	manifestPath := filepath.Join(tmpDir, ManifestFileName)
+	if !l.env.GetFileCache().FastLinkFile(manifestDigest, manifestPath) {
+		return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 	}
-	treeDigest := digest.NewInstanceNameDigest(outs[0].GetTreeDigest(), l.instanceName)
-	return cachetools.GetBlobAsProto(l.ctx, l.env.GetByteStreamClient(), treeDigest, l.tree)
+	buf, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(buf, &l.manifest)
 }
 
 // GetConfigurationData returns the configuration data associated with a
 // snapshot.
 func (l *Loader) GetConfigurationData() ([]byte, error) {
-	for _, f := range l.tree.GetRoot().GetFiles() {
-		if f.GetName() == ManifestFileName {
-			d := digest.NewInstanceNameDigest(f.GetDigest(), l.instanceName)
-			data := new(bytes.Buffer)
-			if err := cachetools.GetBlob(l.ctx, l.env.GetByteStreamClient(), d, data); err != nil {
-				return nil, err
-			}
-			return data.Bytes(), nil
-		}
+	if err := l.unpackManifest(); err != nil {
+		return nil, err
 	}
-	return nil, status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
+	return l.manifest.ConfigurationData, nil
 }
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
 func (l *Loader) UnpackSnapshot(outputDirectory string) error {
-	if _, err := dirtools.DownloadTree(l.ctx, l.env, l.instanceName, l.tree, outputDirectory, &dirtools.DownloadTreeOpts{}); err != nil {
-		return err
+	if l.manifest == nil {
+		if err := l.unpackManifest(); err != nil {
+			return err
+		}
 	}
-	entries, err := os.ReadDir(outputDirectory)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		f := filepath.Join(outputDirectory, entry.Name())
-		if strings.HasSuffix(f, ".gz") {
-			if err := gunzip(f); err != nil {
-				return err
-			}
-			disk.DeleteLocalFileIfExists(f)
+	for filename, dk := range l.manifest.CachedFiles {
+		if !l.env.GetFileCache().FastLinkFile(dk.ToDigest(), filepath.Join(outputDirectory, filename)) {
+			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
 		}
 	}
 	return nil
 }
 
-// CacheSnapshot uploads a snapshot (described by snapOpts), to the cache.
-// Each file is individually stored in the CAS and a parent directory is created
+type manifestData struct {
+	ConfigurationData []byte
+	CachedFiles       map[string]digest.Key
+}
+
+// CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
+// Each file is individually stored in the filecache under a digest made from
+// the snapshot ID and the file name. A manifest file that
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
 func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
-	snapDir, err := os.MkdirTemp(workingDirectory, "snap-upload-*")
-	if err != nil {
-		return nil, err
+	if env.GetFileCache() == nil {
+		return nil, status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
-	defer os.RemoveAll(snapDir) // clean up
-	if err := hardlinkFilesIntoDirectory(snapDir, extractFiles(snapOpts)...); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(snapDir, ManifestFileName), snapOpts.ConfigurationData, 0644); err != nil {
-		return nil, err
+	ad := snapOpts.Digest()
+	snapDir := filepath.Dir(snapOpts.MemSnapshotPath)
+	manifestPath := filepath.Join(snapDir, ManifestFileName)
+	manifest := &manifestData{
+		ConfigurationData: snapOpts.ConfigurationData,
+		CachedFiles:       make(map[string]digest.Key, 0),
 	}
 
-	memSnapFile := filepath.Join(snapDir, "full-mem.snap")
-	if err := gzip(memSnapFile); err != nil {
-		return nil, err
-	}
-	disk.DeleteLocalFileIfExists(memSnapFile)
-	if snapOpts.WorkspaceFSPath != "" {
-		workspaceFile := filepath.Join(snapDir, "workspacefs.ext4")
-		if err := gzip(workspaceFile); err != nil {
+	// Put the files from the snapshot into the filecache and record their
+	// names and digests in the manifest so they can be unpacked later.
+	for _, f := range extractFiles(snapOpts) {
+		info, err := os.Stat(f)
+		if err != nil {
 			return nil, err
 		}
-		disk.DeleteLocalFileIfExists(workspaceFile)
+		filename := filepath.Base(f)
+		fileNameDigest := &repb.Digest{
+			Hash:      hash.String(ad.GetHash() + filename),
+			SizeBytes: int64(info.Size()),
+		}
+		env.GetFileCache().AddFile(fileNameDigest, f)
+		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
 	}
 
-	uploadStart := time.Now()
-	_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, instanceName, snapDir)
+	// Write the manifest files and put it in the filecache too. We'll
+	// retrieve this later in order to unpack the snapshot.
+	b, err := json.Marshal(manifest)
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Uploading snapshot directory took %s", time.Since(uploadStart))
-	actionResult := &repb.ActionResult{
-		OutputDirectories: []*repb.OutputDirectory{{
-			Path:       "snapshot",
-			TreeDigest: td,
-		}},
+	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
+		return nil, err
 	}
-
-	ad := snapOpts.Digest()
-	adInstanceDigest := digest.NewInstanceNameDigest(ad, instanceName)
-	acClient := env.GetActionCacheClient()
-	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
-		return nil, status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+	manifestDigest := &repb.Digest{
+		Hash:      hash.String(ad.GetHash() + ManifestFileName),
+		SizeBytes: int64(101),
 	}
+	env.GetFileCache().AddFile(manifestDigest, manifestPath)
 	return ad, nil
 }

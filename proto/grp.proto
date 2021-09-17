@@ -5,6 +5,8 @@ import "proto/user_id.proto";
 
 package grp;
 
+// Group represents a group that a user is a member of.
+// Next tag: 10
 message Group {
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
@@ -39,6 +41,20 @@ message Group {
   // Whether builds for this group will use custom executors provided by the
   // group.
   bool use_group_owned_executors = 7;
+
+  // Role represent's the authenticated user's role within this group, which
+  // determines which actions the user is authorized to perform.
+  Role role = 9;
+
+  enum Role {
+    UNKNOWN_ROLE = 0;
+    // Developers cannot perform certain privileged actions such as creating API
+    // keys and viewing usage data, but can perform most other common actions
+    // such as viewing invocation history.
+    DEVELOPER_ROLE = 1;
+    // Admins have unrestricted access to any data owned by this group.
+    ADMIN_ROLE = 2;
+  }
 }
 
 message JoinGroupRequest {
@@ -103,6 +119,7 @@ message GetGroupUsersResponse {
   message GroupUser {
     user_id.DisplayUser user = 1;
     GroupMembershipStatus group_membership_status = 2;
+    Group.Role role = 3;
   }
 
   // Users related to the group that match the request criteria.
@@ -127,7 +144,13 @@ message UpdateGroupUsersRequest {
     }
 
     user_id.UserId user_id = 1;
+
+    // New membership status. If unset, membership status is unaffected.
     MembershipAction membership_action = 2;
+
+    // New role to apply to the user within this group. If unset, role is
+    // unaffected.
+    Group.Role role = 3;
   }
 
   // Updates to apply to group users.

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -25,20 +26,22 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
-	image              = flag.String("image", "docker.io/library/busybox", "The default container to run.")
-	registryUser       = flag.String("container_registry_user", "", "User to use when pulling the image")
-	registryPassword   = flag.String("container_registry_password", "", "Password to use when pulling the image")
-	cacheTarget        = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target")
-	remoteInstanceName = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots and interacting with the CAS if an action digest is specified")
-	forceVMIdx         = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
-	snapshotID         = flag.String("snapshot_id", "", "The snapshot ID to load")
-	apiKey             = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
-	actionDigest       = flag.String("action_digest", "", "The optional digest of the action you want to mount.")
+	image               = flag.String("image", "docker.io/library/busybox", "The default container to run.")
+	registryUser        = flag.String("container_registry_user", "", "User to use when pulling the image")
+	registryPassword    = flag.String("container_registry_password", "", "Password to use when pulling the image")
+	cacheTarget         = flag.String("cache_target", "grpcs://remote.buildbuddy.dev", "The remote cache target")
+	snapshotDir         = flag.String("snapshot_dir", "/tmp/filecache", "The directory to store snapshots in")
+	snapshotDirMaxBytes = flag.Int64("snapshot_dir_max_bytes", 10000000000, "The max number of bytes the snapshot_dir can be")
+	remoteInstanceName  = flag.String("remote_instance_name", "", "The remote_instance_name for caching snapshots and interacting with the CAS if an action digest is specified")
+	forceVMIdx          = flag.Int("force_vm_idx", -1, "VM index to force to avoid network conflicts -- random by default")
+	snapshotID          = flag.String("snapshot_id", "", "The snapshot ID to load")
+	apiKey              = flag.String("api_key", "", "The API key to use to interact with the remote cache.")
+	actionDigest        = flag.String("action_digest", "", "The optional digest of the action you want to mount.")
 )
 
 func getToolEnv() *real_environment.RealEnv {
@@ -48,6 +51,12 @@ func getToolEnv() *real_environment.RealEnv {
 	}
 	healthChecker := healthcheck.NewHealthChecker("tool")
 	re := real_environment.NewRealEnv(configurator, healthChecker)
+
+	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes)
+	if err != nil {
+		log.Fatalf("Unable to setup filecache %s", err)
+	}
+	re.SetFileCache(fc)
 
 	conn, err := grpc_client.DialTarget(*cacheTarget)
 	if err != nil {
@@ -167,25 +176,15 @@ func main() {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
 
-		execRequest := &vmxpb.ExecRequest{
-			Arguments:        cmd.GetArguments(),
-			WorkingDirectory: "/casfs/",
-			CasfsConfiguration: &vmxpb.CASFSConfiguration{
-				FileSystemLayout: &vmxpb.FileSystemLayout{
-					RemoteInstanceName: *remoteInstanceName,
-					Inputs:             tree,
-				},
-				DebugSkipExecute: true,
+		prepRequest := &vmfspb.PrepareRequest{
+			FileSystemLayout: &vmfspb.FileSystemLayout{
+				RemoteInstanceName: *remoteInstanceName,
+				Inputs:             tree,
 			},
 		}
-		for _, ev := range cmd.GetEnvironmentVariables() {
-			execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
-				Name: ev.GetName(), Value: ev.GetValue(),
-			})
-		}
-		_, err = c.SendExecRequestToGuest(ctx, execRequest)
+		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, prepRequest)
 		if err != nil {
-			log.Fatalf("Error executing command: %s", err)
+			log.Fatalf("Error preparing CASFS: %s", err)
 		}
 	}
 
