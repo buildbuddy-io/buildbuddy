@@ -11,6 +11,8 @@ ts_library(
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
+        "//app/components/checkbox",
+        "//app/errors",
         "//app/router",
         "//app/service",
         "//proto:group_ts_proto",

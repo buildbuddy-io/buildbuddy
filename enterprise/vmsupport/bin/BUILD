@@ -18,9 +18,15 @@ genrule(
     name = "mkinitrd",
     srcs = [
         "//enterprise/server/cmd/goinit",
+        "//enterprise/server/vmcasfs",
     ],
     outs = ["initrd-latest.cpio"],
-    cmd = "./$(location mkinitrd.sh) $(location //enterprise/server/cmd/goinit:goinit) \"$@\"",
+    cmd_bash = """
+        ./$(location mkinitrd.sh) \
+            $(location //enterprise/server/cmd/goinit:goinit) \
+            $(location //enterprise/server/vmcasfs) \
+            \"$@\"
+    """,
     tags = ["manual"],
     tools = [
         "mkinitrd.sh",

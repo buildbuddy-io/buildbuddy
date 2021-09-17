@@ -3,13 +3,14 @@ package snaploader
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -96,6 +97,7 @@ type Loader struct {
 	instanceName     string
 	workingDirectory string
 	snapshotDigest   *repb.Digest
+	manifest         *manifestData
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
@@ -111,54 +113,108 @@ func New(ctx context.Context, env environment.Env, workingDirectory, instanceNam
 	return l, nil
 }
 
+func (l *Loader) unpackManifest() error {
+	if l.env.GetFileCache() == nil {
+		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
+	}
+	manifestDigest := &repb.Digest{
+		Hash:      hash.String(l.snapshotDigest.GetHash() + ManifestFileName),
+		SizeBytes: int64(101),
+	}
+	tmpDir, err := os.MkdirTemp(l.workingDirectory, "manifest-dir-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	manifestPath := filepath.Join(tmpDir, ManifestFileName)
+	if !l.env.GetFileCache().FastLinkFile(manifestDigest, manifestPath) {
+		return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
+	}
+	buf, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(buf, &l.manifest)
+}
+
 // GetConfigurationData returns the configuration data associated with a
 // snapshot.
 func (l *Loader) GetConfigurationData() ([]byte, error) {
-	snapDir := filepath.Join(l.workingDirectory, fmt.Sprintf("disk-snap-%s", l.snapshotDigest.GetHash()))
-	entries, err := os.ReadDir(snapDir)
-	if err != nil {
+	if err := l.unpackManifest(); err != nil {
 		return nil, err
 	}
-	for _, entry := range entries {
-		if entry.Name() == ManifestFileName {
-			return os.ReadFile(filepath.Join(snapDir, entry.Name()))
-		}
-	}
-	return nil, status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
+	return l.manifest.ConfigurationData, nil
 }
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
 func (l *Loader) UnpackSnapshot(outputDirectory string) error {
-	snapDir := filepath.Join(l.workingDirectory, fmt.Sprintf("disk-snap-%s", l.snapshotDigest.GetHash()))
-	files := make([]string, 0)
-	entries, err := os.ReadDir(snapDir)
-	if err != nil {
-		return err
+	if l.manifest == nil {
+		if err := l.unpackManifest(); err != nil {
+			return err
+		}
 	}
-	for _, entry := range entries {
-		files = append(files, filepath.Join(snapDir, entry.Name()))
+	for filename, dk := range l.manifest.CachedFiles {
+		if !l.env.GetFileCache().FastLinkFile(dk.ToDigest(), filepath.Join(outputDirectory, filename)) {
+			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
+		}
 	}
 	return hardlinkFilesIntoDirectory(outputDirectory, files...)
 }
 
-// CacheSnapshot uploads a snapshot (described by snapOpts), to the cache.
-// Each file is individually stored in the CAS and a parent directory is created
+type manifestData struct {
+	ConfigurationData []byte
+	CachedFiles       map[string]digest.Key
+}
+
+// CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
+// Each file is individually stored in the filecache under a digest made from
+// the snapshot ID and the file name. A manifest file that
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
 func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
+	if env.GetFileCache() == nil {
+		return nil, status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
+	}
 	ad := snapOpts.Digest()
-	snapDir := filepath.Join(workingDirectory, fmt.Sprintf("disk-snap-%s", ad.GetHash()))
-	os.RemoveAll(snapDir)
-	if err := disk.EnsureDirectoryExists(snapDir); err != nil {
+	snapDir := filepath.Dir(snapOpts.MemSnapshotPath)
+	manifestPath := filepath.Join(snapDir, ManifestFileName)
+	manifest := &manifestData{
+		ConfigurationData: snapOpts.ConfigurationData,
+		CachedFiles:       make(map[string]digest.Key, 0),
+	}
+
+	// Put the files from the snapshot into the filecache and record their
+	// names and digests in the manifest so they can be unpacked later.
+	for _, f := range extractFiles(snapOpts) {
+		info, err := os.Stat(f)
+		if err != nil {
+			return nil, err
+		}
+		filename := filepath.Base(f)
+		fileNameDigest := &repb.Digest{
+			Hash:      hash.String(ad.GetHash() + filename),
+			SizeBytes: int64(info.Size()),
+		}
+		env.GetFileCache().AddFile(fileNameDigest, f)
+		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
+	}
+
+	// Write the manifest files and put it in the filecache too. We'll
+	// retrieve this later in order to unpack the snapshot.
+	b, err := json.Marshal(manifest)
+	if err != nil {
 		return nil, err
 	}
-	log.Printf("Caching Snapshot to disk! Snapdir is: %q", snapDir)
-	if err := hardlinkFilesIntoDirectory(snapDir, extractFiles(snapOpts)...); err != nil {
+	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(snapDir, ManifestFileName), snapOpts.ConfigurationData, 0644); err != nil {
-		return nil, err
+	manifestDigest := &repb.Digest{
+		Hash:      hash.String(ad.GetHash() + ManifestFileName),
+		SizeBytes: int64(101),
 	}
+	env.GetFileCache().AddFile(manifestDigest, manifestPath)
 	return ad, nil
 }

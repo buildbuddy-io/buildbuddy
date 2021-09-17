@@ -178,6 +178,9 @@ type Group struct {
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
 	UseGroupOwnedExecutors bool
+
+	// The SAML IDP Metadata URL for this group.
+	SamlIdpMetadataUrl string
 }
 
 func (g *Group) TableName() string {
@@ -425,6 +428,13 @@ type Workflow struct {
 
 func (wf *Workflow) TableName() string {
 	return "Workflows"
+}
+
+type UsageCounts struct {
+	Invocations            int64
+	CASCacheHits           int64
+	ActionCacheHits        int64
+	TotalDownloadSizeBytes int64
 }
 
 type PostAutoMigrateLogic func() error

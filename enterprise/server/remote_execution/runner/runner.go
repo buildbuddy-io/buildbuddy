@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -36,10 +38,12 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	dockerclient "github.com/docker/docker/client"
 )
@@ -139,6 +143,8 @@ type CommandRunner struct {
 	Workspace *workspace.Workspace
 	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
 	CASFS *casfs.CASFS
+	// VFSServer holds the RPC server that serves FUSE filesystem requests.
+	VFSServer *vfs_server.Server
 
 	// State is the current state of the runner as it pertains to reuse.
 	state state
@@ -238,13 +244,16 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	if err := r.Workspace.Remove(); err != nil {
-		errs = append(errs, err)
-	}
 	if r.CASFS != nil {
 		if err := r.CASFS.Unmount(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if r.VFSServer != nil {
+		r.VFSServer.Stop()
+	}
+	if err := r.Workspace.Remove(); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return errSlice(errs)
@@ -518,15 +527,20 @@ func (p *Pool) WarmupDefaultImage() {
 	for _, containerType := range executorProps.SupportedIsolationTypes {
 		containerType := containerType
 		image := platform.DefaultContainerImage
-		platProps := platform.ParseProperties(&repb.Platform{
+		plat := &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: image},
 				{Name: "workload-isolation-type", Value: string(containerType)},
 			},
-		})
-		c, err := p.newContainer(egCtx, platProps, &repb.Command{
-			Arguments: []string{"echo", "'warmup'"},
-		})
+		}
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				Arguments: []string{"echo", "'warmup'"},
+				Platform:  plat,
+			},
+		}
+		platProps := platform.ParseProperties(task)
+		c, err := p.newContainer(egCtx, platProps, task.GetCommand())
 		if err != nil {
 			log.Errorf("Error warming up %q: %s", containerType, err)
 			return
@@ -573,7 +587,7 @@ func (p *Pool) WarmupDefaultImage() {
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
-	props := platform.ParseProperties(task.GetCommand().GetPlatform())
+	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
@@ -602,13 +616,15 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		workerKey = strings.Join(workerArgs, " ")
 	}
 
+	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:           user,
-			ContainerImage: props.ContainerImage,
-			WorkflowID:     props.WorkflowID,
-			InstanceName:   instanceName,
-			WorkerKey:      workerKey,
+			User:             user,
+			ContainerImage:   props.ContainerImage,
+			WorkflowID:       props.WorkflowID,
+			InstanceName:     instanceName,
+			WorkerKey:        workerKey,
+			WorkspaceOptions: wsOpts,
 		})
 		if err != nil {
 			return nil, err
@@ -619,13 +635,13 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return r, nil
 		}
 	}
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	ctr, err := p.newContainer(ctx, props, task.GetCommand())
 	if err != nil {
 		return nil, err
 	}
 	var cfs *casfs.CASFS
+	var vfsServer *vfs_server.Server
 	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
 	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
@@ -634,7 +650,23 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
 		}
 
-		cfs = casfs.New(ws.Path(), casfsDir, &casfs.Options{})
+		vfsServer = vfs_server.New(p.env, ws.Path())
+		unixSocket := filepath.Join(ws.Path(), "vfs.sock")
+
+		lis, err := net.Listen("unix", unixSocket)
+		if err != nil {
+			return nil, err
+		}
+		if err := vfsServer.Start(lis); err != nil {
+			return nil, err
+		}
+
+		conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
+		if err != nil {
+			return nil, err
+		}
+		fsProxyClient := vfspb.NewFileSystemClient(conn)
+		cfs = casfs.New(fsProxyClient, casfsDir, &casfs.Options{})
 		if err := cfs.Mount(); err != nil {
 			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
 		}
@@ -649,6 +681,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		Container:          ctr,
 		Workspace:          ws,
 		CASFS:              cfs,
+		VFSServer:          vfsServer,
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
@@ -711,6 +744,9 @@ type query struct {
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
 	InstanceName string
+	// The workspace options for the desired runner. This query will only match
+	// runners with matching workspace options.
+	WorkspaceOptions *workspace.Opts
 }
 
 // take finds the most recently used runner in the pool that matches the given
@@ -725,7 +761,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
 			r.WorkerKey != q.WorkerKey ||
-			r.InstanceName != q.InstanceName {
+			r.InstanceName != q.InstanceName ||
+			*r.Workspace.Opts != *q.WorkspaceOptions {
 			continue
 		}
 		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {

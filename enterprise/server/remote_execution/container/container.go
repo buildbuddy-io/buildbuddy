@@ -2,7 +2,6 @@ package container
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"sync"
@@ -131,10 +130,8 @@ func (p PullCredentials) String() string {
 
 // ImageCacheToken is a claim to be able to access a locally cached image.
 type ImageCacheToken struct {
-	GroupID      string
-	ImageRef     string
-	UserHash     string
-	PasswordHash string
+	GroupID  string
+	ImageRef string
 }
 
 // NewImageCacheToken returns the token representing the authenticated group ID,
@@ -153,15 +150,9 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 		groupID = u.GetGroupID()
 	}
 	return ImageCacheToken{
-		GroupID:      groupID,
-		ImageRef:     imageRef,
-		UserHash:     hashString(creds.Username),
-		PasswordHash: hashString(creds.Password),
+		GroupID:  groupID,
+		ImageRef: imageRef,
 	}, nil
-}
-
-func hashString(value string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
 // ImageCacheAuthenticator grants access to short-lived tokens for accessing

@@ -4,6 +4,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import ApiKeysComponent from "../api_keys/api_keys";
 import EditOrgComponent from "../org/edit_org";
+import OrgMembersComponent from "../org/org_members";
 import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 
@@ -15,6 +16,7 @@ export interface SettingsProps {
 
 enum TabId {
   OrgDetails = "org/details",
+  OrgMembers = "org/members",
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   PersonalPreferences = "personal/preferences",
@@ -73,6 +75,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id={TabId.OrgDetails} activeTabId={activeTabId}>
                   Org details
                 </SettingsTab>
+                {capabilities.userManagement && (
+                  <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
+                    Members
+                  </SettingsTab>
+                )}
                 <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
                   GitHub link
                 </SettingsTab>
@@ -123,6 +130,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         <div className="settings-section-subtitle">{this.props.user?.selectedGroupName()}</div>
                       )}
                       {capabilities.createOrg && <EditOrgComponent user={this.props.user} />}
+                    </>
+                  )}
+                  {activeTabId === TabId.OrgMembers && capabilities.userManagement && (
+                    <>
+                      <div className="settings-option-title">Members of {this.props.user?.selectedGroupName()}</div>
+                      <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
                   {activeTabId === TabId.OrgGitHub && capabilities.github && (

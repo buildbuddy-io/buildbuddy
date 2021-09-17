@@ -23,9 +23,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
@@ -102,8 +104,14 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
+
+	var authenticator interfaces.Authenticator
 	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
 	if err == nil {
+		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
+			log.Info("SAML auth configured.")
+			authenticator = saml.NewSAMLAuthenticator(env, authenticator)
+		}
 		env.SetAuthenticator(authenticator)
 	} else {
 		log.Warningf("No authentication will be configured: %s", err)
@@ -186,6 +194,14 @@ func main() {
 	if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "cache_redis")
 		realEnv.SetCacheRedisClient(redisClient)
+	}
+
+	if configurator.GetAppUsageTrackingEnabled() {
+		ut, err := usage.NewTracker(realEnv, &usage.TrackerOpts{})
+		if err != nil {
+			log.Fatalf("Failed to create usage tracker: %s", err)
+		}
+		realEnv.SetUsageTracker(ut)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {

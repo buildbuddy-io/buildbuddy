@@ -4,61 +4,76 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
-	"os"
 	"os/exec"
 	"sync"
 	"syscall"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/mdlayher/vsock"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
-)
-
-const (
-	// The port on which the host proxy is listening.
-	byteStreamProxyPort = 9292
 )
 
 type execServer struct {
 	reapMutex *sync.RWMutex
-	cfs       *casfs.CASFS
-	bsClient  bspb.ByteStreamClient
 }
 
 func NewServer(reapMutex *sync.RWMutex) (*execServer, error) {
-	if err := os.Mkdir("/casfs", 0755); err != nil {
-		return nil, err
-	}
-	cfs := casfs.New("/workspace", "/casfs/", &casfs.Options{})
-	if err := cfs.Mount(); err != nil {
-		return nil, status.InternalErrorf("Could not mount CASFS: %s", err)
-	}
-
-	vsockDialer := func(ctx context.Context, s string) (net.Conn, error) {
-		conn, err := vsock.Dial(vsock.Host, byteStreamProxyPort)
-		return conn, err
-	}
-	conn, err := grpc.Dial("vsock", grpc.WithContextDialer(vsockDialer), grpc.WithInsecure())
-	if err != nil {
-		return nil, status.InternalErrorf("Could not dial host: %s", err)
-	}
-	bsClient := bspb.NewByteStreamClient(conn)
-
 	return &execServer{
 		reapMutex: reapMutex,
-		cfs:       cfs,
-		bsClient:  bsClient,
 	}, nil
+}
+
+func clearARPCache() error {
+	handle, err := netlink.NewHandle(syscall.NETLINK_ROUTE)
+	if err != nil {
+		return err
+	}
+	links, err := netlink.LinkList()
+	if err != nil {
+		return err
+	}
+	for _, link := range links {
+		attrs := link.Attrs()
+		if attrs == nil {
+			continue
+		}
+		neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V4)
+		if err != nil {
+			return err
+		}
+		v6neigbors, err := handle.NeighList(attrs.Index, netlink.FAMILY_V6)
+		if err != nil {
+			return err
+		}
+		neigbors = append(neigbors, v6neigbors...)
+		for _, neigh := range neigbors {
+			if err := handle.NeighDel(&neigh); err != nil {
+				log.Errorf("Error deleting neighbor: %s", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
+	if req.GetClearArpCache() {
+		if err := clearARPCache(); err != nil {
+			return nil, err
+		}
+		log.Debugf("Cleared ARP cache")
+	}
+	if req.GetUnixTimestampNanoseconds() > 1 {
+		tv := syscall.NsecToTimeval(req.GetUnixTimestampNanoseconds())
+		if err := syscall.Settimeofday(&tv); err != nil {
+			return nil, err
+		}
+		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
+	}
+	return &vmxpb.InitializeResponse{}, nil
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
@@ -68,14 +83,6 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	cmd := exec.CommandContext(ctx, req.GetArguments()[0], req.GetArguments()[1:]...)
 	if req.GetWorkingDirectory() != "" {
 		cmd.Dir = req.GetWorkingDirectory()
-	}
-
-	if req.CasfsConfiguration != nil {
-		layout := req.CasfsConfiguration.GetFileSystemLayout()
-		ff := dirtools.NewBatchFileFetcher(context.Background(), layout.GetRemoteInstanceName(), nil /* =fileCache */, x.bsClient, nil /* casClient= */)
-		if err := x.cfs.PrepareForTask(ctx, ff, "fc" /* =taskID */, &container.FileSystemLayout{Inputs: layout.GetInputs()}); err != nil {
-			return nil, err
-		}
 	}
 
 	// TODO(tylerw): implement this.
@@ -103,11 +110,6 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	x.reapMutex.RLock()
 	defer x.reapMutex.RUnlock()
 
-	rsp := &vmxpb.ExecResponse{}
-	if req.GetCasfsConfiguration().GetDebugSkipExecute() {
-		return rsp, nil
-	}
-
 	log.Debugf("Running command in VM: %q", cmd.String())
 	err := cmd.Run()
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
@@ -115,6 +117,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		return nil, err
 	}
 
+	rsp := &vmxpb.ExecResponse{}
 	rsp.ExitCode = int32(exitCode)
 	rsp.Stdout = stdoutBuf.Bytes()
 	rsp.Stderr = stderrBuf.Bytes()

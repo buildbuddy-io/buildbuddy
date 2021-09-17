@@ -7,9 +7,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/util/disk",
         "//server/util/fastcopy",
         "//server/util/log",
+        "//server/util/lru",
+        "//server/util/status",
         "@com_github_google_uuid//:uuid",
     ],
 )

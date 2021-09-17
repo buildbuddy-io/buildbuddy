@@ -196,6 +196,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// info should not be exposed here.
 		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
+		SsoEnabled:  group.SamlIdpMetadataUrl != "",
 	}, nil
 }
 
