@@ -56,6 +56,7 @@ type appConfig struct {
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	UserManagementEnabled     bool     `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 }
@@ -560,6 +561,10 @@ func (c *Configurator) GetDefaultToDenseMode() bool {
 
 func (c *Configurator) GetCodeEditorEnabled() bool {
 	return c.gc.App.CodeEditorEnabled
+}
+
+func (c *Configurator) GetAppUserManagementEnabled() bool {
+	return c.gc.App.UserManagementEnabled
 }
 
 func (c *Configurator) GetAppGlobalFilterEnabled() bool {
