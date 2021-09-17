@@ -39,6 +39,8 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	return &MemoryCache{
 		l:    l,
 		lock: &sync.RWMutex{},
+		cacheType: interfaces.CASCacheType,
+		remoteInstanceName: "",
 	}, nil
 }
 
