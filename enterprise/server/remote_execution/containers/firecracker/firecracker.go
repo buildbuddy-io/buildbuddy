@@ -478,6 +478,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if err != nil {
 		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
 	}
+
 	c.externalJailerCmd = cmd
 
 	// Wait for the jailer directory to be created. We have to do this because we
@@ -579,7 +580,6 @@ func (c *FirecrackerContainer) newID() error {
 		vmIdx = 0
 	}
 
-	log.Debugf("global vmIDX is now: %d", vmIdx)
 	return nil
 }
 
