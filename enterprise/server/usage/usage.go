@@ -361,14 +361,14 @@ func countsRedisKey(groupID string, c collectionPeriod) string {
 
 func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	counts := map[string]int64{}
-	if tu.Invocations > 0 {
-		counts["invocations"] = tu.Invocations
+	if tu.ActionCacheHits > 0 {
+		counts["action_cache_hits"] = tu.ActionCacheHits
 	}
 	if tu.CASCacheHits > 0 {
 		counts["cas_cache_hits"] = tu.CASCacheHits
 	}
-	if tu.ActionCacheHits > 0 {
-		counts["action_cache_hits"] = tu.ActionCacheHits
+	if tu.Invocations > 0 {
+		counts["invocations"] = tu.Invocations
 	}
 	if tu.TotalDownloadSizeBytes > 0 {
 		counts["total_download_size_bytes"] = tu.TotalDownloadSizeBytes
