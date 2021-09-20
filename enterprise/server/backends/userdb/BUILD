@@ -28,12 +28,11 @@ go_test(
     deps = [
         ":userdb",
         "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
-        "//server/util/perms",
         "//server/util/testing/flags",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
