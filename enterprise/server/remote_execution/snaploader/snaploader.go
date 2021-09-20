@@ -62,7 +62,6 @@ func hardlinkFilesIntoDirectory(targetDir string, files ...string) error {
 		fileName := filepath.Base(f)
 		stat, err := os.Stat(f)
 		if err != nil {
-			log.Errorf("File %q stat err: %s", f, err)
 			return err
 		}
 		if stat.IsDir() {
@@ -76,7 +75,6 @@ func hardlinkFilesIntoDirectory(targetDir string, files ...string) error {
 }
 
 func extractFiles(snapOpts *LoadSnapshotOptions) []string {
-	log.Printf("extractFiles called with %+v", snapOpts)
 	files := []string{
 		snapOpts.MemSnapshotPath,
 		snapOpts.DiskSnapshotPath,
@@ -87,7 +85,6 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	if snapOpts.WorkspaceFSPath != "" {
 		files = append(files, snapOpts.WorkspaceFSPath)
 	}
-	log.Printf("Files are: %s", files)
 	return files
 }
 
@@ -161,7 +158,7 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
 		}
 	}
-	return hardlinkFilesIntoDirectory(outputDirectory, files...)
+	return nil
 }
 
 type manifestData struct {

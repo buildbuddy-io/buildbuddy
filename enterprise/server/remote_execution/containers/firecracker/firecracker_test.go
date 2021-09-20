@@ -11,12 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -24,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func makeDir(t *testing.T, prefix string) string {
@@ -42,48 +36,17 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	diskCacheSize := 10_000_000_000 // 10GB
 	testRootDir := makeDir(t, "/tmp")
-	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
-	if err != nil {
-		t.Error(err)
-	}
-	env.SetCache(dc)
-	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-	if err != nil {
-		t.Error(err)
-	}
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	if err != nil {
-		t.Error(err)
-	}
-	actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-	if err != nil {
-		t.Error(err)
-	}
-	grpcServer, runFunc := env.LocalGRPCServer()
-	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-	go runFunc()
-
-	conn, err := env.LocalGRPCConn(ctx)
-	if err != nil {
-		t.Error(err)
-	}
-
-	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
 	if err != nil {
 		t.Error(err)
 	}
+	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
 	return env
 }
 
 func TestFirecrackerRun(t *testing.T) {
-	t.Skip()
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := makeDir(t, "/tmp")
@@ -191,7 +154,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecrackerFileMapping(t *testing.T) {
-	t.Skip()
 	numFiles := 100
 	fileSizeBytes := int64(1000)
 	ctx := context.Background()
@@ -256,7 +218,6 @@ func TestFirecrackerFileMapping(t *testing.T) {
 }
 
 func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
-	t.Skip()
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := makeDir(t, "/tmp")
