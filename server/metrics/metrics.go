@@ -36,9 +36,6 @@ const (
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
-	/// SQL query before substituting template parameters.
-	SQLQueryTemplateLabel = "sql_query_template"
-
 	/// `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 	BlobstoreTypeLabel = "blobstore_type"
 
@@ -48,10 +45,6 @@ const (
 	/// SQL DB replica role: `primary` for read+write replicas, or
 	/// `read_replica` for read-only DB replicas.
 	SQLDBRoleLabel = "sql_db_role"
-
-	/// HTTP route before substituting path parameters
-	/// (`/invocation/:id`, `/settings`, ...)
-	HTTPRouteLabel = "route"
 
 	/// HTTP method: `GET`, `POST`, ...
 	HTTPMethodLabel = "method"
@@ -573,13 +566,11 @@ var (
 	///
 	/// ## Query / error rate metrics
 
-	SQLQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	SQLQueryCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "query_count",
 		Help:      "Number of SQL queries executed.",
-	}, []string{
-		SQLQueryTemplateLabel,
 	})
 
 	/// #### Examples
@@ -589,14 +580,12 @@ var (
 	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
 	/// ```
 
-	SQLQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	SQLQueryDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "query_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "SQL query duration, in **microseconds**.",
-	}, []string{
-		SQLQueryTemplateLabel,
 	})
 
 	/// #### Examples
@@ -609,13 +598,11 @@ var (
 	/// )
 	/// ```
 
-	SQLErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	SQLErrorCount = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "error_count",
 		Help:      "Number of SQL queries that resulted in an error.",
-	}, []string{
-		SQLQueryTemplateLabel,
 	})
 
 	/// #### Examples
@@ -705,7 +692,6 @@ var (
 		Name:      "request_count",
 		Help:      "HTTP request count.",
 	}, []string{
-		HTTPRouteLabel,
 		HTTPMethodLabel,
 	})
 
@@ -728,7 +714,6 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Time taken to handle each HTTP request in **microseconds**.",
 	}, []string{
-		HTTPRouteLabel,
 		HTTPMethodLabel,
 		HTTPResponseCodeLabel,
 	})
@@ -752,7 +737,6 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
 		Help:      "Response size of each HTTP response in **bytes**.",
 	}, []string{
-		HTTPRouteLabel,
 		HTTPMethodLabel,
 		HTTPResponseCodeLabel,
 	})

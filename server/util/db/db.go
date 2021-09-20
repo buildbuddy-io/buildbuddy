@@ -154,19 +154,16 @@ func instrumentGORM(gdb *gorm.DB) {
 		if db.DryRun || db.Statement == nil {
 			return
 		}
-		labels := prometheus.Labels{
-			metrics.SQLQueryTemplateLabel: db.Statement.SQL.String(),
-		}
-		metrics.SQLQueryCount.With(labels).Inc()
+		metrics.SQLQueryCount.Inc()
 		// v will be nil if our key is not in the map so we can ignore the presence indicator.
 		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
 		if opStartTime, ok := v.(time.Time); ok {
-			metrics.SQLQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
+			metrics.SQLQueryDurationUsec.Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
 		}
 		// Ignore "record not found" errors as they don't generally indicate a
 		// problem with the server.
 		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
-			metrics.SQLErrorCount.With(labels).Inc()
+			metrics.SQLErrorCount.Inc()
 		}
 	}
 	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)

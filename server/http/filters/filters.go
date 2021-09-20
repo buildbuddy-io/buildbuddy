@@ -10,13 +10,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -131,11 +129,7 @@ func LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		m := method(r)
-		rt, err := route(r)
-		if err != nil {
-			rt = "[INVALID]"
-		}
-		recordRequestMetrics(rt, m)
+		recordRequestMetrics(m)
 		irw := &instrumentedResponseWriter{
 			ResponseWriter: w,
 			// net/http defaults to 200 if not written.
@@ -144,35 +138,8 @@ func LogRequest(next http.Handler) http.Handler {
 		next.ServeHTTP(irw, r)
 		duration := time.Since(start)
 		log.LogHTTPRequest(r.Context(), r.URL.Path, duration, irw.statusCode)
-		recordResponseMetrics(rt, m, irw.statusCode, irw.responseSizeBytes, duration)
+		recordResponseMetrics(m, irw.statusCode, irw.responseSizeBytes, duration)
 	})
-}
-
-func route(r *http.Request) (string, error) {
-	path := r.URL.Path
-
-	if !utf8.ValidString(path) {
-		return "", status.InvalidArgumentError("Path is not valid UTF-8")
-	}
-
-	// TODO(bduffany): migrate to a routing solution that doesn't require
-	// updating this function when we add new HTTP routes.
-
-	// Strip prefixes on large static file directories to avoid
-	// creating new metrics series for every static file that we serve.
-	if strings.HasPrefix(path, "/image/") {
-		return "/image/:path", nil
-	}
-	if strings.HasPrefix(path, "/favicon/") {
-		return "/favicon/:path", nil
-	}
-
-	// Replace path parameters to avoid creating a series for
-	// every possible parameter value.
-
-	// Currently we only use UUID v4 path params so this
-	// find-and-replace is good enough for now.
-	return uuidV4Regexp.ReplaceAllLiteralString(path, ":id"), nil
 }
 
 func method(r *http.Request) string {
@@ -182,16 +149,14 @@ func method(r *http.Request) string {
 	return r.Method
 }
 
-func recordRequestMetrics(route, method string) {
+func recordRequestMetrics(method string) {
 	metrics.HTTPRequestCount.With(prometheus.Labels{
-		metrics.HTTPRouteLabel:  route,
 		metrics.HTTPMethodLabel: method,
 	}).Inc()
 }
 
-func recordResponseMetrics(route, method string, statusCode, responseSizeBytes int, duration time.Duration) {
+func recordResponseMetrics(method string, statusCode, responseSizeBytes int, duration time.Duration) {
 	labels := prometheus.Labels{
-		metrics.HTTPRouteLabel:        route,
 		metrics.HTTPMethodLabel:       method,
 		metrics.HTTPResponseCodeLabel: strconv.Itoa(statusCode),
 	}
