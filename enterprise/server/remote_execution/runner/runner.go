@@ -66,7 +66,7 @@ const (
 	// How long to spend waiting for a runner to be removed before giving up.
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
-	runnerRecycleTimeout = 60 * time.Second
+	runnerRecycleTimeout = 15 * time.Second
 
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
@@ -715,7 +715,6 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Starting firecracker container with opts: %+v", opts)
 		ctr = c
 	default:
 		ctr = bare.NewBareCommandContainer()

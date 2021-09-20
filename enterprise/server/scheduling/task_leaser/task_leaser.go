@@ -125,6 +125,7 @@ func isBazelRetryableError(taskError error) bool {
 func (t *TaskLeaser) Close(taskErr error) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.log.Infof("TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
 	if t.closed {
 		t.log.Infof("TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
 		return nil
@@ -163,6 +164,8 @@ func (t *TaskLeaser) Close(taskErr error) error {
 		} else {
 			t.log.Infof("TaskLeaser %q: Successfully re-enqueued.", t.taskID)
 		}
+	} else {
+		t.log.Infof("TaskLeaser %q: closed cleanly :)", t.taskID)
 	}
 
 	t.closed = true

@@ -1243,10 +1243,6 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
-	if true {
-		log.Printf("TYLER: ReEnqueueTask was called but skipping.")
-		return &scpb.ReEnqueueTaskResponse{}, nil
-	}
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
 	}
