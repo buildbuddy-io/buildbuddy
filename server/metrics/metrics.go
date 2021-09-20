@@ -576,8 +576,8 @@ var (
 	/// #### Examples
 	///
 	/// ```promql
-	/// # SQL queries per second (by query template).
-	/// sum by (sql_query_template) (rate(buildbuddy_sql_query_count[5m]))
+	/// # SQL queries per second
+	/// sum (rate(buildbuddy_sql_query_count[5m]))
 	/// ```
 
 	SQLQueryDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
