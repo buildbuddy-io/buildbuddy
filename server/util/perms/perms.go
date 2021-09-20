@@ -50,6 +50,7 @@ const (
 	DefaultRole = AdminRole
 )
 
+// Role represents a value stored in the UserGroup.Role field.
 type Role uint32
 
 type UserGroupPerm struct {
