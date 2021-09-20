@@ -19,6 +19,7 @@ go_library(
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
         "//server/backends/memory_metrics_collector",
+        "//server/backends/memory_proto_store",
         "//server/backends/repo_downloader",
         "//server/backends/slack",
         "//server/build_event_protocol/build_event_handler",

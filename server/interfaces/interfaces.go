@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 
@@ -454,6 +456,16 @@ type PubSub interface {
 type MetricsCollector interface {
 	IncrementCount(ctx context.Context, counterName string, n int64) (int64, error)
 	ReadCount(ctx context.Context, counterName string) (int64, error)
+}
+
+// A ProtoStore allows for storing ephemeral protos globally.
+//
+// No guarantees are made about durability of ProtoStores -- they may be
+// evicted from the backing store that maintains them (usually memcache or
+// redis), so they should *not* be used in critical path code.
+type ProtoStore interface {
+	SetMessageByKey(ctx context.Context, key string, msg proto.Message) error
+	GetMessageByKey(ctx context.Context, key string, msg proto.Message) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_proto_store"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -215,6 +216,13 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Fatalf("Error configuring in-memory metrics collector: %s", err.Error())
 	}
 	realEnv.SetMetricsCollector(collector)
+
+	protoStore, err := memory_proto_store.NewMemoryProtoStore()
+	if err != nil {
+		log.Fatalf("Error configuring in-memory proto store: %s", err.Error())
+	}
+	realEnv.SetProtoStore(protoStore)
+
 	realEnv.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	return realEnv
 }
