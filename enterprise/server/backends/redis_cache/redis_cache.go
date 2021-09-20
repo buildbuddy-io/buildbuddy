@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/golang/protobuf/proto"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -340,6 +341,25 @@ func (c *Cache) Start() error {
 
 func (c *Cache) Stop() error {
 	return nil
+}
+
+func (c *Cache) SetMessageByKey(ctx context.Context, key string, msg proto.Message) error {
+	if msg == nil {
+		c.rdb.Del(ctx, key)
+	}
+	marshaled, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return c.rdbSet(ctx, key, marshaled)
+}
+
+func (c *Cache) GetMessageByKey(ctx context.Context, key string, msg proto.Message) error {
+	marshaled, err := c.rdbGet(ctx, key)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(marshaled, msg)
 }
 
 func (c *Cache) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {

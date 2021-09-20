@@ -68,7 +68,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	buildEventAccumulator := accumulator.NewBEValues(iid)
 	var logWriter *eventlog.EventLogWriter
 	if b.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-		logWriter = eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), iid)
+		logWriter = eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), b.env.GetProtoStore(), iid)
 	}
 	return &EventChannel{
 		env:                     b.env,

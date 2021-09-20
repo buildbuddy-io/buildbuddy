@@ -67,6 +67,7 @@ type Env interface {
 	GetRemoteExecutionRedisClient() *redis.Client
 	GetRemoteExecutionRedisPubSubClient() *redis.Client
 	GetMetricsCollector() interfaces.MetricsCollector
+	GetProtoStore() interfaces.ProtoStore
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
 	GetGitProviders() interfaces.GitProviders
