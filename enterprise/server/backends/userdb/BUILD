@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "userdb",
@@ -19,5 +19,21 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/timeutil",
+    ],
+)
+
+go_test(
+    name = "userdb_test",
+    srcs = ["userdb_test.go"],
+    deps = [
+        ":userdb",
+        "//proto:group_go_proto",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/perms",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

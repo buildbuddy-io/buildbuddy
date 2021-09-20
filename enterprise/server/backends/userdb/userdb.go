@@ -387,7 +387,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 			return tx.Create(&tables.UserGroup{
 				UserUserID:       userID,
 				GroupGroupID:     groupID,
-				Role:             perms.DefaultRole,
+				Role:             uint32(perms.DefaultRole),
 				MembershipStatus: int32(grpb.GroupMembershipStatus_REQUESTED),
 			}).Error
 		}
@@ -399,10 +399,10 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 }
 
 func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
-	requests := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
+	users := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
 
 	q := query_builder.NewQuery(`
-			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status
+			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
 			FROM Users AS u JOIN UserGroups AS ug`)
 	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, groupID)
 
@@ -426,14 +426,20 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	for rows.Next() {
 		groupUser := &grpb.GetGroupUsersResponse_GroupUser{}
 		user := &tables.User{}
-		if err := rows.Scan(&user.UserID, &user.Email, &user.FirstName, &user.LastName, &groupUser.GroupMembershipStatus); err != nil {
+		var role uint32
+		err := rows.Scan(
+			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
+			&groupUser.GroupMembershipStatus, &role,
+		)
+		if err != nil {
 			return nil, err
 		}
 		groupUser.User = user.ToProto()
-		requests = append(requests, groupUser)
+		groupUser.Role = perms.RoleToProto(perms.Role(role))
+		users = append(users, groupUser)
 	}
 
-	return requests, nil
+	return users, nil
 }
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
@@ -593,18 +599,21 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		}
 		// Promote from default role to admin if the user is the only one in the
 		// group after joining.
+		numPreExistingUsers := int64(0)
+		err = tx.Model(&tables.UserGroup{}).Where(
+			`group_group_id = ? AND user_user_id != ?`, groupID, u.UserID,
+		).Count(&numPreExistingUsers).Error
+		if err != nil {
+			return err
+		}
+		if numPreExistingUsers > 0 {
+			continue
+		}
 		err = tx.Exec(`
 			UPDATE UserGroups
 			SET role = ?
 			WHERE group_group_id = ?
-			AND NOT EXISTS (
-				SELECT * FROM (
-					SELECT * FROM UserGroups
-					WHERE group_group_id = ?
-					AND user_user_id != ?
-				) AS PreExistingUserGroups
-			)
-			`, perms.AdminRole, groupID, groupID, u.UserID,
+		`, perms.AdminRole, groupID,
 		).Error
 		if err != nil {
 			return err

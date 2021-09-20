@@ -13,6 +13,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -28,17 +29,18 @@ const (
 	OTHERS_WRITE = 0o02
 	OTHERS_EXEC  = 0o01
 	ALL          = 0o0777
+)
 
-	// Constants for UserGroup.Role. These are powers of 2 so that we can allow
-	// assigning multiple roles to users and use these as bitmasks to check
-	// role membership.
-
+// Constants for UserGroup.Role. These are powers of 2 so that we can allow
+// assigning multiple roles to users and use these as bitmasks to check
+// role membership.
+const (
 	// DeveloperRole means a user cannot perform certain privileged actions such
 	// as creating API keys and viewing usage data, but can perform most other
 	// common actions such as viewing invocation history.
-	DeveloperRole = 0
+	DeveloperRole Role = 1 << 0
 	// AdminRole means a user has unrestricted access within a group.
-	AdminRole = 1
+	AdminRole Role = 1 << 1
 
 	// DefaultRole is the role assigned to users when joining a group they did
 	// not create.
@@ -47,6 +49,8 @@ const (
 	// users to admins in the meantime).
 	DefaultRole = AdminRole
 )
+
+type Role uint32
 
 type UserGroupPerm struct {
 	UserID  string
@@ -116,6 +120,20 @@ func FromACL(acl *aclpb.ACL) (int, error) {
 		p |= OTHERS_WRITE
 	}
 	return p, nil
+}
+
+func RoleToProto(role Role) grpb.Group_Role {
+	if role&AdminRole == AdminRole {
+		return grpb.Group_ADMIN_ROLE
+	}
+	return grpb.Group_DEVELOPER_ROLE
+}
+
+func RoleFromProto(role grpb.Group_Role) Role {
+	if role == grpb.Group_ADMIN_ROLE {
+		return AdminRole
+	}
+	return DeveloperRole
 }
 
 func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {

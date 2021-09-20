@@ -193,7 +193,7 @@ type UserGroup struct {
 
 	// The user's role within the group.
 	// Constants are defined in the perms package.
-	Role int32
+	Role uint32
 
 	// The user's membership status.
 	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
@@ -469,7 +469,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		postMigrate = append(postMigrate, func() error {
 			// Hard-coding the perms constant here to avoid circular dep on
 			// perms => interfaces => tables.
-			const adminRole = 1
+			const adminRole = 1 << 1
 			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
 		})
 	}
