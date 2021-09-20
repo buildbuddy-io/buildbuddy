@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -126,6 +127,66 @@ func TestFirecrackerRun(t *testing.T) {
 	assert.Equal(t, expectedResult, res)
 }
 
+func TestFirecrackerLifecycle(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := makeDir(t, "/tmp")
+	workDir := makeDir(t, rootDir)
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult := &interfaces.CommandResult{
+		ExitCode:           0,
+		Stdout:             []byte("Hello world"),
+		Stderr:             []byte("foo"),
+		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	cached, err := c.IsImageCached(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cached {
+		if err := c.PullImage(ctx, container.PullCredentials{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatal(err)
+	}
+	res := c.Exec(ctx, cmd, nil, nil)
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	assert.Equal(t, expectedResult, res)
+}
+
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
@@ -142,7 +203,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		ContainerImage:         "docker.io/library/busybox",
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              100,
+		MemSizeMB:              200, // small to make snapshotting faster.
 		EnableNetworking:       false,
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
@@ -228,7 +289,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		ContainerImage:         "docker.io/library/busybox",
 		ActionWorkingDirectory: rootDir,
 		NumCPUs:                1,
-		MemSizeMB:              100,
+		MemSizeMB:              200,
 		EnableNetworking:       false,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -280,7 +341,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		ContainerImage:         "docker.io/library/busybox",
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              100,
+		MemSizeMB:              200,
 		EnableNetworking:       false,
 		AllowSnapshotStart:     true,
 	}
@@ -290,7 +351,9 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
+	firstRunStart := time.Now()
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	firstRunDuration := time.Since(firstRunStart)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -326,7 +389,9 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
+	secondRunStart := time.Now()
 	res = c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	secondRunDuration := time.Since(secondRunStart)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -335,5 +400,5 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	// This should be significantly faster because it's started from a
 	// snapshot.
 	// TODO(tylerw): debug this.
-	//	assert.Less(t, secondRunDuration, firstRunDuration/2)
+	assert.Less(t, secondRunDuration, firstRunDuration)
 }
