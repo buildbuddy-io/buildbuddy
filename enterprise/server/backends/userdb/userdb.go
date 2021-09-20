@@ -599,21 +599,24 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		}
 		// Promote from default role to admin if the user is the only one in the
 		// group after joining.
-		numPreExistingUsers := int64(0)
-		err = tx.Model(&tables.UserGroup{}).Where(
-			`group_group_id = ? AND user_user_id != ?`, groupID, u.UserID,
-		).Count(&numPreExistingUsers).Error
+		preExistingUsers := &struct{ Count int64 }{}
+		err = tx.Raw(`
+			SELECT COUNT(*) AS count
+			FROM UserGroups
+			WHERE group_group_id = ? AND user_user_id != ?
+			`, groupID, u.UserID,
+		).Scan(preExistingUsers).Error
 		if err != nil {
 			return err
 		}
-		if numPreExistingUsers > 0 {
+		if preExistingUsers.Count > 0 {
 			continue
 		}
 		err = tx.Exec(`
 			UPDATE UserGroups
 			SET role = ?
 			WHERE group_group_id = ?
-		`, perms.AdminRole, groupID,
+			`, perms.AdminRole, groupID,
 		).Error
 		if err != nil {
 			return err
