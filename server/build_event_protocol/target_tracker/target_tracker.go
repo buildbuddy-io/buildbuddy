@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -339,7 +340,7 @@ func (t *TargetTracker) handleFinishedEvent(ctx context.Context, event *build_ev
 func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
 	q := query_builder.NewQuery(`SELECT * FROM Targets as t`)
 	q = q.AddWhereClause(`t.repo_url = ?`, repoURL)
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
+	if err := authutil.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()

@@ -11,8 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
@@ -155,7 +155,7 @@ func getPreferredNodeLimit(cmd *repb.Command) int {
 func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteInstanceName string) (string, error) {
 	parts := []string{"task_route"}
 
-	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
+	if u, err := authutil.AuthenticatedUser(ctx, tr.env); err == nil {
 		parts = append(parts, u.GetGroupID())
 	} else {
 		parts = append(parts, interfaces.AuthAnonymousUser)

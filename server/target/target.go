@@ -7,8 +7,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -86,11 +86,11 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
 	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
 	// Adds user / permissions to targets (t) table.
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
+	if err := authutil.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
 	}
 	// Adds user / permissions to invocations (i) table.
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
+	if err := authutil.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
 		return nil, err
 	}
 	q.AddWhereClause("i.created_at_usec > ?", startUsec)

@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -68,7 +68,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	if req.GetSelector().GetCommitSha() != "" {
 		q = q.AddWhereClause(`commit_sha = ?`, req.GetSelector().GetCommitSha())
 	}
-	if err := perms.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
+	if err := authutil.AddPermissionsCheckToQuery(ctx, s.env, q); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()

@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -37,10 +38,10 @@ import (
 	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gstatus "google.golang.org/grpc/status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -339,7 +340,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+	if user, err := authutil.AuthenticatedUser(ctx, s.env); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
 

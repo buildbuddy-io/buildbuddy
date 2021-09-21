@@ -23,6 +23,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",

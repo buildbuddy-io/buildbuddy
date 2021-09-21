@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -91,7 +92,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 			return status.PermissionDeniedError("Your organization does not allow this action.")
 		}
 
-		if err := perms.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
+		if err := authutil.AuthorizeWrite(authenticatedUser, getACL(&in)); err != nil {
 			return err
 		}
 		if err := tx.Exec(`UPDATE Invocations SET perms = ? WHERE invocation_id = ?`, p, invocationID).Error; err != nil {
@@ -110,11 +111,11 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
-		u, err := perms.AuthenticatedUser(ctx, d.env)
+		u, err := authutil.AuthenticatedUser(ctx, d.env)
 		if err != nil {
 			return nil, err
 		}
-		if err := perms.AuthorizeRead(&u, getACL(ti)); err != nil {
+		if err := authutil.AuthorizeRead(&u, getACL(ti)); err != nil {
 			return nil, err
 		}
 	}
@@ -125,7 +126,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 	ti := &tables.Group{}
 	q := query_builder.NewQuery(`SELECT * FROM ` + "`Groups`" + ` as g JOIN Invocations as i ON g.group_id = i.group_id`)
 	q = q.AddWhereClause(`i.invocation_id = ?`, invocationID)
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
+	if err := authutil.AddPermissionsCheckToQueryWithTableAlias(ctx, d.env, q, "i"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
@@ -189,7 +190,7 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
-		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
+		if err := authutil.AuthorizeWrite(authenticatedUser, acl); err != nil {
 			return err
 		}
 		if err := tx.Exec(`DELETE FROM Invocations WHERE invocation_id = ?`, invocationID).Error; err != nil {

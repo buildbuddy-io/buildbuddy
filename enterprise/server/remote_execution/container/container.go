@@ -139,7 +139,7 @@ type ImageCacheToken struct {
 // same token is always returned.
 func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCredentials, imageRef string) (ImageCacheToken, error) {
 	groupID := ""
-	u, err := perms.AuthenticatedUser(ctx, env)
+	u, err := authutil.AuthenticatedUser(ctx, env)
 	if err != nil {
 		// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
 		// anonymous execution, so ignore those.

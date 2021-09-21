@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -512,7 +513,7 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context) (
 		return "", defaultPool, nil
 	}
 
-	user, err := perms.AuthenticatedUser(ctx, s.env)
+	user, err := authutil.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		if s.env.GetConfigurator().GetAnonymousUsageEnabled() {
 			return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
@@ -1276,7 +1277,7 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 }
 
 func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupID string) ([]*scpb.ExecutionNode, error) {
-	user, err := perms.AuthenticatedUser(ctx, s.env)
+	user, err := authutil.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -1298,7 +1299,7 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 				return nil, err
 			}
 
-			err := perms.AuthorizeRead(&user, registeredNode.GetAcl())
+			err := authutil.AuthorizeRead(&user, registeredNode.GetAcl())
 			if err != nil {
 				continue
 			}

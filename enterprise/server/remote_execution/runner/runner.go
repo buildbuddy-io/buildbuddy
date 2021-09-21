@@ -764,7 +764,7 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			*r.Workspace.Opts != *q.WorkspaceOptions {
 			continue
 		}
-		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {
+		if authErr := authutil.AuthorizeWrite(&q.User, r.ACL); authErr != nil {
 			continue
 		}
 

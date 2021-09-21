@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -111,7 +112,7 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 	if blocklist.IsBlockedForStatsQuery(groupID) {

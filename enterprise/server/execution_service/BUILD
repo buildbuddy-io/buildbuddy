@@ -11,7 +11,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/tables",
-        "//server/util/perms",
+        "//server/util/authutil",
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/timeutil",

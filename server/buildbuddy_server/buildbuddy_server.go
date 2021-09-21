@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -24,16 +25,16 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	gcodes "google.golang.org/grpc/codes"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	gstatus "google.golang.org/grpc/status"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -200,7 +201,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 }
 
 func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
@@ -217,7 +218,7 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 }
 
 func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
@@ -288,7 +289,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetId()); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, req.GetId()); err != nil {
 		return nil, err
 	}
 	var group *tables.Group
@@ -368,7 +369,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 	tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
@@ -395,7 +396,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel(), req.GetCapability())
@@ -416,7 +417,7 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 	if apiKeyID == "" {
 		return status.InvalidArgumentError("API key ID is required")
 	}
-	user, err := perms.AuthenticatedUser(ctx, s.env)
+	user, err := authutil.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return err
 	}
@@ -430,7 +431,7 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 		return err
 	}
 	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
-	return perms.AuthorizeWrite(&user, acl)
+	return authutil.AuthorizeWrite(&user, acl)
 }
 
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
@@ -516,7 +517,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	if groupID == "" {
 		return []*akpb.ApiKey{}, nil
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
 	auth := s.env.GetAuthenticator()

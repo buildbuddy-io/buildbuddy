@@ -42,7 +42,8 @@ const testConfigFileTemplate string = `
 app:
   build_buddy_url: "http://localhost:8080"
 database:
-  data_source: "sqlite3://:memory:"
+  data_source: "sqlite3://{{.TestRootDir}}/db.sqlite"
+  #log_queries: true
 storage:
   disk:
     root_directory: "{{.TestRootDir}}/storage"

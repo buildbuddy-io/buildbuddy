@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -54,7 +54,7 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 
 func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
 		return nil, err
 	}
 	if blocklist.IsBlockedForStatsQuery(groupID) {
@@ -168,7 +168,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
 		return nil, err
 	}
 	if blocklist.IsBlockedForStatsQuery(groupID) {

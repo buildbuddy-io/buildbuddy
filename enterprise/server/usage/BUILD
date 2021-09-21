@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/tables",
-        "//server/util/perms",
+        "//server/util/authutil",
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",

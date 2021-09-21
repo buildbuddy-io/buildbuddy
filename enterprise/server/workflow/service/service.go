@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -31,12 +32,12 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	githubapi "github.com/google/go-github/github"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	guuid "github.com/google/uuid"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
-	githubapi "github.com/google/go-github/github"
-	guuid "github.com/google/uuid"
 )
 
 const (
@@ -121,7 +122,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 
 	// Ensure the request is authenticated so some group can own this workflow.
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	groupID, err := authutil.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
-		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
+		if err := authutil.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
 		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, req.GetId()).Error
@@ -256,7 +257,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
+	groupID, err := authutil.AuthenticateSelectedGroupID(ctx, ws.env, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +267,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	// Respect selected group ID.
 	q.AddWhereClause(`group_id = ?`, groupID)
 	// Adds user / permissions check.
-	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
+	if err := authutil.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
 		return nil, err
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
@@ -328,7 +329,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	// Authenticate
-	user, err := perms.AuthenticatedUser(ctx, ws.env)
+	user, err := authutil.AuthenticatedUser(ctx, ws.env)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +349,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	// Authorize workflow access
 	wfACL := perms.ToACLProto(&uidpb.UserId{Id: wf.GroupID}, wf.GroupID, wf.Perms)
-	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
+	if err := authutil.AuthorizeRead(&user, wfACL); err != nil {
 		return nil, err
 	}
 
@@ -465,7 +466,7 @@ func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, re
 	if d == nil {
 		return "", status.FailedPreconditionError("Missing UserDB")
 	}
-	groupID, err := perms.AuthenticateSelectedGroupID(ctx, ws.env, reqCtx)
+	groupID, err := authutil.AuthenticateSelectedGroupID(ctx, ws.env, reqCtx)
 	if err != nil {
 		return "", err
 	}

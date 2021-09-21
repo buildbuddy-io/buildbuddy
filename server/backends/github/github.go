@@ -13,10 +13,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
 )
 
 const (
@@ -138,7 +139,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Restore group ID from cookie.
 	groupID := getCookie(r, groupIDCookieName)
-	if err := perms.AuthorizeGroupAccess(r.Context(), c.env, groupID); err != nil {
+	if err := authutil.AuthorizeGroupAccess(r.Context(), c.env, groupID); err != nil {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("Group auth failed; not linking GitHub account: %s", err.Error()))
 		return
 	}

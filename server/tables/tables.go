@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"gorm.io/gorm"
@@ -467,10 +468,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
-			// Hard-coding the perms constant here to avoid circular dep on
-			// perms => interfaces => tables.
-			const adminRole = 1 << 1
-			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
+			return db.Exec("UPDATE UserGroups SET role = ?", uint32(perms.AdminRole)).Error
 		})
 	}
 
@@ -501,13 +499,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 			var g Group
 
-			// These constants are already defined in perms.go, but we can't reference that
-			// due to a circular dep (tables -> perms -> interfaces -> tables).
-			// Probably not worth refactoring right now, since eventually we want to
-			// release a new version with this migration logic removed.
-			groupRead := 0o040
-			groupWrite := 0o020
-			apiKeyPerms := groupRead | groupWrite
+			apiKeyPerms := perms.GROUP_READ | perms.GROUP_WRITE
 
 			for rows.Next() {
 				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {

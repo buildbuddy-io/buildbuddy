@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
@@ -15,8 +15,8 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 )
 
 type ExecutionService struct {
@@ -40,7 +40,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	db := es.env.GetDBHandle()
 	q := query_builder.NewQuery(`SELECT * FROM Executions as e`)
 	q = q.AddWhereClause(`e.invocation_id = ?`, invocationID)
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, es.env, q, "e"); err != nil {
+	if err := authutil.AddPermissionsCheckToQueryWithTableAlias(ctx, es.env, q, "e"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()

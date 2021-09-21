@@ -16,7 +16,7 @@ go_library(
         "//server/http/protolet",
         "//server/interfaces",
         "//server/tables",
-        "//server/util/perms",
+        "//server/util/authutil",
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/timeutil",

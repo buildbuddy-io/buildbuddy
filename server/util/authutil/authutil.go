@@ -1,0 +1,200 @@
+package authutil
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+)
+
+func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return auth.AuthenticatedUser(ctx)
+}
+
+func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
+	if authenticatedUser == nil {
+		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
+	}
+	u := *authenticatedUser
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	p, err := perms.FromACL(acl)
+	if err != nil {
+		return err
+	}
+
+	if p&perms.OTHERS_READ != 0 || u.IsAdmin() {
+		return nil
+	}
+	isOwner := u.GetUserID() == acl.GetUserId().GetId()
+	if isOwner && p&perms.OWNER_READ != 0 {
+		return nil
+	}
+	if p&perms.GROUP_READ != 0 {
+		for _, groupID := range u.GetAllowedGroups() {
+			if groupID == acl.GetGroupId() {
+				return nil
+			}
+		}
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
+}
+
+func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error {
+	if authenticatedUser == nil {
+		return status.InvalidArgumentError("authenticatedUser cannot be nil.")
+	}
+	u := *authenticatedUser
+	if acl == nil {
+		return status.InvalidArgumentError("acl cannot be nil.")
+	}
+
+	p, err := perms.FromACL(acl)
+	if err != nil {
+		return err
+	}
+
+	if p&perms.OTHERS_WRITE != 0 {
+		log.Warning("Ignoring request to allow OTHERS_WRITE. This should not happen!")
+	}
+	isOwner := u.GetUserID() == acl.GetUserId().GetId()
+	if isOwner && p&perms.OWNER_WRITE != 0 {
+		return nil
+	}
+	if p&perms.GROUP_WRITE != 0 {
+		for _, groupID := range u.GetAllowedGroups() {
+			if groupID == acl.GetGroupId() {
+				return nil
+			}
+		}
+	}
+
+	return status.PermissionDeniedError("You do not have permission to perform this action.")
+}
+
+func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *query_builder.Query) error {
+	return AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "")
+}
+
+func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environment.Env, q *query_builder.Query, tableAlias string) error {
+	tablePrefix := ""
+	if tableAlias != "" {
+		tablePrefix = tableAlias + "."
+	}
+	o := query_builder.OrClauses{}
+	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), perms.OTHERS_READ)
+
+	hasUser := false
+	if auth := env.GetAuthenticator(); auth != nil {
+		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+			hasUser = true
+			if u.GetGroupID() != "" {
+				groupArgs := []interface{}{
+					perms.GROUP_READ,
+					u.GetGroupID(),
+				}
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
+			} else if u.GetUserID() != "" {
+				groupArgs := []interface{}{
+					perms.GROUP_READ,
+				}
+				groupParams := make([]string, 0)
+				for _, groupID := range u.GetAllowedGroups() {
+					groupArgs = append(groupArgs, groupID)
+					groupParams = append(groupParams, "?")
+				}
+				groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
+				groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
+				o.AddOr(groupQueryStr, groupArgs...)
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), perms.OWNER_READ, u.GetUserID())
+			}
+			if u.IsAdmin() {
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), perms.ALL)
+			}
+		}
+	}
+
+	if !hasUser && !env.GetConfigurator().GetAnonymousUsageEnabled() {
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	return nil
+}
+
+func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("group ID is required")
+	}
+	user, err := AuthenticatedUser(ctx, env)
+	if err != nil {
+		return err
+	}
+	for _, allowedGroupID := range user.GetAllowedGroups() {
+		if allowedGroupID == groupID {
+			return nil
+		}
+	}
+	return status.PermissionDeniedError("You do not have access to the requested group")
+}
+
+// AuthenticateSelectedGroupID returns the group ID selected by the user in the
+// UI (determined via the proto request context), returning an error if the user
+// does not have access to the selected group.
+func AuthenticateSelectedGroupID(ctx context.Context, env environment.Env, protoCtx *ctxpb.RequestContext) (string, error) {
+	if protoCtx == nil {
+		return "", status.InvalidArgumentError("request_context field is required")
+	}
+	groupID := protoCtx.GetGroupId()
+	if groupID == "" {
+		return "", status.InvalidArgumentError("request_context.group_id field is required")
+	}
+	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return "", err
+	}
+	return groupID, nil
+}
+
+// AuthenticatedGroupID returns the authenticated group ID from the given
+// context. This is preferred for API requests, since the group ID can be
+// determined directly from the API key. UI requests should instead use
+// `AuthenticateSelectedGroupID`, since the API key is not available, and the
+// user's selected group ID needs to be taken into account.
+func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, error) {
+	u, err := AuthenticatedUser(ctx, env)
+	if err != nil {
+		return "", err
+	}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return "", status.FailedPreconditionError("Authenticated user does not have an associated group ID")
+	}
+	return groupID, nil
+}
+
+// IsAnonymousUserError can be used to check whether an error returned by
+// functions which return the authenticated user (such as AuthenticatedUser or
+// AuthenticateSelectedGroupID) is due to an anonymous user accessing the
+// service. This is useful for allowing anonymous users to proceed, in cases
+// where anonymous usage is explicitly enabled in the app config, and we support
+// anonymous usage for the part of the service where this is used.
+func IsAnonymousUserError(err error) bool {
+	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
+}

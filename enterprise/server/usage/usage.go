@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis"
@@ -66,9 +66,9 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 }
 
 func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
-	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
+	groupID, err := authutil.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
-		if perms.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
 			// Don't track anonymous usage for now.
 			return nil
 		}
