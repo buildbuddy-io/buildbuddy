@@ -13,6 +13,7 @@ import (
 
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
@@ -163,4 +164,41 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	us2 := findGroupUser(t, "US2", groupUsers)
 	// TODO(bduffany): This should be DEVELOPER once we have a user management UI.
 	require.Equal(t, grpb.Group_ADMIN_ROLE, us2.Role, "users should have default role after being added to another group")
+}
+
+func TestUpdateGroupUsers_Role(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", "true")
+	flags.Set(t, "app.no_default_user_group", "true")
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID:    "US1",
+		SubID:     "SubID1",
+		FirstName: "FirstName1",
+		LastName:  "LastName1",
+		Email:     "user1@org1.io",
+	})
+	require.NoError(t, err)
+
+	// Get the user's self owned group
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	u, err := udb.GetUser(ctx1)
+	require.NoError(t, err)
+	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
+	us1Group := u.Groups[0]
+
+	// Make sure we can update their role within the group
+	err = udb.UpdateGroupUsers(ctx, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US1"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err)
+
+	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+	us1 := findGroupUser(t, "US1", groupUsers)
+	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us1.Role, "user role should be DEVELOPER")
 }

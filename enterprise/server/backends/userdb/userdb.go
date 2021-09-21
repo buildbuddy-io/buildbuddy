@@ -435,7 +435,6 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		// TODO: Make this more efficient instead of having one query per update.
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
@@ -460,6 +459,19 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 			default:
 				return status.InvalidArgumentError("Invalid membership action")
 			}
+
+			if update.Role != grpb.Group_UNKNOWN_ROLE {
+				err := tx.Exec(`
+					UPDATE UserGroups
+					SET role = ?
+					WHERE user_user_id = ? AND group_group_id = ?
+				`, perms.RoleFromProto(update.Role), update.GetUserId().GetId(), groupID,
+				).Error
+				if err != nil {
+					return err
+				}
+			}
+
 		}
 		return nil
 	})
