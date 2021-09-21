@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -70,10 +69,6 @@ const (
 	// How long any given job can hold the usage lock for, before it expires
 	// and other jobs may try to acquire it.
 	redisUsageLockExpiry = 45 * time.Second
-
-	// If a flush fails due to a timeout, extend the timeout by this long so that
-	// we have enough time to unlock the lock.
-	redisUsageLockFinalizationTimeout = 5 * time.Second
 
 	// How often to wake up and attempt to flush usage data from Redis to the DB.
 	flushInterval = collectionPeriodDuration
@@ -195,36 +190,35 @@ func (ut *tracker) StopDBFlush() {
 // Public for testing only; the server should call StartDBFlush to periodically
 // flush usage.
 func (ut *tracker) FlushToDB(ctx context.Context) error {
-	// redsync.ErrFailed can be safely ignored; it just means that another app
-	// is already trying to flush.
-	err := ut.flushToDB(ctx)
-	if err != nil && err != redsync.ErrFailed {
+	// Grab lock. This will immediately return `redsync.ErrFailed` if another
+	// client already holds the lock. In that case, we ignore the error.
+	err := ut.flushMutex.LockContext(ctx)
+	if err == redsync.ErrFailed {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	return nil
+	// Time out when the Redis lock expires, since an attempt to unlock it after
+	// it expires would fail anyway.
+	ctx, cancel := context.WithTimeout(ctx, redisUsageLockExpiry)
+	defer cancel()
+
+	defer func() {
+		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
+			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
+		}
+	}()
+	return ut.flushToDB(ctx)
 }
 
 func (ut *tracker) flushToDB(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, flushTimeout)
 	defer cancel()
 
-	// Grab lock. This will immediately return `redsync.ErrFailed` if another
-	// client already holds the lock.
-	if err := ut.flushMutex.LockContext(ctx); err != nil {
-		return err
-	}
-	defer func() {
-		ctx, cancel := background.ExtendContextForFinalization(ctx, redisUsageLockFinalizationTimeout)
-		defer cancel()
-		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
-			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
-		}
-	}()
-
 	// Loop through collection periods starting from the oldest collection period
 	// that may exist in Redis (based on key expiration time) and looping up until
 	// we hit a collection period which is not yet "settled".
-
 	for c := ut.oldestWritableCollectionPeriod(); ut.isSettled(c); c = c.Next() {
 		// Read groups
 		gk := groupsRedisKey(c)
