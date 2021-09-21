@@ -4,7 +4,6 @@ import (
 	"context"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -36,9 +35,8 @@ var (
 	// management is not really an issue. If you change it, you'll
 	// likely cause everyone to be added to a new group and break
 	// existing invocation history if not more.
-	DefaultGroupID         = "GR0000000000000000000"
-	createDefaultGroupOnce sync.Once
-	blockList              = []string{
+	DefaultGroupID = "GR0000000000000000000"
+	blockList      = []string{
 		"aim.com", "alice.it", "aliceadsl.fr", "aol.com", "arcor.de", "att.net", "bellsouth.net", "bigpond.com", "bigpond.net.au", "bluewin.ch", "blueyonder.co.uk", "bol.com.br", "centurytel.net", "charter.net", "chello.nl", "club-internet.fr", "comcast.net", "cox.net", "earthlink.net", "facebook.com", "free.fr", "freenet.de", "frontiernet.net", "gmail.com", "gmx.de", "gmx.net", "googlemail.com", "hetnet.nl", "home.nl", "hotmail.co.uk", "hotmail.com", "hotmail.de", "hotmail.es", "hotmail.fr", "hotmail.it", "ig.com.br", "juno.com", "laposte.net", "libero.it", "live.ca", "live.co.uk", "live.com", "live.com.au", "live.fr", "live.it", "live.nl", "mac.com", "mail.com", "mail.ru", "me.com", "msn.com", "neuf.fr", "ntlworld.com", "optonline.net", "optusnet.com.au", "orange.fr", "outlook.com", "planet.nl", "qq.com", "rambler.ru", "rediffmail.com", "rocketmail.com", "sbcglobal.net", "sfr.fr", "shaw.ca", "sky.com", "skynet.be", "sympatico.ca", "t-online.de", "telenet.be", "terra.com.br", "tin.it", "tiscali.co.uk", "tiscali.it", "uol.com.br", "verizon.net", "virgilio.it", "voila.fr", "wanadoo.fr", "web.de", "windstream.net", "yahoo.ca", "yahoo.co.id", "yahoo.co.in", "yahoo.co.jp", "yahoo.co.uk", "yahoo.com", "yahoo.com.ar", "yahoo.com.au", "yahoo.com.br", "yahoo.com.mx", "yahoo.com.sg", "yahoo.de", "yahoo.es", "yahoo.fr", "yahoo.in", "yahoo.it", "yandex.ru", "ymail.com", "zonnet.nl"}
 	// Group URL identifiers can only contain a-z, 0-9, and hyphen
 	groupUrlIdentifierPattern = regexp.MustCompile("^[a-z0-9\\-]+$")
@@ -85,18 +83,11 @@ func NewUserDB(env environment.Env, h *db.DBHandle) (*UserDB, error) {
 		env: env,
 		h:   h,
 	}
-
-	var err error
-	createDefaultGroupOnce.Do(func() {
-		if db.env.GetConfigurator().GetAppNoDefaultUserGroup() {
-			return
+	if !db.env.GetConfigurator().GetAppNoDefaultUserGroup() {
+		if err := db.CreateDefaultGroup(context.Background()); err != nil {
+			return nil, err
 		}
-		err = db.CreateDefaultGroup(context.Background())
-	})
-	if err != nil {
-		return nil, err
 	}
-
 	return db, nil
 }
 
@@ -366,7 +357,7 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 		}
 		return tx.Exec(
 			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
-			userID, groupID, grpb.GroupMembershipStatus_MEMBER, perms.DefaultRole,
+			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(perms.DefaultRole),
 		).Error
 	})
 }
@@ -591,8 +582,8 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	for _, groupID := range groupIDs {
 		err := tx.Exec(`
 			INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role)
-			VALUES(?, ?, ?, ?)
-			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), perms.DefaultRole,
+			VALUES (?, ?, ?, ?)
+			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(perms.DefaultRole),
 		).Error
 		if err != nil {
 			return err
@@ -616,7 +607,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 			UPDATE UserGroups
 			SET role = ?
 			WHERE group_group_id = ?
-			`, perms.AdminRole, groupID,
+			`, uint32(perms.AdminRole), groupID,
 		).Error
 		if err != nil {
 			return err
@@ -654,9 +645,11 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
-		groupRows, err := tx.Raw(`SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
-                                          ON g.group_id = ug.group_group_id
-                                          WHERE ug.user_user_id = ? AND ug.membership_status = ?`, u.GetUserID(), int32(grpb.GroupMembershipStatus_MEMBER)).Rows()
+		groupRows, err := tx.Raw(`
+			SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
+			ON g.group_id = ug.group_group_id
+			WHERE ug.user_user_id = ? AND ug.membership_status = ?
+		`, u.GetUserID(), int32(grpb.GroupMembershipStatus_MEMBER)).Rows()
 		if err != nil {
 			return err
 		}

@@ -79,7 +79,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	require.Equal(t, grpb.Group_ADMIN_ROLE, groupUser.Role, "users should be admins of their self-owned group")
 }
 
-func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeAddedToDefaultGroup(t *testing.T) {
+func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "false")
 	flags.Set(t, "app.no_default_user_group", "false")
 	env := newTestEnv(t)
@@ -108,7 +108,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeAddedToDefaultGroup(t *te
 	u, err := udb.GetUser(ctx1)
 	require.NoError(t, err)
 
-	require.Len(t, u.Groups, 1, "user should be added to the default group")
+	require.Len(t, u.Groups, 1, "US1 should be added to the default group")
 
 	defaultGroup := u.Groups[0]
 	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
