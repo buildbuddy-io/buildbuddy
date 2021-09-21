@@ -544,7 +544,7 @@ func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) {
 	}
 
 	if len(parts) > 0 {
-		fk.remoteInstanceName = strings.Join(parts, "/")
+		fk.remoteInstanceName = fk.part.internString(strings.Join(parts, "/"))
 	}
 }
 
@@ -574,7 +574,7 @@ func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, rem
 		part:               p,
 		cacheType:          cacheType,
 		userPrefix:         p.internString(userPrefix),
-		remoteInstanceName: remoteInstanceName,
+		remoteInstanceName: p.internString(remoteInstanceName),
 		digestHash:         hash,
 	}, nil
 }
