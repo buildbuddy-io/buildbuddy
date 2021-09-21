@@ -56,6 +56,7 @@ func getToolEnv() *real_environment.RealEnv {
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}
+	fc.WaitForDirectoryScanToComplete()
 	re.SetFileCache(fc)
 
 	conn, err := grpc_client.DialTarget(*cacheTarget)
