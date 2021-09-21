@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:acl_go_proto",
         "//proto:context_go_proto",
+        "//proto:group_go_proto",
         "//proto:user_id_go_proto",
         "//server/environment",
         "//server/interfaces",
