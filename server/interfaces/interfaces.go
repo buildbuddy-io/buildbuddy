@@ -451,14 +451,16 @@ type MetricsCollector interface {
 	ReadCount(ctx context.Context, counterName string) (int64, error)
 }
 
-// A ProtoStore allows for storing ephemeral protos globally.
+// A KeyValStore allows for storing ephemeral values globally.
 //
-// No guarantees are made about durability of ProtoStores -- they may be
+// No guarantees are made about durability of KEyValStores -- they may be
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
-type ProtoStore interface {
-	SetMessageByKey(ctx context.Context, key string, msg proto.Message) error
-	GetMessageByKey(ctx context.Context, key string, msg proto.Message) error
+type KeyValStore interface {
+	SetByKey(ctx context.Context, key string, val []byte) error
+	GetByKey(ctx context.Context, key string) ([]byte, error)
+	SetProtoByKey(ctx context.Context, key string, msg proto.Message) error
+	GetProtoByKey(ctx context.Context, key string, msg proto.Message) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.

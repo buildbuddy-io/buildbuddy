@@ -240,7 +240,7 @@ func main() {
 		r := redis_cache.NewCache(realEnv.GetCacheRedisClient(), maxValueSizeBytes)
 		realEnv.SetCache(composable_cache.NewComposableCache(r, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
 		realEnv.SetMetricsCollector(r)
-		realEnv.SetProtoStore(r)
+		realEnv.SetKeyValStore(r)
 	}
 
 	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {

@@ -59,7 +59,7 @@ type RealEnv struct {
 	remoteExecutionClient            repb.ExecutionClient
 	contentAddressableStorageClient  repb.ContentAddressableStorageClient
 	metricsCollector                 interfaces.MetricsCollector
-	protoStore                       interfaces.ProtoStore
+	keyValStore                      interfaces.KeyValStore
 	APIService                       interfaces.ApiService
 	fileCache                        interfaces.FileCache
 	remoteExecutionService           interfaces.RemoteExecutionService
@@ -268,11 +268,11 @@ func (r *RealEnv) SetMetricsCollector(c interfaces.MetricsCollector) {
 func (r *RealEnv) GetMetricsCollector() interfaces.MetricsCollector {
 	return r.metricsCollector
 }
-func (r *RealEnv) SetProtoStore(c interfaces.ProtoStore) {
-	r.protoStore = c
+func (r *RealEnv) SetKeyValStore(c interfaces.KeyValStore) {
+	r.keyValStore = c
 }
-func (r *RealEnv) GetProtoStore() interfaces.ProtoStore {
-	return r.protoStore
+func (r *RealEnv) GetKeyValStore() interfaces.KeyValStore {
+	return r.keyValStore
 }
 func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 	r.executionService = e

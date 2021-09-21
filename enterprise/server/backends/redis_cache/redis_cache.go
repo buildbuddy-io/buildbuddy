@@ -343,19 +343,31 @@ func (c *Cache) Stop() error {
 	return nil
 }
 
-func (c *Cache) SetMessageByKey(ctx context.Context, key string, msg proto.Message) error {
-	if msg == nil {
+func (c *Cache) SetByKey(ctx context.Context, key string, val []byte) error {
+	if val == nil {
 		c.rdb.Del(ctx, key)
+		return nil
+	}
+	return c.rdbSet(ctx, key, val)
+}
+
+func (c *Cache) GetByKey(ctx context.Context, key string) ([]byte, error) {
+	return c.rdbGet(ctx, key)
+}
+
+func (c *Cache) SetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
+	if msg == nil {
+		c.SetByKey(ctx, key, nil)
 	}
 	marshaled, err := proto.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	return c.rdbSet(ctx, key, marshaled)
+	return c.SetByKey(ctx, key, marshaled)
 }
 
-func (c *Cache) GetMessageByKey(ctx context.Context, key string, msg proto.Message) error {
-	marshaled, err := c.rdbGet(ctx, key)
+func (c *Cache) GetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
+	marshaled, err := c.GetByKey(ctx, key)
 	if err != nil {
 		return err
 	}
