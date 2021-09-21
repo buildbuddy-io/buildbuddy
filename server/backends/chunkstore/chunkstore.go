@@ -500,30 +500,45 @@ func (l *writeLoop) run() {
 	l.flushTime = time.Now().Add(year)
 	l.open = true
 	for l.open {
+		// Get the read request and update loop for this iteration.
 		req := l.readFromWriteChannel()
 		if !l.open {
+			// We are closing the file, so any tail must be written lest it be lost.
 			l.chunk = append(l.chunk, l.volatileTail...)
 			l.lastWriteSize = len(l.volatileTail)
 		}
 		var err error
 		for err == nil && len(l.chunk) >= l.writeBlockSize {
+			// Write blocks until we have fewer than writeBlockSize bytes remaining
+			// or we encounter a write error.
 			err = l.write()
 		}
+		// We do not attempt to write if we have already encountered a write error
+		// in this iteration of the loop, and instead we simply move on.
+		// If the file is empty and we are closing it, we must write an empty chunk.
+		// Otherwise, if we have data cached to write and we are either flushing or
+		// closing the file, we need to write a chunk.
 		if err == nil && ((!l.open && l.chunkIndex == 0) || (len(l.chunk) > 0 && (time.Now().After(l.flushTime) || !l.open))) {
 			l.write()
 		}
 		if len(l.chunk) == 0 {
+			// There is no data to write; we don't need to wake to flush data.
 			l.flushTime = time.Now().Add(year)
 		} else if time.Until(l.flushTime) > (l.writeTimeoutDuration) {
+			// There is data to write, we need to wake after a timeout to flush data.
 			l.flushTime = time.Now().Add(l.writeTimeoutDuration)
 		}
 		result := &WriteResult{Size: l.bytesFlushed, Err: l.writeError, LastChunkIndex: l.chunkIndex - 1}
 		if !l.timeout {
+			// This iteration was triggered by a call to Write or Close, return a
+			// write result. Since the write result contains the byte count and error
+			// (if any), we no longer wish to track those.
 			l.writeResultChannel <- result
 			l.writeError = nil
 			l.bytesFlushed = 0
 		}
 		if l.writeHook != nil {
+			// All work has been done for this write; trigger the writeHook
 			l.writeHook(req, result, l.chunk, l.volatileTail, l.timeout, l.open)
 		}
 	}
