@@ -376,10 +376,12 @@ func (p *partition) makeRecordFromFileInfo(key *fileKey, info os.FileInfo) *file
 	return p.makeRecord(key, info.Size(), getLastUse(info))
 }
 
-func (p *partition) makeRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) *fileRecord {
+func (p *partition) makeRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) (*fileRecord, error) {
 	fk := &fileKey{}
-	fk.FromPartitionAndPath(p, fullPath)
-	return p.makeRecordFromFileInfo(fk, info)
+	if err := fk.FromPartitionAndPath(p, fullPath); err != nil {
+		return nil, err
+	}
+	return p.makeRecordFromFileInfo(fk, info), nil
 }
 
 func (p *partition) Statusz(ctx context.Context) string {
@@ -472,7 +474,12 @@ func (p *partition) initializeCache() error {
 				log.Debugf("Skipping 0 length file: %q", path)
 				return nil
 			}
-			records = append(records, p.makeRecordFromPathAndFileInfo(path, info))
+			fileRecord, err := p.makeRecordFromPathAndFileInfo(path, info)
+			if err != nil {
+				log.Debugf("Skipping file: %s", err)
+				return nil
+			}
+			records = append(records, fileRecord)
 			return nil
 		}
 		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {
@@ -515,23 +522,43 @@ type fileKey struct {
 	digestHash         string
 }
 
-func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) {
+func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error {
 	fk.part = part
 
 	p := strings.TrimPrefix(fullPath, fk.part.rootDir+"/")
 	parts := strings.Split(p, "/")
 
+	parseError := func() error {
+		return status.FailedPreconditionErrorf("file %q did not match expected format.", fullPath)
+	}
+
 	// pull group off the front
-	fk.userPrefix = fk.part.internString(parts[0])
-	parts = parts[1:]
+	if len(parts) > 0 {
+		fk.userPrefix = fk.part.internString(parts[0])
+		parts = parts[1:]
+	} else {
+		return parseError()
+	}
 
 	// pull digest off the end
-	fk.digestHash = parts[len(parts)-1]
-	parts = parts[:len(parts)-1]
+	if len(parts) > 0 {
+		fk.digestHash = parts[len(parts)-1]
+		parts = parts[:len(parts)-1]
+	} else {
+		return parseError()
+	}
 
 	// If this is a v2-formatted path, remove the hash prefix dir
 	if fk.part.useV2Layout {
-		parts = parts[:len(parts)-1]
+		if len(parts) > 0 {
+			prefixPart := parts[len(parts)-1]
+			if len(prefixPart) != HashPrefixDirPrefixLen {
+				return parseError()
+			}
+			parts = parts[:len(parts)-1]
+		} else {
+			return parseError()
+		}
 	}
 
 	// If this is an /ac/ directory, this was an actionCache item
@@ -546,6 +573,7 @@ func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) {
 	if len(parts) > 0 {
 		fk.remoteInstanceName = fk.part.internString(strings.Join(parts, "/"))
 	}
+	return nil
 }
 
 func (fk *fileKey) FullPath() string {
