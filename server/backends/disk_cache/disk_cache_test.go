@@ -225,6 +225,7 @@ func TestSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
@@ -263,6 +264,7 @@ func TestLRU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
@@ -387,9 +389,7 @@ func TestAsyncLoading(t *testing.T) {
 		digests = append(digests, d)
 	}
 
-	// Wait for loading to async loading to finish.
-	// Yeah yeah a sleep is lame.
-	time.Sleep(100 * time.Millisecond)
+	dc.WaitUntilMapped()
 
 	// Check that everything still exists.
 	for _, d := range digests {
@@ -704,6 +704,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	}
 	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
 	require.NoError(t, err)
+	dc.WaitUntilMapped()
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"

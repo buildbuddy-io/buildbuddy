@@ -278,21 +278,29 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
+func (c *DiskCache) WaitUntilMapped() {
+	for _, p := range c.partitions {
+		p.WaitUntilMapped()
+	}
+}
+
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
 // when our cache reaches maxSize we remove the oldest files. Rather than
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type partition struct {
-	id              string
-	useV2Layout     bool
-	mu              sync.RWMutex
-	rootDir         string
-	maxSizeBytes    int64
-	lru             interfaces.LRU
-	fileChannel     chan *fileRecord
-	diskIsMapped    bool
-	lastGCTime      time.Time
-	internedStrings map[string]string
+	id               string
+	useV2Layout      bool
+	mu               sync.RWMutex
+	rootDir          string
+	maxSizeBytes     int64
+	lru              interfaces.LRU
+	fileChannel      chan *fileRecord
+	diskIsMapped     bool
+	doneAsyncLoading chan struct{}
+	lastGCTime       time.Time
+	stringLock       sync.RWMutex
+	internedStrings  map[string]string
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
@@ -301,13 +309,14 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		return nil, err
 	}
 	c := &partition{
-		id:              id,
-		useV2Layout:     useV2Layout,
-		maxSizeBytes:    maxSizeBytes,
-		lru:             l,
-		rootDir:         rootDir,
-		fileChannel:     make(chan *fileRecord),
-		internedStrings: make(map[string]string, 0),
+		id:               id,
+		useV2Layout:      useV2Layout,
+		maxSizeBytes:     maxSizeBytes,
+		lru:              l,
+		rootDir:          rootDir,
+		fileChannel:      make(chan *fileRecord),
+		internedStrings:  make(map[string]string, 0),
+		doneAsyncLoading: make(chan struct{}),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -356,11 +365,15 @@ func getLastUse(info os.FileInfo) int64 {
 }
 
 func (p *partition) internString(s string) string {
+	p.stringLock.RLock()
 	v, ok := p.internedStrings[s]
+	p.stringLock.RUnlock()
 	if ok {
 		return v
 	}
+	p.stringLock.Lock()
 	p.internedStrings[s] = s
+	p.stringLock.Unlock()
 	return s
 }
 
@@ -382,6 +395,10 @@ func (p *partition) makeRecordFromPathAndFileInfo(fullPath string, info os.FileI
 		return nil, err
 	}
 	return p.makeRecordFromFileInfo(fk, info), nil
+}
+
+func (p *partition) WaitUntilMapped() {
+	<-p.doneAsyncLoading
 }
 
 func (p *partition) Statusz(ctx context.Context) string {
@@ -509,6 +526,7 @@ func (p *partition) initializeCache() error {
 		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.maxSizeBytes)
 
 		p.diskIsMapped = true
+		close(p.doneAsyncLoading)
 		p.mu.Unlock()
 	}()
 	return nil
@@ -581,7 +599,7 @@ func (fk *fileKey) FullPath() string {
 	if fk.part.useV2Layout {
 		hashPrefixDir = fk.digestHash[0:HashPrefixDirPrefixLen] + "/"
 	}
-	return filepath.Join(fk.part.rootDir, fk.userPrefix+fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+fk.digestHash)
+	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+fk.digestHash)
 }
 
 func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
