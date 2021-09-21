@@ -16,8 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redsync/redsync/v4"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
@@ -55,16 +53,36 @@ const (
 	redisGroupsKeyPrefix = redisUsageKeyPrefix + "groups/"
 	redisCountsKeyPrefix = redisUsageKeyPrefix + "counts/"
 
+	// Time format used to store Redis keys.
+	// Example: 2020-01-01T00:00:00Z
 	redisTimeKeyFormat = time.RFC3339
 
-	redisUsageLockKey    = "lock.usage"
+	// Key used to get a lock on Redis usage data. The lock is acquired using the
+	// Redlock protocol. See https://redis.io/topics/distlock
+	//
+	// This lock is purely to reduce load on the DB. Flush jobs should be
+	// able to run concurrently (without needing this lock) and still write the
+	// correct usage data. The atomicity of DB writes, combined with the
+	// fact that we write usage data in monotonically increasing order of
+	// timestamp, is really what prevents usage data from being overcounted.
+	redisUsageLockKey = "lock.usage"
+
+	// How long any given job can hold the usage lock for, before it expires
+	// and other jobs may try to acquire it.
 	redisUsageLockExpiry = 45 * time.Second
+
 	// If a flush fails due to a timeout, extend the timeout by this long so that
 	// we have enough time to unlock the lock.
 	redisUsageLockFinalizationTimeout = 5 * time.Second
 
+	// How often to wake up and attempt to flush usage data from Redis to the DB.
 	flushInterval = collectionPeriodDuration
-	flushTimeout  = redisUsageLockExpiry - 10*time.Second
+
+	// How long we give the flush job before it times out. We time out before
+	// the Redis lock expires so that other jobs don't kick in at the same time,
+	// plus a margin of 10 seconds in case the DB is under a high load and the
+	// Redis lock expires while a DB write is in progress.
+	flushTimeout = redisUsageLockExpiry - 10*time.Second
 )
 
 var (
@@ -179,7 +197,8 @@ func (ut *tracker) StopDBFlush() {
 func (ut *tracker) FlushToDB(ctx context.Context) error {
 	// redsync.ErrFailed can be safely ignored; it just means that another app
 	// is already trying to flush.
-	if err := ut.flushToDB(ctx); err != nil && err != redsync.ErrFailed {
+	err := ut.flushToDB(ctx)
+	if err != nil && err != redsync.ErrFailed {
 		return err
 	}
 	return nil
@@ -250,27 +269,61 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
+		finalBeforeUsec := timeutil.ToUsec(c.Start().Add(collectionPeriodDuration))
+
 		// Create a row for the corresponding usage period if one doesn't already
 		// exist
-		err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(pk).Error
-		if err != nil {
+		res := tx.Exec(`
+			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
+				group_id,
+				period_start_usec,
+				final_before_usec,
+				invocations,
+				cas_cache_hits,
+				action_cache_hits,
+				total_download_size_bytes
+			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			`,
+			pk.GroupID,
+			pk.PeriodStartUsec,
+			finalBeforeUsec,
+			counts.Invocations,
+			counts.CASCacheHits,
+			counts.ActionCacheHits,
+			counts.TotalDownloadSizeBytes,
+		)
+		if err := res.Error; err != nil {
 			return err
 		}
-		updates, err := usageUpdates(c, counts)
-		if err != nil {
-			return err
+		// If we inserted successfully, no need to update.
+		if res.RowsAffected > 0 {
+			return nil
 		}
 		// Update the usage row, but only if collection period data has not already
 		// been written (for example, if the previous flush failed to delete the
 		// data from Redis).
-		return tx.Model(&tables.Usage{}).Where(
-			`group_id = ?
-			AND period_start_usec = ?
-			AND final_before_usec <= ?`,
+		return tx.Exec(`
+			UPDATE Usages
+			SET
+				final_before_usec = ?,
+				invocations = invocations + ?,
+				cas_cache_hits = cas_cache_hits + ?,
+				action_cache_hits = action_cache_hits + ?,
+				total_download_size_bytes = total_download_size_bytes + ?
+			WHERE
+				group_id = ?
+				AND period_start_usec = ?
+				AND final_before_usec <= ?
+		`,
+			finalBeforeUsec,
+			counts.Invocations,
+			counts.CASCacheHits,
+			counts.ActionCacheHits,
+			counts.TotalDownloadSizeBytes,
 			pk.GroupID,
 			pk.PeriodStartUsec,
-			timeutil.ToUsec(c.Start()),
-		).Updates(updates).Error
+			finalBeforeUsec,
+		).Error
 	})
 }
 
@@ -328,7 +381,9 @@ func (c collectionPeriod) Next() collectionPeriod {
 }
 
 // UsagePeriod returns the usage period that this collection period is contained
-// within.
+// within. A usage period corresponds to the coarse-level time range of usage
+// rows in the DB (1 hour), while a collection period corresponds to the more
+// fine-grained time ranges of Redis keys (1 minute).
 func (c collectionPeriod) UsagePeriod() usagePeriod {
 	t := c.Start()
 	return usagePeriod(time.Date(
@@ -379,7 +434,7 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 // stringMapToCounts converts a Redis hashmap containing usage counts to
 // tables.UsageCounts.
 func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
-	hInt64 := map[string]int64{}
+	hInt64 := make(map[string]int64, len(h))
 	for k, v := range h {
 		count, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
@@ -393,22 +448,4 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		ActionCacheHits:        hInt64["action_cache_hits"],
 		TotalDownloadSizeBytes: hInt64["total_download_size_bytes"],
 	}, nil
-}
-
-// usageUpdates returns a GORM updates map that finalizes the usage row up to
-// the end of the collection period and increments each field by the
-// corresponding value in counts.
-func usageUpdates(c collectionPeriod, counts *tables.UsageCounts) (map[string]interface{}, error) {
-	updates := map[string]interface{}{
-		"final_before_usec": timeutil.ToUsec(c.End()),
-	}
-	// Field names used by `countsToMap` match the DB field names.
-	m, err := countsToMap(counts)
-	if err != nil {
-		return nil, err
-	}
-	for col, count := range m {
-		updates[col] = gorm.Expr(fmt.Sprintf("%s + ?", col), count)
-	}
-	return updates, nil
 }
