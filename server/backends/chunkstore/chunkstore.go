@@ -371,8 +371,8 @@ type ChunkstoreWriterOptions struct {
 }
 
 type ChunkstoreWriter struct {
-	writeChannel         chan WriteRequest
-	writeResultChannel   chan WriteResult
+	writeChannel         chan *WriteRequest
+	writeResultChannel   chan *WriteResult
 	blobName             string
 	writeTimeoutDuration time.Duration
 	lastChunkIndex       uint16
@@ -412,7 +412,7 @@ func (w *ChunkstoreWriter) WriteWithTail(p []byte, tail []byte) (int, error) {
 	if w.closed {
 		return 0, nil
 	}
-	w.writeChannel <- WriteRequest{Chunk: p, VolatileTail: tail}
+	w.writeChannel <- &WriteRequest{Chunk: p, VolatileTail: tail}
 	return w.readFromWriteResultChannel()
 }
 
@@ -435,8 +435,8 @@ type writeLoop struct {
 	writeError           error
 	ctx                  context.Context
 	volatileTail         []byte
-	writeResultChannel   chan WriteResult
-	writeChannel         chan WriteRequest
+	writeResultChannel   chan *WriteResult
+	writeChannel         chan *WriteRequest
 	chunkstore           *Chunkstore
 	writeHook            func(*WriteRequest, *WriteResult, []byte, []byte, bool, bool)
 	blobName             string
@@ -486,7 +486,7 @@ func (l *writeLoop) readFromWriteChannel() *WriteRequest {
 				l.lastWriteSize = len(req.Chunk)
 			}
 		}
-		return &req
+		return req
 	case <-time.After(time.Until(l.flushTime)):
 		l.timeout = true
 		return nil
@@ -517,14 +517,14 @@ func (l *writeLoop) run() {
 		} else if time.Until(l.flushTime) > (l.writeTimeoutDuration) {
 			l.flushTime = time.Now().Add(l.writeTimeoutDuration)
 		}
-		result := WriteResult{Size: l.bytesFlushed, Err: l.writeError, LastChunkIndex: l.chunkIndex - 1}
+		result := &WriteResult{Size: l.bytesFlushed, Err: l.writeError, LastChunkIndex: l.chunkIndex - 1}
 		if !l.timeout {
 			l.writeResultChannel <- result
 			l.writeError = nil
 			l.bytesFlushed = 0
 		}
 		if l.writeHook != nil {
-			l.writeHook(req, &result, l.chunk, l.volatileTail, l.timeout, l.open)
+			l.writeHook(req, result, l.chunk, l.volatileTail, l.timeout, l.open)
 		}
 	}
 	close(l.writeResultChannel)
@@ -550,8 +550,8 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 
 	writer := &ChunkstoreWriter{
 		blobName:             blobName,
-		writeChannel:         make(chan WriteRequest),
-		writeResultChannel:   make(chan WriteResult),
+		writeChannel:         make(chan *WriteRequest),
+		writeResultChannel:   make(chan *WriteResult),
 		writeTimeoutDuration: writeTimeoutDuration,
 	}
 
