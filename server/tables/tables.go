@@ -441,6 +441,46 @@ type UsageCounts struct {
 	TotalDownloadSizeBytes int64
 }
 
+// Usage holds usage counter values for a group during a particular time period.
+type Usage struct {
+	Model
+
+	GroupID string `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:1"`
+
+	// PeriodStartUsec is the time at which the usage period started, in
+	// microseconds since the Unix epoch. The usage period duration is 1 hour.
+	// Only usage data occurring in collection periods inside this 1 hour period
+	// is included in this usage row.
+	PeriodStartUsec int64 `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:2"`
+
+	// FinalBeforeUsec is the time before which all collection period data in this
+	// usage period is finalized. This is used to guarantee that collection period
+	// data is added to this row in strictly increasing order of collection period
+	// start time.
+	//
+	// Consider the following diagram:
+	//
+	// [xxxxxxxxxxxxxxxxxxx)------------------)
+	// ^ PeriodStart       ^ FinalBefore      ^ PeriodEnd = PeriodStart + 1hr
+	//
+	// Usage data occuring in the x-marked region cannot be added to this usage
+	// row any longer, since the data is finalized.
+	//
+	// When writing the next collection period's data, the FinalBefore timestamp
+	// is updated as follows:
+	//
+	// [xxxxxxxxxxxxxxxxxxx[xxxxxx)-----------)
+	//                     ^ FinalBefore (before update) = CollectionPeriodStart
+	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
+	FinalBeforeUsec int64
+
+	UsageCounts
+}
+
+func (*Usage) TableName() string {
+	return "Usages"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -574,4 +614,5 @@ func init() {
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("WF", &Workflow{})
+	registerTable("UA", &Usage{})
 }

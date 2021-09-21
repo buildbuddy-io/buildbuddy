@@ -8,10 +8,14 @@ go_library(
     deps = [
         "//server/environment",
         "//server/tables",
+        "//server/util/db",
+        "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_go_redsync_redsync_v4//:redsync",
+        "@com_github_go_redsync_redsync_v4//redis/goredis/v8:goredis",
     ],
 )
 
@@ -26,8 +30,11 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testclock",
         "//server/testutil/testenv",
+        "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@io_gorm_gorm//:gorm",
+        "@org_golang_x_sync//errgroup",
     ],
 )
