@@ -72,12 +72,6 @@ const (
 
 	// How often to wake up and attempt to flush usage data from Redis to the DB.
 	flushInterval = collectionPeriodDuration
-
-	// How long we give the flush job before it times out. We time out before
-	// the Redis lock expires so that other jobs don't kick in at the same time,
-	// plus a margin of 10 seconds in case the DB is under a high load and the
-	// Redis lock expires while a DB write is in progress.
-	flushTimeout = redisUsageLockExpiry - 10*time.Second
 )
 
 var (
@@ -199,11 +193,6 @@ func (ut *tracker) FlushToDB(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Time out when the Redis lock expires, since an attempt to unlock it after
-	// it expires would fail anyway.
-	ctx, cancel := context.WithTimeout(ctx, redisUsageLockExpiry)
-	defer cancel()
-
 	defer func() {
 		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
 			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
@@ -213,7 +202,10 @@ func (ut *tracker) FlushToDB(ctx context.Context) error {
 }
 
 func (ut *tracker) flushToDB(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, flushTimeout)
+	// Don't run for longer than we have the Redis lock. This is mostly just to
+	// avoid situations where multiple apps are trying to write usage data to the
+	// DB at once while it is already under high load.
+	ctx, cancel := context.WithTimeout(ctx, redisUsageLockExpiry)
 	defer cancel()
 
 	// Loop through collection periods starting from the oldest collection period
