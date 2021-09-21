@@ -1,0 +1,188 @@
+// A Virtual File System API based on the FUSE API.
+// There doesn't appear to be an official reference for the FUSE protocol, but
+// the libfuse docs serve as a good reference:
+// http://libfuse.github.io/doxygen/structfuse__operations.html
+
+syntax = "proto3";
+
+package vfs;
+
+message SyscallError {
+  uint32 errno = 1;
+}
+
+message OpenRequest {
+  string path = 1;
+  uint32 flags = 2;
+  uint32 mode = 3;
+}
+
+message OpenResponse {
+  uint64 handle_id = 1;
+}
+
+message ReadRequest {
+  uint64 handle_id = 1;
+  int64 offset = 2;
+  int32 num_bytes = 3;
+}
+
+message ReadResponse {
+  bytes data = 1;
+}
+
+message AllocateRequest {
+  uint64 handle_id = 1;
+  uint32 mode = 2;
+  int64 offset = 3;
+  int64 num_bytes = 4;
+}
+
+message AllocateResponse {}
+
+message WriteRequest {
+  uint64 handle_id = 1;
+  int64 offset = 2;
+  bytes data = 3;
+}
+
+message WriteResponse {
+  uint32 num_bytes = 1;
+}
+
+message FsyncRequest {
+  uint64 handle_id = 1;
+}
+
+message FsyncResponse {}
+
+message FlushRequest {
+  uint64 handle_id = 1;
+}
+
+message FlushResponse {}
+
+message ReleaseRequest {
+  uint64 handle_id = 1;
+}
+
+message ReleaseResponse {}
+
+message CopyFileRangeRequest {
+  uint64 read_handle_id = 1;
+  int64 read_handle_offset = 2;
+  uint64 write_handle_id = 3;
+  int64 write_handle_offset = 4;
+  uint32 num_bytes = 5;
+  uint32 flags = 6;
+}
+
+message CopyFileRangeResponse {
+  uint32 num_bytes_copied = 1;
+}
+
+message GetAttrRequest {
+  string path = 1;
+}
+
+message Attrs {
+  int64 size = 1;
+  uint32 perm = 2;
+}
+
+message GetAttrResponse {
+  Attrs attrs = 1;
+}
+
+message SetAttrRequest {
+  string path = 1;
+  message SetSize {
+    int64 size = 2;
+  }
+  SetSize set_size = 2;
+  message SetPerms {
+    uint32 perms = 1;
+  }
+  SetPerms set_perms = 3;
+}
+
+message SetAttrResponse {
+  Attrs attrs = 1;
+}
+
+message RenameRequest {
+  string old_path = 1;
+  string new_path = 2;
+}
+
+message RenameResponse {}
+
+message MkdirRequest {
+  string path = 1;
+  uint32 perms = 2;
+}
+
+message MkdirResponse {}
+
+message RmdirRequest {
+  string path = 1;
+}
+
+message RmdirResponse {}
+
+message SymlinkRequest {
+  string path = 1;
+  string target = 2;
+}
+
+message SymlinkResponse {}
+
+message UnlinkRequest {
+  string path = 1;
+}
+
+message UnlinkResponse {}
+
+// FileSystem is Virtual File System API that follows the FUSE API.
+// Refer to the FUSE API documentation for details of specific operations.
+service FileSystem {
+  // API for operating on a single file.
+  // Open will return an ID that can be used for the remaining file APIs.
+  rpc Open(OpenRequest) returns (OpenResponse);
+
+  // Allocates/dellocates byte ranges on a file referred by file handle.
+  // See `man 2 fallocate`.
+  rpc Allocate(AllocateRequest) returns (AllocateResponse);
+
+  // Reads data from a file handle.
+  rpc Read(ReadRequest) returns (ReadResponse);
+
+  // Writes data to a file handle.
+  rpc Write(WriteRequest) returns (WriteResponse);
+
+  // Flushes any buffered modifications to backing storage device.
+  // See `man 2 fsync`.
+  rpc Fsync(FsyncRequest) returns (FsyncResponse);
+
+  // Flush is called on a file handle whenever a file descriptor is closed in
+  // the client FS. This may be called more than once if the file descriptor was
+  // duplicated. Errors from this op are returned to the file system user.
+  rpc Flush(FlushRequest) returns (FlushResponse);
+
+  //  Release is called on a file handle when there are no more file descriptor
+  //  references left. Any errors returned here are not visible to the file
+  //  system user.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+
+  // CopyFileRange copies data between two open file handles on the server which
+  // avoids the need to copy data to/from client.
+  rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
+
+  rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
+  rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  rpc Mkdir(MkdirRequest) returns (MkdirResponse);
+  rpc Rmdir(RmdirRequest) returns (RmdirResponse);
+  rpc Symlink(SymlinkRequest) returns (SymlinkResponse);
+  rpc Unlink(UnlinkRequest) returns (UnlinkResponse);
+}

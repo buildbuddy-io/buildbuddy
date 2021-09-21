@@ -243,3 +243,102 @@
 .org-join-requests .org-join-request-outcome > :not(:last-child) {
   margin-right: 8px;
 }
+
+.org-members {
+  margin-top: 16px;
+  max-width: 600px;
+}
+
+.org-members .org-members-list-controls {
+  display: flex;
+  align-items: center;
+  padding: 8px 0px;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.org-members .select-all-button {
+  margin-right: auto;
+}
+
+.org-members .org-members-list-item {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding: 8px 16px;
+  min-height: 48px;
+  box-sizing: border-box;
+  gap: 8px;
+  transition: background-color 100ms ease-out;
+}
+
+.org-members .org-members-list-item:first-child {
+  border-top: 1px solid #eee;
+}
+
+.org-members .org-members-list-item:hover {
+  background-color: #fafafa;
+}
+
+.org-members .org-members-list-item.selected {
+  background-color: #bbdefb;
+}
+
+.org-members .org-member-email {
+  font-weight: 600;
+}
+
+.org-members .org-member-role {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 13px;
+  border: 1px solid transparent;
+}
+
+.org-members-edit-modal .select-role-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.org-members-edit-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.org-members-edit-modal .role-description {
+  font-size: 14px;
+  color: #616161;
+  min-height: 40px;
+}
+
+.org-members-edit-modal .affected-users-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.org-members-edit-modal .affected-users-list-item {
+  display: flex;
+  padding: 8px;
+}
+
+.org-members-edit-modal .affected-users-list > :not(:last-child) {
+  border-bottom: 1px solid #eee;
+}
+
+.org-members-edit-modal .editing-self-warning {
+  background: #ffcdd2;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.org-members-edit-modal .flagged-self-user {
+  font-weight: 600;
+  color: #e53935;
+}

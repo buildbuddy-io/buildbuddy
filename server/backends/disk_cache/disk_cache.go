@@ -134,8 +134,9 @@ type DiskCache struct {
 	partitionMappings []config.DiskCachePartitionMapping
 	// The currently selected partition. Initialized to the default partition.
 	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
-	partition *partition
-	prefix    string
+	partition          *partition
+	cacheType          interfaces.CacheType
+	remoteInstanceName string
 }
 
 func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSizeBytes int64) (*DiskCache, error) {
@@ -185,10 +186,12 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 	}
 
 	c := &DiskCache{
-		env:               env,
-		partitions:        partitions,
-		partitionMappings: config.PartitionMappings,
-		partition:         defaultPartition,
+		env:                env,
+		partitions:         partitions,
+		partitionMappings:  config.PartitionMappings,
+		partition:          defaultPartition,
+		cacheType:          interfaces.CASCacheType,
+		remoteInstanceName: "",
 	}
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
@@ -221,17 +224,13 @@ func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.Cach
 		return nil, err
 	}
 
-	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
 	return &DiskCache{
-		env:               c.env,
-		prefix:            newPrefix,
-		partition:         p,
-		partitions:        c.partitions,
-		partitionMappings: c.partitionMappings,
+		env:                c.env,
+		partition:          p,
+		partitions:         c.partitions,
+		partitionMappings:  c.partitionMappings,
+		cacheType:          cacheType,
+		remoteInstanceName: remoteInstanceName,
 	}, nil
 }
 
@@ -244,39 +243,39 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.partition.contains(ctx, c.prefix, d)
+	return c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	return c.partition.containsMulti(ctx, c.prefix, digests)
+	return c.partition.containsMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 
 func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.partition.get(ctx, c.prefix, d)
+	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return c.partition.getMulti(ctx, c.prefix, digests)
+	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 
 func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	return c.partition.set(ctx, c.prefix, d, data)
+	return c.partition.set(ctx, c.cacheType, c.remoteInstanceName, d, data)
 }
 
 func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return c.partition.setMulti(ctx, c.prefix, kvs)
+	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
 }
 
 func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return c.partition.delete(ctx, c.prefix, d)
+	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.prefix, d, offset)
+	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	return c.partition.writer(ctx, c.prefix, d)
+	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
@@ -284,14 +283,16 @@ func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type partition struct {
-	id           string
-	useV2Layout  bool
-	mu           sync.RWMutex
-	rootDir      string
-	lru          *lru.LRU
-	fileChannel  chan *fileRecord
-	diskIsMapped bool
-	lastGCTime   time.Time
+	id              string
+	useV2Layout     bool
+	mu              sync.RWMutex
+	rootDir         string
+	maxSizeBytes    int64
+	lru             interfaces.LRU
+	fileChannel     chan *fileRecord
+	diskIsMapped    bool
+	lastGCTime      time.Time
+	internedStrings map[string]string
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
@@ -300,11 +301,13 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		return nil, err
 	}
 	c := &partition{
-		id:          id,
-		useV2Layout: useV2Layout,
-		lru:         l,
-		rootDir:     rootDir,
-		fileChannel: make(chan *fileRecord),
+		id:              id,
+		useV2Layout:     useV2Layout,
+		maxSizeBytes:    maxSizeBytes,
+		lru:             l,
+		rootDir:         rootDir,
+		fileChannel:     make(chan *fileRecord),
+		internedStrings: make(map[string]string, 0),
 	}
 	if err := c.initializeCache(); err != nil {
 		return nil, err
@@ -314,12 +317,16 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 }
 
 type fileRecord struct {
-	key       string
+	key       *fileKey
 	lastUse   int64
 	sizeBytes int64
 }
 
-func sizeFn(key interface{}, value interface{}) int64 {
+func (fr *fileRecord) FullPath() string {
+	return fr.key.FullPath()
+}
+
+func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.(*fileRecord); ok {
 		size += v.sizeBytes
@@ -327,9 +334,9 @@ func sizeFn(key interface{}, value interface{}) int64 {
 	return size
 }
 
-func evictFn(key interface{}, value interface{}) {
-	if k, ok := key.(string); ok {
-		disk.DeleteFile(context.TODO(), k)
+func evictFn(value interface{}) {
+	if v, ok := value.(*fileRecord); ok {
+		disk.DeleteFile(context.TODO(), v.FullPath())
 	}
 }
 
@@ -348,12 +355,33 @@ func getLastUse(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
-func makeRecord(fullPath string, info os.FileInfo) *fileRecord {
-	return &fileRecord{
-		key:       fullPath,
-		sizeBytes: info.Size(),
-		lastUse:   getLastUse(info),
+func (p *partition) internString(s string) string {
+	v, ok := p.internedStrings[s]
+	if ok {
+		return v
 	}
+	p.internedStrings[s] = s
+	return s
+}
+
+func (p *partition) makeRecord(key *fileKey, sizeBytes int64, lastUse int64) *fileRecord {
+	return &fileRecord{
+		key:       key,
+		sizeBytes: sizeBytes,
+		lastUse:   lastUse,
+	}
+}
+
+func (p *partition) makeRecordFromFileInfo(key *fileKey, info os.FileInfo) *fileRecord {
+	return p.makeRecord(key, info.Size(), getLastUse(info))
+}
+
+func (p *partition) makeRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) (*fileRecord, error) {
+	fk := &fileKey{}
+	if err := fk.FromPartitionAndPath(p, fullPath); err != nil {
+		return nil, err
+	}
+	return p.makeRecordFromFileInfo(fk, info), nil
 }
 
 func (p *partition) Statusz(ctx context.Context) string {
@@ -362,15 +390,8 @@ func (p *partition) Statusz(ctx context.Context) string {
 	buf := "<br>"
 	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
 	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
-	percentFull := float64(p.lru.Size()) / float64(p.lru.MaxSize()) * 100.0
-	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.lru.MaxSize(), percentFull)
-	var oldestItem time.Time
-	if _, v, ok := p.lru.GetOldest(); ok {
-		if fr, ok := v.(*fileRecord); ok {
-			oldestItem = time.Unix(0, fr.lastUse)
-		}
-	}
-	buf += fmt.Sprintf("<div>%d items (oldest: %s)</div>", p.lru.Len(), oldestItem.Format("Jan 02, 2006 15:04:05 MST"))
+	percentFull := float64(p.lru.Size()) / float64(p.maxSizeBytes) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.maxSizeBytes, percentFull)
 	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
 	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
 	return buf
@@ -382,7 +403,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 	if p.lru.Size() < targetSize {
 		return false
 	}
-	_, value, ok := p.lru.RemoveOldest()
+	value, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
 	}
@@ -394,7 +415,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 }
 
 func (p *partition) startJanitor() {
-	targetSize := int64(float64(p.lru.MaxSize()) * janitorCutoffThreshold)
+	targetSize := int64(float64(p.maxSizeBytes) * janitorCutoffThreshold)
 	go func() {
 		for {
 			select {
@@ -418,10 +439,12 @@ func (p *partition) initializeCache() error {
 		start := time.Now()
 		records := make([]*fileRecord, 0)
 		inFlightRecords := make([]*fileRecord, 0)
+		finishedFileChannel := make(chan struct{})
 		go func() {
 			for record := range p.fileChannel {
 				inFlightRecords = append(inFlightRecords, record)
 			}
+			close(finishedFileChannel)
 		}()
 		walkFn := func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -451,7 +474,12 @@ func (p *partition) initializeCache() error {
 				log.Debugf("Skipping 0 length file: %q", path)
 				return nil
 			}
-			records = append(records, makeRecord(path, info))
+			fileRecord, err := p.makeRecordFromPathAndFileInfo(path, info)
+			if err != nil {
+				log.Debugf("Skipping file: %s", err)
+				return nil
+			}
+			records = append(records, fileRecord)
 			return nil
 		}
 		if err := filepath.WalkDir(p.rootDir, walkFn); err != nil {
@@ -464,68 +492,143 @@ func (p *partition) initializeCache() error {
 		p.mu.Lock()
 		// Populate our LRU with everything we scanned from disk.
 		for _, record := range records {
-			p.lru.Add(record.key, record)
+			p.lru.Add(record.FullPath(), record)
 		}
+		records = nil
+
 		// Add in-flight records to the LRU. These were new files
 		// touched during the loading phase, so we assume they are new
 		// enough to just add to the top of the LRU without sorting.
 		close(p.fileChannel)
+		<-finishedFileChannel
 		for _, record := range inFlightRecords {
-			p.lru.Add(record.key, record)
+			p.lru.Add(record.FullPath(), record)
 		}
+		inFlightRecords = nil
+		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
+		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.maxSizeBytes)
+
 		p.diskIsMapped = true
 		p.mu.Unlock()
-
-		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
-		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.lru.MaxSize())
 	}()
 	return nil
 }
 
-func (p *partition) key(ctx context.Context, cachePrefix string, d *repb.Digest) (string, error) {
+type fileKey struct {
+	part               *partition
+	cacheType          interfaces.CacheType
+	userPrefix         string
+	remoteInstanceName string
+	digestHash         string
+}
+
+func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error {
+	fk.part = part
+
+	p := strings.TrimPrefix(fullPath, fk.part.rootDir+"/")
+	parts := strings.Split(p, "/")
+
+	parseError := func() error {
+		return status.FailedPreconditionErrorf("file %q did not match expected format.", fullPath)
+	}
+
+	// pull group off the front
+	if len(parts) > 0 {
+		fk.userPrefix = fk.part.internString(parts[0])
+		parts = parts[1:]
+	} else {
+		return parseError()
+	}
+
+	// pull digest off the end
+	if len(parts) > 0 {
+		fk.digestHash = parts[len(parts)-1]
+		parts = parts[:len(parts)-1]
+	} else {
+		return parseError()
+	}
+
+	// If this is a v2-formatted path, remove the hash prefix dir
+	if fk.part.useV2Layout {
+		if len(parts) > 0 {
+			prefixPart := parts[len(parts)-1]
+			if len(prefixPart) != HashPrefixDirPrefixLen {
+				return parseError()
+			}
+			parts = parts[:len(parts)-1]
+		} else {
+			return parseError()
+		}
+	}
+
+	// If this is an /ac/ directory, this was an actionCache item
+	// otherwise it was a CAS item.
+	if len(parts) > 0 && parts[len(parts)-1] == "ac" {
+		fk.cacheType = interfaces.ActionCacheType
+		parts = parts[:len(parts)-1]
+	} else {
+		fk.cacheType = interfaces.CASCacheType
+	}
+
+	if len(parts) > 0 {
+		fk.remoteInstanceName = fk.part.internString(strings.Join(parts, "/"))
+	}
+	return nil
+}
+
+func (fk *fileKey) FullPath() string {
+	hashPrefixDir := ""
+	if fk.part.useV2Layout {
+		hashPrefixDir = fk.digestHash[0:HashPrefixDirPrefixLen] + "/"
+	}
+	return filepath.Join(fk.part.rootDir, fk.userPrefix+fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+fk.digestHash)
+}
+
+func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
 	hash, err := digest.Validate(d)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	hashPrefixDir := ""
-	// Under the V2 layout, we nest hashes under a subdirectory named after the hash prefix.
-	if p.useV2Layout {
-		// Should never be the case.
-		if len(hash) < HashPrefixDirPrefixLen {
-			alert.UnexpectedEvent("disk_cache_digest_too_short", "digest hash %q is too short", hash)
-			return "", status.FailedPreconditionErrorf("digest hash %q is way too short!", hash)
-		}
-		hashPrefixDir = hash[0:HashPrefixDirPrefixLen] + "/"
+
+	if len(hash) < HashPrefixDirPrefixLen {
+		alert.UnexpectedEvent("disk_cache_digest_too_short", "digest hash %q is too short", hash)
+		return nil, status.FailedPreconditionErrorf("digest hash %q is way too short!", hash)
 	}
-	return filepath.Join(p.rootDir, userPrefix+cachePrefix+hashPrefixDir+hash), nil
+	return &fileKey{
+		part:               p,
+		cacheType:          cacheType,
+		userPrefix:         p.internString(userPrefix),
+		remoteInstanceName: p.internString(remoteInstanceName),
+		digestHash:         hash,
+	}, nil
 }
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(k string) bool {
+func (p *partition) addFileToLRUIfExists(key *fileKey) bool {
 	if p.diskIsMapped {
 		return false
 	}
-	info, err := os.Stat(k)
+	info, err := os.Stat(key.FullPath())
 	if err == nil {
 		if info.Size() == 0 {
-			log.Debugf("Skipping 0 length file: %q", k)
+			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return false
 		}
-		record := makeRecord(k, info)
+		record := p.makeRecordFromFileInfo(key, info)
 		p.fileChannel <- record
-		p.lru.Add(record.key, record)
+		p.lru.Add(record.FullPath(), record)
 		return true
 	}
 	return false
 }
 
-func (p *partition) contains(ctx context.Context, prefix string, d *repb.Digest) (bool, error) {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return false, err
 	}
@@ -544,7 +647,7 @@ func (p *partition) contains(ctx context.Context, prefix string, d *repb.Digest)
 	// if necessary and applicable.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.lru.Get(k)
+	ok := p.lru.Contains(k.FullPath())
 
 	if !ok && !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
@@ -555,7 +658,7 @@ func (p *partition) contains(ctx context.Context, prefix string, d *repb.Digest)
 	return ok, nil
 }
 
-func (p *partition) containsMulti(ctx context.Context, prefix string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
+func (p *partition) containsMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest]bool, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -563,7 +666,7 @@ func (p *partition) containsMulti(ctx context.Context, prefix string, digests []
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := p.contains(ctx, prefix, d)
+				exists, err := p.contains(ctx, cacheType, remoteInstanceName, d)
 				// NotFoundError is never returned from contains above, so
 				// we don't check for it.
 				if err != nil {
@@ -585,28 +688,28 @@ func (p *partition) containsMulti(ctx context.Context, prefix string, digests []
 	return foundMap, nil
 }
 
-func (p *partition) get(ctx context.Context, prefix string, d *repb.Digest) ([]byte, error) {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) get(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) ([]byte, error) {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
-	buf, err := disk.ReadFile(ctx, k)
+	buf, err := disk.ReadFile(ctx, k.FullPath())
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err != nil {
-		p.lru.Remove(k) // remove it just in case
+		p.lru.Remove(k.FullPath()) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
 	}
 
-	if p.lru.Contains(k) {
-		p.lru.Get(k) // mark the file as used.
+	if p.lru.Contains(k.FullPath()) {
+		p.lru.Get(k.FullPath()) // mark the file as used.
 	} else if !p.diskIsMapped {
 		p.addFileToLRUIfExists(k)
 	}
 	return buf, nil
 }
 
-func (p *partition) getMulti(ctx context.Context, prefix string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)
@@ -614,7 +717,7 @@ func (p *partition) getMulti(ctx context.Context, prefix string, digests []*repb
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				data, err := p.get(ctx, prefix, d)
+				data, err := p.get(ctx, cacheType, remoteInstanceName, d)
 				if status.IsNotFoundError(err) {
 					return nil
 				}
@@ -637,61 +740,58 @@ func (p *partition) getMulti(ctx context.Context, prefix string, digests []*repb
 	return foundMap, nil
 }
 
-func (p *partition) set(ctx context.Context, prefix string, d *repb.Digest, data []byte) error {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, data []byte) error {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err
 	}
-	n, err := disk.WriteFile(ctx, k, data)
+	n, err := disk.WriteFile(ctx, k.FullPath(), data)
 	if err != nil {
 		// If we had an error writing the file, just return that.
 		return err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.lru.Add(k, &fileRecord{
-		key:       k,
-		sizeBytes: int64(n),
-		lastUse:   time.Now().UnixNano(),
-	})
+	record := p.makeRecord(k, int64(n), time.Now().UnixNano())
+	p.lru.Add(record.FullPath(), record)
 	return err
 
 }
 
-func (p *partition) setMulti(ctx context.Context, prefix string, kvs map[*repb.Digest][]byte) error {
+func (p *partition) setMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
-		if err := p.set(ctx, prefix, d, data); err != nil {
+		if err := p.set(ctx, cacheType, remoteInstanceName, d, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *partition) delete(ctx context.Context, prefix string, d *repb.Digest) error {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) error {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.lru.Remove(k)
+	p.lru.Remove(k.FullPath())
 	return nil
 }
 
-func (p *partition) reader(ctx context.Context, prefix string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) reader(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
 	// Can't specify length because this might be ActionCache
-	r, err := disk.FileReader(ctx, k, offset, 0)
+	r, err := disk.FileReader(ctx, k.FullPath(), offset, 0)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err != nil {
-		p.lru.Remove(k) // remove it just in case
+		p.lru.Remove(k.FullPath()) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
 	} else {
-		p.lru.Get(k) // mark the file as used.
+		p.lru.Get(k.FullPath()) // mark the file as used.
 	}
 	return r, nil
 }
@@ -717,13 +817,13 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (p *partition) writer(ctx context.Context, prefix string, d *repb.Digest) (io.WriteCloser, error) {
-	k, err := p.key(ctx, prefix, d)
+func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (io.WriteCloser, error) {
+	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
 
-	writeCloser, err := disk.FileWriter(ctx, k)
+	writeCloser, err := disk.FileWriter(ctx, k.FullPath())
 	if err != nil {
 		return nil, err
 	}
@@ -732,11 +832,8 @@ func (p *partition) writer(ctx context.Context, prefix string, d *repb.Digest) (
 		closeFn: func(totalBytesWritten int64) error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			p.lru.Add(k, &fileRecord{
-				key:       k,
-				sizeBytes: totalBytesWritten,
-				lastUse:   time.Now().UnixNano(),
-			})
+			record := p.makeRecord(k, totalBytesWritten, time.Now().UnixNano())
+			p.lru.Add(record.FullPath(), record)
 			return nil
 		},
 	}, nil

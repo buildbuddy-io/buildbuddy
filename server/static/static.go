@@ -104,7 +104,7 @@ func setCacheHeaders(h http.Handler) http.Handler {
 
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
-	ssoEnabled := false
+	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
 	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,
 	// and set ssoEnabled = true if any private issuers are present in the config.
 	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
@@ -139,6 +139,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		SsoEnabled:                 ssoEnabled,
 		GlobalFilterEnabled:        env.GetConfigurator().GetAppGlobalFilterEnabled(),
 		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
+		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		Config:           &config,

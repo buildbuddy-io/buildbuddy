@@ -438,3 +438,18 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 	}
 	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 }
+
+// InsertIgnoreModifier returns SQL that can be placed after the
+// INSERT command to ignore duplicate keys when inserting.
+//
+// Example:
+//
+//     `INSERT `+db.InsertIgnoreModifier()+` INTO MyTable
+//      (potentially_already_existing_key)
+//      VALUES ("key_value")`
+func (h *DBHandle) InsertIgnoreModifier() string {
+	if h.dialect == sqliteDialect {
+		return "OR IGNORE"
+	}
+	return "IGNORE"
+}

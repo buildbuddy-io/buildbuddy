@@ -28,11 +28,41 @@ First, you'll need to point your `workspace_status_command` flag at a `workspace
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
-Then you'll need to add a `workspace_status.sh` file to the root of your workspace. You can copy the contents of [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh). This will populate your repo url, commit sha, and other build metadata automatically for every invocation.
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace. You can copy the contents of [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh). This will populate your repo url, git branch, commit sha, and other build metadata automatically for every invocation.
 
 ### Environment variables
 
 BuildBuddy will automatically pull your repo URL from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_REPOSITORY`, `CIRCLE_REPOSITORY_URL`, `TRAVIS_REPO_SLUG`, `GIT_URL`, `CI_REPOSITORY_URL`, `REPO_URL` and `BUILDKITE_REPO`.
+
+## Git Branch
+
+BuildBuddy allows you to group invocations by the git branch on which they were run. In order to perform this grouping, BuildBuddy needs the branch name. There are three ways of providing this information to BuildBuddy:
+
+### Build metadata
+
+You can provide the current git branch with Bazel's build_metadata flag with the key `BRANCH_NAME`. You can do this by adding the flag to your bazel invocations:
+
+```
+--build_metadata=BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+```
+
+Note: you cannot add this particular flag to your `.bazelrc` file because it does not support parameter substitution. If you're looking for a solution that supports your `.bazelrc` file, try the Workspace info method below.
+
+### Workspace info
+
+The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
+
+First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
+```
+build --workspace_status_command=$(pwd)/workspace_status.sh
+```
+
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace. You can copy the contents of [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh). This will populate your repo url, git branch, commit sha, and other build metadata automatically for every invocation.
+
+### Environment variables
+
+BuildBuddy will automatically pull your git branch from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_REF`, `GITHUB_HEAD_REF`, `CIRCLE_BRANCH`, `BUILDKITE_BRANCH`, `TRAVIS_BRANCH`, `GIT_BRANCH`, and `CI_COMMIT_BRANCH`. Note that `GITHUB_REF` will be ignored when it refers to a tag, or overridden by `GITHUB_HEAD_REF` for pull requests.
 
 ## Commit SHA
 
@@ -56,7 +86,7 @@ First, you'll need to point your `workspace_status_command` flag at a `workspace
 build --workspace_status_command=$(pwd)/workspace_status.sh
 ```
 
-Then you'll need to add a `workspace_status.sh` file to the root of your workspace. You can copy the contents of [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh). This will populate your repo url, commit sha, and other build metadata automatically for every invocation.
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace. You can copy the contents of [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh). This will populate your repo url, git branch, commit sha, and other build metadata automatically for every invocation.
 
 ### Environment variables
 

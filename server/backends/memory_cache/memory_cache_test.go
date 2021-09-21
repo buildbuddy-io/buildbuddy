@@ -38,6 +38,90 @@ func getAnonContext(t *testing.T) context.Context {
 	return ctx
 }
 
+func TestIsolation(t *testing.T) {
+	maxSizeBytes := int64(1000000000) // 1GB
+	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := getAnonContext(t)
+
+	type test struct {
+		cache1         interfaces.Cache
+		cache2         interfaces.Cache
+		shouldBeShared bool
+	}
+	mustIsolate := func(cacheType interfaces.CacheType, remoteInstanceName string) interfaces.Cache {
+		c, err := mc.WithIsolation(ctx, cacheType, remoteInstanceName)
+		if err != nil {
+			t.Fatalf("Error isolating cache: %s", err)
+		}
+		return c
+	}
+
+	tests := []test{
+		{ // caches with the same isolation are shared.
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			shouldBeShared: true,
+		},
+		{ // action caches with the same isolation are shared.
+			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			shouldBeShared: true,
+		},
+		{ // CAS caches with different remote instance names are shared.
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.CASCacheType, "otherInstanceName"),
+			shouldBeShared: true,
+		},
+		{ // Action caches with different remote instance names are not shared.
+			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "otherInstanceName"),
+			shouldBeShared: false,
+		},
+		{ // CAS and Action caches are not shared.
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			shouldBeShared: false,
+		},
+	}
+
+	for _, test := range tests {
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		// Set() the bytes in cache1.
+		err := test.cache1.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		// Get() the bytes from cache2.
+		rbuf, err := test.cache2.Get(ctx, d)
+		if test.shouldBeShared {
+			// if the caches should be shared but there was an error
+			// getting the digest: fail.
+			if err != nil {
+				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			}
+
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if err != nil {
+				t.Fatalf("Error computing digest: %s", err.Error())
+			}
+
+			if d.GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			}
+		} else {
+			// if the caches should *not* be shared but there was
+			// no error getting the digest: fail.
+			if err == nil {
+				t.Fatalf("Got %q from cache, but should have been isolated.", d.GetHash())
+			}
+		}
+	}
+}
+
 func TestGetSet(t *testing.T) {
 	maxSizeBytes := int64(1000000000) // 1GB
 	mc, err := memory_cache.NewMemoryCache(maxSizeBytes)

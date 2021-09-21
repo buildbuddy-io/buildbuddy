@@ -24,7 +24,7 @@ func main() {
 	ctx := context.Background()
 	flag.Parse()
 
-	conn, err := vsock.SimpleGRPCDial(ctx, *sock)
+	conn, err := vsock.SimpleGRPCDial(ctx, *sock, vsock.VMExecPort)
 	if err != nil {
 		log.Fatalf("Error connecting to client: %s", err)
 	}

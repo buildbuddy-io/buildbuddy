@@ -56,6 +56,7 @@ type appConfig struct {
 	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
 	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	UserManagementEnabled     bool     `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
@@ -184,6 +185,7 @@ type authConfig struct {
 	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
+	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
 }
 
 type OauthProvider struct {
@@ -191,6 +193,10 @@ type OauthProvider struct {
 	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
 	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
 	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
+}
+type SAMLConfig struct {
+	CertFile string `yaml:"cert_file" usage:"Path to a PEM encoded certificate file used for SAML auth."`
+	KeyFile  string `yaml:"key_file" usage:"Path to a PEM encoded certificate key file used for SAML auth."`
 }
 
 type SSLConfig struct {
@@ -558,6 +564,10 @@ func (c *Configurator) GetCodeEditorEnabled() bool {
 	return c.gc.App.CodeEditorEnabled
 }
 
+func (c *Configurator) GetAppUserManagementEnabled() bool {
+	return c.gc.App.UserManagementEnabled
+}
+
 func (c *Configurator) GetAppGlobalFilterEnabled() bool {
 	return c.gc.App.GlobalFilterEnabled
 }
@@ -670,6 +680,10 @@ func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
 
 func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
 	return c.gc.Auth.APIKeyGroupCacheTTL
+}
+
+func (c *Configurator) GetSAMLConfig() *SAMLConfig {
+	return &c.gc.Auth.SAMLConfig
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

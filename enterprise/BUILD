@@ -38,7 +38,6 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     embedsrcs = [
-        "//:VERSION",
         "//enterprise:config_files",
         "//enterprise:licenses",
         "//:config_files",

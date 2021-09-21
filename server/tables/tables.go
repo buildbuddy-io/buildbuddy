@@ -178,6 +178,9 @@ type Group struct {
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
 	UseGroupOwnedExecutors bool
+
+	// The SAML IDP Metadata URL for this group.
+	SamlIdpMetadataUrl string
 }
 
 func (g *Group) TableName() string {
@@ -187,6 +190,10 @@ func (g *Group) TableName() string {
 type UserGroup struct {
 	UserUserID   string `gorm:"primaryKey"`
 	GroupGroupID string `gorm:"primaryKey"`
+
+	// The user's role within the group.
+	// Constants are defined in the perms package.
+	Role uint32
 
 	// The user's membership status.
 	// Values correspond to `GroupMembershipStatus` enum values in `grp.proto`.
@@ -429,7 +436,7 @@ func (wf *Workflow) TableName() string {
 
 type UsageCounts struct {
 	Invocations            int64
-	CasCacheHits           int64
+	CASCacheHits           int64
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
 }
@@ -495,6 +502,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		if err := db.Exec("UPDATE UserGroups SET membership_status = ?", int32(grpb.GroupMembershipStatus_MEMBER)).Error; err != nil {
 			return nil, err
 		}
+	}
+
+	// Initialize UserGroups.role to Admin if the role column doesn't exist.
+	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
+		postMigrate = append(postMigrate, func() error {
+			// Hard-coding the perms constant here to avoid circular dep on
+			// perms => interfaces => tables.
+			const adminRole = 1 << 1
+			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
+		})
 	}
 
 	// Prepare Groups.url_identifier for index update (non-unique index to unique index).
@@ -596,5 +613,6 @@ func init() {
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
+	registerTable("WF", &Workflow{})
 	registerTable("UA", &Usage{})
 }

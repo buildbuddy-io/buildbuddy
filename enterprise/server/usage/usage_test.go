@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
-
 )
 
 const (
@@ -101,16 +100,16 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	require.NoError(t, err)
 
 	// Increment some counts
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 10})
 	ut.Increment(ctx, &tables.UsageCounts{TotalDownloadSizeBytes: 100})
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1_000})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1_000})
 
 	// Go to the next collection period
 	clock.Set(usage1Collection2Start)
 
 	// Increment some more counts
-	ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 2})
+	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 2})
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 20})
 
 	rdb := te.GetCacheRedisClient()
@@ -163,7 +162,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 			// collection period.
 			FinalBeforeUsec: timeutil.ToUsec(usage1Collection3Start),
 			UsageCounts: tables.UsageCounts{
-				CasCacheHits:           1001 + 2,
+				CASCacheHits:           1001 + 2,
 				ActionCacheHits:        10 + 20,
 				TotalDownloadSizeBytes: 100,
 			},
@@ -180,8 +179,8 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	require.NoError(t, err)
 
 	// Increment for group 1, then group 2
-	ut.Increment(ctx1, &tables.UsageCounts{CasCacheHits: 1})
-	ut.Increment(ctx2, &tables.UsageCounts{CasCacheHits: 10})
+	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
+	ut.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 10})
 
 	rdb := te.GetCacheRedisClient()
 	ctx := context.Background()
@@ -225,7 +224,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR1",
 			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
 			UsageCounts: tables.UsageCounts{
-				CasCacheHits: 1,
+				CASCacheHits: 1,
 			},
 		},
 		{
@@ -233,7 +232,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 			GroupID:         "GR2",
 			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
 			UsageCounts: tables.UsageCounts{
-				CasCacheHits: 10,
+				CASCacheHits: 10,
 			},
 		},
 	}, usages, "data flushed to DB should match expected values")
@@ -246,13 +245,13 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(usage1Collection2Start)
-	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 10})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 10})
 	require.NoError(t, err)
 	clock.Set(usage1Collection3Start)
-	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 100})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
 
 	// Note: we're at the start of the 3rd collection period when flushing.
@@ -271,7 +270,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 			PeriodStartUsec: timeutil.ToUsec(usage1Start),
 			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
 			UsageCounts: tables.UsageCounts{
-				CasCacheHits: 1,
+				CASCacheHits: 1,
 			},
 		},
 	}, usages)
@@ -284,7 +283,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
@@ -310,7 +309,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CasCacheHits: 1})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 

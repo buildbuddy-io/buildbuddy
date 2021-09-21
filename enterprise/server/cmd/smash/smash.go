@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/golang/protobuf/proto"
 	"github.com/jhump/protoreflect/desc"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -34,6 +35,7 @@ var (
 	testDuration = flag.Duration("test_duration", 10*time.Second, "The duration of the loadtest.")
 	concurrency  = flag.Uint("concurrency", 10, "Number of concurrent workers to use")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
+	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
 	randomSeed         = flag.Int64("random_seed", 0, "Random seed.")
 	realisticBlobSizes = flag.Bool("realistic_blob_sizes", true, "If true, use realistic blob sizes, ignoring blob_size flag.")
@@ -116,6 +118,7 @@ func writeBlobsForReading() []*repb.Digest {
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
 	ctx := context.Background()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	digests := make([]*repb.Digest, 0)
 	for i := 0; uint(i) < *concurrency; i++ {
 		d, buf := newRandomDigestBuf(randomBlobSize())
@@ -214,6 +217,11 @@ func main() {
 	if *realisticBlobSizes {
 		blobSizeDesc = "simulating real blob sizes."
 	}
+
+	md := make(map[string]string)
+	if *apiKey != "" {
+		md["x-buildbuddy-api-key"] = *apiKey
+	}
 	log.Printf("Running a %s test @ %d r/sec, concurrency: %d, %s", *testDuration, *rps, *concurrency, blobSizeDesc)
 	report, err := runner.Run(
 		*method,
@@ -224,6 +232,7 @@ func main() {
 		runner.WithProtoset(protosetFile),
 		runner.WithInsecure(!*ssl),
 		runner.WithBinaryDataFunc(dataFunc),
+		runner.WithMetadata(md),
 	)
 
 	if err != nil {

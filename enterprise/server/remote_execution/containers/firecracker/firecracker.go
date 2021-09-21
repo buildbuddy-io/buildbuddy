@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -35,15 +35,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -103,8 +102,8 @@ const (
 	// workspace disk image beyond the size of the existing files.
 	workspaceSlackBytes = 100 * 1e6 // 100MB
 
-	// This is the port on which the guest connects to the bytestream proxy on the host.
-	byteStreamProxyPort = 9292
+	// The path in the guest where CASFS is mounted.
+	guestCASFSMountDir = "/casfs"
 )
 
 var (
@@ -261,110 +260,6 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 	return true
 }
 
-// byteStreamProxy is a server that proxies ByteStream RPCs between the guest VM and the remote cache.
-// Prior to executing a task in the VM, `SetExecutionContext` context should be called to set the context to use
-// to communicate with the remote cache.
-// TODO(vadim): ideally we should also check if the server context is cancelled, not just the execution context
-// TODO(vadim): take advantage of the file cache instead of always streaming from remote cache
-type byteStreamProxy struct {
-	target         bspb.ByteStreamClient
-	unixSocketPath string
-
-	mu      sync.Mutex
-	server  *grpc.Server
-	context context.Context
-}
-
-func (c *byteStreamProxy) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) error {
-	c.mu.Lock()
-	ctx := c.context
-	c.mu.Unlock()
-	stream, err := c.target.Read(ctx, request)
-	if err != nil {
-		return err
-	}
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := server.Send(rsp); err != nil {
-			return err
-		}
-	}
-}
-
-func (c *byteStreamProxy) Write(server bspb.ByteStream_WriteServer) error {
-	c.mu.Lock()
-	ctx := c.context
-	c.mu.Unlock()
-	stream, err := c.target.Write(ctx)
-	if err != nil {
-		return err
-	}
-	for {
-		req, err := server.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if err := stream.Send(req); err != nil {
-			return err
-		}
-	}
-}
-
-func (c *byteStreamProxy) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	c.mu.Lock()
-	ctx = c.context
-	c.mu.Unlock()
-	return c.target.QueryWriteStatus(ctx, request)
-}
-
-func (c *byteStreamProxy) Start() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.server != nil {
-		return status.FailedPreconditionError("ByteStreamProxy already started")
-	}
-
-	c.server = grpc.NewServer()
-	bspb.RegisterByteStreamServer(c.server, c)
-	lis, err := net.Listen("unix", c.unixSocketPath)
-	if err != nil {
-		return err
-	}
-	go func() {
-		c.server.Serve(lis)
-	}()
-	return nil
-}
-
-func (c *byteStreamProxy) Stop() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.server == nil {
-		return
-	}
-	c.server.Stop()
-	c.server = nil
-}
-
-func (c *byteStreamProxy) SetExecutionContext(ctx context.Context) {
-	c.mu.Lock()
-	c.context = ctx
-	c.mu.Unlock()
-}
-
-func newBSProxy(unixSocketPath string, target bspb.ByteStreamClient) *byteStreamProxy {
-	return &byteStreamProxy{target: target, unixSocketPath: unixSocketPath, context: context.Background()}
-}
-
 // Container invariants which cannot bechanged across snapshot/resume cycles.
 // Things like the container used to create the image, the numCPUs / RAM, etc.
 // Importantly, the files attached in the actionWorkingDir, which are attached
@@ -390,8 +285,8 @@ type FirecrackerContainer struct {
 	containerFSPath  string // the path to the container ext4 image
 
 	// when CASFS is enabled, this contains the layout for the next execution
-	fsLayout *container.FileSystemLayout
-	bsProxy  *byteStreamProxy
+	fsLayout  *container.FileSystemLayout
+	vfsServer *vfs_server.Server
 
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
@@ -592,7 +487,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
 	// Wait until jailer directory exists because the host vsock socket is created in that directory.
-	if err := c.setupByteStreamProxy(); err != nil {
+	if err := c.setupVFSServer(); err != nil {
 		return err
 	}
 
@@ -643,7 +538,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
 	if err != nil {
 		return err
 	}
@@ -893,18 +788,22 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupByteStreamProxy() error {
-	if c.bsProxy != nil {
+func (c *FirecrackerContainer) setupVFSServer() error {
+	if c.vfsServer != nil {
 		return nil
 	}
 
-	vsockServerPath := filepath.Join(c.getChroot(), firecrackerVSockPath) + "_" + strconv.Itoa(byteStreamProxyPort)
+	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-	c.bsProxy = newBSProxy(vsockServerPath, c.env.GetByteStreamClient())
-	if err := c.bsProxy.Start(); err != nil {
-		return status.InternalErrorf("Could not start ByteStreamServer proxy: %s", err)
+	c.vfsServer = vfs_server.New(c.env, c.actionWorkingDir)
+	lis, err := net.Listen("unix", vsockServerPath)
+	if err != nil {
+		return err
+	}
+	if err := c.vfsServer.Start(lis); err != nil {
+		return status.InternalErrorf("Could not start VFS server: %s", err)
 	}
 	return nil
 }
@@ -1009,7 +908,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	if err := c.setupByteStreamProxy(); err != nil {
+	if err := c.setupVFSServer(); err != nil {
 		return err
 	}
 
@@ -1030,13 +929,11 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 }
 
 func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
-	c.bsProxy.SetExecutionContext(ctx)
-
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
 	if err != nil {
 		return nil, err
 	}
@@ -1044,6 +941,31 @@ func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *v
 
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rsp, err
+}
+
+func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+	p, err := vfs_server.NewCASLazyFileProvider(c.env, ctx, c.fsLayout.RemoteInstanceName, c.fsLayout.Inputs)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.vfsServer.Prepare(p); err != nil {
+		return nil, err
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMCASFSPort)
+	if err != nil {
+		return nil, err
+	}
+	client := vmfspb.NewFileSystemClient(conn)
+	rsp, err := client.Prepare(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1067,18 +989,28 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		ExitCode:           commandutil.NoExitCode,
 	}
 
+	if c.fsLayout != nil {
+		req := &vmfspb.PrepareRequest{
+			FileSystemLayout: &vmfspb.FileSystemLayout{
+				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
+				Inputs:             c.fsLayout.Inputs,
+				OutputFiles:        c.fsLayout.OutputFiles,
+				OutputDirectories:  c.fsLayout.OutputDirs,
+			},
+		}
+		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
+		if err != nil {
+			result.Error = err
+			return result
+		}
+	}
+
 	execRequest := &vmxpb.ExecRequest{
 		Arguments:        cmd.GetArguments(),
 		WorkingDirectory: "/workspace/",
 	}
 	if c.fsLayout != nil {
-		execRequest.CasfsConfiguration = &vmxpb.CASFSConfiguration{
-			FileSystemLayout: &vmxpb.FileSystemLayout{
-				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
-				Inputs:             c.fsLayout.Inputs,
-			},
-		}
-		execRequest.WorkingDirectory = "/casfs/"
+		execRequest.WorkingDirectory = guestCASFSMountDir
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {
 		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
@@ -1092,22 +1024,25 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		return result
 	}
 
-	// Command was successful, let's unpack the files back to our
-	// workspace directory now.
-	if err := c.machine.PauseVM(ctx); err != nil {
-		result.Error = status.InternalErrorf("error pausing VM: %s", err)
-		return result
-	}
+	// If FUSE is enabled then outputs are already in the workspace.
+	if c.fsLayout == nil {
+		// Command was successful, let's unpack the files back to our
+		// workspace directory now.
+		if err := c.machine.PauseVM(ctx); err != nil {
+			result.Error = status.InternalErrorf("error pausing VM: %s", err)
+			return result
+		}
 
-	copyOutputsErr := c.copyOutputsToWorkspace(ctx)
-	if err := c.machine.ResumeVM(ctx); err != nil {
-		result.Error = status.InternalErrorf("error resuming VM: %s", err)
-		return result
-	}
+		copyOutputsErr := c.copyOutputsToWorkspace(ctx)
+		if err := c.machine.ResumeVM(ctx); err != nil {
+			result.Error = status.InternalErrorf("error resuming VM: %s", err)
+			return result
+		}
 
-	if copyOutputsErr != nil {
-		result.Error = err
-		return result
+		if copyOutputsErr != nil {
+			result.Error = err
+			return result
+		}
 	}
 
 	result.ExitCode = int(rsp.GetExitCode())
@@ -1171,8 +1106,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
 	}
-	if c.bsProxy != nil {
-		c.bsProxy.Stop()
+	if c.vfsServer != nil {
+		c.vfsServer.Stop()
+		c.vfsServer = nil
 	}
 	return nil
 }
