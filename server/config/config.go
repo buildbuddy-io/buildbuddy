@@ -115,6 +115,11 @@ type AwsS3Config struct {
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
 
+	// Useful for configuring WebIdentity based auth
+	WebIdentityTokenFilePath string `yaml:"web_identity_token_file" usage:"The file path to the web identity token file."`
+	RoleARN                  string `yaml:"role_arn" usage:"The role ARN to use for web identity auth."`
+	RoleSessionName          string `yaml:"role_session_name" usage:"The role session name to use for web identity auth."`
+
 	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
 	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
 	StaticCredentialsID     string `yaml:"static_credentials_id" usage:"Static credentials ID to use, useful for configuring the use of MinIO."`
@@ -144,6 +149,11 @@ type S3CacheConfig struct {
 	Bucket             string `yaml:"bucket" usage:"The AWS S3 bucket to store files in."`
 	CredentialsProfile string `yaml:"credentials_profile" usage:"A custom credentials profile to use."`
 	TTLDays            int64  `yaml:"ttl_days" usage:"The period after which cache files should be TTLd. Disabled if 0."`
+
+	// Useful for configuring WebIdentity based auth
+	WebIdentityTokenFilePath string `yaml:"web_identity_token_file" usage:"The file path to the web identity token file."`
+	RoleARN                  string `yaml:"role_arn" usage:"The role ARN to use for web identity auth."`
+	RoleSessionName          string `yaml:"role_session_name" usage:"The role session name to use for web identity auth."`
 
 	// Useful for configuring MinIO: https://docs.min.io/docs/how-to-use-aws-sdk-for-go-with-minio-server.html
 	Endpoint                string `yaml:"endpoint" usage:"The AWS endpoint to use, useful for configuring the use of MinIO."`
