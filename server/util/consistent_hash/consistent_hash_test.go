@@ -24,7 +24,9 @@ func TestNodesetOrderIndependence(t *testing.T) {
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
 	}
 
-	ch.Set(hosts...)
+	if err := ch.Set(hosts...); err != nil {
+		t.Fatal(err)
+	}
 
 	mappings := make(map[string]string, 0)
 	for i := 0; i < 1000; i++ {
@@ -36,7 +38,9 @@ func TestNodesetOrderIndependence(t *testing.T) {
 	rand.Shuffle(len(hosts), func(i, j int) {
 		hosts[i], hosts[j] = hosts[j], hosts[i]
 	})
-	ch.Set(hosts...)
+	if err := ch.Set(hosts...); err != nil {
+		t.Fatal(err)
+	}
 
 	for d, host := range mappings {
 		assert.Equal(host, ch.Get(d))
@@ -56,12 +60,41 @@ func TestGetAllReplicas(t *testing.T) {
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
 	}
 
-	ch.Set(hosts...)
+	if err := ch.Set(hosts...); err != nil {
+		t.Fatal(err)
+	}
 
 	for i := 0; i < 100; i++ {
 		k, err := random.RandomString(64)
 		assert.Nil(err)
 		replicas := ch.GetAllReplicas(k)
 		assert.Equal(10, len(replicas))
+	}
+}
+
+func BenchmarkGetAllReplicas(b *testing.B) {
+	rand.Seed(time.Now().UnixNano())
+	assert := assert.New(b)
+	ch := consistent_hash.NewConsistentHash()
+
+	hosts := make([]string, 0)
+	for i := 0; i < 10; i++ {
+		r, err := random.RandomString(5)
+		assert.Nil(err)
+		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+	}
+
+	if err := ch.Set(hosts...); err != nil {
+		b.Fatal(err)
+	}
+
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		k, err := random.RandomString(64)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		_ = ch.GetAllReplicas(k)
 	}
 }

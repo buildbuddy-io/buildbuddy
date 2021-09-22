@@ -105,9 +105,13 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
 		heartbeatConfig := &heartbeat.Config{
-			MyPublicAddr:     config.ListenAddr,
-			GroupName:        config.GroupName,
-			UpdateFn:         chash.Set,
+			MyPublicAddr: config.ListenAddr,
+			GroupName:    config.GroupName,
+			UpdateFn: func(peers ...string) {
+				if err := chash.Set(peers...); err != nil {
+					log.Errorf("Error setting peers in consistent hash: %s", err)
+				}
+			},
 			EnablePeerExpiry: false,
 		}
 		dc.heartbeatChannel = heartbeat.NewHeartbeatChannel(config.PubSub, heartbeatConfig)
