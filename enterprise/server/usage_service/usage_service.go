@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -19,10 +20,18 @@ const (
 
 type usageService struct {
 	env environment.Env
+
+	// start is the earliest moment in time at which we're able to return usage
+	// data to the user. We return usage data from the start of the month
+	// corresponding to this date.
+	start time.Time
 }
 
 func New(env environment.Env) *usageService {
-	return &usageService{env}
+	return &usageService{
+		env:   env,
+		start: configuredUsageStartDate(env),
+	}
 }
 
 func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
@@ -36,7 +45,12 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	// usage.
 	now := time.Now().UTC()
 	maxNumHistoricalMonths := maxNumMonthsOfUsageToReturn - 1
+
 	start := addCalendarMonths(startOfMonth(now), -maxNumHistoricalMonths)
+	// Limit the start date to the start of the month in which we began collecting
+	// usage data.
+	start = maxTime(start, startOfMonth(s.start))
+
 	end := addCalendarMonths(startOfMonth(now), 1)
 
 	usages, err := s.scanUsages(ctx, groupID, start, end)
@@ -66,7 +80,6 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
 	db := s.env.GetDBHandle()
-
 	rows, err := db.Raw(`
 		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
 		SUM(invocations) AS invocations,
@@ -119,4 +132,25 @@ func reverseUsageSlice(a []*usagepb.Usage) {
 		j := len(a) - i - 1
 		a[i], a[j] = a[j], a[i]
 	}
+}
+
+func configuredUsageStartDate(env environment.Env) time.Time {
+	startDateStr := env.GetConfigurator().GetAppUsageStartDate()
+	if startDateStr == "" {
+		log.Warningf("Usage start date is not configured; usage page may show some months with missing usage data.")
+		return time.Unix(0, 0).UTC()
+	}
+	start, err := time.Parse(time.RFC3339, startDateStr)
+	if err != nil {
+		log.Errorf("Failed to parse app.usage_start_date from string %q: %s", startDateStr, err)
+		return time.Unix(0, 0).UTC()
+	}
+	return start.UTC()
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
