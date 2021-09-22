@@ -256,9 +256,9 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
 	}
 	dbh := ut.env.GetDBHandle()
-	// Create a row for the corresponding usage period if one doesn't already
-	// exist.
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
+		// Create a row for the corresponding usage period if one doesn't already
+		// exist.
 		res := tx.Exec(`
 			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
 				group_id,
