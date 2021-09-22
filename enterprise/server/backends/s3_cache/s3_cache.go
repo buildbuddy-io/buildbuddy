@@ -77,7 +77,6 @@ func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 
 	if awsConfig.WebIdentityTokenFilePath != "" {
 		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), awsConfig.RoleARN, awsConfig.RoleSessionName, awsConfig.WebIdentityTokenFilePath))
-		log.Debugf("AWS web identity credentials set (%s, %s, %s)", awsConfig.RoleARN, awsConfig.RoleSessionName, awsConfig.WebIdentityTokenFilePath)
 	}
 
 	// Create S3 service client
