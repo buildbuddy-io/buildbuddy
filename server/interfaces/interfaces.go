@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 
@@ -459,8 +457,6 @@ type MetricsCollector interface {
 type KeyValStore interface {
 	SetByKey(ctx context.Context, key string, val []byte) error
 	GetByKey(ctx context.Context, key string) ([]byte, error)
-	SetProtoByKey(ctx context.Context, key string, msg proto.Message) error
-	GetProtoByKey(ctx context.Context, key string, msg proto.Message) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.
