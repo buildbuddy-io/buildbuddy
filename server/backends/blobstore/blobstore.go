@@ -14,9 +14,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -351,6 +353,11 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 		return nil, err
 	}
 	log.Debug("AWS blobstore session created")
+
+	if awsConfig.WebIdentityTokenFilePath != "" {
+		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), awsConfig.RoleARN, awsConfig.RoleSessionName, awsConfig.WebIdentityTokenFilePath))
+		log.Debugf("AWS web identity credentials set (%s, %s, %s)", awsConfig.RoleARN, awsConfig.RoleSessionName, awsConfig.WebIdentityTokenFilePath)
+	}
 
 	// Create S3 service client
 	svc := s3.New(sess)
