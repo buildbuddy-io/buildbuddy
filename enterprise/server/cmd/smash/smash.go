@@ -194,7 +194,7 @@ func dataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 }
 func main() {
 	flag.Parse()
-	monitoring.StartMonitoringHandler("localhost:9091")
+	monitoring.StartMonitoringHandler("localhost:8888")
 
 	seed := *randomSeed
 	if seed == 0 {
