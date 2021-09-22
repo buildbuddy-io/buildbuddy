@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -265,12 +264,9 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
 	}
 	dbh := ut.env.GetDBHandle()
-	return dbh.Transaction(ctx, func(tx *db.DB) error {
-		finalBeforeUsec := timeutil.ToUsec(c.End())
-
-		// Create a row for the corresponding usage period if one doesn't already
-		// exist
-		res := tx.Exec(`
+	// Create a row for the corresponding usage period if one doesn't already
+	// exist.
+	res := dbh.Exec(`
 			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
 				group_id,
 				period_start_usec,
@@ -281,25 +277,25 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				total_download_size_bytes
 			) VALUES (?, ?, ?, ?, ?, ?, ?)
 			`,
-			pk.GroupID,
-			pk.PeriodStartUsec,
-			finalBeforeUsec,
-			counts.Invocations,
-			counts.CASCacheHits,
-			counts.ActionCacheHits,
-			counts.TotalDownloadSizeBytes,
-		)
-		if err := res.Error; err != nil {
-			return err
-		}
-		// If we inserted successfully, no need to update.
-		if res.RowsAffected > 0 {
-			return nil
-		}
-		// Update the usage row, but only if collection period data has not already
-		// been written (for example, if the previous flush failed to delete the
-		// data from Redis).
-		return tx.Exec(`
+		pk.GroupID,
+		pk.PeriodStartUsec,
+		timeutil.ToUsec(c.End()),
+		counts.Invocations,
+		counts.CASCacheHits,
+		counts.ActionCacheHits,
+		counts.TotalDownloadSizeBytes,
+	)
+	if err := res.Error; err != nil {
+		return err
+	}
+	// If we inserted successfully, no need to update.
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	// Update the usage row, but only if collection period data has not already
+	// been written (for example, if the previous flush failed to delete the
+	// data from Redis).
+	return dbh.Exec(`
 			UPDATE Usages
 			SET
 				final_before_usec = ?,
@@ -312,16 +308,15 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				AND period_start_usec = ?
 				AND final_before_usec <= ?
 		`,
-			finalBeforeUsec,
-			counts.Invocations,
-			counts.CASCacheHits,
-			counts.ActionCacheHits,
-			counts.TotalDownloadSizeBytes,
-			pk.GroupID,
-			pk.PeriodStartUsec,
-			timeutil.ToUsec(c.Start()),
-		).Error
-	})
+		timeutil.ToUsec(c.End()),
+		counts.Invocations,
+		counts.CASCacheHits,
+		counts.ActionCacheHits,
+		counts.TotalDownloadSizeBytes,
+		pk.GroupID,
+		pk.PeriodStartUsec,
+		timeutil.ToUsec(c.Start()),
+	).Error
 }
 
 func (ut *tracker) currentCollectionPeriod() collectionPeriod {
