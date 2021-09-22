@@ -309,7 +309,11 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
 	require.NoError(t, err)
 
+	// Write 2 collection periods worth of data.
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(collectionPeriodDuration))
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 
@@ -335,9 +339,9 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	require.Equal(t, []*tables.Usage{
 		{
 			GroupID:         "GR1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Collection1Start),
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection3Start),
+			UsageCounts:     tables.UsageCounts{CASCacheHits: 1001},
 		},
 	}, usages)
 }
