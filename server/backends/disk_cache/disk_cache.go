@@ -2,6 +2,7 @@ package disk_cache
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -537,7 +538,7 @@ type fileKey struct {
 	cacheType          interfaces.CacheType
 	userPrefix         string
 	remoteInstanceName string
-	digestHash         string
+	digestBytes        []byte
 }
 
 func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error {
@@ -560,7 +561,11 @@ func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error 
 
 	// pull digest off the end
 	if len(parts) > 0 {
-		fk.digestHash = parts[len(parts)-1]
+		digestBytes, err := hex.DecodeString(parts[len(parts)-1])
+		if err != nil {
+			return parseError()
+		}
+		fk.digestBytes = digestBytes
 		parts = parts[:len(parts)-1]
 	} else {
 		return parseError()
@@ -596,10 +601,11 @@ func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error 
 
 func (fk *fileKey) FullPath() string {
 	hashPrefixDir := ""
+	digestHash := hex.EncodeToString(fk.digestBytes)
 	if fk.part.useV2Layout {
-		hashPrefixDir = fk.digestHash[0:HashPrefixDirPrefixLen] + "/"
+		hashPrefixDir = digestHash[0:HashPrefixDirPrefixLen] + "/"
 	}
-	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+fk.digestHash)
+	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+digestHash)
 }
 
 func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
@@ -616,12 +622,17 @@ func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, rem
 		alert.UnexpectedEvent("disk_cache_digest_too_short", "digest hash %q is too short", hash)
 		return nil, status.FailedPreconditionErrorf("digest hash %q is way too short!", hash)
 	}
+
+	digestBytes, err := hex.DecodeString(hash)
+	if err != nil {
+		return nil, err
+	}
 	return &fileKey{
 		part:               p,
 		cacheType:          cacheType,
 		userPrefix:         p.internString(userPrefix),
 		remoteInstanceName: p.internString(remoteInstanceName),
-		digestHash:         hash,
+		digestBytes:        digestBytes,
 	}, nil
 }
 
