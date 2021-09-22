@@ -3,6 +3,7 @@
 package vfs_server
 
 import (
+	"context"
 	"syscall"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
