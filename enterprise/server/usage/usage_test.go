@@ -316,7 +316,13 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
-			ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
+			ut, err := usage.NewTracker(te, &usage.TrackerOpts{
+				Clock: clock,
+				// Disable Redis locking to test that the DB queries are properly
+				// synchronized on their own. Redis is purely used as an optimization to
+				// reduce DB load, and we should not overcount data if Redis fails.
+				DisableRedlock: true,
+			})
 			require.NoError(t, err)
 			return ut.FlushToDB(ctx)
 		})
@@ -324,4 +330,14 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 
 	err = eg.Wait()
 	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	require.Equal(t, []*tables.Usage{
+		{
+			GroupID:         "GR1",
+			PeriodStartUsec: timeutil.ToUsec(usage1Collection1Start),
+			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
+		},
+	}, usages)
 }

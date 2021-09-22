@@ -79,7 +79,14 @@ var (
 )
 
 type TrackerOpts struct {
+	// TEST ONLY options
+
+	// Clock overrides the clock used by the usage tracker.
 	Clock timeutil.Clock
+
+	// DisableRedlock disables the Redis locking mechanism used to prevent
+	// flush operations from accessing the DB concurrently.
+	DisableRedlock bool
 }
 
 type tracker struct {
@@ -87,8 +94,9 @@ type tracker struct {
 	rdb   *redis.Client
 	clock timeutil.Clock
 
-	flushMutex *redsync.Mutex
-	stopFlush  chan struct{}
+	disableRedlock bool
+	flushMutex     *redsync.Mutex
+	stopFlush      chan struct{}
 }
 
 func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
@@ -109,11 +117,12 @@ func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
 	)
 
 	return &tracker{
-		env:        env,
-		rdb:        rdb,
-		clock:      clock,
-		flushMutex: flushMutex,
-		stopFlush:  make(chan struct{}),
+		env:            env,
+		rdb:            rdb,
+		clock:          clock,
+		disableRedlock: opts.DisableRedlock,
+		flushMutex:     flushMutex,
+		stopFlush:      make(chan struct{}),
 	}, nil
 }
 
@@ -184,20 +193,22 @@ func (ut *tracker) StopDBFlush() {
 // Public for testing only; the server should call StartDBFlush to periodically
 // flush usage.
 func (ut *tracker) FlushToDB(ctx context.Context) error {
-	// Grab lock. This will immediately return `redsync.ErrFailed` if another
-	// client already holds the lock. In that case, we ignore the error.
-	err := ut.flushMutex.LockContext(ctx)
-	if err == redsync.ErrFailed {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
-			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
+	if !ut.disableRedlock {
+		// Grab Redis lock. This will immediately return `redsync.ErrFailed` if
+		// another client already holds the lock. In that case, we ignore the error.
+		err := ut.flushMutex.LockContext(ctx)
+		if err == redsync.ErrFailed {
+			return nil
 		}
-	}()
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
+				log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
+			}
+		}()
+	}
 	return ut.flushToDB(ctx)
 }
 
@@ -255,7 +266,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
-		finalBeforeUsec := timeutil.ToUsec(c.Start().Add(collectionPeriodDuration))
+		finalBeforeUsec := timeutil.ToUsec(c.End())
 
 		// Create a row for the corresponding usage period if one doesn't already
 		// exist
@@ -308,7 +319,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			counts.TotalDownloadSizeBytes,
 			pk.GroupID,
 			pk.PeriodStartUsec,
-			finalBeforeUsec,
+			timeutil.ToUsec(c.Start()),
 		).Error
 	})
 }
