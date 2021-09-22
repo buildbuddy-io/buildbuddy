@@ -13,22 +13,22 @@ import (
 const defaultNumReplicas = 100
 
 type ConsistentHash struct {
-	ring        map[int]int
+	ring        map[int]uint8
 	keys        []int
 	items       []string
 	numReplicas int
 	mu          sync.RWMutex
 	replicaMu   sync.RWMutex
-	replicaSets map[uint64][]string
+	replicaSets map[uint32][]string
 }
 
 func NewConsistentHash() *ConsistentHash {
 	return &ConsistentHash{
 		numReplicas: defaultNumReplicas,
 		keys:        make([]int, 0),
-		ring:        make(map[int]int, 0),
+		ring:        make(map[int]uint8, 0),
 		items:       make([]string, 0),
-		replicaSets: make(map[uint64][]string, 0),
+		replicaSets: make(map[uint32][]string, 0),
 	}
 }
 
@@ -43,13 +43,13 @@ func (c *ConsistentHash) GetItems() []string {
 }
 
 func (c *ConsistentHash) Set(items ...string) error {
-	if len(items) > 64 {
-		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 64")
+	if len(items) > 256 {
+		return status.InvalidArgumentError("Too many items in consistent hash, max allowed: 256")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.keys = make([]int, 0)
-	c.ring = make(map[int]int, 0)
+	c.ring = make(map[int]uint8, 0)
 	c.items = items
 	sort.Strings(c.items)
 
@@ -57,7 +57,7 @@ func (c *ConsistentHash) Set(items ...string) error {
 		for i := 0; i < c.numReplicas; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
 			c.keys = append(c.keys, h)
-			c.ring[h] = itemIndex
+			c.ring[h] = uint8(itemIndex)
 		}
 	}
 	sort.Ints(c.keys)
@@ -81,7 +81,7 @@ func (c *ConsistentHash) Get(key string) string {
 	return c.items[c.ring[c.keys[idx]]]
 }
 
-func (c *ConsistentHash) lookupReplicas(idx int, fn func(replicaIndex int)) {
+func (c *ConsistentHash) lookupReplicas(idx int, fn func(replicaIndex uint8)) {
 	for offset := 1; offset < len(c.keys); offset += 1 {
 		newIdx := (idx + offset) % len(c.keys)
 		fn(c.ring[c.keys[newIdx]])
@@ -105,18 +105,15 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	// first, attempt to lookup the replicaset in our local cache, by
 	// computing a hash of the replicas in the set, and checking if this set
 	// has been returned before. If it has -- return that set.
-	seen := uint64(0)
-	replicasKey := uint64(0)
-
 	originalIndex := c.ring[c.keys[idx]]
-	seen |= (1 << originalIndex)
 
-	c.lookupReplicas(idx, func(replicaIndex int) {
-		if (seen>>replicaIndex)&1 == 0 {
-			replicasKey |= (1 << replicaIndex)
-			seen |= (1 << replicaIndex)
-		}
+	replicasHash := crc32.NewIEEE()
+	replicasHash.Write([]byte{originalIndex})
+	c.lookupReplicas(idx, func(replicaIndex uint8) {
+		replicasHash.Write([]byte{replicaIndex})
 	})
+
+	replicasKey := replicasHash.Sum32()
 
 	c.replicaMu.RLock()
 	replicas, ok := c.replicaSets[replicasKey]
@@ -127,16 +124,16 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 
 	// if no replicaset was found under the hash key, we'll go ahead and
 	// allocate a new replica set and cache it, then return it.
-	seen = uint64(0)
-	seen |= (1 << originalIndex)
+	seen := make(map[uint8]struct{}, len(c.keys))
+	seen[originalIndex] = struct{}{}
 
 	replicas = make([]string, 0, len(c.keys))
 	replicas = append(replicas, c.items[originalIndex])
 
-	c.lookupReplicas(idx, func(replicaIndex int) {
-		if (seen>>replicaIndex)&1 == 0 {
+	c.lookupReplicas(idx, func(replicaIndex uint8) {
+		if _, ok := seen[replicaIndex]; !ok {
 			replicas = append(replicas, c.items[replicaIndex])
-			seen |= (1 << replicaIndex)
+			seen[replicaIndex] = struct{}{}
 		}
 	})
 
