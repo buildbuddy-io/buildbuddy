@@ -71,10 +71,14 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 			rsp.Usage = append(rsp.Usage, &usagepb.Usage{Period: period})
 		}
 	}
-
+	// Make sure we always return at least one month (to make the client simpler).
+	if len(rsp.Usage) == 0 {
+		rsp.Usage = append(rsp.Usage, &usagepb.Usage{
+			Period: fmt.Sprintf("%d-%02d", now.Year(), now.Month()),
+		})
+	}
 	// Return in reverse-chronological order.
 	reverseUsageSlice(rsp.Usage)
-
 	return rsp, nil
 }
 
@@ -144,6 +148,9 @@ func configuredUsageStartDate(env environment.Env) time.Time {
 	if err != nil {
 		log.Errorf("Failed to parse app.usage_start_date from string %q: %s", startDateStr, err)
 		return time.Unix(0, 0).UTC()
+	}
+	if start.After(time.Now()) {
+		log.Warningf("Configured usage start date %q is in the future; usage page may show empty usage data.", startDateStr)
 	}
 	return start.UTC()
 }
