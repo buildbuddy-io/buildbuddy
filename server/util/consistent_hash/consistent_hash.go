@@ -50,6 +50,8 @@ func (c *ConsistentHash) Set(items ...string) error {
 	defer c.mu.Unlock()
 	c.keys = make([]int, 0)
 	c.ring = make(map[int]uint8, 0)
+	c.replicaSets = make(map[uint32][]string, 0)
+
 	c.items = items
 	sort.Strings(c.items)
 
