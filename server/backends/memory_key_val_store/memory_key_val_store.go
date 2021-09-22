@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 
 	lru "github.com/hashicorp/golang-lru"
 )
@@ -48,25 +47,4 @@ func (m *MemoryKeyValStore) GetByKey(ctx context.Context, key string) ([]byte, e
 		return nil, status.InternalErrorf("Value in the KeyValStore for key %s was not a byte slice.", key)
 	}
 	return nil, status.NotFoundErrorf("No message found in the KeyValStore for key %s.", key)
-}
-
-func (m *MemoryKeyValStore) SetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
-	if msg == nil {
-		return m.SetByKey(ctx, key, nil)
-	}
-	marshaled, err := proto.Marshal(msg)
-	if err != nil {
-		return err
-	}
-
-	m.SetByKey(ctx, key, marshaled)
-	return nil
-}
-
-func (m *MemoryKeyValStore) GetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
-	marshaled, err := m.GetByKey(ctx, key)
-	if err != nil {
-		return err
-	}
-	return proto.Unmarshal(marshaled, msg)
 }

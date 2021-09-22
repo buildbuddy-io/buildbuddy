@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_golang_lru//:golang-lru",
     ],
 )

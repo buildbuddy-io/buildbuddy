@@ -9,7 +9,6 @@ import (
 	"unsafe"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/golang/protobuf/proto"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -341,25 +340,6 @@ func (c *Cache) SetByKey(ctx context.Context, key string, val []byte) error {
 
 func (c *Cache) GetByKey(ctx context.Context, key string) ([]byte, error) {
 	return c.rdbGet(ctx, key)
-}
-
-func (c *Cache) SetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
-	if msg == nil {
-		c.SetByKey(ctx, key, nil)
-	}
-	marshaled, err := proto.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	return c.SetByKey(ctx, key, marshaled)
-}
-
-func (c *Cache) GetProtoByKey(ctx context.Context, key string, msg proto.Message) error {
-	marshaled, err := c.GetByKey(ctx, key)
-	if err != nil {
-		return err
-	}
-	return proto.Unmarshal(marshaled, msg)
 }
 
 func (c *Cache) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {

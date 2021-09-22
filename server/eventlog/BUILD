@@ -12,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/terminal",
+        "//server/util/keyval",
         "//server/util/status",
     ],
 )

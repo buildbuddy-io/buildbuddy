@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -102,7 +103,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 				// If the invocation is in progress and the chunk requested is not on
 				// disk, check the cache to see if the live chunk is being requested.
 				liveChunk := &elpb.LiveEventLogChunk{}
-				if err := env.GetKeyValStore().GetProtoByKey(ctx, eventLogPath, liveChunk); err == nil {
+				if err := keyval.GetProto(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
 					if chunkstore.ChunkIndexAsStringId(startIndex) == liveChunk.ChunkId {
 						return &elpb.GetEventLogChunkResponse{
 							Buffer:      liveChunk.Buffer,
@@ -260,16 +261,17 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	if c != nil {
 		writeHook = func(writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, timeout, open bool) {
 			if !open {
-				c.SetProtoByKey(ctx, eventLogPath, nil)
+				keyval.SetProto(ctx, c, eventLogPath, nil)
 				return
 			}
 			chunkId := chunkstore.ChunkIndexAsStringId(writeResult.LastChunkIndex + 1)
 			if chunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
-				c.SetProtoByKey(ctx, eventLogPath, nil)
+				keyval.SetProto(ctx, c, eventLogPath, nil)
 				return
 			}
-			c.SetProtoByKey(
+			keyval.SetProto(
 				ctx,
+				c,
 				eventLogPath,
 				&elpb.LiveEventLogChunk{
 					ChunkId: chunkId,
