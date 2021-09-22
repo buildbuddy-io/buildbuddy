@@ -4,11 +4,15 @@ import (
 	"context"
 	"log"
 	"strings"
-
-	"github.com/go-redis/redis/extra/redisotel/v8"
-	"github.com/go-redis/redis/v8"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/go-redis/redis/extra/redisotel/v8"
+	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
+
+	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
 
 func isRedisURI(redisTarget string) bool {
@@ -55,4 +59,40 @@ func NewClientWithOpts(opts *redis.Options, checker interfaces.HealthChecker, he
 	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient
+}
+
+type redlock struct {
+	rmu *redsync.Mutex
+}
+
+// NewWeakRedlock returns a distributed lock implemented using a single Redis
+// client. This provides a "weak" implementation of the Redlock algorithm
+// in the sense that:
+//
+// (a) It is not resilient to Redis nodes failing (even if
+//     the given Redis client points to a Redis cluster)
+// (b) It does not retry failed locking attempts.
+//
+// See https://redis.io/topics/distlock
+func NewWeakLock(rdb *redis.Client, key string, expiry time.Duration) *redlock {
+	pool := redsync_goredis.NewPool(rdb)
+	rs := redsync.New(pool)
+	rmu := rs.NewMutex(key, redsync.WithTries(1), redsync.WithExpiry(expiry))
+	return &redlock{rmu}
+}
+
+func (r *redlock) Lock(ctx context.Context) error {
+	err := r.rmu.LockContext(ctx)
+	if err == nil {
+		return nil
+	}
+	if err == redsync.ErrFailed {
+		return status.ResourceExhaustedErrorf("Failed to acquire redis lock: %s", err)
+	}
+	return err
+}
+
+func (r *redlock) Unlock(ctx context.Context) error {
+	_, err := r.rmu.UnlockContext(ctx)
+	return err
 }

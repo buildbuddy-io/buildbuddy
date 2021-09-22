@@ -543,3 +543,19 @@ type LRU interface {
 	// Returns metrics about the status of the LRU.
 	Metrics() string
 }
+
+// DistributedLock provides a way to serialize access to a resource, where the
+// accessors may be running on different nodes.
+//
+// Implementations should expire the lock after an appropriate length of time to
+// ensure that the lock will eventually be released even if this node goes down.
+type DistributedLock interface {
+	// Lock attempts to acquire the lock.
+	//
+	// Implementations may return ResourceExhaustedError if and only if the
+	// lock is already held.
+	Lock(ctx context.Context) error
+
+	// Unlock releases the lock.
+	Unlock(ctx context.Context) error
+}

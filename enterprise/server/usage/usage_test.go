@@ -92,6 +92,11 @@ func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	dbh.Callback().Raw().Register("fail", fail)
 }
 
+type nopDistributedLock struct{}
+
+func (*nopDistributedLock) Lock(context context.Context) error   { return nil }
+func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
+
 func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
@@ -325,7 +330,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 				// Disable Redis locking to test that the DB queries are properly
 				// synchronized on their own. Redis is purely used as an optimization to
 				// reduce DB load, and we should not overcount data if Redis fails.
-				DisableRedlock: true,
+				FlushLock: &nopDistributedLock{},
 			})
 			require.NoError(t, err)
 			return ut.FlushToDB(ctx)

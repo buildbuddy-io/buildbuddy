@@ -10,8 +10,11 @@ go_library(
     ],
     deps = [
         "//server/interfaces",
+        "//server/util/status",
         "@com_github_go_redis_redis_extra_redisotel_v8//:redisotel",
         "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_go_redsync_redsync_v4//:redsync",
+        "@com_github_go_redsync_redsync_v4//redis/goredis/v8:goredis",
     ],
 )
 
