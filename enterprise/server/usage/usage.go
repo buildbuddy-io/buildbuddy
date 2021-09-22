@@ -197,7 +197,7 @@ func (ut *tracker) FlushToDB(ctx context.Context) error {
 	}
 	defer func() {
 		if err := ut.flushLock.Unlock(ctx); err != nil {
-			log.Warningf("Failed to unlock Redis lock: %s", err)
+			log.Warningf("Failed to unlock distributed lock: %s", err)
 		}
 	}()
 	return ut.flushToDB(ctx)
