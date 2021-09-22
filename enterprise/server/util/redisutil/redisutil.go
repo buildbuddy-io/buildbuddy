@@ -65,8 +65,8 @@ type redlock struct {
 	rmu *redsync.Mutex
 }
 
-// NewWeakRedlock returns a distributed lock implemented using a single Redis
-// client. This provides a "weak" implementation of the Redlock algorithm
+// NewWeakLock returns a distributed lock implemented using a single Redis
+// client. This provides a "weak" implementation of the Redlock algorithm,
 // in the sense that:
 //
 // (a) It is not resilient to Redis nodes failing (even if
