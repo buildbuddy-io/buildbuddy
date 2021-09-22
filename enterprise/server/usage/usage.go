@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
-
 )
 
 const (
@@ -187,7 +186,7 @@ func (ut *tracker) StopDBFlush() {
 // Public for testing only; the server should call StartDBFlush to periodically
 // flush usage.
 func (ut *tracker) FlushToDB(ctx context.Context) error {
-	// Grab Redis lock. This will immediately return ResourceExhausted if
+	// Grab lock. This will immediately return ResourceExhausted if
 	// another client already holds the lock. In that case, we ignore the error.
 	err := ut.flushLock.Lock(ctx)
 	if status.IsResourceExhaustedError(err) {
