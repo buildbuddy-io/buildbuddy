@@ -246,7 +246,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                   </Suspense>
                 )}
-                {usage && <UsageComponent />}
+                {usage && <UsageComponent user={this.state.user} />}
                 {executors && (
                   <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                 )}

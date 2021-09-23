@@ -12,4 +12,33 @@ message GetUsageRequest {
 message GetUsageResponse {
   // Response context.
   context.ResponseContext response_context = 1;
+
+  // Usage numbers by UTC month, in reverse-chronological order (most
+  // recent usage period comes first in the list).
+  //
+  // Usage numbers will always be returned for the current period (even
+  // if the values are all 0).
+  //
+  // If historical data exists, the server may return historical data from some
+  // recent number of months (clients should handle any number of months).
+  repeated Usage usage = 2;
+}
+
+// Usage represents a count of BuildBuddy resources used for a particular time
+// period.
+message Usage {
+  // Usage period in UTC, in "YYYY-MM" format.
+  string period = 1;
+
+  // The number of invocations.
+  int64 invocations = 2;
+
+  // The number of action cache hits.
+  int64 action_cache_hits = 3;
+
+  // The number of content addressable store hits.
+  int64 cas_cache_hits = 4;
+
+  // The number of bytes downloaded from the CAS.
+  int64 total_download_size_bytes = 5;
 }

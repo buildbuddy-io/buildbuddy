@@ -195,6 +195,12 @@ func main() {
 			log.Fatalf("Failed to create usage tracker: %s", err)
 		}
 		realEnv.SetUsageTracker(ut)
+
+		ut.StartDBFlush()
+		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+			ut.StopDBFlush()
+			return nil
+		})
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {

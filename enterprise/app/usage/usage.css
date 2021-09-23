@@ -1,8 +1,59 @@
+.usage-page .container.usage-page-container {
+  max-width: 768px;
+}
+
+.usage-page .org-name {
+  color: #616161;
+}
+
 .usage-page .usage-header {
   margin: 32px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .usage-page .usage-title {
   font-size: 32px;
   font-weight: 700;
+}
+
+.usage-page .usage-period-header .selected-period-label {
+  font-size: 16px;
+}
+
+.usage-page .usage-period-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 16px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.usage-page .usage-period-header .usage-period {
+  font-weight: 600;
+}
+
+.usage-page .usage-period-table {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 4px 16px;
+}
+
+.usage-page .card .content {
+  gap: 16px;
+}
+
+.usage-page .usage-period-selection {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 8px;
+}
+
+.usage-page .usage-resource-name {
+  font-weight: 600;
 }
