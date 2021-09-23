@@ -80,7 +80,7 @@ var (
 // NewFlushLock returns a distributed lock that can be used with NewTracker
 // to help serialize access to the usage data in Redis across apps.
 func NewFlushLock(env environment.Env) interfaces.DistributedLock {
-	return redisutil.NewWeakLock(env.GetCacheRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
+	return redisutil.NewWeakLock(env.GetRemoteExecutionRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
 type tracker struct {
@@ -95,7 +95,7 @@ type tracker struct {
 func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) *tracker {
 	return &tracker{
 		env:       env,
-		rdb:       env.GetCacheRedisClient(),
+		rdb:       env.GetRemoteExecutionRedisClient(),
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
