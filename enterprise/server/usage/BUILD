@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/util/redisutil",
         "//server/environment",
+        "//server/interfaces",
         "//server/tables",
         "//server/util/db",
         "//server/util/log",
@@ -14,8 +16,6 @@ go_library(
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_go_redsync_redsync_v4//:redsync",
-        "@com_github_go_redsync_redsync_v4//redis/goredis/v8:goredis",
     ],
 )
 

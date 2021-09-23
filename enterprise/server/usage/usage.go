@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -14,9 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
-	"github.com/go-redsync/redsync/v4"
-
-	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
 
 const (
@@ -78,8 +77,10 @@ var (
 	collectionPeriodZeroValue = collectionPeriodStartingAt(time.Unix(0, 0))
 )
 
-type TrackerOpts struct {
-	Clock timeutil.Clock
+// NewFlushLock returns a distributed lock that can be used with NewTracker
+// to help serialize access to the usage data in Redis across apps.
+func NewFlushLock(env environment.Env) interfaces.DistributedLock {
+	return redisutil.NewWeakLock(env.GetCacheRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
 type tracker struct {
@@ -87,34 +88,18 @@ type tracker struct {
 	rdb   *redis.Client
 	clock timeutil.Clock
 
-	flushMutex *redsync.Mutex
-	stopFlush  chan struct{}
+	flushLock interfaces.DistributedLock
+	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
-	rdb := env.GetCacheRedisClient()
-	if rdb == nil {
-		return nil, status.UnimplementedError("Missing redis client for usage")
-	}
-	clock := opts.Clock
-	if clock == nil {
-		clock = timeutil.NewClock()
-	}
-
-	pool := redsync_goredis.NewPool(rdb)
-	rs := redsync.New(pool)
-	flushMutex := rs.NewMutex(
-		redisUsageLockKey,
-		redsync.WithTries(1), redsync.WithExpiry(redisUsageLockExpiry),
-	)
-
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) *tracker {
 	return &tracker{
-		env:        env,
-		rdb:        rdb,
-		clock:      clock,
-		flushMutex: flushMutex,
-		stopFlush:  make(chan struct{}),
-	}, nil
+		env:       env,
+		rdb:       env.GetCacheRedisClient(),
+		clock:     clock,
+		flushLock: flushLock,
+		stopFlush: make(chan struct{}),
+	}
 }
 
 func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
@@ -184,18 +169,18 @@ func (ut *tracker) StopDBFlush() {
 // Public for testing only; the server should call StartDBFlush to periodically
 // flush usage.
 func (ut *tracker) FlushToDB(ctx context.Context) error {
-	// Grab lock. This will immediately return `redsync.ErrFailed` if another
-	// client already holds the lock. In that case, we ignore the error.
-	err := ut.flushMutex.LockContext(ctx)
-	if err == redsync.ErrFailed {
+	// Grab lock. This will immediately return ResourceExhausted if
+	// another client already holds the lock. In that case, we ignore the error.
+	err := ut.flushLock.Lock(ctx)
+	if status.IsResourceExhaustedError(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if ok, err := ut.flushMutex.UnlockContext(ctx); !ok || err != nil {
-			log.Warningf("Failed to unlock Redis lock: ok=%v, err=%s", ok, err)
+		if err := ut.flushLock.Unlock(ctx); err != nil {
+			log.Warningf("Failed to unlock distributed lock: %s", err)
 		}
 	}()
 	return ut.flushToDB(ctx)
@@ -255,10 +240,8 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
-		finalBeforeUsec := timeutil.ToUsec(c.Start().Add(collectionPeriodDuration))
-
 		// Create a row for the corresponding usage period if one doesn't already
-		// exist
+		// exist.
 		res := tx.Exec(`
 			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
 				group_id,
@@ -272,7 +255,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			`,
 			pk.GroupID,
 			pk.PeriodStartUsec,
-			finalBeforeUsec,
+			timeutil.ToUsec(c.End()),
 			counts.Invocations,
 			counts.CASCacheHits,
 			counts.ActionCacheHits,
@@ -301,14 +284,14 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				AND period_start_usec = ?
 				AND final_before_usec <= ?
 		`,
-			finalBeforeUsec,
+			timeutil.ToUsec(c.End()),
 			counts.Invocations,
 			counts.CASCacheHits,
 			counts.ActionCacheHits,
 			counts.TotalDownloadSizeBytes,
 			pk.GroupID,
 			pk.PeriodStartUsec,
-			finalBeforeUsec,
+			timeutil.ToUsec(c.Start()),
 		).Error
 	})
 }

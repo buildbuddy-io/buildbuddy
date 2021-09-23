@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/api/option"
@@ -190,7 +191,10 @@ func main() {
 	}
 
 	if configurator.GetAppUsageTrackingEnabled() {
-		ut, err := usage.NewTracker(realEnv, &usage.TrackerOpts{})
+		if realEnv.GetCacheRedisClient() == nil {
+			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
+		}
+		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
 		if err != nil {
 			log.Fatalf("Failed to create usage tracker: %s", err)
 		}
