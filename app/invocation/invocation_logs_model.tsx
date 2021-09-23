@@ -18,6 +18,9 @@ export default class InvocationLogsModel {
   private logs = "";
   private responseSubscription: Subscription;
   private pollTailTimeout: number | null = null;
+
+  // Length of the log prefix which has already been persisted. The remainder of
+  // the log is considered "live" and may be updated on subsequent fetches.
 	private stableLogLength = 0;
 
   constructor(private invocationId: string) {}
