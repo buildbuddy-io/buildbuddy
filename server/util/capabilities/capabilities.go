@@ -52,7 +52,7 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 		}
 		return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
 	}
-	user, err := perms.AuthenticatedUser(ctx, env)
+	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
 		if perms.IsAnonymousUserError(err) {
 			if authIsRequired {
