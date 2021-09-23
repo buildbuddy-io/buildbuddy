@@ -110,6 +110,7 @@ func (cfs *CASFS) Mount() error {
 			// Don't depend on the `fusermount` binary to make things simpler under Firecracker.
 			DirectMount: true,
 			FsName:      "casfs",
+			MaxWrite:    fuse.MAX_KERNEL_WRITE,
 		},
 	}
 	nodeFS := fs.NewNodeFS(cfs.root, opts)
