@@ -191,8 +191,7 @@ func main() {
 	}
 
 	if configurator.GetAppUsageTrackingEnabled() {
-		rdb := realEnv.GetRemoteExecutionRedisClient()
-		if rdb == nil {
+		if realEnv.GetRemoteExecutionRedisClient() == nil {
 			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 		}
 		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
