@@ -593,10 +593,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 
-	// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
-	// anonymous execution, so ignore those.
 	user, err := auth.UserFromTrustedJWT(ctx)
-	if err != nil && !status.IsPermissionDeniedError(err) && !status.IsUnauthenticatedError(err) && !status.IsUnimplementedError(err) {
+	if err != nil && !perms.IsAnonymousUserError(err) {
 		return nil, err
 	}
 	if props.RecycleRunner && err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -53,7 +54,7 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	}
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
-		if isAnonymousUser := status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err); isAnonymousUser {
+		if perms.IsAnonymousUserError(err) {
 			if authIsRequired {
 				return false, nil
 			}

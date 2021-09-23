@@ -141,9 +141,7 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
-		// PermissionDenied, Unauthenticated, Unimplemented all imply that this is an
-		// anonymous execution, so ignore those.
-		if !status.IsUnauthenticatedError(err) && !status.IsPermissionDeniedError(err) && !status.IsUnimplementedError(err) {
+		if !perms.IsAnonymousUserError(err) {
 			return ImageCacheToken{}, err
 		}
 	} else {
