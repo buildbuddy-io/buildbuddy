@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -118,10 +119,11 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
-func makeGroups(grps []*tables.Group) []*grpb.Group {
+func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
-	for _, g := range grps {
+	for _, gr := range groupRoles {
 		urlIdentifier := ""
+		g := gr.Group
 		if g.URLIdentifier != nil {
 			urlIdentifier = *g.URLIdentifier
 		}
@@ -134,6 +136,7 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors,
+			Role:                   perms.RoleToProto(perms.Role(gr.Role)),
 		})
 	}
 	return r
@@ -395,7 +398,12 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+	acl := perms.ACLForGroupResourceType(groupID, acl.ResourceType_API_KEYS)
+	if err := perms.AuthorizeWrite(&u, acl); err != nil {
 		return nil, err
 	}
 	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel(), req.GetCapability())
@@ -424,12 +432,19 @@ func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID st
 	if userDB == nil {
 		return status.UnimplementedError("Not Implemented")
 	}
-	// Check that the user belongs to the group that owns the requested API key.
 	key, err := userDB.GetAPIKey(ctx, apiKeyID)
 	if err != nil {
 		return err
 	}
-	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
+
+	acl := perms.ACLForGroupResourceType(key.GroupID, acl.ResourceType_API_KEYS)
+
+	// TODO(bduffany): The API keys table also has a "perms" field, which we
+	// are ignoring in favor of role-based auth, since currently the default perms
+	// grant read+write permissions to anyone in the group. We should run a
+	// DB migration to remove group permission bits from API keys so that we can
+	// include them in the ACL here for more uniform authorization logic.
+
 	return perms.AuthorizeWrite(&user, acl)
 }
 

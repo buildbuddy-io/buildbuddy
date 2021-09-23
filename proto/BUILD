@@ -8,6 +8,7 @@ proto_library(
     name = "acl_proto",
     srcs = ["acl.proto"],
     deps = [
+        ":group_proto",
         ":user_id_proto",
     ],
 )
@@ -53,6 +54,9 @@ proto_library(
     name = "config_proto",
     srcs = [
         "config.proto",
+    ],
+    deps = [
+        ":acl_proto",
     ],
 )
 
@@ -325,6 +329,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/acl",
     proto = ":acl_proto",
     deps = [
+        ":group_go_proto",
         ":user_id_go_proto",
     ],
 )
@@ -357,6 +362,9 @@ go_proto_library(
     name = "config_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
+    deps = [
+        ":acl_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -652,6 +660,11 @@ ts_proto_library(
 ts_proto_library(
     name = "bazel_config_ts_proto",
     proto = ":bazel_config_proto",
+)
+
+ts_proto_library(
+    name = "config_ts_proto",
+    proto = ":config_proto",
 )
 
 ts_proto_library(

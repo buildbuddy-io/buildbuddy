@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -48,6 +49,39 @@ const (
 	// roles via the UI (otherwise, there would be no easy way to promote new
 	// users to admins in the meantime).
 	DefaultRole = AdminRole
+)
+
+var (
+	// RolePermissionsConfig defines a mapping from resource types to the
+	// permissions granted per role. Permissions must be explicitly granted
+	// per-role.
+	ResourceRolePermissions = []*acl.ResourceRolePermissions{
+		{
+			ResourceType:    acl.ResourceType_API_KEYS,
+			RolePermissions: developerReadAdminReadWritePermissions,
+		},
+		// TODO(bduffany): define RolePermissions for all ResourceTypes
+		// {
+		// 	ResourceType:    acl.ResourceType_ORG_DETAILS,
+		// 	RolePermissions: developerReadAdminReadWritePermissions,
+		// },
+		// {
+		// 	ResourceType:    acl.ResourceType_ORG_MEMBERS,
+		// 	RolePermissions: adminOnlyPermissions,
+		// },
+	}
+
+	rolePermissionsByResource = rolePermissionsToMap(ResourceRolePermissions)
+
+	adminOnlyPermissions = []*acl.RolePermissions{
+		{Role: grpb.Group_ADMIN_ROLE, Permissions: readWritePermissions},
+	}
+	developerReadAdminReadWritePermissions = []*acl.RolePermissions{
+		{Role: grpb.Group_DEVELOPER_ROLE, Permissions: readOnlyPermissions},
+		{Role: grpb.Group_ADMIN_ROLE, Permissions: readWritePermissions},
+	}
+	readWritePermissions = &acl.ACL_Permissions{Read: true, Write: true}
+	readOnlyPermissions  = &acl.ACL_Permissions{Read: true, Write: false}
 )
 
 // Role represents a value stored in the UserGroup.Role field.
@@ -98,9 +132,6 @@ func FromACL(acl *aclpb.ACL) (int, error) {
 	if acl == nil {
 		return 0, status.InvalidArgumentError("ACL is nil.")
 	}
-	if acl.GetOwnerPermissions() == nil || acl.GetGroupPermissions() == nil || acl.GetOthersPermissions() == nil {
-		return 0, status.InvalidArgumentError("ACL is missing one or more required permissions fields.")
-	}
 	p := 0
 	if acl.GetOwnerPermissions().GetRead() {
 		p |= OWNER_READ
@@ -123,6 +154,16 @@ func FromACL(acl *aclpb.ACL) (int, error) {
 	return p, nil
 }
 
+// ACLForGroupResourceType returns an ACL representing the permissions granted
+// to users who are a member of the given group and are trying to access the
+// given resource type.
+func ACLForGroupResourceType(groupID string, resourceType aclpb.ResourceType) *aclpb.ACL {
+	return &aclpb.ACL{
+		GroupId:         groupID,
+		RolePermissions: rolePermissionsByResource[resourceType],
+	}
+}
+
 func RoleToProto(role Role) grpb.Group_Role {
 	if role&AdminRole == AdminRole {
 		return grpb.Group_ADMIN_ROLE
@@ -135,6 +176,14 @@ func RoleFromProto(role grpb.Group_Role) Role {
 		return AdminRole
 	}
 	return DeveloperRole
+}
+
+func rolePermissionsToMap(rrps []*aclpb.ResourceRolePermissions) map[aclpb.ResourceType][]*aclpb.RolePermissions {
+	m := make(map[aclpb.ResourceType][]*aclpb.RolePermissions, len(rrps))
+	for _, rrp := range rrps {
+		m[rrp.ResourceType] = rrp.RolePermissions
+	}
+	return m
 }
 
 func AuthenticatedUser(ctx context.Context, env environment.Env) (interfaces.UserInfo, error) {
@@ -174,6 +223,17 @@ func AuthorizeRead(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) error
 		}
 	}
 
+	if acl.GroupId != "" {
+		userRoleBits := u.GetGroupRoles()[acl.GroupId]
+		for _, rolePerms := range acl.GetRolePermissions() {
+			requiredRoleBits := uint32(RoleFromProto(rolePerms.Role))
+			userHasRole := userRoleBits&requiredRoleBits == requiredRoleBits
+			if userHasRole && rolePerms.Permissions.Read {
+				return nil
+			}
+		}
+	}
+
 	return status.PermissionDeniedError("You do not have permission to perform this action.")
 }
 
@@ -201,6 +261,17 @@ func AuthorizeWrite(authenticatedUser *interfaces.UserInfo, acl *aclpb.ACL) erro
 	if perms&GROUP_WRITE != 0 {
 		for _, groupID := range u.GetAllowedGroups() {
 			if groupID == acl.GetGroupId() {
+				return nil
+			}
+		}
+	}
+
+	if acl.GroupId != "" {
+		userRoleBits := u.GetGroupRoles()[acl.GroupId]
+		for _, rolePerms := range acl.GetRolePermissions() {
+			requiredRoleBits := uint32(RoleFromProto(rolePerms.Role))
+			userHasRole := userRoleBits&requiredRoleBits == requiredRoleBits
+			if userHasRole && rolePerms.Permissions.Write {
 				return nil
 			}
 		}

@@ -30,6 +30,7 @@
 .api-keys .api-key-list-item {
   display: flex;
   align-items: baseline;
+  min-height: 40px;
 }
 
 .api-keys .api-key-label,

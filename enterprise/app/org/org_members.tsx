@@ -44,6 +44,8 @@ const ROLE_LABELS: Record<grp.Group.Role, string> = {
   [grp.Group.Role.DEVELOPER_ROLE]: "Developer",
 };
 
+const DEFAULT_ROLE = grp.Group.Role.DEVELOPER_ROLE;
+
 export default class OrgMembersComponent extends React.Component<OrgMembersProps, State> {
   state: State = {
     loading: true,
@@ -122,7 +124,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
             (id) =>
               new grp.UpdateGroupUsersRequest.Update({
                 userId: new user_id.UserId({ id }),
-                role: this.state.roleToApply,
+                role: this.state.roleToApply || DEFAULT_ROLE,
               })
           ),
         })

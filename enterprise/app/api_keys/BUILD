@@ -17,6 +17,7 @@ ts_library(
         "//app/errors",
         "//app/service",
         "//app/util:errors",
+        "//proto:acl_ts_proto",
         "//proto:api_key_ts_proto",
         "@npm//@types/react",
         "@npm//react",

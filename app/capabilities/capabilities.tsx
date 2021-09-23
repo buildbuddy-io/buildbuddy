@@ -1,10 +1,18 @@
-declare var window: any;
+import { config } from "../../proto/config_ts_proto";
+
+declare const window: Window & {
+  buildbuddyConfigBase64: string;
+  gtag?: (method: string, ...args: any[]) => void;
+};
 
 export class Capabilities {
   name: string;
-  version: string;
   paths: Set<string>;
   enterprise: boolean;
+
+  config: config.FrontendConfig;
+
+  version: string;
   github: boolean;
   auth: string;
   anonymous: boolean;
@@ -27,30 +35,37 @@ export class Capabilities {
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
-
-    const config = (window.buildbuddyConfig || {}) as Record<string, any>;
-
-    this.version = config.version || "";
-    this.auth = config.configured_issuers?.[0] || "";
-    this.github = Boolean(config.github_enabled);
-    this.anonymous = Boolean(config.anonymous_usage_enabled);
-    this.test = Boolean(config.test_dashboard_enabled);
+    this.paths = new Set(paths);
     this.enterprise = enterprise;
+
     this.createOrg = this.enterprise;
+
     this.invocationSharing = true;
     this.compareInvocations = true;
     this.deleteInvocation = true;
     this.manageApiKeys = true;
-    this.sso = Boolean(config.sso_enabled);
-    this.workflows = Boolean(config.workflows_enabled);
-    this.executors = Boolean(config.remote_execution_enabled);
-    this.userOwnedExecutors = Boolean(config.user_owned_executors_enabled);
-    this.executorKeyCreation = Boolean(config.executor_key_creation_enabled);
-    this.code = Boolean(config.code_editor_enabled);
-    this.paths = new Set(paths);
-    this.globalFilter = Boolean(config.global_filter_enabled);
-    this.usage = Boolean(config.usage_enabled);
-    this.userManagement = Boolean(config.user_management_enabled);
+
+    this.config = getFrontendConfig();
+    // Log the config since it's useful for debugging.
+    console.debug(this.config);
+
+    // Note: Please don't add any new config fields below;
+    // get them from the config directly.
+    this.version = this.config.version || "";
+    this.auth = this.config.configuredIssuers?.[0] || "";
+    this.github = this.config.githubEnabled;
+    this.anonymous = this.config.anonymousUsageEnabled;
+    this.test = this.config.testDashboardEnabled;
+    this.sso = this.config.ssoEnabled;
+    this.workflows = this.config.workflowsEnabled;
+    this.executors = this.config.remoteExecutionEnabled;
+    this.userOwnedExecutors = this.config.userOwnedExecutorsEnabled;
+    this.executorKeyCreation = this.config.executorKeyCreationEnabled;
+    this.code = this.config.codeEditorEnabled;
+    this.globalFilter = this.config.globalFilterEnabled;
+    this.usage = this.config.usageEnabled;
+    this.userManagement = this.config.userManagementEnabled;
+
     if (window.gtag) {
       window.gtag("set", {
         app_name: this.name,
@@ -59,6 +74,7 @@ export class Capabilities {
       });
       window.gtag("config", "UA-156160991-2");
     }
+
     this.didNavigateToPath();
   }
 
@@ -74,6 +90,12 @@ export class Capabilities {
       });
     }
   }
+}
+
+function getFrontendConfig(): config.FrontendConfig {
+  const base64String = window.buildbuddyConfigBase64;
+  const binary = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
+  return config.FrontendConfig.decode(binary);
 }
 
 export default new Capabilities();

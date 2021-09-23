@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//proto:api_key_go_proto",
+        "//proto:group_go_proto",
         "//server/config",
         "//server/environment",
         "//server/interfaces",
@@ -19,6 +20,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/lru",
+        "//server/util/perms",
         "//server/util/random",
         "//server/util/request_context",
         "//server/util/status",

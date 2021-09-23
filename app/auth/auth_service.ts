@@ -7,6 +7,7 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
+import { acl } from "../../proto/acl_ts_proto";
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
@@ -22,6 +23,28 @@ export class User {
 
   isInDefaultGroup() {
     return this.selectedGroup?.id == "GR0000000000000000000";
+  }
+
+  canRead(resourceType: acl.ResourceType): boolean {
+    return this.hasPermission("read", resourceType);
+  }
+
+  canWrite(resourceType: acl.ResourceType): boolean {
+    return this.hasPermission("write", resourceType);
+  }
+
+  private hasPermission(action: "read" | "write", resourceType: acl.ResourceType): boolean {
+    const role = this.selectedGroup.role;
+    for (const resourceRolePermissions of capabilities.config.resourceRolePermissions) {
+      if (resourceRolePermissions.resourceType !== resourceType) continue;
+
+      for (const rolePermissions of resourceRolePermissions.rolePermissions) {
+        if (rolePermissions.role !== role) continue;
+
+        return rolePermissions.permissions[action];
+      }
+    }
+    return false;
   }
 }
 

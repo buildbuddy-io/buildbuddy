@@ -15,6 +15,7 @@ import errorService from "../../../app/errors/error_service";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
+import { acl } from "../../../proto/acl_ts_proto";
 
 export interface ApiKeysComponentProps {
   user?: User;
@@ -338,13 +339,19 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       );
     }
 
+    const canWrite = this.props.user.canWrite(acl.ResourceType.API_KEYS);
+
     return (
       <div className="api-keys">
-        <div>
-          <FilledButton className="create-new-button" onClick={this.onClickCreateNew.bind(this)}>
-            Create new API key
-          </FilledButton>
-        </div>
+        {canWrite && (
+          <>
+            <div>
+              <FilledButton className="create-new-button" onClick={this.onClickCreateNew.bind(this)}>
+                Create new API key
+              </FilledButton>
+            </div>
+          </>
+        )}
 
         {this.renderModal({
           title: "New API key",
@@ -382,12 +389,16 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <img src="/image/key.svg" />
                 <span>{key.value}</span>
               </div>
-              <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
-                Edit
-              </OutlinedButton>
-              <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
-                Delete
-              </OutlinedButton>
+              {canWrite && (
+                <>
+                  <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
+                    Edit
+                  </OutlinedButton>
+                  <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
+                    Delete
+                  </OutlinedButton>
+                </>
+              )}
             </div>
           ))}
         </div>

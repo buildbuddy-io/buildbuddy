@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/user_id.proto";
+import "proto/grp.proto";
 
 package acl;
 
@@ -16,8 +17,32 @@ message ACL {
   Permissions group_permissions = 4;
   Permissions others_permissions = 5;
 
+  // Role permissions specify the permissions that are granted to any user
+  // within the owner group (given by group_id) that fulfills the given role.
+  repeated RolePermissions role_permissions = 6;
+
   message Permissions {
     bool read = 1;
     bool write = 2;
   }
+}
+
+message RolePermissions {
+  grp.Group.Role role = 1;
+  ACL.Permissions permissions = 2;
+}
+
+enum ResourceType {
+  UNKNOWN = 0;
+  API_KEYS = 1;
+  ORG_DETAILS = 2;
+  ORG_MEMBERS = 3;
+  ORG_GITHUB_LINK = 4;
+  WORKFLOWS = 5;
+  EXECUTORS = 6;
+}
+
+message ResourceRolePermissions {
+  ResourceType resource_type = 1;
+  repeated RolePermissions role_permissions = 2;
 }

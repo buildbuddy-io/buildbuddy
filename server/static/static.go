@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"html/template"
 	"io/fs"
@@ -12,8 +13,10 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/golang/protobuf/proto"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
@@ -140,11 +143,19 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		GlobalFilterEnabled:        env.GetConfigurator().GetAppGlobalFilterEnabled(),
 		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
 		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
+		ResourceRolePermissions:    perms.ResourceRolePermissions,
 	}
-	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
-		Config:           &config,
+
+	configBytes, err := proto.Marshal(&config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
+		ConfigBase64:     base64.StdEncoding.EncodeToString(configBytes),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
