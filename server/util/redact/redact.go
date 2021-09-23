@@ -145,7 +145,7 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			option.CombinedForm = stripURLSecrets(option.CombinedForm)
 
 			// Redact remote header values
-			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" {
+			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" || option.OptionName == "bes_header" {
 				option.OptionValue = envVarRedactedPlaceholder
 				option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
 			}
