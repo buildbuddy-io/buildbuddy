@@ -38,7 +38,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 
 	redisTarget := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
-	te.SetCacheRedisClient(rdb)
+	te.SetRemoteExecutionRedisClient(rdb)
 
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers(
 		"US1", "GR1",
@@ -116,7 +116,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 2})
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 20})
 
-	rdb := te.GetCacheRedisClient()
+	rdb := te.GetRemoteExecutionRedisClient()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
 	countsKey1 := "usage/counts/GR1/" + timeStr(usage1Collection1Start)
@@ -185,7 +185,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
 	ut.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 10})
 
-	rdb := te.GetCacheRedisClient()
+	rdb := te.GetRemoteExecutionRedisClient()
 	ctx := context.Background()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
 	require.NoError(t, err)
