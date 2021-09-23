@@ -77,15 +77,10 @@ var (
 	collectionPeriodZeroValue = collectionPeriodStartingAt(time.Unix(0, 0))
 )
 
-type TrackerOpts struct {
-	// TEST ONLY options
-
-	// Clock overrides the clock used by the usage tracker.
-	Clock timeutil.Clock
-
-	// FlushLock overrides the distributed lock to serialize access to the DB
-	// across flush jobs.
-	FlushLock interfaces.DistributedLock
+// NewFlushLock returns a distributed lock that can be used with NewTracker
+// to help serialize access to the usage data in Redis across apps.
+func NewFlushLock(env environment.Env) interfaces.DistributedLock {
+	return redisutil.NewWeakLock(env.GetCacheRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
 type tracker struct {
@@ -97,26 +92,14 @@ type tracker struct {
 	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, opts *TrackerOpts) (*tracker, error) {
-	rdb := env.GetCacheRedisClient()
-	if rdb == nil {
-		return nil, status.UnimplementedError("Missing redis client for usage")
-	}
-	clock := opts.Clock
-	if clock == nil {
-		clock = timeutil.NewClock()
-	}
-	flushLock := opts.FlushLock
-	if flushLock == nil {
-		flushLock = redisutil.NewWeakLock(rdb, redisUsageLockKey, redisUsageLockExpiry)
-	}
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) *tracker {
 	return &tracker{
 		env:       env,
-		rdb:       rdb,
+		rdb:       env.GetCacheRedisClient(),
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
-	}, nil
+	}
 }
 
 func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {

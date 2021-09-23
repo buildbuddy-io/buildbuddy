@@ -101,8 +101,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 
 	// Increment some counts
 	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
@@ -180,8 +179,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 
 	// Increment for group 1, then group 2
 	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
@@ -247,10 +245,9 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(usage1Collection2Start)
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 10})
@@ -285,10 +282,9 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
@@ -311,11 +307,10 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 
-	ut, err := usage.NewTracker(te, &usage.TrackerOpts{Clock: clock})
-	require.NoError(t, err)
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 
 	// Write 2 collection periods worth of data.
-	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(collectionPeriodDuration))
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1000})
@@ -325,13 +320,13 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
-			ut, err := usage.NewTracker(te, &usage.TrackerOpts{
-				Clock: clock,
+			ut := usage.NewTracker(
+				te, clock,
 				// Disable Redis locking to test that the DB queries are properly
 				// synchronized on their own. Redis is purely used as an optimization to
 				// reduce DB load, and we should not overcount data if Redis fails.
-				FlushLock: &nopDistributedLock{},
-			})
+				&nopDistributedLock{},
+			)
 			require.NoError(t, err)
 			return ut.FlushToDB(ctx)
 		})
