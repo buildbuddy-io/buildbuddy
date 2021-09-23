@@ -190,6 +190,18 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
+	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
+		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
+		realEnv.SetRemoteExecutionRedisClient(redisClient)
+
+		// Task router uses the remote execution redis client.
+		taskRouter, err := task_router.New(realEnv)
+		if err != nil {
+			log.Fatalf("Failed to create server: %s", err)
+		}
+		realEnv.SetTaskRouter(taskRouter)
+	}
+
 	if configurator.GetAppUsageTrackingEnabled() {
 		if realEnv.GetRemoteExecutionRedisClient() == nil {
 			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
@@ -205,18 +217,6 @@ func main() {
 			ut.StopDBFlush()
 			return nil
 		})
-	}
-
-	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
-		realEnv.SetRemoteExecutionRedisClient(redisClient)
-
-		// Task router uses the remote execution redis client.
-		taskRouter, err := task_router.New(realEnv)
-		if err != nil {
-			log.Fatalf("Failed to create server: %s", err)
-		}
-		realEnv.SetTaskRouter(taskRouter)
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
