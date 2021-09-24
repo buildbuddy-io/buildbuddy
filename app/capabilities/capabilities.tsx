@@ -1,8 +1,7 @@
 import { config } from "../../proto/config_ts_proto";
 
 declare const window: Window & {
-  buildbuddyConfigBase64: string;
-  buildbuddyConfig?: config.FrontendConfig;
+  buildbuddyConfig: config.IFrontendConfig;
   gtag?: (method: string, ...args: any[]) => void;
 };
 
@@ -11,7 +10,7 @@ export class Capabilities {
   paths: Set<string>;
   enterprise: boolean;
 
-  config: config.FrontendConfig;
+  config: config.IFrontendConfig;
 
   version: string;
   github: boolean;
@@ -46,10 +45,9 @@ export class Capabilities {
     this.deleteInvocation = true;
     this.manageApiKeys = true;
 
-    this.config = getFrontendConfig();
-    // Log the config and assign it to a global for easier debugging.
+    this.config = window.buildbuddyConfig;
+    // Log the config for easier debugging.
     console.debug(this.config);
-    window.buildbuddyConfig = this.config;
 
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
@@ -92,12 +90,6 @@ export class Capabilities {
       });
     }
   }
-}
-
-function getFrontendConfig(): config.FrontendConfig {
-  const base64String = window.buildbuddyConfigBase64;
-  const bytes = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
-  return config.FrontendConfig.decode(bytes);
 }
 
 export default new Capabilities();

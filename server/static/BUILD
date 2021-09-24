@@ -13,7 +13,7 @@ go_library(
         "//server/environment",
         "//server/util/status",
         "//server/version",
-        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
