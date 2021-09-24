@@ -2,6 +2,7 @@ import { config } from "../../proto/config_ts_proto";
 
 declare const window: Window & {
   buildbuddyConfigBase64: string;
+  buildbuddyConfig?: config.FrontendConfig;
   gtag?: (method: string, ...args: any[]) => void;
 };
 
@@ -46,8 +47,9 @@ export class Capabilities {
     this.manageApiKeys = true;
 
     this.config = getFrontendConfig();
-    // Log the config since it's useful for debugging.
+    // Log the config and assign it to a global for easier debugging.
     console.debug(this.config);
+    window.buildbuddyConfig = this.config;
 
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
