@@ -6,5 +6,6 @@ ts_library(
     name = "capabilities",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//proto:config_ts_proto",
     ],
 )

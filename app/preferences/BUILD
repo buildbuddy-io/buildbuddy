@@ -6,5 +6,6 @@ ts_library(
     name = "preferences",
     srcs = glob(["*.ts"]),
     deps = [
+        "//app/capabilities",
     ],
 )

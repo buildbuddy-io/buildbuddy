@@ -1,6 +1,7 @@
 package static
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"html/template"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/golang/protobuf/jsonpb"
 
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
@@ -102,6 +104,15 @@ func setCacheHeaders(h http.Handler) http.Handler {
 	})
 }
 
+type FrontendTemplateData struct {
+	// JsEntryPointPath is the path to the main script that bootstraps the app.
+	JsEntryPointPath string
+	// GaEnabled decides whether to render the Google Analytics script.
+	GaEnabled bool
+	// Config is the FrontendConfig proto serialized using jsonpb.
+	Config template.JS
+}
+
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
@@ -141,10 +152,16 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
 		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
 	}
-	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &cfgpb.FrontendTemplateData{
-		Config:           &config,
+
+	configJSON := &bytes.Buffer{}
+	if err := (&jsonpb.Marshaler{}).Marshal(configJSON, &config); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
+		Config:           template.JS(configJSON.String()),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

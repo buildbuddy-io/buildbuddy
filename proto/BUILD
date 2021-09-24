@@ -655,6 +655,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "config_ts_proto",
+    proto = ":config_proto",
+)
+
+ts_proto_library(
     name = "execution_stats_ts_proto",
     proto = ":execution_stats_proto",
 )
