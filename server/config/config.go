@@ -258,6 +258,8 @@ type ExecutorConfig struct {
 	HostExecutorRootDirectory string                    `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
 	ContainerRegistries       []ContainerRegistryConfig `yaml:"container_registries"`
 	EnableCASFS               bool                      `yaml:"enable_casfs" usage:"Whether FUSE based CAS filesystem is enabled."`
+	DefaultImage              string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
+	WarmupTimeoutSecs         int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
 }
 
 type ContainerRegistryConfig struct {
