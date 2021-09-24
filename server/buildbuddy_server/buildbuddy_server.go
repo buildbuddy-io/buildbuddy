@@ -121,8 +121,8 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, gr := range groupRoles {
-		urlIdentifier := ""
 		g := gr.Group
+		urlIdentifier := ""
 		if g.URLIdentifier != nil {
 			urlIdentifier = *g.URLIdentifier
 		}
