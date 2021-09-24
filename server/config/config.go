@@ -82,6 +82,7 @@ type storageConfig struct {
 	Disk                   DiskConfig  `yaml:"disk"`
 	GCS                    GCSConfig   `yaml:"gcs"`
 	AwsS3                  AwsS3Config `yaml:"aws_s3"`
+	Azure                  AzureConfig `yaml:"azure"`
 	TTLSeconds             int         `yaml:"ttl_seconds" usage:"The time, in seconds, to keep invocations before deletion"`
 	ChunkFileSizeBytes     int         `yaml:"chunk_file_size_bytes" usage:"How many bytes to buffer in memory before flushing a chunk of build protocol data to disk."`
 	EnableChunkedEventLogs bool        `yaml:"enable_chunked_event_logs" usage:"If true, Event logs will be stored separately from the invocation proto in chunks."`
@@ -128,6 +129,12 @@ type AwsS3Config struct {
 	StaticCredentialsToken  string `yaml:"static_credentials_token" usage:"Static credentials token to use, useful for configuring the use of MinIO."`
 	DisableSSL              bool   `yaml:"disable_ssl" usage:"Disables the use of SSL, useful for configuring the use of MinIO."`
 	S3ForcePathStyle        bool   `yaml:"s3_force_path_style" usage:"Force path style urls for objects, useful for configuring the use of MinIO."`
+}
+
+type AzureConfig struct {
+	AccountName   string `yaml:"account_name" usage:"The name of the Azure storage account"`
+	AccountKey    string `yaml:"account_key" usage:"The key for the Azure storage account"`
+	ContainerName string `yaml:"container_name" usage:"The name of the Azure storage container"`
 }
 
 type integrationsConfig struct {
@@ -503,6 +510,10 @@ func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
 
 func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
 	return &c.gc.Storage.AwsS3
+}
+
+func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
+	return &c.gc.Storage.Azure
 }
 
 func (c *Configurator) GetDatabaseConfig() *DatabaseConfig {

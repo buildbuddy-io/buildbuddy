@@ -9,6 +9,7 @@ replace (
 
 require (
 	cloud.google.com/go/storage v1.12.0
+	github.com/Azure/azure-storage-blob-go v0.14.0 // indirect
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/rules_go v0.24.3
