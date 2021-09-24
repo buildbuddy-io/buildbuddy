@@ -223,7 +223,7 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// Groups and roles are used to determine read/write permissions
+	// Group roles are used to determine read/write permissions
 	// for everything.
 	Groups []*GroupRole `gorm:"-"`
 	Model
