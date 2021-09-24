@@ -8,12 +8,14 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
@@ -21,6 +23,12 @@ import (
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
 )
+
+// opStats tracks statistics for a single FUSE OP type.
+type opStats struct {
+	count     int
+	timeSpent time.Duration
+}
 
 type CASFS struct {
 	vfsClient  vfspb.FileSystemClient
@@ -35,7 +43,7 @@ type CASFS struct {
 	mu             sync.Mutex
 	internalTaskID string
 	rpcCtx         context.Context
-	cancelRPCCtx   context.CancelFunc
+	opStats        map[string]*opStats
 }
 
 type Options struct {
@@ -46,17 +54,17 @@ type Options struct {
 }
 
 func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *CASFS {
-	// This is so we always have a context/cancel function set. The real context will be set in the PrepareForTask call.
+	// This is so we always have a context set. The real context will be set in the PrepareForTask call.
 	rpcCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	cfs := &CASFS{
-		vfsClient:    vfsClient,
-		mountDir:     mountDir,
-		verbose:      options.Verbose,
-		logFUSEOps:   options.LogFUSEOps,
-		rpcCtx:       rpcCtx,
-		cancelRPCCtx: cancel,
+		vfsClient:  vfsClient,
+		mountDir:   mountDir,
+		verbose:    options.Verbose,
+		logFUSEOps: options.LogFUSEOps,
+		rpcCtx:     rpcCtx,
+		opStats:    make(map[string]*opStats),
 	}
 	root := &Node{cfs: cfs}
 	cfs.root = root
@@ -73,12 +81,28 @@ func (cfs *CASFS) GetMountDir() string {
 	return cfs.mountDir
 }
 
+type latencyRecorder struct {
+	cfs *CASFS
+}
+
+func (r *latencyRecorder) Add(name string, dt time.Duration) {
+	r.cfs.mu.Lock()
+	defer r.cfs.mu.Unlock()
+	stats, ok := r.cfs.opStats[name]
+	if !ok {
+		stats = &opStats{}
+		r.cfs.opStats[name] = stats
+	}
+	stats.count++
+	stats.timeSpent += dt
+}
+
 func (cfs *CASFS) Mount() error {
 	if cfs.server != nil {
 		return status.FailedPreconditionError("CASFS already mounted")
 	}
 
-	server, err := fs.Mount(cfs.mountDir, cfs.root, &fs.Options{
+	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
 			AllowOther:    true,
 			Debug:         cfs.logFUSEOps,
@@ -86,25 +110,34 @@ func (cfs *CASFS) Mount() error {
 			// Don't depend on the `fusermount` binary to make things simpler under Firecracker.
 			DirectMount: true,
 			FsName:      "casfs",
+			MaxWrite:    fuse.MAX_KERNEL_WRITE,
 		},
-	})
-	if err != nil {
-		return status.UnknownErrorf("could not mount CAS FS at %q: %s", cfs.mountDir, err)
 	}
+	nodeFS := fs.NewNodeFS(cfs.root, opts)
+	server, err := fuse.NewServer(nodeFS, cfs.mountDir, &opts.MountOptions)
+	if err != nil {
+		return status.UnavailableErrorf("could not mount CASFS at %q: %s", cfs.mountDir, err)
+	}
+
+	server.RecordLatencies(&latencyRecorder{cfs: cfs})
+
+	go server.Serve()
+	if err := server.WaitMount(); err != nil {
+		return status.UnavailableErrorf("waiting for CASFS mount failed: %s", err)
+	}
+
 	cfs.server = server
+
 	return nil
 }
 
 // PrepareForTask prepares the virtual filesystem layout according to the provided `fsLayout`.
-// The passed `fileFetcher` is expected to be configured with appropriate credentials necessary to be able to interact
-// with the CAS for the given task.
+// `ctx` is used for outgoing RPCs to the server and must stay alive as long as the filesystem is being used.
 // The passed `taskID` os only used for logging purposes.
 func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *container.FileSystemLayout) error {
 	cfs.mu.Lock()
 	cfs.internalTaskID = taskID
-	rpcCtx, cancel := context.WithCancel(context.Background())
-	cfs.rpcCtx = rpcCtx
-	cfs.cancelRPCCtx = cancel
+	cfs.rpcCtx = ctx
 	cfs.mu.Unlock()
 
 	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
@@ -203,8 +236,18 @@ func (cfs *CASFS) FinishTask() error {
 	cfs.mu.Lock()
 	defer cfs.mu.Unlock()
 
+	// TODO(vadim): propagate stats to ActionResult
+	if cfs.verbose {
+		var totalTime time.Duration
+		log.Debugf("OP stats:")
+		for op, s := range cfs.opStats {
+			log.Infof("%-20s num_calls=%-08d time=%.2fs", op, s.count, s.timeSpent.Seconds())
+			totalTime += s.timeSpent
+		}
+		log.Debugf("Total time spent in OPs: %s", totalTime)
+	}
+
 	cfs.internalTaskID = "unset"
-	cfs.cancelRPCCtx()
 
 	return nil
 }
@@ -230,11 +273,18 @@ type Node struct {
 	fileNode *repb.FileNode
 
 	mu            sync.Mutex
+	cachedAttrs   *vfspb.Attrs
 	symlinkTarget string
 }
 
 func (n *Node) relativePath() string {
 	return n.Path(nil)
+}
+
+func (n *Node) resetCachedAttrs() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.cachedAttrs = nil
 }
 
 type remoteFile struct {
@@ -243,6 +293,14 @@ type remoteFile struct {
 	path      string
 	id        uint64
 	node      *Node
+	// Optional file contents if the server returned the entire file contents inline as part of the Open RPC.
+	data []byte
+
+	mu         sync.Mutex
+	readBytes  int
+	readRPCs   int
+	wroteBytes int
+	writeRPCs  int
 }
 
 // rpcErrToSyscallErrno extracts the syscall errno passed via RPC error status.
@@ -265,6 +323,7 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 }
 
 func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	f.node.resetCachedAttrs()
 	allocReq := &vfspb.AllocateRequest{
 		HandleId: f.id,
 		Mode:     mode,
@@ -278,6 +337,12 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 }
 
 func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
+	if f.node.cfs.verbose {
+		f.mu.Lock()
+		log.Debugf("[%s] Flush %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.cfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		f.mu.Unlock()
+	}
+
 	if _, err := f.vfsClient.Flush(f.ctx, &vfspb.FlushRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -292,6 +357,11 @@ func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 }
 
 func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
+	if f.node.cfs.verbose {
+		f.mu.Lock()
+		log.Debugf("[%s] Release %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.cfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		f.mu.Unlock()
+	}
 	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -310,6 +380,19 @@ func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
 		numBytes = len(buf)
 	}
 
+	// If the file contents was returned inline as part of the Open RPC, read from it directly instead of making
+	// additional RPCs.
+	if r.f.data != nil {
+		dataSize := int64(len(r.f.data))
+		if r.offset >= dataSize {
+			return nil, fuse.EIO
+		}
+		if int64(numBytes) > dataSize-r.offset {
+			numBytes = int(dataSize - r.offset)
+		}
+		return r.f.data[r.offset : r.offset+int64(numBytes)], fuse.OK
+	}
+
 	readReq := &vfspb.ReadRequest{
 		HandleId: r.f.id,
 		Offset:   r.offset,
@@ -319,6 +402,10 @@ func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
 	if err != nil {
 		return nil, fuse.ToStatus(rpcErrToSyscallErrno(err))
 	}
+	r.f.mu.Lock()
+	r.f.readRPCs++
+	r.f.readBytes += len(rsp.GetData())
+	r.f.mu.Unlock()
 	return rsp.GetData(), fuse.OK
 }
 
@@ -335,6 +422,7 @@ func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.
 }
 
 func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
+	f.node.resetCachedAttrs()
 	writeReq := &vfspb.WriteRequest{
 		HandleId: f.id,
 		Data:     data,
@@ -344,6 +432,10 @@ func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32,
 	if err != nil {
 		return 0, rpcErrToSyscallErrno(err)
 	}
+	f.mu.Lock()
+	f.writeRPCs++
+	f.wroteBytes += int(rsp.GetNumBytes())
+	f.mu.Unlock()
 	return rsp.GetNumBytes(), 0
 }
 
@@ -363,6 +455,7 @@ func openRemoteFile(ctx context.Context, vfsClient vfspb.FileSystemClient, path 
 		path:      path,
 		id:        rsp.GetHandleId(),
 		node:      node,
+		data:      rsp.GetData(),
 	}, nil
 }
 
@@ -371,6 +464,10 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	if n.isInput && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
 		log.Warningf("[%s] Denied attempt to write to input file %q", n.cfs.taskID(), n.relativePath())
 		return nil, 0, syscall.EPERM
+	}
+
+	if n.cfs.verbose {
+		log.Debugf("[%s] Open %q", n.cfs.taskID(), n.relativePath())
 	}
 
 	rf, err := openRemoteFile(n.cfs.getRPCContext(), n.cfs.vfsClient, n.relativePath(), flags, 0, n)
@@ -400,6 +497,37 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	out.Mode = mode
 
 	return inode, rf, 0, 0
+}
+
+func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
+	n.resetCachedAttrs()
+
+	rf, ok := fhIn.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+		return 0, syscall.EBADF
+	}
+	wf, ok := fhOut.(*remoteFile)
+	if !ok {
+		log.Warningf("file handle is not a *remoteFile")
+	}
+
+	if n.cfs.verbose {
+		log.Debugf("[%s] CopyFileRange %q => %q", n.cfs.taskID(), rf.path, wf.path)
+	}
+
+	rsp, err := n.cfs.vfsClient.CopyFileRange(n.cfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
+		ReadHandleId:      rf.id,
+		ReadHandleOffset:  int64(offIn),
+		WriteHandleId:     wf.id,
+		WriteHandleOffset: int64(offOut),
+		NumBytes:          uint32(len),
+		Flags:             uint32(flags),
+	})
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+	return rsp.GetNumBytesCopied(), fs.OK
 }
 
 func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
@@ -455,6 +583,10 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	if n.cfs.verbose {
+		log.Debugf("[%s] Getattr %q", n.cfs.taskID(), n.relativePath())
+	}
+
 	if n.fileNode != nil {
 		out.Size = uint64(n.fileNode.GetDigest().SizeBytes)
 		out.Mode = 0444
@@ -464,16 +596,30 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		return fs.OK
 	}
 
-	rsp, err := n.cfs.vfsClient.GetAttr(n.cfs.getRPCContext(), &vfspb.GetAttrRequest{Path: n.relativePath()})
-	if err != nil {
-		return rpcErrToSyscallErrno(err)
+	n.mu.Lock()
+	attrs := n.cachedAttrs
+	n.mu.Unlock()
+
+	if attrs == nil {
+		rsp, err := n.cfs.vfsClient.GetAttr(n.cfs.getRPCContext(), &vfspb.GetAttrRequest{Path: n.relativePath()})
+		if err != nil {
+			return rpcErrToSyscallErrno(err)
+		}
+		attrs = rsp.GetAttrs()
+		n.mu.Lock()
+		n.cachedAttrs = rsp.GetAttrs()
+		n.mu.Unlock()
 	}
-	out.Size = uint64(rsp.GetAttrs().GetSize())
-	out.Mode = rsp.GetAttrs().GetPerm()
+	out.Size = uint64(attrs.GetSize())
+	out.Mode = attrs.GetPerm()
 	return fs.OK
 }
 
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	if n.cfs.verbose {
+		log.Debugf("[%s] Setattr %q", n.cfs.taskID(), n.relativePath())
+	}
+
 	// Do not allow modifying attributes of input files.
 	if n.isInput {
 		log.Warningf("[%s] Denied attempt to change input file attributes %q", n.cfs.taskID(), n.relativePath())
@@ -494,6 +640,10 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+
+	n.mu.Lock()
+	n.cachedAttrs = rsp.GetAttrs()
+	n.mu.Unlock()
 
 	out.Size = uint64(rsp.GetAttrs().GetSize())
 	out.Mode = rsp.GetAttrs().GetPerm()

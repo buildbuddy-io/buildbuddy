@@ -25,6 +25,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+// Files opened for reading that are smaller than this size are returned inline to avoid the overhead of additional
+// Read RPCs.
+const smallFileThresholdBytes = 512 * 1024
+
 type fileHandle struct {
 	mu        sync.Mutex
 	f         *os.File
@@ -184,22 +188,39 @@ func syscallErrStatus(sysErr error) error {
 }
 
 func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
-	f, err := os.OpenFile(fullPath, int(req.GetFlags()), os.FileMode(req.GetMode()))
+	flags := int(req.GetFlags())
+	f, err := os.OpenFile(fullPath, flags, os.FileMode(req.GetMode()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
+	h.mu.Lock()
 	h.f = f
 	h.openFlags = req.GetFlags()
-	return &vfspb.OpenResponse{}, nil
+	h.mu.Unlock()
+
+	rsp := &vfspb.OpenResponse{}
+
+	if flags&(os.O_WRONLY|os.O_RDWR) == 0 {
+		s, err := f.Stat()
+		if err == nil && s.Size() <= smallFileThresholdBytes {
+			buf := make([]byte, s.Size())
+			n, err := f.Read(buf)
+			if err == nil && int64(n) == s.Size() {
+				rsp.Data = buf
+			}
+		}
+	}
+
+	return rsp, nil
 }
 
-// TODO(vadim): investigate if we can allow parallel reads
 func (h *fileHandle) read(req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	f := h.f
+	h.mu.Unlock()
 
 	buf := make([]byte, req.GetNumBytes())
-	n, err := h.f.ReadAt(buf, req.GetOffset())
+	n, err := f.ReadAt(buf, req.GetOffset())
 	if err != nil && err != io.EOF {
 		return nil, syscallErrStatus(err)
 	}

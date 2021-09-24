@@ -73,6 +73,7 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 	// This is the context that is used to make RPCs to the host.
 	// It needs to stay alive as long as there's an active command on the VM.
 	rpcCtx, cancel := context.WithCancel(context.Background())
+	s.mu.Lock()
 	s.remoteCtx = rpcCtx
 	s.cancelRemoteFunc = cancel
 	s.mu.Unlock()
@@ -90,6 +91,12 @@ func (s *casfsServer) Finish(ctx context.Context, request *vmfspb.FinishRequest)
 		s.cancelRemoteFunc()
 	}
 	s.mu.Unlock()
+
+	err := s.cfs.FinishTask()
+	if err != nil {
+		return nil, err
+	}
+
 	return &vmfspb.FinishResponse{}, nil
 }
 

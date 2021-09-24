@@ -19,6 +19,10 @@ message OpenRequest {
 
 message OpenResponse {
   uint64 handle_id = 1;
+  // If the file is small (as determine by the server) and is open for only
+  // reading (O_RDONLY flag), the server may return the contents inline to avoid
+  // the overhead of additional read requests.
+  bytes data = 2;
 }
 
 message ReadRequest {
