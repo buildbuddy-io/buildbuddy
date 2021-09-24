@@ -211,6 +211,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 
+	defaultContainerImage := DefaultContainerImage
+	if env.GetConfigurator().GetExecutorConfig() != nil && env.GetConfigurator().GetExecutorConfig().DefaultImage != "" {
+		defaultContainerImage = env.GetConfigurator().GetExecutorConfig().DefaultImage
+	}
+
 	// Normalize the container image string
 	if platformProps.WorkloadIsolationType == string(BareContainerType) {
 		// BareRunner strings become ""
@@ -225,7 +230,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = DefaultContainerImage
+			platformProps.ContainerImage = defaultContainerImage
 		} else if !strings.HasPrefix(platformProps.ContainerImage, dockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.

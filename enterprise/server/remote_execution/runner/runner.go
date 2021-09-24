@@ -517,16 +517,24 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 
 func (p *Pool) WarmupDefaultImage() {
 	start := time.Now()
+	config := p.env.GetConfigurator().GetExecutorConfig()
+	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
 	// In practice I saw clean pulls take about 30 seconds.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	timeout := 2 * time.Minute
+	if config.WarmupTimeoutSecs > 0 {
+		timeout = time.Duration(config.WarmupTimeoutSecs) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	for _, containerType := range executorProps.SupportedIsolationTypes {
 		containerType := containerType
 		image := platform.DefaultContainerImage
+		if config.DefaultImage != "" {
+			image = config.DefaultImage
+		}
 		plat := &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: image},
