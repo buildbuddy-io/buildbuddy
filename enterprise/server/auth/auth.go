@@ -483,6 +483,7 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 		}
 		groupRows, err := tx.Raw(`
 			SELECT
+			  g.user_id,
 				g.group_id,
 				g.url_identifier,
 				g.name,
@@ -505,6 +506,7 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 		for groupRows.Next() {
 			gr := &tables.GroupRole{}
 			err := groupRows.Scan(
+				&gr.Group.UserID,
 				&gr.Group.GroupID,
 				&gr.Group.URLIdentifier,
 				&gr.Group.Name,

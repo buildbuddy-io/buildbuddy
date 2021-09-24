@@ -659,6 +659,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		}
 		groupRows, err := tx.Raw(`
 			SELECT
+			  g.user_id,
 				g.group_id,
 				g.url_identifier,
 				g.name,
@@ -680,6 +681,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		for groupRows.Next() {
 			gr := &tables.GroupRole{}
 			err := groupRows.Scan(
+				&gr.Group.UserID,
 				&gr.Group.GroupID,
 				&gr.Group.URLIdentifier,
 				&gr.Group.Name,
