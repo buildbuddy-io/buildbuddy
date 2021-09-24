@@ -43,7 +43,10 @@ type BasicAuthToken interface {
 type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
+	// DEPRECATED: Use GetGroupRoles to check for group membership or enumerate
+	// the user's groups.
 	GetAllowedGroups() []string
+	GetGroupRoles() map[string]uint32
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
