@@ -35,6 +35,21 @@ interface State {
   loading: boolean;
 }
 
+capabilities.register("BuildBuddy Enterprise", true, [
+  Path.invocationPath,
+  Path.userHistoryPath,
+  Path.hostHistoryPath,
+  Path.repoHistoryPath,
+  Path.branchHistoryPath,
+  Path.commitHistoryPath,
+  Path.workflowsPath,
+  Path.settingsPath,
+  Path.trendsPath,
+  Path.executorsPath,
+  Path.tapPath,
+  Path.codePath,
+]);
+
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
@@ -46,20 +61,6 @@ export default class EnterpriseRootComponent extends React.Component {
   };
 
   componentWillMount() {
-    capabilities.register("BuildBuddy Enterprise", true, [
-      Path.invocationPath,
-      Path.userHistoryPath,
-      Path.hostHistoryPath,
-      Path.repoHistoryPath,
-      Path.branchHistoryPath,
-      Path.commitHistoryPath,
-      Path.workflowsPath,
-      Path.settingsPath,
-      Path.trendsPath,
-      Path.executorsPath,
-      Path.tapPath,
-      Path.codePath,
-    ]);
     if (!capabilities.auth) {
       this.setState({ ...this.state, user: null, loading: false });
     }

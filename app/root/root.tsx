@@ -23,6 +23,8 @@ interface State {
   preferences: UserPreferences;
 }
 
+capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
+
 export default class RootComponent extends React.Component {
   state: State = {
     user: null,
@@ -33,7 +35,6 @@ export default class RootComponent extends React.Component {
   };
 
   componentWillMount() {
-    capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPath]);
     authService.register();
     router.register(this.handlePathChange.bind(this));
     authService.userStream.subscribe({

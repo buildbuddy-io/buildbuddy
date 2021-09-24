@@ -94,8 +94,8 @@ export class Capabilities {
 
 function getFrontendConfig(): config.FrontendConfig {
   const base64String = window.buildbuddyConfigBase64;
-  const binary = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
-  return config.FrontendConfig.decode(binary);
+  const bytes = Uint8Array.from(atob(base64String), (c) => c.charCodeAt(0));
+  return config.FrontendConfig.decode(bytes);
 }
 
 export default new Capabilities();

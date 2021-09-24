@@ -13,7 +13,6 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/golang/protobuf/proto"
@@ -143,7 +142,6 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		GlobalFilterEnabled:        env.GetConfigurator().GetAppGlobalFilterEnabled(),
 		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
 		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
-		ResourceRolePermissions:    perms.ResourceRolePermissions,
 	}
 
 	configBytes, err := proto.Marshal(&config)
