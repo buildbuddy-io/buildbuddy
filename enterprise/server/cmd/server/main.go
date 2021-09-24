@@ -190,6 +190,11 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
+	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
+		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
+		realEnv.SetDefaultRedisClient(redisClient)
+	}
+
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
@@ -203,7 +208,7 @@ func main() {
 	}
 
 	if configurator.GetAppUsageTrackingEnabled() {
-		if realEnv.GetRemoteExecutionRedisClient() == nil {
+		if realEnv.GetDefaultRedisClient() == nil {
 			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 		}
 		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
@@ -262,7 +267,7 @@ func main() {
 		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
 		mc := memcache.NewCache(mcTargets...)
 		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
+	} else if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
 		log.Infof("Enabling redis layer with targets: %s", redisTarget)
 		maxValueSizeBytes := int64(0)
 		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
