@@ -1,5 +1,4 @@
 import { Subject } from "rxjs";
-import { context } from "../../proto/context_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
@@ -7,8 +6,7 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
-
-const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
+import { SELECTED_GROUP_ID_LOCAL_STORAGE_KEY } from "../service/rpc_service";
 
 export class User {
   displayUser: user_id.DisplayUser;
@@ -87,14 +85,7 @@ export class AuthService {
     let user = new User();
     user.displayUser = response.displayUser as user_id.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
-    let selectedGroupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
-    if (user.groups.length > 0) {
-      user.selectedGroup =
-        (selectedGroupId && user.groups.find((group) => group.id === selectedGroupId)) ||
-        user.groups.find((group) => group.urlIdentifier) ||
-        user.groups.find((group) => group.ownedDomain) ||
-        user.groups[0];
-    }
+    user.selectedGroup = response.userGroup.find((group) => group.id === response.selectedGroupId) as grp.Group;
     return user;
   }
 

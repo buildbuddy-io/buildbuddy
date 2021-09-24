@@ -6,6 +6,8 @@ import * as protobufjs from "protobufjs";
 
 export { CancelablePromise } from "../util/async";
 
+export const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
+
 /**
  * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
  * the following differences:
@@ -19,6 +21,7 @@ class RpcService {
   service: ExtendedBuildBuddyService;
   events: Subject<string>;
   requestContext = new context.RequestContext({
+    groupId: window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY),
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   });
 
