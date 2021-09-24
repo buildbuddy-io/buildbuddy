@@ -169,7 +169,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
+		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
 
 	err := e.fillInvocationFromEvents(ctx, iid, invocation)
