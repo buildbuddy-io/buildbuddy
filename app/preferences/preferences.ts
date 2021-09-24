@@ -1,3 +1,5 @@
+import capabilities from "../capabilities/capabilities";
+
 const viewModeKey = "VIEW_MODE";
 const denseModeValue = "DENSE";
 const comfyModeValue = "COMFY";
@@ -17,7 +19,7 @@ export default class UserPreferences {
   denseModeEnabled =
     viewModeKey in window.localStorage
       ? window.localStorage.getItem(viewModeKey) == denseModeValue
-      : window.buildbuddyConfig && window.buildbuddyConfig.default_to_dense_mode;
+      : capabilities.config.defaultToDenseMode;
   lightTerminalEnabled = window.localStorage.getItem(terminalThemeKey) == terminalThemeLightValue || false;
 
   toggleDenseMode() {
