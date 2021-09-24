@@ -50,7 +50,7 @@ type UserInfo interface {
 	// GetGroupRoles returns a mapping of group ID to the user's role within the
 	// group, for all groups of which the user is a member.
 	GetGroupRoles() map[string]uint32
-	// IsAdmin returns whether this user is a BuildBuddy administrator, meaning
+	// IsAdmin returns whether this user is a global administrator, meaning
 	// they can access data across groups. This is not to be confused with the
 	// concept of group admin, which grants full access only within a single
 	// group.
