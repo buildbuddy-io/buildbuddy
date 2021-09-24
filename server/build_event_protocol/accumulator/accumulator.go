@@ -46,6 +46,7 @@ type BEValues struct {
 	invocationID            string
 	sawWorkspaceStatusEvent bool
 	buildStartTime          time.Time
+	finishedSuccess         bool
 }
 
 func NewBEValues(invocationID string) *BEValues {
@@ -69,6 +70,8 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 		v.sawWorkspaceStatusEvent = true
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
+	case *build_event_stream.BuildEvent_Finished:
+		v.handleFinishedEvent(p.Finished)
 	}
 }
 func (v *BEValues) InvocationID() string {
@@ -111,6 +114,10 @@ func (v *BEValues) ActionName() string {
 
 func (v *BEValues) WorkspaceIsLoaded() bool {
 	return v.sawWorkspaceStatusEvent
+}
+
+func (v *BEValues) FinishedSuccess() bool {
+	return v.finishedSuccess
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
@@ -204,6 +211,10 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConfigured) {
 	v.setStringValue(workflowIDFieldName, wfc.GetWorkflowId())
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
+}
+
+func (v *BEValues) handleFinishedEvent(finished *build_event_stream.BuildFinished) {
+	v.finishedSuccess = finished.GetExitCode().GetCode() == 0
 }
 
 func patternFromEvent(event *build_event_stream.BuildEvent) string {

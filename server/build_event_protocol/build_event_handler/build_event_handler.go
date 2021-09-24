@@ -159,14 +159,21 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 }
 
 func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
-	e.statusReporter.ReportDisconnect(ctx)
+	if !e.beValues.FinishedSuccess() {
+		e.statusReporter.ReportDisconnect(ctx)
+	}
 
 	if err := e.pw.Flush(ctx); err != nil {
 		return err
 	}
+
+	status := inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	if e.beValues.FinishedSuccess() {
+		status = inpb.Invocation_COMPLETE_INVOCATION_STATUS
+	}
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
+		InvocationStatus: status,
 	}
 
 	err := e.fillInvocationFromEvents(ctx, iid, invocation)
