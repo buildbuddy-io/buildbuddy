@@ -6,7 +6,8 @@ import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
-import { SELECTED_GROUP_ID_LOCAL_STORAGE_KEY } from "../service/rpc_service";
+
+const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 
 export class User {
   displayUser: user_id.DisplayUser;
@@ -31,6 +32,9 @@ export class AuthService {
 
   register() {
     if (!capabilities.auth) return;
+    // Set initially preferred group ID from local storage.
+    rpcService.requestContext.groupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
+
     let request = new user.GetUserRequest();
     rpcService.service
       .getUser(request)
