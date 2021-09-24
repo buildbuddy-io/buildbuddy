@@ -43,10 +43,17 @@ type BasicAuthToken interface {
 type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
+	// GetAllowedGroups returns the IDs of the groups of which the user is a member.
 	// DEPRECATED: Use GetGroupRoles to check for group membership or enumerate
 	// the user's groups.
 	GetAllowedGroups() []string
+	// GetGroupRoles returns a mapping of group ID to the user's role within the
+	// group, for all groups of which the user is a member.
 	GetGroupRoles() map[string]uint32
+	// IsAdmin returns whether this user is a BuildBuddy administrator, meaning
+	// they can access data across groups. This is not to be confused with the
+	// concept of group admin, which grants full access only within a single
+	// group.
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
