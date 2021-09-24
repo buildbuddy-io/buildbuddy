@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:build_events_go_proto",
+        "//proto:build_status_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -14,5 +15,7 @@ go_library(
         "//server/util/log",
         "@io_bazel_rules_go//proto/wkt:empty_go_proto",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
