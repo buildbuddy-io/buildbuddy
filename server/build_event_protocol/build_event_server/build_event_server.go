@@ -12,8 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
-	grpc_status "google.golang.org/grpc/status"
 	grpc_codes "google.golang.org/grpc/codes"
+	grpc_status "google.golang.org/grpc/status"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_status"
