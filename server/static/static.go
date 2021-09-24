@@ -154,13 +154,11 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 
 	configJSON := &bytes.Buffer{}
-	m := jsonpb.Marshaler{}
-	err := m.Marshal(configJSON, &config)
-	if err != nil {
+	if err := (&jsonpb.Marshaler{}).Marshal(configJSON, &config); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
+	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
 		Config:           template.JS(configJSON.String()),
