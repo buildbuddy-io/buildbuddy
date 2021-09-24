@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package config;
 
+import "proto/acl.proto";
+
 message FrontendConfig {
   // The version of this buildbuddy instance.
   string version = 1;
@@ -50,4 +52,11 @@ message FrontendConfig {
 
   // Whether or not user management is enabled.
   bool user_management_enabled = 16;
+
+  // Default configuration as to which roles can access which resource types.
+  //
+  // This allows showing or hiding sections of the UI based on the user's role,
+  // and also rendering an explicit list of role permissions in the user
+  // management UI.
+  repeated acl.ResourceTypeACL resource_type_acl = 17;
 }

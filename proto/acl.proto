@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/user_id.proto";
+import "proto/grp.proto";
 
 package acl;
 
@@ -12,12 +13,60 @@ message ACL {
   // ID of the group that owns the object.
   string group_id = 2;
 
+  // TODO(bduffany): define special roles for OWNER_USER, OWNER_GROUP, and
+  // OTHERS, and then migrate these fields to role_permissions.
+
   Permissions owner_permissions = 3;
   Permissions group_permissions = 4;
   Permissions others_permissions = 5;
+
+  // Permissions that are granted to roles within the owner group (given by
+  // group_id). These are unioned with group_permissions, meaning that group
+  // members are granted group_permissions in addition to any permissions
+  // granted to their roles within the group.
+  repeated RolePermissions role_permissions = 6;
 
   message Permissions {
     bool read = 1;
     bool write = 2;
   }
+}
+
+// Permissions granted to a particular role within a group.
+message RolePermissions {
+  // The group role that the user must have in order to be granted the
+  // associated permissions.
+  grp.Group.Role role = 1;
+
+  // The permissions that are granted.
+  ACL.Permissions permissions = 2;
+}
+
+// Types of resources which may be restricted by permissions.
+//
+// These are used to define resource types which don't necessarily correspond to
+// a single object with associated permissions bits. For example, API_KEYS
+// allows controlling the ability to create, read, update, and delete *any* API
+// key from the org, as opposed to the ability to do those actions on an
+// *individual* API key.
+//
+// These resource types are agnostic to the underlying DB representation,
+// although in most cases there is a direct mapping from resource types to
+// tables or subsets of table fields.
+enum ResourceType {
+  UNKNOWN = 0;
+  API_KEYS = 1;
+  ORG_DETAILS = 2;
+  ORG_MEMBERS = 3;
+  ORG_GITHUB_LINK = 4;
+  WORKFLOWS = 5;
+  EXECUTORS = 6;
+}
+
+// An ACL attached to a resource type.
+message ResourceTypeACL {
+  // The resource to which the ACL applies.
+  ResourceType resource_type = 1;
+  // The ACL defining who can do what with the resource type.
+  ACL acl = 2;
 }
