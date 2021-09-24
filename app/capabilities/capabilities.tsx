@@ -46,8 +46,6 @@ export class Capabilities {
     this.manageApiKeys = true;
 
     this.config = window.buildbuddyConfig;
-    // Log the config for easier debugging.
-    console.debug(this.config);
 
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
