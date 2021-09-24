@@ -4,6 +4,7 @@ app:
   create_group_per_user: true
   add_user_to_domain_group: true
   code_editor_enabled: true
+  default_redis_target: "localhost:6379"
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
 storage:
@@ -28,4 +29,3 @@ github:
   client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
 remote_execution:
   enable_remote_exec: true
-  redis_target: "localhost:6379"
