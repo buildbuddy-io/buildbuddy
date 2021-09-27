@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"gorm.io/gorm"
 
@@ -512,10 +513,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
-			// Hard-coding the perms constant here to avoid circular dep on
-			// perms => interfaces => tables.
-			const adminRole = 1 << 1
-			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
+			return db.Exec("UPDATE UserGroups SET role = ?", uint32(role.Admin)).Error
 		})
 	}
 

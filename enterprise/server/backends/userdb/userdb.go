@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
@@ -357,7 +358,7 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 		}
 		return tx.Exec(
 			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
-			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(perms.DefaultRole),
+			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
 		).Error
 	})
 }
@@ -378,7 +379,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 			return tx.Create(&tables.UserGroup{
 				UserUserID:       userID,
 				GroupGroupID:     groupID,
-				Role:             uint32(perms.DefaultRole),
+				Role:             uint32(role.Default),
 				MembershipStatus: int32(grpb.GroupMembershipStatus_REQUESTED),
 			}).Error
 		}
@@ -417,16 +418,16 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	for rows.Next() {
 		groupUser := &grpb.GetGroupUsersResponse_GroupUser{}
 		user := &tables.User{}
-		var role uint32
+		var groupRole uint32
 		err := rows.Scan(
 			&user.UserID, &user.Email, &user.FirstName, &user.LastName,
-			&groupUser.GroupMembershipStatus, &role,
+			&groupUser.GroupMembershipStatus, &groupRole,
 		)
 		if err != nil {
 			return nil, err
 		}
 		groupUser.User = user.ToProto()
-		groupUser.Role = perms.RoleToProto(perms.Role(role))
+		groupUser.Role = role.ToProto(role.Role(groupRole))
 		users = append(users, groupUser)
 	}
 
@@ -465,7 +466,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 					UPDATE UserGroups
 					SET role = ?
 					WHERE user_user_id = ? AND group_group_id = ?
-				`, perms.RoleFromProto(update.Role), update.GetUserId().GetId(), groupID,
+				`, role.FromProto(update.Role), update.GetUserId().GetId(), groupID,
 				).Error
 				if err != nil {
 					return err
@@ -595,7 +596,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		err := tx.Exec(`
 			INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role)
 			VALUES (?, ?, ?, ?)
-			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(perms.DefaultRole),
+			`, u.UserID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
 		).Error
 		if err != nil {
 			return err
@@ -619,7 +620,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 			UPDATE UserGroups
 			SET role = ?
 			WHERE group_group_id = ?
-			`, uint32(perms.AdminRole), groupID,
+			`, uint32(role.Admin), groupID,
 		).Error
 		if err != nil {
 			return err
