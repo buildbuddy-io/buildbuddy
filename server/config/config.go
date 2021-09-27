@@ -61,6 +61,7 @@ type appConfig struct {
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 	UsageStartDate            string   `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
 	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
+	DefaultRedisTarget        string   `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
 }
 
 type buildEventProxy struct {
@@ -236,7 +237,7 @@ type RemoteExecutionConfig struct {
 	WorkflowsDefaultImage         string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
 	WorkflowsCIRunnerDebug        bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
 	WorkflowsCIRunnerBazelCommand string `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
-	RedisTarget                   string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Required for remote execution. To ease migration, the redis target from the cache config will be used if this value is not specified."`
+	RedisTarget                   string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
 	SharedExecutorPoolGroupID     string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
 	RedisPubSubPoolSize           int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
 	EnableRemoteExec              bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
@@ -608,6 +609,20 @@ func (c *Configurator) GetAppUsageTrackingEnabled() bool {
 	return c.gc.App.UsageTrackingEnabled
 }
 
+func (c *Configurator) GetDefaultRedisTarget() string {
+	if c.gc.App.DefaultRedisTarget != "" {
+		return c.gc.App.DefaultRedisTarget
+	}
+
+	if crt := c.GetCacheRedisTarget(); crt != "" {
+		// Fall back to the cache redis target if default redis target is not specified.
+		return crt
+	}
+
+	// Otherwise, fall back to the remote exec redis target.
+	return c.GetRemoteExecutionRedisTarget()
+}
+
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
 	n := c.gc.App.GRPCMaxRecvMsgSizeBytes
 	if n == 0 {
@@ -732,7 +747,13 @@ func (c *Configurator) GetRemoteExecutionRedisTarget() string {
 	if rec := c.GetRemoteExecutionConfig(); rec != nil && rec.RedisTarget != "" {
 		return rec.RedisTarget
 	}
-	// Fall back to the cache redis target if redis target is not specified in remote execution config.
+
+	// If no remote execution target is defined, use the default.
+	if c.gc.App.DefaultRedisTarget != "" {
+		return c.gc.App.DefaultRedisTarget
+	}
+
+	// Fall back to the cache redis target if redis target is not specified in remote execution config or app config.
 	// Historically we did not have a separate redis target for remote execution.
 	return c.GetCacheRedisTarget()
 }

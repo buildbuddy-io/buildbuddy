@@ -31,6 +31,19 @@ database:
 
 If using the [BuildBuddy Enterprise Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise), MySQL can be configured for you using the `mysql.enabled`, `mysql.username`, and `mysql.password` values.
 
+### Default Redis Target
+
+For a BuildBuddy deployment running multiple apps, it is necessary to provide a default redis target for some features to work correctly. Metrics collection, usage tracking, and responsive build logs all depend on this.
+
+If no default redis target is configured, we will fall back to using the cache redis target, if available, and then the remote execution target, if available. The default redis target also acts as the primary fallback if the remote execution redis target is left unspecified. The default redis target does NOT act as a fallback for the cache redis target.
+
+The configuration below demostrates a default redis target:
+
+```
+app:
+  default_redis_target: "my-redis.local:6379"
+```
+
 ### GCS Based Cache / Object Storage / Redis
 
 By default, BuildBuddy will cache objects and store uploaded build events on the local disk. If you want to store them in a shared durable location, like a Google Cloud Storage bucket, you can do that by configuring a GCS cache or storage backend.
