@@ -600,8 +600,13 @@ func (c *Configurator) GetDefaultRedisTarget() string {
 	if drc := c.GetDefaultRedisConfig(); drc != nil && drc.RedisTarget != "" {
 		return drc.RedisTarget
 	}
-	// Fall back to the remote execution redis target if default redis target is not specified.
-	// Historically we did not have a default redis target.
+
+	if crt := c.GetCacheRedisTarget(); crt != "" {
+		// Fall back to the cache redis target if default redis target is not specified.
+		return crt
+	}
+
+	// Otherwise, fall back to the remote exec redis target.
 	return c.GetRemoteExecutionRedisTarget()
 }
 
