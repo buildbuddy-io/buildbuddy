@@ -175,9 +175,9 @@ type DistributedCacheConfig struct {
 	ClusterSize       int      `yaml:"cluster_size" usage:"The total number of nodes in this cluster. Required for health checking. ** Enterprise only **"`
 }
 
-type RedisConfig struct {
-	RedisTarget       string `yaml:"redis_target" usage:"A redis target to use for usage tracking, metrics collection, caching, or remote execution, depending on configuration options. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
-	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to store in redis (in bytes)."`
+type RedisCacheConfig struct {
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
 }
 
 type cacheConfig struct {
@@ -186,7 +186,7 @@ type cacheConfig struct {
 	S3               S3CacheConfig          `yaml:"s3"`
 	GCS              GCSCacheConfig         `yaml:"gcs"`
 	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
-	Redis            RedisConfig            `yaml:"redis"`
+	Redis            RedisCacheConfig       `yaml:"redis"`
 	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
 	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
@@ -679,7 +679,7 @@ func (c *Configurator) GetCacheRedisTarget() string {
 	return c.gc.Cache.RedisTarget
 }
 
-func (c *Configurator) GetCacheRedisConfig() *RedisConfig {
+func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
 	if c.gc.Cache.Redis.RedisTarget != "" {
 		return &c.gc.Cache.Redis
 	}
