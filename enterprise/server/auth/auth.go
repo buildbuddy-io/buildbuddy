@@ -103,7 +103,7 @@ type Claims struct {
 	UserID                 string                   `json:"user_id"`
 	GroupID                string                   `json:"group_id"`
 	AllowedGroups          []string                 `json:"allowed_groups"`
-	GroupRoles             map[string]uint32        `json:"group_roles"`
+	GroupRoles             []uint32                 `json:"group_roles"`
 	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
 	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
 }
@@ -116,13 +116,11 @@ func (c *Claims) GetGroupID() string {
 	return c.GroupID
 }
 
-// DEPRECATED: Use GetGroupRoles to check for group membership or enumerate
-// the user's groups.
 func (c *Claims) GetAllowedGroups() []string {
 	return c.AllowedGroups
 }
 
-func (c *Claims) GetGroupRoles() map[string]uint32 {
+func (c *Claims) GetGroupRoles() []uint32 {
 	return c.GroupRoles
 }
 
@@ -546,11 +544,11 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 }
 
 func userClaims(u *tables.User) *Claims {
-	groupRoles := make(map[string]uint32, len(u.Groups))
 	allowedGroups := make([]string, 0, len(u.Groups))
+	groupRoles := make([]uint32, 0, len(u.Groups))
 	for _, g := range u.Groups {
-		groupRoles[g.Group.GroupID] = g.Role
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
+		groupRoles = append(groupRoles, g.Role)
 	}
 	return &Claims{
 		UserID:        u.UserID,
@@ -564,7 +562,7 @@ func groupClaims(akg interfaces.APIKeyGroup) *Claims {
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		// For now, API keys are assigned the default role.
-		GroupRoles:             map[string]uint32{akg.GetGroupID(): uint32(perms.DefaultRole)},
+		GroupRoles:             []uint32{uint32(perms.DefaultRole)},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 	}
