@@ -660,16 +660,16 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		}
 		groupRows, err := tx.Raw(`
 			SELECT
-			g.user_id,
-			g.group_id,
-			g.url_identifier,
-			g.name,
-			g.owned_domain,
-			g.github_token,
-			g.sharing_enabled,
-			g.use_group_owned_executors,
-			g.saml_idp_metadata_url,
-			ug.role
+				g.user_id,
+				g.group_id,
+				g.url_identifier,
+				g.name,
+				g.owned_domain,
+				g.github_token,
+				g.sharing_enabled,
+				g.use_group_owned_executors,
+				g.saml_idp_metadata_url,
+				ug.role
 			FROM `+"`Groups`"+` as g
 			JOIN UserGroups as ug
 			ON g.group_id = ug.group_group_id

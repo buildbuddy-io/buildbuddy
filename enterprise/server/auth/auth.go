@@ -100,8 +100,9 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	UserID                 string                        `json:"user_id"`
-	GroupID                string                        `json:"group_id"`
+	UserID  string `json:"user_id"`
+	GroupID string `json:"group_id"`
+	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
@@ -481,16 +482,16 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 		}
 		groupRows, err := tx.Raw(`
 			SELECT
-			g.user_id,
-			g.group_id,
-			g.url_identifier,
-			g.name,
-			g.owned_domain,
-			g.github_token,
-			g.sharing_enabled,
-			g.use_group_owned_executors,
-			g.saml_idp_metadata_url,
-			ug.role
+				g.user_id,
+				g.group_id,
+				g.url_identifier,
+				g.name,
+				g.owned_domain,
+				g.github_token,
+				g.sharing_enabled,
+				g.use_group_owned_executors,
+				g.saml_idp_metadata_url,
+				ug.role
 			FROM Groups AS g, UserGroups AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
