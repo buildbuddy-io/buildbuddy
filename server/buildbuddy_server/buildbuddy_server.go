@@ -22,6 +22,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -39,6 +40,24 @@ import (
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
+)
+
+var (
+	// AdminAPIMethods holds the list of service methods which are accessible
+	// only by group admins.
+	AdminAPIMethods = []string{
+		"UpdateGroup",
+		"GetGroupUsers",
+		"UpdateGroupUsers",
+		"CreateApiKey",
+		"UpdateApiKey",
+		"DeleteApiKey",
+		"CreateWorkflow",
+		"DeleteWorkflow",
+		"GetWorkflows",
+		"GetRepos",
+		"GetUsage",
+	}
 )
 
 type BuildBuddyServer struct {
@@ -204,6 +223,9 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
 		return nil, err
 	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -219,6 +241,9 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 
 func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
@@ -290,6 +315,9 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetId()); err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
 	var group *tables.Group
@@ -399,6 +427,9 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel(), req.GetCapability())
 	if err != nil {
 		return nil, err
@@ -439,6 +470,9 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
@@ -457,6 +491,9 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
+	}
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
 	}
 	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
 		return nil, err
@@ -654,18 +691,27 @@ func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEv
 }
 
 func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.CreateWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error) {
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.DeleteWorkflow(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error) {
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.GetWorkflows(ctx, req)
 	}
@@ -678,12 +724,18 @@ func (s *BuildBuddyServer) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.GetRepos(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
+	if err := s.authorizeRPC(ctx, req.GetRequestContext()); err != nil {
+		return nil, err
+	}
 	if us := s.env.GetUsageService(); us != nil {
 		return us.GetUsage(ctx, req)
 	}
@@ -742,6 +794,36 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 		return nil, status.NotFoundError("The group that owns this invocation doesn't have any API keys configured.")
 	}
 	return apiKeys[0], nil
+}
+
+// authorizeRPC authorizes the authenticated user to access the
+// BuildBuddyService RPC currently being called.
+func (s *BuildBuddyServer) authorizeRPC(ctx context.Context, reqCtx *ctxpb.RequestContext) error {
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		// Note: RPCs requiring authorization do not permit anonymous access, so we
+		// return an error here even if it's due to the user being anonymous.
+		return err
+	}
+
+	method, ok := ctx.Value("protolet.methodName").(string)
+	if !ok || method == "" {
+		return status.UnknownErrorf("Failed to determine RPC method from context")
+	}
+
+	roles := u.GetGroupRoles()
+	selectedGroupRole := perms.Role(roles[reqCtx.GetGroupId()])
+	if selectedGroupRole&perms.AdminRole == perms.AdminRole {
+		return nil
+	}
+
+	for _, adminOnlyMethod := range AdminAPIMethods {
+		if method == adminOnlyMethod {
+			return status.PermissionDeniedErrorf("RPC %q requires admin access.", method)
+		}
+	}
+
+	return nil
 }
 
 // Handle requests for build logs and artifacts by looking them up in from our

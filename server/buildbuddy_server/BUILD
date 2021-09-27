@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "buildbuddy_server",
@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:bazel_config_go_proto",
+        "//proto:context_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
@@ -31,5 +32,15 @@ go_library(
         "//server/util/status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "buildbuddy_server_test",
+    srcs = ["buildbuddy_server_test.go"],
+    deps = [
+        ":buildbuddy_server",
+        "//proto:buildbuddy_service_go_proto",
+        "@com_github_stretchr_testify//assert",
     ],
 )

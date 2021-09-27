@@ -16,6 +16,7 @@ import (
 
 const (
 	contextProtoMessageKey = "protolet.requestMessage"
+	contextMethodNameKey   = "protolet.methodName"
 )
 
 func isRPCMethod(m reflect.Method) bool {
@@ -125,6 +126,7 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 				return
 			}
 			ctx := context.WithValue(r.Context(), contextProtoMessageKey, req)
+			ctx = context.WithValue(ctx, contextMethodNameKey, r.URL.Path)
 			reqCtx := requestcontext.GetProtoRequestContext(req)
 			ctx = requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
 
