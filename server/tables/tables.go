@@ -161,14 +161,6 @@ type Group struct {
 	// email belonging to that domain may be added to this group.
 	OwnedDomain string `gorm:"index:owned_domain_index"`
 
-	// The group access token. This token allows writing data for this
-	// group.
-	WriteToken string `gorm:"index:write_token_index"`
-
-	// The group's api key. This allows members of the group to make
-	// API requests on the group's behalf.
-	APIKey string `gorm:"index:api_key_index"`
-
 	// The group's Github API token.
 	GithubToken string
 	Model
@@ -531,7 +523,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Migrate Groups.APIKey to APIKey rows.
-	if m.HasTable("Groups") && !m.HasTable("APIKeys") {
+	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
 			if err != nil {
@@ -540,6 +532,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			defer rows.Close()
 
 			var g Group
+			var apiKey string
 
 			// These constants are already defined in perms.go, but we can't reference that
 			// due to a circular dep (tables -> perms -> interfaces -> tables).
@@ -550,7 +543,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			apiKeyPerms := groupRead | groupWrite
 
 			for rows.Next() {
-				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {
+				if err := rows.Scan(&g.GroupID, &apiKey); err != nil {
 					return err
 				}
 				pk, err := PrimaryKeyForTable("APIKeys")
@@ -560,14 +553,13 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 				if err := db.Exec(
 					`INSERT INTO APIKeys (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
-					pk, g.GroupID, apiKeyPerms, g.APIKey, "Default API key").Error; err != nil {
+					pk, g.GroupID, apiKeyPerms, apiKey, "Default API key").Error; err != nil {
 					return err
 				}
 			}
 			return nil
 		})
 	}
-
 	return postMigrate, nil
 }
 
@@ -594,6 +586,24 @@ func PostAutoMigrate(db *gorm.DB) error {
 			if err != nil {
 				log.Errorf("Error creating %s: %s", indexName, err)
 			}
+		}
+	}
+
+	// Drop old columns at the very end of the migration.
+	for _, ref := range []struct {
+		table  Table
+		column string
+	}{
+		// Group.api_key has been migrated to a single row in the APIKeys table.
+		{&Group{}, "api_key"},
+		// Group.write_token has been superseded by API keys.
+		{&Group{}, "write_token"},
+	} {
+		if !m.HasColumn(ref.table, ref.column) {
+			continue
+		}
+		if err := m.DropColumn(ref.table, ref.column); err != nil {
+			log.Warningf("Failed to drop column %s.%s", ref.table.TableName(), ref.column)
 		}
 	}
 	return nil
