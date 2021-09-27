@@ -19,8 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/dgrijalva/jwt-go"
@@ -100,12 +100,12 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	UserID                 string                   `json:"user_id"`
-	GroupID                string                   `json:"group_id"`
-	AllowedGroups          []string                 `json:"allowed_groups"`
-	GroupRoles             []uint32                 `json:"group_roles"`
-	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
-	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
+	UserID                 string                        `json:"user_id"`
+	GroupID                string                        `json:"group_id"`
+	AllowedGroups          []string                      `json:"allowed_groups"`
+	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
+	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
+	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 }
 
 func (c *Claims) GetUserID() string {
@@ -120,8 +120,8 @@ func (c *Claims) GetAllowedGroups() []string {
 	return c.AllowedGroups
 }
 
-func (c *Claims) GetGroupRoles() []uint32 {
-	return c.GroupRoles
+func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
+	return c.GroupMemberships
 }
 
 func (c *Claims) IsAdmin() bool {
@@ -545,15 +545,18 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 
 func userClaims(u *tables.User) *Claims {
 	allowedGroups := make([]string, 0, len(u.Groups))
-	groupRoles := make([]uint32, 0, len(u.Groups))
+	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
-		groupRoles = append(groupRoles, g.Role)
+		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
+			GroupID: g.Group.GroupID,
+			Role:    role.Role(g.Role),
+		})
 	}
 	return &Claims{
-		UserID:        u.UserID,
-		GroupRoles:    groupRoles,
-		AllowedGroups: allowedGroups,
+		UserID:           u.UserID,
+		GroupMemberships: groupMemberships,
+		AllowedGroups:    allowedGroups,
 	}
 }
 
@@ -562,7 +565,9 @@ func groupClaims(akg interfaces.APIKeyGroup) *Claims {
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		// For now, API keys are assigned the default role.
-		GroupRoles:             []uint32{uint32(perms.DefaultRole)},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{GroupID: akg.GetGroupID(), Role: role.Default},
+		},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 	}

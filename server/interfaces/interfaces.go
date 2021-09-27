@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -40,13 +41,22 @@ type BasicAuthToken interface {
 	GetPassword() string
 }
 
+// GroupMembership represents a user's membership within a group as well as
+// their role within that group.
+type GroupMembership struct {
+	GroupID string    `json:"group_id"`
+	Role    role.Role `json:"role"`
+}
+
 type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
-	// GetAllowedGroups returns the IDs of the groups of which the user is a member.
+	// GetAllowedGroups returns the IDs of the groups of which the user is a
+	// member.
+	// DEPRECATED: Use GetGroupMemberships instead.
 	GetAllowedGroups() []string
-	// GetGroupRoles returns the user's role within each of their allowed groups.
-	GetGroupRoles() []uint32
+	// GetGroupMemberships returns the user's group memberships.
+	GetGroupMemberships() []*GroupMembership
 	// IsAdmin returns whether this user is a global administrator, meaning
 	// they can access data across groups. This is not to be confused with the
 	// concept of group admin, which grants full access only within a single

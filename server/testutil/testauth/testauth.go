@@ -9,9 +9,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
 	"github.com/dgrijalva/jwt-go"
 	"google.golang.org/grpc/metadata"
 
@@ -45,19 +44,19 @@ var (
 
 type TestUser struct {
 	jwt.StandardClaims
-	UserID                 string                   `json:"user_id"`
-	GroupID                string                   `json:"group_id"`
-	AllowedGroups          []string                 `json:"allowed_groups"`
-	GroupRoles             []uint32                 `json:"group_roles"`
-	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
-	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
+	UserID                 string                        `json:"user_id"`
+	GroupID                string                        `json:"group_id"`
+	AllowedGroups          []string                      `json:"allowed_groups"`
+	GroupMemberships       []*interfaces.GroupMembership `json:"group_roles"`
+	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
+	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 }
 
-func (c *TestUser) GetUserID() string          { return c.UserID }
-func (c *TestUser) GetGroupID() string         { return c.GroupID }
-func (c *TestUser) GetAllowedGroups() []string { return c.AllowedGroups }
-func (c *TestUser) GetGroupRoles() []uint32    { return c.GroupRoles }
-func (c *TestUser) IsAdmin() bool              { return false }
+func (c *TestUser) GetUserID() string                                  { return c.UserID }
+func (c *TestUser) GetGroupID() string                                 { return c.GroupID }
+func (c *TestUser) GetAllowedGroups() []string                         { return c.AllowedGroups }
+func (c *TestUser) GetGroupMemberships() []*interfaces.GroupMembership { return c.GroupMemberships }
+func (c *TestUser) IsAdmin() bool                                      { return false }
 func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 	for _, cc := range c.Capabilities {
 		if cap == cc {
@@ -84,7 +83,9 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 		} else {
 			u.GroupID = val
 			u.AllowedGroups = []string{val}
-			u.GroupRoles = []uint32{uint32(perms.DefaultRole)}
+			u.GroupMemberships = []*interfaces.GroupMembership{
+				{GroupID: val, Role: role.Default},
+			}
 			u.Capabilities = capabilities.DefaultAuthenticatedUserCapabilities
 			testUsers[u.UserID] = u
 		}

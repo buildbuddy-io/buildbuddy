@@ -23,6 +23,7 @@ go_library(
         "//server/util/perms",
         "//server/util/random",
         "//server/util/request_context",
+        "//server/util/role",
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_coreos_go_oidc//:go-oidc",
