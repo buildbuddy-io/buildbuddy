@@ -193,6 +193,13 @@ func main() {
 	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
 		realEnv.SetDefaultRedisClient(redisClient)
+		maxValueSizeBytes := int64(0)
+		if redisConfig := configurator.GetDefaultRedisConfig(); redisConfig != nil {
+			maxValueSizeBytes = redisConfig.MaxValueSizeBytes
+		}
+		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), maxValueSizeBytes)
+		realEnv.SetMetricsCollector(r)
+		realEnv.SetKeyValStore(r)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
@@ -267,7 +274,7 @@ func main() {
 		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
 		mc := memcache.NewCache(mcTargets...)
 		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
+	} else if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
 		log.Infof("Enabling redis layer with targets: %s", redisTarget)
 		maxValueSizeBytes := int64(0)
 		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
@@ -275,8 +282,6 @@ func main() {
 		}
 		r := redis_cache.NewCache(realEnv.GetCacheRedisClient(), maxValueSizeBytes)
 		realEnv.SetCache(composable_cache.NewComposableCache(r, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-		realEnv.SetMetricsCollector(r)
-		realEnv.SetKeyValStore(r)
 	}
 
 	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {
