@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,12 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/hanwen/go-fuse/v2/fs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -38,11 +39,17 @@ type fileHandle struct {
 type LazyFileProvider interface {
 	// GetAllFilePaths should return all file paths that this provider can handle.
 	// The list is only retrieved once during initialization.
-	GetAllFilePaths() []string
+	GetAllFilePaths() []*LazyFile
 
 	// Place requests that the file in the VFS at path `relPath` should be written to the local filesystem at path
 	// `fullPath`.
 	Place(relPath, fullPath string) error
+}
+
+type LazyFile struct {
+	Path  string
+	Size  int64
+	Perms fs.FileMode
 }
 
 type CASLazyFileProvider struct {
@@ -108,12 +115,20 @@ func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
 	return nil
 }
 
-func (p *CASLazyFileProvider) GetAllFilePaths() []string {
-	var paths []string
-	for p := range p.inputFiles {
-		paths = append(paths, p)
+func (p *CASLazyFileProvider) GetAllFilePaths() []*LazyFile {
+	var lazyFiles []*LazyFile
+	for p, fileNode := range p.inputFiles {
+		perms := 0644
+		if fileNode.GetIsExecutable() {
+			perms |= 0111
+		}
+		lazyFiles = append(lazyFiles, &LazyFile{
+			Path:  p,
+			Size:  fileNode.GetDigest().GetSizeBytes(),
+			Perms: fs.FileMode(perms),
+		})
 	}
-	return paths
+	return lazyFiles
 }
 
 type Server struct {
@@ -123,8 +138,9 @@ type Server struct {
 	server *grpc.Server
 
 	mu                 sync.Mutex
+	layoutRoot         *vfspb.DirectoryEntry
 	remoteInstanceName string
-	lazyFiles          map[string]struct{}
+	lazyFiles          map[string]*LazyFile
 	lazyFileProvider   LazyFileProvider
 	nextHandleID       uint64
 	fileHandles        map[uint64]*fileHandle
@@ -134,10 +150,146 @@ func New(env environment.Env, workspacePath string) *Server {
 	return &Server{
 		env:           env,
 		workspacePath: workspacePath,
-		lazyFiles:     make(map[string]struct{}),
+		lazyFiles:     make(map[string]*LazyFile),
 		fileHandles:   make(map[uint64]*fileHandle),
 		nextHandleID:  1,
 	}
+}
+
+// computeLayout computes the tree representation of the workspace by iterating over existing files in the workspace
+// and combining them with the lazy files in the `lazyFiles` map. The function returns a new lazy files map that does
+// not include files that already present in the workspace.
+func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb.DirectoryEntry, map[string]*LazyFile, error) {
+	lazyFilesByDir := make(map[string]map[string]*LazyFile)
+	for path, lazyFile := range lazyFiles {
+		dir := filepath.Dir(path)
+		if dir == "." {
+			dir = ""
+		}
+		if lazyFilesByDir[dir] == nil {
+			lazyFilesByDir[dir] = make(map[string]*LazyFile)
+		}
+		lazyFilesByDir[dir][filepath.Base(path)] = lazyFile
+	}
+
+	var walkDir func(path string, parent *vfspb.DirectoryEntry) error
+	walkDir = func(relPath string, parent *vfspb.DirectoryEntry) error {
+		path := filepath.Join(workspacePath, relPath)
+		children, err := os.ReadDir(path)
+		if err != nil {
+			return err
+		}
+		lazyFilesInDir := lazyFilesByDir[relPath]
+		for _, child := range children {
+			childInfo, err := child.Info()
+
+			if child.Type()&os.ModeSocket != 0 {
+				continue
+			}
+
+			if child.Type().IsRegular() {
+				if err != nil {
+					return err
+				}
+
+				_, isLazyFile := lazyFilesInDir[child.Name()]
+
+				fe := &vfspb.FileEntry{
+					Name: child.Name(),
+					Attrs: &vfspb.Attrs{
+						Size:      childInfo.Size(),
+						Perm:      uint32(childInfo.Mode().Perm()),
+						Immutable: isLazyFile,
+					},
+				}
+				parent.Files = append(parent.Files, fe)
+
+				if isLazyFile {
+					// Delete from list of lazy files if it already exists on disk.
+					delete(lazyFilesInDir, child.Name())
+				}
+
+				continue
+			}
+
+			if child.Type()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(filepath.Join(path, child.Name()))
+				if err != nil {
+					return err
+				}
+
+				if strings.HasPrefix(target, "/") {
+					if !strings.HasPrefix(filepath.Clean(target), workspacePath) {
+						return status.PermissionDeniedErrorf("symlink target %q outside of workspace", target)
+					}
+					target = filepath.Join("/", strings.TrimPrefix(target, workspacePath))
+				} else {
+					if !strings.HasPrefix(filepath.Clean(filepath.Join(path, target)), workspacePath) {
+						return status.PermissionDeniedErrorf("symlink target %q outside of workspace", target)
+					}
+				}
+
+				se := &vfspb.SymlinkEntry{
+					Name: child.Name(),
+					Attrs: &vfspb.Attrs{
+						Size: int64(len(target)),
+						Perm: uint32(childInfo.Mode().Perm()),
+					},
+					Target: target,
+				}
+				parent.Symlinks = append(parent.Symlinks, se)
+				continue
+			}
+
+			de := &vfspb.DirectoryEntry{
+				Name: child.Name(),
+				Attrs: &vfspb.Attrs{
+					Size: childInfo.Size(),
+					Perm: uint32(childInfo.Mode().Perm()),
+				},
+			}
+			parent.Directories = append(parent.Directories, de)
+			if err := walkDir(filepath.Join(relPath, child.Name()), de); err != nil {
+				return err
+			}
+		}
+
+		// Add in lazy files that do not exist on disk.
+		for name, lazyFile := range lazyFilesInDir {
+			fe := &vfspb.FileEntry{
+				Name: name,
+				Attrs: &vfspb.Attrs{
+					Size:      lazyFile.Size,
+					Perm:      uint32(lazyFile.Perms),
+					Immutable: true,
+				},
+			}
+			parent.Files = append(parent.Files, fe)
+		}
+		return nil
+	}
+
+	root := &vfspb.DirectoryEntry{}
+	err := walkDir("", root)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create new lazy files map that does not include files that are already on disk.
+	newLazyFiles := make(map[string]*LazyFile)
+	for dir, lazyFiles := range lazyFilesByDir {
+		for name, lazyFile := range lazyFiles {
+			newLazyFiles[filepath.Join(dir, name)] = lazyFile
+		}
+	}
+
+	return root, newLazyFiles, nil
+}
+
+func (p *Server) GetLayout(ctx context.Context, request *vfspb.GetLayoutRequest) (*vfspb.GetLayoutResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return &vfspb.GetLayoutResponse{Root: p.layoutRoot}, nil
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
@@ -146,12 +298,13 @@ func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lazyFileProvider = lazyFileProvider
-	p.lazyFiles = make(map[string]struct{})
+
+	lazyFiles := make(map[string]*LazyFile)
 
 	dirsToMake := make(map[string]struct{})
 	for _, lf := range lazyFileProvider.GetAllFilePaths() {
-		p.lazyFiles[lf] = struct{}{}
-		dirsToMake[filepath.Dir(lf)] = struct{}{}
+		lazyFiles[lf.Path] = lf
+		dirsToMake[filepath.Dir(lf.Path)] = struct{}{}
 	}
 
 	for dir := range dirsToMake {
@@ -160,6 +313,15 @@ func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
 			return err
 		}
 	}
+
+	layoutRoot, updatedLazyFiles, err := computeLayout(p.workspacePath, lazyFiles)
+	if err != nil {
+		return err
+	}
+
+	p.layoutRoot = layoutRoot
+	p.lazyFiles = updatedLazyFiles
+
 	return nil
 }
 
@@ -172,7 +334,7 @@ func (p *Server) computeFullPath(relativePath string) (string, error) {
 }
 
 func syscallErrProto(sysErr error) *vfspb.SyscallError {
-	errno := fs.ToErrno(sysErr)
+	errno := fusefs.ToErrno(sysErr)
 	return &vfspb.SyscallError{Errno: uint32(errno)}
 }
 

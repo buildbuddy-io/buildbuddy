@@ -237,7 +237,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 	}
 	if r.CASFS != nil {
-		if err := r.CASFS.PrepareForTask(ctx, task.GetExecutionId(), layout); err != nil {
+		if err := r.CASFS.PrepareForTask(ctx, task.GetExecutionId()); err != nil {
 			return finishWithErrFn(err)
 		}
 	}

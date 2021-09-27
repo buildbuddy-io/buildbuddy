@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -62,14 +61,6 @@ func NewServer() (*casfsServer, error) {
 }
 
 func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	reqLayout := req.GetFileSystemLayout()
-	// TODO(vadim): get rid of this struct and use a common proto throughout
-	layout := &container.FileSystemLayout{
-		Inputs:      reqLayout.GetInputs(),
-		OutputFiles: reqLayout.GetOutputFiles(),
-		OutputDirs:  reqLayout.GetOutputDirectories(),
-	}
-
 	// This is the context that is used to make RPCs to the host.
 	// It needs to stay alive as long as there's an active command on the VM.
 	rpcCtx, cancel := context.WithCancel(context.Background())
@@ -78,7 +69,7 @@ func (s *casfsServer) Prepare(ctx context.Context, req *vmfspb.PrepareRequest) (
 	s.cancelRemoteFunc = cancel
 	s.mu.Unlock()
 
-	if err := s.cfs.PrepareForTask(s.remoteCtx, "fc" /* =taskID */, layout); err != nil {
+	if err := s.cfs.PrepareForTask(s.remoteCtx, "fc" /* =taskID */); err != nil {
 		return nil, err
 	}
 

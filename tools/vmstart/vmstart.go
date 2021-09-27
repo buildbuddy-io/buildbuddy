@@ -177,13 +177,14 @@ func main() {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
 
-		prepRequest := &vmfspb.PrepareRequest{
-			FileSystemLayout: &vmfspb.FileSystemLayout{
-				RemoteInstanceName: *remoteInstanceName,
-				Inputs:             tree,
-			},
-		}
-		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, prepRequest)
+		c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+			RemoteInstanceName: *remoteInstanceName,
+			Inputs:             tree,
+			OutputDirs:         cmd.GetOutputDirectories(),
+			OutputFiles:        cmd.GetOutputFiles(),
+		})
+
+		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, &vmfspb.PrepareRequest{})
 		if err != nil {
 			log.Fatalf("Error preparing CASFS: %s", err)
 		}

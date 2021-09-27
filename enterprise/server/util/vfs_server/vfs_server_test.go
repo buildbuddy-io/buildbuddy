@@ -11,9 +11,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
@@ -34,10 +37,10 @@ func (f *FakeLazyFileProvider) Place(relPath, fullPath string) error {
 	return nil
 }
 
-func (f *FakeLazyFileProvider) GetAllFilePaths() []string {
-	var paths []string
-	for p := range f.contents {
-		paths = append(paths, p)
+func (f *FakeLazyFileProvider) GetAllFilePaths() []*vfs_server.LazyFile {
+	var paths []*vfs_server.LazyFile
+	for p, c := range f.contents {
+		paths = append(paths, &vfs_server.LazyFile{Path: p, Size: int64(len(c)), Perms: 0644})
 	}
 	return paths
 }
@@ -63,6 +66,89 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 
 	server := vfs_server.New(env, tmpDir)
 	return server, tmpDir
+}
+
+func TestGetLayout(t *testing.T) {
+	server, tmpDir := newServer(t)
+
+	dir1File1Contents := "file one"
+	dir1File2Contents := "file two"
+	dir1File3Contents := "file three"
+	dir2File1Contents := "dir two file one"
+	files := map[string]string{
+		"dir1/file1": dir1File1Contents,
+		"dir1/file2": dir1File2Contents,
+		"dir1/file3": dir1File3Contents,
+		"dir2/file1": dir2File1Contents,
+	}
+	testfs.WriteAllFileContents(t, tmpDir, files)
+
+	dir1 := filepath.Join(tmpDir, "dir1")
+	err := os.Symlink("dir1/file2", filepath.Join(dir1, "rel_symlink"))
+	require.NoError(t, err)
+	err = os.Symlink(filepath.Join(tmpDir, "dir1/file2"), filepath.Join(dir1, "abs_symlink"))
+	require.NoError(t, err)
+
+	dir1File4Contents := "file four"
+	p := &FakeLazyFileProvider{contents: map[string]string{
+		// This entry should not be used since the file exists on disk.
+		"dir1/file2": "file two but lazy",
+		"dir1/file4": dir1File4Contents,
+	}}
+	err = server.Prepare(p)
+	require.NoError(t, err)
+
+	rsp, err := server.GetLayout(context.Background(), &vfspb.GetLayoutRequest{})
+	require.NoError(t, err)
+
+	assert.Empty(t, cmp.Diff(&vfspb.DirectoryEntry{
+		Directories: []*vfspb.DirectoryEntry{
+			{
+				Name:  "dir1",
+				Attrs: &vfspb.Attrs{Size: 4096, Perm: 0755},
+				Files: []*vfspb.FileEntry{
+					{
+						Name:  "file1",
+						Attrs: &vfspb.Attrs{Size: int64(len(dir1File1Contents)), Perm: 0644},
+					},
+					{
+						Name:  "file2",
+						Attrs: &vfspb.Attrs{Size: int64(len(dir1File2Contents)), Perm: 0644, Immutable: true},
+					},
+					{
+						Name:  "file3",
+						Attrs: &vfspb.Attrs{Size: int64(len(dir1File3Contents)), Perm: 0644},
+					},
+					{
+						Name:  "file4",
+						Attrs: &vfspb.Attrs{Size: int64(len(dir1File4Contents)), Perm: 0644, Immutable: true},
+					},
+				},
+				Symlinks: []*vfspb.SymlinkEntry{
+					{
+						Name:   "abs_symlink",
+						Target: "/dir1/file2",
+						Attrs:  &vfspb.Attrs{Size: 11, Perm: 0777},
+					},
+					{
+						Name:   "rel_symlink",
+						Target: "dir1/file2",
+						Attrs:  &vfspb.Attrs{Size: 10, Perm: 0777},
+					},
+				},
+			},
+			{
+				Name:  "dir2",
+				Attrs: &vfspb.Attrs{Size: 4096, Perm: 0755},
+				Files: []*vfspb.FileEntry{
+					{
+						Name:  "file1",
+						Attrs: &vfspb.Attrs{Size: int64(len(dir2File1Contents)), Perm: 0644},
+					},
+				},
+			},
+		},
+	}, rsp.GetRoot(), protocmp.Transform()))
 }
 
 func TestOpenNonExistentFile(t *testing.T) {

@@ -10,16 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -139,21 +135,26 @@ func (cfs *CASFS) Mount() error {
 // PrepareForTask prepares the virtual filesystem layout according to the provided `fsLayout`.
 // `ctx` is used for outgoing RPCs to the server and must stay alive as long as the filesystem is being used.
 // The passed `taskID` os only used for logging purposes.
-func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *container.FileSystemLayout) error {
+func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string) error {
 	cfs.mu.Lock()
 	cfs.internalTaskID = taskID
 	cfs.rpcCtx = ctx
 	cfs.mu.Unlock()
 
-	_, dirMap, err := dirtools.DirMapFromTree(fsLayout.Inputs)
+	rsp, err := cfs.vfsClient.GetLayout(ctx, &vfspb.GetLayoutRequest{})
 	if err != nil {
 		return err
 	}
 
-	var walkDir func(dir *repb.Directory, node *Node) error
-	walkDir = func(dir *repb.Directory, parentNode *Node) error {
+	var walkDir func(dir *vfspb.DirectoryEntry, node *Node) error
+	walkDir = func(dir *vfspb.DirectoryEntry, parentNode *Node) error {
 		for _, childDirNode := range dir.GetDirectories() {
-			child := &Node{cfs: cfs, parent: parentNode}
+			child := &Node{
+				cfs:         cfs,
+				parent:      parentNode,
+				cachedAttrs: childDirNode.Attrs,
+				immutable:   childDirNode.GetAttrs().GetImmutable(),
+			}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
 			if !parentNode.AddChild(childDirNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childDirNode.Name, parentNode.relativePath())
@@ -161,16 +162,17 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *c
 			if cfs.verbose {
 				log.Debugf("[%s] Input directory: %s", cfs.taskID(), child.relativePath())
 			}
-			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
-			if !ok {
-				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
-			}
-			if err := walkDir(childDir, child); err != nil {
+			if err := walkDir(childDirNode, child); err != nil {
 				return err
 			}
 		}
 		for _, childFileNode := range dir.GetFiles() {
-			child := &Node{cfs: cfs, parent: parentNode, fileNode: childFileNode, isInput: true}
+			child := &Node{
+				cfs:         cfs,
+				parent:      parentNode,
+				cachedAttrs: childFileNode.Attrs,
+				immutable:   childFileNode.GetAttrs().GetImmutable(),
+			}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG})
 			if !parentNode.AddChild(childFileNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childFileNode.Name, parentNode.relativePath())
@@ -180,7 +182,13 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *c
 			}
 		}
 		for _, childSymlinkNode := range dir.GetSymlinks() {
-			child := &Node{cfs: cfs, parent: parentNode, symlinkTarget: childSymlinkNode.GetTarget()}
+			child := &Node{
+				cfs:           cfs,
+				parent:        parentNode,
+				symlinkTarget: childSymlinkNode.GetTarget(),
+				cachedAttrs:   childSymlinkNode.Attrs,
+				immutable:     childSymlinkNode.GetAttrs().GetImmutable(),
+			}
 			inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK})
 			if !parentNode.AddChild(childSymlinkNode.Name, inode, false) {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childSymlinkNode.Name, parentNode.relativePath())
@@ -192,40 +200,9 @@ func (cfs *CASFS) PrepareForTask(ctx context.Context, taskID string, fsLayout *c
 		return nil
 	}
 
-	err = walkDir(fsLayout.Inputs.GetRoot(), cfs.root)
+	err = walkDir(rsp.Root, cfs.root)
 	if err != nil {
 		return err
-	}
-
-	outputDirs := make(map[string]struct{})
-	for _, dir := range fsLayout.OutputDirs {
-		if cfs.verbose {
-			log.Debugf("[%s] Output dir: %s", cfs.taskID(), dir)
-		}
-		outputDirs[dir] = struct{}{}
-	}
-	for _, file := range fsLayout.OutputFiles {
-		if cfs.verbose {
-			log.Debugf("[%s] Output file: %s", cfs.taskID(), file)
-		}
-		outputDirs[filepath.Dir(file)] = struct{}{}
-	}
-	for dir := range outputDirs {
-		parts := strings.Split(dir, string(os.PathSeparator))
-		node := cfs.root
-		for _, p := range parts {
-			childNode := node.GetChild(p)
-			if childNode == nil {
-				child := &Node{cfs: cfs, parent: node}
-				inode := cfs.root.NewPersistentInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR})
-				if !node.AddChild(p, inode, false) {
-					return status.UnknownErrorf("could not add child %q, already exists", p)
-				}
-				node = child
-			} else {
-				node = childNode.Operations().(*Node)
-			}
-		}
 	}
 
 	return nil
@@ -268,14 +245,9 @@ func (cfs *CASFS) Unmount() error {
 type Node struct {
 	fs.Inode
 
-	cfs    *CASFS
-	parent *Node
-
-	// Whether this node represents an input to the action.
-	// Modifications to inputs are denied.
-	isInput bool
-
-	fileNode *repb.FileNode
+	cfs       *CASFS
+	parent    *Node
+	immutable bool
 
 	mu            sync.Mutex
 	cachedAttrs   *vfspb.Attrs
@@ -466,8 +438,8 @@ func openRemoteFile(ctx context.Context, vfsClient vfspb.FileSystemClient, path 
 
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	// Don't allow writes to input files.
-	if n.isInput && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
-		log.Warningf("[%s] Denied attempt to write to input file %q", n.cfs.taskID(), n.relativePath())
+	if n.immutable && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
+		log.Warningf("[%s] Denied attempt to write to immutable file %q", n.cfs.taskID(), n.relativePath())
 		return nil, 0, syscall.EPERM
 	}
 
@@ -555,8 +527,8 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		log.Warningf("[%s] Source is not a *Node", n.cfs.taskID())
 		return syscall.EINVAL
 	}
-	if existingSrcNode.isInput {
-		log.Warningf("[%s] Denied attempt to rename input file %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
+	if existingSrcNode.immutable {
+		log.Warningf("[%s] Denied attempt to rename immutable file %q", n.cfs.taskID(), filepath.Join(n.relativePath(), name))
 		return syscall.EPERM
 	}
 
@@ -570,8 +542,8 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 			return syscall.EINVAL
 		}
 		// Don't allow a rename to overwrite an input file.
-		if existingNode.fileNode != nil {
-			log.Warningf("[%s] Denied attempt to rename over input file %q", n.cfs.taskID(), existingNode.relativePath())
+		if existingNode.immutable {
+			log.Warningf("[%s] Denied attempt to rename over immutable file %q", n.cfs.taskID(), existingNode.relativePath())
 			return syscall.EPERM
 		}
 	}
@@ -590,15 +562,6 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	if n.cfs.verbose {
 		log.Debugf("[%s] Getattr %q", n.cfs.taskID(), n.relativePath())
-	}
-
-	if n.fileNode != nil {
-		out.Size = uint64(n.fileNode.GetDigest().SizeBytes)
-		out.Mode = 0444
-		if n.fileNode.GetIsExecutable() {
-			out.Mode |= 0111
-		}
-		return fs.OK
 	}
 
 	n.mu.Lock()
@@ -626,8 +589,8 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 
 	// Do not allow modifying attributes of input files.
-	if n.isInput {
-		log.Warningf("[%s] Denied attempt to change input file attributes %q", n.cfs.taskID(), n.relativePath())
+	if n.immutable {
+		log.Warningf("[%s] Denied attempt to change immutable file attributes %q", n.cfs.taskID(), n.relativePath())
 		return syscall.EPERM
 	}
 
@@ -770,8 +733,8 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return syscall.EINVAL
 	}
 
-	if existingNode.fileNode != nil {
-		log.Warningf("[%s] Denied attempt to unlink input file %q", n.cfs.taskID(), relPath)
+	if existingNode.immutable {
+		log.Warningf("[%s] Denied attempt to unlink immutable file %q", n.cfs.taskID(), relPath)
 		return syscall.EPERM
 	}
 
