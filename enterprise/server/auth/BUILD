@@ -20,7 +20,6 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/lru",
-        "//server/util/perms",
         "//server/util/random",
         "//server/util/request_context",
         "//server/util/role",
