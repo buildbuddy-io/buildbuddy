@@ -33,35 +33,35 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL             string      `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL              string      `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL               string      `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL     string      `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	LogLevel                  string      `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
-	GRPCMaxRecvMsgSizeBytes   int         `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
-	GRPCOverHTTPPortEnabled   bool        `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	AddUserToDomainGroup      bool        `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	DefaultToDenseMode        bool        `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
-	CreateGroupPerUser        bool        `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	EnableTargetTracking      bool        `yaml:"enable_target_tracking" usage:"Cloud-Only"`
-	EnableStructuredLogging   bool        `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
-	LogIncludeShortFileName   bool        `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	NoDefaultUserGroup        bool        `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	LogEnableGCPLoggingFormat bool        `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
-	LogErrorStackTraces       bool        `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
-	TraceProjectID            string      `yaml:"trace_project_id" usage:"Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP."`
-	TraceJaegerCollector      string      `yaml:"trace_jaeger_collector" usage:"Address of the Jager collector endpoint where traces will be sent."`
-	TraceServiceName          string      `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
-	TraceFraction             float64     `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
-	TraceFractionOverrides    []string    `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
-	IgnoreForcedTracingHeader bool        `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
-	CodeEditorEnabled         bool        `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
-	UserManagementEnabled     bool        `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
-	GlobalFilterEnabled       bool        `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
-	UsageEnabled              bool        `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
-	UsageStartDate            string      `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
-	UsageTrackingEnabled      bool        `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
-	DefaultRedisConfig        RedisConfig `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
+	BuildBuddyURL             string   `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              string   `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               string   `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     string   `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	LogLevel                  string   `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
+	GRPCMaxRecvMsgSizeBytes   int      `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	GRPCOverHTTPPortEnabled   bool     `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool     `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool     `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	CreateGroupPerUser        bool     `yaml:"create_group_per_user" usage:"Cloud-Only"`
+	EnableTargetTracking      bool     `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging   bool     `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName   bool     `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	NoDefaultUserGroup        bool     `yaml:"no_default_user_group" usage:"Cloud-Only"`
+	LogEnableGCPLoggingFormat bool     `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool     `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	TraceProjectID            string   `yaml:"trace_project_id" usage:"Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP."`
+	TraceJaegerCollector      string   `yaml:"trace_jaeger_collector" usage:"Address of the Jager collector endpoint where traces will be sent."`
+	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
+	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
+	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
+	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
+	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	UserManagementEnabled     bool     `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
+	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
+	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
+	UsageStartDate            string   `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
+	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
+	DefaultRedisTarget        string   `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
 }
 
 type buildEventProxy struct {
@@ -176,7 +176,7 @@ type DistributedCacheConfig struct {
 }
 
 type RedisConfig struct {
-	RedisTarget       string `yaml:"redis_target" usage:"A redis target to use for usage tracking, metrics collection, caching, or remote execution. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	RedisTarget       string `yaml:"redis_target" usage:"A redis target to use for usage tracking, metrics collection, caching, or remote execution, depending on configuration options. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
 	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to store in redis (in bytes)."`
 }
 
@@ -597,8 +597,8 @@ func (c *Configurator) GetAppUsageTrackingEnabled() bool {
 }
 
 func (c *Configurator) GetDefaultRedisTarget() string {
-	if drc := c.GetDefaultRedisConfig(); drc != nil && drc.RedisTarget != "" {
-		return drc.RedisTarget
+	if c.gc.App.DefaultRedisTarget != "" {
+		return c.gc.App.DefaultRedisTarget
 	}
 
 	if crt := c.GetCacheRedisTarget(); crt != "" {
@@ -608,13 +608,6 @@ func (c *Configurator) GetDefaultRedisTarget() string {
 
 	// Otherwise, fall back to the remote exec redis target.
 	return c.GetRemoteExecutionRedisTarget()
-}
-
-func (c *Configurator) GetDefaultRedisConfig() *RedisConfig {
-	if c.gc.App.DefaultRedisConfig.RedisTarget != "" {
-		return &c.gc.App.DefaultRedisConfig
-	}
-	return nil
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {

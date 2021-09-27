@@ -193,11 +193,7 @@ func main() {
 	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
 		realEnv.SetDefaultRedisClient(redisClient)
-		maxValueSizeBytes := int64(0)
-		if redisConfig := configurator.GetDefaultRedisConfig(); redisConfig != nil {
-			maxValueSizeBytes = redisConfig.MaxValueSizeBytes
-		}
-		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), maxValueSizeBytes)
+		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), 0)
 		realEnv.SetMetricsCollector(r)
 		realEnv.SetKeyValStore(r)
 	}
