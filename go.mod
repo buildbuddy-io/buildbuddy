@@ -9,6 +9,7 @@ replace (
 
 require (
 	cloud.google.com/go/storage v1.12.0
+	github.com/Azure/azure-storage-blob-go v0.14.0 // indirect
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/rules_go v0.24.3
@@ -72,7 +73,7 @@ require (
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/api v0.50.0
 	google.golang.org/genproto v0.0.0-20210721163202-f1cecdd8b78a
-	google.golang.org/grpc v1.39.0
+	google.golang.org/grpc v1.41.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/driver/mysql v1.0.4

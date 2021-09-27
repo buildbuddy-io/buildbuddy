@@ -20,6 +20,7 @@ go_library(
         "@com_github_aws_aws_sdk_go//service/s3",
         "@com_github_aws_aws_sdk_go//service/s3/s3manager",
         "@com_github_aws_aws_sdk_go//service/sts",
+        "@com_github_azure_azure_storage_blob_go//azblob",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_google_cloud_go_storage//:storage",
         "@org_golang_google_api//option:go_default_library",
