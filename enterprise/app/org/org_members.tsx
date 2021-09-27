@@ -44,10 +44,13 @@ const ROLE_LABELS: Record<grp.Group.Role, string> = {
   [grp.Group.Role.DEVELOPER_ROLE]: "Developer",
 };
 
+const DEFAULT_ROLE = grp.Group.Role.DEVELOPER_ROLE;
+
 export default class OrgMembersComponent extends React.Component<OrgMembersProps, State> {
   state: State = {
     loading: true,
     selectedUserIds: new Set<string>(),
+    roleToApply: DEFAULT_ROLE,
   };
 
   componentDidMount() {
@@ -275,7 +278,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
               <div className="role-description">
                 {/* TODO(bduffany): Get role metadata from the server so that we
                    don't have to keep these descriptions in sync. */}
-                {(this.state.roleToApply === grp.Group.Role.DEVELOPER_ROLE || this.state.roleToApply === undefined) && (
+                {this.state.roleToApply === grp.Group.Role.DEVELOPER_ROLE && (
                   <>
                     Developers can view invocations and stats, but do not have access to org settings, usage data, or
                     workflow configuration.
