@@ -68,6 +68,7 @@ type RealEnv struct {
 	configurator                     *config.Configurator
 	executionClients                 map[string]*executionClientConfig
 	cacheRedisClient                 *redis.Client
+	defaultRedisClient               *redis.Client
 	remoteExecutionRedisClient       *redis.Client
 	dbHandle                         *db.DBHandle
 	remoteExecutionRedisPubSubClient *redis.Client
@@ -328,6 +329,14 @@ func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {
 
 func (r *RealEnv) GetCacheRedisClient() *redis.Client {
 	return r.cacheRedisClient
+}
+
+func (r *RealEnv) SetDefaultRedisClient(redisClient *redis.Client) {
+	r.defaultRedisClient = redisClient
+}
+
+func (r *RealEnv) GetDefaultRedisClient() *redis.Client {
+	return r.defaultRedisClient
 }
 
 func (r *RealEnv) SetRemoteExecutionRedisClient(redisClient *redis.Client) {
