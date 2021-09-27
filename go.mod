@@ -44,6 +44,7 @@ require (
 	github.com/jhump/protoreflect v1.8.2
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/pgzip v1.2.5
+	github.com/lni/dragonboat/v3 v3.3.4 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
