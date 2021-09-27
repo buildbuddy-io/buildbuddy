@@ -182,7 +182,7 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 	return metrics.CacheDownloadDurationUsec
 }
 
-func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter, throughputCounter counterType) closeFunction {
+func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter, throughputCounter counterType) closeFunction {
 	return func() error {
 		dur := time.Since(start)
 
@@ -209,9 +209,6 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if err := h.recordCacheUsage(actionCache, d, actionCounter); err != nil {
-			return err
-		}
 		totalMicroseconds, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds())
 		if err != nil {
 			return err
@@ -231,6 +228,11 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 		if _, err := h.c.IncrementCount(h.ctx, h.counterName(throughputCounter), throughputDelta); err != nil {
 			return err
 		}
+
+		if err := h.recordCacheUsage(d, actionCounter); err != nil {
+			return err
+		}
+
 		return nil
 	}
 }
@@ -244,7 +246,7 @@ func (h *HitTracker) makeCloseFunc(actionCache bool, d *repb.Digest, start time.
 func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, start, Hit, DownloadSizeBytes, DownloadUsec, DownloadThroughputBytesPerSecond),
+		closeFn: h.makeCloseFunc(d, start, Hit, DownloadSizeBytes, DownloadUsec, DownloadThroughputBytesPerSecond),
 	}
 }
 
@@ -257,18 +259,18 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(false, d, start, Upload, UploadSizeBytes, UploadUsec, UploadThroughputBytesPerSecond),
+		closeFn: h.makeCloseFunc(d, start, Upload, UploadSizeBytes, UploadUsec, UploadThroughputBytesPerSecond),
 	}
 }
 
-func (h *HitTracker) recordCacheUsage(actionCache bool, d *repb.Digest, actionCounter counterType) error {
+func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType) error {
 	if h.usage == nil || actionCounter != Hit {
 		return nil
 	}
 	c := &tables.UsageCounts{
 		TotalDownloadSizeBytes: d.GetSizeBytes(),
 	}
-	if actionCache {
+	if h.actionCache {
 		c.ActionCacheHits = 1
 	} else {
 		c.CASCacheHits = 1
