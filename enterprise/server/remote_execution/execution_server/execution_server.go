@@ -320,14 +320,14 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	os := defaultPlatformOSValue
 	arch := defaultPlatformArchValue
-	platformPool := ""
+	pool := ""
 	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
 	for _, property := range platformProps {
 		if property.Name == platformOSKey {
 			os = strings.ToLower(property.Value)
 		}
 		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolValue {
-			platformPool = strings.ToLower(property.Value)
+			pool = strings.ToLower(property.Value)
 		}
 		if property.Name == platformArchKey {
 			arch = strings.ToLower(property.Value)
@@ -339,9 +339,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", err
 	}
 
-	pool := defaultPool
-	if platformPool != "" {
-		pool = platformPool
+	if pool == "" {
+		pool = defaulPool
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
