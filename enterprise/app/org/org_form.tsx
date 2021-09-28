@@ -168,7 +168,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="useGroupOwnedExecutors"
               checked={request.useGroupOwnedExecutors}
             />
-            <span>Use self-hosted executors</span>
+            <span>Use self-hosted Linux executors</span>
           </label>
         )}
       </>
