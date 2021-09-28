@@ -100,14 +100,10 @@ type tracker struct {
 }
 
 func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock, opts *TrackerOpts) *tracker {
-	region := opts.Region
-	if region == "" {
-		log.Warningf("Region is not configured; usage may not be tracked properly in multi-region deployments.")
-	}
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    region,
+		region:    opts.Region,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
