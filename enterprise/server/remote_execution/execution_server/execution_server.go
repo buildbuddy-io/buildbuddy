@@ -340,7 +340,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if pool == "" {
-		pool = defaulPool
+		pool = defaultPool
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
