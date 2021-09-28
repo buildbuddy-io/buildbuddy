@@ -57,9 +57,10 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	}
 
 	return &tables.Group{
-		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
-		UserID:  u.UserID,
-		Name:    name,
+		GroupID:    strings.Replace(u.UserID, "US", "GR", 1),
+		UserID:     u.UserID,
+		Name:       name,
+		WriteToken: randomToken(10),
 	}, nil
 }
 
@@ -318,6 +319,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			}
 			groupID = pk
 			newGroup.GroupID = pk
+			newGroup.WriteToken = randomToken(10)
 
 			if err := tx.Create(&newGroup).Error; err != nil {
 				return err
@@ -483,6 +485,9 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 			if db.IsRecordNotFound(err) {
 				if c.apiKeyValue == "" {
 					c.apiKeyValue = newAPIKeyToken()
+				}
+				if c.group.WriteToken == "" {
+					c.group.WriteToken = randomToken(10)
 				}
 				if err := tx.Create(&c.group).Error; err != nil {
 					return err

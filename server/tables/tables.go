@@ -161,6 +161,10 @@ type Group struct {
 	// email belonging to that domain may be added to this group.
 	OwnedDomain string `gorm:"index:owned_domain_index"`
 
+	// The group access token. This token allows writing data for this
+	// group.
+	WriteToken string `gorm:"index:write_token_index"`
+
 	// The group's Github API token.
 	GithubToken string
 	Model
@@ -596,8 +600,6 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}{
 		// Group.api_key has been migrated to a single row in the APIKeys table.
 		{&Group{}, "api_key"},
-		// Group.write_token has been superseded by API keys.
-		{&Group{}, "write_token"},
 	} {
 		if !m.HasColumn(ref.table, ref.column) {
 			continue
