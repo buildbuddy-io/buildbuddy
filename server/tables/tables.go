@@ -442,13 +442,13 @@ type UsageCounts struct {
 type Usage struct {
 	Model
 
-	GroupID string `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:1"`
+	GroupID string `gorm:"uniqueIndex:group_period_region_index,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in
 	// microseconds since the Unix epoch. The usage period duration is 1 hour.
 	// Only usage data occurring in collection periods inside this 1 hour period
 	// is included in this usage row.
-	PeriodStartUsec int64 `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:2"`
+	PeriodStartUsec int64 `gorm:"uniqueIndex:group_period_region_index,priority:2"`
 
 	// FinalBeforeUsec is the time before which all collection period data in this
 	// usage period is finalized. This is used to guarantee that collection period
@@ -470,6 +470,12 @@ type Usage struct {
 	//                     ^ FinalBefore (before update) = CollectionPeriodStart
 	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
 	FinalBeforeUsec int64
+
+	// Region is the region in which the usage data was originally gathered.
+	// Since we have a global DB deployment but usage data is collected
+	// per-region, this effectively partitions the usage table by region, allowing
+	// the FinalBeforeUsec logic to work independently in each region.
+	Region string `gorm:"uniqueIndex:group_period_region_index,priority:3"`
 
 	UsageCounts
 }

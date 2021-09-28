@@ -83,19 +83,27 @@ func NewFlushLock(env environment.Env) interfaces.DistributedLock {
 	return redisutil.NewWeakLock(env.GetDefaultRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
+type TrackerOpts struct {
+	// Region identifies the datacenter in which the Redis deployment is running.
+	// Usage is tracked separately per Redis deployment.
+	Region string
+}
+
 type tracker struct {
-	env   environment.Env
-	rdb   *redis.Client
-	clock timeutil.Clock
+	env    environment.Env
+	rdb    *redis.Client
+	clock  timeutil.Clock
+	region string
 
 	flushLock interfaces.DistributedLock
 	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) *tracker {
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock, opts *TrackerOpts) *tracker {
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
+		region:    opts.Region,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
@@ -237,6 +245,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 	pk := &tables.Usage{
 		GroupID:         groupID,
 		PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
+		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx *db.DB) error {
@@ -246,15 +255,17 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			INSERT `+dbh.InsertIgnoreModifier()+` INTO Usages (
 				group_id,
 				period_start_usec,
+				region,
 				final_before_usec,
 				invocations,
 				cas_cache_hits,
 				action_cache_hits,
 				total_download_size_bytes
-			) VALUES (?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 			pk.GroupID,
 			pk.PeriodStartUsec,
+			pk.Region,
 			timeutil.ToUsec(c.End()),
 			counts.Invocations,
 			counts.CASCacheHits,
@@ -282,6 +293,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			WHERE
 				group_id = ?
 				AND period_start_usec = ?
+				AND region = ?
 				AND final_before_usec <= ?
 		`,
 			timeutil.ToUsec(c.End()),
@@ -291,6 +303,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			counts.TotalDownloadSizeBytes,
 			pk.GroupID,
 			pk.PeriodStartUsec,
+			pk.Region,
 			timeutil.ToUsec(c.Start()),
 		).Error
 	})
