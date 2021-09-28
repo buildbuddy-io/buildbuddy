@@ -81,6 +81,9 @@ const (
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
+
+	// Platform property value corresponding with the darwin (Mac) operating system.
+	darwinOperatingSystemName   = "darwin"
 )
 
 var (
@@ -518,10 +521,10 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 	}
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		if s.forceUserOwnedDarwinExecutors && os == "darwin" {
-			return "", "", status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
-		}	
 		if s.env.GetConfigurator().GetAnonymousUsageEnabled() {
+			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
+				return "", "", status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
+			}		
 			return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
 		}
 		return "", "", err
@@ -529,7 +532,7 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 	if user.GetUseGroupOwnedExecutors() {
 		return user.GetGroupID(), "", nil
 	}
-	if s.forceUserOwnedDarwinExecutors && os == "darwin" {
+	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 		return user.GetGroupID(), "", nil
 	}
 	return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
