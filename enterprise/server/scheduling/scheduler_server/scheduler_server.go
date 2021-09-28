@@ -518,6 +518,9 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 	}
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
+		if s.forceUserOwnedDarwinExecutors && os == "darwin" {
+			return "", "", status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
+		}	
 		if s.env.GetConfigurator().GetAnonymousUsageEnabled() {
 			return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
 		}
