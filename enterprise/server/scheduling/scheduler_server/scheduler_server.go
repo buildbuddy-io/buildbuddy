@@ -83,7 +83,7 @@ const (
 	checkRegistrationCredentialsInterval = 5 * time.Minute
 
 	// Platform property value corresponding with the darwin (Mac) operating system.
-	darwinOperatingSystemName   = "darwin"
+	darwinOperatingSystemName = "darwin"
 )
 
 var (
