@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/dgrijalva/jwt-go"
@@ -30,7 +29,6 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	oidc "github.com/coreos/go-oidc"
 )
@@ -100,13 +98,11 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	UserID  string `json:"user_id"`
-	GroupID string `json:"group_id"`
-	// TODO(bduffany): remove this field
-	AllowedGroups          []string                      `json:"allowed_groups"`
-	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
-	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
-	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
+	UserID                 string                   `json:"user_id"`
+	GroupID                string                   `json:"group_id"`
+	AllowedGroups          []string                 `json:"allowed_groups"`
+	Capabilities           []akpb.ApiKey_Capability `json:"capabilities"`
+	UseGroupOwnedExecutors bool                     `json:"use_group_owned_executors,omitempty"`
 }
 
 func (c *Claims) GetUserID() string {
@@ -119,10 +115,6 @@ func (c *Claims) GetGroupID() string {
 
 func (c *Claims) GetAllowedGroups() []string {
 	return c.AllowedGroups
-}
-
-func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
-	return c.GroupMemberships
 }
 
 func (c *Claims) IsAdmin() bool {
@@ -480,46 +472,19 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
-		groupRows, err := tx.Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.use_group_owned_executors,
-				g.saml_idp_metadata_url,
-				ug.role
-			FROM Groups AS g, UserGroups AS ug
-			WHERE g.group_id = ug.group_group_id
-			AND ug.membership_status = ?
-			AND ug.user_user_id = ?
-			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
-		).Rows()
+		groupRows, err := tx.Raw(`SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
+                                          ON g.group_id = ug.group_group_id
+                                          WHERE ug.user_user_id = ?`, user.UserID).Rows()
 		if err != nil {
 			return err
 		}
 		defer groupRows.Close()
 		for groupRows.Next() {
-			gr := &tables.GroupRole{}
-			err := groupRows.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
+			g := &tables.Group{}
+			if err := tx.ScanRows(groupRows, g); err != nil {
 				return err
 			}
-			user.Groups = append(user.Groups, gr)
+			user.Groups = append(user.Groups, g)
 		}
 		return nil
 	})
@@ -545,30 +510,20 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 }
 
 func userClaims(u *tables.User) *Claims {
-	allowedGroups := make([]string, 0, len(u.Groups))
-	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
+	var allowedGroups []string
 	for _, g := range u.Groups {
-		allowedGroups = append(allowedGroups, g.Group.GroupID)
-		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
-			GroupID: g.Group.GroupID,
-			Role:    role.Role(g.Role),
-		})
+		allowedGroups = append(allowedGroups, g.GroupID)
 	}
 	return &Claims{
-		UserID:           u.UserID,
-		GroupMemberships: groupMemberships,
-		AllowedGroups:    allowedGroups,
+		UserID:        u.UserID,
+		AllowedGroups: allowedGroups,
 	}
 }
 
 func groupClaims(akg interfaces.APIKeyGroup) *Claims {
 	return &Claims{
-		GroupID:       akg.GetGroupID(),
-		AllowedGroups: []string{akg.GetGroupID()},
-		// For now, API keys are assigned the default role.
-		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: akg.GetGroupID(), Role: role.Default},
-		},
+		GroupID:                akg.GetGroupID(),
+		AllowedGroups:          []string{akg.GetGroupID()},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 	}
@@ -828,9 +783,7 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	user.Email = t.Email
 	user.ImageURL = t.Picture
 	if t.slug != "" {
-		user.Groups = []*tables.GroupRole{
-			{Group: tables.Group{URLIdentifier: &t.slug}},
-		}
+		user.Groups = []*tables.Group{{URLIdentifier: &t.slug}}
 	}
 	return nil
 }

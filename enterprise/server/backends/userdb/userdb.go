@@ -536,7 +536,7 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
 	groupIDs := make([]string, 0)
 	for _, group := range u.Groups {
-		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
+		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.URLIdentifier)
 		if err != nil {
 			return err
 		}
@@ -659,19 +659,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 			return err
 		}
 		groupRows, err := tx.Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.use_group_owned_executors,
-				g.saml_idp_metadata_url,
-				ug.role
-			FROM `+"`Groups`"+` as g
-			JOIN UserGroups as ug
+			SELECT g.* FROM `+"`Groups`"+` as g JOIN UserGroups as ug
 			ON g.group_id = ug.group_group_id
 			WHERE ug.user_user_id = ? AND ug.membership_status = ?
 		`, u.GetUserID(), int32(grpb.GroupMembershipStatus_MEMBER)).Rows()
@@ -680,23 +668,11 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		}
 		defer groupRows.Close()
 		for groupRows.Next() {
-			gr := &tables.GroupRole{}
-			err := groupRows.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
+			g := &tables.Group{}
+			if err := tx.ScanRows(groupRows, g); err != nil {
 				return err
 			}
-			user.Groups = append(user.Groups, gr)
+			user.Groups = append(user.Groups, g)
 		}
 		return nil
 	})

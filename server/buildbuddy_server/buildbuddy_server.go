@@ -118,10 +118,9 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
-func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
+func makeGroups(grps []*tables.Group) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
-	for _, gr := range groupRoles {
-		g := gr.Group
+	for _, g := range grps {
 		urlIdentifier := ""
 		if g.URLIdentifier != nil {
 			urlIdentifier = *g.URLIdentifier
@@ -468,26 +467,26 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
-func selectedGroupID(preferredGroupID string, groupRoles []*tables.GroupRole) string {
+func selectedGroupID(preferredGroupID string, groups []*tables.Group) string {
 	if preferredGroupID != "" {
-		for _, gr := range groupRoles {
-			if gr.Group.GroupID == preferredGroupID {
-				return gr.Group.GroupID
+		for _, group := range groups {
+			if group.GroupID == preferredGroupID {
+				return group.GroupID
 			}
 		}
 	}
-	for _, gr := range groupRoles {
-		if gr.Group.URLIdentifier != nil && *gr.Group.URLIdentifier != "" {
-			return gr.Group.GroupID
+	for _, group := range groups {
+		if group.URLIdentifier != nil && *group.URLIdentifier != "" {
+			return group.GroupID
 		}
 	}
-	for _, gr := range groupRoles {
-		if gr.Group.OwnedDomain != "" {
-			return gr.Group.GroupID
+	for _, group := range groups {
+		if group.OwnedDomain != "" {
+			return group.GroupID
 		}
 	}
-	if len(groupRoles) > 0 {
-		return groupRoles[0].Group.GroupID
+	if len(groups) > 0 {
+		return groups[0].GroupID
 	}
 	return ""
 }
