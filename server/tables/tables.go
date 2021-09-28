@@ -205,11 +205,6 @@ func (ug *UserGroup) TableName() string {
 	return "UserGroups"
 }
 
-type GroupRole struct {
-	Group Group
-	Role  uint32
-}
-
 type User struct {
 	// The buildbuddy user ID.
 	UserID string `gorm:"primaryKey;"`
@@ -224,9 +219,9 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// Group roles are used to determine read/write permissions
+	// Groups are used to determine read/write permissions
 	// for everything.
-	Groups []*GroupRole `gorm:"-"`
+	Groups []*Group `gorm:"-"`
 	Model
 }
 
