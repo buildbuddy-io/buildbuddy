@@ -86,7 +86,7 @@ func addPermissionsCheckToQuery(tu *tables.User, q *query_builder.Query) {
 	}
 	groupParams := make([]string, 0)
 	for _, g := range tu.Groups {
-		groupArgs = append(groupArgs, g.GroupID)
+		groupArgs = append(groupArgs, g.Group.GroupID)
 		groupParams = append(groupParams, "?")
 	}
 	groupParamString := "(" + strings.Join(groupParams, ", ") + ")"

@@ -20,5 +20,6 @@ go_library(
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/role",
     ],
 )
