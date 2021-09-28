@@ -62,6 +62,7 @@ type appConfig struct {
 	UsageStartDate            string   `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
 	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
 	DefaultRedisTarget        string   `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
+	Region                    string   `yaml:"region" usage:"The region in which the app is running."`
 }
 
 type buildEventProxy struct {
@@ -607,6 +608,10 @@ func (c *Configurator) GetAppUsageStartDate() string {
 
 func (c *Configurator) GetAppUsageTrackingEnabled() bool {
 	return c.gc.App.UsageTrackingEnabled
+}
+
+func (c *Configurator) GetAppRegion() string {
+	return c.gc.App.Region
 }
 
 func (c *Configurator) GetDefaultRedisTarget() string {

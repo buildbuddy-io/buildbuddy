@@ -214,7 +214,8 @@ func main() {
 		if realEnv.GetDefaultRedisClient() == nil {
 			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 		}
-		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
+		opts := &usage.TrackerOpts{Region: realEnv.GetConfigurator().GetAppRegion()}
+		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv), opts)
 		if err != nil {
 			log.Fatalf("Failed to create usage tracker: %s", err)
 		}
