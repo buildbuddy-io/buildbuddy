@@ -84,8 +84,8 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             5 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
-			PermitWithoutStream: true,            // Allow pings even when there are no active streams
+			MinTime:             10 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
+			PermitWithoutStream: true,             // Allow pings even when there are no active streams
 		}),
 	}
 }
