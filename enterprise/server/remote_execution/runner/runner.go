@@ -519,9 +519,9 @@ func (p *Pool) WarmupDefaultImage() {
 	start := time.Now()
 	config := p.env.GetConfigurator().GetExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
-	// Give the pull up to 1 minute to succeed.
-	// In practice I saw clean pulls take about 30 seconds.
-	timeout := 1 * time.Minute
+	// Give the pull up to 2 minute to succeed.
+	// In practice warmup take about 30 seconds for docker and 75 seconds for firecracker.
+	timeout := 2 * time.Minute
 	if config.WarmupTimeoutSecs > 0 {
 		timeout = time.Duration(config.WarmupTimeoutSecs) * time.Second
 	}
