@@ -48,10 +48,6 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
-const (
-	startupWarmupMaxWait = 30 * time.Second
-)
-
 var (
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -305,9 +301,11 @@ func main() {
 		close(warmupDone)
 	}()
 	go func() {
-		select {
-		case <-warmupDone:
-		case <-time.After(startupWarmupMaxWait):
+		if executorConfig.StartupWarmupMaxWaitSecs != 0 {
+			select {
+			case <-warmupDone:
+			case <-time.After(time.Duration(executorConfig.StartupWarmupMaxWaitSecs) * time.Second):
+			}
 		}
 		reg.Start(rootContext)
 	}()

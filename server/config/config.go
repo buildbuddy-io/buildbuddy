@@ -270,6 +270,7 @@ type ExecutorConfig struct {
 	EnableCASFS               bool                      `yaml:"enable_casfs" usage:"Whether FUSE based CAS filesystem is enabled."`
 	DefaultImage              string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
 	WarmupTimeoutSecs         int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
+	StartupWarmupMaxWaitSecs  int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
 }
 
 type ContainerRegistryConfig struct {
