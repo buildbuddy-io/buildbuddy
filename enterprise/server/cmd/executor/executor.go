@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
@@ -45,6 +46,10 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
+)
+
+const (
+	startupWarmupMaxWait = 30 * time.Second
 )
 
 var (
@@ -293,7 +298,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)
 	}
-	reg.Start(rootContext)
+
+	warmupDone := make(chan struct{})
+	go func() {
+		executionServer.Warmup()
+		close(warmupDone)
+	}()
+	go func() {
+		select {
+		case <-warmupDone:
+		case <-time.After(startupWarmupMaxWait):
+		}
+		reg.Start(rootContext)
+	}()
 
 	go func() {
 		localServer.Serve(localListener)

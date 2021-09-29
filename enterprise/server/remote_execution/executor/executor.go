@@ -97,12 +97,15 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	} else {
 		return nil, status.FailedPreconditionError("Missing health checker in env")
 	}
-	go s.runnerPool.WarmupDefaultImage()
 	return s, nil
 }
 
 func (s *Executor) Name() string {
 	return s.name
+}
+
+func (s *Executor) Warmup() {
+	s.runnerPool.WarmupDefaultImage()
 }
 
 func diffTimestamps(startPb, endPb *tspb.Timestamp) time.Duration {
