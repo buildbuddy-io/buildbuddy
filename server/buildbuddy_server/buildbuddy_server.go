@@ -153,9 +153,8 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		return nil, status.UnauthenticatedError("User not found")
 	}
 	return &uspb.GetUserResponse{
-		DisplayUser:     tu.ToProto(),
-		UserGroup:       makeGroups(tu.Groups),
-		SelectedGroupId: selectedGroupID(req.GetRequestContext().GetGroupId(), tu.Groups),
+		DisplayUser: tu.ToProto(),
+		UserGroup:   makeGroups(tu.Groups),
 	}, nil
 }
 
@@ -465,30 +464,6 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 		return nil, err
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
-}
-
-func selectedGroupID(preferredGroupID string, groups []*tables.Group) string {
-	if preferredGroupID != "" {
-		for _, group := range groups {
-			if group.GroupID == preferredGroupID {
-				return group.GroupID
-			}
-		}
-	}
-	for _, group := range groups {
-		if group.URLIdentifier != nil && *group.URLIdentifier != "" {
-			return group.GroupID
-		}
-	}
-	for _, group := range groups {
-		if group.OwnedDomain != "" {
-			return group.GroupID
-		}
-	}
-	if len(groups) > 0 {
-		return groups[0].GroupID
-	}
-	return ""
 }
 
 func getEmailDomain(email string) string {
