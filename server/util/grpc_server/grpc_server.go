@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
@@ -82,5 +83,9 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             5 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
+			PermitWithoutStream: true,            // Allow pings even when there are no active streams
+		}),
 	}
 }
