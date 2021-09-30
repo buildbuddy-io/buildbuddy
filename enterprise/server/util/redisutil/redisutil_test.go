@@ -1,18 +1,22 @@
 package redisutil_test
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func genOptions(scheme, user, password, addr, database string) *redis.Options {
@@ -269,4 +273,72 @@ func TestTargetToOptionsWithConnectionURI(t *testing.T) {
 	}
 	test_map(bad_targets_with_options)
 
+}
+
+func TestCommandBuffer(t *testing.T) {
+	addr := testredis.Start(t)
+	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
+	ctx := context.Background()
+
+	buf := redisutil.NewCommandBuffer(rdb)
+
+	buf.HIncrBy("hash1", "h1_field1", 1)
+	buf.HIncrBy("hash1", "h1_field1", 10)
+	buf.HIncrBy("hash1", "h1_field2", 100)
+	buf.HIncrBy("hash2", "h2_field1", 1000)
+
+	buf.IncrBy("counter1", 1)
+	buf.IncrBy("counter1", 10)
+	buf.IncrBy("counter2", 100)
+
+	buf.SAdd("set1", "1", "2")
+	buf.SAdd("set1", 2, 3)
+	buf.SAdd("set2", "1")
+
+	// Create 2 keys that don't expire (initially).
+	_, err := rdb.Set(ctx, "expiring1", "value1", 0).Result()
+	require.NoError(t, err)
+	_, err = rdb.Set(ctx, "expiring2", "value2", 0).Result()
+	require.NoError(t, err)
+	// Now add 2 EXPIRE commands to the buffer: the first key should expire
+	// immediately but the second should expire long after the test completes.
+	buf.Expire("expiring1", 0)
+	buf.Expire("expiring2", 24*time.Hour)
+
+	// Flush all buffered values.
+	err = buf.Flush(ctx)
+	require.NoError(t, err)
+
+	// Assert Redis has the values we're expecting.
+	h1, err := rdb.HGetAll(ctx, "hash1").Result()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"h1_field1": "11",
+		"h1_field2": "100",
+	}, h1, "HIncrBy not working as expected")
+	h2, err := rdb.HGetAll(ctx, "hash2").Result()
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"h2_field1": "1000",
+	}, h2, "HIncrBy not working as expected")
+
+	c1, err := rdb.Get(ctx, "counter1").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "11", c1, "IncrBy not working as expected")
+	c2, err := rdb.Get(ctx, "counter2").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "100", c2, "IncrBy not working as expected")
+
+	s1, err := rdb.SMembers(ctx, "set1").Result()
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"1", "2", "3"}, s1, "SAdd not working as expected")
+	s2, err := rdb.SMembers(ctx, "set2").Result()
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"1"}, s2, "SAdd not working as expected")
+
+	_, err = rdb.Get(ctx, "expiring1").Result()
+	assert.Equal(t, redis.Nil, err)
+	e2, err := rdb.Get(ctx, "expiring2").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "value2", e2)
 }
