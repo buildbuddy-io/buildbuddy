@@ -1,0 +1,27 @@
+diff --git a/fuse/opcode.go b/fuse/opcode.go
+index 9c24211..4bf62c5 100644
+--- a/fuse/opcode.go
++++ b/fuse/opcode.go
+@@ -89,7 +89,7 @@ func doInit(server *Server, req *request) {
+ 	server.reqMu.Lock()
+ 	server.kernelSettings = *input
+ 	server.kernelSettings.Flags = input.Flags & (CAP_ASYNC_READ | CAP_BIG_WRITES | CAP_FILE_OPS |
+-		CAP_READDIRPLUS | CAP_NO_OPEN_SUPPORT | CAP_PARALLEL_DIROPS)
++		CAP_READDIRPLUS | CAP_NO_OPEN_SUPPORT | CAP_PARALLEL_DIROPS | CAP_WRITEBACK_CACHE)
+ 
+ 	if server.opts.EnableLocks {
+ 		server.kernelSettings.Flags |= CAP_FLOCK_LOCKS | CAP_POSIX_LOCKS
+diff --git a/fuse/server.go b/fuse/server.go
+index 4b5c242..68fa8d6 100644
+--- a/fuse/server.go
++++ b/fuse/server.go
+@@ -149,9 +149,6 @@ func NewServer(fs RawFileSystem, mountPoint string, opts *MountOptions) (*Server
+ 	if o.MaxWrite == 0 {
+ 		o.MaxWrite = 1 << 16
+ 	}
+-	if o.MaxWrite > MAX_KERNEL_WRITE {
+-		o.MaxWrite = MAX_KERNEL_WRITE
+-	}
+ 	if o.Name == "" {
+ 		name := fs.String()
+ 		l := len(name)

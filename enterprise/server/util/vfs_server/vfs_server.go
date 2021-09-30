@@ -189,6 +189,11 @@ func syscallErrStatus(sysErr error) error {
 
 func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
 	flags := int(req.GetFlags())
+	if flags&os.O_WRONLY != 0 {
+		flags ^= os.O_WRONLY
+		flags |= os.O_RDWR
+	}
+
 	f, err := os.OpenFile(fullPath, flags, os.FileMode(req.GetMode()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
