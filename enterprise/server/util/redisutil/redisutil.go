@@ -98,12 +98,14 @@ func (r *redlock) Unlock(ctx context.Context) error {
 	return err
 }
 
-// commandBuffer buffers and aggregates Redis commands in-memory. The buffer
+// CommandBuffer buffers and aggregates Redis commands in-memory. The buffer
 // This is useful for reducing the load placed on Redis, with a tradeoff that
 // data is not updated immediately and needs to be explicitly flushed.
 //
+// Callers should be careful
+//
 // It is safe for concurrent access.
-type commandBuffer struct {
+type CommandBuffer struct {
 	rdb *redis.Client
 
 	mu sync.Mutex // protects all fields below
@@ -118,13 +120,13 @@ type commandBuffer struct {
 }
 
 // NewCommandBuffer creates a buffer.
-func NewCommandBuffer(rdb *redis.Client) *commandBuffer {
-	c := &commandBuffer{rdb: rdb}
+func NewCommandBuffer(rdb *redis.Client) *CommandBuffer {
+	c := &CommandBuffer{rdb: rdb}
 	c.init()
 	return c
 }
 
-func (c *commandBuffer) init() {
+func (c *CommandBuffer) init() {
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
 	c.sadd = map[string]map[interface{}]struct{}{}
@@ -133,7 +135,7 @@ func (c *commandBuffer) init() {
 
 // SAdd adds an SADD operation to the buffer. All buffered members of the set
 // will be added in a single SADD command.
-func (c *commandBuffer) SAdd(key string, members ...interface{}) {
+func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -148,7 +150,7 @@ func (c *commandBuffer) SAdd(key string, members ...interface{}) {
 }
 
 // IncrBy adds an INCRBY operation to the buffer.
-func (c *commandBuffer) IncrBy(key string, increment int64) {
+func (c *CommandBuffer) IncrBy(key string, increment int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -156,7 +158,7 @@ func (c *commandBuffer) IncrBy(key string, increment int64) {
 }
 
 // HIncrBy adds an HINCRBY operation to the buffer.
-func (c *commandBuffer) HIncrBy(key, field string, increment int64) {
+func (c *CommandBuffer) HIncrBy(key, field string, increment int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -170,7 +172,7 @@ func (c *commandBuffer) HIncrBy(key, field string, increment int64) {
 
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
 // expiry currently buffered for the given key.
-func (c *commandBuffer) Expire(key string, duration time.Duration) {
+func (c *CommandBuffer) Expire(key string, duration time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -181,7 +183,7 @@ func (c *commandBuffer) Expire(key string, duration time.Duration) {
 // the buffers are issued in serial. If a command fails, the error is returned
 // and the rest of the commands in the series are not executed, and their data
 // is dropped from the buffer.
-func (c *commandBuffer) Flush(ctx context.Context) error {
+func (c *CommandBuffer) Flush(ctx context.Context) error {
 	c.mu.Lock()
 	incr := c.incr
 	hincr := c.hincr
