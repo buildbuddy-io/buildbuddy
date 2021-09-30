@@ -194,7 +194,7 @@ func main() {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
 		realEnv.SetDefaultRedisClient(redisClient)
 		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), 0)
-		realEnv.SetMetricsCollector(r)
+		// realEnv.SetMetricsCollector(r)
 		realEnv.SetKeyValStore(r)
 	}
 
