@@ -458,12 +458,12 @@ type MetricsCollector interface {
 
 // A KeyValStore allows for storing ephemeral values globally.
 //
-// No guarantees are made about durability of KEyValStores -- they may be
+// No guarantees are made about durability of KeyValStores -- they may be
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
 type KeyValStore interface {
-	SetByKey(ctx context.Context, key string, val []byte) error
-	GetByKey(ctx context.Context, key string) ([]byte, error)
+	Set(ctx context.Context, key string, val []byte) error
+	Get(ctx context.Context, key string) ([]byte, error)
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.

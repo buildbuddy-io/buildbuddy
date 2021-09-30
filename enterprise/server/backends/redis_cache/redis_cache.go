@@ -329,23 +329,3 @@ func (c *Cache) Start() error {
 func (c *Cache) Stop() error {
 	return nil
 }
-
-func (c *Cache) SetByKey(ctx context.Context, key string, val []byte) error {
-	if val == nil {
-		c.rdb.Del(ctx, key)
-		return nil
-	}
-	return c.rdbSet(ctx, key, val)
-}
-
-func (c *Cache) GetByKey(ctx context.Context, key string) ([]byte, error) {
-	return c.rdbGet(ctx, key)
-}
-
-func (c *Cache) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {
-	return c.rdb.IncrBy(ctx, counterName, n).Result()
-}
-
-func (c *Cache) ReadCount(ctx context.Context, counterName string) (int64, error) {
-	return c.rdb.IncrBy(ctx, counterName, 0).Result()
-}

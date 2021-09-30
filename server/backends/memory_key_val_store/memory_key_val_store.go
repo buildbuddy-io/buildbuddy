@@ -30,7 +30,7 @@ func NewMemoryKeyValStore() (*MemoryKeyValStore, error) {
 	}, nil
 }
 
-func (m *MemoryKeyValStore) SetByKey(ctx context.Context, key string, val []byte) error {
+func (m *MemoryKeyValStore) Set(ctx context.Context, key string, val []byte) error {
 	if val != nil {
 		m.l.Add(key, val)
 	} else {
@@ -39,7 +39,7 @@ func (m *MemoryKeyValStore) SetByKey(ctx context.Context, key string, val []byte
 	return nil
 }
 
-func (m *MemoryKeyValStore) GetByKey(ctx context.Context, key string) ([]byte, error) {
+func (m *MemoryKeyValStore) Get(ctx context.Context, key string) ([]byte, error) {
 	if existingValIface, ok := m.l.Get(key); ok {
 		if val, ok := existingValIface.([]byte); ok {
 			return val, nil
