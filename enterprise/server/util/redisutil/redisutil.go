@@ -100,8 +100,18 @@ func (r *redlock) Unlock(ctx context.Context) error {
 
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
 // flushing the aggregate results in batch. This is useful for reducing the load
-// placed on Redis, with the tradeoff that data is not updated immediately and
-// needs to be explicitly flushed.
+// placed on Redis in cases where several commands are performed on the same key
+// at a high rate.
+//
+// When using this buffer, the caller is responsible for explicitly flushing
+// the data. In most cases, flushing should be done at regular intervals, as well
+// as after writing the last command to the buffer, if applicable.
+//
+// There may be a non-negligible delay between the time that the data is written
+// to the buffer and the time that data is flushed, so callers may need extra
+// synchronization in order to ensure that buffers are flushed (on all nodes,
+// if applicable), before relying on the values of any keys updated via this
+// buffer.
 //
 // It is safe for concurrent access.
 type CommandBuffer struct {
