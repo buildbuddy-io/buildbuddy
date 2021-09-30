@@ -98,11 +98,10 @@ func (r *redlock) Unlock(ctx context.Context) error {
 	return err
 }
 
-// CommandBuffer buffers and aggregates Redis commands in-memory. The buffer
-// This is useful for reducing the load placed on Redis, with a tradeoff that
-// data is not updated immediately and needs to be explicitly flushed.
-//
-// Callers should be careful
+// CommandBuffer buffers and aggregates Redis commands in-memory and allows
+// flushing the aggregate results in batch. This is useful for reducing the load
+// placed on Redis, with the tradeoff that data is not updated immediately and
+// needs to be explicitly flushed.
 //
 // It is safe for concurrent access.
 type CommandBuffer struct {
