@@ -55,7 +55,7 @@ jobs:
           echo "prettier errors:"
           cat prettier-errors.txt
 
-      - name: Summary
+      - name: Check
         run: |
           echo "===== gofmt diff ====="
           cat gofmt-diff.txt
@@ -68,8 +68,6 @@ jobs:
           echo "===== prettier errors ====="
           cat prettier-errors.txt
 
-      - name: Check
-        run: |
           if [ -s gazelle-diff.txt ]; then exit 1; fi
           if [ -s gofmt-diff.txt ]; then exit 1; fi
           if [ -s buildifier-diff.txt ]; then exit 1; fi
