@@ -302,11 +302,14 @@ func main() {
 	}()
 	go func() {
 		if executorConfig.StartupWarmupMaxWaitSecs != 0 {
+			warmupMaxWait := time.Duration(executorConfig.StartupWarmupMaxWaitSecs) * time.Second
 			select {
 			case <-warmupDone:
-			case <-time.After(time.Duration(executorConfig.StartupWarmupMaxWaitSecs) * time.Second):
+			case <-time.After(warmupMaxWait):
+				log.Warningf("Warmup did not finish within %s, resuming startup", warmupMaxWait)
 			}
 		}
+		log.Infof("Registering executor with server.")
 		reg.Start(rootContext)
 	}()
 
