@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultCutoffSizeBytes = 10000000
-	ttl                    = 259200 * time.Second // 3 days
+	ttl                    = 3 * 24 * time.Hour
 )
 
 var (
