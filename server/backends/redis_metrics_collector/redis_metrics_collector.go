@@ -4,21 +4,20 @@ import (
 	"context"
 
 	"github.com/go-redis/redis"
-
 )
 
-type redisMetricsCollector struct {
+type collector struct {
 	rdb *redis.Client
 }
 
-func New(rdb *redis.Client) *redisMetricsCollector {
-	return &redisMetricsCollector{rdb}
+func New(rdb *redis.Client) *collector {
+	return &collector{rdb}
 }
 
-func (c *redisMetricsCollector) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {
+func (c *collector) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {
 	return c.rdb.IncrBy(ctx, counterName, n).Result()
 }
 
-func (c *redisMetricsCollector) ReadCount(ctx context.Context, counterName string) (int64, error) {
+func (c *collector) ReadCount(ctx context.Context, counterName string) (int64, error) {
 	return c.rdb.IncrBy(ctx, counterName, 0).Result()
 }
