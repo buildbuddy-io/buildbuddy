@@ -181,7 +181,9 @@ func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
 }
 
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
-// expiry currently buffered for the given key.
+// expiry currently buffered for the given key. Note that the expiry duration
+// will apply only from the time that the buffer is flushed. This implies that
+// the expiration does not affect any buffered keys.
 func (c *CommandBuffer) Expire(key string, duration time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
