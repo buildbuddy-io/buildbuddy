@@ -170,20 +170,35 @@ func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	s, ok := c.sadd[key]
+	set, ok := c.sadd[key]
 	if !ok {
-		s = map[interface{}]struct{}{}
-		c.sadd[key] = s
+		set = make(map[interface{}]struct{}, len(members))
+		c.sadd[key] = set
 	}
 	for _, m := range members {
-		s[m] = struct{}{}
+		set[m] = struct{}{}
 	}
 }
 
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
-// expiry currently buffered for the given key. Note that the expiry duration
-// will apply only from the time that the buffer is flushed. This implies that
-// the expiration does not affect any buffered keys.
+// expiry currently buffered for the given key. The duration is applied
+// as-is when flushed to Redis, meaning that any time elapsed until the flush
+// does not count towards the expiration duration.
+//
+// Because the expirations are relative to when the buffer is flushed, the
+// buffer does not actively apply expirations to its own keys or delete keys
+// from Redis when the buffered expiration times have elapsed. This means there
+// are some corner cases where a sequence of buffered commands does not behave
+// the same as if those commands were issued directly to Redis. For example,
+// consider the following sequence of buffered commands:
+//
+//     INCRBY key 1
+//     EXPIRE key 0
+//     EXPIRE key 3600
+//
+// The `EXPIRE key 0` command is effectively dropped from the buffer since the
+// later `EXPIRE` command overwrites it, whereas Redis would delete the key
+// immediately upon seeing the `EXPIRE key 0` command.
 func (c *CommandBuffer) Expire(key string, duration time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
