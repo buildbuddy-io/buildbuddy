@@ -320,11 +320,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	os := defaultPlatformOSValue
 	arch := defaultPlatformArchValue
-	executorGroupID, pool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx)
-	if err != nil {
-		return "", err
-	}
-
+	pool := ""
 	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
 	for _, property := range platformProps {
 		if property.Name == platformOSKey {
@@ -336,6 +332,15 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if property.Name == platformArchKey {
 			arch = strings.ToLower(property.Value)
 		}
+	}
+
+	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, os)
+	if err != nil {
+		return "", err
+	}
+
+	if pool == "" {
+		pool = defaultPool
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser

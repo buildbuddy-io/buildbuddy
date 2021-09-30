@@ -190,6 +190,14 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
+	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
+		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
+		realEnv.SetDefaultRedisClient(redisClient)
+		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), 0)
+		// realEnv.SetMetricsCollector(r)
+		realEnv.SetKeyValStore(r)
+	}
+
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
 		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
@@ -203,13 +211,15 @@ func main() {
 	}
 
 	if configurator.GetAppUsageTrackingEnabled() {
-		if realEnv.GetRemoteExecutionRedisClient() == nil {
+		if realEnv.GetDefaultRedisClient() == nil {
 			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 		}
-		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
-		if err != nil {
-			log.Fatalf("Failed to create usage tracker: %s", err)
+		region := realEnv.GetConfigurator().GetAppRegion()
+		if region == "" {
+			log.Fatalf("Usage tracking requires app.region to be configured.")
 		}
+		opts := &usage.TrackerOpts{Region: region}
+		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv), opts)
 		realEnv.SetUsageTracker(ut)
 
 		ut.StartDBFlush()
@@ -270,8 +280,6 @@ func main() {
 		}
 		r := redis_cache.NewCache(realEnv.GetCacheRedisClient(), maxValueSizeBytes)
 		realEnv.SetCache(composable_cache.NewComposableCache(r, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-		realEnv.SetMetricsCollector(r)
-		realEnv.SetKeyValStore(r)
 	}
 
 	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {

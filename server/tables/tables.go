@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"gorm.io/gorm"
 
@@ -164,10 +165,6 @@ type Group struct {
 	// The group access token. This token allows writing data for this
 	// group.
 	WriteToken string `gorm:"index:write_token_index"`
-
-	// The group's api key. This allows members of the group to make
-	// API requests on the group's behalf.
-	APIKey string `gorm:"index:api_key_index"`
 
 	// The group's Github API token.
 	GithubToken string
@@ -445,13 +442,13 @@ type UsageCounts struct {
 type Usage struct {
 	Model
 
-	GroupID string `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:1"`
+	GroupID string `gorm:"uniqueIndex:group_period_region_index,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in
 	// microseconds since the Unix epoch. The usage period duration is 1 hour.
 	// Only usage data occurring in collection periods inside this 1 hour period
 	// is included in this usage row.
-	PeriodStartUsec int64 `gorm:"uniqueIndex:group_id_period_start_usec_index,priority:2"`
+	PeriodStartUsec int64 `gorm:"uniqueIndex:group_period_region_index,priority:2"`
 
 	// FinalBeforeUsec is the time before which all collection period data in this
 	// usage period is finalized. This is used to guarantee that collection period
@@ -473,6 +470,12 @@ type Usage struct {
 	//                     ^ FinalBefore (before update) = CollectionPeriodStart
 	//                            ^ FinalBefore (after update) = CollectionPeriodEnd
 	FinalBeforeUsec int64
+
+	// Region is the region in which the usage data was originally gathered.
+	// Since we have a global DB deployment but usage data is collected
+	// per-region, this effectively partitions the usage table by region, allowing
+	// the FinalBeforeUsec logic to work independently in each region.
+	Region string `gorm:"uniqueIndex:group_period_region_index,priority:3"`
 
 	UsageCounts
 }
@@ -507,10 +510,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
-			// Hard-coding the perms constant here to avoid circular dep on
-			// perms => interfaces => tables.
-			const adminRole = 1 << 1
-			return db.Exec("UPDATE UserGroups SET role = ?", adminRole).Error
+			return db.Exec("UPDATE UserGroups SET role = ?", uint32(role.Admin)).Error
 		})
 	}
 
@@ -531,7 +531,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Migrate Groups.APIKey to APIKey rows.
-	if m.HasTable("Groups") && !m.HasTable("APIKeys") {
+	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
 		postMigrate = append(postMigrate, func() error {
 			rows, err := db.Raw(`SELECT group_id, api_key FROM ` + "`Groups`" + ``).Rows()
 			if err != nil {
@@ -540,6 +540,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			defer rows.Close()
 
 			var g Group
+			var apiKey string
 
 			// These constants are already defined in perms.go, but we can't reference that
 			// due to a circular dep (tables -> perms -> interfaces -> tables).
@@ -550,7 +551,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			apiKeyPerms := groupRead | groupWrite
 
 			for rows.Next() {
-				if err := rows.Scan(&g.GroupID, &g.APIKey); err != nil {
+				if err := rows.Scan(&g.GroupID, &apiKey); err != nil {
 					return err
 				}
 				pk, err := PrimaryKeyForTable("APIKeys")
@@ -560,14 +561,13 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 				if err := db.Exec(
 					`INSERT INTO APIKeys (api_key_id, group_id, perms, value, label) VALUES (?, ?, ?, ?, ?)`,
-					pk, g.GroupID, apiKeyPerms, g.APIKey, "Default API key").Error; err != nil {
+					pk, g.GroupID, apiKeyPerms, apiKey, "Default API key").Error; err != nil {
 					return err
 				}
 			}
 			return nil
 		})
 	}
-
 	return postMigrate, nil
 }
 
@@ -594,6 +594,22 @@ func PostAutoMigrate(db *gorm.DB) error {
 			if err != nil {
 				log.Errorf("Error creating %s: %s", indexName, err)
 			}
+		}
+	}
+
+	// Drop old columns at the very end of the migration.
+	for _, ref := range []struct {
+		table  Table
+		column string
+	}{
+		// Group.api_key has been migrated to a single row in the APIKeys table.
+		{&Group{}, "api_key"},
+	} {
+		if !m.HasColumn(ref.table, ref.column) {
+			continue
+		}
+		if err := m.DropColumn(ref.table, ref.column); err != nil {
+			log.Warningf("Failed to drop column %s.%s", ref.table.TableName(), ref.column)
 		}
 	}
 	return nil
