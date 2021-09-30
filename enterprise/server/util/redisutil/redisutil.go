@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -95,4 +96,157 @@ func (r *redlock) Lock(ctx context.Context) error {
 func (r *redlock) Unlock(ctx context.Context) error {
 	_, err := r.rmu.UnlockContext(ctx)
 	return err
+}
+
+// CommandBuffer buffers and aggregates Redis commands in-memory and allows
+// flushing the aggregate results in batch. This is useful for reducing the load
+// placed on Redis in cases where a high volume of commands are operating on
+// a relatively small subset of Redis keys (for example, counter values that
+// are incremented several times over a short time period).
+//
+// When using this buffer, the caller is responsible for explicitly flushing
+// the data. In most cases, flushing should be done at regular intervals, as well
+// as after writing the last command to the buffer, if applicable.
+//
+// There may be a non-negligible delay between the time that the data is written
+// to the buffer and the time that data is flushed, so callers may need extra
+// synchronization in order to ensure that buffers are flushed (on all nodes,
+// if applicable), before relying on the values of any keys updated via this
+// buffer.
+//
+// It is safe for concurrent access.
+type CommandBuffer struct {
+	rdb *redis.Client
+
+	mu sync.Mutex // protects all fields below
+	// Buffer for INCRBY commands.
+	incr map[string]int64
+	// Buffer for HINCRBY commands.
+	hincr map[string]map[string]int64
+	// Buffer for SADD commands.
+	sadd map[string]map[interface{}]struct{}
+	// Buffer for EXPIRE commands.
+	expire map[string]time.Duration
+}
+
+// NewCommandBuffer creates a buffer.
+func NewCommandBuffer(rdb *redis.Client) *CommandBuffer {
+	c := &CommandBuffer{rdb: rdb}
+	c.init()
+	return c
+}
+
+func (c *CommandBuffer) init() {
+	c.incr = map[string]int64{}
+	c.hincr = map[string]map[string]int64{}
+	c.sadd = map[string]map[interface{}]struct{}{}
+	c.expire = map[string]time.Duration{}
+}
+
+// IncrBy adds an INCRBY operation to the buffer.
+func (c *CommandBuffer) IncrBy(key string, increment int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.incr[key] += increment
+}
+
+// HIncrBy adds an HINCRBY operation to the buffer.
+func (c *CommandBuffer) HIncrBy(key, field string, increment int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	h, ok := c.hincr[key]
+	if !ok {
+		h = map[string]int64{}
+		c.hincr[key] = h
+	}
+	h[field] += increment
+}
+
+// SAdd adds an SADD operation to the buffer. All buffered members of the set
+// will be added in a single SADD command.
+func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	set, ok := c.sadd[key]
+	if !ok {
+		set = make(map[interface{}]struct{}, len(members))
+		c.sadd[key] = set
+	}
+	for _, m := range members {
+		set[m] = struct{}{}
+	}
+}
+
+// Expire adds an EXPIRE operation to the buffer, overwriting any previous
+// expiry currently buffered for the given key. The duration is applied
+// as-is when flushed to Redis, meaning that any time elapsed until the flush
+// does not count towards the expiration duration.
+//
+// Because the expirations are relative to when the buffer is flushed, the
+// buffer does not actively apply expirations to its own keys or delete keys
+// from Redis when the buffered expiration times have elapsed. This means there
+// are some corner cases where a sequence of buffered commands does not behave
+// the same as if those commands were issued directly to Redis. For example,
+// consider the following sequence of buffered commands:
+//
+//     INCRBY key 1
+//     EXPIRE key 0
+//     EXPIRE key 3600
+//
+// The `EXPIRE key 0` command is effectively dropped from the buffer since the
+// later `EXPIRE` command overwrites it, whereas Redis would delete the key
+// immediately upon seeing the `EXPIRE key 0` command.
+func (c *CommandBuffer) Expire(key string, duration time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.expire[key] = duration
+}
+
+// Flush flushes the buffered commands to Redis. The commands needed to flush
+// the buffers are issued in serial. If a command fails, the error is returned
+// and the rest of the commands in the series are not executed, and their data
+// is dropped from the buffer.
+func (c *CommandBuffer) Flush(ctx context.Context) error {
+	c.mu.Lock()
+	incr := c.incr
+	hincr := c.hincr
+	sadd := c.sadd
+	expire := c.expire
+	// Set all fields to fresh values so the current ones can be flushed without
+	// keeping a hold on the lock.
+	c.init()
+	c.mu.Unlock()
+
+	for key, increment := range incr {
+		if _, err := c.rdb.IncrBy(ctx, key, increment).Result(); err != nil {
+			return err
+		}
+	}
+	for key, h := range hincr {
+		for field, increment := range h {
+			if _, err := c.rdb.HIncrBy(ctx, key, field, increment).Result(); err != nil {
+				return err
+			}
+		}
+	}
+	for key, set := range sadd {
+		members := []interface{}{}
+		for member, _ := range set {
+			members = append(members, member)
+		}
+		if _, err := c.rdb.SAdd(ctx, key, members...).Result(); err != nil {
+			return err
+		}
+	}
+	for key, duration := range expire {
+		if _, err := c.rdb.Expire(ctx, key, duration).Result(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
