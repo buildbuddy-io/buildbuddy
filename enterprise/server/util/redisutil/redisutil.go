@@ -132,22 +132,6 @@ func (c *CommandBuffer) init() {
 	c.expire = map[string]time.Duration{}
 }
 
-// SAdd adds an SADD operation to the buffer. All buffered members of the set
-// will be added in a single SADD command.
-func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	s, ok := c.sadd[key]
-	if !ok {
-		s = map[interface{}]struct{}{}
-		c.sadd[key] = s
-	}
-	for _, m := range members {
-		s[m] = struct{}{}
-	}
-}
-
 // IncrBy adds an INCRBY operation to the buffer.
 func (c *CommandBuffer) IncrBy(key string, increment int64) {
 	c.mu.Lock()
@@ -167,6 +151,22 @@ func (c *CommandBuffer) HIncrBy(key, field string, increment int64) {
 		c.hincr[key] = h
 	}
 	h[field] += increment
+}
+
+// SAdd adds an SADD operation to the buffer. All buffered members of the set
+// will be added in a single SADD command.
+func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	s, ok := c.sadd[key]
+	if !ok {
+		s = map[interface{}]struct{}{}
+		c.sadd[key] = s
+	}
+	for _, m := range members {
+		s[m] = struct{}{}
+	}
 }
 
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
