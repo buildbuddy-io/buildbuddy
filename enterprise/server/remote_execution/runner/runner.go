@@ -519,8 +519,8 @@ func (p *Pool) WarmupDefaultImage() {
 	start := time.Now()
 	config := p.env.GetConfigurator().GetExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
-	// Give the pull up to 1 minute to succeed and 1 minute to create a warm up container.
-	// In practice I saw clean pulls take about 30 seconds.
+	// Give the pull up to 2 minute to succeed.
+	// In practice warmup take about 30 seconds for docker and 75 seconds for firecracker.
 	timeout := 2 * time.Minute
 	if config.WarmupTimeoutSecs > 0 {
 		timeout = time.Duration(config.WarmupTimeoutSecs) * time.Second
@@ -564,18 +564,6 @@ func (p *Pool) WarmupDefaultImage() {
 				return err
 			}
 			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
-			tmpDir, err := os.MkdirTemp("", "buildbuddy-warmup-*")
-			if err != nil {
-				return err
-			}
-			defer os.Remove(tmpDir)
-			if err = c.Create(egCtx, tmpDir); err != nil {
-				return err
-			}
-			if err := c.Remove(egCtx); err != nil {
-				return err
-			}
-			log.Infof("Warmup: %s finished in %s.", containerType, time.Since(start))
 			return nil
 		})
 	}

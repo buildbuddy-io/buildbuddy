@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
@@ -293,7 +294,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)
 	}
-	reg.Start(rootContext)
+
+	warmupDone := make(chan struct{})
+	go func() {
+		executionServer.Warmup()
+		close(warmupDone)
+	}()
+	go func() {
+		if executorConfig.StartupWarmupMaxWaitSecs != 0 {
+			warmupMaxWait := time.Duration(executorConfig.StartupWarmupMaxWaitSecs) * time.Second
+			select {
+			case <-warmupDone:
+			case <-time.After(warmupMaxWait):
+				log.Warningf("Warmup did not finish within %s, resuming startup", warmupMaxWait)
+			}
+		}
+		log.Infof("Registering executor with server.")
+		reg.Start(rootContext)
+	}()
 
 	go func() {
 		localServer.Serve(localListener)
