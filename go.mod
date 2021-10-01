@@ -42,6 +42,7 @@ require (
 	github.com/hanwen/go-fuse/v2 v2.1.0
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4
+	github.com/hashicorp/serf v0.9.5 // indirect
 	github.com/jhump/protoreflect v1.8.2
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/pgzip v1.2.5

@@ -148,8 +148,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_armon_go_radix",
         importpath = "github.com/armon/go-radix",
-        sum = "h1:BUAU3CGlLvorLI26FmByPp2eC2qla6E1Tw+scpcg/to=",
-        version = "v0.0.0-20180808171621-7fddfc383310",
+        sum = "h1:F4z6KzEeeQIMeLFa97iZU6vupzoecKdU5TX24SNppXI=",
+        version = "v1.0.0",
     )
     go_repository(
         name = "com_github_armon_go_socks5",
@@ -474,8 +474,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_cockroachdb_errors",
+        build_file_proto_mode = "disable_global",
         importpath = "github.com/cockroachdb/errors",
-	build_file_proto_mode = "disable_global",
         sum = "h1:ptyO1BLW+sBxwBTSKJfS6kGzYCVKhI7MyBhoXAnPIKM=",
         version = "v1.7.5",
     )
@@ -1964,8 +1964,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hashicorp_mdns",
         importpath = "github.com/hashicorp/mdns",
-        sum = "h1:WhIgCr5a7AaVH6jPUwjtRuuE7/RDufnUvzIr48smyxs=",
-        version = "v1.0.0",
+        sum = "h1:XFSOubp8KWB+Jd2PDyaX5xUd5bhSP/+pTDZVDMzZJM8=",
+        version = "v1.0.1",
     )
     go_repository(
         name = "com_github_hashicorp_memberlist",
@@ -1976,8 +1976,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hashicorp_serf",
         importpath = "github.com/hashicorp/serf",
-        sum = "h1:YZ7UKsJv+hKjqGVUUbtE3HNj79Eln2oQ75tniF6iPt0=",
-        version = "v0.8.2",
+        sum = "h1:EBWvyu9tcRszt3Bxp3KNssBMP1KuHWyO51lz9+786iM=",
+        version = "v0.9.5",
     )
     go_repository(
         name = "com_github_hpcloud_tail",
@@ -2462,8 +2462,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_lni_dragonboat_v3",
+        build_file_proto_mode = "disable_global",
         importpath = "github.com/lni/dragonboat/v3",
-	build_file_proto_mode = "disable_global",
         sum = "h1:hh/XOeTC+fN1xJ5GsidYwKt2oeCe/V9WUjoB9dEKoJY=",
         version = "v3.3.4",
     )
@@ -2701,8 +2701,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_mitchellh_cli",
         importpath = "github.com/mitchellh/cli",
-        sum = "h1:iGBIsUe3+HZ/AD/Vd7DErOt5sU9fa8Uj7A2s1aggv1Y=",
-        version = "v1.0.0",
+        sum = "h1:tEElEatulEHDeedTxwckzyYMA5c86fbmNIUL1hBIiTg=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_mitchellh_go_homedir",
@@ -3079,8 +3079,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_posener_complete",
         importpath = "github.com/posener/complete",
-        sum = "h1:ccV59UEOTzVDnDUEFdT95ZzHVZ+5+158q8+SJb2QV5w=",
-        version = "v1.1.1",
+        sum = "h1:NP0eAhjcjImqslEwo/1hq7gpajME0fTLTezBKDqfXqo=",
+        version = "v1.2.3",
     )
     go_repository(
         name = "com_github_pquerna_cachecontrol",
