@@ -1,4 +1,4 @@
-package memory_key_val_store
+package memory_kvstore
 
 import (
 	"context"

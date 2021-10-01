@@ -36,7 +36,7 @@ go_library(
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
         "//proto:remote_execution_go_proto",
-        "//server/backends/redis_key_val_store",
+        "//server/backends/redis_kvstore",
         "//server/config",
         "//server/interfaces",
         "//server/janitor",

@@ -18,7 +18,7 @@ go_library(
         "//server/backends/github",
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
-        "//server/backends/memory_key_val_store",
+        "//server/backends/memory_kvstore",
         "//server/backends/memory_metrics_collector",
         "//server/backends/repo_downloader",
         "//server/backends/slack",

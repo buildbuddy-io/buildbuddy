@@ -1,4 +1,4 @@
-package redis_key_val_store
+package redis_kvstore
 
 import (
 	"context"
@@ -22,8 +22,7 @@ func New(rdb *redis.Client) *store {
 
 func (s *store) Set(ctx context.Context, key string, val []byte) error {
 	if val == nil {
-		s.rdb.Del(ctx, key)
-		return nil
+		return s.rdb.Del(ctx, key).Err()
 	}
 	return s.rdb.Set(ctx, key, val, ttl).Err()
 }

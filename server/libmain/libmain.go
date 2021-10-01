@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_key_val_store"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
@@ -217,7 +217,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 	realEnv.SetMetricsCollector(collector)
 
-	keyValStore, err := memory_key_val_store.NewMemoryKeyValStore()
+	keyValStore, err := memory_kvstore.NewMemoryKeyValStore()
 	if err != nil {
 		log.Fatalf("Error configuring in-memory proto store: %s", err.Error())
 	}
