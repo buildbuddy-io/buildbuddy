@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/redis_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
@@ -191,11 +192,13 @@ func main() {
 	}
 
 	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
-		realEnv.SetDefaultRedisClient(redisClient)
-		r := redis_cache.NewCache(realEnv.GetDefaultRedisClient(), 0)
-		// realEnv.SetMetricsCollector(r)
-		realEnv.SetKeyValStore(r)
+		rdb := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
+		realEnv.SetDefaultRedisClient(rdb)
+		rkv := redis_kvstore.New(rdb)
+		realEnv.SetKeyValStore(rkv)
+		// TODO(bduffany): Fix Redis load issues and re-enable
+		// rmc := redis_metrics_collector.New(rdb)
+		// realEnv.SetMetricsCollector(rmc)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
