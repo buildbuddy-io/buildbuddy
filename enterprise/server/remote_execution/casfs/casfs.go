@@ -102,7 +102,12 @@ func (cfs *CASFS) Mount() error {
 		return status.FailedPreconditionError("CASFS already mounted")
 	}
 
+	// The filesystem is mutated only through the FUSE filesystem so we can let the kernel cache node and attribute
+	// information for an arbitrary amount of time.
+	nodeAttrTimeout := 6 * time.Hour
 	opts := &fs.Options{
+		EntryTimeout: &nodeAttrTimeout,
+		AttrTimeout:  &nodeAttrTimeout,
 		MountOptions: fuse.MountOptions{
 			AllowOther:    true,
 			Debug:         cfs.logFUSEOps,
@@ -239,12 +244,12 @@ func (cfs *CASFS) FinishTask() error {
 	// TODO(vadim): propagate stats to ActionResult
 	if cfs.verbose {
 		var totalTime time.Duration
-		log.Debugf("OP stats:")
+		log.Debugf("[%s] OP stats:", cfs.internalTaskID)
 		for op, s := range cfs.opStats {
-			log.Infof("%-20s num_calls=%-08d time=%.2fs", op, s.count, s.timeSpent.Seconds())
+			log.Infof("[%s] %-20s num_calls=%-08d time=%.2fs", cfs.internalTaskID, op, s.count, s.timeSpent.Seconds())
 			totalTime += s.timeSpent
 		}
-		log.Debugf("Total time spent in OPs: %s", totalTime)
+		log.Debugf("[%s] Total time spent in OPs: %s", cfs.internalTaskID, totalTime)
 	}
 
 	cfs.internalTaskID = "unset"
