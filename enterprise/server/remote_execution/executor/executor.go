@@ -289,6 +289,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 	}
 
+	if r.CASFS != nil {
+		r.CASFS.FinishTask()
+	}
+
 	if cmdResult.ExitCode != 0 {
 		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
 	}
