@@ -28,7 +28,7 @@ func NewMemoryMetricsCollector() (*MemoryMetricsCollector, error) {
 	}, nil
 }
 
-func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, counterName string, n int64) (int64, error) {
+func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, counterName string, n int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -36,12 +36,12 @@ func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, counterName
 		if existingVal, ok := existingValIface.(int64); ok {
 			newVal := existingVal + n
 			m.l.Add(counterName, newVal)
-			return newVal, nil
+			return nil
 		}
 	}
 
 	m.l.Add(counterName, n)
-	return n, nil
+	return nil
 
 }
 
