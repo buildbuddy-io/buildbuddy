@@ -15,7 +15,8 @@ func New(rdb *redis.Client) *collector {
 }
 
 func (c *collector) IncrementCount(ctx context.Context, counterName string, n int64) error {
-	return c.rdb.IncrBy(ctx, counterName, n).Result()
+	_, err := c.rdb.IncrBy(ctx, counterName, n).Result()
+	return err
 }
 
 func (c *collector) ReadCount(ctx context.Context, counterName string) (int64, error) {
