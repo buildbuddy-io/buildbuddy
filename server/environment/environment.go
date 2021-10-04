@@ -67,7 +67,6 @@ type Env interface {
 	GetDefaultRedisClient() *redis.Client
 	GetRemoteExecutionRedisClient() *redis.Client
 	GetRemoteExecutionRedisPubSubClient() *redis.Client
-	GetRedisCommandBuffer() interfaces.RedisCommandBuffer
 	GetMetricsCollector() interfaces.MetricsCollector
 	GetKeyValStore() interfaces.KeyValStore
 	GetRepoDownloader() interfaces.RepoDownloader
