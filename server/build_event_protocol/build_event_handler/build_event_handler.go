@@ -271,8 +271,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	// Wait for stats collected by the hit tracker to be flushed to the
-	// backing storage medium, then copy the stats to the DB.
 	go e.writeCacheStatsToDBWhenReady(context.Background(), iid)
 
 	// Notify our webhooks, if we have any.
