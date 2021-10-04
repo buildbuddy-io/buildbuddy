@@ -295,8 +295,8 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 }
 
 // writeCacheStatsToDBWhenReady waits long enough for all apps to flush their
-// cache stats to the backing storage, then updates the invocation cache stats
-// in the DB.
+// cache stats from their in-memory buffers, then updates the invocation cache
+// stats in the DB.
 func (e *EventChannel) writeCacheStatsToDBWhenReady(ctx context.Context, invocationID string) {
 	ctx, cancel := context.WithTimeout(ctx, writeCacheStatsTimeout)
 	defer cancel()
