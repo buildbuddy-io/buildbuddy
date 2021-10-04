@@ -3719,6 +3719,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # confuse Gazelle.
         build_directives = [
             "gazelle:go_visibility @io_opentelemetry_go_otel_metric//:__subpackages__",
+            "gazelle:resolve go go.opentelemetry.io/otel/metric/registry @io_opentelemetry_go_otel_metric//registry",
         ],
         importpath = "go.opentelemetry.io/otel/internal/metric",
         sum = "h1:Q9bS02XRykSRIbggaU4hVF9oWOP9PyILu26zJWoKmk0=",
