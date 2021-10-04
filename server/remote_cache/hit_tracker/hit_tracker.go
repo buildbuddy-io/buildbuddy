@@ -255,6 +255,9 @@ func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType)
 }
 
 func computeThroughputBytesPerSecond(sizeBytes, durationUsec int64) int64 {
+	if durationUsec == 0 {
+		return 0
+	}
 	dur := time.Duration(durationUsec * int64(time.Microsecond))
 	return int64(float64(sizeBytes) / dur.Seconds())
 }
@@ -286,3 +289,4 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 
 	return cs
 }
+log.Errorf("FLUSHING STATS")
