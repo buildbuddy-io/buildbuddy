@@ -289,4 +289,3 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 
 	return cs
 }
-log.Errorf("FLUSHING STATS")
