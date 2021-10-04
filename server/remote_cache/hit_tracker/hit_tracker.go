@@ -126,8 +126,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
 	}).Inc()
-	err := h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
-	return err
+	return h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
@@ -138,8 +137,7 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	err := h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
-	return err
+	return h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
 }
 
 type closeFunction func() error
