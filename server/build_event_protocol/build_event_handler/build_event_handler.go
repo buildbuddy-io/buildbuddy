@@ -44,6 +44,14 @@ import (
 
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
+
+	// The time allowed for the cache hit trackers across all app instances to
+	// flush their stats from their local buffer to the backing storage (Redis).
+	// We wait this long before we write the invocation's cache stats to the DB.
+	cacheStatsFinalizationDelay = 500 * time.Millisecond
+
+	// How long to wait before giving up on writing cache stats to the DB.
+	writeCacheStatsTimeout = 30 * time.Second
 )
 
 var (
@@ -184,11 +192,12 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
-		fillInvocationFromCacheStats(cacheStats, ti)
-	}
 	recordInvocationMetrics(ti)
-	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
+	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		return err
+	}
+	go e.writeCacheStatsToDBWhenReady(context.Background(), iid)
+	return nil
 }
 
 func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invocation) {
@@ -257,13 +266,14 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
-		fillInvocationFromCacheStats(cacheStats, ti)
-	}
 	recordInvocationMetrics(ti)
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 		return err
 	}
+
+	// Wait for stats collected by the hit tracker to be flushed to the
+	// backing storage medium, then copy the stats to the DB.
+	go e.writeCacheStatsToDBWhenReady(context.Background(), iid)
 
 	// Notify our webhooks, if we have any.
 	for _, hook := range e.env.GetWebhooks() {
@@ -284,6 +294,22 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		}()
 	}
 	return nil
+}
+
+// writeCacheStatsToDBWhenReady waits long enough for all apps to flush their
+// cache stats to the DB, then updates the invocation cache stats in the DB.
+func (e *EventChannel) writeCacheStatsToDBWhenReady(ctx context.Context, invocationID string) {
+	ctx, cancel := context.WithTimeout(ctx, writeCacheStatsTimeout)
+	defer cancel()
+
+	time.Sleep(cacheStatsFinalizationDelay)
+	ti := &tables.Invocation{InvocationID: invocationID}
+	if cacheStats := hit_tracker.CollectCacheStats(context.Background(), e.env, invocationID); cacheStats != nil {
+		fillInvocationFromCacheStats(cacheStats, ti)
+	}
+	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		log.Errorf("Failed to write cache stats for invocation: %s", err)
+	}
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
