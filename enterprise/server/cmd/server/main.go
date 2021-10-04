@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
@@ -31,7 +33,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/redis_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
@@ -48,9 +49,9 @@ import (
 	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -194,11 +195,19 @@ func main() {
 	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
 		rdb := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
 		realEnv.SetDefaultRedisClient(rdb)
+
+		rbuf := redisutil.NewCommandBuffer(rdb)
+		cancel := rbuf.StartPeriodicFlush(context.Background())
+		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+			cancel()
+			// Flush the Redis buffer one last time before shutting down.
+			return rbuf.Flush(ctx)
+		})
+
 		rkv := redis_kvstore.New(rdb)
 		realEnv.SetKeyValStore(rkv)
-		// TODO(bduffany): Fix Redis load issues and re-enable
-		// rmc := redis_metrics_collector.New(rdb)
-		// realEnv.SetMetricsCollector(rmc)
+		rmc := redis_metrics_collector.New(rdb, rbuf)
+		realEnv.SetMetricsCollector(rmc)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {

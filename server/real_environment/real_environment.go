@@ -70,6 +70,7 @@ type RealEnv struct {
 	cacheRedisClient                 *redis.Client
 	defaultRedisClient               *redis.Client
 	remoteExecutionRedisClient       *redis.Client
+	redisCommandBuffer               interfaces.RedisCommandBuffer
 	dbHandle                         *db.DBHandle
 	remoteExecutionRedisPubSubClient *redis.Client
 	buildEventProxyClients           []pepb.PublishBuildEventClient
@@ -353,4 +354,12 @@ func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client *redis.Client) {
 
 func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() *redis.Client {
 	return r.remoteExecutionRedisPubSubClient
+}
+
+func (r *RealEnv) GetRedisCommandBuffer() interfaces.RedisCommandBuffer {
+	return r.redisCommandBuffer
+}
+
+func (r *RealEnv) SetRedisCommandBuffer(b interfaces.RedisCommandBuffer) {
+	r.redisCommandBuffer = b
 }

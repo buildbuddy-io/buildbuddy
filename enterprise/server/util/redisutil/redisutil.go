@@ -2,18 +2,22 @@ package redisutil
 
 import (
 	"context"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/extra/redisotel/v8"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redsync/redsync/v4"
 
 	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
+)
+
+const (
+	commandBufferFlushInterval = 250 * time.Millisecond
 )
 
 func isRedisURI(redisTarget string) bool {
@@ -32,13 +36,12 @@ func TargetToOptions(redisTarget string) *redis.Options {
 	} else if opt, err := redis.ParseURL(redisTarget); err == nil {
 		return opt
 	} else {
-		log.Println(err)
-		log.Println(
-			"The supported redis URI formats are:\n" +
-				"redis[s]://[[USER][:PASSWORD]@][HOST][:PORT]" +
-				"[/DATABASE]\nor:\nunix://[[USER][:PASSWORD]@]" +
-				"SOCKET_PATH[?db=DATABASE]\nIf using a socket path, " +
-				"path must be an absolute unix path.")
+		log.Errorf(
+			"Failed to parse redis URI %q: %s - The supported redis URI formats are:\n"+
+				"redis[s]://[[USER][:PASSWORD]@][HOST][:PORT]"+
+				"[/DATABASE]\nor:\nunix://[[USER][:PASSWORD]@]"+
+				"SOCKET_PATH[?db=DATABASE]\nIf using a socket path, "+
+				"path must be an absolute unix path.", redisTarget, err)
 		return &redis.Options{}
 	}
 }
@@ -249,4 +252,21 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) context.CancelFunc {
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(commandBufferFlushInterval): // fallthrough
+			}
+			if err := c.Flush(ctx); err != nil {
+				log.Errorf("Failed to flush Redis command buffer: %s", err)
+			}
+		}
+	}()
+	return cancel
 }

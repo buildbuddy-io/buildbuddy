@@ -569,3 +569,13 @@ type DistributedLock interface {
 	// Unlock releases the lock.
 	Unlock(ctx context.Context) error
 }
+
+// RedisCommandBuffer buffers and aggregates Redis commands in memory to reduce
+// load placed on Redis. See redisutil.CommandBuffer for details.
+type RedisCommandBuffer interface {
+	IncrBy(key string, increment int64)
+	HIncrBy(key, field string, increment int64)
+	SAdd(key string, members ...interface{})
+	Expire(key string, duration time.Duration)
+	Flush(ctx context.Context) error
+}
