@@ -21,19 +21,7 @@ export default class InvocationNotFoundComponent extends React.Component {
     const canLogin = capabilities.auth && !this.props.user;
 
     if (invocationExists && canLogin) {
-      return (
-        <div className="login-interstitial">
-          <div className="container">
-            <div className="login-box">
-              <div className="login-buttons">
-                <h2>Sign in to continue</h2>
-                <button onClick={this.handleLoginClicked.bind(this)}>Sign up for BuildBuddy</button>
-                <button onClick={this.handleLoginClicked.bind(this)}>Log in to BuildBuddy</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+      window.location.href = "/?" + new URLSearchParams({redirect_url: window.location.href});
     }
 
     return (
