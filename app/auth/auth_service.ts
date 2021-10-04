@@ -130,16 +130,17 @@ export class AuthService {
   }
 
   login(slug?: string) {
+    const search = new URLSearchParams(window.location.search);
     if (slug) {
       window.location.href = `/login/?${new URLSearchParams({
-        redirect_url: window.location.href,
+        redirect_url: search.get("redirect_url") || window.location.href,
         slug,
       })}`;
       return;
     }
 
     window.location.href = `/login/?${new URLSearchParams({
-      redirect_url: window.location.href,
+      redirect_url: search.get("redirect_url") || window.location.href,
       issuer_url: capabilities.auth,
     })}`;
   }

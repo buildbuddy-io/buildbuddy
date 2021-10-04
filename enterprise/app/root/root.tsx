@@ -278,7 +278,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     </SetupComponent>
                   </Suspense>
                 )}
-                {login && <LoginComponent />}
+                {login && <LoginComponent search={this.state.search} />}
               </div>
             )}
             {!this.state.loading && !code && <FooterComponent />}
