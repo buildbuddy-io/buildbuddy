@@ -36,9 +36,12 @@ go_test(
         ":vfs_server",
         "//proto:vfs_go_proto",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/status",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

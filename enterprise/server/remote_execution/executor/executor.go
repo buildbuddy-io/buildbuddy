@@ -56,11 +56,10 @@ const (
 )
 
 type Executor struct {
-	env         environment.Env
-	runnerPool  *runner.Pool
-	id          string
-	name        string
-	enableCASFS bool
+	env        environment.Env
+	runnerPool *runner.Pool
+	id         string
+	name       string
 }
 
 type Options struct {
@@ -86,11 +85,10 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 		return nil, err
 	}
 	s := &Executor{
-		env:         env,
-		id:          id,
-		name:        name,
-		runnerPool:  runnerPool,
-		enableCASFS: executorConfig.EnableCASFS,
+		env:        env,
+		id:         id,
+		name:       name,
+		runnerPool: runnerPool,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
 		hc.RegisterShutdownFunction(runnerPool.Shutdown)
@@ -219,8 +217,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		OutputFiles:        task.GetCommand().GetOutputFiles(),
 	}
 
-	if s.env.GetConfigurator().GetExecutorConfig().EnableCASFS && r.PlatformProperties.EnableCASFS {
-		// Unlike other "container" implementations, for Firecracker CASFS is mounted inside the guest VM so we need to
+	if s.env.GetConfigurator().GetExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
+		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
 		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
 			fc.SetTaskFileSystemLayout(layout)
@@ -236,16 +234,16 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			return finishWithErrFn(err)
 		}
 	}
-	if r.CASFS != nil {
-		if err := r.CASFS.PrepareForTask(ctx, task.GetExecutionId(), layout); err != nil {
+	if r.VFS != nil {
+		if err := r.VFS.PrepareForTask(ctx, task.GetExecutionId()); err != nil {
 			return finishWithErrFn(err)
 		}
 	}
 
 	rxInfo := &dirtools.TransferInfo{}
 	// Don't download inputs if the FUSE-based filesystem is enabled.
-	// TODO(vadim): integrate CASFS stats
-	if r.CASFS == nil {
+	// TODO(vadim): integrate VFS stats
+	if r.VFS == nil {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
 		if err != nil {
 			return finishWithErrFn(err)

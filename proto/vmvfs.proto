@@ -1,26 +1,12 @@
 syntax = "proto3";
 
-package vmcasfs;
+package vmvfs;
 
 import "proto/remote_execution.proto";
 
-message FileSystemLayout {
-  // The "remote instance name" to use when interacting with the CAS.
-  string remote_instance_name = 1;
-  // The layout of the inputs to the command to be executed.
-  build.bazel.remote.execution.v2.Tree inputs = 2;
-  // Set of expected output files.
-  repeated string output_files = 3;
-  // Set of expected output directories.
-  repeated string output_directories = 4;
-}
-
-// Set up the FUSE filesystem to reflect the given layout.
-// To processes running the VM, all the files specified in the layout will
-// appear to exist on the VM.
-message PrepareRequest {
-  FileSystemLayout file_system_layout = 1;
-}
+// Set up the FUSE filesystem.
+// The filesystem layout will be retrieved from the VFS server.
+message PrepareRequest {}
 
 message PrepareResponse {}
 
@@ -44,8 +30,7 @@ message FinishResponse {
       3;
 }
 
-// FileSystem is a service for controlling the FUSE CASFS filesystem inside a
-// VM.
+// FileSystem is a service for controlling the FUSE filesystem inside a VM.
 service FileSystem {
   // Prepare the filesystem for use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);

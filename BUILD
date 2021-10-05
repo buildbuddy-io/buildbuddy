@@ -143,12 +143,24 @@ platform(
 )
 
 platform(
-    name = "casfs",
+    name = "firecracker_vfs",
     constraint_values = [
         "@bazel_tools//platforms:x86_64",
         "@bazel_tools//platforms:linux",
     ],
     exec_properties = {
-        "enable-casfs": "true",
+        "workload-isolation-type": "firecracker",
+        "enable-vfs": "true",
+    },
+)
+
+platform(
+    name = "vfs",
+    constraint_values = [
+        "@bazel_tools//platforms:x86_64",
+        "@bazel_tools//platforms:linux",
+    ],
+    exec_properties = {
+        "enable-vfs": "true",
     },
 )
