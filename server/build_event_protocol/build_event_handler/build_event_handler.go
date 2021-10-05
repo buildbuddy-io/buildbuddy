@@ -125,11 +125,7 @@ type recordStatsRequest struct {
 type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
-
-	// workersDone holds one channel per worker, where each channel receives an
-	// event when the worker is done. A worker is done when there are no more
-	// invocation IDs on the reqs channel, and the server is shutting down.
-	workersDone []chan struct{}
+	workerDone   chan struct{}
 
 	mu      sync.Mutex // protects(stopped, reqs)
 	reqs    chan *recordStatsRequest
@@ -141,7 +137,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *statsR
 		env:          env,
 		openChannels: openChannels,
 		reqs:         make(chan *recordStatsRequest, 4096),
-		workersDone:  make([]chan struct{}, 0, numStatsRecorderWorkers),
+		workerDone:   make(chan struct{}),
 	}
 }
 
@@ -165,15 +161,15 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 
 func (r *statsRecorder) Start() {
 	for i := 0; i < numStatsRecorderWorkers; i++ {
-		done := r.startWorker(context.Background())
-		r.workersDone = append(r.workersDone, done)
+		r.startWorker(context.Background())
 	}
 }
 
-func (r *statsRecorder) startWorker(ctx context.Context) chan struct{} {
-	done := make(chan struct{})
+func (r *statsRecorder) startWorker(ctx context.Context) {
 	go func() {
-		defer func() { done <- struct{}{} }()
+		defer func() {
+			r.workerDone <- struct{}{}
+		}()
 
 		for req := range r.reqs {
 			// Apply the finalization delay relative to when the invocation was marked
@@ -190,7 +186,6 @@ func (r *statsRecorder) startWorker(ctx context.Context) chan struct{} {
 			}
 		}
 	}()
-	return done
 }
 
 func (r *statsRecorder) Stop() {
@@ -204,8 +199,9 @@ func (r *statsRecorder) Stop() {
 	r.stopped = true
 	close(r.reqs)
 
-	for _, done := range r.workersDone {
-		<-done
+	// Wait for all workers to be done recording stats.
+	for i := 0; i < numStatsRecorderWorkers; i++ {
+		<-r.workerDone
 	}
 }
 
