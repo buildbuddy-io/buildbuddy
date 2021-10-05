@@ -92,6 +92,7 @@ type TrackerOpts struct {
 type tracker struct {
 	env    environment.Env
 	rdb    *redis.Client
+	rbuf   *redisutil.CommandBuffer
 	clock  timeutil.Clock
 	region string
 
@@ -99,13 +100,14 @@ type tracker struct {
 	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock, opts *TrackerOpts) *tracker {
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock, rbuf *redisutil.CommandBuffer, opts *TrackerOpts) *tracker {
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
 		region:    opts.Region,
 		clock:     clock,
 		flushLock: flushLock,
+		rbuf:      rbuf,
 		stopFlush: make(chan struct{}),
 	}
 }
@@ -130,20 +132,16 @@ func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error 
 
 	t := ut.currentCollectionPeriod()
 
-	pipe := ut.rdb.TxPipeline()
 	// Add the group ID to the set of groups with usage
 	groupsCollectionPeriodKey := groupsRedisKey(t)
-	pipe.SAdd(ctx, groupsCollectionPeriodKey, groupID)
-	pipe.Expire(ctx, groupsCollectionPeriodKey, redisKeyTTL)
+	ut.rbuf.SAdd(groupsCollectionPeriodKey, groupID)
+	ut.rbuf.Expire(groupsCollectionPeriodKey, redisKeyTTL)
 	// Increment the hash values
 	countsKey := countsRedisKey(groupID, t)
 	for countField, count := range counts {
-		pipe.HIncrBy(ctx, countsKey, countField, count)
+		ut.rbuf.HIncrBy(countsKey, countField, count)
 	}
-	pipe.Expire(ctx, countsKey, redisKeyTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return err
-	}
+	ut.rbuf.Expire(countsKey, redisKeyTTL)
 
 	return nil
 }
