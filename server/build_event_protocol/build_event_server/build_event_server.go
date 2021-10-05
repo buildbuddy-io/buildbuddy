@@ -139,6 +139,5 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			return disconnectWithErr(err)
 		}
 	}
-
 	return nil
 }
