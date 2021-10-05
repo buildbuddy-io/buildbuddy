@@ -35,7 +35,8 @@ const (
 	// collectionPeriodSettlingTime is the max length of time that we expect
 	// usage data to be written to a collection period bucket in Redis after the
 	// collection period has ended. This accounts for differences in clocks across
-	// apps as well as Redis latency.
+	// apps, Redis buffer flush delay (see redisutil.CommandBuffer), and latency
+	// to Redis itself.
 	collectionPeriodSettlingTime = 10 * time.Second
 
 	// redisKeyTTL defines how long usage keys have to live before they are
