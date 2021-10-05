@@ -153,6 +153,7 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 			"stats_recorder_finalize_after_shutdown",
 			"Invocation %q was marked finalized after the stats recorder was shut down.",
 			invocationID)
+		return
 	}
 
 	req := &recordStatsTask{
