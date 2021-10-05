@@ -49,9 +49,9 @@ import (
 	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
