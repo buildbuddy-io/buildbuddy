@@ -46,7 +46,7 @@ const (
 	persistentWorkerKeyPropertyName  = "persistentWorkerKey"
 	WorkflowIDPropertyName           = "workflow-id"
 	workloadIsolationPropertyName    = "workload-isolation-type"
-	enableCASFSPropertyName          = "enable-casfs"
+	enableVFSPropertyName            = "enable-vfs"
 
 	operatingSystemPropertyName = "OSFamily"
 	defaultOperatingSystemName  = "linux"
@@ -69,7 +69,7 @@ type Properties struct {
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
 	RecycleRunner             bool
-	EnableCASFS               bool
+	EnableVFS                 bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
@@ -109,7 +109,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
-		EnableCASFS:               boolProp(m, enableCASFSPropertyName, false),
+		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),

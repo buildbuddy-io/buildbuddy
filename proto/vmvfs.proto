@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package vmcasfs;
+package vmvfs;
 
 import "proto/remote_execution.proto";
 
@@ -30,8 +30,7 @@ message FinishResponse {
       3;
 }
 
-// FileSystem is a service for controlling the FUSE CASFS filesystem inside a
-// VM.
+// FileSystem is a service for controlling the FUSE filesystem inside a VM.
 service FileSystem {
   // Prepare the filesystem for use.
   rpc Prepare(PrepareRequest) returns (PrepareResponse);

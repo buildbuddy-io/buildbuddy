@@ -44,7 +44,6 @@ type DockerOptions struct {
 	ForceRoot               bool
 	DockerMountMode         string
 	InheritUserIDs          bool
-	EnableCASFS             bool
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
