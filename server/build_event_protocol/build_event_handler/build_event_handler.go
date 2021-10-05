@@ -63,13 +63,13 @@ var (
 
 type BuildEventHandler struct {
 	env           environment.Env
-	statsRecorder *StatsRecorder
+	statsRecorder *statsRecorder
 	openChannels  *sync.WaitGroup
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	openChannels := &sync.WaitGroup{}
-	statsRecorder := NewStatsRecorder(env, openChannels)
+	statsRecorder := newStatsRecorder(env, openChannels)
 	return &BuildEventHandler{
 		env:           env,
 		statsRecorder: statsRecorder,
@@ -109,7 +109,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 }
 
-func (b *BuildEventHandler) GetStatsRecorder() *StatsRecorder {
+func (b *BuildEventHandler) GetStatsRecorder() *statsRecorder {
 	return b.statsRecorder
 }
 
@@ -120,9 +120,9 @@ type recordStatsRequest struct {
 	requestedAt  time.Time
 }
 
-// StatsRecorder listens for finalized invocations and copies cache stats from
+// statsRecorder listens for finalized invocations and copies cache stats from
 // the metrics collector to the DB.
-type StatsRecorder struct {
+type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
 
@@ -136,8 +136,8 @@ type StatsRecorder struct {
 	stopped bool
 }
 
-func NewStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *StatsRecorder {
-	return &StatsRecorder{
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *statsRecorder {
+	return &statsRecorder{
 		env:          env,
 		openChannels: openChannels,
 		reqs:         make(chan *recordStatsRequest, 4096),
@@ -145,7 +145,7 @@ func NewStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *StatsR
 	}
 }
 
-func (r *StatsRecorder) MarkFinalized(invocationID string) {
+func (r *statsRecorder) MarkFinalized(invocationID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -163,14 +163,14 @@ func (r *StatsRecorder) MarkFinalized(invocationID string) {
 	r.reqs <- req
 }
 
-func (r *StatsRecorder) Start() {
+func (r *statsRecorder) Start() {
 	for i := 0; i < numStatsRecorderWorkers; i++ {
 		done := r.startWorker(context.Background())
 		r.workersDone = append(r.workersDone, done)
 	}
 }
 
-func (r *StatsRecorder) startWorker(ctx context.Context) chan struct{} {
+func (r *statsRecorder) startWorker(ctx context.Context) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer func() { done <- struct{}{} }()
@@ -193,7 +193,7 @@ func (r *StatsRecorder) startWorker(ctx context.Context) chan struct{} {
 	return done
 }
 
-func (r *StatsRecorder) Stop() {
+func (r *statsRecorder) Stop() {
 	// Wait for all invocation channels to be closed to ensure that we won't see
 	// any more invocation IDs on the channel.
 	r.openChannels.Wait()
@@ -249,7 +249,7 @@ type EventChannel struct {
 	redactor                *redact.StreamingRedactor
 	statusReporter          *build_status_reporter.BuildStatusReporter
 	targetTracker           *target_tracker.TargetTracker
-	statsRecorder           *StatsRecorder
+	statsRecorder           *statsRecorder
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
 	logWriter               *eventlog.EventLogWriter
