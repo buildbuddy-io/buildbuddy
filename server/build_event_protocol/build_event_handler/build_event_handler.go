@@ -173,9 +173,8 @@ func (r *statsRecorder) startWorker(ctx context.Context) {
 
 		for req := range r.reqs {
 			// Apply the finalization delay relative to when the invocation was marked
-			// finalized, rather than relative to now. Otherwise the channel buffer
-			// drawdown rate on each worker would be unnecessarily limited to once
-			// every cacheStatsFinalizationDelay.
+			// finalized, rather than relative to now. Otherwise each worker would be
+			// unnecessarily throttled.
 			time.Sleep(time.Until(req.requestedAt.Add(cacheStatsFinalizationDelay)))
 			ti := &tables.Invocation{InvocationID: req.invocationID}
 			if stats := hit_tracker.CollectCacheStats(ctx, r.env, req.invocationID); stats != nil {
