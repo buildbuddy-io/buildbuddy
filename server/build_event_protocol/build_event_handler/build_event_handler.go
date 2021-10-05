@@ -50,9 +50,6 @@ const (
 	// We wait this long before we write the invocation's cache stats to the DB.
 	cacheStatsFinalizationDelay = 500 * time.Millisecond
 
-	// How long to wait before giving up on writing cache stats to the DB.
-	writeCacheStatsTimeout = 30 * time.Second
-
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
 )
