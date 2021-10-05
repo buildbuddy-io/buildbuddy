@@ -39,8 +39,8 @@ import (
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 )
@@ -102,8 +102,8 @@ const (
 	// workspace disk image beyond the size of the existing files.
 	workspaceSlackBytes = 100 * 1e6 // 100MB
 
-	// The path in the guest where CASFS is mounted.
-	guestCASFSMountDir = "/casfs"
+	// The path in the guest where VFS is mounted.
+	guestVFSMountDir = "/vfs"
 )
 
 var (
@@ -284,7 +284,7 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
-	// when CASFS is enabled, this contains the layout for the next execution
+	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
@@ -960,7 +960,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMCASFSPort)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
 	if err != nil {
 		return nil, err
 	}
@@ -1003,7 +1003,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		WorkingDirectory: "/workspace/",
 	}
 	if c.fsLayout != nil {
-		execRequest.WorkingDirectory = guestCASFSMountDir
+		execRequest.WorkingDirectory = guestVFSMountDir
 	}
 	for _, ev := range cmd.GetEnvironmentVariables() {
 		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{

@@ -176,7 +176,7 @@ func main() {
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
-	die(copyFile("/vmcasfs", "/mnt/vmcasfs", 0555))
+	die(copyFile("/vmvfs", "/mnt/vmvfs", 0555))
 
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
@@ -303,7 +303,7 @@ func main() {
 		return server.Serve(listener)
 	})
 	eg.Go(func() error {
-		cmd := exec.CommandContext(ctx, "/vmcasfs")
+		cmd := exec.CommandContext(ctx, "/vmvfs")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

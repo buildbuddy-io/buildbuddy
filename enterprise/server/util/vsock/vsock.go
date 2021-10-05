@@ -32,8 +32,8 @@ const (
 
 	// VMExecPort is the guest gRPC port for the Exec service used to execute commands on the guest.
 	VMExecPort = 25415
-	// VMCASFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
-	VMCASFSPort = 25416
+	// VMVFSPort is the guest gRPC port for the FileSystem service used to configure the FUSE-based filesystem.
+	VMVFSPort = 25416
 	// HostVFSServerPort is the host gRPC port for the VFS server that handles requests forwarded from the FUSE-based fs.
 	HostVFSServerPort = 25410
 )

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
@@ -141,8 +141,8 @@ type CommandRunner struct {
 	Container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
-	// CASFS holds the FUSE-backed virtual filesystem, if it's enabled.
-	CASFS *casfs.CASFS
+	// VFS holds the FUSE-backed virtual filesystem, if it's enabled.
+	VFS *vfs.VFS
 	// VFSServer holds the RPC server that serves FUSE filesystem requests.
 	VFSServer *vfs_server.Server
 
@@ -197,8 +197,8 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 
 func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
-	if r.CASFS != nil {
-		wsPath = r.CASFS.GetMountDir()
+	if r.VFS != nil {
+		wsPath = r.VFS.GetMountDir()
 	}
 
 	if !r.PlatformProperties.RecycleRunner {
@@ -244,8 +244,8 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 			errs = append(errs, err)
 		}
 	}
-	if r.CASFS != nil {
-		if err := r.CASFS.Unmount(); err != nil {
+	if r.VFS != nil {
+		if err := r.VFS.Unmount(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -598,8 +598,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
-	if props.RecycleRunner && props.EnableCASFS {
-		return nil, status.InvalidArgumentError("CASFS is not yet supported for recycled runners")
+	if props.RecycleRunner && props.EnableVFS {
+		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
@@ -634,13 +634,13 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	if err != nil {
 		return nil, err
 	}
-	var cfs *casfs.CASFS
+	var fs *vfs.VFS
 	var vfsServer *vfs_server.Server
-	enableCASFS := p.env.GetConfigurator().GetExecutorConfig().EnableCASFS && props.EnableCASFS
+	enableVFS := p.env.GetConfigurator().GetExecutorConfig().EnableVFS && props.EnableVFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
-	if enableCASFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
-		casfsDir := ws.Path() + "_casfs"
-		if err := os.Mkdir(casfsDir, 0755); err != nil {
+	if enableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		vfsDir := ws.Path() + "_vfs"
+		if err := os.Mkdir(vfsDir, 0755); err != nil {
 			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
 		}
 
@@ -660,9 +660,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return nil, err
 		}
 		vfsClient := vfspb.NewFileSystemClient(conn)
-		cfs = casfs.New(vfsClient, casfsDir, &casfs.Options{})
-		if err := cfs.Mount(); err != nil {
-			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
+		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{})
+		if err := fs.Mount(); err != nil {
+			return nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
 		}
 	}
 	r := &CommandRunner{
@@ -674,7 +674,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
-		CASFS:              cfs,
+		VFS:                fs,
 		VFSServer:          vfsServer,
 	}
 	p.runners = append(p.runners, r)
@@ -687,7 +687,6 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
-		opts.EnableCASFS = props.EnableCASFS
 		ctr = docker.NewDockerContainer(
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,

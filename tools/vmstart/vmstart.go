@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -186,7 +186,7 @@ func main() {
 
 		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, &vmfspb.PrepareRequest{})
 		if err != nil {
-			log.Fatalf("Error preparing CASFS: %s", err)
+			log.Fatalf("Error preparing VFS: %s", err)
 		}
 	}
 

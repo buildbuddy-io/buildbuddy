@@ -1,15 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
-    name = "vmcasfs_lib",
-    srcs = ["vmcasfs.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmcasfs",
+    name = "vmvfs_lib",
+    srcs = ["vmvfs.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmvfs",
     visibility = ["//visibility:private"],
     deps = [
-        "//enterprise/server/remote_execution/casfs",
+        "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/vsock",
         "//proto:vfs_go_proto",
-        "//proto:vmcasfs_go_proto",
+        "//proto:vmvfs_go_proto",
         "//server/util/log",
         "//server/util/status",
         "@com_github_mdlayher_vsock//:vsock",
@@ -18,8 +18,8 @@ go_library(
 )
 
 go_binary(
-    name = "vmcasfs",
-    embed = [":vmcasfs_lib"],
+    name = "vmvfs",
+    embed = [":vmvfs_lib"],
     pure = "on",
     static = "on",
     visibility = ["//visibility:public"],

@@ -17,7 +17,7 @@ go_library(
         "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
-        "//proto:vmcasfs_go_proto",
+        "//proto:vmvfs_go_proto",
         "//server/config",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
