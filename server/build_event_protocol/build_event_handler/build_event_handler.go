@@ -189,8 +189,8 @@ func (r *statsRecorder) startWorker(ctx context.Context) {
 }
 
 func (r *statsRecorder) Stop() {
-	// Wait for all invocation channels to be closed to ensure that we won't see
-	// any more invocation IDs on the channel.
+	// Wait for all EventHandler channels to be closed to ensure there will be
+	// no more calls to MarkFinalized.
 	r.openChannels.Wait()
 
 	r.mu.Lock()
