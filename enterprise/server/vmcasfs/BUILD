@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/remote_execution/casfs",
-        "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/vsock",
         "//proto:vfs_go_proto",
         "//proto:vmcasfs_go_proto",

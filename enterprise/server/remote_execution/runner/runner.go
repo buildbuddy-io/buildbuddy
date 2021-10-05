@@ -659,8 +659,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		if err != nil {
 			return nil, err
 		}
-		fsProxyClient := vfspb.NewFileSystemClient(conn)
-		cfs = casfs.New(fsProxyClient, casfsDir, &casfs.Options{})
+		vfsClient := vfspb.NewFileSystemClient(conn)
+		cfs = casfs.New(vfsClient, casfsDir, &casfs.Options{})
 		if err := cfs.Mount(); err != nil {
 			return nil, status.UnavailableErrorf("unable to mount CASFS at %q: %s", casfsDir, err)
 		}

@@ -990,14 +990,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	if c.fsLayout != nil {
-		req := &vmfspb.PrepareRequest{
-			FileSystemLayout: &vmfspb.FileSystemLayout{
-				RemoteInstanceName: c.fsLayout.RemoteInstanceName,
-				Inputs:             c.fsLayout.Inputs,
-				OutputFiles:        c.fsLayout.OutputFiles,
-				OutputDirectories:  c.fsLayout.OutputDirs,
-			},
-		}
+		req := &vmfspb.PrepareRequest{}
 		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
 		if err != nil {
 			result.Error = err
