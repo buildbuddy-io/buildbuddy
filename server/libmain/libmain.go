@@ -182,7 +182,15 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
 	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
-	realEnv.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(realEnv))
+	beHandler := build_event_handler.NewBuildEventHandler(realEnv)
+	realEnv.SetBuildEventHandler(beHandler)
+
+	sr := beHandler.GetStatsRecorder()
+	sr.Start()
+	realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		sr.Stop()
+		return nil
+	})
 
 	// If configured, enable the cache.
 	var cache interfaces.Cache
