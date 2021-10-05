@@ -32,6 +32,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -67,6 +68,13 @@ type BuildEventHandler struct {
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	openChannels := &sync.WaitGroup{}
 	statsRecorder := newStatsRecorder(env, openChannels)
+
+	statsRecorder.Start()
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		statsRecorder.Stop()
+		return nil
+	})
+
 	return &BuildEventHandler{
 		env:           env,
 		statsRecorder: statsRecorder,
@@ -106,15 +114,14 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 }
 
-func (b *BuildEventHandler) GetStatsRecorder() *statsRecorder {
-	return b.statsRecorder
-}
-
-// recordStatsRequest is a request to record the stats for an invocation, which
-// will be fulfilled by one of the workers spawned by StatsRecorder.
-type recordStatsRequest struct {
+// recordStatsTask contains the info needed to record the stats for an
+// invocation. These tasks are enqueued to statsRecorder and executed in the
+// background.
+type recordStatsTask struct {
 	invocationID string
-	requestedAt  time.Time
+
+	// createdAt is the time at which this task was created.
+	createdAt time.Time
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -122,10 +129,10 @@ type recordStatsRequest struct {
 type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
-	workerDone   chan struct{}
+	eg           errgroup.Group
 
 	mu      sync.Mutex // protects(stopped, reqs)
-	reqs    chan *recordStatsRequest
+	tasks   chan *recordStatsTask
 	stopped bool
 }
 
@@ -133,8 +140,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *statsR
 	return &statsRecorder{
 		env:          env,
 		openChannels: openChannels,
-		reqs:         make(chan *recordStatsRequest, 4096),
-		workerDone:   make(chan struct{}),
+		tasks:        make(chan *recordStatsTask, 4096),
 	}
 }
 
@@ -149,39 +155,34 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 			invocationID)
 	}
 
-	req := &recordStatsRequest{
+	req := &recordStatsTask{
 		invocationID: invocationID,
-		requestedAt:  time.Now(),
+		createdAt:    time.Now(),
 	}
-	r.reqs <- req
+	r.tasks <- req
 }
 
 func (r *statsRecorder) Start() {
+	r.eg = errgroup.Group{}
+	ctx := context.Background()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
-		r.startWorker(context.Background())
+		r.eg.Go(func() error {
+			for task := range r.tasks {
+				// Apply the finalization delay relative to when the invocation was marked
+				// finalized, rather than relative to now. Otherwise each worker would be
+				// unnecessarily throttled.
+				time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
+				ti := &tables.Invocation{InvocationID: task.invocationID}
+				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationID); stats != nil {
+					fillInvocationFromCacheStats(stats, ti)
+				}
+				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+					log.Errorf("Failed to write cache stats for invocation: %s", err)
+				}
+			}
+			return nil
+		})
 	}
-}
-
-func (r *statsRecorder) startWorker(ctx context.Context) {
-	go func() {
-		defer func() {
-			r.workerDone <- struct{}{}
-		}()
-
-		for req := range r.reqs {
-			// Apply the finalization delay relative to when the invocation was marked
-			// finalized, rather than relative to now. Otherwise each worker would be
-			// unnecessarily throttled.
-			time.Sleep(time.Until(req.requestedAt.Add(cacheStatsFinalizationDelay)))
-			ti := &tables.Invocation{InvocationID: req.invocationID}
-			if stats := hit_tracker.CollectCacheStats(ctx, r.env, req.invocationID); stats != nil {
-				fillInvocationFromCacheStats(stats, ti)
-			}
-			if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
-				log.Errorf("Failed to write cache stats for invocation: %s", err)
-			}
-		}
-	}()
 }
 
 func (r *statsRecorder) Stop() {
@@ -193,11 +194,10 @@ func (r *statsRecorder) Stop() {
 	defer r.mu.Unlock()
 
 	r.stopped = true
-	close(r.reqs)
+	close(r.tasks)
 
-	// Wait for all workers to be done recording stats.
-	for i := 0; i < numStatsRecorderWorkers; i++ {
-		<-r.workerDone
+	if err := r.eg.Wait(); err != nil {
+		log.Error(err.Error())
 	}
 }
 
