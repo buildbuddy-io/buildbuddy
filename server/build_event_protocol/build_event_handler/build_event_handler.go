@@ -196,7 +196,13 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
-	go e.writeCacheStatsToDBWhenReady(context.Background(), iid)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), writeCacheStatsTimeout)
+		defer cancel()
+		e.writeCacheStatsToDBWhenReady(ctx, iid)
+	}()
+
 	return nil
 }
 
@@ -271,7 +277,11 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	go e.writeCacheStatsToDBWhenReady(context.Background(), iid)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), writeCacheStatsTimeout)
+		defer cancel()
+		e.writeCacheStatsToDBWhenReady(ctx, iid)
+	}()
 
 	// Notify our webhooks, if we have any.
 	for _, hook := range e.env.GetWebhooks() {
@@ -298,9 +308,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 // cache stats from their in-memory buffers, then updates the invocation cache
 // stats in the DB.
 func (e *EventChannel) writeCacheStatsToDBWhenReady(ctx context.Context, invocationID string) {
-	ctx, cancel := context.WithTimeout(ctx, writeCacheStatsTimeout)
-	defer cancel()
-
 	time.Sleep(cacheStatsFinalizationDelay)
 	ti := &tables.Invocation{InvocationID: invocationID}
 	if cacheStats := hit_tracker.CollectCacheStats(context.Background(), e.env, invocationID); cacheStats != nil {
