@@ -131,7 +131,7 @@ type statsRecorder struct {
 	openChannels *sync.WaitGroup
 	eg           errgroup.Group
 
-	mu      sync.Mutex // protects(stopped, reqs)
+	mu      sync.Mutex // protects(tasks, stopped)
 	tasks   chan *recordStatsTask
 	stopped bool
 }
