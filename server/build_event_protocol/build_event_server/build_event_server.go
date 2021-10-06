@@ -94,6 +94,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
 			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+			defer channel.Close()
 		}
 
 		if err := channel.HandleEvent(in); err != nil {
