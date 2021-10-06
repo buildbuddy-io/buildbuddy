@@ -155,16 +155,16 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 			invocationID)
 		return
 	}
-	if len(r.tasks) >= cap(r.tasks) {
-		log.Error("Failed to write cache stats: stats recorder task buffer is full")
-		return
-	}
-
 	req := &recordStatsTask{
 		invocationID: invocationID,
 		createdAt:    time.Now(),
 	}
-	r.tasks <- req
+	select {
+	case r.tasks <- req:
+		break
+	default:
+		log.Error("Failed to write cache stats: stats recorder task buffer is full")
+	}
 }
 
 func (r *statsRecorder) Start() {
