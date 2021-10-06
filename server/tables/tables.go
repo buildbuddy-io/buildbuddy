@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -167,17 +168,17 @@ type Group struct {
 	WriteToken string `gorm:"index:write_token_index"`
 
 	// The group's Github API token.
-	GithubToken string
+	GithubToken sql.NullString
 	Model
 
 	SharingEnabled bool `gorm:"default:true"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors bool
+	UseGroupOwnedExecutors sql.NullBool
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl string
+	SamlIdpMetadataUrl sql.NullString
 }
 
 func (g *Group) TableName() string {

@@ -229,7 +229,7 @@ func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
 		return err
 	}
 
-	c.githubToken = group.GithubToken
+	c.githubToken = group.GithubToken.String
 	return nil
 }
 

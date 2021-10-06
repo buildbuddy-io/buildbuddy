@@ -473,10 +473,10 @@ func (ws *workflowService) gitHubTokenForAuthorizedGroup(ctx context.Context, re
 	if err != nil {
 		return "", err
 	}
-	if g.GithubToken == "" {
+	if g.GithubToken.String == "" {
 		return "", status.FailedPreconditionError("The selected group does not have a GitHub account linked")
 	}
-	return g.GithubToken, nil
+	return g.GithubToken.String, nil
 }
 
 func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, error) {

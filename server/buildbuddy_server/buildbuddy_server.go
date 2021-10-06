@@ -2,6 +2,7 @@ package buildbuddy_server
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"net/http"
@@ -129,11 +130,11 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 			Id:                     g.GroupID,
 			Name:                   g.Name,
 			OwnedDomain:            g.OwnedDomain,
-			GithubLinked:           g.GithubToken != "",
-			GithubToken:            g.GithubToken,
+			GithubLinked:           g.GithubToken.String != "",
+			GithubToken:            g.GithubToken.String,
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
-			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors,
+			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors.Bool,
 		})
 	}
 	return r
@@ -195,7 +196,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// info should not be exposed here.
 		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
-		SsoEnabled:  group.SamlIdpMetadataUrl != "",
+		SsoEnabled:  group.SamlIdpMetadataUrl.String != "",
 	}, nil
 }
 
@@ -256,7 +257,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		Name:                   groupName,
 		OwnedDomain:            groupOwnedDomain,
 		SharingEnabled:         req.GetSharingEnabled(),
-		UseGroupOwnedExecutors: req.GetUseGroupOwnedExecutors(),
+		UseGroupOwnedExecutors: sql.NullBool{Valid: true, Bool: req.GetUseGroupOwnedExecutors()},
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
@@ -325,7 +326,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		group.OwnedDomain = ""
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
-	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
+	group.UseGroupOwnedExecutors = sql.NullBool{Valid: true, Bool: req.GetUseGroupOwnedExecutors()}
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
