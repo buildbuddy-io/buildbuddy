@@ -750,8 +750,13 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedError("User not found")
+	// WARNING: app/auth/auth_service.ts depends on this status being
+	// UNAUTHENTICATED.
+	err, ok := ctx.Value(contextUserErrorKey).(error)
+	if !ok {
+		err = status.UnknownError("unknown error occurred")
+	}
+	return nil, status.UnauthenticatedErrorf("User not found: %s", status.Message(err))
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
