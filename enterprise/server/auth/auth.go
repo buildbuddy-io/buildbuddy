@@ -750,8 +750,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	// WARNING: app/auth/auth_service.ts depends on this status being
-	// UNAUTHENTICATED.
+	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 	err, ok := ctx.Value(contextUserErrorKey).(error)
 	if !ok {
 		err = status.UnknownError("unknown error occurred")
