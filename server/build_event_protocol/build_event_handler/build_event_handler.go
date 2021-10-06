@@ -156,7 +156,7 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 		return
 	}
 	if len(r.tasks) >= cap(r.tasks) {
-		log.Errorf("Failed to write cache stats: stats recorder task buffer is full")
+		log.Error("Failed to write cache stats: stats recorder task buffer is full")
 		return
 	}
 
