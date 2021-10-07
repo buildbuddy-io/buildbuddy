@@ -24,5 +24,3 @@ export class BuildBuddyError extends Error {
     return new BuildBuddyError(code as ErrorCode, description);
   }
 }
-
-(window as any).BuildBuddyError = BuildBuddyError;
