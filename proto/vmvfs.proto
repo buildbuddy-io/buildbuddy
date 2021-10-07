@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package vmvfs;
+
+import "proto/remote_execution.proto";
+
+// Set up the FUSE filesystem.
+// The filesystem layout will be retrieved from the VFS server.
+message PrepareRequest {}
+
+message PrepareResponse {}
+
+// Indicates that the FUSE filesystem is no longer needed.
+// All remote IO will fail until the next Prepare call.
+message FinishRequest {}
+
+message Stats {
+  int64 read_io_bytes = 1;
+  int64 write_io_bytes = 2;
+}
+
+message FinishResponse {
+  // Stats for activity since the last Prepare call.
+  Stats stats = 1;
+  // Files written to the CAS matching the output_files set in the layout.
+  repeated build.bazel.remote.execution.v2.OutputFile output_files = 2;
+  // Files written to the CAS under any of the directories in the layout
+  // output_directories list.
+  repeated build.bazel.remote.execution.v2.OutputDirectory output_directories =
+      3;
+}
+
+// FileSystem is a service for controlling the FUSE filesystem inside a VM.
+service FileSystem {
+  // Prepare the filesystem for use.
+  rpc Prepare(PrepareRequest) returns (PrepareResponse);
+
+  // Finish any outstanding work (such as uploading data to the CAS).
+  rpc Finish(FinishRequest) returns (FinishResponse);
+}

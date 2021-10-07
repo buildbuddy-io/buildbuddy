@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmcasfs"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -177,15 +177,16 @@ func main() {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
 
-		prepRequest := &vmfspb.PrepareRequest{
-			FileSystemLayout: &vmfspb.FileSystemLayout{
-				RemoteInstanceName: *remoteInstanceName,
-				Inputs:             tree,
-			},
-		}
-		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, prepRequest)
+		c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+			RemoteInstanceName: *remoteInstanceName,
+			Inputs:             tree,
+			OutputDirs:         cmd.GetOutputDirectories(),
+			OutputFiles:        cmd.GetOutputFiles(),
+		})
+
+		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, &vmfspb.PrepareRequest{})
 		if err != nil {
-			log.Fatalf("Error preparing CASFS: %s", err)
+			log.Fatalf("Error preparing VFS: %s", err)
 		}
 	}
 

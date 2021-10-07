@@ -201,11 +201,12 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	entityURL.RawQuery = query
 	samlSP, _ := samlsp.New(samlsp.Options{
-		EntityID:    entityURL.String(),
-		URL:         *authURL,
-		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
-		Certificate: keyPair.Leaf,
-		IDPMetadata: idpMetadata,
+		EntityID:          entityURL.String(),
+		URL:               *authURL,
+		Key:               keyPair.PrivateKey.(*rsa.PrivateKey),
+		Certificate:       keyPair.Leaf,
+		IDPMetadata:       idpMetadata,
+		AllowIDPInitiated: true,
 	})
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query

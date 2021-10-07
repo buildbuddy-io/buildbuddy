@@ -40,8 +40,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        // TODO(siggisim): Remove "not found" string matching after the next release.
-        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated") {
           this.createUser();
         } else {
           this.onUserRpcError(error);
@@ -130,16 +129,17 @@ export class AuthService {
   }
 
   login(slug?: string) {
+    const search = new URLSearchParams(window.location.search);
     if (slug) {
       window.location.href = `/login/?${new URLSearchParams({
-        redirect_url: window.location.href,
+        redirect_url: search.get("redirect_url") || window.location.href,
         slug,
       })}`;
       return;
     }
 
     window.location.href = `/login/?${new URLSearchParams({
-      redirect_url: window.location.href,
+      redirect_url: search.get("redirect_url") || window.location.href,
       issuer_url: capabilities.auth,
     })}`;
   }

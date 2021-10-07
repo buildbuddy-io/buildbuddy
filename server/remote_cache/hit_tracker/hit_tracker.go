@@ -45,8 +45,6 @@ const (
 
 	CachedActionExecUsec
 
-	UploadThroughputBytesPerSecond
-	DownloadThroughputBytesPerSecond
 	// New counter types go here!
 )
 
@@ -76,10 +74,6 @@ func rawCounterName(actionCache bool, ct counterType) string {
 		return "upload-usec"
 	case CachedActionExecUsec:
 		return "cached-action-exec-usec"
-	case DownloadThroughputBytesPerSecond:
-		return "download-throughput-bytes-per-second"
-	case UploadThroughputBytesPerSecond:
-		return "upload-throughput-bytes-per-second"
 	default:
 		return "UNKNOWN-COUNTER-TYPE"
 	}
@@ -132,8 +126,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
 	}).Inc()
-	_, err := h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
-	return err
+	return h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
@@ -144,8 +137,7 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	_, err := h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
-	return err
+	return h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
 }
 
 type closeFunction func() error
@@ -182,7 +174,7 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 	return metrics.CacheDownloadDurationUsec
 }
 
-func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter, throughputCounter counterType) closeFunction {
+func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
 	return func() error {
 		dur := time.Since(start)
 
@@ -203,29 +195,13 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 			return nil
 		}
 
-		if _, err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
 			return err
 		}
-		if _, err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		totalMicroseconds, err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds())
-		if err != nil {
-			return err
-		}
-
-		// Weighted streaming throughput calculation (see Welford's).
-		// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Weighted_incremental_algorithm
-		bytesPerSecond := int64(float64(d.GetSizeBytes()) / dur.Seconds())
-
-		// Weight by the duration of the upload / download.
-		weight := float64(dur.Microseconds()) / float64(totalMicroseconds)
-		oldMeanThroughput, err := h.c.ReadCount(h.ctx, h.counterName(throughputCounter))
-		if err != nil {
-			return err
-		}
-		throughputDelta := int64(float64(bytesPerSecond-oldMeanThroughput) * weight)
-		if _, err := h.c.IncrementCount(h.ctx, h.counterName(throughputCounter), throughputDelta); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
 
@@ -246,7 +222,7 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(d, start, Hit, DownloadSizeBytes, DownloadUsec, DownloadThroughputBytesPerSecond),
+		closeFn: h.makeCloseFunc(d, start, Hit, DownloadSizeBytes, DownloadUsec),
 	}
 }
 
@@ -259,7 +235,7 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(d, start, Upload, UploadSizeBytes, UploadUsec, UploadThroughputBytesPerSecond),
+		closeFn: h.makeCloseFunc(d, start, Upload, UploadSizeBytes, UploadUsec),
 	}
 }
 
@@ -276,6 +252,14 @@ func (h *HitTracker) recordCacheUsage(d *repb.Digest, actionCounter counterType)
 		c.CASCacheHits = 1
 	}
 	return h.usage.Increment(h.ctx, c)
+}
+
+func computeThroughputBytesPerSecond(sizeBytes, durationUsec int64) int64 {
+	if durationUsec == 0 {
+		return 0
+	}
+	dur := time.Duration(durationUsec * int64(time.Microsecond))
+	return int64(float64(sizeBytes) / dur.Seconds())
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {
@@ -298,8 +282,8 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.TotalDownloadUsec, _ = c.ReadCount(ctx, counterName(false, DownloadUsec, iid))
 	cs.TotalUploadUsec, _ = c.ReadCount(ctx, counterName(false, UploadUsec, iid))
 
-	cs.DownloadThroughputBytesPerSecond, _ = c.ReadCount(ctx, counterName(false, DownloadThroughputBytesPerSecond, iid))
-	cs.UploadThroughputBytesPerSecond, _ = c.ReadCount(ctx, counterName(false, UploadThroughputBytesPerSecond, iid))
+	cs.DownloadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalDownloadSizeBytes, cs.TotalDownloadUsec)
+	cs.UploadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalUploadSizeBytes, cs.TotalUploadUsec)
 
 	cs.TotalCachedActionExecUsec, _ = c.ReadCount(ctx, counterName(false, CachedActionExecUsec, iid))
 

@@ -7,6 +7,37 @@ syntax = "proto3";
 
 package vfs;
 
+message Attrs {
+  int64 size = 1;
+  uint32 perm = 2;
+  bool immutable = 3;
+}
+
+message SymlinkEntry {
+  string name = 1;
+  Attrs attrs = 2;
+  string target = 3;
+}
+
+message FileEntry {
+  string name = 1;
+  Attrs attrs = 2;
+}
+
+message DirectoryEntry {
+  string name = 1;
+  Attrs attrs = 2;
+  repeated DirectoryEntry directories = 3;
+  repeated FileEntry files = 4;
+  repeated SymlinkEntry symlinks = 5;
+}
+
+message GetLayoutRequest {}
+
+message GetLayoutResponse {
+  DirectoryEntry root = 1;
+}
+
 message SyscallError {
   uint32 errno = 1;
 }
@@ -89,11 +120,6 @@ message GetAttrRequest {
   string path = 1;
 }
 
-message Attrs {
-  int64 size = 1;
-  uint32 perm = 2;
-}
-
 message GetAttrResponse {
   Attrs attrs = 1;
 }
@@ -101,7 +127,7 @@ message GetAttrResponse {
 message SetAttrRequest {
   string path = 1;
   message SetSize {
-    int64 size = 2;
+    int64 size = 1;
   }
   SetSize set_size = 2;
   message SetPerms {
@@ -150,6 +176,10 @@ message UnlinkResponse {}
 // FileSystem is Virtual File System API that follows the FUSE API.
 // Refer to the FUSE API documentation for details of specific operations.
 service FileSystem {
+  // Returns the initial directory and file layout of the filesystem to be
+  // presented to the user.
+  rpc GetLayout(GetLayoutRequest) returns (GetLayoutResponse);
+
   // API for operating on a single file.
   // Open will return an ID that can be used for the remaining file APIs.
   rpc Open(OpenRequest) returns (OpenResponse);

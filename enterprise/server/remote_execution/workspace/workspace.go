@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/casfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -39,7 +39,7 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
-	casFs     *casfs.CASFS
+	vfs       *vfs.VFS
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to digests.
 	// TODO: Make sure these files are written read-only
