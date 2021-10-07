@@ -54,6 +54,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	redisBufferFinalFlushTimeout = 1 * time.Second
+)
+
 var (
 	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -198,11 +202,17 @@ func main() {
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
 		rbuf.StartPeriodicFlush(context.Background())
-		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+		// Don't stop flushing until *after* the server is shutdown, including any
+		// shutdown funcs, since some code running during shutdown may add more
+		// stuff to the buffer that we would still like to flush.
+		defer func() {
 			rbuf.StopPeriodicFlush()
-			// Flush the Redis buffer one last time before shutting down.
-			return rbuf.Flush(ctx)
-		})
+			ctx, cancel := context.WithTimeout(context.Background(), redisBufferFinalFlushTimeout)
+			defer cancel()
+			if err := rbuf.Flush(ctx); err != nil {
+				log.Errorf("Failed to flush redis buffer post-shutdown: %s", err)
+			}
+		}()
 
 		rkv := redis_kvstore.New(rdb)
 		realEnv.SetKeyValStore(rkv)
