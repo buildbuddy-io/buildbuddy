@@ -20,6 +20,5 @@ go_test(
         ":role_filter",
         "//proto:buildbuddy_service_go_proto",
         "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
     ],
 )
