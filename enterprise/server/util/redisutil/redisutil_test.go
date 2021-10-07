@@ -360,7 +360,8 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 
 	buf := redisutil.NewCommandBuffer(rdb)
 
-	// Start the buffer then immediately stop.
+	// Start the background flush then immediately stop it, which puts the buffer
+	// into a state where all new commands get forwarded directly to Redis.
 	buf.StartPeriodicFlush(ctx)
 	err := buf.StopPeriodicFlush(ctx)
 	require.NoError(t, err)
@@ -398,9 +399,8 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	err = buf.Expire(ctx, "expiring1", 0)
 	err = buf.Expire(ctx, "expiring2", 24*time.Hour)
 
-	// Flush all buffered values.
-	err = buf.Flush(ctx)
-	require.NoError(t, err)
+	// Note: No need to flush, since all commands should have gone directly to
+	// Redis.
 
 	// Assert Redis has the values we're expecting.
 	h1, err := rdb.HGetAll(ctx, "hash1").Result()
