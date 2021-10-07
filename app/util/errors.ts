@@ -6,8 +6,6 @@ export class BuildBuddyError extends Error {
   }
 
   static parse(e: any): BuildBuddyError {
-    console.log("parsing error", { e });
-
     if (e instanceof BuildBuddyError) return e;
 
     const message = (e instanceof Error ? e.message : String(e)).trim();
