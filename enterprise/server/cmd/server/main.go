@@ -202,9 +202,9 @@ func main() {
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
 		rbuf.StartPeriodicFlush(context.Background())
-		// Don't stop flushing until *after* the server is shutdown, including any
-		// shutdown funcs, since some code running during shutdown may add more
-		// stuff to the buffer that we would still like to flush.
+		// Don't stop flushing until *after* the server is shutdown (and all
+		// shutdown funcs have run), since some code running during shutdown may add
+		// more commands to the buffer that we would still like to flush.
 		defer func() {
 			rbuf.StopPeriodicFlush()
 			ctx, cancel := context.WithTimeout(context.Background(), redisBufferFinalFlushTimeout)
