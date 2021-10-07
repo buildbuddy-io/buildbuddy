@@ -23,8 +23,7 @@ var (
 		"CreateUser",
 		"GetGroup",
 		// Invocations can be shared publicly, so authorization for these RPCs is
-		// done purely using the perms associated with each invocation, not group
-		// roles.
+		// done purely using perms bits attached to each row.
 		"GetInvocation",
 		"GetEventLogChunk",
 		"GetTarget",
