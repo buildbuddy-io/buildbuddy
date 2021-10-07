@@ -31,7 +31,6 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	oidc "github.com/coreos/go-oidc"
 )
 
