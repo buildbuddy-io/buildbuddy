@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
@@ -194,11 +195,15 @@ func main() {
 	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
 		rdb := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
 		realEnv.SetDefaultRedisClient(rdb)
+
+		rbuf := redisutil.NewCommandBuffer(rdb)
+		rbuf.StartPeriodicFlush(context.Background())
+		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
+
 		rkv := redis_kvstore.New(rdb)
 		realEnv.SetKeyValStore(rkv)
-		// TODO(bduffany): Fix Redis load issues and re-enable
-		// rmc := redis_metrics_collector.New(rdb)
-		// realEnv.SetMetricsCollector(rmc)
+		rmc := redis_metrics_collector.New(rdb, rbuf)
+		realEnv.SetMetricsCollector(rmc)
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
@@ -322,5 +327,5 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	libmain.StartAndRunServices(realEnv) // Does not return
+	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }

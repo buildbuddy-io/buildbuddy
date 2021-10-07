@@ -8,5 +8,8 @@ go_library(
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
-    deps = ["@com_github_go_redis_redis_v8//:redis"],
+    deps = [
+        "//enterprise/server/util/redisutil",
+        "@com_github_go_redis_redis_v8//:redis",
+    ],
 )

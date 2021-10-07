@@ -3,20 +3,25 @@ package redis_metrics_collector
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/go-redis/redis"
 )
 
 type collector struct {
-	rdb *redis.Client
+	rdb  *redis.Client
+	rbuf *redisutil.CommandBuffer
 }
 
-func New(rdb *redis.Client) *collector {
-	return &collector{rdb}
+func New(rdb *redis.Client, rbuf *redisutil.CommandBuffer) *collector {
+	return &collector{
+		rdb:  rdb,
+		rbuf: rbuf,
+	}
 }
 
 func (c *collector) IncrementCount(ctx context.Context, counterName string, n int64) error {
-	_, err := c.rdb.IncrBy(ctx, counterName, n).Result()
-	return err
+	// Buffer writes to avoid high load on Redis.
+	return c.rbuf.IncrBy(ctx, counterName, n)
 }
 
 func (c *collector) ReadCount(ctx context.Context, counterName string) (int64, error) {
