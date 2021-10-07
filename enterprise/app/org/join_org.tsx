@@ -4,6 +4,7 @@ import { grp } from "../../../proto/group_ts_proto";
 import authService, { User } from "../../../app/auth/auth_service";
 import rpcService from "../../../app/service/rpc_service";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import { BuildBuddyError } from "../../../app/util/errors";
 
 export interface JoinOrgComponentProps {
   user: User;
@@ -31,8 +32,8 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
       const org = await rpcService.service.getGroup(new grp.GetGroupRequest({ urlIdentifier }));
       this.setState({ status: "READY", org });
     } catch (e) {
-      const { code } = parseError(e);
-      if (code === "NotFound") {
+      const error = BuildBuddyError.parse(e);
+      if (error.code === "NotFound") {
         this.setState({ status: "NOT_FOUND" });
       } else {
         throw e;
@@ -50,10 +51,9 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
       console.debug("Joining group", this.state.org.id);
       await rpcService.service.joinGroup(Object.assign(new grp.JoinGroupRequest(), { id: this.state.org.id }));
     } catch (e) {
-      console.error("ERROR");
-      const { code, description } = parseError(e);
-      if (code === "AlreadyExists") {
-        this.setState({ status: "ALREADY_EXISTS", error: description });
+      const error = BuildBuddyError.parse(e);
+      if (error.code === "AlreadyExists") {
+        this.setState({ status: "ALREADY_EXISTS", error: error.description });
         return;
       } else {
         throw e;
@@ -144,30 +144,6 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
         );
     }
   }
-}
-
-type ErrorCode = "NotFound" | "AlreadyExists";
-interface Error {
-  code: ErrorCode;
-  description?: string;
-}
-
-function parseError(e: any): Error {
-  const error = String(e).trim();
-  if (error === "Error: record not found") {
-    return { code: "NotFound" };
-  }
-
-  const pattern = /code = (.*?) desc = (.*)$/;
-  const match = error.match(pattern);
-  if (!match) {
-    console.warn("Could not parse error:", error);
-    throw e;
-  }
-
-  const [_, code, description] = match;
-
-  return { code: code as ErrorCode, description };
 }
 
 function getUserEmailDomain(user: User) {
