@@ -197,9 +197,9 @@ func main() {
 		realEnv.SetDefaultRedisClient(rdb)
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
-		cancel := rbuf.StartPeriodicFlush(context.Background())
+		rbuf.StartPeriodicFlush(context.Background())
 		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
-			cancel()
+			rbuf.StopPeriodicFlush()
 			// Flush the Redis buffer one last time before shutting down.
 			return rbuf.Flush(ctx)
 		})

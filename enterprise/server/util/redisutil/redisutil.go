@@ -119,7 +119,8 @@ func (r *redlock) Unlock(ctx context.Context) error {
 //
 // It is safe for concurrent access.
 type CommandBuffer struct {
-	rdb *redis.Client
+	rdb       *redis.Client
+	stopFlush chan struct{}
 
 	mu sync.Mutex // protects all fields below
 	// Buffer for INCRBY commands.
@@ -254,12 +255,14 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) context.CancelFunc {
-	ctx, cancel := context.WithCancel(ctx)
+// StartPeriodicFlush starts a loop that periodically flushes buffered commands
+// to Redis.
+func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
+	c.stopFlush = make(chan struct{})
 	go func() {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-c.stopFlush:
 				return
 			case <-time.After(commandBufferFlushInterval): // fallthrough
 			}
@@ -268,5 +271,10 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) context.CancelFu
 			}
 		}
 	}()
-	return cancel
+}
+
+// StopPeriodicFlush stops flushing the buffer to Redis. If a flush is currently
+// in progress, this will block until the flush is complete.
+func (c *CommandBuffer) StopPeriodicFlush() {
+	c.stopFlush <- struct{}{}
 }
