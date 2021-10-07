@@ -345,5 +345,5 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	libmain.StartAndRunServices(realEnv) // Does not return
+	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
