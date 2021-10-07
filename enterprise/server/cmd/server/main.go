@@ -54,14 +54,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-const (
-	// How long to allow the Redis buffer to flush any remaining commands to Redis
-	// after all shutdown logic has run. This is intentionally very short because
-	// in the case where shutdown logic takes a long time, we don't have very long
-	// until k8s sends a SIGKILL to us anyway.
-	redisBufferFinalFlushTimeout = 1 * time.Second
-)
-
 var (
 	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
