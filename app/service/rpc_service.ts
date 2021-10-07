@@ -86,12 +86,12 @@ class RpcService {
         this.events.next(method.name);
         console.log(`Emitting event [${method.name}]`);
       } else {
-        callback(`Error: ${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`);
+        callback(new Error(`${new TextDecoder("utf-8").decode(new Uint8Array(request.response))}`));
       }
     };
 
     request.onerror = () => {
-      callback("Error: Connection error");
+      callback(new Error("Connection error"));
     };
 
     request.send(requestData);

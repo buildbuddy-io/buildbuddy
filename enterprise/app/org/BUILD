@@ -20,6 +20,7 @@ ts_library(
         "//app/errors",
         "//app/router",
         "//app/service",
+        "//app/util:errors",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "@npm//@types/react",
