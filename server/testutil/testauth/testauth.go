@@ -47,7 +47,7 @@ type TestUser struct {
 	UserID                 string                        `json:"user_id"`
 	GroupID                string                        `json:"group_id"`
 	AllowedGroups          []string                      `json:"allowed_groups"`
-	GroupMemberships       []*interfaces.GroupMembership `json:"group_roles"`
+	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 }
