@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	// How long to wait between flushing CommandBuffer instances to Redis.
 	commandBufferFlushInterval = 250 * time.Millisecond
 )
 
