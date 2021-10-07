@@ -206,17 +206,7 @@ func main() {
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
 		rbuf.StartPeriodicFlush(context.Background())
-		// Stop flushing the Redis buffer *after* all shutdown funcs have run, since
-		// some code running during shutdown may add more commands to the buffer
-		// that we would still like to flush.
-		defer func() {
-			rbuf.StopPeriodicFlush()
-			ctx, cancel := context.WithTimeout(context.Background(), redisBufferFinalFlushTimeout)
-			defer cancel()
-			if err := rbuf.Flush(ctx); err != nil {
-				log.Errorf("Failed to flush redis buffer post-shutdown: %s", err)
-			}
-		}()
+		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
 
 		rkv := redis_kvstore.New(rdb)
 		realEnv.SetKeyValStore(rkv)

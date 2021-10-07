@@ -21,8 +21,7 @@ func New(rdb *redis.Client, rbuf *redisutil.CommandBuffer) *collector {
 
 func (c *collector) IncrementCount(ctx context.Context, counterName string, n int64) error {
 	// Buffer writes to avoid high load on Redis.
-	c.rbuf.IncrBy(counterName, n)
-	return nil
+	return c.rbuf.IncrBy(ctx, counterName, n)
 }
 
 func (c *collector) ReadCount(ctx context.Context, counterName string) (int64, error) {

@@ -103,22 +103,28 @@ func (r *redlock) Unlock(ctx context.Context) error {
 }
 
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
-// flushing the aggregate results in batch. This is useful for reducing the load
-// placed on Redis in cases where a high volume of commands are operating on
-// a relatively small subset of Redis keys (for example, counter values that
-// are incremented several times over a short time period).
+// periodically flushing the aggregate results in batch. This is useful for
+// reducing the load placed on Redis in cases where a high volume of commands
+// are operating on a relatively small subset of Redis keys (for example,
+// counter values that are incremented several times over a short time period).
 //
-// When using this buffer, the caller is responsible for explicitly flushing
-// the data. In most cases, flushing should be done at regular intervals, as well
-// as after writing the last command to the buffer, if applicable.
+// When using this buffer, the caller is responsible for explicitly flushing the
+// data. In most cases, flushing should be done at regular intervals, as well as
+// after writing the last command to the buffer, if applicable.
 //
 // There may be a non-negligible delay between the time that the data is written
 // to the buffer and the time that data is flushed, so callers may need extra
-// synchronization in order to ensure that buffers are flushed (on all nodes,
-// if applicable), before relying on the values of any keys updated via this
+// synchronization in order to ensure that buffers are flushed (on all nodes, if
+// applicable), before relying on the values of any keys updated via this
 // buffer.
 //
 // It is safe for concurrent access.
+//
+// When the server is shutting down, all commands are issued synchronously
+// rather than adding them to the buffer. This is to reduce the likelihood of
+// data being lost from the buffer due to the server shutting down. In practice,
+// not much new data should be written to the buffer during shutdown since we
+// don't accept new RPCs while shutting down.
 type CommandBuffer struct {
 	rdb       *redis.Client
 	stopFlush chan struct{}
@@ -132,6 +138,8 @@ type CommandBuffer struct {
 	sadd map[string]map[interface{}]struct{}
 	// Buffer for EXPIRE commands.
 	expire map[string]time.Duration
+	// Whether the server is shutting down.
+	isShuttingDown bool
 }
 
 // NewCommandBuffer creates a buffer.
@@ -149,16 +157,33 @@ func (c *CommandBuffer) init() {
 }
 
 // IncrBy adds an INCRBY operation to the buffer.
-func (c *CommandBuffer) IncrBy(key string, increment int64) {
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) IncrBy(ctx context.Context, key string, increment int64) error {
 	c.mu.Lock()
+	if c.isShuttingDown {
+		c.mu.Unlock()
+		return c.rdb.IncrBy(ctx, key, increment).Err()
+	}
 	defer c.mu.Unlock()
 
 	c.incr[key] += increment
+	return nil
 }
 
 // HIncrBy adds an HINCRBY operation to the buffer.
-func (c *CommandBuffer) HIncrBy(key, field string, increment int64) {
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, increment int64) error {
 	c.mu.Lock()
+	if c.isShuttingDown {
+		c.mu.Unlock()
+		return c.rdb.HIncrBy(ctx, key, field, increment).Err()
+	}
 	defer c.mu.Unlock()
 
 	h, ok := c.hincr[key]
@@ -167,12 +192,21 @@ func (c *CommandBuffer) HIncrBy(key, field string, increment int64) {
 		c.hincr[key] = h
 	}
 	h[field] += increment
+	return nil
 }
 
 // SAdd adds an SADD operation to the buffer. All buffered members of the set
 // will be added in a single SADD command.
-func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interface{}) error {
 	c.mu.Lock()
+	if c.isShuttingDown {
+		c.mu.Unlock()
+		return c.rdb.SAdd(ctx, key, members...).Err()
+	}
 	defer c.mu.Unlock()
 
 	set, ok := c.sadd[key]
@@ -183,6 +217,7 @@ func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
 	for _, m := range members {
 		set[m] = struct{}{}
 	}
+	return nil
 }
 
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
@@ -204,11 +239,16 @@ func (c *CommandBuffer) SAdd(key string, members ...interface{}) {
 // The `EXPIRE key 0` command is effectively dropped from the buffer since the
 // later `EXPIRE` command overwrites it, whereas Redis would delete the key
 // immediately upon seeing the `EXPIRE key 0` command.
-func (c *CommandBuffer) Expire(key string, duration time.Duration) {
+func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Duration) error {
 	c.mu.Lock()
+	if c.isShuttingDown {
+		c.mu.Unlock()
+		return c.rdb.Expire(ctx, key, duration).Err()
+	}
 	defer c.mu.Unlock()
 
 	c.expire[key] = duration
+	return nil
 }
 
 // Flush flushes the buffered commands to Redis. The commands needed to flush
@@ -265,10 +305,10 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 			select {
 			case <-c.stopFlush:
 				return
-			case <-time.After(commandBufferFlushInterval): // fallthrough
-			}
-			if err := c.Flush(ctx); err != nil {
-				log.Errorf("Failed to flush Redis command buffer: %s", err)
+			case <-time.After(commandBufferFlushInterval):
+				if err := c.Flush(ctx); err != nil {
+					log.Errorf("Failed to flush Redis command buffer: %s", err)
+				}
 			}
 		}
 	}()
@@ -276,6 +316,16 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 
 // StopPeriodicFlush stops flushing the buffer to Redis. If a flush is currently
 // in progress, this will block until the flush is complete.
-func (c *CommandBuffer) StopPeriodicFlush() {
+func (c *CommandBuffer) StopPeriodicFlush(ctx context.Context) error {
 	c.stopFlush <- struct{}{}
+
+	c.mu.Lock()
+	// Set a flag to make any newly written commands to go directly to Redis.
+	c.isShuttingDown = true
+	c.mu.Unlock()
+
+	// Since all newly written commands will now go directly to Redis and we
+	// just stopped the background flusher, we're on the hook for flushing any
+	// remaining buffer contents.
+	return c.Flush(ctx)
 }
