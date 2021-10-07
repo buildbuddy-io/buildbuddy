@@ -29,7 +29,6 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	oidc "github.com/coreos/go-oidc"
 )
 
@@ -666,26 +665,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authContextWithError(ctx, err)
 	}
-	err = a.authenticateGroup(ctx, claims)
-	if err != nil {
-		return authContextWithError(ctx, err)
-	}
 	return authContextFromClaims(ctx, claims, err)
-}
-
-func (a *OpenIDAuthenticator) authenticateGroup(ctx context.Context, claims *Claims) error {
-	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
-	// If no group ID was provided in context then we'll fall back to a default.
-	if reqCtx == nil || reqCtx.GetGroupId() == "" {
-		return nil
-	}
-	groupID := reqCtx.GetGroupId()
-	for _, allowedGroupID := range claims.GetAllowedGroups() {
-		if groupID == allowedGroupID {
-			return nil
-		}
-	}
-	return status.PermissionDeniedError("User does not have access to the requested group.")
 }
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*Claims, *userToken, error) {
