@@ -228,10 +228,10 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 	if err != nil {
 		return nil, err
 	}
-	if group.SamlIdpMetadataUrl.String == "" {
+	if group.SamlIdpMetadataUrl == nil || *group.SamlIdpMetadataUrl == "" {
 		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
 	}
-	metadataUrl, err := url.Parse(group.SamlIdpMetadataUrl.String)
+	metadataUrl, err := url.Parse(*group.SamlIdpMetadataUrl)
 	if err != nil {
 		return nil, err
 	}

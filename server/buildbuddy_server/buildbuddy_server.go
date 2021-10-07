@@ -2,7 +2,6 @@ package buildbuddy_server
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"net/http"
@@ -126,15 +125,19 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 		if g.URLIdentifier != nil {
 			urlIdentifier = *g.URLIdentifier
 		}
+		githubToken := ""
+		if g.GithubToken != nil {
+			githubToken = *g.GithubToken
+		}
 		r = append(r, &grpb.Group{
 			Id:                     g.GroupID,
 			Name:                   g.Name,
 			OwnedDomain:            g.OwnedDomain,
-			GithubLinked:           g.GithubToken.String != "",
-			GithubToken:            g.GithubToken.String,
+			GithubLinked:           githubToken != "",
+			GithubToken:            githubToken,
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
-			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors.Bool,
+			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
 		})
 	}
 	return r
@@ -196,7 +199,7 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 		// info should not be exposed here.
 		Name:        group.Name,
 		OwnedDomain: group.OwnedDomain,
-		SsoEnabled:  group.SamlIdpMetadataUrl.String != "",
+		SsoEnabled:  group.SamlIdpMetadataUrl != nil && *group.SamlIdpMetadataUrl != "",
 	}, nil
 }
 
@@ -252,12 +255,13 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		groupOwnedDomain = userEmailDomain
 	}
 
+	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group := &tables.Group{
 		UserID:                 user.UserID,
 		Name:                   groupName,
 		OwnedDomain:            groupOwnedDomain,
 		SharingEnabled:         req.GetSharingEnabled(),
-		UseGroupOwnedExecutors: sql.NullBool{Valid: true, Bool: req.GetUseGroupOwnedExecutors()},
+		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
 
@@ -326,7 +330,8 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 		group.OwnedDomain = ""
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
-	group.UseGroupOwnedExecutors = sql.NullBool{Valid: true, Bool: req.GetUseGroupOwnedExecutors()}
+	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
+	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}
