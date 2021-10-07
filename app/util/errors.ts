@@ -1,4 +1,4 @@
-export type ErrorCode = "Unknown" | "NotFound" | "PermissionDenied" | "Unauthenticated";
+export type ErrorCode = "Unknown" | "NotFound" | "AlreadyExists" | "PermissionDenied" | "Unauthenticated";
 
 export class BuildBuddyError extends Error {
   constructor(public code: ErrorCode, public description: string) {
@@ -6,15 +6,17 @@ export class BuildBuddyError extends Error {
   }
 
   static parse(e: any): BuildBuddyError {
-    const error = String(e).trim();
-    if (error === "Error: record not found") {
+    if (e instanceof BuildBuddyError) return e;
+
+    const message = (e instanceof Error ? e.message : String(e)).trim();
+    if (message === "record not found") {
       return new BuildBuddyError("NotFound", "Not found");
     }
 
     const pattern = /code = (.*?) desc = (.*)$/;
-    const match = error.match(pattern);
+    const match = message.match(pattern);
     if (!match) {
-      return new BuildBuddyError("Unknown", error || "Internal error");
+      return new BuildBuddyError("Unknown", message || "Internal error");
     }
 
     const [_, code, description] = match;

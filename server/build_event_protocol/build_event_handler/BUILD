@@ -23,6 +23,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/hit_tracker",
         "//server/tables",
+        "//server/util/alert",
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",
@@ -33,6 +34,7 @@ go_library(
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

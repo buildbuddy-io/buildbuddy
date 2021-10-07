@@ -111,6 +111,7 @@ type BuildEventChannel interface {
 	MarkInvocationDisconnected(ctx context.Context, iid string) error
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
+	Close()
 }
 
 type BuildEventHandler interface {
