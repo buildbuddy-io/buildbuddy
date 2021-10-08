@@ -107,12 +107,14 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 			}
 		}
 		if uRole == role.None {
+			// User was probably removed from their org during their current UI
+			// session.
 			http.Error(w, `You do not have access to the requested organization.`, http.StatusForbidden)
 			return
 		}
 
 		if stringSliceContains(GroupAdminOnlyRPCs, rpcName) && (uRole&role.Admin != role.Admin) {
-			http.Error(w, `This action can only be performed by group administrators.`, http.StatusForbidden)
+			http.Error(w, `This action can only be performed by administrators of the organization.`, http.StatusForbidden)
 			return
 		}
 
