@@ -1,5 +1,4 @@
 import { Subject } from "rxjs";
-import { context } from "../../proto/context_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
@@ -33,6 +32,9 @@ export class AuthService {
 
   register() {
     if (!capabilities.auth) return;
+    // Set initially preferred group ID from local storage.
+    rpcService.requestContext.groupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
+
     let request = new user.GetUserRequest();
     rpcService.service
       .getUser(request)
@@ -86,14 +88,7 @@ export class AuthService {
     let user = new User();
     user.displayUser = response.displayUser as user_id.DisplayUser;
     user.groups = response.userGroup as grp.Group[];
-    let selectedGroupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
-    if (user.groups.length > 0) {
-      user.selectedGroup =
-        (selectedGroupId && user.groups.find((group) => group.id === selectedGroupId)) ||
-        user.groups.find((group) => group.urlIdentifier) ||
-        user.groups.find((group) => group.ownedDomain) ||
-        user.groups[0];
-    }
+    user.selectedGroup = response.userGroup.find((group) => group.id === response.selectedGroupId) as grp.Group;
     return user;
   }
 
