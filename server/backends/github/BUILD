@@ -11,6 +11,7 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/random",
+        "//server/util/role",
         "//server/util/status",
     ],
 )

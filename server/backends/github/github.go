@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -138,8 +139,20 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Restore group ID from cookie.
 	groupID := getCookie(r, groupIDCookieName)
-	if err := perms.AuthorizeGroupAccess(r.Context(), c.env, groupID); err != nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Group auth failed; not linking GitHub account: %s", err.Error()))
+	u, err := perms.AuthenticatedUser(r.Context(), c.env)
+	if err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+	uRole := role.None
+	for _, m := range u.GetGroupMemberships() {
+		if m.GroupID == groupID {
+			uRole = m.Role
+			break
+		}
+	}
+	if uRole&role.Admin != role.Admin {
+		redirectWithError(w, r, status.PermissionDeniedError("Only administrators of this group can link a GitHub account"))
 		return
 	}
 
