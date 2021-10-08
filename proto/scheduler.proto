@@ -106,6 +106,11 @@ message RegisterExecutorRequest {
   ExecutionNode node = 1;
 }
 
+message ShuttingDownRequest {
+  // Task IDs that are in the executor queue.
+  repeated string task_id = 1;
+}
+
 message RegisterAndStreamWorkRequest {
   // Only one of the fields should be sent. oneofs not used due to awkward Go
   // APIs.
@@ -118,6 +123,9 @@ message RegisterAndStreamWorkRequest {
 
   // Response to a previous EnqueueTaskReservationRequest.
   EnqueueTaskReservationResponse enqueue_task_reservation_response = 2;
+
+  // Notifications to the scheduler that this executor is going away.
+  ShuttingDownRequest shutting_down_request = 3;
 }
 
 message RegisterAndStreamWorkResponse {

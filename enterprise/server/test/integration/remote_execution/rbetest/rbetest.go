@@ -157,6 +157,24 @@ func NewRBETestEnv(t *testing.T) *Env {
 	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
 	rbe.rbeClient = rbeclient.New(rbe)
+
+	t.Cleanup(func() {
+		log.Warningf("Shutting down executors...")
+		var wg sync.WaitGroup
+		for id, e := range rbe.executors {
+			e.env.GetHealthChecker().Shutdown()
+			wg.Add(1)
+			go func() {
+				log.Infof("Waiting for executor %q to shut down.", id)
+				e.env.GetHealthChecker().WaitForGracefulShutdown()
+				wg.Done()
+			}()
+			log.Infof("Shut down for executor %q completed.", id)
+		}
+		log.Warningf("Waiting for executor shutdown to finish...")
+		wg.Wait()
+	})
+
 	return rbe
 }
 
@@ -204,20 +222,21 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	router, err := task_router.New(env)
 	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
-	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
-	require.NoError(t, err, "could not set up SchedulerServer")
 	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
 	env.SetRemoteExecutionService(executionServer)
-	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
-	require.NoError(t, err, "could not set up BuildBuddyServiceServer")
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
-	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
 
 	if opts.EnvModifier != nil {
 		opts.EnvModifier(env.TestEnv)
 	}
+
+	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
+	require.NoError(t, err, "could not set up SchedulerServer")
+	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
+	require.NoError(t, err, "could not set up BuildEventProtocolServer")
+	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
+	require.NoError(t, err, "could not set up BuildBuddyServiceServer")
 
 	server := &BuildBuddyServer{
 		t:                       t,
@@ -386,15 +405,27 @@ type ExecutorOptions struct {
 
 // Executor is a handle for a running executor instance.
 type Executor struct {
+	env                *testenv.TestEnv
 	hostPort           string
 	grpcServer         *grpc.Server
 	cancelRegistration context.CancelFunc
+	taskScheduler      *priority_task_scheduler.PriorityTaskScheduler
 }
 
 // Stop unregisters the executor from the BuildBuddy server.
 func (e *Executor) stop() {
+	e.env.GetHealthChecker().Shutdown()
+	e.env.GetHealthChecker().WaitForGracefulShutdown()
+	// TODO: add grpcServer to healthchecker shutdown
 	e.grpcServer.Stop()
-	e.cancelRegistration()
+	//e.cancelRegistration()
+	//e.taskScheduler.Shutdown(ctx)
+}
+
+func (e *Executor) ShutdownTaskScheduler() {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
+	defer cancel()
+	e.taskScheduler.Shutdown(ctx)
 }
 
 func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
@@ -497,12 +528,6 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	}
 
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
-	r.t.Cleanup(func() {
-		env.GetHealthChecker().Shutdown()
-		log.Infof("Waiting for executor %q to shut down.", options.Name)
-		env.GetHealthChecker().WaitForGracefulShutdown()
-		log.Infof("Shut down for executor %q completed.", options.Name)
-	})
 
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
@@ -547,6 +572,9 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	executorUUID, err := guuid.NewRandom()
 	require.NoError(r.t, err)
 	executorID := executorUUID.String()
+	if options.Name != "" {
+		executorID = options.Name
+	}
 
 	exec, err := executor.NewExecutor(env, executorID, &executor.Options{NameOverride: options.Name})
 	if err != nil {
@@ -581,9 +609,11 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	registration.Start(ctx)
 
 	executor := &Executor{
+		env:                env,
 		hostPort:           fmt.Sprintf("localhost:%d", executorPort),
 		grpcServer:         executorGRPCServer,
 		cancelRegistration: cancel,
+		taskScheduler:      taskScheduler,
 	}
 	r.executors[executor.hostPort] = executor
 	return executor
