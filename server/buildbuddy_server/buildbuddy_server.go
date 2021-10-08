@@ -160,17 +160,17 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	}
 	// TODO(bduffany): Read this from interfaces.UserInfo
 	selectedGroupRole := role.Admin
-	allowedActions := role_filter.RoleIndependentRPCs
+	allowedRPCs := role_filter.RoleIndependentRPCs
 	if selectedGroupRole&role.Admin > 0 {
-		allowedActions = append(allowedActions, role_filter.GroupAdminOnlyRPCs...)
+		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs...)
 	}
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
-		allowedActions = append(allowedActions, role_filter.GroupDeveloperRPCs...)
+		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs...)
 	}
 	return &uspb.GetUserResponse{
-		DisplayUser:   tu.ToProto(),
-		UserGroup:     makeGroups(tu.Groups),
-		AllowedAction: allowedActions,
+		DisplayUser: tu.ToProto(),
+		UserGroup:   makeGroups(tu.Groups),
+		AllowedRpc:  allowedRPCs,
 	}, nil
 }
 
