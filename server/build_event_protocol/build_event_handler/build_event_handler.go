@@ -184,6 +184,9 @@ func (r *statsRecorder) Start() {
 				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
 				}
+				// Cleanup regardless of whether the stats are flushed successfully to
+				// the DB (since we won't retry the flush and we don't need these stats
+				// for any other purpose).
 				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationID)
 			}
 			return nil
