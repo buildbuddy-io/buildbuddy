@@ -103,7 +103,9 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		user.LastName = firstSet(attributes, samlLastNameAttributes)
 		user.Email = firstSet(attributes, samlEmailAttributes)
 		if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
-			user.Groups = []*tables.Group{{URLIdentifier: &slug}}
+			user.Groups = []*tables.GroupRole{
+				{Group: tables.Group{URLIdentifier: &slug}},
+			}
 		}
 		return nil
 	}
@@ -228,10 +230,10 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 	if err != nil {
 		return nil, err
 	}
-	if group.SamlIdpMetadataUrl == "" {
+	if group.SamlIdpMetadataUrl == nil || *group.SamlIdpMetadataUrl == "" {
 		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
 	}
-	metadataUrl, err := url.Parse(group.SamlIdpMetadataUrl)
+	metadataUrl, err := url.Parse(*group.SamlIdpMetadataUrl)
 	if err != nil {
 		return nil, err
 	}

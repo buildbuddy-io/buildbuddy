@@ -167,17 +167,17 @@ type Group struct {
 	WriteToken string `gorm:"index:write_token_index"`
 
 	// The group's Github API token.
-	GithubToken string
+	GithubToken *string
 	Model
 
 	SharingEnabled bool `gorm:"default:true"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors bool
+	UseGroupOwnedExecutors *bool
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl string
+	SamlIdpMetadataUrl *string
 }
 
 func (g *Group) TableName() string {
@@ -201,6 +201,11 @@ func (ug *UserGroup) TableName() string {
 	return "UserGroups"
 }
 
+type GroupRole struct {
+	Group Group
+	Role  uint32
+}
+
 type User struct {
 	// The buildbuddy user ID.
 	UserID string `gorm:"primaryKey;"`
@@ -215,9 +220,9 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// Groups are used to determine read/write permissions
+	// Group roles are used to determine read/write permissions
 	// for everything.
-	Groups []*Group `gorm:"-"`
+	Groups []*GroupRole `gorm:"-"`
 	Model
 }
 
