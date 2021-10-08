@@ -30,6 +30,7 @@
 .api-keys .api-key-list-item {
   display: flex;
   align-items: baseline;
+  min-height: 40px;
 }
 
 .api-keys .api-key-label,
@@ -59,12 +60,19 @@
 .api-keys .api-key-label,
 .api-keys .api-key-value {
   width: 0;
-  max-width: 224px;
+  display: flex;
+}
+
+.api-keys .api-key-label {
   flex-basis: 224px;
   flex-grow: 1;
   flex-shrink: 1;
+}
 
-  display: flex;
+.api-keys .api-key-value {
+  box-sizing: border-box;
+  flex-basis: 240px;
+  flex-shrink: 0;
 }
 
 .api-keys .api-key-label > span,
