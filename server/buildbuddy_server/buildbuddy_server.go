@@ -159,8 +159,13 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return nil, status.UnauthenticatedError("User not found")
 	}
-	// TODO(bduffany): Read this from interfaces.UserInfo
-	selectedGroupRole := role.Admin
+
+	selectedGroupID := ""
+	selectedGroupRole := role.None
+	if g := selectedGroup(req.GetRequestContext().GetGroupId(), tu.Groups); g != nil {
+		selectedGroupID = g.Group.GroupID
+		selectedGroupRole = role.Role(g.Role)
+	}
 	allowedRPCs := role_filter.RoleIndependentRPCs
 	if selectedGroupRole&role.Admin > 0 {
 		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs...)
@@ -171,7 +176,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
 		UserGroup:       makeGroups(tu.Groups),
-		SelectedGroupId: selectedGroupID(req.GetRequestContext().GetGroupId(), tu.Groups),
+		SelectedGroupId: selectedGroupID,
 		AllowedRpc:      allowedRPCs,
 	}, nil
 }
@@ -486,28 +491,28 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
-func selectedGroupID(preferredGroupID string, groupRoles []*tables.GroupRole) string {
+func selectedGroup(preferredGroupID string, groupRoles []*tables.GroupRole) *tables.GroupRole {
 	if preferredGroupID != "" {
 		for _, gr := range groupRoles {
 			if gr.Group.GroupID == preferredGroupID {
-				return gr.Group.GroupID
+				return gr
 			}
 		}
 	}
 	for _, gr := range groupRoles {
 		if gr.Group.URLIdentifier != nil && *gr.Group.URLIdentifier != "" {
-			return gr.Group.GroupID
+			return gr
 		}
 	}
 	for _, gr := range groupRoles {
 		if gr.Group.OwnedDomain != "" {
-			return gr.Group.GroupID
+			return gr
 		}
 	}
 	if len(groupRoles) > 0 {
-		return groupRoles[0].Group.GroupID
+		return groupRoles[0]
 	}
-	return ""
+	return nil
 }
 
 func getEmailDomain(email string) string {
