@@ -100,9 +100,9 @@ export class AuthService {
         user.groups[0];
     }
     user.allowedRpcs = new Set(
-      response.allowedAction.map(
+      response.allowedRpc.map(
         // Ensure RPC names are camelCase.
-        (action) => (action[0].toLowerCase() + action.substring(1)) as BuildBuddyServiceRpcName
+        (name) => (name[0].toLowerCase() + name.substring(1)) as BuildBuddyServiceRpcName
       )
     );
     return user;
