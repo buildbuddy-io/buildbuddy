@@ -26,6 +26,10 @@ message GetUserResponse {
   // be set to one of the group IDs in user_group as a fallback. If user_group
   // is empty, this will also be empty.
   string selected_group_id = 3;
+
+  // List of BuildBuddyService RPC names that the user is allowed to perform
+  // for their currently selected group.
+  repeated string allowed_rpc = 4;
 }
 
 message CreateUserRequest {
