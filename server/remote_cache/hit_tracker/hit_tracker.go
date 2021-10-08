@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/prometheus/client_golang/prometheus"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -56,7 +57,11 @@ func cacheTypePrefix(actionCache bool, name string) string {
 	}
 }
 
-func rawCounterName(actionCache bool, ct counterType) string {
+func counterKey(iid string) string {
+	return "hit_tracker/" + iid
+}
+
+func counterField(actionCache bool, ct counterType) string {
 	switch ct {
 	case Hit:
 		return cacheTypePrefix(actionCache, "hits")
@@ -79,10 +84,6 @@ func rawCounterName(actionCache bool, ct counterType) string {
 	}
 }
 
-func counterName(actionCache bool, ct counterType, iid string) string {
-	return iid + "-" + rawCounterName(actionCache, ct)
-}
-
 type HitTracker struct {
 	c           interfaces.MetricsCollector
 	usage       interfaces.UsageTracker
@@ -101,8 +102,12 @@ func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *
 	}
 }
 
-func (h *HitTracker) counterName(ct counterType) string {
-	return counterName(h.actionCache, ct, h.iid)
+func (h *HitTracker) counterKey() string {
+	return counterKey(h.iid)
+}
+
+func (h *HitTracker) counterField(ct counterType) string {
+	return counterField(h.actionCache, ct)
 }
 
 func (h *HitTracker) cacheTypeLabel() string {
@@ -126,7 +131,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
 	}).Inc()
-	return h.c.IncrementCount(h.ctx, h.counterName(Miss), 1)
+	return h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Miss), 1)
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
@@ -137,7 +142,7 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	return h.c.IncrementCount(h.ctx, h.counterName(Hit), 1)
+	return h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1)
 }
 
 type closeFunction func() error
@@ -195,13 +200,13 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 			return nil
 		}
 
-		if err := h.c.IncrementCount(h.ctx, h.counterName(actionCounter), 1); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(actionCounter), 1); err != nil {
 			return err
 		}
-		if err := h.c.IncrementCount(h.ctx, h.counterName(sizeCounter), d.GetSizeBytes()); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(sizeCounter), d.GetSizeBytes()); err != nil {
 			return err
 		}
-		if err := h.c.IncrementCount(h.ctx, h.counterName(timeCounter), dur.Microseconds()); err != nil {
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
 
@@ -269,23 +274,43 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	}
 	cs := &capb.CacheStats{}
 
-	cs.ActionCacheHits, _ = c.ReadCount(ctx, counterName(true, Hit, iid))
-	cs.ActionCacheMisses, _ = c.ReadCount(ctx, counterName(true, Miss, iid))
-	cs.ActionCacheUploads, _ = c.ReadCount(ctx, counterName(true, Upload, iid))
+	counts, err := c.ReadCounts(ctx, counterKey(iid))
+	if err != nil {
+		log.Warningf("Failed to collect cache stats: %s", err)
+		return cs
+	}
+	if counts == nil {
+		counts = make(map[string]int64)
+	}
 
-	cs.CasCacheHits, _ = c.ReadCount(ctx, counterName(false, Hit, iid))
-	cs.CasCacheMisses, _ = c.ReadCount(ctx, counterName(false, Miss, iid))
-	cs.CasCacheUploads, _ = c.ReadCount(ctx, counterName(false, Upload, iid))
+	cs.ActionCacheHits = counts[counterField(true, Hit)]
+	cs.ActionCacheMisses = counts[counterField(true, Miss)]
+	cs.ActionCacheUploads = counts[counterField(true, Upload)]
 
-	cs.TotalDownloadSizeBytes, _ = c.ReadCount(ctx, counterName(false, DownloadSizeBytes, iid))
-	cs.TotalUploadSizeBytes, _ = c.ReadCount(ctx, counterName(false, UploadSizeBytes, iid))
-	cs.TotalDownloadUsec, _ = c.ReadCount(ctx, counterName(false, DownloadUsec, iid))
-	cs.TotalUploadUsec, _ = c.ReadCount(ctx, counterName(false, UploadUsec, iid))
+	cs.CasCacheHits = counts[counterField(false, Hit)]
+	cs.CasCacheMisses = counts[counterField(false, Miss)]
+	cs.CasCacheUploads = counts[counterField(false, Upload)]
+
+	cs.TotalDownloadSizeBytes = counts[counterField(false, DownloadSizeBytes)]
+	cs.TotalUploadSizeBytes = counts[counterField(false, UploadSizeBytes)]
+	cs.TotalDownloadUsec = counts[counterField(false, DownloadUsec)]
+	cs.TotalUploadUsec = counts[counterField(false, UploadUsec)]
 
 	cs.DownloadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalDownloadSizeBytes, cs.TotalDownloadUsec)
 	cs.UploadThroughputBytesPerSecond = computeThroughputBytesPerSecond(cs.TotalUploadSizeBytes, cs.TotalUploadUsec)
 
-	cs.TotalCachedActionExecUsec, _ = c.ReadCount(ctx, counterName(false, CachedActionExecUsec, iid))
+	cs.TotalCachedActionExecUsec = counts[counterField(false, CachedActionExecUsec)]
 
 	return cs
+}
+
+func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
+	c := env.GetMetricsCollector()
+	if c == nil || iid == "" {
+		return
+	}
+
+	if err := c.Delete(ctx, counterKey(iid)); err != nil {
+		log.Warningf("Failed to clean up cache stats: %s", err)
+	}
 }
