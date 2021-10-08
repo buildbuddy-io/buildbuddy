@@ -141,7 +141,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	groupID := getCookie(r, groupIDCookieName)
 	u, err := perms.AuthenticatedUser(r.Context(), c.env)
 	if err != nil {
-		redirectWithError(w, r, err)
+		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
 		return
 	}
 	uRole := role.None
