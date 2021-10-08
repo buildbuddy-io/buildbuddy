@@ -14,6 +14,10 @@ message GetUserResponse {
 
   // The groups this user is a member of.
   repeated grp.Group user_group = 2;
+
+  // List of BuildBuddyService RPC names that the user is allowed to perform
+  // for their currently selected group.
+  repeated string allowed_action = 4;
 }
 
 message CreateUserRequest {

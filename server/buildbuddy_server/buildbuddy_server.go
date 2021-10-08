@@ -12,12 +12,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/http/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -143,6 +145,8 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 	return r
 }
 
+var selectedGroupRole role.Role
+
 func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -156,9 +160,19 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
 		return nil, status.UnauthenticatedError("User not found")
 	}
+	// TODO(bduffany): Read this from interfaces.UserInfo
+	selectedGroupRole := role.Admin
+	allowedActions := role_filter.RoleIndependentRPCs
+	if selectedGroupRole&role.Admin > 0 {
+		allowedActions = append(allowedActions, role_filter.GroupAdminOnlyRPCs...)
+	}
+	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
+		allowedActions = append(allowedActions, role_filter.GroupDeveloperRPCs...)
+	}
 	return &uspb.GetUserResponse{
-		DisplayUser: tu.ToProto(),
-		UserGroup:   makeGroups(tu.Groups),
+		DisplayUser:   tu.ToProto(),
+		UserGroup:     makeGroups(tu.Groups),
+		AllowedAction: allowedActions,
 	}, nil
 }
 
