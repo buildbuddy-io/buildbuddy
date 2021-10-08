@@ -99,16 +99,22 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 			return
 		}
 
-		// TODO(bduffs): Once we expose role info in UserInfo, get the user's actual
-		// group role instead of assuming admin role
-		if !stringSliceContains(u.GetAllowedGroups(), reqCtx.GetGroupId()) {
-			http.Error(w, `User does not have access to the requested group.`, http.StatusForbidden)
+		uRole := role.None
+		for _, m := range u.GetGroupMemberships() {
+			if m.GroupID == reqCtx.GetGroupId() {
+				uRole = m.Role
+				break
+			}
+		}
+		if uRole == role.None {
+			// User was probably removed from their org during their current UI
+			// session.
+			http.Error(w, `You do not have access to the requested organization.`, http.StatusForbidden)
 			return
 		}
-		uRole := role.Admin
 
 		if stringSliceContains(GroupAdminOnlyRPCs, rpcName) && (uRole&role.Admin != role.Admin) {
-			http.Error(w, `RPC requires group admin role.`, http.StatusForbidden)
+			http.Error(w, `This action can only be performed by administrators of the organization.`, http.StatusForbidden)
 			return
 		}
 
