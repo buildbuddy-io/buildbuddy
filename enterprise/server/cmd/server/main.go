@@ -197,12 +197,8 @@ func main() {
 		realEnv.SetDefaultRedisClient(rdb)
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
-		cancel := rbuf.StartPeriodicFlush(context.Background())
-		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
-			cancel()
-			// Flush the Redis buffer one last time before shutting down.
-			return rbuf.Flush(ctx)
-		})
+		rbuf.StartPeriodicFlush(context.Background())
+		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
 
 		rkv := redis_kvstore.New(rdb)
 		realEnv.SetKeyValStore(rkv)
@@ -331,5 +327,5 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	libmain.StartAndRunServices(realEnv) // Does not return
+	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }

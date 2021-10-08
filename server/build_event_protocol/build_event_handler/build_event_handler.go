@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -21,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -29,21 +32,27 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
-
-	gstatus "google.golang.org/grpc/status"
-
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"golang.org/x/sync/errgroup"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
+
+	// The time allowed for the cache hit trackers across all app instances to
+	// flush their stats from their local buffer to the backing storage (Redis).
+	// We wait this long before we write the invocation's cache stats to the DB.
+	cacheStatsFinalizationDelay = 500 * time.Millisecond
+
+	// How many workers to spin up for writing cache stats to the DB.
+	numStatsRecorderWorkers = 8
 )
 
 var (
@@ -51,12 +60,25 @@ var (
 )
 
 type BuildEventHandler struct {
-	env environment.Env
+	env           environment.Env
+	statsRecorder *statsRecorder
+	openChannels  *sync.WaitGroup
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
+	openChannels := &sync.WaitGroup{}
+	statsRecorder := newStatsRecorder(env, openChannels)
+
+	statsRecorder.Start()
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		statsRecorder.Stop()
+		return nil
+	})
+
 	return &BuildEventHandler{
-		env: env,
+		env:           env,
+		statsRecorder: statsRecorder,
+		openChannels:  openChannels,
 	}
 }
 
@@ -70,8 +92,15 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	if b.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 		logWriter = eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), b.env.GetKeyValStore(), iid)
 	}
+
+	b.openChannels.Add(1)
+	onClose := func() {
+		b.openChannels.Done()
+	}
+
 	return &EventChannel{
 		env:                     b.env,
+		statsRecorder:           b.statsRecorder,
 		ctx:                     ctx,
 		pw:                      protofile.NewBufferedProtoWriter(b.env.GetBlobstore(), iid, chunkFileSizeBytes),
 		beValues:                buildEventAccumulator,
@@ -81,6 +110,99 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
 		logWriter:               logWriter,
+		onClose:                 onClose,
+	}
+}
+
+// recordStatsTask contains the info needed to record the stats for an
+// invocation. These tasks are enqueued to statsRecorder and executed in the
+// background.
+type recordStatsTask struct {
+	invocationID string
+
+	// createdAt is the time at which this task was created.
+	createdAt time.Time
+}
+
+// statsRecorder listens for finalized invocations and copies cache stats from
+// the metrics collector to the DB.
+type statsRecorder struct {
+	env          environment.Env
+	openChannels *sync.WaitGroup
+	eg           errgroup.Group
+
+	mu      sync.Mutex // protects(tasks, stopped)
+	tasks   chan *recordStatsTask
+	stopped bool
+}
+
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *statsRecorder {
+	return &statsRecorder{
+		env:          env,
+		openChannels: openChannels,
+		tasks:        make(chan *recordStatsTask, 4096),
+	}
+}
+
+func (r *statsRecorder) MarkFinalized(invocationID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.stopped {
+		alert.UnexpectedEvent(
+			"stats_recorder_finalize_after_shutdown",
+			"Invocation %q was marked finalized after the stats recorder was shut down.",
+			invocationID)
+		return
+	}
+	req := &recordStatsTask{
+		invocationID: invocationID,
+		createdAt:    time.Now(),
+	}
+	select {
+	case r.tasks <- req:
+		break
+	default:
+		log.Error("Failed to write cache stats: stats recorder task buffer is full")
+	}
+}
+
+func (r *statsRecorder) Start() {
+	r.eg = errgroup.Group{}
+	ctx := context.Background()
+	for i := 0; i < numStatsRecorderWorkers; i++ {
+		r.eg.Go(func() error {
+			for task := range r.tasks {
+				// Apply the finalization delay relative to when the invocation was marked
+				// finalized, rather than relative to now. Otherwise each worker would be
+				// unnecessarily throttled.
+				time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
+				ti := &tables.Invocation{InvocationID: task.invocationID}
+				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationID); stats != nil {
+					fillInvocationFromCacheStats(stats, ti)
+				}
+				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+					log.Errorf("Failed to write cache stats for invocation: %s", err)
+				}
+			}
+			return nil
+		})
+	}
+}
+
+func (r *statsRecorder) Stop() {
+	// Wait for all EventHandler channels to be closed to ensure there will be
+	// no more calls to MarkFinalized.
+	r.openChannels.Wait()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.stopped = true
+	close(r.tasks)
+
+	if err := r.eg.Wait(); err != nil {
+		log.Error(err.Error())
 	}
 }
 
@@ -124,9 +246,11 @@ type EventChannel struct {
 	redactor                *redact.StreamingRedactor
 	statusReporter          *build_status_reporter.BuildStatusReporter
 	targetTracker           *target_tracker.TargetTracker
+	statsRecorder           *statsRecorder
 	eventsBeforeStarted     []*inpb.InvocationEvent
 	hasReceivedStartedEvent bool
 	logWriter               *eventlog.EventLogWriter
+	onClose                 func()
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -158,6 +282,10 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	return err
 }
 
+func (e *EventChannel) Close() {
+	e.onClose()
+}
+
 func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
 	if !e.beValues.BuildFinished() {
 		return e.FinalizeInvocation(iid)
@@ -184,11 +312,14 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
-		fillInvocationFromCacheStats(cacheStats, ti)
-	}
 	recordInvocationMetrics(ti)
-	return e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti)
+	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+		return err
+	}
+
+	e.statsRecorder.MarkFinalized(iid)
+
+	return nil
 }
 
 func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invocation) {
@@ -257,13 +388,12 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
-	if cacheStats := hit_tracker.CollectCacheStats(e.ctx, e.env, iid); cacheStats != nil {
-		fillInvocationFromCacheStats(cacheStats, ti)
-	}
 	recordInvocationMetrics(ti)
 	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 		return err
 	}
+
+	e.statsRecorder.MarkFinalized(iid)
 
 	// Notify our webhooks, if we have any.
 	for _, hook := range e.env.GetWebhooks() {

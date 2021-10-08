@@ -135,14 +135,22 @@ func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error 
 
 	// Add the group ID to the set of groups with usage
 	groupsCollectionPeriodKey := groupsRedisKey(t)
-	ut.rbuf.SAdd(groupsCollectionPeriodKey, groupID)
-	ut.rbuf.Expire(groupsCollectionPeriodKey, redisKeyTTL)
+	if err := ut.rbuf.SAdd(ctx, groupsCollectionPeriodKey, groupID); err != nil {
+		return err
+	}
+	if err := ut.rbuf.Expire(ctx, groupsCollectionPeriodKey, redisKeyTTL); err != nil {
+		return err
+	}
 	// Increment the hash values
 	countsKey := countsRedisKey(groupID, t)
 	for countField, count := range counts {
-		ut.rbuf.HIncrBy(countsKey, countField, count)
+		if err := ut.rbuf.HIncrBy(ctx, countsKey, countField, count); err != nil {
+			return err
+		}
 	}
-	ut.rbuf.Expire(countsKey, redisKeyTTL)
+	if err := ut.rbuf.Expire(ctx, countsKey, redisKeyTTL); err != nil {
+		return err
+	}
 
 	return nil
 }
