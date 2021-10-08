@@ -8,9 +8,12 @@ import (
 )
 
 const (
-	// Tested this with keys like `hit_tracker/` + uuid(), with the map stored
-	// in each key having 8 entries named `field-1`, `field-2` etc.
-	// When maxed out, I saw this take 72 MB.
+	// Maximum number of entries before keys are evicted from the metrics
+	// collector.
+	//
+	// This value was chosen so that the LRU consumes around 100MB when maxed out
+	// with keys of length ~50, metric names of length ~20, and ~10 metrics per
+	// map.
 	maxNumEntries = 50_000
 )
 
