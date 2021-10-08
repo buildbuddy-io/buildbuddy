@@ -120,9 +120,10 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
-func makeGroups(grps []*tables.Group) []*grpb.Group {
+func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
-	for _, g := range grps {
+	for _, gr := range groupRoles {
+		g := gr.Group
 		urlIdentifier := ""
 		if g.URLIdentifier != nil {
 			urlIdentifier = *g.URLIdentifier
@@ -168,9 +169,10 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs...)
 	}
 	return &uspb.GetUserResponse{
-		DisplayUser: tu.ToProto(),
-		UserGroup:   makeGroups(tu.Groups),
-		AllowedRpc:  allowedRPCs,
+		DisplayUser:     tu.ToProto(),
+		UserGroup:       makeGroups(tu.Groups),
+		SelectedGroupId: selectedGroupID(req.GetRequestContext().GetGroupId(), tu.Groups),
+		AllowedRpc:      allowedRPCs,
 	}, nil
 }
 
@@ -482,6 +484,30 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 		return nil, err
 	}
 	return &akpb.DeleteApiKeyResponse{}, nil
+}
+
+func selectedGroupID(preferredGroupID string, groupRoles []*tables.GroupRole) string {
+	if preferredGroupID != "" {
+		for _, gr := range groupRoles {
+			if gr.Group.GroupID == preferredGroupID {
+				return gr.Group.GroupID
+			}
+		}
+	}
+	for _, gr := range groupRoles {
+		if gr.Group.URLIdentifier != nil && *gr.Group.URLIdentifier != "" {
+			return gr.Group.GroupID
+		}
+	}
+	for _, gr := range groupRoles {
+		if gr.Group.OwnedDomain != "" {
+			return gr.Group.GroupID
+		}
+	}
+	if len(groupRoles) > 0 {
+		return groupRoles[0].Group.GroupID
+	}
+	return ""
 }
 
 func getEmailDomain(email string) string {

@@ -14,6 +14,7 @@ go_library(
         "//server/tables",
         "//server/util/capabilities",
         "//server/util/log",
+        "//server/util/role",
         "//server/util/status",
         "@com_github_dgrijalva_jwt_go//:jwt-go",
         "@org_golang_google_grpc//metadata",
