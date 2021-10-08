@@ -17,7 +17,7 @@ message GetUserResponse {
 
   // List of BuildBuddyService RPC names that the user is allowed to perform
   // for their currently selected group.
-  repeated string allowed_action = 4;
+  repeated string allowed_rpc = 4;
 }
 
 message CreateUserRequest {
