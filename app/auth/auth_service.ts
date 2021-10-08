@@ -4,7 +4,7 @@ import { grp } from "../../proto/group_ts_proto";
 import { user_id } from "../../proto/user_id_ts_proto";
 import { user } from "../../proto/user_ts_proto";
 import capabilities from "../capabilities/capabilities";
-import rpcService from "../service/rpc_service";
+import rpcService, { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
 
@@ -14,6 +14,7 @@ export class User {
   displayUser: user_id.DisplayUser;
   groups: grp.Group[];
   selectedGroup: grp.Group;
+  allowedRpcs: Set<BuildBuddyServiceRpcName>;
 
   selectedGroupName() {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
@@ -22,6 +23,10 @@ export class User {
 
   isInDefaultGroup() {
     return this.selectedGroup?.id == "GR0000000000000000000";
+  }
+
+  canCall(rpc: BuildBuddyServiceRpcName) {
+    return this.allowedRpcs.has(rpc);
   }
 }
 
@@ -94,6 +99,12 @@ export class AuthService {
         user.groups.find((group) => group.ownedDomain) ||
         user.groups[0];
     }
+    user.allowedRpcs = new Set(
+      response.allowedAction.map(
+        // Ensure RPC names are camelCase.
+        (action) => (action[0].toLowerCase() + action.substring(1)) as BuildBuddyServiceRpcName
+      )
+    );
     return user;
   }
 

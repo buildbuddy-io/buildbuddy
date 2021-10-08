@@ -72,17 +72,22 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <div className="settings-tab-group-subtitle">{this.props.user?.selectedGroupName()}</div>
               </div>
               <div className="settings-tab-group">
-                <SettingsTab id={TabId.OrgDetails} activeTabId={activeTabId}>
-                  Org details
-                </SettingsTab>
-                {capabilities.userManagement && (
+                {this.props.user.canCall("updateGroup") && (
+                  <SettingsTab id={TabId.OrgDetails} activeTabId={activeTabId}>
+                    Org details
+                  </SettingsTab>
+                )}
+                {capabilities.userManagement && this.props.user.canCall("getGroupUsers") && (
                   <SettingsTab id={TabId.OrgMembers} activeTabId={activeTabId}>
                     Members
                   </SettingsTab>
                 )}
-                <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
-                  GitHub link
-                </SettingsTab>
+                {/* GitHub link technically does not call updateGroup, but the effect is the same. */}
+                {this.props.user.canCall("updateGroup") && (
+                  <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
+                    GitHub link
+                  </SettingsTab>
+                )}
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
                   API keys
                 </SettingsTab>
