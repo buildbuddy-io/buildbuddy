@@ -204,6 +204,25 @@ func main() {
 		realEnv.SetKeyValStore(rkv)
 		rmc := redis_metrics_collector.New(rdb, rbuf)
 		realEnv.SetMetricsCollector(rmc)
+
+		if configurator.GetAppUsageTrackingEnabled() {
+			region := realEnv.GetConfigurator().GetAppRegion()
+			if region == "" {
+				log.Fatalf("Usage tracking requires app.region to be configured.")
+			}
+			opts := &usage.TrackerOpts{Region: region}
+			ut := usage.NewTracker(
+				realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv), rbuf, opts)
+			realEnv.SetUsageTracker(ut)
+
+			ut.StartDBFlush()
+			healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+				ut.StopDBFlush()
+				return nil
+			})
+		}
+	} else if configurator.GetAppUsageTrackingEnabled() {
+		log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 	}
 
 	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
@@ -216,25 +235,6 @@ func main() {
 			log.Fatalf("Failed to create server: %s", err)
 		}
 		realEnv.SetTaskRouter(taskRouter)
-	}
-
-	if configurator.GetAppUsageTrackingEnabled() {
-		if realEnv.GetDefaultRedisClient() == nil {
-			log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
-		}
-		region := realEnv.GetConfigurator().GetAppRegion()
-		if region == "" {
-			log.Fatalf("Usage tracking requires app.region to be configured.")
-		}
-		opts := &usage.TrackerOpts{Region: region}
-		ut := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv), opts)
-		realEnv.SetUsageTracker(ut)
-
-		ut.StartDBFlush()
-		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
-			ut.StopDBFlush()
-			return nil
-		})
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
