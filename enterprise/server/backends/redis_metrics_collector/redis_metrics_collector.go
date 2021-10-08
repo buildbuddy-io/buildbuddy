@@ -60,5 +60,5 @@ func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int6
 }
 
 func (c *collector) Delete(ctx context.Context, key string) error {
-	return c.rdb.Del(ctx).Err()
+	return c.rdb.Del(ctx, key).Err()
 }
