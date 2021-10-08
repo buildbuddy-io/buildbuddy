@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	// (8 + 36) bytes * 1,000,000 =~ 44 MB
-	// That's 1 int64 + invocation_id string.
-	maxNumEntries = 1000000
+	// Tested this with keys like `hit_tracker/` + uuid(), with the map stored
+	// in each key having 8 entries named `field-1`, `field-2` etc.
+	// When maxed out, I saw this take 72 MB.
+	maxNumEntries = 50_000
 )
 
 type MemoryMetricsCollector struct {
@@ -28,32 +29,39 @@ func NewMemoryMetricsCollector() (*MemoryMetricsCollector, error) {
 	}, nil
 }
 
-func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, counterName string, n int64) error {
+func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, key, field string, n int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if existingValIface, ok := m.l.Get(counterName); ok {
-		if existingVal, ok := existingValIface.(int64); ok {
-			newVal := existingVal + n
-			m.l.Add(counterName, newVal)
+	if existingValIface, ok := m.l.Get(key); ok {
+		if existingVal, ok := existingValIface.(map[string]int64); ok {
+			existingVal[field] += n
+			m.l.Add(key, existingVal)
 			return nil
 		}
 	}
-
-	m.l.Add(counterName, n)
+	m.l.Add(key, map[string]int64{field: n})
 	return nil
 
 }
 
-func (m *MemoryMetricsCollector) ReadCount(ctx context.Context, counterName string) (int64, error) {
+func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if existingValIface, ok := m.l.Get(counterName); ok {
-		if existingVal, ok := existingValIface.(int64); ok {
+	if existingValIface, ok := m.l.Get(key); ok {
+		if existingVal, ok := existingValIface.(map[string]int64); ok {
 			return existingVal, nil
 		}
 	}
 
-	return 0, nil
+	return make(map[string]int64), nil
+}
+
+func (m *MemoryMetricsCollector) Delete(ctx context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.l.Remove(key)
+	return nil
 }
