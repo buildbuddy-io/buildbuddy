@@ -145,8 +145,6 @@ func makeGroups(grps []*tables.Group) []*grpb.Group {
 	return r
 }
 
-var selectedGroupRole role.Role
-
 func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
