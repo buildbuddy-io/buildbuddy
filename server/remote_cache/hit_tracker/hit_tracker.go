@@ -279,6 +279,9 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 		log.Warningf("Failed to collect cache stats: %s", err)
 		return cs
 	}
+	if counts == nil {
+		counts = make(map[string]int64)
+	}
 
 	cs.ActionCacheHits = counts[counterField(true, Hit)]
 	cs.ActionCacheMisses = counts[counterField(true, Miss)]
