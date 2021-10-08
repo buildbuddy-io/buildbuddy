@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//proto:api_key_go_proto",
+        "//proto:group_go_proto",
         "//server/config",
         "//server/environment",
         "//server/interfaces",
@@ -20,6 +21,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
+        "//server/util/role",
         "//server/util/status",
         "//server/util/timeutil",
         "@com_github_coreos_go_oidc//:go-oidc",

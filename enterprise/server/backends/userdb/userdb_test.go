@@ -68,7 +68,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 
 	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
 
-	selfOwnedGroup := u.Groups[0]
+	selfOwnedGroup := u.Groups[0].Group
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
 
 	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
@@ -111,7 +111,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 
 	require.Len(t, u.Groups, 1, "US1 should be added to the default group")
 
-	defaultGroup := u.Groups[0]
+	defaultGroup := u.Groups[0].Group
 	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "default group should have 2 members")
@@ -151,7 +151,7 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	u, err := udb.GetUser(ctx1)
 	require.NoError(t, err)
 	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
-	us1Group := u.Groups[0]
+	us1Group := u.Groups[0].Group
 
 	// Add US2 to it
 	ctx2 := authUserCtx(ctx, env, t, "US2")
@@ -188,7 +188,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	u, err := udb.GetUser(ctx1)
 	require.NoError(t, err)
 	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
-	us1Group := u.Groups[0]
+	us1Group := u.Groups[0].Group
 
 	// Make sure we can update their role within the group
 	err = udb.UpdateGroupUsers(ctx, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
