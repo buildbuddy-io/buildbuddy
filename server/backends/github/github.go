@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -144,15 +145,8 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
 		return
 	}
-	uRole := role.None
-	for _, m := range u.GetGroupMemberships() {
-		if m.GroupID == groupID {
-			uRole = m.Role
-			break
-		}
-	}
-	if uRole&role.Admin != role.Admin {
-		redirectWithError(w, r, status.PermissionDeniedError("Only administrators of this group can link a GitHub account"))
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
 		return
 	}
 
