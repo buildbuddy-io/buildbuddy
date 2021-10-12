@@ -542,6 +542,24 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if isStartedEvent(&bazelBuildEvent) {
 		isFirstStartedEvent := !e.hasReceivedStartedEvent
 		e.hasReceivedStartedEvent = true
+		if isFirstStartedEvent {
+			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
+			if err == nil {
+				// We are retrying a previous invocation.
+				if inv.Success {
+					// The invocation was a success; it is not valid to retry.
+					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
+				} else if time.UnixMicro(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
+					// The invocation was last updated over 4 hours ago; it is not valid
+					// to retry.
+					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+				}
+			} else if !status.IsNotFoundError(err) {
+				// NotFoundError means this invocation has never existed, which is not
+				// an error. All other errors are real errors.
+				return err
+			}
+		}
 		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
