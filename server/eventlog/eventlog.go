@@ -79,6 +79,8 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 						Live:        true,
 					}, nil
 				}
+			} else if !status.IsNotFoundError(err) {
+				return nil, err
 			}
 			// If the invocation is in progress, logs may be written in the future.
 			// Return an empty chunk with NextChunkId set to 0.
@@ -123,6 +125,8 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 							Live:        true,
 						}, nil
 					}
+				} else if !status.IsNotFoundError(err) {
+					return nil, err
 				}
 			}
 
