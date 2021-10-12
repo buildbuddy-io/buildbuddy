@@ -68,6 +68,18 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 		// No chunks have been written for this invocation
 		if invocationInProgress {
+			// If the invocation is in progress and the chunk requested is not on
+			// disk, check the cache to see if the live chunk is being requested.
+			liveChunk := &elpb.LiveEventLogChunk{}
+			if err := keyval.GetProto(ctx, env.GetKeyValStore(), eventLogPath, liveChunk); err == nil {
+				if req.ChunkId == liveChunk.ChunkId {
+					return &elpb.GetEventLogChunkResponse{
+						Buffer:      liveChunk.Buffer,
+						NextChunkId: liveChunk.ChunkId,
+						Live:        true,
+					}, nil
+				}
+			}
 			// If the invocation is in progress, logs may be written in the future.
 			// Return an empty chunk with NextChunkId set to 0.
 			return &elpb.GetEventLogChunkResponse{
