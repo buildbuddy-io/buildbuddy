@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -79,11 +80,11 @@ func sleepWithContext(ctx context.Context, delay time.Duration) (done bool) {
 }
 
 type Registration struct {
-	schedulerClient     scpb.SchedulerClient
-	queueExecutorServer scpb.QueueExecutorServer
-	node                *scpb.ExecutionNode
-	apiKey              string
-	shutdownSignal      chan struct{}
+	schedulerClient scpb.SchedulerClient
+	taskScheduler   *priority_task_scheduler.PriorityTaskScheduler
+	node            *scpb.ExecutionNode
+	apiKey          string
+	shutdownSignal  chan struct{}
 
 	mu        sync.Mutex
 	connected bool
@@ -122,6 +123,19 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		return true, nil
 	case <-r.shutdownSignal:
 		log.Info("Executor shutting down, cancelling node registration.")
+		taskReservations := r.taskScheduler.GetQueuedTaskReservations()
+		var taskIDs []string
+		for _, r := range taskReservations {
+			taskIDs = append(taskIDs, r.GetTaskId())
+		}
+		rsp := &scpb.RegisterAndStreamWorkRequest{
+			ShuttingDownRequest: &scpb.ShuttingDownRequest{
+				TaskId: taskIDs,
+			},
+		}
+		if err := stream.Send(rsp); err != nil {
+			return false, status.UnavailableErrorf("could not send shutdown notification: %s", err)
+		}
 		return true, nil
 	case msg, ok := <-schedulerMsgs:
 		if !ok {
@@ -132,7 +146,7 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", proto.MarshalTextString(msg))
 		}
 
-		rsp, err := r.queueExecutorServer.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())
+		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())
 		if err != nil {
 			log.Warningf("Task reservation enqueue failed: %s", err)
 			return false, status.UnavailableErrorf("could not enqueue task reservation: %s", err)
@@ -225,7 +239,7 @@ func (r *Registration) Start(ctx context.Context) {
 
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
-func NewRegistration(env environment.Env, queueExecutorServer scpb.QueueExecutorServer, executorID string, options *Options) (*Registration, error) {
+func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID string, options *Options) (*Registration, error) {
 	node, err := makeExecutionNode(executorID, options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
@@ -242,11 +256,11 @@ func NewRegistration(env environment.Env, queueExecutorServer scpb.QueueExecutor
 	})
 
 	registration := &Registration{
-		schedulerClient:     env.GetSchedulerClient(),
-		queueExecutorServer: queueExecutorServer,
-		node:                node,
-		apiKey:              apiKey,
-		shutdownSignal:      shutdownSignal,
+		schedulerClient: env.GetSchedulerClient(),
+		taskScheduler:   taskScheduler,
+		node:            node,
+		apiKey:          apiKey,
+		shutdownSignal:  shutdownSignal,
 	}
 	env.GetHealthChecker().AddHealthCheck("registered_to_scheduler", registration)
 	return registration, nil

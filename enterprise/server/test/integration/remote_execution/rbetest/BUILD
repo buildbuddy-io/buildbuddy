@@ -38,6 +38,7 @@ go_library(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/grpc_client",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/prefix",
         "@com_github_golang_protobuf//proto:go_default_library",

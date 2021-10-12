@@ -188,12 +188,14 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	h.groupID = groupID
 
 	var registeredNode *scpb.ExecutionNode
-	defer func() {
+	removeConnectedExecutor := func() {
 		if registeredNode == nil {
 			return
 		}
 		h.scheduler.RemoveConnectedExecutor(ctx, h, registeredNode)
-	}()
+		registeredNode = nil
+	}
+	defer removeConnectedExecutor()
 
 	requestChan := make(chan *scpb.RegisterAndStreamWorkRequest, 1)
 	errChan := make(chan error)
@@ -214,6 +216,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
 
+	executorID := "unknown"
 	for {
 		select {
 		case <-h.scheduler.shuttingDown:
@@ -230,8 +233,18 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					return err
 				}
 				registeredNode = registration
+				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
+			} else if req.GetShuttingDownRequest() != nil {
+				log.Infof("Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
+				// Remove the executor first so that we don't try to send any work its way.
+				removeConnectedExecutor()
+				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+					if err := h.scheduler.reEnqueueTask(ctx, taskID, 1 /*=numReplicas*/); err != nil {
+						log.Warningf("Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+					}
+				}
 			} else {
 				log.Warningf("Invalid message from executor:\n%q", proto.MarshalTextString(req))
 				return status.InternalErrorf("message from executor did not contain any data")
@@ -1370,36 +1383,43 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
-	if req.GetTaskId() == "" {
-		return nil, status.FailedPreconditionError("A task_id is required")
+func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numReplicas int) error {
+	if taskID == "" {
+		return status.FailedPreconditionError("A task_id is required")
 	}
-	task, err := s.readTask(ctx, req.GetTaskId())
+	task, err := s.readTask(ctx, taskID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if task.attemptCount >= maxTaskAttemptCount {
-		if err := s.deleteClaimedTask(ctx, req.GetTaskId()); err != nil {
-			return nil, err
+		if err := s.deleteClaimedTask(ctx, taskID); err != nil {
+			return err
 		}
-		return nil, status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
+		return status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
 	}
-	_ = s.unclaimTask(ctx, req.GetTaskId()) // ignore error -- it's fine if it's already unclaimed.
-	log.Debugf("ReEnqueueTask RPC for task %q", req.GetTaskId())
+	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
+	log.Debugf("ReEnqueueTask RPC for task %q", taskID)
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
-		TaskId:             req.GetTaskId(),
+		TaskId:             taskID,
 		TaskSize:           task.metadata.GetTaskSize(),
 		SchedulingMetadata: task.metadata,
 	}
 	opts := enqueueTaskReservationOpts{
-		numReplicas:           probesPerTask,
+		numReplicas:           numReplicas,
 		alwaysScheduleLocally: false,
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
-		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err.Error())
+		return err
+	}
+	log.Debugf("ReEnqueueTask succeeded for task %q", taskID)
+	return nil
+}
+
+func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask); err != nil {
+		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err
 	}
-	log.Debugf("ReEnqueueTask RPC succeeded for task %q", req.GetTaskId())
 	return &scpb.ReEnqueueTaskResponse{}, nil
 }
 

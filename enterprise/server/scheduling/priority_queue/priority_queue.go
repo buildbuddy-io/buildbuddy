@@ -81,6 +81,16 @@ func (pq *PriorityQueue) Peek() *scpb.EnqueueTaskReservationRequest {
 	return (*pq.inner)[0].value
 }
 
+func (pq *PriorityQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
+	pq.mu.Lock()
+	defer pq.mu.Unlock()
+	var reservations []*scpb.EnqueueTaskReservationRequest
+	for _, i := range *pq.inner {
+		reservations = append(reservations, i.value)
+	}
+	return reservations
+}
+
 func (pq *PriorityQueue) Len() int {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
