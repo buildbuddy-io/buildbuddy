@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/golang/protobuf/proto"
@@ -416,12 +417,9 @@ type Executor struct {
 func (e *Executor) stop() {
 	e.env.GetHealthChecker().Shutdown()
 	e.env.GetHealthChecker().WaitForGracefulShutdown()
-	// TODO: add grpcServer to healthchecker shutdown
-	e.grpcServer.Stop()
-	//e.cancelRegistration()
-	//e.taskScheduler.Shutdown(ctx)
 }
 
+// ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
 func (e *Executor) ShutdownTaskScheduler() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
 	defer cancel()
@@ -589,6 +587,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		assert.FailNowf(r.t, fmt.Sprintf("could not listen on port %d", executorPort), err.Error())
 	}
 	executorGRPCServer, execRunFunc := env.GRPCServer(execLis)
+	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(executorGRPCServer))
 
 	scpb.RegisterQueueExecutorServer(executorGRPCServer, taskScheduler)
 
