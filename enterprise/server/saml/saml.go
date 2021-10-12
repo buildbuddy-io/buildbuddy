@@ -25,6 +25,7 @@ const (
 	slugParam              = "slug"
 	slugCookie             = "Slug"
 	cookieDuration         = 365 * 24 * time.Hour
+	sessionDuration        = 12 * time.Hour
 	contextSamlSessionKey  = "saml.session"
 	contextSamlEntityIDKey = "saml.entityID"
 	contextSamlSlugKey     = "saml.slug"
@@ -213,6 +214,14 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
+	if cookieProvider, ok := samlSP.Session.(samlsp.CookieSessionProvider); ok {
+		cookieProvider.MaxAge = sessionDuration
+		if codec, ok := cookieProvider.Codec.(samlsp.JWTSessionCodec); ok {
+			codec.MaxAge = sessionDuration
+			cookieProvider.Codec = codec
+		}
+		samlSP.Session = cookieProvider
+	}
 	a.samlProviders[slug] = samlSP
 	return samlSP, nil
 }
