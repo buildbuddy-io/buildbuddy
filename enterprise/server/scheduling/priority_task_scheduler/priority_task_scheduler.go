@@ -404,5 +404,7 @@ func (q *PriorityTaskScheduler) Stop() error {
 }
 
 func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskReservationRequest {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.q.GetAll()
 }

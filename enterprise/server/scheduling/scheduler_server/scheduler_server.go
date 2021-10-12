@@ -141,13 +141,12 @@ type executorHandle struct {
 	replies  map[string]chan<- *scpb.EnqueueTaskReservationResponse
 }
 
-func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireAuthorization bool, stream scpb.Scheduler_RegisterAndStreamWorkServer, groupID string) *executorHandle {
+func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireAuthorization bool, stream scpb.Scheduler_RegisterAndStreamWorkServer) *executorHandle {
 	h := &executorHandle{
 		env:                  env,
 		scheduler:            scheduler,
 		requireAuthorization: requireAuthorization,
 		stream:               stream,
-		groupID:              groupID,
 		requests:             make(chan enqueueTaskReservationRequest, 10),
 		replies:              make(map[string]chan<- *scpb.EnqueueTaskReservationResponse),
 	}
@@ -251,7 +250,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				return status.InternalErrorf("message from executor did not contain any data")
 			}
 		case <-checkCredentialsTicker.C:
-			if _, err := h.scheduler.authorizeExecutor(ctx); err != nil {
+			if _, err := h.authorize(ctx); err != nil {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
 					return err
 				}
@@ -857,35 +856,8 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 	return err
 }
 
-func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error) {
-	if !s.requireExecutorAuthorization {
-		return "", nil
-	}
-
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
-	}
-	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
-	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
-	// created.
-	user, err := auth.AuthenticateGRPCRequest(ctx)
-	if err != nil {
-		return "", err
-	}
-	if !user.HasCapability(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) {
-		return "", status.PermissionDeniedError("API key is missing executor registration capability")
-	}
-	return user.GetGroupID(), nil
-}
-
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
-	groupID, err := s.authorizeExecutor(stream.Context())
-	if err != nil {
-		return err
-	}
-
-	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream, groupID)
+	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
 	return handle.Serve(stream.Context())
 }
 
