@@ -16,6 +16,7 @@ require (
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.1
+	github.com/cockroachdb/errors v1.8.6 // indirect
 	github.com/containerd/containerd v1.5.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/crewjam/saml v0.4.5
@@ -47,6 +48,7 @@ require (
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/pgzip v1.2.5
 	github.com/lni/dragonboat/v3 v3.3.4 // indirect
+	github.com/lni/vfs v0.2.0 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect

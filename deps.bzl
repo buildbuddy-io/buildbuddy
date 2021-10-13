@@ -476,8 +476,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_cockroachdb_errors",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/cockroachdb/errors",
-        sum = "h1:ptyO1BLW+sBxwBTSKJfS6kGzYCVKhI7MyBhoXAnPIKM=",
-        version = "v1.7.5",
+        sum = "h1:Am9evxl/po3RzpokemQvq7S7Cd0mxv24xy0B/trlQF4=",
+        version = "v1.8.6",
     )
     go_repository(
         name = "com_github_cockroachdb_logtags",
@@ -494,8 +494,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cockroachdb_redact",
         importpath = "github.com/cockroachdb/redact",
-        sum = "h1:W34uRRyNR4dlZFd0MibhNELsZSgMkl52uRV/tA1xToY=",
-        version = "v1.0.6",
+        sum = "h1:TNJ9tJHjtS7TrJR3n3DidvsQji8Av6Ecq8la9Xmn6SI=",
+        version = "v1.1.1",
     )
     go_repository(
         name = "com_github_cockroachdb_sentry_go",
@@ -1517,8 +1517,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_gogo_googleapis",
         build_file_proto_mode = "disable",
         importpath = "github.com/gogo/googleapis",
-        sum = "h1:zgVt4UpGxcqVOw97aRGxT4svlcmdK35fynLNctY32zI=",
-        version = "v1.4.0",
+        sum = "h1:1Yx4Myt7BxzvUr5ldGSbwYiZG6t9wGBZ+8/fX3Wvtq0=",
+        version = "v1.4.1",
     )
     go_repository(
         name = "com_github_gogo_protobuf",
@@ -1988,8 +1988,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hydrogen18_memlistener",
         importpath = "github.com/hydrogen18/memlistener",
-        sum = "h1:EPRgaDqXpLFUJLXZdGLnBTy1l6CLiNAPnvn2l+kHit0=",
-        version = "v0.0.0-20141126152155-54553eb933fb",
+        sum = "h1:KyZDvZ/GGn+r+Y3DKZ7UOQ/TP4xV6HNkrwiVMB1GnNY=",
+        version = "v0.0.0-20200120041712-dcc25e7acd91",
     )
 
     go_repository(
@@ -2464,14 +2464,22 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_lni_dragonboat_v3",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/lni/dragonboat/v3",
-        sum = "h1:hh/XOeTC+fN1xJ5GsidYwKt2oeCe/V9WUjoB9dEKoJY=",
-        version = "v3.3.4",
+	replace = "github.com/tylerwilliams/dragonboat/v3",
+        sum = "h1:rgT2w+T0OLmZoRSez1eiAwVgZ0ZIBE0zyzry++mUNbM=",
+        version = "v3.3.4-rc2",
     )
+
     go_repository(
         name = "com_github_lni_goutils",
         importpath = "github.com/lni/goutils",
         sum = "h1:oBhV7Z5DjNWbcy/c3fFj6qo4SnHcpyTY28qfKvLy6UM=",
         version = "v1.3.0",
+    )
+    go_repository(
+        name = "com_github_lni_vfs",
+        importpath = "github.com/lni/vfs",
+        sum = "h1:aBE5/npL2p1XtkNBNyKKw7iTHVKdScI/HtFsulO/6qk=",
+        version = "v0.2.0",
     )
 
     go_repository(
@@ -3977,8 +3985,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "in_gopkg_yaml_v3",
         importpath = "gopkg.in/yaml.v3",
-        sum = "h1:tQIYjPdBoyREyB9XMu+nnTclpTYkz2zFM+lzLJFO4gQ=",
-        version = "v3.0.0-20200615113413-eeeca48fe776",
+        sum = "h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=",
+        version = "v3.0.0-20210107192922-496545a6307b",
     )
     http_file(
         name = "io_bazel_bazel-3.7-darwin-x86_64",
@@ -4376,8 +4384,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:wjuX4b5yYQnEQHzd+CBcrcC6OVR2J1CN6mUy0oSxIPo=",
-        version = "v0.0.0-20210525063256-abc453219eb5",
+        sum = "h1:XpT3nA5TvE525Ne3hInMh6+GETgn27Zfm9dxsThnX2Q=",
+        version = "v0.0.0-20210614182718-04defd469f4e",
     )
 
     go_repository(
