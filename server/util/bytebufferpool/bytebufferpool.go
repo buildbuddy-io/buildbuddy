@@ -7,6 +7,9 @@ import (
 
 // Pool is a wrapper around `sync.Pool` that manages pool for buffers of different lengths of n (using power of 2).
 type Pool struct {
+	// pools contain slices of lengths that are powers of 2. the slice itself is indexed by the exponent.
+	// index 0 containing a pool of 2^0 length slices, index 1 containing 2^1 length slices and so forth.
+	// To compute the index for a given length we use bits.Len64(n - 1) which computes the inverse of 2^n.
 	pools         []sync.Pool
 	maxBufferSize int
 }
@@ -27,7 +30,7 @@ func New(maxBufferSize int) *Pool {
 	return bp
 }
 
-// Get returns a byte slice with a length of at least `length`.
+// Get returns a byte slice of the requested length.
 func (bp *Pool) Get(length int64) []byte {
 	idx := bits.Len64(uint64(length - 1))
 	if length == 0 {
@@ -36,7 +39,8 @@ func (bp *Pool) Get(length int64) []byte {
 	if idx >= len(bp.pools) {
 		idx = len(bp.pools) - 1
 	}
-	return bp.pools[idx].Get().([]byte)
+	buf := bp.pools[idx].Get().([]byte)
+	return buf[:length]
 }
 
 // Put returns a byte slice back into the pool.
