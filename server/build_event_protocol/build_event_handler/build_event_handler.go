@@ -151,9 +151,10 @@ type statsRecorder struct {
 
 func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRecorded chan<- *inpb.Invocation) *statsRecorder {
 	return &statsRecorder{
-		env:          env,
-		openChannels: openChannels,
-		tasks:        make(chan *recordStatsTask, 4096),
+		env:           env,
+		openChannels:  openChannels,
+		statsRecorded: statsRecorded,
+		tasks:         make(chan *recordStatsTask, 4096),
 	}
 }
 
