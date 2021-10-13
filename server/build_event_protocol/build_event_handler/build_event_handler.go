@@ -56,6 +56,9 @@ const (
 
 	// How many workers to spin up for notifying webhooks.
 	numWebhookNotifierWorkers = 16
+
+	// How long to wait before giving up on webhook requests.
+	webhookNotifyTimeout = 1 * time.Minute
 )
 
 var (
@@ -237,6 +240,12 @@ type notifyWebhookTask struct {
 	invocation *inpb.Invocation
 }
 
+func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
+	ctx, cancel := context.WithTimeout(ctx, webhookNotifyTimeout)
+	defer cancel()
+	return t.hook.NotifyComplete(ctx, t.invocation)
+}
+
 type webhookNotifier struct {
 	env           environment.Env
 	statsRecorded <-chan *inpb.Invocation
@@ -274,7 +283,7 @@ func (w *webhookNotifier) Start() {
 	for i := 0; i < numWebhookNotifierWorkers; i++ {
 		w.eg.Go(func() error {
 			for task := range w.tasks {
-				if err := task.hook.NotifyComplete(ctx, task.invocation); err != nil {
+				if err := notifyWithTimeout(ctx, task); err != nil {
 					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
 				}
 			}
