@@ -273,6 +273,11 @@ func (w *webhookNotifier) Start() {
 		// Listen for invocations that have been finalized by the stats recorder,
 		// and start a notify webhook task for each webhook.
 		for invocation := range w.statsRecorded {
+			// Don't call webhooks for disconnected invocations.
+			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+				continue
+			}
+
 			for _, hook := range w.env.GetWebhooks() {
 				w.tasks <- &notifyWebhookTask{
 					hook:       hook,
