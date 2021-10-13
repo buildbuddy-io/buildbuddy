@@ -64,7 +64,7 @@ build:untrusted-ci --disk_cache=
 build:workflows --config=remote
 build:workflows --build_metadata=ROLE=CI
 build:workflows --build_metadata=VISIBILITY=PUBLIC
-build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
+build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows/1
 build:workflows --color=yes
 build:workflows --disk_cache=
 
