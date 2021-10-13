@@ -276,7 +276,8 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 		return err
 	}
 	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
-		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err.Error())
+		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
+		_, _ = clientStream.CloseAndRecv()
 		return err
 	}
 	_, err = clientStream.CloseAndRecv()
