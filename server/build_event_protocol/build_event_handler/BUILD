@@ -24,6 +24,7 @@ go_library(
         "//server/remote_cache/hit_tracker",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/db",
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",

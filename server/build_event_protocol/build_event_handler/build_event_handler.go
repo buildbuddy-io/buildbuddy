@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -555,8 +556,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					// to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
 				}
-			} else if !status.IsNotFoundError(err) {
-				// NotFoundError means this invocation has never existed, which is not
+			} else if !db.IsRecordNotFound(err) {
+				// RecordNotFound means this invocation has never existed, which is not
 				// an error. All other errors are real errors.
 				return err
 			}
