@@ -23,7 +23,20 @@ func TestBufferSize(t *testing.T) {
 		{dataSize: 16, wantBufSize: 16},
 		{dataSize: 17, wantBufSize: 32},
 	} {
-		assert.EqualValues(t, testCase.dataSize, len(bp.Get(testCase.dataSize)))
+		assert.EqualValues(t, testCase.wantBufSize, len(bp.Get(testCase.dataSize)), "incorrect buffer len for length %d", testCase.dataSize)
 		assert.EqualValues(t, testCase.wantBufSize, cap(bp.Get(testCase.dataSize)), "incorrect buffer cap for data of length %d", testCase.dataSize)
+	}
+}
+
+func TestReuse(t *testing.T) {
+	bp := bytebufferpool.New(1024)
+
+	for i := 1; i < 20; i++ {
+		bp.Put(make([]byte, i))
+	}
+
+	for i := 1; i < 30; i++ {
+		buf := bp.Get(int64(i))
+		assert.GreaterOrEqual(t, len(buf), i, "buffer for length %d did not have sufficient length", i)
 	}
 }
