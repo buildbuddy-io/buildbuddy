@@ -247,6 +247,8 @@ func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
 	return t.hook.NotifyComplete(ctx, t.invocation)
 }
 
+// webhookNotifier listens for invocations to be finalized (including stats)
+// and notifies webhooks.
 type webhookNotifier struct {
 	env           environment.Env
 	statsRecorded <-chan *inpb.Invocation
@@ -294,6 +296,8 @@ func (w *webhookNotifier) Start() {
 }
 
 func (w *webhookNotifier) Stop() {
+	close(w.tasks)
+
 	if err := w.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
