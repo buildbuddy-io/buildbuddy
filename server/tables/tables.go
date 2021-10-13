@@ -178,6 +178,8 @@ type Group struct {
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
+
+	InvocationWebhookURL string `gorm:"not null;default:''"`
 }
 
 func (g *Group) TableName() string {

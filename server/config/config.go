@@ -140,11 +140,16 @@ type AzureConfig struct {
 }
 
 type integrationsConfig struct {
-	Slack SlackConfig `yaml:"slack"`
+	Slack SlackConfig      `yaml:"slack"`
+	GCS   GCSWebhookConfig `yaml:"gcs"`
 }
 
 type SlackConfig struct {
 	WebhookURL string `yaml:"webhook_url" usage:"A Slack webhook url to post build update messages to."`
+}
+
+type GCSWebhookConfig struct {
+	CredentialsJSON string `yaml:"credentials" usage:"Credentials JSON for the service account used to authenticate to GCS when GCS is used as a webhook target. ** Enterprise only **"`
 }
 
 type GCSCacheConfig struct {
