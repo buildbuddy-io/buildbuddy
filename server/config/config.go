@@ -652,6 +652,10 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 	return &c.gc.Integrations.Slack
 }
 
+func (c *Configurator) GetIntegrationsGCSConfig() *GCSWebhookConfig {
+	return &c.gc.Integrations.GCS
+}
+
 func (c *Configurator) GetBuildEventProxyHosts() []string {
 	return c.gc.BuildEventProxy.Hosts
 }
