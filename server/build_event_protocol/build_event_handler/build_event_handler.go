@@ -204,7 +204,7 @@ func (r *statsRecorder) Start() {
 				// for any other purpose).
 				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocation.GetInvocationId())
 
-				// Once cache stats are populated, notify the onRecorded channel in a
+				// Once cache stats are populated, notify the statsRecorded channel in a
 				// non-blocking fashion.
 				select {
 				case r.statsRecorded <- task.invocation:
