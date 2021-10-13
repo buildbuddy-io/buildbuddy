@@ -1,14 +1,18 @@
 package remote_execution_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -532,5 +536,93 @@ func TestWaitExecution(t *testing.T) {
 	for i, cmd := range cmds {
 		res := cmd.Wait()
 		assert.Equal(t, i, res.ExitCode, "exit code should be propagated for command %q", cmd.Name)
+	}
+}
+
+type fixedNodeTaskRouter struct {
+	mu          sync.Mutex
+	executorIDs map[string]struct{}
+}
+
+func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
+	idSet := make(map[string]struct{})
+	for _, id := range executorIDs {
+		idSet[id] = struct{}{}
+	}
+	return &fixedNodeTaskRouter{executorIDs: idSet}
+}
+
+func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []interfaces.ExecutionNode
+	for _, n := range nodes {
+		if _, ok := f.executorIDs[n.GetExecutorID()]; ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+}
+
+func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	idSet := make(map[string]struct{})
+	for _, id := range executorIDs {
+		idSet[id] = struct{}{}
+	}
+	f.executorIDs = idSet
+}
+
+func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	var busyExecutorIDs []string
+	for i := 1; i <= 3; i++ {
+		busyExecutorIDs = append(busyExecutorIDs, fmt.Sprintf("busyExecutor%d", i))
+	}
+
+	// Set up the task router to send all reservations to "busy" executors. These executors will queue up tasks but not
+	// try to execute any of them.
+	taskRouter := newFixedNodeTaskRouter(busyExecutorIDs)
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+		env.SetTaskRouter(taskRouter)
+	}})
+
+	var busyExecutors []*rbetest.Executor
+	for _, id := range busyExecutorIDs {
+		e := rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: id})
+		e.ShutdownTaskScheduler()
+		busyExecutors = append(busyExecutors, e)
+	}
+	// Add another executor that should execute all scheduled commands once the "busy" executors are shut down.
+	_ = rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Name: "newExecutor"})
+
+	// Now schedule some commands. The fake task router will ensure that the reservations only land on "busy"
+	// executors.
+	var cmds []*rbetest.Command
+	for i := 0; i < 10; i++ {
+		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
+		cmds = append(cmds, cmd)
+	}
+	for _, cmd := range cmds {
+		cmd.WaitAccepted()
+	}
+
+	// Update the task router to allow tasks to be routed to the non-busy executor.
+	taskRouter.UpdateSubset(append(busyExecutorIDs, "newExecutor"))
+
+	// Now shutdown the "busy" executors which should still have all the commands in their queues.
+	// During shutdown the tasks should get re-enqueued onto the non-busy executor.
+	for _, e := range busyExecutors {
+		rbe.RemoveExecutor(e)
+	}
+
+	for _, cmd := range cmds {
+		res := cmd.Wait()
+		assert.Equal(t, "newExecutor", res.Executor, "[%s] should have been executed on new executor", cmd.Name)
 	}
 }

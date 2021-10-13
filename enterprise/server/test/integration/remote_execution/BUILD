@@ -12,6 +12,8 @@ go_test(
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/testutil/testenv",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -8,6 +8,9 @@ import (
 // assigning multiple roles to users and use these as bitmasks to check
 // role membership.
 const (
+	// None means that the user is not granted any role-based permissions for
+	// a particular group.
+	None Role = 0
 	// Developer means a user cannot perform certain privileged actions such
 	// as creating API keys and viewing usage data, but can perform most other
 	// common actions such as viewing invocation history.

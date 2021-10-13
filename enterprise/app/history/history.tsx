@@ -512,7 +512,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
             </div>
           )}
         </div>
-        {this.props.hash === "#users" && <OrgJoinRequestsComponent user={this.props.user} />}
+        {this.props.hash === "#users" && this.props.user.canCall("getGroupUsers") && (
+          <OrgJoinRequestsComponent user={this.props.user} />
+        )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">
             {this.state.invocations?.map((invocation) => (

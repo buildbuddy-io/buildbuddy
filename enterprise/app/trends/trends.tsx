@@ -251,7 +251,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 extractMisses={(date) => +this.state.dateToStatMap.get(date)?.actionCacheMisses}
               />
               <CacheChartComponent
-                title="Content Adressable Store"
+                title="Content Addressable Store"
                 data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}

@@ -25,6 +25,7 @@ const (
 	slugParam              = "slug"
 	slugCookie             = "Slug"
 	cookieDuration         = 365 * 24 * time.Hour
+	sessionDuration        = 12 * time.Hour
 	contextSamlSessionKey  = "saml.session"
 	contextSamlEntityIDKey = "saml.entityID"
 	contextSamlSlugKey     = "saml.slug"
@@ -103,7 +104,9 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 		user.LastName = firstSet(attributes, samlLastNameAttributes)
 		user.Email = firstSet(attributes, samlEmailAttributes)
 		if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
-			user.Groups = []*tables.Group{{URLIdentifier: &slug}}
+			user.Groups = []*tables.GroupRole{
+				{Group: tables.Group{URLIdentifier: &slug}},
+			}
 		}
 		return nil
 	}
@@ -211,6 +214,14 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	samlSP.ServiceProvider.MetadataURL.RawQuery = query
 	samlSP.ServiceProvider.AcsURL.RawQuery = query
 	samlSP.ServiceProvider.SloURL.RawQuery = query
+	if cookieProvider, ok := samlSP.Session.(samlsp.CookieSessionProvider); ok {
+		cookieProvider.MaxAge = sessionDuration
+		if codec, ok := cookieProvider.Codec.(samlsp.JWTSessionCodec); ok {
+			codec.MaxAge = sessionDuration
+			cookieProvider.Codec = codec
+		}
+		samlSP.Session = cookieProvider
+	}
 	a.samlProviders[slug] = samlSP
 	return samlSP, nil
 }
@@ -228,10 +239,10 @@ func (a *SAMLAuthenticator) getSAMLMetadataUrlForSlug(ctx context.Context, slug 
 	if err != nil {
 		return nil, err
 	}
-	if group.SamlIdpMetadataUrl == "" {
+	if group.SamlIdpMetadataUrl == nil || *group.SamlIdpMetadataUrl == "" {
 		return nil, status.NotFoundErrorf("Group %s does not have SAML configured", slug)
 	}
-	metadataUrl, err := url.Parse(group.SamlIdpMetadataUrl)
+	metadataUrl, err := url.Parse(*group.SamlIdpMetadataUrl)
 	if err != nil {
 		return nil, err
 	}

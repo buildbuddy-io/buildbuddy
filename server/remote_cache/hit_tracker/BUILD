@@ -13,6 +13,7 @@ go_library(
         "//server/metrics",
         "//server/tables",
         "//server/util/bazel_request",
+        "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
     ],
 )

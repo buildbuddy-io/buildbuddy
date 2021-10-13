@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -40,10 +41,26 @@ type BasicAuthToken interface {
 	GetPassword() string
 }
 
+// GroupMembership represents a user's membership within a group as well as
+// their role within that group.
+type GroupMembership struct {
+	GroupID string    `json:"group_id"`
+	Role    role.Role `json:"role"`
+}
+
 type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
+	// GetAllowedGroups returns the IDs of the groups of which the user is a
+	// member.
+	// DEPRECATED: Use GetGroupMemberships instead.
 	GetAllowedGroups() []string
+	// GetGroupMemberships returns the user's group memberships.
+	GetGroupMemberships() []*GroupMembership
+	// IsAdmin returns whether this user is a global administrator, meaning
+	// they can access data across groups. This is not to be confused with the
+	// concept of group admin, which grants full access only within a single
+	// group.
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
@@ -453,8 +470,9 @@ type PubSub interface {
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used in critical path code.
 type MetricsCollector interface {
-	IncrementCount(ctx context.Context, counterName string, n int64) error
-	ReadCount(ctx context.Context, counterName string) (int64, error)
+	IncrementCount(ctx context.Context, key, field string, n int64) error
+	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
+	Delete(ctx context.Context, key string) error
 }
 
 // A KeyValStore allows for storing ephemeral values globally.

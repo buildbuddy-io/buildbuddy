@@ -57,6 +57,22 @@ func newTaskQueue() *taskQueue {
 	}
 }
 
+func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
+	var reservations []*scpb.EnqueueTaskReservationRequest
+
+	for e := t.pqs.Front(); e != nil; e = e.Next() {
+		pq, ok := e.Value.(*groupPriorityQueue)
+		if !ok {
+			log.Error("not a *groupPriorityQueue!??!")
+			continue
+		}
+
+		reservations = append(reservations, pq.GetAll()...)
+	}
+
+	return reservations
+}
+
 func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
 	var pq *groupPriorityQueue
@@ -135,13 +151,13 @@ type PriorityTaskScheduler struct {
 	env           environment.Env
 	log           log.Logger
 	shuttingDown  bool
-	q             *taskQueue
 	exec          *executor.Executor
 	newTaskSignal chan struct{}
 	rootContext   context.Context
 	rootCancel    context.CancelFunc
 
 	mu                    sync.Mutex
+	q                     *taskQueue
 	activeTaskCancelFuncs map[*context.CancelFunc]struct{}
 	ramBytesCapacity      int64
 	ramBytesUsed          int64
@@ -385,4 +401,10 @@ func (q *PriorityTaskScheduler) Start() error {
 
 func (q *PriorityTaskScheduler) Stop() error {
 	return nil
+}
+
+func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskReservationRequest {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.q.GetAll()
 }

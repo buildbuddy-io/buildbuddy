@@ -340,11 +340,13 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     return (
       <div className="api-keys">
-        <div>
-          <FilledButton className="create-new-button" onClick={this.onClickCreateNew.bind(this)}>
-            Create new API key
-          </FilledButton>
-        </div>
+        {this.props.user.canCall("createApiKey") && (
+          <div>
+            <FilledButton className="create-new-button" onClick={this.onClickCreateNew.bind(this)}>
+              Create new API key
+            </FilledButton>
+          </div>
+        )}
 
         {this.renderModal({
           title: "New API key",
@@ -382,12 +384,16 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <img src="/image/key.svg" />
                 <span>{key.value}</span>
               </div>
-              <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
-                Edit
-              </OutlinedButton>
-              <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
-                Delete
-              </OutlinedButton>
+              {this.props.user.canCall("updateApiKey") && (
+                <OutlinedButton className="api-key-edit-button" onClick={this.onClickUpdate.bind(this, key)}>
+                  Edit
+                </OutlinedButton>
+              )}
+              {this.props.user.canCall("deleteApiKey") && (
+                <OutlinedButton onClick={this.onClickDelete.bind(this, key)} className="destructive">
+                  Delete
+                </OutlinedButton>
+              )}
             </div>
           ))}
         </div>

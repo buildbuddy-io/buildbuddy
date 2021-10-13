@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/executor_handle"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +30,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 )
 
 const (
@@ -76,6 +77,8 @@ const (
 	// Timeout when making EnqueueTaskReservation RPC to a different scheduler.
 	schedulerEnqueueTaskReservationTimeout      = 3 * time.Second
 	schedulerEnqueueTaskReservationFailureSleep = 1 * time.Second
+	// Timeout when sending EnqueueTaskReservation request to a connected executor.
+	executorEnqueueTaskReservationTimeout = 100 * time.Millisecond
 
 	removeExecutorCleanupTimeout = 15 * time.Second
 
@@ -119,6 +122,211 @@ func init() {
 	prometheus.MustRegister(queueWaitTimeMs)
 }
 
+// enqueueTaskReservationRequest represents a request to be sent via the executor work stream and a channel for the
+// reply once one is received via the stream.
+type enqueueTaskReservationRequest struct {
+	proto    *scpb.EnqueueTaskReservationRequest
+	response chan<- *scpb.EnqueueTaskReservationResponse
+}
+
+type executorHandle struct {
+	env                  environment.Env
+	scheduler            *SchedulerServer
+	requireAuthorization bool
+	stream               scpb.Scheduler_RegisterAndStreamWorkServer
+	groupID              string
+
+	mu       sync.RWMutex
+	requests chan enqueueTaskReservationRequest
+	replies  map[string]chan<- *scpb.EnqueueTaskReservationResponse
+}
+
+func newExecutorHandle(env environment.Env, scheduler *SchedulerServer, requireAuthorization bool, stream scpb.Scheduler_RegisterAndStreamWorkServer) *executorHandle {
+	h := &executorHandle{
+		env:                  env,
+		scheduler:            scheduler,
+		requireAuthorization: requireAuthorization,
+		stream:               stream,
+		requests:             make(chan enqueueTaskReservationRequest, 10),
+		replies:              make(map[string]chan<- *scpb.EnqueueTaskReservationResponse),
+	}
+	h.startTaskReservationStreamer()
+	return h
+}
+
+func (h *executorHandle) GroupID() string {
+	return h.groupID
+}
+
+func (h *executorHandle) authorize(ctx context.Context) (string, error) {
+	if !h.requireAuthorization {
+		return "", nil
+	}
+
+	auth := h.env.GetAuthenticator()
+	if auth == nil {
+		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
+	}
+	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
+	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
+	// created.
+	user, err := auth.AuthenticateGRPCRequest(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !user.HasCapability(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) {
+		return "", status.PermissionDeniedError("API key is missing executor registration capability")
+	}
+	return user.GetGroupID(), nil
+}
+
+func (h *executorHandle) Serve(ctx context.Context) error {
+	groupID, err := h.authorize(ctx)
+	if err != nil {
+		return err
+	}
+	h.groupID = groupID
+
+	var registeredNode *scpb.ExecutionNode
+	removeConnectedExecutor := func() {
+		if registeredNode == nil {
+			return
+		}
+		h.scheduler.RemoveConnectedExecutor(ctx, h, registeredNode)
+		registeredNode = nil
+	}
+	defer removeConnectedExecutor()
+
+	requestChan := make(chan *scpb.RegisterAndStreamWorkRequest, 1)
+	errChan := make(chan error)
+	go func() {
+		for {
+			req, err := h.stream.Recv()
+			if err == io.EOF {
+				close(requestChan)
+				break
+			}
+			if err != nil {
+				errChan <- err
+				break
+			}
+			requestChan <- req
+		}
+	}()
+
+	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
+
+	executorID := "unknown"
+	for {
+		select {
+		case <-h.scheduler.shuttingDown:
+			return status.CanceledError("server is shutting down")
+		case err := <-errChan:
+			return err
+		case req, ok := <-requestChan:
+			if !ok {
+				return nil
+			}
+			if req.GetRegisterExecutorRequest() != nil {
+				registration := req.GetRegisterExecutorRequest().GetNode()
+				if err := h.scheduler.AddConnectedExecutor(ctx, h, registration); err != nil {
+					return err
+				}
+				registeredNode = registration
+				executorID = registration.GetExecutorId()
+			} else if req.GetEnqueueTaskReservationResponse() != nil {
+				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
+			} else if req.GetShuttingDownRequest() != nil {
+				log.Infof("Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
+				// Remove the executor first so that we don't try to send any work its way.
+				removeConnectedExecutor()
+				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+					if err := h.scheduler.reEnqueueTask(ctx, taskID, 1 /*=numReplicas*/); err != nil {
+						log.Warningf("Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+					}
+				}
+			} else {
+				log.Warningf("Invalid message from executor:\n%q", proto.MarshalTextString(req))
+				return status.InternalErrorf("message from executor did not contain any data")
+			}
+		case <-checkCredentialsTicker.C:
+			if _, err := h.authorize(ctx); err != nil {
+				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
+					return err
+				}
+				log.Warningf("could not revalidate executor registration: %h", err)
+			}
+		}
+	}
+}
+
+func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTaskReservationResponse) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ch := h.replies[response.GetTaskId()]
+	if ch == nil {
+		log.Warningf("Got task reservation response for unknown task %q", response.GetTaskId())
+		return
+	}
+
+	// Reply channel is buffered so it's okay to write while holding lock.
+	ch <- response
+	close(ch)
+	delete(h.replies, response.GetTaskId())
+}
+
+func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
+	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
+	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
+	if !ok {
+		log.Errorf("could not clone reservation request")
+		return nil, status.InternalError("could not clone reservation request")
+	}
+	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+
+	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
+	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
+	select {
+	case h.requests <- enqueueTaskReservationRequest{proto: req, response: rspCh}:
+	case <-ctx.Done():
+		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
+	case <-timeout.C:
+		log.Warningf("Could not enqueue task reservation %q on to work stream within timeout", req.GetTaskId())
+		return nil, status.DeadlineExceededErrorf("could not enqueue task reservation %q on to stream", req.GetTaskId())
+	}
+	if !timeout.Stop() {
+		<-timeout.C
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
+	case rsp := <-rspCh:
+		return rsp, nil
+	}
+}
+
+func (h *executorHandle) startTaskReservationStreamer() {
+	go func() {
+		for {
+			select {
+			case req := <-h.requests:
+				msg := scpb.RegisterAndStreamWorkResponse{EnqueueTaskReservationRequest: req.proto}
+				h.mu.Lock()
+				h.replies[req.proto.GetTaskId()] = req.response
+				h.mu.Unlock()
+				if err := h.stream.Send(&msg); err != nil {
+					log.Warningf("Error sending task reservation response: %s", err)
+					return
+				}
+			case <-h.stream.Context().Done():
+				return
+			}
+		}
+	}()
+}
+
 type executionNode struct {
 	executorID            string
 	assignableMemoryBytes int64
@@ -127,7 +335,7 @@ type executionNode struct {
 	// the "task streaming" API.
 	schedulerHostPort string
 	// Optional handle for locally connected executor that can be used to enqueue task reservations.
-	handle executor_handle.ExecutorHandle
+	handle *executorHandle
 }
 
 func (en *executionNode) GetSchedulerURI() string {
@@ -275,7 +483,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	return fitCount, nil
 }
 
-func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle *executorHandle) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for _, e := range np.connectedExecutors {
@@ -292,7 +500,7 @@ func (np *nodePool) AddConnectedExecutor(id string, mem int64, cpu int64, handle
 	return true
 }
 
-func (np *nodePool) RemoveConnectedExecutor(id string, handle executor_handle.ExecutorHandle) bool {
+func (np *nodePool) RemoveConnectedExecutor(id string) bool {
 	np.mu.Lock()
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
@@ -546,14 +754,14 @@ func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 	return nil
 }
 
-func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle executor_handle.ExecutorHandle, node *scpb.ExecutionNode) {
+func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) {
 	nodePoolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
 	if s.enableUserOwnedExecutors {
 		nodePoolKey.groupID = handle.GroupID()
 	}
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
-		if !pool.RemoveConnectedExecutor(node.GetExecutorId(), handle) {
+		if !pool.RemoveConnectedExecutor(node.GetExecutorId()) {
 			log.Warningf("Executor %q not in pool %+v", node.GetExecutorId(), nodePoolKey)
 		}
 	} else {
@@ -578,7 +786,7 @@ func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNo
 	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
 }
 
-func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle executor_handle.ExecutorHandle, node *scpb.ExecutionNode) error {
+func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) error {
 	poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
 	if s.enableUserOwnedExecutors {
 		poolKey.groupID = handle.GroupID()
@@ -614,7 +822,7 @@ func (s *SchedulerServer) redisKeyForExecutorPools(groupID string) string {
 	return key
 }
 
-func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle executor_handle.ExecutorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
+func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle *executorHandle, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
 	if err := s.checkPreconditions(node); err != nil {
 		return err
 	}
@@ -648,92 +856,12 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 	return err
 }
 
-func (s *SchedulerServer) processExecutorStream(ctx context.Context, handle executor_handle.ExecutorHandle) error {
-	var registeredNode *scpb.ExecutionNode
-	defer func() {
-		if registeredNode == nil {
-			return
-		}
-		s.RemoveConnectedExecutor(ctx, handle, registeredNode)
-	}()
-
-	registrationChan := make(chan *scpb.ExecutionNode, 1)
-	errChan := make(chan error)
-	go func() {
-		for {
-			registration, err := handle.RecvRegistration()
-			if err == io.EOF {
-				close(registrationChan)
-				break
-			}
-			if err != nil {
-				errChan <- err
-				break
-			}
-			registrationChan <- registration
-		}
-	}()
-
-	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
-
-	for {
-		select {
-		case <-s.shuttingDown:
-			return status.CanceledError("server is shutting down")
-		case err := <-errChan:
-			return err
-		case registration, ok := <-registrationChan:
-			if !ok {
-				return nil
-			}
-			if err := s.AddConnectedExecutor(ctx, handle, registration); err != nil {
-				return err
-			}
-			registeredNode = registration
-		case <-checkCredentialsTicker.C:
-			if _, err := s.authorizeExecutor(ctx); err != nil {
-				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
-					return err
-				}
-				log.Warningf("could not revalidate executor registration: %s", err)
-			}
-		}
-	}
-}
-
-func (s *SchedulerServer) authorizeExecutor(ctx context.Context) (string, error) {
-	if !s.requireExecutorAuthorization {
-		return "", nil
-	}
-
-	auth := s.env.GetAuthenticator()
-	if auth == nil {
-		return "", status.FailedPreconditionError("executor authorization required, but authenticator is not set")
-	}
-	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
-	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
-	// created.
-	user, err := auth.AuthenticateGRPCRequest(ctx)
-	if err != nil {
-		return "", err
-	}
-	if !user.HasCapability(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) {
-		return "", status.PermissionDeniedError("API key is missing executor registration capability")
-	}
-	return user.GetGroupID(), nil
-}
-
 func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error {
-	groupID, err := s.authorizeExecutor(stream.Context())
-	if err != nil {
-		return err
-	}
-
-	handle := executor_handle.NewRegistrationAndTasksExecutorHandle(stream, groupID)
-	return s.processExecutorStream(stream.Context(), handle)
+	handle := newExecutorHandle(s.env, s, s.requireExecutorAuthorization, stream)
+	return handle.Serve(stream.Context())
 }
 
-func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle executor_handle.ExecutorHandle, nodePoolKey nodePoolKey) error {
+func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) error {
 	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
 	if err != nil {
 		return err
@@ -1255,36 +1383,43 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
-	if req.GetTaskId() == "" {
-		return nil, status.FailedPreconditionError("A task_id is required")
+func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numReplicas int) error {
+	if taskID == "" {
+		return status.FailedPreconditionError("A task_id is required")
 	}
-	task, err := s.readTask(ctx, req.GetTaskId())
+	task, err := s.readTask(ctx, taskID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if task.attemptCount >= maxTaskAttemptCount {
-		if err := s.deleteClaimedTask(ctx, req.GetTaskId()); err != nil {
-			return nil, err
+		if err := s.deleteClaimedTask(ctx, taskID); err != nil {
+			return err
 		}
-		return nil, status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
+		return status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
 	}
-	_ = s.unclaimTask(ctx, req.GetTaskId()) // ignore error -- it's fine if it's already unclaimed.
-	log.Debugf("ReEnqueueTask RPC for task %q", req.GetTaskId())
+	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
+	log.Debugf("ReEnqueueTask RPC for task %q", taskID)
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
-		TaskId:             req.GetTaskId(),
+		TaskId:             taskID,
 		TaskSize:           task.metadata.GetTaskSize(),
 		SchedulingMetadata: task.metadata,
 	}
 	opts := enqueueTaskReservationOpts{
-		numReplicas:           probesPerTask,
+		numReplicas:           numReplicas,
 		alwaysScheduleLocally: false,
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
-		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err.Error())
+		return err
+	}
+	log.Debugf("ReEnqueueTask succeeded for task %q", taskID)
+	return nil
+}
+
+func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask); err != nil {
+		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err
 	}
-	log.Debugf("ReEnqueueTask RPC succeeded for task %q", req.GetTaskId())
 	return &scpb.ReEnqueueTaskResponse{}, nil
 }
 

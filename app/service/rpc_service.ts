@@ -15,6 +15,12 @@ export { CancelablePromise } from "../util/async";
  */
 type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
 
+/**
+ * BuildBuddyServiceRpcName is a union type consisting of all BuildBuddyService
+ * RPC names (in `camelCase`).
+ */
+export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBuddyService>;
+
 class RpcService {
   service: ExtendedBuildBuddyService;
   events: Subject<string>;
@@ -119,6 +125,8 @@ type Rpc<Request, Response> = (request: Request) => Promise<Response>;
 
 type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
 
+type RpcMethodNames<Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
+
 /**
  * Utility type that adapts a `PromiseBasedService` so that `CancelablePromise` is
  * returned from all methods, instead of `Promise`.
@@ -127,10 +135,7 @@ type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.
   {
     // Loop over all methods in the service, except for the ones inherited from the base
     // service (we don't want to modify those at all).
-    [MethodName in keyof Omit<Service, keyof protobufjs.rpc.Service>]: Service[MethodName] extends Rpc<
-      infer Request,
-      infer Response
-    >
+    [MethodName in RpcMethodNames<Service>]: Service[MethodName] extends Rpc<infer Request, infer Response>
       ? CancelableRpc<Request, Response>
       : never;
   };
