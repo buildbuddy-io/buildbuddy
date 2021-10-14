@@ -70,6 +70,8 @@ const (
 	maxUnclaimedTasksTracked = 10_000
 	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
 	unclaimedTaskSetTTL = 1 * time.Hour
+	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
+	unclaimedTaskMaxAge = 2 * time.Hour
 
 	unusedSchedulerClientExpiration    = 5 * time.Minute
 	unusedSchedulerClientCheckInterval = 1 * time.Minute
@@ -551,8 +553,17 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	if n > maxUnclaimedTasksTracked {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		return np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err()
+		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
+			log.Warningf("Error trimming unclaimed tasks: %s", err)
+		}
 	}
+
+	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
+	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
+	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
+		log.Warningf("Error deleting old unclaimed tasks: %s", err)
+	}
+
 	return nil
 }
 
@@ -1228,9 +1239,11 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		return err
 	}
 
-	err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
-	if err != nil {
-		log.Warningf("Could not add task to unclaimed task list: %s", err)
+	if !opts.alwaysScheduleLocally {
+		err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
+		if err != nil {
+			log.Warningf("Could not add task to unclaimed task list: %s", err)
+		}
 	}
 
 	probeCount := minInt(opts.numReplicas, nodeCount)
