@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -29,9 +28,8 @@ const (
 )
 
 type ByteStreamServer struct {
-	env        environment.Env
-	cache      interfaces.Cache
-	bufferPool *bytebufferpool.Pool
+	env   environment.Env
+	cache interfaces.Cache
 }
 
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
@@ -40,9 +38,8 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
 	return &ByteStreamServer{
-		env:        env,
-		cache:      cache,
-		bufferPool: bytebufferpool.New(readBufSizeBytes),
+		env:   env,
+		cache: cache,
 	}, nil
 }
 
@@ -119,9 +116,8 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
-	copyBuf := s.bufferPool.Get(bufSize)
+	copyBuf := make([]byte, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
-	s.bufferPool.Put(copyBuf)
 	if err == nil {
 		downloadTracker.Close()
 	}
