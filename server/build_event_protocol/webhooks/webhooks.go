@@ -37,15 +37,15 @@ func NewProtoUploadHook(env environment.Env) interfaces.Webhook {
 }
 
 func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocation) error {
+	groupID := in.GetAcl().GetGroupId()
+	if groupID == "" {
+		return nil
+	}
 	db := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
-	err := db.Raw(`
-		SELECT g.invocation_webhook_url
-		FROM Groups AS g, Invocations AS i
-		WHERE g.group_id = i.group_id
-		AND i.invocation_id = ?
-		LIMIT 1;
-		`, in.GetInvocationId(),
+	err := db.Raw(
+		`SELECT invocation_webhook_url FROM Groups WHERE group_id = ?`,
+		groupID,
 	).Take(row).Error
 	if err != nil {
 		return err
@@ -85,6 +85,7 @@ func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocatio
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		return err

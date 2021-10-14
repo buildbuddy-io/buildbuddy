@@ -354,6 +354,15 @@ type EventChannel struct {
 	onClose                 func()
 }
 
+func (e *EventChannel) fillInvocationFromContext(invocation *inpb.Invocation) {
+	groupID, err := perms.AuthenticatedGroupID(e.ctx, e.env)
+	if err == nil {
+		// Set the group owner ID but not perms; perms are computed only when the
+		// invocation is actually written to the DB.
+		invocation.Acl = perms.ToACLProto(&uidpb.UserId{}, groupID, 0)
+	}
+}
+
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), iid)
 	parser := event_parser.NewStreamingEventParser()
@@ -401,6 +410,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
 
+	e.fillInvocationFromContext(invocation)
 	err := e.fillInvocationFromEvents(ctx, iid, invocation)
 	if err != nil {
 		return err
@@ -477,6 +487,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationId:     iid,
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
+	e.fillInvocationFromContext(invocation)
 	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
 	if err != nil {
 		return err
