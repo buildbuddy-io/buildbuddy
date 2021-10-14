@@ -229,11 +229,11 @@ func (r *statsRecorder) Stop() {
 	r.stopped = true
 	close(r.tasks)
 
-	close(r.statsRecorded)
-
 	if err := r.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
+
+	close(r.statsRecorded)
 }
 
 type notifyWebhookTask struct {
