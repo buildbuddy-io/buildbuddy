@@ -35,4 +35,15 @@ export const Popup = React.forwardRef(
   }
 );
 
+type PopupContainerProps = JSX.IntrinsicElements["div"];
+
+/**
+ * PopupContainer
+ */
+export const PopupContainer = React.forwardRef(
+  ({ className, ...props }: PopupContainerProps, ref: React.Ref<HTMLDivElement>) => {
+    return <div className={`popup-container ${className || ""}`} {...props} />;
+  }
+);
+
 export default Popup;
