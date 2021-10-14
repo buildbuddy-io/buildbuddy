@@ -224,10 +224,9 @@ func (r *statsRecorder) Stop() {
 	r.openChannels.Wait()
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	r.stopped = true
 	close(r.tasks)
+	r.mu.Unlock()
 
 	if err := r.eg.Wait(); err != nil {
 		log.Error(err.Error())
