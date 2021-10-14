@@ -82,10 +82,11 @@ func (te *TestEnv) LocalGRPCServer() (*grpc.Server, func()) {
 	return te.GRPCServer(te.lis)
 }
 
-func (te *TestEnv) LocalGRPCConn(ctx context.Context) (*grpc.ClientConn, error) {
+func (te *TestEnv) LocalGRPCConn(ctx context.Context, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	dialOptions := grpc_client.CommonGRPCClientOptions()
 	dialOptions = append(dialOptions, grpc.WithContextDialer(te.bufDialer))
 	dialOptions = append(dialOptions, grpc.WithInsecure())
+	dialOptions = append(dialOptions, opts...)
 	return grpc.DialContext(ctx, "bufnet", dialOptions...)
 }
 

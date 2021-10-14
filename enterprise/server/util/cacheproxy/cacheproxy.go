@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -36,6 +37,7 @@ type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
+	bufferPool            *bytebufferpool.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*dcClient
@@ -49,6 +51,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		env:        env,
 		cache:      c,
 		log:        log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
+		bufferPool: bytebufferpool.New(readBufSizeBytes),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -255,8 +258,9 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
-	copyBuf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
+	copyBuf := c.bufferPool.Get(bufSize)
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	c.bufferPool.Put(copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", IsolationToString(req.GetIsolation())+d.GetHash(), up)
 	return err
 }
