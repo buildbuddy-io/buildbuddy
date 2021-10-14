@@ -4,8 +4,10 @@ import (
 	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -99,22 +101,13 @@ func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Han
 			return
 		}
 
-		uRole := role.None
-		for _, m := range u.GetGroupMemberships() {
-			if m.GroupID == reqCtx.GetGroupId() {
-				uRole = m.Role
-				break
-			}
-		}
-		if uRole == role.None {
-			// User was probably removed from their org during their current UI
-			// session.
-			http.Error(w, `You do not have access to the requested organization.`, http.StatusForbidden)
-			return
+		allowedRoles := role.Admin | role.Developer
+		if stringSliceContains(GroupAdminOnlyRPCs, rpcName) {
+			allowedRoles = role.Admin
 		}
 
-		if stringSliceContains(GroupAdminOnlyRPCs, rpcName) && (uRole&role.Admin != role.Admin) {
-			http.Error(w, `This action can only be performed by administrators of the organization.`, http.StatusForbidden)
+		if err := authutil.AuthorizeGroupRole(u, reqCtx.GetGroupId(), allowedRoles); err != nil {
+			http.Error(w, status.Message(err), http.StatusForbidden)
 			return
 		}
 
