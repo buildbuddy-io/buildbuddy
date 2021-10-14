@@ -155,7 +155,12 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 
-	query := d.h.Raw(`SELECT api_key_id, value, label, perms, capabilities FROM APIKeys WHERE group_id = ?`, groupID)
+	query := d.h.Raw(`
+		SELECT api_key_id, value, label, perms, capabilities
+		FROM APIKeys
+		WHERE group_id = ?
+		ORDER BY label ASC
+	`, groupID)
 	rows, err := query.Rows()
 	if err != nil {
 		return nil, err
@@ -407,6 +412,8 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	}
 	orQuery, orArgs := o.Build()
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+
+	q.SetOrderBy(`u.email`, true /*=ascending*/)
 
 	qString, qArgs := q.Build()
 	rows, err := d.h.Raw(qString, qArgs...).Rows()
