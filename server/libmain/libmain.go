@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -44,7 +45,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -58,7 +58,6 @@ import (
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
@@ -165,14 +164,15 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 
-	webhooks := make([]interfaces.Webhook, 0)
+	hooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
 		if sc.WebhookURL != "" {
-			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
+			hooks = append(hooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
 		}
 	}
-	realEnv.SetWebhooks(webhooks)
+	hooks = append(hooks, webhooks.NewPutWebhook(realEnv))
+	realEnv.SetWebhooks(hooks)
 
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	for _, target := range configurator.GetBuildEventProxyHosts() {

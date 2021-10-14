@@ -25,6 +25,7 @@ go_library(
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/build_event_proxy",
         "//server/build_event_protocol/build_event_server",
+        "//server/build_event_protocol/webhooks",
         "//server/buildbuddy_server",
         "//server/config",
         "//server/environment",
@@ -52,7 +53,6 @@ go_library(
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//reflection",
     ],
 )
