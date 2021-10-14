@@ -548,8 +548,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
 			if err == nil {
 				// We are retrying a previous invocation.
-				if inv.Success {
-					// The invocation was a success; it is not valid to retry.
+				if inv.InvocationStatus != int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) && inv.InvocationStatus != int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+					// The invocation is neither disconnected nor in-progress, it is not
+					// valid to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
 				} else if timeutil.FromUsec(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
 					// The invocation was last updated over 4 hours ago; it is not valid
