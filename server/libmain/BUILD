@@ -53,6 +53,7 @@ go_library(
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//encoding/gzip",
         "@org_golang_google_grpc//reflection",
     ],
 )
