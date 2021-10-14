@@ -88,6 +88,7 @@ var (
 	actionName      = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID    = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	bazelClean      = flag.Bool("bazel_clean", false, "If set, run `bazel clean --expunge` before running any other bazel commands.")
 
 	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
@@ -163,6 +164,11 @@ func main() {
 	}
 	if err := ws.setup(ctx); err != nil {
 		fatal(status.WrapError(err, "failed to set up git repo"))
+	}
+	if *bazelClean {
+		if err := ws.runBazelClean(ctx); err != nil {
+			fatal(err)
+		}
 	}
 	cfg, err := readConfig()
 	if err != nil {
@@ -676,6 +682,15 @@ func (ws *workspace) setup(ctx context.Context) error {
 		return err
 	}
 	return ws.sync(ctx)
+}
+
+func (ws *workspace) runBazelClean(ctx context.Context) error {
+	cmd, args := *bazelCommand, []string{"clean", "--expunge"}
+	printCommandLine(ws.log, cmd, args...)
+	if err := runCommand(ctx, cmd, args, map[string]string{} /*=env*/, ws.log); err != nil {
+		return status.WrapError(err, "bazel clean failed")
+	}
+	return nil
 }
 
 func (ws *workspace) sync(ctx context.Context) error {

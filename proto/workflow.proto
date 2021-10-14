@@ -149,6 +149,10 @@ message ExecuteWorkflowRequest {
   // For push events this should be set equal to the pushed branch.
   // Ex. "main"
   string target_branch = 9;
+
+  // Whether to run `bazel clean --expunge` before running any other Bazel
+  // commands in the workflow.
+  bool bazel_clean = 10;
 }
 
 message ExecuteWorkflowResponse {

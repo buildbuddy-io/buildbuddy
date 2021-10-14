@@ -372,6 +372,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	extraCIRunnerArgs := []string{
 		fmt.Sprintf("--action_name=%s", req.GetActionName()),
 		fmt.Sprintf("--invocation_id=%s", invocationID),
+		fmt.Sprintf("--bazel_clean=%v", req.GetBazelClean()),
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
