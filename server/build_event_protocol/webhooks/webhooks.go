@@ -26,17 +26,17 @@ const (
 	gcsReadWriteScope = "https://www.googleapis.com/auth/devstorage.read_write"
 )
 
-type putWebhook struct {
+type protoUploadHook struct {
 	env environment.Env
 }
 
-// NewPutWebhook returns a webhook that sends the invocation proto contents to
-// the webhook target using an HTTP PUT request.
-func NewPutWebhook(env environment.Env) interfaces.Webhook {
-	return &putWebhook{env}
+// NewProtoUploadHook returns a webhook that uploads the invocation proto
+// contents to the webhook target using an HTTP PUT request.
+func NewProtoUploadHook(env environment.Env) interfaces.Webhook {
+	return &protoUploadHook{env}
 }
 
-func (h *putWebhook) NotifyComplete(ctx context.Context, in *inpb.Invocation) error {
+func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocation) error {
 	db := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
 	err := db.Raw(`
@@ -108,7 +108,7 @@ func (h *putWebhook) NotifyComplete(ctx context.Context, in *inpb.Invocation) er
 // this returns a token source that generates tokens for the configured service
 // account. Otherwise, it returns nil, which is properly handled by the oauth
 // client.
-func (h *putWebhook) getTokenSource(ctx context.Context, u *url.URL) (oauth2.TokenSource, error) {
+func (h *protoUploadHook) getTokenSource(ctx context.Context, u *url.URL) (oauth2.TokenSource, error) {
 	if !strings.HasSuffix(u.Host, "."+gcsDomain) {
 		return nil, nil
 	}
