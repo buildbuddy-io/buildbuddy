@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
@@ -56,10 +57,10 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func instanceName(wd *interfaces.WebhookData) string {
+func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData) string {
 	// Note, we use a unique remote instance per repo URL, so that the cache as
 	// well as runners aren't shared across repos.
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL)))
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+wf.InstanceNameSuffix)))
 }
 
 type workflowService struct {
@@ -336,7 +337,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// Lookup workflow
 	wf := &tables.Workflow{}
 	err = ws.env.GetDBHandle().Raw(
-		`SELECT workflow_id, group_id, repo_url, access_token, perms FROM Workflows WHERE workflow_id = ?`,
+		`SELECT * FROM Workflows WHERE workflow_id = ?`,
 		req.GetWorkflowId(),
 	).Take(wf).Error
 	if err != nil {
@@ -350,6 +351,25 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wfACL := perms.ToACLProto(&uidpb.UserId{Id: wf.GroupID}, wf.GroupID, wf.Perms)
 	if err := perms.AuthorizeRead(&user, wfACL); err != nil {
 		return nil, err
+	}
+
+	// If running clean, update the instance name suffix.
+	if req.GetClean() {
+		if err := perms.AuthorizeWrite(&user, wfACL); err != nil {
+			return nil, err
+		}
+		suffix, err := random.RandomString(10)
+		if err != nil {
+			return nil, err
+		}
+		wf.InstanceNameSuffix = suffix
+		err = ws.env.GetDBHandle().Exec(
+			`UPDATE Workflows WHERE workflow_id = ? SET instance_name_suffix = ?`,
+			wf.WorkflowID, wf.InstanceNameSuffix,
+		).Error
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Execute
@@ -372,7 +392,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	extraCIRunnerArgs := []string{
 		fmt.Sprintf("--action_name=%s", req.GetActionName()),
 		fmt.Sprintf("--invocation_id=%s", invocationID),
-		fmt.Sprintf("--bazel_clean=%v", req.GetBazelClean()),
 	}
 
 	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
@@ -702,7 +721,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workf
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
 		return "", err
 	}
-	in := instanceName(wd)
+	in := instanceName(wf, wd)
 	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, extraCIRunnerArgs)
 	if err != nil {
 		return "", err

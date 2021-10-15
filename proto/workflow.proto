@@ -150,9 +150,10 @@ message ExecuteWorkflowRequest {
   // Ex. "main"
   string target_branch = 9;
 
-  // Whether to run `bazel clean --expunge` before running any other Bazel
-  // commands in the workflow.
-  bool bazel_clean = 10;
+  // Whether to run the workflow in a clean container. This prevents all
+  // existing workflow containers from being reused, so using this flag is not
+  // encouraged.
+  bool clean = 10;
 }
 
 message ExecuteWorkflowResponse {

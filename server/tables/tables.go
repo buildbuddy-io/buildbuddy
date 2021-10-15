@@ -427,7 +427,8 @@ type Workflow struct {
 	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
-	Perms int `gorm:"index:workflow_perms"`
+	Perms              int    `gorm:"index:workflow_perms"`
+	InstanceNameSuffix string `gorm:"not null;default:''"`
 	// GitProviderWebhookID is the ID returned from the Git provider API when
 	// registering the webhook. This will only be set for the case where we
 	// successfully auto-registered the webhook.
