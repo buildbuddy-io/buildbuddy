@@ -53,6 +53,12 @@ const (
 
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
+
+	// How many workers to spin up for notifying webhooks.
+	numWebhookNotifierWorkers = 16
+
+	// How long to wait before giving up on webhook requests.
+	webhookNotifyTimeout = 1 * time.Minute
 )
 
 var (
@@ -67,11 +73,15 @@ type BuildEventHandler struct {
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	openChannels := &sync.WaitGroup{}
-	statsRecorder := newStatsRecorder(env, openChannels)
+	statsRecorded := make(chan *inpb.Invocation, 4096)
+	statsRecorder := newStatsRecorder(env, openChannels, statsRecorded)
+	webhookNotifier := newWebhookNotifier(env, statsRecorded)
 
 	statsRecorder.Start()
+	webhookNotifier.Start()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		statsRecorder.Stop()
+		webhookNotifier.Stop()
 		return nil
 	})
 
@@ -118,7 +128,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 // invocation. These tasks are enqueued to statsRecorder and executed in the
 // background.
 type recordStatsTask struct {
-	invocationID string
+	invocation *inpb.Invocation
 
 	// createdAt is the time at which this task was created.
 	createdAt time.Time
@@ -129,22 +139,26 @@ type recordStatsTask struct {
 type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
-	eg           errgroup.Group
+	// statsRecorded is a channel that should be notified after the statsRecorder
+	// collects stats and flushes them to the DB.
+	statsRecorded chan<- *inpb.Invocation
+	eg            errgroup.Group
 
 	mu      sync.Mutex // protects(tasks, stopped)
 	tasks   chan *recordStatsTask
 	stopped bool
 }
 
-func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup) *statsRecorder {
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRecorded chan<- *inpb.Invocation) *statsRecorder {
 	return &statsRecorder{
-		env:          env,
-		openChannels: openChannels,
-		tasks:        make(chan *recordStatsTask, 4096),
+		env:           env,
+		openChannels:  openChannels,
+		statsRecorded: statsRecorded,
+		tasks:         make(chan *recordStatsTask, 4096),
 	}
 }
 
-func (r *statsRecorder) MarkFinalized(invocationID string) {
+func (r *statsRecorder) MarkFinalized(invocation *inpb.Invocation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -152,12 +166,12 @@ func (r *statsRecorder) MarkFinalized(invocationID string) {
 		alert.UnexpectedEvent(
 			"stats_recorder_finalize_after_shutdown",
 			"Invocation %q was marked finalized after the stats recorder was shut down.",
-			invocationID)
+			invocation.GetInvocationId())
 		return
 	}
 	req := &recordStatsTask{
-		invocationID: invocationID,
-		createdAt:    time.Now(),
+		invocation: invocation,
+		createdAt:  time.Now(),
 	}
 	select {
 	case r.tasks <- req:
@@ -177,9 +191,10 @@ func (r *statsRecorder) Start() {
 				// finalized, rather than relative to now. Otherwise each worker would be
 				// unnecessarily throttled.
 				time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
-				ti := &tables.Invocation{InvocationID: task.invocationID}
-				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationID); stats != nil {
+				ti := &tables.Invocation{InvocationID: task.invocation.GetInvocationId()}
+				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocation.GetInvocationId()); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
+					task.invocation.CacheStats = stats
 				}
 				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
@@ -187,7 +202,16 @@ func (r *statsRecorder) Start() {
 				// Cleanup regardless of whether the stats are flushed successfully to
 				// the DB (since we won't retry the flush and we don't need these stats
 				// for any other purpose).
-				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationID)
+				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocation.GetInvocationId())
+
+				// Once cache stats are populated, notify the statsRecorded channel in a
+				// non-blocking fashion.
+				select {
+				case r.statsRecorded <- task.invocation:
+					break
+				default:
+					log.Warningf("Failed to notify stats recorder listeners: channel buffer is full")
+				}
 			}
 			return nil
 		})
@@ -200,12 +224,85 @@ func (r *statsRecorder) Stop() {
 	r.openChannels.Wait()
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	r.stopped = true
 	close(r.tasks)
+	r.mu.Unlock()
 
 	if err := r.eg.Wait(); err != nil {
+		log.Error(err.Error())
+	}
+
+	close(r.statsRecorded)
+}
+
+type notifyWebhookTask struct {
+	hook       interfaces.Webhook
+	invocation *inpb.Invocation
+}
+
+func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
+	ctx, cancel := context.WithTimeout(ctx, webhookNotifyTimeout)
+	defer cancel()
+	return t.hook.NotifyComplete(ctx, t.invocation)
+}
+
+// webhookNotifier listens for invocations to be finalized (including stats)
+// and notifies webhooks.
+type webhookNotifier struct {
+	env           environment.Env
+	statsRecorded <-chan *inpb.Invocation
+
+	tasks chan *notifyWebhookTask
+	eg    errgroup.Group
+}
+
+func newWebhookNotifier(env environment.Env, statsRecorded <-chan *inpb.Invocation) *webhookNotifier {
+	return &webhookNotifier{
+		env:           env,
+		statsRecorded: statsRecorded,
+		tasks:         make(chan *notifyWebhookTask, 4096),
+	}
+}
+
+func (w *webhookNotifier) Start() {
+	w.eg = errgroup.Group{}
+	ctx := context.Background()
+
+	w.eg.Go(func() error {
+		// Listen for invocations that have been finalized by the stats recorder,
+		// and start a notify webhook task for each webhook.
+		for invocation := range w.statsRecorded {
+			// Don't call webhooks for disconnected invocations.
+			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+				continue
+			}
+
+			for _, hook := range w.env.GetWebhooks() {
+				w.tasks <- &notifyWebhookTask{
+					hook:       hook,
+					invocation: invocation,
+				}
+			}
+		}
+		return nil
+	})
+
+	for i := 0; i < numWebhookNotifierWorkers; i++ {
+		w.eg.Go(func() error {
+			for task := range w.tasks {
+				if err := notifyWithTimeout(ctx, task); err != nil {
+					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
+				}
+			}
+			return nil
+		})
+	}
+}
+
+func (w *webhookNotifier) Stop() {
+	close(w.tasks)
+
+	if err := w.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
 }
@@ -321,7 +418,7 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 		return err
 	}
 
-	e.statsRecorder.MarkFinalized(iid)
+	e.statsRecorder.MarkFinalized(invocation)
 
 	return nil
 }
@@ -397,19 +494,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	e.statsRecorder.MarkFinalized(iid)
-
-	// Notify our webhooks, if we have any.
-	for _, hook := range e.env.GetWebhooks() {
-		hook := hook // copy loopvar to local var for closure capture
-		go func() {
-			// We use context background here because the request context will
-			// be closed soon and we don't want to block while calling webhooks.
-			if err := hook.NotifyComplete(context.Background(), invocation); err != nil {
-				log.Warningf("Error calling webhook: %s", err)
-			}
-		}()
-	}
+	e.statsRecorder.MarkFinalized(invocation)
 	if searcher := e.env.GetInvocationSearchService(); searcher != nil {
 		go func() {
 			if err := searcher.IndexInvocation(context.Background(), invocation); err != nil {

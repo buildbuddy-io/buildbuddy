@@ -70,6 +70,8 @@ const (
 	maxUnclaimedTasksTracked = 10_000
 	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
 	unclaimedTaskSetTTL = 1 * time.Hour
+	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
+	unclaimedTaskMaxAge = 2 * time.Hour
 
 	unusedSchedulerClientExpiration    = 5 * time.Minute
 	unusedSchedulerClientCheckInterval = 1 * time.Minute
@@ -551,8 +553,17 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	if n > maxUnclaimedTasksTracked {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		return np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err()
+		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
+			log.Warningf("Error trimming unclaimed tasks: %s", err)
+		}
 	}
+
+	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
+	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
+	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
+		log.Warningf("Error deleting old unclaimed tasks: %s", err)
+	}
+
 	return nil
 }
 
@@ -1207,9 +1218,12 @@ func minInt(i, j int) int {
 }
 
 type enqueueTaskReservationOpts struct {
-	numReplicas           int
-	maxAttempts           int
-	alwaysScheduleLocally bool
+	numReplicas int
+	maxAttempts int
+	// This option determines whether tasks should be scheduled only on executors connected to this scheduler.
+	// If false, this scheduler will make RPCs to other schedulers to have them enqueue tasks on their connected
+	// executors.
+	scheduleOnConnectedExecutors bool
 }
 
 func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, serializedTask []byte, opts enqueueTaskReservationOpts) error {
@@ -1228,9 +1242,13 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		return err
 	}
 
-	err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
-	if err != nil {
-		log.Warningf("Could not add task to unclaimed task list: %s", err)
+	// We only want to add the unclaimed task once on the "master" scheduler.
+	// scheduleOnConnectedExecutors implies that we are enqueuing task reservations on behalf of another scheduler.
+	if !opts.scheduleOnConnectedExecutors {
+		err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
+		if err != nil {
+			log.Warningf("Could not add task to unclaimed task list: %s", err)
+		}
 	}
 
 	probeCount := minInt(opts.numReplicas, nodeCount)
@@ -1277,7 +1295,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				preferredNode = nil
 			} else {
 				nodes = nodeBalancer.nodes
-				if opts.alwaysScheduleLocally {
+				if opts.scheduleOnConnectedExecutors {
 					nodes = nodeBalancer.connectedExecutors
 				}
 				if len(nodes) == 0 {
@@ -1300,7 +1318,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		enqueueRequest.ExecutorId = node.GetExecutorID()
 
 		enqueueStart := time.Now()
-		if opts.alwaysScheduleLocally {
+		if opts.scheduleOnConnectedExecutors {
 			if node.handle == nil {
 				log.Errorf("nil handle for a local executor %q", node.GetExecutorID())
 				continue
@@ -1360,8 +1378,8 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	}
 
 	opts := enqueueTaskReservationOpts{
-		numReplicas:           probesPerTask,
-		alwaysScheduleLocally: false,
+		numReplicas:                  probesPerTask,
+		scheduleOnConnectedExecutors: false,
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, req.GetSerializedTask(), opts); err != nil {
 		return nil, err
@@ -1373,9 +1391,9 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	// TODO(vadim): verify user is authorized to use executor pool
 
 	opts := enqueueTaskReservationOpts{
-		numReplicas:           1,
-		maxAttempts:           10,
-		alwaysScheduleLocally: true,
+		numReplicas:                  1,
+		maxAttempts:                  10,
+		scheduleOnConnectedExecutors: true,
 	}
 	if err := s.enqueueTaskReservations(ctx, req, nil /*=serializedTask*/, opts); err != nil {
 		return nil, err
@@ -1405,8 +1423,8 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		SchedulingMetadata: task.metadata,
 	}
 	opts := enqueueTaskReservationOpts{
-		numReplicas:           numReplicas,
-		alwaysScheduleLocally: false,
+		numReplicas:                  numReplicas,
+		scheduleOnConnectedExecutors: false,
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
 		return err
