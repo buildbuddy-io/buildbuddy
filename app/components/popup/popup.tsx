@@ -35,7 +35,7 @@ export const Popup = React.forwardRef(
   }
 );
 
-type PopupContainerProps = JSX.IntrinsicElements["div"];
+export type PopupContainerProps = JSX.IntrinsicElements["div"];
 
 /**
  * PopupContainer wraps an element that triggers a popup, as well the popup
