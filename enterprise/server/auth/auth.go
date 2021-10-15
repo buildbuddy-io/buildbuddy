@@ -491,7 +491,7 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 				g.use_group_owned_executors,
 				g.saml_idp_metadata_url,
 				ug.role
-			FROM Groups AS g, UserGroups AS ug
+			FROM `+"`Groups`"+` AS g, UserGroups AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
 			AND ug.user_user_id = ?

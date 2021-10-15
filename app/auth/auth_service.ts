@@ -47,7 +47,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        if (BuildBuddyError.parse(error).code == "Unauthenticated") {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
           this.createUser();
         } else {
           this.onUserRpcError(error);

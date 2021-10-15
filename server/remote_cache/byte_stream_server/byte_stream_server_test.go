@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc"
 
@@ -32,7 +34,8 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 
 	go runFunc()
 
-	clientConn, err := env.LocalGRPCConn(ctx)
+	// TODO(vadim): can we remove the MsgSize override from the default options?
+	clientConn, err := env.LocalGRPCConn(ctx, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -204,4 +207,28 @@ func TestRPCTooLongWrite(t *testing.T) {
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
+}
+
+// Tests Read/Write of a blob that exceeds the default gRPC message size.
+func TestRPCReadWriteLargeBlob(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	blob, err := random.RandomString(10_000_000)
+	require.NoError(t, err)
+	d, err := digest.Compute(strings.NewReader(blob))
+	require.NoError(t, err)
+	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+
+	// Write
+	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))
+	require.NoError(t, err)
+
+	// Read
+	var buf bytes.Buffer
+	err = readBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
+	require.NoError(t, err)
+	require.Equal(t, blob, string(buf.Bytes()))
 }
