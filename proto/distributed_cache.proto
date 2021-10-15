@@ -55,7 +55,6 @@ message ContainsMultiResponse {
     Key key = 1;
     bool exists = 2;
   }
-  // Populated only if only_return_missing is not set in the request.
   repeated KeysFound keys_found = 1;
 }
 

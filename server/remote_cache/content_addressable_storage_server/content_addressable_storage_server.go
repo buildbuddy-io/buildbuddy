@@ -76,15 +76,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, d)
 	}
-	foundMap, err := cache.ContainsMulti(ctx, digestsToLookup)
+	missing, err := cache.FindMissing(ctx, digestsToLookup)
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range digestsToLookup {
-		found, ok := foundMap[d]
-		if !ok || !found {
-			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, d)
-		}
+	for _, d := range missing {
+		rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, d)
 	}
 	return rsp, nil
 }
