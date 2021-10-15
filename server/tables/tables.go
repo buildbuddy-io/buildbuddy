@@ -428,6 +428,10 @@ type Workflow struct {
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
 	Perms int `gorm:"index:workflow_perms"`
+	// InstanceNameSuffix is appended to the remote instance name for CI runner
+	// actions associated with this workflow. It can be updated in order to
+	// prevent reusing a bad workspace.
+	InstanceNameSuffix string `gorm:"not null;default:''"`
 	// GitProviderWebhookID is the ID returned from the Git provider API when
 	// registering the webhook. This will only be set for the case where we
 	// successfully auto-registered the webhook.
