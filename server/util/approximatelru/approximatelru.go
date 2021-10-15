@@ -1,8 +1,9 @@
+// Package approximatelru implements an approximate LRU map.
 package approximatelru
 
 import (
-	"container/list"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -10,6 +11,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	xxhash "github.com/cespare/xxhash/v2"
+)
+
+const (
+	// The number of items to keep around in the eviction pool between
+	// evictions.
+	EvictionPoolSize = 16
+
+	// Number of random samples to look at each time the eviction pool is
+	// repopulated.
+	Samples = 5
 )
 
 // EvictedCallback is used to get a callback when a cache Entry is evicted
@@ -25,7 +36,7 @@ type SizeFn func(value interface{}) int64
 type RandomSampleFn func() (interface{}, interface{})
 
 // Config specifies how the LRU cache is to be constructed.
-// MaxSize & SizeFn are required.
+// MaxSize & SizeFn & RandomSample are required.
 type Config struct {
 	// Function to calculate size of cache entries.
 	SizeFn SizeFn
@@ -53,22 +64,22 @@ type ApproximateLRU struct {
 	onEvict      EvictedCallback
 	randomSample RandomSampleFn
 
-	evictionPool *list.List
-	items        map[uint64][]ApproximateEntry
+	evictionPool []EvictionPoolEntry
+	items        map[uint64][]ALRUEntry
 	maxSize      int64
 	currentSize  int64
 }
 
-type ApproximateEntry struct {
+type ALRUEntry struct {
 	key         uint64
 	conflictKey uint64
 	lastUsed    int64
 	size        int64
 }
 
-type EvictionSample struct {
-	approxEntry *ApproximateEntry
-	value interface{}
+type EvictionPoolEntry struct {
+	alruEntry *ALRUEntry
+	value     interface{}
 }
 
 // New constructs an LRU based on the specified config.
@@ -89,8 +100,8 @@ func New(config *Config) (*ApproximateLRU, error) {
 
 		currentSize:  0,
 		maxSize:      config.MaxSize,
-		items:        make(map[uint64][]ApproximateEntry, 0),
-		evictionPool: list.New(),
+		items:        make(map[uint64][]ALRUEntry, 0),
+		evictionPool: make([]EvictionPoolEntry, 0, EvictionPoolSize),
 	}
 	return c, nil
 }
@@ -123,16 +134,13 @@ func (c *ApproximateLRU) Add(key, value interface{}) bool {
 	// Check for existing item
 	if v, ok := c.lookupEntry(pk, ck); ok {
 		v.lastUsed = time.Now().UnixNano()
-		log.Printf("Add: %q was already in the cache.", key)
 		return true
 	}
 
 	// Add new item
 	c.addItem(pk, ck, value)
 
-	log.Printf("Add: Added %q to the cache.", key)
 	for c.currentSize > c.maxSize {
-		log.Printf("c.currentSize: %d > c.maxSize: %d", c.currentSize, c.maxSize)
 		c.RemoveOldest()
 	}
 	return true
@@ -145,7 +153,6 @@ func (c *ApproximateLRU) Contains(key interface{}) bool {
 		return false
 	}
 	v, ok := c.lookupEntry(pk, ck)
-	log.Printf("Contains: %q val: %+v.", key, v)
 	if ok {
 		v.lastUsed = time.Now().UnixNano()
 	}
@@ -168,10 +175,10 @@ func (c *ApproximateLRU) Remove(key interface{}) (present bool) {
 }
 
 func (c *ApproximateLRU) evictionPoolPopulate() {
-	for i := 0; i < 5; i++ {
+	for i := 0; i < Samples; i++ {
 		key, val := c.randomSample()
 		if key == nil {
-			log.Errorf("Sampled key was nil")
+			log.Errorf("Sampled key was nil: this should not happen")
 			continue
 		}
 		pk, ck, ok := keyHash(key)
@@ -180,94 +187,54 @@ func (c *ApproximateLRU) evictionPoolPopulate() {
 			continue
 		}
 		// Ensure that this item exists in the cache.
-		approxEntry, ok := c.lookupEntry(pk, ck)
+		alruEntry, ok := c.lookupEntry(pk, ck)
 		if !ok {
 			log.Errorf("sampled value was not even in the LRU")
 			continue
 		}
-
-		// evictionPool is a list ordered from newest to oldest
-		// [t=-1,     t=-4,       t=-5,     t=-5,        t=-6]
-		
-		sample := EvictionSample{
-			approxEntry: approxEntry,
-			value: val,
-		}
-
-		if c.evictionPool.Len() == 0 {
-			c.evictionPool.PushFront(sample)
-			continue
-		}
-
-		insertionPoint := c.evictionPool.Front()
-		for e := c.evictionPool.Front(); e != nil; e = e.Next() {
-			if existingSample, ok := e.Value.(EvictionSample); ok {
-				if existingSample.approxEntry.lastUsed < sample.approxEntry.lastUsed {
-					insertionPoint = e
-					break
-				}
+		// Ensure that this item does not already exist in the eviction
+		// pool.
+		alreadyInPool := false
+		for _, evictionSample := range c.evictionPool {
+			if evictionSample.alruEntry.key == pk && evictionSample.alruEntry.conflictKey == ck {
+				alreadyInPool = true
 			}
 		}
-		c.evictionPool.InsertBefore(sample, insertionPoint)
+		if !alreadyInPool {
+			c.evictionPool = append(c.evictionPool, EvictionPoolEntry{
+				alruEntry: alruEntry,
+				value:     val,
+			})
+		}
 	}
-	log.Printf("c.evictionPool len is now: %d", c.evictionPool.Len())
-	for c.evictionPool.Len() > 15 {
-		log.Printf("eviction pool was > 15; removing front element %+v", c.evictionPool.Front())
-		c.evictionPool.Remove(c.evictionPool.Front())
-	}
-	c.printEvictionPool()
-}
-
-func (c *ApproximateLRU) printEvictionPool() {
-	log.Printf("printEvictionPool: %+v", c.evictionPool)
-	i := 0
-	for e := c.evictionPool.Front(); e != nil; e = e.Next() {
-		evictionSample, _ := e.Value.(EvictionSample);
-		log.Printf("printEvictionPool evictionPool[%2d] = %d (%+v)", i, evictionSample.approxEntry.lastUsed, evictionSample.approxEntry)
-		i += 1
-	}
-}
-
-func (c *ApproximateLRU) printItems() {
-	log.Printf("printItems:")
-	for k, v := range c.items {
-		log.Printf("  %d = %+v", k, v)
+	sort.Slice(c.evictionPool, func(i, j int) bool {
+		return c.evictionPool[i].alruEntry.lastUsed < c.evictionPool[j].alruEntry.lastUsed
+	})
+	if len(c.evictionPool) > EvictionPoolSize {
+		c.evictionPool = c.evictionPool[:EvictionPoolSize]
 	}
 }
 
 func (c *ApproximateLRU) deleteFromEvictionPool() bool {
-	c.printItems()
-	for e := c.evictionPool.Back(); e != nil; e = e.Prev() {
-		if evictSample, ok := e.Value.(EvictionSample); ok {
-			log.Printf("deleteFromEvictionPool: considering evictSample: %+v", evictSample.approxEntry)
-			_, ok := c.lookupEntry(evictSample.approxEntry.key, evictSample.approxEntry.conflictKey)
-			c.evictionPool.Remove(e)
-			log.Printf("deleteFromEvictionPool: lookupEntry: %t", ok)
-			if ok {
-				// This value exists in the LRU, and is the
-				// oldest element, according to our LRU sampling
-				// algo. Delete it.
-				c.removeItem(evictSample.approxEntry.key, evictSample.approxEntry.conflictKey)
-				if c.onEvict != nil {
-					c.onEvict(evictSample.value)
-				}				
-				return true
-			}
+	for i, evictionSample := range c.evictionPool {
+		c.removeItem(evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
+		if c.onEvict != nil {
+			c.onEvict(evictionSample.value)
 		}
+		c.evictionPool = append(c.evictionPool[:i], c.evictionPool[i+1:]...)
+		return true
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
 func (c *ApproximateLRU) RemoveOldest() bool {
-	for i := 0; i < 5; i++ {
-		c.evictionPoolPopulate()
-		if c.deleteFromEvictionPool() {
-			break
-		}
-		log.Warning("Nothing was deleted from the eviction pool")
+	c.evictionPoolPopulate()
+	if c.deleteFromEvictionPool() {
+		return true
 	}
-	return true
+	log.Warning("Nothing was evicted.")
+	return false
 }
 
 func (c *ApproximateLRU) Size() int64 {
@@ -276,7 +243,7 @@ func (c *ApproximateLRU) Size() int64 {
 
 func (c *ApproximateLRU) addItem(key, conflictKey uint64, value interface{}) {
 	itemSize := c.sizeFn(value)
-	kv := ApproximateEntry{
+	kv := ALRUEntry{
 		key:         key,
 		conflictKey: conflictKey,
 		lastUsed:    time.Now().UnixNano(),
@@ -287,14 +254,12 @@ func (c *ApproximateLRU) addItem(key, conflictKey uint64, value interface{}) {
 }
 
 func (c *ApproximateLRU) removeItem(key, conflictKey uint64) {
-	log.Printf("removeItem deleting (%d, %d)", key, conflictKey)
 	entries, ok := c.items[key]
 	if !ok {
 		log.Errorf("removeItem %d: not in items", key)
 		return
 	}
 	if len(entries) == 0 {
-		log.Printf("removeItem %d: deleted all entries", key)
 		delete(c.items, key)
 		return
 	}
@@ -316,10 +281,10 @@ func (c *ApproximateLRU) removeItem(key, conflictKey uint64) {
 			entries[deleteIndex] = entries[len(entries)-1]
 			c.items[key] = entries[:len(entries)-1]
 		}
-	}		
+	}
 }
 
-func (c *ApproximateLRU) lookupEntry(key, conflictKey uint64) (*ApproximateEntry, bool) {
+func (c *ApproximateLRU) lookupEntry(key, conflictKey uint64) (*ALRUEntry, bool) {
 	entries, ok := c.items[key]
 	if !ok {
 		return nil, false
