@@ -336,7 +336,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 
 		groupID = g.GroupID
 		res := tx.Exec(`
-			UPDATE Groups SET name = ?, url_identifier = ?, owned_domain = ?, sharing_enabled = ?, 
+			UPDATE `+"`Groups`"+` SET name = ?, url_identifier = ?, owned_domain = ?, sharing_enabled = ?, 
 				use_group_owned_executors = ?
 			WHERE group_id = ?`,
 			g.Name, g.URLIdentifier, g.OwnedDomain, g.SharingEnabled, g.UseGroupOwnedExecutors,
