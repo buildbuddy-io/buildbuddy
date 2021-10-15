@@ -181,6 +181,30 @@ func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiR
 	return rsp, nil
 }
 
+func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	if err != nil {
+		return nil, err
+	}
+	digests := make([]*repb.Digest, 0)
+	for _, k := range req.GetKey() {
+		digests = append(digests, digestFromKey(k))
+	}
+	cache, err := c.getCache(ctx, req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	missing, err := cache.FindMissing(ctx, digests)
+	if err != nil {
+		return nil, err
+	}
+	rsp := &dcpb.FindMissingResponse{}
+	for _, d := range missing {
+		rsp.Missing = append(rsp.Missing, digestToKey(d))
+	}
+	return rsp, nil
+}
+
 // IsolationToString returns a compact representation of the Isolation proto suitable for logging.
 func IsolationToString(isolation *dcpb.Isolation) string {
 	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
@@ -370,6 +394,34 @@ func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer string, isola
 		}
 	}
 	return resultMap, nil
+}
+
+func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
+	req := &dcpb.FindMissingRequest{
+		Isolation: isolation,
+	}
+	hashDigests := make(map[string]*repb.Digest, len(digests))
+	for _, d := range digests {
+		key := digestToKey(d)
+		hashDigests[d.GetHash()] = d
+		req.Key = append(req.Key, key)
+	}
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := client.FindMissing(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var missing []*repb.Digest
+	for _, k := range rsp.GetMissing() {
+		missing = append(missing, &repb.Digest{
+			Hash:      k.GetKey(),
+			SizeBytes: k.GetSizeBytes(),
+		})
+	}
+	return missing, nil
 }
 
 func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

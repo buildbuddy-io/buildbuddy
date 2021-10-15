@@ -605,16 +605,24 @@ func TestContainsMulti(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	randomSrc := &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	testSizes := []int{
-		1, 10, 100, 1000, 10000,
+
+	type testCase struct {
+		numExistingDigests int
+		numMissingDigests  int
 	}
 
-	for _, numDigests := range testSizes {
-		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
+	for _, tc := range []testCase{
+		{numExistingDigests: 1, numMissingDigests: 0},
+		{numExistingDigests: 10, numMissingDigests: 1},
+		{numExistingDigests: 100, numMissingDigests: 10},
+		{numExistingDigests: 1000, numMissingDigests: 10},
+		{numExistingDigests: 10000, numMissingDigests: 10},
+	} {
+		remoteInstanceName := fmt.Sprintf("prefix/%d", tc.numExistingDigests)
 		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
-		digests := make([]*repb.Digest, 0, numDigests)
-		for i := 0; i < numDigests; i++ {
+		existingDigests := make([]*repb.Digest, 0, tc.numExistingDigests)
+		for i := 0; i < tc.numExistingDigests; i++ {
 			// Read some random bytes.
 			buf := new(bytes.Buffer)
 			io.CopyN(buf, randomSrc, 100)
@@ -625,7 +633,7 @@ func TestContainsMulti(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			digests = append(digests, d)
+			existingDigests = append(existingDigests, d)
 			// Set the random bytes in the cache (with a prefix)
 			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 			require.NoError(t, err)
@@ -635,17 +643,32 @@ func TestContainsMulti(t *testing.T) {
 			}
 		}
 
-		// Ensure key exists.
-		foundMap, err := c.RemoteContainsMulti(ctx, peer, isolation, digests)
-		if err != nil {
-			t.Fatal(err)
+		var missingDigests []*repb.Digest
+		for i := 0; i < tc.numMissingDigests; i++ {
+			d, _ := testdigest.NewRandomDigestBuf(t, 1000)
+			missingDigests = append(missingDigests, d)
 		}
-		for _, d := range digests {
+
+		// Check server properly reports present and missing digests.
+		foundMap, err := c.RemoteContainsMulti(ctx, peer, isolation, append(existingDigests, missingDigests...))
+		require.NoError(t, err)
+		for _, d := range existingDigests {
 			exists, ok := foundMap[d]
 			if !ok || !exists {
 				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
 			}
 		}
+		for _, d := range missingDigests {
+			exists, ok := foundMap[d]
+			if !ok || exists {
+				t.Fatalf("Digest %q was not uploaded but is not reported as missing in cache", d.GetHash())
+			}
+		}
+
+		// Now repeat with RemoteFindMissing.
+		remoteMissing, err := c.RemoteFindMissing(ctx, peer, isolation, append(existingDigests, missingDigests...))
+		require.NoError(t, err)
+		require.ElementsMatch(t, remoteMissing, missingDigests)
 	}
 }
 

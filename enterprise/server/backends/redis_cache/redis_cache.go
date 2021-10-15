@@ -167,6 +167,38 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	return response, nil
 }
 
+func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	if len(digests) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(digests))
+	digestsByKey := make(map[string]*repb.Digest, len(digests))
+	for _, d := range digests {
+		k, err := c.key(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+		digestsByKey[k] = d
+	}
+
+	mcMap, err := c.rdbMultiExists(ctx, keys...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Assemble results.
+	var missing []*repb.Digest
+	for _, k := range keys {
+		d := digestsByKey[k]
+		found, ok := mcMap[k]
+		if !ok || !found {
+			missing = append(missing, d)
+		}
+	}
+	return missing, nil
+}
+
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", d)
