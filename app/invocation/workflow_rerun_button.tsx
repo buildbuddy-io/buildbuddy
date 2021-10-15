@@ -1,7 +1,15 @@
 import React from "react";
 import { workflow } from "../../proto/workflow_ts_proto";
-import { OutlinedButton } from "../components/button/button";
+import Button, { OutlinedButton } from "../components/button/button";
 import { OutlinedButtonGroup } from "../components/button/button_group";
+import Modal from "../components/modal/modal";
+import Dialog, {
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+} from "../components/dialog/dialog";
 import Menu, { MenuItem } from "../components/menu/menu";
 import Popup, { PopupContainer } from "../components/popup/popup";
 import errorService from "../errors/error_service";
@@ -15,6 +23,7 @@ export interface WorkflowRerunButtonProps {
 
 type State = {
   isMenuOpen?: boolean;
+  isDialogOpen?: boolean;
   isLoading?: boolean;
 };
 
@@ -26,14 +35,21 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
   private onOpenMenu() {
     this.setState({ isMenuOpen: true });
   }
-  private onRequestClose() {
+  private onCloseMenu() {
     this.setState({ isMenuOpen: false });
+  }
+
+  private onOpenDialog() {
+    this.setState({ isMenuOpen: false, isDialogOpen: true });
+  }
+  private onCloseDialog() {
+    this.setState({ isDialogOpen: false });
   }
 
   private onClickRerun(clean: boolean) {
     this.inFlightRpc?.cancel();
 
-    this.setState({ isMenuOpen: false, isLoading: true });
+    this.setState({ isMenuOpen: false, isDialogOpen: false, isLoading: true });
 
     const configuredEvent = this.props.model.workflowConfigured;
 
@@ -63,25 +79,50 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     const isEnabled = this.props.model.workflowConfigured && !this.state.isLoading;
 
     return (
-      <PopupContainer>
-        <OutlinedButtonGroup>
-          <OutlinedButton
-            disabled={!isEnabled}
-            className="workflow-rerun-button"
-            onClick={this.onClickRerun.bind(this, /*clean=*/ false)}>
-            {this.state.isLoading ? <div className="loading"></div> : <img alt="" src="/image/refresh-cw.svg" />}
-            <span>Re-run</span>
-          </OutlinedButton>
-          <OutlinedButton disabled={!isEnabled} className="icon-button" onClick={this.onOpenMenu.bind(this)}>
-            <img alt="" src="/image/chevron-down.svg" />
-          </OutlinedButton>
-        </OutlinedButtonGroup>
-        <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onRequestClose.bind(this)} anchor="right">
-          <Menu>
-            <MenuItem onClick={this.onClickRerun.bind(this, /*clean=*/ true)}>Clean workspace and re-run</MenuItem>
-          </Menu>
-        </Popup>
-      </PopupContainer>
+      <>
+        <PopupContainer>
+          <OutlinedButtonGroup>
+            <OutlinedButton
+              disabled={!isEnabled}
+              className="workflow-rerun-button"
+              onClick={this.onClickRerun.bind(this, /*clean=*/ false)}>
+              {this.state.isLoading ? <div className="loading"></div> : <img alt="" src="/image/refresh-cw.svg" />}
+              <span>Re-run</span>
+            </OutlinedButton>
+            <OutlinedButton disabled={!isEnabled} className="icon-button" onClick={this.onOpenMenu.bind(this)}>
+              <img alt="" src="/image/chevron-down.svg" />
+            </OutlinedButton>
+          </OutlinedButtonGroup>
+          <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
+            <Menu>
+              <MenuItem onClick={this.onOpenDialog.bind(this)}>Re-run from clean workspace</MenuItem>
+            </Menu>
+          </Popup>
+        </PopupContainer>
+        <Modal isOpen={this.state.isDialogOpen} onRequestClose={this.onCloseDialog.bind(this)}>
+          <Dialog>
+            <DialogHeader>
+              <DialogTitle>Confirm clean re-run</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <p>
+                This will create a new runner for this workflow, re-clone the Git repo, and start from a new, empty
+                Bazel cache.
+              </p>
+              <p>
+                In some cases, this can recover workflows that are in a broken state, but may temporarily slow down all
+                executions of this workflow, so it is intended to be used sparingly.
+              </p>
+            </DialogBody>
+            <DialogFooter>
+              <DialogFooterButtons>
+                <OutlinedButton onClick={this.onCloseDialog.bind(this)}>Cancel</OutlinedButton>
+                <Button onClick={this.onClickRerun.bind(this, /*clean=*/ true)}>OK</Button>
+              </DialogFooterButtons>
+            </DialogFooter>
+          </Dialog>
+        </Modal>
+      </>
     );
   }
 }

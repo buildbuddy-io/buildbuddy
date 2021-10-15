@@ -110,8 +110,7 @@
 
 .outlined-button-group > .outlined-button {
   border: none;
-  /* Subtract parent's border thickness from top and bottom */
-  min-height: 38px;
+  min-height: 38px; /* = 40px usual min-height - 1px for top + bottom border from parent */
 }
 
 .outlined-button-group > .outlined-button:not(:last-child) {
