@@ -35,4 +35,16 @@ export const Popup = React.forwardRef(
   }
 );
 
+export type PopupContainerProps = JSX.IntrinsicElements["div"];
+
+/**
+ * PopupContainer wraps an element that triggers a popup, as well the popup
+ * itself. It is required to correctly anchor the popup to the popup trigger.
+ */
+export const PopupContainer = React.forwardRef(
+  ({ className, ...props }: PopupContainerProps, ref: React.Ref<HTMLDivElement>) => {
+    return <div ref={ref} className={`popup-container ${className || ""}`} {...props} />;
+  }
+);
+
 export default Popup;
