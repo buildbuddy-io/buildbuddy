@@ -363,10 +363,12 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			return nil, err
 		}
 		wf.InstanceNameSuffix = suffix
-		err = ws.env.GetDBHandle().Exec(
-			`UPDATE Workflows WHERE workflow_id = ? SET instance_name_suffix = ?`,
-			wf.WorkflowID, wf.InstanceNameSuffix,
-		).Error
+		err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+			return tx.Exec(
+				`UPDATE Workflows WHERE workflow_id = ? SET instance_name_suffix = ?`,
+				wf.WorkflowID, wf.InstanceNameSuffix,
+			).Error
+		})
 		if err != nil {
 			return nil, err
 		}
