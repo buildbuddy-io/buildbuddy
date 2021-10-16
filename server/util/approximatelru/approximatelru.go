@@ -139,7 +139,6 @@ func (c *ApproximateLRU) Add(key, value interface{}) bool {
 
 	// Add new item
 	c.addItem(pk, ck, value)
-
 	for c.currentSize > c.maxSize {
 		c.RemoveOldest()
 	}
@@ -217,6 +216,10 @@ func (c *ApproximateLRU) evictionPoolPopulate() {
 
 func (c *ApproximateLRU) deleteFromEvictionPool() bool {
 	for i, evictionSample := range c.evictionPool {
+		if _, ok := c.lookupEntry(evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey); !ok {
+			log.Warningf("%d %d was not stored by this LRU, not evicting.", evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
+			continue
+		}
 		c.removeItem(evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
 		if c.onEvict != nil {
 			c.onEvict(evictionSample.value)
@@ -289,10 +292,15 @@ func (c *ApproximateLRU) lookupEntry(key, conflictKey uint64) (*ALRUEntry, bool)
 	if !ok {
 		return nil, false
 	}
-	for _, ent := range entries {
+	foundIndex := -1
+	for i, ent := range entries {
 		if ent.conflictKey == conflictKey {
-			return &ent, true
+			foundIndex = i
+			break
 		}
 	}
-	return nil, false
+	if foundIndex == -1 {
+		return nil, false
+	}
+	return &c.items[key][foundIndex], true
 }

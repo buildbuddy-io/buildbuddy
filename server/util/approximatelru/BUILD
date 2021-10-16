@@ -20,7 +20,6 @@ go_test(
         ":approximatelru",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
-        "//server/util/log",
         "@com_github_stretchr_testify//require",
     ],
 )
