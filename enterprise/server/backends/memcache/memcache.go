@@ -137,6 +137,36 @@ func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[
 	return foundMap, nil
 }
 
+func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	lock := sync.RWMutex{} // protects(missing)
+	var missing []*repb.Digest
+	eg, ctx := errgroup.WithContext(ctx)
+
+	for _, d := range digests {
+		fetchFn := func(d *repb.Digest) {
+			eg.Go(func() error {
+				exists, err := c.Contains(ctx, d)
+				if err != nil {
+					return err
+				}
+				if !exists {
+					lock.Lock()
+					defer lock.Unlock()
+					missing = append(missing, d)
+				}
+				return nil
+			})
+		}
+		fetchFn(d)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return missing, nil
+}
+
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for memcache", d)
