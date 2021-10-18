@@ -140,7 +140,10 @@ func (c *ApproximateLRU) Add(key, value interface{}) bool {
 	// Add new item
 	c.addItem(pk, ck, value)
 	for c.currentSize > c.maxSize {
-		c.RemoveOldest()
+		if !c.RemoveOldest() {
+			log.Warningf("Error evicting items; cache may be oversize.")
+			break
+		}
 	}
 	return true
 }
@@ -173,22 +176,22 @@ func (c *ApproximateLRU) Remove(key interface{}) (present bool) {
 	return false
 }
 
-func (c *ApproximateLRU) evictionPoolPopulate() {
+func (c *ApproximateLRU) evictionPoolPopulate() bool {
 	for i := 0; i < Samples; i++ {
 		key, val := c.randomSample()
 		if key == nil {
 			log.Errorf("Sampled key was nil: this should not happen")
-			continue
+			return false
 		}
 		pk, ck, ok := keyHash(key)
 		if !ok {
 			log.Errorf("keyhash for sampled value was nil")
-			continue
+			return false
 		}
 		// Ensure that this item exists in the cache.
 		alruEntry, ok := c.lookupEntry(pk, ck)
 		if !ok {
-			log.Errorf("sampled value was not even in the LRU")
+			log.Warningf("sampled value was not even in the LRU")
 			continue
 		}
 		// Ensure that this item does not already exist in the eviction
@@ -212,6 +215,7 @@ func (c *ApproximateLRU) evictionPoolPopulate() {
 	if len(c.evictionPool) > EvictionPoolSize {
 		c.evictionPool = c.evictionPool[:EvictionPoolSize]
 	}
+	return true
 }
 
 func (c *ApproximateLRU) deleteFromEvictionPool() bool {
@@ -232,12 +236,14 @@ func (c *ApproximateLRU) deleteFromEvictionPool() bool {
 
 // RemoveOldest removes the oldest item from the cache.
 func (c *ApproximateLRU) RemoveOldest() bool {
-	c.evictionPoolPopulate()
-	if c.deleteFromEvictionPool() {
-		return true
+	if !c.evictionPoolPopulate() {
+		return false
 	}
-	log.Warning("Nothing was evicted.")
-	return false
+	if !c.deleteFromEvictionPool() {
+		log.Warning("Nothing was evicted.")
+		return false
+	}
+	return true
 }
 
 func (c *ApproximateLRU) Size() int64 {
