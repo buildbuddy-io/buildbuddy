@@ -1,6 +1,7 @@
 import React from "react";
 import capabilities from "../../../app/capabilities/capabilities";
 import { User } from "../../../app/auth/auth_service";
+import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
 
 export type FormProps = {
