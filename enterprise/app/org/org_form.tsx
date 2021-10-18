@@ -2,6 +2,7 @@ import React from "react";
 import capabilities from "../../../app/capabilities/capabilities";
 import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
+import { BuildBuddyError } from "../../../app/util/errors";
 
 export type FormProps = {
   user: User;
@@ -14,7 +15,7 @@ export type FormState<T extends GroupRequest> = {
   initialRequest: T;
   // Fields that have received focus at least once.
   touched: Set<string>;
-  error?: string;
+  error?: BuildBuddyError;
   submitting?: boolean;
   submitted?: boolean;
   dirty?: boolean;
@@ -37,7 +38,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   async onSubmit(e: any) {
     e.preventDefault();
 
-    this.setState({ submitting: true, error: "" });
+    this.setState({ submitting: true, error: null });
     try {
       await this.submitRequest();
       this.setState({
@@ -47,7 +48,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         initialRequest: Object.assign(this.newRequest(), this.state.request),
       });
     } catch (error) {
-      this.setState({ error });
+      this.setState({ error: BuildBuddyError.parse(error) });
     } finally {
       this.setState({ submitting: false });
     }
@@ -79,7 +80,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 
   renderError() {
-    return this.state.error && <div className="form-error">{parseErrorDescription(this.state.error)}</div>;
+    return this.state.error && <div className="form-error">{this.state.error.description}</div>;
   }
 
   renderFields() {
@@ -187,14 +188,6 @@ export function getChangedFormState(changeEvent: React.ChangeEvent) {
 
 function getDomainFromEmail(email: string) {
   return email.split("@").pop();
-}
-
-function parseErrorDescription(message: string) {
-  if (!message?.includes("desc = ")) {
-    return "An unknown error occurred. Try again later.";
-  }
-
-  return message.split("desc = ").pop();
 }
 
 export function makeSlug(value: string) {
