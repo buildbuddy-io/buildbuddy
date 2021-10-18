@@ -83,6 +83,22 @@ func Exists(t testing.TB, rootDir, path string) bool {
 	return true
 }
 
+func DirSize(t testing.TB, rootDir string) int64 {
+	size := int64(0)
+	err := filepath.WalkDir(rootDir, func(path string, entry fs.DirEntry, err error) error {
+		require.NoError(t, err)
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		require.NoError(t, err)
+		size += info.Size()
+		return nil
+	})
+	require.NoError(t, err)
+	return size
+}
+
 // AssertExactFileContents checks that the given mapping exactly represents the
 // files in rootDir. The mapping is keyed by path relative to rootDir.
 // Empty dirs and non-regular files (e.g. symlinks) are ignored in the

@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -218,7 +219,7 @@ func TestReadOffset(t *testing.T) {
 }
 
 func TestSizeLimit(t *testing.T) {
-	maxSizeBytes := int64(1000) // 1000 bytes
+	maxSizeBytes := int64(100_000)
 	rootDir := getTmpDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
@@ -227,33 +228,30 @@ func TestSizeLimit(t *testing.T) {
 	}
 	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
-	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
-	for d, buf := range digestBufs {
+
+	digestKeys := make([]*repb.Digest, 0, 150)
+	for i := 0; i < 150; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		digestKeys = append(digestKeys, d)
 		if err := dc.Set(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
-		digestKeys = append(digestKeys, d)
 	}
-	// Expect the last *2* digests to be present.
-	// The first digest should have been evicted.
-	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, d)
-		if i == 0 {
-			if err == nil {
-				t.Fatalf("%q should have been evicted from cache", d.GetHash())
-			}
-			continue
-		}
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-		}
-		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+
+	// Expect the sum of all contained digests be less than or equal to max
+	// size bytes.
+	containedDigestsSize := int64(0)
+	for _, d := range digestKeys {
+		if ok, err := dc.Contains(ctx, d); err == nil && ok {
+			containedDigestsSize += d.GetSizeBytes()
 		}
 	}
+	require.LessOrEqual(t, containedDigestsSize, maxSizeBytes)
+
+	// Expect the on disk directory size be less than or equal to max size
+	// bytes.
+	dirSize := testfs.DirSize(t, rootDir)
+	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
 func TestLRU(t *testing.T) {
@@ -404,7 +402,7 @@ func TestAsyncLoading(t *testing.T) {
 }
 
 func TestJanitorThread(t *testing.T) {
-	maxSizeBytes := int64(10_000_000) // 10MB
+	maxSizeBytes := int64(100_000)
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	rootDir := getTmpDir(t)
@@ -414,8 +412,8 @@ func TestJanitorThread(t *testing.T) {
 	}
 	// Fill the cache.
 	digests := make([]*repb.Digest, 0)
-	for i := 0; i < 999; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+	for i := 0; i < 100; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 		err := dc.Set(ctx, d, buf)
 		if err != nil {
 			t.Fatal(err)
@@ -423,26 +421,36 @@ func TestJanitorThread(t *testing.T) {
 		digests = append(digests, d)
 	}
 
+	reducedMaxSizeBytes := maxSizeBytes / 2
 	// Make a new disk cache with a smaller size. The
 	// janitor should clean extra data up, oldest first.
-	dc, err = disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes/2) // 5MB
+	dc, err = disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, reducedMaxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	dc.WaitUntilMapped()
+
 	// GC runs after 100ms, so give it a little time to delete the files.
 	time.Sleep(500 * time.Millisecond)
-	for i, d := range digests {
-		if i > 500 {
-			break
-		}
-		contains, err := dc.Contains(ctx, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if contains {
-			t.Fatalf("Expected oldest digest %+v to be deleted", d)
+
+	// Expect the sum of all contained digests be less than or equal to max
+	// size bytes.
+	containedDigestsSize := int64(0)
+	for _, d := range digests {
+		if ok, err := dc.Contains(ctx, d); err == nil && ok {
+			containedDigestsSize += d.GetSizeBytes()
 		}
 	}
+	log.Printf("containedDigestsSize: %d", containedDigestsSize)
+	require.LessOrEqual(t, containedDigestsSize, reducedMaxSizeBytes)
+
+	// Expect the on disk directory size be less than or equal to max size
+	// bytes.
+	dirSize := testfs.DirSize(t, rootDir)
+	log.Printf("dirSize: %d", dirSize)
+	require.LessOrEqual(t, dirSize, reducedMaxSizeBytes)
+
 }
 
 func TestZeroLengthFiles(t *testing.T) {

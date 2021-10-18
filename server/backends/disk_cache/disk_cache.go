@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,9 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/approximatelru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -45,6 +46,14 @@ const (
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
 	V2Dir                    = "v2"
+
+	// This is the number of files that will be read at a time from each dir
+	// that contains files in the cache using f.Readdir(n). From this batch
+	// a single file will be selected randomly for eviction consideration.
+	// This number should be set high enough that there is some randomness
+	// in which file is selected (so not 1), but low enough that resources
+	// required for considering random files for eviction are low.
+	readdirSampleSize = 10
 )
 
 var (
@@ -299,35 +308,110 @@ type partition struct {
 	mu               sync.RWMutex
 	rootDir          string
 	maxSizeBytes     int64
-	lru              interfaces.LRU
+	lru              *approximatelru.ApproximateLRU
 	fileChannel      chan *fileRecord
 	diskIsMapped     bool
 	doneAsyncLoading chan struct{}
 	lastGCTime       time.Time
 	stringLock       sync.RWMutex
 	internedStrings  map[string]string
+	dirScannerOnce   sync.Once
+	newDirCh         chan string
+	seenDirsMu       sync.RWMutex
+	seenDirs         map[string]struct{}
+	randomSampleCh   chan *fileRecord
+}
+
+func (p *partition) scanRandomFiles(newDirCh <-chan string, sampleChan chan<- *fileRecord) {
+	dirs := make([]string, 0)
+	for {
+		select {
+		case d := <-newDirCh:
+			dirs = append(dirs, d)
+		default:
+		}
+
+		if len(dirs) == 0 {
+			continue
+		}
+
+		randomDir := dirs[rand.Intn(len(dirs))]
+		f, err := os.Open(randomDir)
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		for {
+			fileInfos, err := f.Readdir(readdirSampleSize)
+			if err != nil && err != io.EOF {
+				break
+			}
+			if len(fileInfos) == 0 {
+				break
+			}
+
+			// Ensure that fileInfos is not wasted if a zero-length file is
+			// encountered first: loop until we sample a record or exhaust
+			// all possibilities.
+			for len(fileInfos) > 0 {
+				i := rand.Intn(len(fileInfos))
+				info := fileInfos[i]
+				fileInfos = append(fileInfos[:i], fileInfos[i+1:]...)
+				if info.Size() == 0 {
+					continue
+				}
+				path := filepath.Join(randomDir, info.Name())
+				record, err := p.makeRecordFromPathAndFileInfo(path, info)
+				if err == nil {
+					sampleChan <- record
+					break
+				}
+			}
+		}
+	}
+}
+
+func (p *partition) randomSampleFn() (interface{}, interface{}) {
+	// This function must randomly sample files from the disk.
+	// In order to make this efficient, a list of all sub-directories which
+	// contain files is kept, and when a sample is taken, this function:
+	//  - picks a random sub-directory
+	//  - reads a batch of 1000 items from that directory and returns a
+	//    random one.
+	//  - re-opens the directory if less than 1000 files are returned
+	fileRecord := <-p.randomSampleCh
+	return fileRecord.FullPath(), fileRecord
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
-	if err != nil {
-		return nil, err
-	}
-	c := &partition{
+	p := &partition{
 		id:               id,
 		useV2Layout:      useV2Layout,
 		maxSizeBytes:     maxSizeBytes,
-		lru:              l,
 		rootDir:          rootDir,
 		fileChannel:      make(chan *fileRecord),
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
+		newDirCh:         make(chan string, 65536), // 16^4 (max num dirs we have in v2 disk)
+		seenDirs:         make(map[string]struct{}, 0),
+		randomSampleCh:   make(chan *fileRecord),
 	}
-	if err := c.initializeCache(); err != nil {
+	l, err := approximatelru.New(&approximatelru.Config{
+		MaxSize:      maxSizeBytes,
+		OnEvict:      evictFn,
+		SizeFn:       sizeFn,
+		RandomSample: p.randomSampleFn,
+	})
+	if err != nil {
 		return nil, err
 	}
-	c.startJanitor()
-	return c, nil
+	p.lru = l
+
+	if err := p.initializeCache(); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 type fileRecord struct {
@@ -425,12 +509,9 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 	if p.lru.Size() < targetSize {
 		return false
 	}
-	value, ok := p.lru.RemoveOldest()
+	ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
-	}
-	if f, ok := value.(*fileRecord); ok {
-		log.Debugf("Delete thread removed item from cache. Last use was: %d", f.lastUse)
 	}
 	p.lastGCTime = time.Now()
 	return true
@@ -450,6 +531,31 @@ func (p *partition) startJanitor() {
 			}
 		}
 	}()
+}
+
+func (p *partition) trackParentDir(key *fileKey) {
+	parentDir := filepath.Dir(key.FullPath())
+
+	p.seenDirsMu.RLock()
+	_, ok := p.seenDirs[parentDir]
+	p.seenDirsMu.RUnlock()
+	if !ok {
+		p.seenDirsMu.Lock()
+		if _, ok := p.seenDirs[parentDir]; !ok {
+			p.seenDirs[parentDir] = struct{}{}
+		}
+		p.newDirCh <- parentDir
+		p.seenDirsMu.Unlock()
+		p.dirScannerOnce.Do(func() {
+			go p.scanRandomFiles(p.newDirCh, p.randomSampleCh)
+		})
+	}
+}
+
+func (p *partition) addRecordToLRU(record *fileRecord) {
+	key := record.key
+	p.trackParentDir(key)
+	p.lru.Add(key.FullPath(), record)
 }
 
 func (p *partition) initializeCache() error {
@@ -501,6 +607,7 @@ func (p *partition) initializeCache() error {
 				log.Debugf("Skipping file: %s", err)
 				return nil
 			}
+			p.trackParentDir(fileRecord.key)
 			records = append(records, fileRecord)
 			return nil
 		}
@@ -514,7 +621,7 @@ func (p *partition) initializeCache() error {
 		p.mu.Lock()
 		// Populate our LRU with everything we scanned from disk.
 		for _, record := range records {
-			p.lru.Add(record.FullPath(), record)
+			p.addRecordToLRU(record)
 		}
 		records = nil
 
@@ -524,7 +631,7 @@ func (p *partition) initializeCache() error {
 		close(p.fileChannel)
 		<-finishedFileChannel
 		for _, record := range inFlightRecords {
-			p.lru.Add(record.FullPath(), record)
+			p.addRecordToLRU(record)
 		}
 		inFlightRecords = nil
 		log.Debugf("DiskCache partition %q: statd %d files in %s", p.id, len(records), time.Since(start))
@@ -532,6 +639,7 @@ func (p *partition) initializeCache() error {
 
 		p.diskIsMapped = true
 		close(p.doneAsyncLoading)
+		p.startJanitor()
 		p.mu.Unlock()
 	}()
 	return nil
@@ -642,7 +750,7 @@ func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, rem
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(key *fileKey) bool {
+func (p *partition) scheduleFileForInitialization(key *fileKey) bool {
 	if p.diskIsMapped {
 		return false
 	}
@@ -652,9 +760,10 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) bool {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return false
 		}
+		p.trackParentDir(key)
 		record := p.makeRecordFromFileInfo(key, info)
 		p.fileChannel <- record
-		p.lru.Add(record.FullPath(), record)
+		p.addRecordToLRU(record)
 		return true
 	}
 	return false
@@ -686,7 +795,7 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		ok = p.addFileToLRUIfExists(k)
+		ok = p.scheduleFileForInitialization(k)
 	}
 	return ok, nil
 }
@@ -767,9 +876,9 @@ func (p *partition) get(ctx context.Context, cacheType interfaces.CacheType, rem
 	}
 
 	if p.lru.Contains(k.FullPath()) {
-		p.lru.Get(k.FullPath()) // mark the file as used.
+		// the file use time was updated when we called Contains.
 	} else if !p.diskIsMapped {
-		p.addFileToLRUIfExists(k)
+		p.scheduleFileForInitialization(k)
 	}
 	return buf, nil
 }
@@ -818,7 +927,7 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	record := p.makeRecord(k, int64(n), time.Now().UnixNano())
-	p.lru.Add(record.FullPath(), record)
+	p.addRecordToLRU(record)
 	return err
 
 }
@@ -856,7 +965,7 @@ func (p *partition) reader(ctx context.Context, cacheType interfaces.CacheType, 
 		p.lru.Remove(k.FullPath()) // remove it just in case
 		return nil, status.NotFoundErrorf("DiskCache missing file: %s", err)
 	} else {
-		p.lru.Get(k.FullPath()) // mark the file as used.
+		p.lru.Contains(k.FullPath()) // mark the file as used.
 	}
 	return r, nil
 }
@@ -898,7 +1007,7 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			record := p.makeRecord(k, totalBytesWritten, time.Now().UnixNano())
-			p.lru.Add(record.FullPath(), record)
+			p.addRecordToLRU(record)
 			return nil
 		},
 	}, nil
