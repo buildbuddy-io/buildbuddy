@@ -47,7 +47,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("not found")) {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("not found")) {
           this.createUser();
         } else {
           this.onUserRpcError(error);
@@ -75,7 +75,7 @@ export class AuthService {
       })
       .catch((error: any) => {
         // TODO(siggisim): Remove "No user token" string matching after the next release.
-        if (BuildBuddyError.parse(error).code == "Unauthenticated" || error.includes("No user token")) {
+        if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("No user token")) {
           console.log("User was not created because no auth cookie was set, this is normal.");
           this.emitUser(null);
         } else {
