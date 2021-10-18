@@ -341,6 +341,7 @@ func (p *partition) scanRandomFiles(newDirCh <-chan string, sampleChan chan<- *f
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+		defer f.Close()
 
 		for {
 			fileInfos, err := f.Readdir(readdirSampleSize)
@@ -377,9 +378,9 @@ func (p *partition) randomSampleFn() (interface{}, interface{}) {
 	// In order to make this efficient, a list of all sub-directories which
 	// contain files is kept, and when a sample is taken, this function:
 	//  - picks a random sub-directory
-	//  - reads a batch of 1000 items from that directory and returns a
-	//    random one.
-	//  - re-opens the directory if less than 1000 files are returned
+	//  - reads a batch of readdirSampleSize items from that directory and
+	//    returns one at random.
+	//  - repeats as needed
 	fileRecord := <-p.randomSampleCh
 	return fileRecord.FullPath(), fileRecord
 }
