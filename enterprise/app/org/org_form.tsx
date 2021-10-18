@@ -47,7 +47,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
         touched: new Set(),
         initialRequest: Object.assign(this.newRequest(), this.state.request),
       });
-    } catch (error: any) {
+    } catch (error) {
       this.setState({ error: BuildBuddyError.parse(error) });
     } finally {
       this.setState({ submitting: false });
