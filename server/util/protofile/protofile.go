@@ -68,6 +68,21 @@ func chunkName(streamID string, sequenceNumber int) string {
 	return filepath.Join(streamID, "/chunks/", chunkFileName)
 }
 
+func DeleteBufferedProto(ctx context.Context, bs interfaces.Blobstore, streamID string) error {
+	for i := 0; ; i++ {
+		blobName := chunkName(streamID, i)
+		if exists, err := bs.BlobExists(ctx, blobName); err != nil {
+			return err
+		} else if !exists {
+			return nil
+		}
+		err := bs.DeleteBlob(ctx, blobName)
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (w *BufferedProtoWriter) internalFlush(ctx context.Context) error {
 	if w.writeBuf.Len() == 0 {
 		return nil

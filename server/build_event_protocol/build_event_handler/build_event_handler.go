@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -585,6 +586,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					// to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
 				}
+				protofile.DeleteBufferedProto(e.ctx, e.env.GetBlobstore(), iid)
+				chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid))
 			} else if !db.IsRecordNotFound(err) {
 				// RecordNotFound means this invocation has never existed, which is not
 				// an error. All other errors are real errors.

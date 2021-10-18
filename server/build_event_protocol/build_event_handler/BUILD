@@ -12,6 +12,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:user_id_go_proto",
+        "//server/backends/chunkstore",
         "//server/build_event_protocol/accumulator",
         "//server/build_event_protocol/build_status_reporter",
         "//server/build_event_protocol/event_parser",
