@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_oauth2//google",
