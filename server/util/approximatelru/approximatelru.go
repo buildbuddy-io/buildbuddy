@@ -42,7 +42,7 @@ type Config struct {
 	SizeFn SizeFn
 	// Optional callback for cache eviction events.
 	OnEvict EvictedCallback
-	// Optional callback for random sampling.
+	// Required callback for random sampling.
 	RandomSample RandomSampleFn
 
 	// Maximum amount of data to store in the cache.
@@ -170,13 +170,21 @@ func (c *ApproximateLRU) Remove(key interface{}) (present bool) {
 		return false
 	}
 	if _, ok := c.lookupEntry(pk, ck); ok {
-		c.removeItem(pk, ck)
-		return true
+		return c.removeItem(pk, ck)
 	}
 	return false
 }
 
-func (c *ApproximateLRU) evictionPoolPopulate() bool {
+func (c *ApproximateLRU) evictionPoolContains(pk, ck uint64) bool {
+	for _, evictionSample := range c.evictionPool {
+		if evictionSample.alruEntry.key == pk && evictionSample.alruEntry.conflictKey == ck {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *ApproximateLRU) populateEvictionPool() bool {
 	for i := 0; i < Samples; i++ {
 		key, val := c.randomSample()
 		if key == nil {
@@ -196,18 +204,13 @@ func (c *ApproximateLRU) evictionPoolPopulate() bool {
 		}
 		// Ensure that this item does not already exist in the eviction
 		// pool.
-		alreadyInPool := false
-		for _, evictionSample := range c.evictionPool {
-			if evictionSample.alruEntry.key == pk && evictionSample.alruEntry.conflictKey == ck {
-				alreadyInPool = true
-			}
+		if c.evictionPoolContains(pk, ck) {
+			continue
 		}
-		if !alreadyInPool {
-			c.evictionPool = append(c.evictionPool, EvictionPoolEntry{
-				alruEntry: alruEntry,
-				value:     val,
-			})
-		}
+		c.evictionPool = append(c.evictionPool, EvictionPoolEntry{
+			alruEntry: alruEntry,
+			value:     val,
+		})
 	}
 	sort.Slice(c.evictionPool, func(i, j int) bool {
 		return c.evictionPool[i].alruEntry.lastUsed < c.evictionPool[j].alruEntry.lastUsed
@@ -224,23 +227,22 @@ func (c *ApproximateLRU) deleteFromEvictionPool() bool {
 			log.Warningf("%d %d was not stored by this LRU, not evicting.", evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
 			continue
 		}
-		c.removeItem(evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
+		removed := c.removeItem(evictionSample.alruEntry.key, evictionSample.alruEntry.conflictKey)
 		if c.onEvict != nil {
 			c.onEvict(evictionSample.value)
 		}
 		c.evictionPool = append(c.evictionPool[:i], c.evictionPool[i+1:]...)
-		return true
+		return removed
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
 func (c *ApproximateLRU) RemoveOldest() bool {
-	if !c.evictionPoolPopulate() {
+	if !c.populateEvictionPool() {
 		return false
 	}
 	if !c.deleteFromEvictionPool() {
-		log.Warning("Nothing was evicted.")
 		return false
 	}
 	return true
@@ -262,15 +264,14 @@ func (c *ApproximateLRU) addItem(key, conflictKey uint64, value interface{}) {
 	c.currentSize += itemSize
 }
 
-func (c *ApproximateLRU) removeItem(key, conflictKey uint64) {
+func (c *ApproximateLRU) removeItem(key, conflictKey uint64) bool {
 	entries, ok := c.items[key]
 	if !ok {
-		log.Errorf("removeItem %d: not in items", key)
-		return
+		return false
 	}
 	if len(entries) == 0 {
 		delete(c.items, key)
-		return
+		return false
 	}
 
 	deleteIndex := -1
@@ -291,6 +292,7 @@ func (c *ApproximateLRU) removeItem(key, conflictKey uint64) {
 			c.items[key] = entries[:len(entries)-1]
 		}
 	}
+	return true
 }
 
 func (c *ApproximateLRU) lookupEntry(key, conflictKey uint64) (*ALRUEntry, bool) {
