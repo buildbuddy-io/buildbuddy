@@ -93,7 +93,7 @@ func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocatio
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Content-Encoding", "gzip")
 
-	log.Infof("Uploading invocation proto to %s", u.String())
+	log.Infof("Uploading invocation proto to: %s", u.String())
 	res, err := client.Do(req)
 	if err != nil {
 		return err
