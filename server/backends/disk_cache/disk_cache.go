@@ -53,7 +53,7 @@ const (
 	// This number should be set high enough that there is some randomness
 	// in which file is selected (so not 1), but low enough that resources
 	// required for considering random files for eviction are low.
-	readdirSampleSize = 10
+	readdirSampleSize = 100
 )
 
 var (
@@ -325,16 +325,27 @@ type partition struct {
 func (p *partition) scanRandomFiles(newDirCh <-chan string, sampleChan chan<- *fileRecord) {
 	dirs := make([]string, 0)
 	for {
-		select {
-		case d := <-newDirCh:
-			dirs = append(dirs, d)
-		default:
+		// Add any new directories to our set.
+		for {
+			drainedChannel := false
+			select {
+			case d := <-newDirCh:
+				dirs = append(dirs, d)
+				log.Printf("Saw new dir: %q", d)
+			default:
+				drainedChannel = true
+			}
+			if drainedChannel {
+				break
+			}
 		}
 
+		// If there are no random dirs to sample from, then just loop.
 		if len(dirs) == 0 {
 			continue
 		}
 
+		// Pick a random directory.
 		randomDir := dirs[rand.Intn(len(dirs))]
 		f, err := os.Open(randomDir)
 		if err != nil {
