@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
@@ -552,7 +551,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					// The invocation is neither disconnected nor in-progress, it is not
 					// valid to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
-				} else if timeutil.FromUsec(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
+				} else if time.UnixMicro(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
 					// The invocation was last updated over 4 hours ago; it is not valid
 					// to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
