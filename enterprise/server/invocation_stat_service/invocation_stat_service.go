@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -113,7 +112,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	}
 
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
+		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	} else {
 		// If no start time specified, respect the lookback window field if set,
 		// or default to 7 days.
@@ -125,11 +124,11 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 			}
 			lookbackWindowDays = time.Duration(w*24) * time.Hour
 		}
-		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(time.Now().Add(-lookbackWindowDays)))
+		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowDays).UnixMicro())
 	}
 
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
+		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
@@ -228,11 +227,11 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
+		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	}
 
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
+		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
