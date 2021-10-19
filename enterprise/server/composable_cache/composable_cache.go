@@ -85,6 +85,17 @@ func (c *composableCache) ContainsMulti(ctx context.Context, digests []*repb.Dig
 	return foundMap, nil
 }
 
+func (c *composableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	missing, err := c.outer.FindMissing(ctx, digests)
+	if err != nil {
+		missing = digests
+	}
+	if len(missing) == 0 {
+		return nil, nil
+	}
+	return c.inner.FindMissing(ctx, missing)
+}
+
 func (c *composableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	outerRsp, err := c.outer.Get(ctx, d)
 	if err == nil {

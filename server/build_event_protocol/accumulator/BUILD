@@ -10,6 +10,5 @@ go_library(
         "//proto:command_line_go_proto",
         "//server/build_event_protocol/invocation_format",
         "//server/util/git",
-        "//server/util/timeutil",
     ],
 )

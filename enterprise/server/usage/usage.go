@@ -251,7 +251,7 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collectionPeriod, counts *tables.UsageCounts) error {
 	pk := &tables.Usage{
 		GroupID:         groupID,
-		PeriodStartUsec: timeutil.ToUsec(c.UsagePeriod().Start()),
+		PeriodStartUsec: c.UsagePeriod().Start().UnixMicro(),
 		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
@@ -273,7 +273,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			pk.GroupID,
 			pk.PeriodStartUsec,
 			pk.Region,
-			timeutil.ToUsec(c.End()),
+			c.End().UnixMicro(),
 			counts.Invocations,
 			counts.CASCacheHits,
 			counts.ActionCacheHits,
@@ -303,7 +303,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 				AND region = ?
 				AND final_before_usec <= ?
 		`,
-			timeutil.ToUsec(c.End()),
+			c.End().UnixMicro(),
 			counts.Invocations,
 			counts.CASCacheHits,
 			counts.ActionCacheHits,
@@ -311,7 +311,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 			pk.GroupID,
 			pk.PeriodStartUsec,
 			pk.Region,
-			timeutil.ToUsec(c.Start()),
+			c.Start().UnixMicro(),
 		).Error
 	})
 }
@@ -352,7 +352,7 @@ func parseCollectionPeriod(s string) (collectionPeriod, error) {
 	if err != nil {
 		return collectionPeriodZeroValue, err
 	}
-	t := timeutil.FromUsec(usec)
+	t := time.UnixMicro(usec)
 	return collectionPeriodStartingAt(t), nil
 }
 

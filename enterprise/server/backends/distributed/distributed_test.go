@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -64,6 +65,9 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	if err != nil {
 		t.Fatal(err)
 	}
+	ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "" /* =remoteInstanceName */)
+	require.NoError(t, err)
+	c = ic.(*Cache)
 	c.StartListening()
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
@@ -481,6 +485,77 @@ func TestContainsMulti(t *testing.T) {
 			assert.True(t, ok)
 			assert.True(t, exists)
 		}
+	}
+}
+
+func TestFindMissing(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		digestsWritten = append(digestsWritten, d)
+	}
+
+	// Generate some more digests, but don't write them to the cache.
+	digestsNotWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 100; i++ {
+		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+		digestsNotWritten = append(digestsNotWritten, d)
+	}
+
+	allDigests := append(digestsWritten, digestsNotWritten...)
+
+	for _, baseCache := range baseCaches {
+		missing, err := baseCache.FindMissing(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
+	}
+
+	for _, distributedCache := range distributedCaches {
+		missing, err := distributedCache.FindMissing(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 }
 

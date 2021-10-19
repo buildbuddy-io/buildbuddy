@@ -20,6 +20,8 @@ export default class CacheCardComponent extends React.Component {
           <div className="title">Cache stats</div>
           {!this.props.model.cacheStats.length ||
             (this.props.model.cacheStats.length &&
+              +this.props.model.cacheStats[0]?.actionCacheHits == 0 &&
+              +this.props.model.cacheStats[0]?.actionCacheMisses == 0 &&
               +this.props.model.cacheStats[0]?.totalDownloadSizeBytes == 0 &&
               +this.props.model.cacheStats[0]?.totalUploadSizeBytes == 0 && (
                 <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>

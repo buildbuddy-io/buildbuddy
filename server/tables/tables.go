@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -75,14 +74,14 @@ type Model struct {
 // Timestamps are hard and differing sql implementations do... a lot. Too much.
 // So, we handle this in go-code and set as the timestamp in microseconds.
 func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
-	nowUsec := timeutil.ToUsec(time.Now())
+	nowUsec := time.Now().UnixMicro()
 	m.CreatedAtUsec = nowUsec
 	m.UpdatedAtUsec = nowUsec
 	return nil
 }
 
 func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
-	m.UpdatedAtUsec = timeutil.ToUsec(time.Now())
+	m.UpdatedAtUsec = time.Now().UnixMicro()
 	return nil
 }
 
@@ -178,6 +177,8 @@ type Group struct {
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
+
+	InvocationWebhookURL string `gorm:"not null;default:''"`
 }
 
 func (g *Group) TableName() string {
@@ -426,6 +427,10 @@ type Workflow struct {
 	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
 	Model
 	Perms int `gorm:"index:workflow_perms"`
+	// InstanceNameSuffix is appended to the remote instance name for CI runner
+	// actions associated with this workflow. It can be updated in order to
+	// prevent reusing a bad workspace.
+	InstanceNameSuffix string `gorm:"not null;default:''"`
 	// GitProviderWebhookID is the ID returned from the Git provider API when
 	// registering the webhook. This will only be set for the case where we
 	// successfully auto-registered the webhook.
@@ -529,7 +534,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 		// Before creating a unique index, need to replace empty strings with NULL.
 		if !m.HasIndex("Groups", "url_identifier_unique_index") {
-			if err := db.Exec(`UPDATE Groups SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
+			if err := db.Exec(`UPDATE ` + "`Groups`" + ` SET url_identifier = NULL WHERE url_identifier = ""`).Error; err != nil {
 				return nil, err
 			}
 		}

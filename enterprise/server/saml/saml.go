@@ -140,6 +140,10 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		a.fallback.Auth(w, r)
 		return
 	}
+	// Store slug as a cookie to enable logins directly from the /acs page.
+	slug := r.URL.Query().Get(slugParam)
+	auth.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration))
+
 	sp.ServeHTTP(w, r)
 }
 

@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/ptypes"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
@@ -57,7 +56,7 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 		return nil, err
 	}
 	startUsec := int64(0)
-	endUsec := timeutil.ToUsec(time.Now())
+	endUsec := time.Now().UnixMicro()
 	if st := req.GetStartTimeUsec(); st != 0 {
 		startUsec = st
 	}
@@ -162,7 +161,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 				})
 			}
 
-			tsPb, _ := ptypes.TimestampProto(timeutil.FromUsec(row.StartTimeUsec))
+			tsPb, _ := ptypes.TimestampProto(time.UnixMicro(row.StartTimeUsec))
 			statuses[targetID] = append(statuses[targetID], &trpb.TargetStatus{
 				InvocationId: row.InvocationID,
 				CommitSha:    row.CommitSHA,

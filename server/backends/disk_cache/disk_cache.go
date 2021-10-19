@@ -251,6 +251,10 @@ func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (
 	return c.partition.containsMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 
+func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
+}
+
 func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
@@ -715,6 +719,38 @@ func (p *partition) containsMulti(ctx context.Context, cacheType interfaces.Cach
 	}
 
 	return foundMap, nil
+}
+
+func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
+	lock := sync.RWMutex{} // protects(missing)
+	var missing []*repb.Digest
+	eg, ctx := errgroup.WithContext(ctx)
+
+	for _, d := range digests {
+		fetchFn := func(d *repb.Digest) {
+			eg.Go(func() error {
+				exists, err := p.contains(ctx, cacheType, remoteInstanceName, d)
+				// NotFoundError is never returned from contains above, so
+				// we don't check for it.
+				if err != nil {
+					return err
+				}
+				if !exists {
+					lock.Lock()
+					missing = append(missing, d)
+					lock.Unlock()
+				}
+				return nil
+			})
+		}
+		fetchFn(d)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return missing, nil
 }
 
 func (p *partition) get(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) ([]byte, error) {
