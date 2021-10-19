@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
@@ -925,7 +924,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 			SubID:        ut.GetSubID(),
 			AccessToken:  oauth2Token.AccessToken,
 			RefreshToken: refreshToken,
-			ExpiryUsec:   timeutil.ToUsec(expireTime),
+			ExpiryUsec:   expireTime.UnixMicro(),
 		}
 		if authDB := a.env.GetAuthDB(); authDB != nil {
 			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {

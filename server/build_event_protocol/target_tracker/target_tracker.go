@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
 
@@ -411,7 +410,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
-			nowUsec := timeutil.ToUsec(time.Now())
+			nowUsec := time.Now().UnixMicro()
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.RepoURL)
 			valueArgs = append(valueArgs, t.TargetID)
@@ -453,7 +452,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueStrings := []string{}
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
-			nowUsec := timeutil.ToUsec(time.Now())
+			nowUsec := time.Now().UnixMicro()
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationPK)

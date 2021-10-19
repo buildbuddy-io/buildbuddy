@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -266,7 +265,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 					Name: exitCodeName,
 					Code: int32(exitCode),
 				},
-				FinishTimeMillis: timeutil.ToMillis(time.Now()),
+				FinishTimeMillis: time.Now().UnixMilli(),
 			}},
 		})
 		elapsedTimeSeconds := float64(time.Since(startTime)) / float64(time.Second)
@@ -356,7 +355,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               ar.invocationID,
-			StartTimeMillis:    timeutil.ToMillis(startTime),
+			StartTimeMillis:    startTime.UnixMilli(),
 			OptionsDescription: optionsDescription,
 		}},
 	}
@@ -483,7 +482,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			}}},
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:        int32(exitCode),
-				StartTimeMillis: timeutil.ToMillis(cmdStartTime),
+				StartTimeMillis: cmdStartTime.UnixMilli(),
 				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
 			}},
 		}

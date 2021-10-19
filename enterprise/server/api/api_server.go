@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/golang/protobuf/ptypes"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -272,7 +271,7 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 			{
 				target := targetMap[event.GetBuildEvent().GetId().GetTestSummary().GetLabel()]
 				target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
-				startTimeProto, _ := ptypes.TimestampProto(timeutil.FromMillis(p.TestSummary.FirstStartTimeMillis))
+				startTimeProto, _ := ptypes.TimestampProto(time.UnixMilli(p.TestSummary.FirstStartTimeMillis))
 				duration, _ := time.ParseDuration(fmt.Sprintf("%dms", p.TestSummary.TotalRunDurationMillis))
 				durationProto := ptypes.DurationProto(duration)
 				target.Timing = &cmnpb.Timing{

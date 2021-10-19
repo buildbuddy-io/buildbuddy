@@ -19,7 +19,6 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
-        "//server/util/timeutil",
     ],
 )
 
