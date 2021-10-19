@@ -388,7 +388,7 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
-	if !e.beValues.BuildFinished() {
+	if e.beValues.BuildFinished() {
 		return e.FinalizeInvocation(iid)
 	}
 	e.statusReporter.ReportDisconnect(ctx)
