@@ -19,7 +19,6 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
-        "//server/util/timeutil",
         "//server/util/tracing",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_golang_protobuf//proto:go_default_library",
