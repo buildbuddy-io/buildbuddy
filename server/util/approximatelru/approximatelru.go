@@ -3,6 +3,7 @@ package approximatelru
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -311,4 +312,14 @@ func (c *ApproximateLRU) lookupEntry(key, conflictKey uint64) (*ALRUEntry, bool)
 		return nil, false
 	}
 	return &c.items[key][foundIndex], true
+}
+
+func (c *ApproximateLRU) Metrics() string {
+	buf := fmt.Sprintf("current size: %d, max size: %d\n", c.currentSize, c.maxSize)
+	for i, evictionSample := range c.evictionPool {
+		e := evictionSample.alruEntry
+		lastUse := time.Unix(0, e.lastUsed).Format("Jan 02, 2006 15:04:05 MST")
+		buf += fmt.Sprintf("evictionPool[%d] (%d, %d) last used: %+ size: %d (bytes)\n", i, e.key, e.conflictKey, lastUse, e.size)
+	}
+	return buf
 }

@@ -322,44 +322,88 @@ type partition struct {
 	randomSampleCh   chan *fileRecord
 }
 
-func (p *partition) scanRandomFiles(newDirCh <-chan string, sampleChan chan<- *fileRecord) {
-	dirs := make([]string, 0)
+// randomFileScanner consumes a channel of paths to scan
+// and writes random files chosen from randomly selected
+// paths back to the sampleChan.
+type randomFileScanner struct {
+	part     *partition
+	mu       sync.RWMutex
+	dirs     []string
+	openDirs map[string]*os.File
+}
+
+func ScanRandomFiles(p *partition, newDirCh <-chan string, sampleChan chan<- *fileRecord) {
+	rfs := randomFileScanner{
+		part:     p,
+		dirs:     make([]string, 0),
+		openDirs: make(map[string]*os.File, 0),
+	}
+	go rfs.handleNewDirs(newDirCh)
+	go rfs.scanRandomFiles(sampleChan)
+}
+
+func (rfs *randomFileScanner) handleNewDirs(newDirCh <-chan string) {
+	// Add any new directories to our set.
+	for d := range newDirCh {
+		rfs.mu.Lock()
+		rfs.dirs = append(rfs.dirs, d)
+		rfs.mu.Unlock()
+	}
+}
+
+func (rfs *randomFileScanner) sampleDirs() bool {
+	if len(rfs.openDirs) >= 10 {
+		return true
+	}
+	rfs.mu.RLock()
+	for i := 0; i < len(rfs.dirs); i++ {
+		if len(rfs.openDirs) >= 10 {
+			break
+		}
+		randomDir := rfs.dirs[rand.Intn(len(rfs.dirs))]
+		if _, ok := rfs.openDirs[randomDir]; ok {
+			continue
+		}
+		f, err := os.Open(randomDir)
+		if err == nil {
+			rfs.openDirs[randomDir] = f
+		}
+	}
+	rfs.mu.RUnlock()
+	return len(rfs.openDirs) > 0
+}
+
+func (rfs *randomFileScanner) selectRandomPath() string {
+	openDirPaths := make([]string, 0, len(rfs.openDirs))
+	for path, _ := range rfs.openDirs {
+		openDirPaths = append(openDirPaths, path)
+	}
+	return openDirPaths[rand.Intn(len(openDirPaths))]
+}
+
+func (rfs *randomFileScanner) scanRandomFiles(sampleChan chan<- *fileRecord) {
 	for {
-		// Add any new directories to our set.
 		for {
-			drainedChannel := false
-			select {
-			case d := <-newDirCh:
-				dirs = append(dirs, d)
-				log.Printf("Saw new dir: %q", d)
-			default:
-				drainedChannel = true
-			}
-			if drainedChannel {
+			// If there are no random dirs to sample from, break to
+			// the outer loop so more can possibly be read from
+			// newDirCh.
+			if !rfs.sampleDirs() {
 				break
 			}
-		}
 
-		// If there are no random dirs to sample from, then just loop.
-		if len(dirs) == 0 {
-			continue
-		}
-
-		// Pick a random directory.
-		randomDir := dirs[rand.Intn(len(dirs))]
-		f, err := os.Open(randomDir)
-		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		defer f.Close()
-
-		for {
+			// Pick a random directory. If it's exhausted, delete it
+			// from rfs.openDirs
+			randomDir := rfs.selectRandomPath()
+			f := rfs.openDirs[randomDir]
 			fileInfos, err := f.Readdir(readdirSampleSize)
 			if err != nil && err != io.EOF {
+				f.Close()
+				delete(rfs.openDirs, randomDir)
 				break
 			}
 			if len(fileInfos) == 0 {
+				f.Close()
+				delete(rfs.openDirs, randomDir)
 				break
 			}
 
@@ -374,7 +418,7 @@ func (p *partition) scanRandomFiles(newDirCh <-chan string, sampleChan chan<- *f
 					continue
 				}
 				path := filepath.Join(randomDir, info.Name())
-				record, err := p.makeRecordFromPathAndFileInfo(path, info)
+				record, err := rfs.part.makeRecordFromPathAndFileInfo(path, info)
 				if err == nil {
 					sampleChan <- record
 					break
@@ -392,8 +436,11 @@ func (p *partition) randomSampleFn() (interface{}, interface{}) {
 	//  - reads a batch of readdirSampleSize items from that directory and
 	//    returns one at random.
 	//  - repeats as needed
-	fileRecord := <-p.randomSampleCh
-	return fileRecord.FullPath(), fileRecord
+	select {
+	case fileRecord := <-p.randomSampleCh:
+		//		log.Printf("sampled random file %q", fileRecord.FullPath())
+		return fileRecord.FullPath(), fileRecord
+	}
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
@@ -510,8 +557,11 @@ func (p *partition) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
 	percentFull := float64(p.lru.Size()) / float64(p.maxSizeBytes) * 100.0
 	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", p.lru.Size(), p.maxSizeBytes, percentFull)
-	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
+	buf += fmt.Sprintf("<div>Mapped into Approximate LRU: %t</div>", p.diskIsMapped)
 	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
+	for _, line := range strings.Split(p.lru.Metrics(), "\n") {
+		buf += fmt.Sprintf("<div>%s</div>", line)
+	}
 	return buf
 }
 
@@ -556,10 +606,17 @@ func (p *partition) trackParentDir(key *fileKey) {
 		if _, ok := p.seenDirs[parentDir]; !ok {
 			p.seenDirs[parentDir] = struct{}{}
 		}
-		p.newDirCh <- parentDir
+
+		select {
+		case p.newDirCh <- parentDir:
+			break
+		default:
+			log.Debugf("Error writing to p.newDirCh; this should not happen")
+		}
+
 		p.seenDirsMu.Unlock()
 		p.dirScannerOnce.Do(func() {
-			go p.scanRandomFiles(p.newDirCh, p.randomSampleCh)
+			ScanRandomFiles(p, p.newDirCh, p.randomSampleCh)
 		})
 	}
 }
