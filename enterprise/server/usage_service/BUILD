@@ -10,6 +10,5 @@ go_library(
         "//server/environment",
         "//server/util/log",
         "//server/util/perms",
-        "//server/util/timeutil",
     ],
 )

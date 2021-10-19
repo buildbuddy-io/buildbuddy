@@ -30,7 +30,6 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testclock",
         "//server/testutil/testenv",
-        "//server/util/timeutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

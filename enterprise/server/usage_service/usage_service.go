@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
@@ -95,7 +94,7 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 		AND group_id = ?
 		GROUP BY period
 		ORDER BY period ASC
-	`, timeutil.ToUsec(start), timeutil.ToUsec(end), groupID).Rows()
+	`, start.UnixMicro(), end.UnixMicro(), groupID).Rows()
 	if err != nil {
 		return nil, err
 	}

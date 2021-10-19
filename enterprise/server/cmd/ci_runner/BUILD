@@ -17,7 +17,6 @@ go_library(
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/status",
-        "//server/util/timeutil",
         "@com_github_google_shlex//:shlex",
         "@com_github_google_uuid//:uuid",
         "@com_github_logrusorgru_aurora//:aurora",

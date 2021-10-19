@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -149,10 +148,10 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("i.updated_at_usec >= ?", timeutil.ToUsec(start.AsTime()))
+		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("i.updated_at_usec < ?", timeutil.ToUsec(end.AsTime()))
+		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
 	statusClauses := query_builder.OrClauses{}
