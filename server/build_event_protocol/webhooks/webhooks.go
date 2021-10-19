@@ -70,7 +70,8 @@ func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocatio
 	// Set up a pipeline of proto -> jsonpb -> gzip -> request body
 	jsonpbPipeReader, jsonpbPipeWriter := io.Pipe()
 	go func() {
-		err := (&jsonpb.Marshaler{}).Marshal(jsonpbPipeWriter, in)
+		marshaler := &jsonpb.Marshaler{}
+		err := marshaler.Marshal(jsonpbPipeWriter, in)
 		jsonpbPipeWriter.CloseWithError(err)
 	}()
 
