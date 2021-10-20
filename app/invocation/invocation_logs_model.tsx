@@ -56,9 +56,6 @@ export default class InvocationLogsModel {
       next: (response) => {
         this.logs = this.logs.slice(0, this.stableLogLength);
         this.logs += new TextDecoder().decode(response.buffer || new Uint8Array());
-        // Pad with extra blank lines to prevent the bottom horizontal scrollbar
-        // in the log from covering the last line of text.
-        this.logs += "\n\n";
         if (!response.live) {
           this.stableLogLength = this.logs.length;
         }
