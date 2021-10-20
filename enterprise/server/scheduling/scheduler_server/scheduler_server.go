@@ -1412,7 +1412,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		if err := s.deleteClaimedTask(ctx, taskID); err != nil {
 			return err
 		}
-		return status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
+		return status.ResourceExhaustedErrorf("Task %q already attempted %d times.", taskID, task.attemptCount)
 	}
 	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
 	log.Debugf("ReEnqueueTask RPC for task %q", taskID)
