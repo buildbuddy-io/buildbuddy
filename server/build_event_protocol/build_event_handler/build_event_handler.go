@@ -425,15 +425,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	e.statsRecorder.MarkFinalized(invocation)
-	if e.beValues.BuildFinished() {
-		if searcher := e.env.GetInvocationSearchService(); searcher != nil {
-			go func() {
-				if err := searcher.IndexInvocation(context.Background(), invocation); err != nil {
-					log.Warningf("Error indexing invocation: %s", err)
-				}
-			}()
-		}
-	}
 	return nil
 }
 
