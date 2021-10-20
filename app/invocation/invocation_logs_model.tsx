@@ -55,7 +55,7 @@ export default class InvocationLogsModel {
     ).subscribe({
       next: (response) => {
         this.logs = this.logs.slice(0, this.stableLogLength);
-        this.logs += new TextDecoder().decode(response.buffer || new Uint8Array());
+        this.logs = this.logs + new TextDecoder().decode(response.buffer || new Uint8Array());
         if (!response.live) {
           this.stableLogLength = this.logs.length;
         }
