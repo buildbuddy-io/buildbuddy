@@ -6,16 +6,12 @@ go_test(
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/testutil/buildbuddy_enterprise",
-        "//enterprise/server/testutil/testredis",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
-        "//server/testutil/app",
-        "//server/testutil/buildbuddy",
         "//server/util/status",
-        "@com_github_google_uuid//:go_default_library",
-        "@com_github_stretchr_testify//assert",
+        "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//require",
     ],
 )
