@@ -34,6 +34,9 @@ var (
 		// able to create another group or request to join an existing group.
 		"CreateGroup",
 		"JoinGroup",
+		// Anonymous users can see the Bazel config required to use BuildBuddy, so
+		// don't require a group role.
+		"GetBazelConfig",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
@@ -49,7 +52,6 @@ var (
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
-		"GetBazelConfig",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
