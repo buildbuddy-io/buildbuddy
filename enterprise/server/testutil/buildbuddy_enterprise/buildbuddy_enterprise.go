@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 )
 
@@ -17,9 +18,11 @@ func Run(t *testing.T, args ...string) *app.App {
 }
 
 func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
+	redisTarget := testredis.Start(t)
 	commandArgs := []string{
 		fmt.Sprintf("--telemetry_port=%d", app.FreePort(t)),
 		"--app_directory=/enterprise/app",
+		"--app.default_redis_target=" + redisTarget,
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.Run(
