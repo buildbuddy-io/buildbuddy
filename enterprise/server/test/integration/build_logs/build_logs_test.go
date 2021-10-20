@@ -145,15 +145,15 @@ func waitForInvocation(t *testing.T, ctx context.Context, bbClient bbspb.BuildBu
 	require.FailNowf(t, "timed out", "Timed out waiting for invocation %q to be created", invocationID)
 }
 
-func getLogs(t *testing.T, ctx context.Context, client *invocationLog) string {
-	logs, err := client.Get(ctx)
+func getLogs(t *testing.T, ctx context.Context, log *invocationLog) string {
+	logs, err := log.Get(ctx)
 	require.NoError(t, err)
 	return logs
 }
 
-func waitForLogsToEqual(t *testing.T, ctx context.Context, client *invocationLog, expected string) {
+func waitForLogsToEqual(t *testing.T, ctx context.Context, log *invocationLog, expected string) {
 	for delay := 1 * time.Microsecond; delay < time.Second; delay *= 2 {
-		logs := getLogs(t, ctx, client)
+		logs := getLogs(t, ctx, log)
 		if logs == expected {
 			return
 		}
@@ -161,7 +161,7 @@ func waitForLogsToEqual(t *testing.T, ctx context.Context, client *invocationLog
 	}
 
 	// One last attempt, showing a nice diff if it fails.
-	logs := getLogs(t, ctx, client)
+	logs := getLogs(t, ctx, log)
 	require.Equal(t, expected, logs)
 }
 
