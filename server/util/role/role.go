@@ -20,7 +20,10 @@ const (
 
 	// DefaultRole is the role assigned to users when joining a group they did
 	// not create.
-	Default = Developer
+	// TODO(bduffany): Change this to DeveloperRole once we have a way to manage
+	// roles via the UI (otherwise, there would be no easy way to promote new
+	// users to admins in the meantime).
+	Default = Admin
 )
 
 // Role represents a user's role within a group.
