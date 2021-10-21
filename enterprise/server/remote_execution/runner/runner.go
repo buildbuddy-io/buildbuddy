@@ -547,7 +547,7 @@ func (p *Pool) WarmupDefaultImage() {
 				Platform:  plat,
 			},
 		}
-		platProps := platform.ParseProperties(task)
+		platProps := platform.ParseProperties(platform.FromTask(task))
 		c, err := p.newContainer(egCtx, platProps, task.GetCommand())
 		if err != nil {
 			log.Errorf("Error warming up %q: %s", containerType, err)
@@ -583,7 +583,7 @@ func (p *Pool) WarmupDefaultImage() {
 // executor is shut down.
 func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
-	props := platform.ParseProperties(task)
+	props := platform.ParseProperties(platform.FromTask(task))
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err

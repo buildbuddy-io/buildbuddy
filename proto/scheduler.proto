@@ -148,6 +148,9 @@ service Scheduler {
   // chosen executor.
   rpc EnqueueTaskReservation(EnqueueTaskReservationRequest)
       returns (EnqueueTaskReservationResponse) {}
+
+  rpc MarkTaskExecuted(MarkTaskExecutedRequest)
+      returns (MarkTaskExecutedResponse) {}
 }
 
 service QueueExecutor {
@@ -213,3 +216,10 @@ message RegisteredExecutionNode {
   string group_id = 3;
   acl.ACL acl = 4;
 }
+
+message MarkTaskExecutedRequest {
+  string task_id = 1;
+  string executor_id = 2;
+}
+
+message MarkTaskExecutedResponse {}

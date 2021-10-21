@@ -42,19 +42,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// The default operating system platform value, Linux.
-	defaultPlatformOSValue = "linux"
-	// The default architecture cpu architecture value, amd64.
-	defaultPlatformArchValue = "amd64"
-	// The key in Bazel platform properties that specifies operating system.
-	platformOSKey = "OSFamily"
-	// The key in Bazel platform properties that specifies executor cpu architecture.
-	platformArchKey = "Arch"
-	// The key in Bazel platform properties that specifies executor pool.
-	platformPoolKey = "Pool"
-)
-
 func timestampToMicros(tsPb *tspb.Timestamp) int64 {
 	ts, _ := ptypes.Timestamp(tsPb)
 	return ts.UnixMicro()
@@ -317,40 +304,24 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	taskSize := tasksize.Estimate(command)
 
-	os := defaultPlatformOSValue
-	arch := defaultPlatformArchValue
-	pool := ""
-	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
-	for _, property := range platformProps {
-		if property.Name == platformOSKey {
-			os = strings.ToLower(property.Value)
-		}
-		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolValue {
-			pool = strings.ToLower(property.Value)
-		}
-		if property.Name == platformArchKey {
-			arch = strings.ToLower(property.Value)
-		}
-	}
+	plat := platform.ParseProperties(platform.FromTask(executionTask))
 
-	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, os)
+	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, plat.OS)
 	if err != nil {
 		return "", err
 	}
-
-	if pool == "" {
-		pool = defaultPool
+	if plat.Pool == "" {
+		plat.Pool = defaultPool
 	}
-
 	taskGroupID := interfaces.AuthAnonymousUser
 	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
 		taskGroupID = user.GetGroupID()
 	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:              os,
-		Arch:            arch,
-		Pool:            pool,
+		Os:              plat.OS,
+		Arch:            plat.Arch,
+		Pool:            plat.Pool,
 		TaskSize:        taskSize,
 		ExecutorGroupId: executorGroupID,
 		TaskGroupId:     taskGroupID,
@@ -632,31 +603,14 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 }
 
 func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
-	router := s.env.GetTaskRouter()
-	if router == nil {
-		return nil
-	}
 	// If the result was served from cache, nothing was actually executed, so no
 	// need to update the task router.
 	if executeResponse.GetCachedResult() {
 		return nil
 	}
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
-	if err != nil {
-		return err
-	}
-	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
-	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
-		return err
-	}
-	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
-	cmd := &repb.Command{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
-		return err
-	}
-	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, instanceName, nodeID)
-	return nil
+	_, err := s.env.GetSchedulerClient().MarkTaskExecuted(ctx, &scpb.MarkTaskExecutedRequest{
+		TaskId:     taskID,
+		ExecutorId: executeResponse.GetResult().GetExecutionMetadata().GetExecutorId(),
+	})
+	return err
 }

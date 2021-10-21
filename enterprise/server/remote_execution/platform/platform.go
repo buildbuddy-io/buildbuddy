@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -24,9 +25,14 @@ const (
 	//     x-buildbuddy-platform.container-registry-username: _json_key
 	overrideHeaderPrefix = "x-buildbuddy-platform."
 
-	// DefaultPoolValue is the value for the "Pool" platform property that selects
-	// the default executor pool for remote execution.
+	poolPropertyName = "pool"
+	// DefaultPoolValue is the value for the "Pool" platform property that
+	// selects the default executor pool for remote execution. It is equivalent to
+	// an empty-string value.
 	DefaultPoolValue = "default"
+
+	cpuArchitecturePropertyName = "arch"
+	defaultCPUArchitecture      = "amd64"
 
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
@@ -60,9 +66,11 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 )
 
-// Properties represents the platform properties parsed from a command.
+// Properties represents a set of parsed canonical platform properties.
 type Properties struct {
 	OS                        string
+	Arch                      string
+	Pool                      string
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -90,19 +98,34 @@ type ExecutorProperties struct {
 	DefaultXCodeVersion     string
 }
 
+// CanonicalPlatform represents the effective platform resulting from a command
+// and any remote header overrides, with keys and values canonicalized.
+type CanonicalPlatform struct {
+	canonicalized *repb.Platform
+	propsMap      map[string]string
+}
+
+func (p *CanonicalPlatform) AsPlatform() *repb.Platform {
+	return p.canonicalized
+}
+
+func (p *CanonicalPlatform) AsMap() map[string]string {
+	return p.propsMap
+}
+
 // ParseProperties parses the client provided properties into a struct.
 // Before use, the returned platform.Properties object *must* have
 // executor-specific overrides applied via the ApplyOverrides function.
-func ParseProperties(task *repb.ExecutionTask) *Properties {
-	m := map[string]string{}
-	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
-		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
-	}
-	for _, prop := range task.GetPlatformOverrides().GetProperties() {
-		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
+func ParseProperties(plat *CanonicalPlatform) *Properties {
+	m := plat.AsMap()
+	pool := stringProp(m, poolPropertyName, "")
+	if pool == DefaultPoolValue {
+		pool = ""
 	}
 	return &Properties{
 		OS:                        stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName),
+		Arch:                      stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture),
+		Pool:                      pool,
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
@@ -115,6 +138,34 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
+	}
+}
+
+// FromTask returns the canonical platform from the given task.
+func FromTask(task *repb.ExecutionTask) *CanonicalPlatform {
+	props := append(
+		task.GetCommand().GetPlatform().GetProperties(),
+		task.GetPlatformOverrides().GetProperties()...,
+	)
+	m := make(map[string]string, len(props))
+	for _, prop := range props {
+		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
+	}
+	plat := &repb.Platform{}
+	for name, value := range m {
+		plat.Properties = append(plat.Properties, &repb.Platform_Property{
+			Name:  name,
+			Value: value,
+		})
+	}
+	// Order properties alphabetically by name, so that equivalent maps are
+	// converted to equivalent platforms.
+	sort.Slice(plat.Properties, func(i, j int) bool {
+		return plat.Properties[i].Name < plat.Properties[j].Name
+	})
+	return &CanonicalPlatform{
+		canonicalized: plat,
+		propsMap:      m,
 	}
 }
 

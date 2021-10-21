@@ -56,22 +56,22 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
-func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
+func (tr *taskRouter) RankNodes(ctx context.Context, task *repb.ExecutionTask, nodes []interfaces.ExecutionNode) []interfaces.ExecutionNode {
 	nodes = copyNodes(nodes)
 
 	rand.Shuffle(len(nodes), func(i, j int) {
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
 
-	if cmd == nil {
+	if task == nil {
 		return nodes
 	}
-	preferredNodeLimit := getPreferredNodeLimit(cmd)
+	preferredNodeLimit := getPreferredNodeLimit(task)
 	if preferredNodeLimit == 0 {
 		return nodes
 	}
 
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
+	key, err := tr.routingKey(ctx, task)
 	if err != nil {
 		log.Errorf("Failed to compute routing key: %s", err)
 		return nodes
@@ -112,12 +112,12 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // MarkComplete updates the routing table after a task is completed, so that
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
-func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorID string) {
-	nodeListMaxLength := getPreferredNodeLimit(cmd)
+func (tr *taskRouter) MarkComplete(ctx context.Context, task *repb.ExecutionTask, executorID string) {
+	nodeListMaxLength := getPreferredNodeLimit(task)
 	if nodeListMaxLength == 0 {
 		return
 	}
-	key, err := tr.routingKey(ctx, cmd, remoteInstanceName)
+	key, err := tr.routingKey(ctx, task)
 	if err != nil {
 		log.Errorf("Failed to compute routing key: %s", err)
 		return
@@ -140,19 +140,18 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 // getPreferredNodeLimit returns the max number of nodes that should be stored
 // in the preferred executors list for each task key, as well as the max number
 // of preferred nodes that should be returned by RankNodes.
-func getPreferredNodeLimit(cmd *repb.Command) int {
-	isRunnerRecyclingEnabled := platform.IsTrue(platform.FindValue(cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
-	if !isRunnerRecyclingEnabled {
+func getPreferredNodeLimit(task *repb.ExecutionTask) int {
+	p := platform.ParseProperties(platform.FromTask(task))
+	if !p.RecycleRunner {
 		return 0
 	}
-	workflowID := platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName)
-	if workflowID != "" {
+	if p.WorkflowID != "" {
 		return workflowsPreferredNodeLimit
 	}
 	return defaultPreferredNodeLimit
 }
 
-func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteInstanceName string) (string, error) {
+func (tr *taskRouter) routingKey(ctx context.Context, task *repb.ExecutionTask) (string, error) {
 	parts := []string{"task_route"}
 
 	if u, err := perms.AuthenticatedUser(ctx, tr.env); err == nil {
@@ -161,15 +160,13 @@ func (tr *taskRouter) routingKey(ctx context.Context, cmd *repb.Command, remoteI
 		parts = append(parts, interfaces.AuthAnonymousUser)
 	}
 
+	remoteInstanceName := task.GetExecuteRequest().GetInstanceName()
 	if remoteInstanceName != "" {
 		parts = append(parts, remoteInstanceName)
 	}
 
-	platform := cmd.GetPlatform()
-	if platform == nil {
-		platform = &repb.Platform{}
-	}
-	b, err := proto.Marshal(platform)
+	plat := platform.FromTask(task).AsPlatform()
+	b, err := proto.Marshal(plat)
 	if err != nil {
 		return "", status.InternalErrorf("failed to marshal Command: %s", err)
 	}

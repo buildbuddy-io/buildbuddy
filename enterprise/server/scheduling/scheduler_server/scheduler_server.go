@@ -1260,9 +1260,9 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			enqueueRequest.GetTaskId(), time.Now().Sub(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
-	cmd, remoteInstanceName, err := extractRoutingProps(serializedTask)
-	if err != nil {
-		return err
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(serializedTask, task); err != nil {
+		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
 
 	// Note: preferredNode may be nil if the executor ID isn't specified or if
@@ -1300,7 +1300,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}
-				rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
+				rankedNodes := s.taskRouter.RankNodes(ctx, task, toNodeInterfaces(nodes))
 				nodes, err = fromNodeInterfaces(rankedNodes)
 				if err != nil {
 					return err
@@ -1473,6 +1473,20 @@ func (s *SchedulerServer) getExecutionNodesFromRedis(ctx context.Context, groupI
 	return executionNodes, nil
 }
 
+func (s *SchedulerServer) MarkTaskExecuted(ctx context.Context, req *scpb.MarkTaskExecutedRequest) (*scpb.MarkTaskExecutedResponse, error) {
+	taskID := req.GetTaskId()
+	persistedTask, err := s.readTask(ctx, taskID)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read task %q: %s", taskID, err)
+	}
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(persistedTask.serializedTask, task); err != nil {
+		return nil, status.InternalErrorf("failed to unmarshal task %q: %s", taskID, err)
+	}
+	s.taskRouter.MarkComplete(ctx, task, req.GetExecutorId())
+	return &scpb.MarkTaskExecutedResponse{}, nil
+}
+
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
@@ -1499,17 +1513,4 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		ExecutionNode:               executionNodes,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
-}
-
-// extractRoutingProps deserializes the given task and returns the properties
-// needed to route the task (command and remote instance name).
-func extractRoutingProps(serializedTask []byte) (*repb.Command, string, error) {
-	if serializedTask == nil {
-		return nil, "", nil
-	}
-	task := &repb.ExecutionTask{}
-	if err := proto.Unmarshal(serializedTask, task); err != nil {
-		return nil, "", status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
-	}
-	return task.GetCommand(), task.GetExecuteRequest().GetInstanceName(), nil
 }

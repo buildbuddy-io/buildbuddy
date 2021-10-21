@@ -380,6 +380,7 @@ type SchedulerService interface {
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
+	MarkTaskExecuted(ctx context.Context, req *scpb.MarkTaskExecutedRequest) (*scpb.MarkTaskExecutedResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 	GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string) (string, string, error)
 }
@@ -407,12 +408,12 @@ type TaskRouter interface {
 	// suitability are returned in random order (for load balancing purposes).
 	//
 	// If an error occurs, the input nodes should be returned in random order.
-	RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []ExecutionNode
+	RankNodes(ctx context.Context, task *repb.ExecutionTask, nodes []ExecutionNode) []ExecutionNode
 
 	// MarkComplete notifies the router that the command has been completed by the
 	// given executor instance. Subsequent calls to RankNodes may assign a higher
 	// rank to nodes with the given instance ID, given similar commands.
-	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
+	MarkComplete(ctx context.Context, task *repb.ExecutionTask, executorInstanceID string)
 }
 
 // CommandResult captures the output and details of an executed command.
