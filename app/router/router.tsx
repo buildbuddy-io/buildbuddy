@@ -1,3 +1,4 @@
+import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
 
@@ -287,6 +288,70 @@ class Router {
     }
     this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
+
+  canAccessExecutorsPage(user: User) {
+    return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
+  }
+
+  canAccessUsagePage(user: User) {
+    return capabilities.usage && Boolean(user?.canCall("getUsage"));
+  }
+
+  canAccessWorkflowsPage(user: User) {
+    return capabilities.workflows && Boolean(user?.canCall("getWorkflows"));
+  }
+
+  canAccessOrgDetailsPage(user: User) {
+    return Boolean(user?.canCall("updateGroup"));
+  }
+
+  canAccessOrgMembersPage(user: User) {
+    return Boolean(user?.canCall("updateGroupUsers"));
+  }
+
+  canAccessOrgGitHubLinkPage(user: User) {
+    // GitHub linking does not call updateGroup, but the required permissions
+    // are equivalent.
+    return Boolean(user?.canCall("updateGroup"));
+  }
+
+  /**
+   * Routes the user to a new page if they don't have the ability to access the
+   * current page.
+   */
+  reroute(user: User) {
+    const fallbackPath = this.getFallbackPath(user);
+    if (fallbackPath === null) return;
+
+    const newUrl = getModifiedUrl({ path: fallbackPath });
+    window.history.replaceState({}, "", newUrl);
+  }
+
+  private getFallbackPath(user: User): string | null {
+    const path = window.location.pathname;
+
+    if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
+      return Path.home;
+    }
+    if (path === Path.workflowsPath && !this.canAccessWorkflowsPage(user)) {
+      return Path.home;
+    }
+    if (path === Path.usagePath && !this.canAccessUsagePage(user)) {
+      return Path.home;
+    }
+
+    if (path === Path.settingsOrgDetailsPath && !this.canAccessOrgDetailsPage(user)) {
+      return Path.settingsPath;
+    }
+    if (path === Path.settingsOrgMembersPath && !this.canAccessOrgMembersPage(user)) {
+      return Path.settingsPath;
+    }
+    if (path === Path.settingsOrgGitHubLinkPath && !this.canAccessOrgGitHubLinkPage(user)) {
+      return Path.settingsPath;
+    }
+
+    return null;
+  }
 }
 
 // If a repo matches https://github.com/{owner}/{repo} or https://github.com/{owner}/{repo}.git
@@ -312,14 +377,13 @@ function getQueryString(params: Record<string, string>) {
   ).toString();
 }
 
-function getModifiedUrl({ query }: { query?: Record<string, string> }) {
+function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?: string }) {
   const queryString = query ? getQueryString(query) : window.location.search;
-
   return (
     window.location.protocol +
     "//" +
     window.location.host +
-    window.location.pathname +
+    (path === undefined ? window.location.pathname : path) +
     (queryString ? "?" : "") +
     queryString +
     window.location.hash
@@ -327,6 +391,7 @@ function getModifiedUrl({ query }: { query?: Record<string, string> }) {
 }
 
 export class Path {
+  static home = "/";
   static comparePath = "/compare/";
   static invocationPath = "/invocation/";
   static userHistoryPath = "/history/user/";
@@ -336,6 +401,9 @@ export class Path {
   static commitHistoryPath = "/history/commit/";
   static setupPath = "/docs/setup/";
   static settingsPath = "/settings/";
+  static settingsOrgDetailsPath = "/settings/org/details";
+  static settingsOrgMembersPath = "/settings/org/members";
+  static settingsOrgGitHubLinkPath = "/settings/org/github";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";
   static trendsPath = "/trends/";

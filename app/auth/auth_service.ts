@@ -6,28 +6,12 @@ import capabilities from "../capabilities/capabilities";
 import rpcService, { BuildBuddyServiceRpcName } from "../service/rpc_service";
 import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
+import router from "../router/router";
+import { User } from "./user";
+
+export { User };
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
-
-export class User {
-  displayUser: user_id.DisplayUser;
-  groups: grp.Group[];
-  selectedGroup: grp.Group;
-  allowedRpcs: Set<BuildBuddyServiceRpcName>;
-
-  selectedGroupName() {
-    if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
-    return this.selectedGroup?.name?.trim();
-  }
-
-  isInDefaultGroup() {
-    return this.selectedGroup?.id == "GR0000000000000000000";
-  }
-
-  canCall(rpc: BuildBuddyServiceRpcName) {
-    return this.allowedRpcs.has(rpc);
-  }
-}
 
 export class AuthService {
   user: User = null;
@@ -104,10 +88,13 @@ export class AuthService {
     return user;
   }
 
-  emitUser(user: User) {
+  emitUser(user: User | null) {
     console.log("User", user);
     this.user = user;
     this.updateRequestContext();
+    // Ensure that the user we are about to emit will see a route they are
+    // authorized to view.
+    router.reroute(user);
     this.userStream.next(user);
   }
 
