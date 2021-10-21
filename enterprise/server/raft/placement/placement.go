@@ -4,6 +4,6 @@ import (
 	"sync"
 )
 
-type Driver struct {}
+type Driver struct{}
 
-func (d *Driver) GetReplicas() 
+func (d *Driver) GetReplicas()

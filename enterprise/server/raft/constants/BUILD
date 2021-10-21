@@ -5,5 +5,9 @@ go_library(
     srcs = ["constants.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants",
     visibility = ["//visibility:public"],
-    deps = ["//enterprise/server/raft/keys"],
+    deps = [
+        "//enterprise/server/raft/keys",
+        "//proto:raft_go_proto",
+        "//server/util/status",
+    ],
 )

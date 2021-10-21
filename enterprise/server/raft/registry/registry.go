@@ -16,22 +16,26 @@ import (
 // DynamicNodeRegistry is a node registry backed by gossip. It is capable of
 // supporting NodeHosts with dynamic RaftAddress values.
 type DynamicNodeRegistry struct {
-	nhid string
+	nhid        string
 	raftAddress string
-	setTagFn func(tagName, tagValue string) error
+	setTagFn    func(tagName, tagValue string) error
 
-	validator dbConfig.TargetValidator
+	validator   dbConfig.TargetValidator
 	partitioner *fixedPartitioner
-	
-	mu sync.RWMutex  // PROTECTS(nodeTargets, nodeAddrs)
+
+	mu sync.RWMutex // PROTECTS(nodeTargets, nodeAddrs)
 
 	// NodeInfo is (clusterID, nodeID)
 	// nodeTargets contains a map of nodeInfo -> target
 	nodeTargets map[raftio.NodeInfo]string
 
-	// nodeAddrs contains a map of nodehostID -> raftAddress
+	// raftAddrs contains a map of nodehostID -> raftAddress
 	// this map is populated by gossip data from serf.
-	nodeAddrs map[string]string
+	raftAddrs map[string]string
+
+	// grpcAddrs contains a map of nodehostID -> grpcAddress
+	// this map is populated by gossip data from serf.
+	grpcAddrs map[string]string
 }
 
 // We need to provide a factory method that creates the DynamicNodeRegistry, and
@@ -39,13 +43,14 @@ type DynamicNodeRegistry struct {
 // DynamicNodeRegistry and use it to resolve all other raft nodes until the
 // process shuts down.
 func NewDynamicNodeRegistry(nhid, raftAddress string, streamConnections uint64, v dbConfig.TargetValidator) (*DynamicNodeRegistry, error) {
-	dnr := &DynamicNodeRegistry{		
-		nhid: nhid,
+	dnr := &DynamicNodeRegistry{
+		nhid:        nhid,
 		raftAddress: raftAddress,
-		validator: v,
-		mu: sync.RWMutex{},
+		validator:   v,
+		mu:          sync.RWMutex{},
 		nodeTargets: make(map[raftio.NodeInfo]string, 0),
-		nodeAddrs: make(map[string]string, 0),
+		raftAddrs:   make(map[string]string, 0),
+		grpcAddrs:   make(map[string]string, 0),
 	}
 	if streamConnections > 1 {
 		dnr.partitioner = &fixedPartitioner{capacity: streamConnections}
@@ -56,12 +61,12 @@ func NewDynamicNodeRegistry(nhid, raftAddress string, streamConnections uint64, 
 // fixedPartitioner is the IPartitioner with fixed capacity and naive
 // partitioning strategy.
 type fixedPartitioner struct {
-        capacity uint64
+	capacity uint64
 }
 
 // GetPartitionID returns the partition ID for the specified raft cluster.
 func (p *fixedPartitioner) GetPartitionID(clusterID uint64) uint64 {
-        return clusterID % p.capacity
+	return clusterID % p.capacity
 }
 
 // MemberEvent is called when a node joins, leaves, or is updated.
@@ -71,39 +76,63 @@ func (dnr *DynamicNodeRegistry) MemberEvent(updateType serf.EventType, member *s
 		if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
 			if raftAddress, ok := member.Tags[constants.RaftAddressTag]; ok {
 				if raftAddress != "" {
-					dnr.addNodeHost(nhid, raftAddress)
+					dnr.addRaftNodeHost(nhid, raftAddress)
 				} else {
-					dnr.removeNodeHost(nhid)
+					dnr.removeRaftNodeHost(nhid)
+				}
+			}
+
+			if grpcAddress, ok := member.Tags[constants.GRPCAddressTag]; ok {
+				if grpcAddress != "" {
+					dnr.addGRPCNodeHost(nhid, grpcAddress)
+				} else {
+					dnr.removeGRPCNodeHost(nhid)
 				}
 			}
 		}
 	case serf.EventMemberLeave:
 		if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
-			dnr.removeNodeHost(nhid)
+			dnr.removeRaftNodeHost(nhid)
+			dnr.removeGRPCNodeHost(nhid)
 		}
 	default:
 		break
 	}
-}		
+}
 
-func (dnr *DynamicNodeRegistry) addNodeHost(nhid, raftAddress string) {
+func (dnr *DynamicNodeRegistry) addRaftNodeHost(nhid, raftAddress string) {
 	dnr.mu.Lock()
-	_, ok := dnr.nodeAddrs[nhid]
+	_, ok := dnr.raftAddrs[nhid]
 	if !ok {
-		dnr.nodeAddrs[nhid] = raftAddress
+		dnr.raftAddrs[nhid] = raftAddress
 	}
 	dnr.mu.Unlock()
 }
 
-func (dnr *DynamicNodeRegistry) removeNodeHost(nhid string) {
+func (dnr *DynamicNodeRegistry) removeRaftNodeHost(nhid string) {
 	dnr.mu.Lock()
-	delete(dnr.nodeAddrs, nhid)
+	delete(dnr.raftAddrs, nhid)
+	dnr.mu.Unlock()
+}
+
+func (dnr *DynamicNodeRegistry) addGRPCNodeHost(nhid, raftAddress string) {
+	dnr.mu.Lock()
+	_, ok := dnr.grpcAddrs[nhid]
+	if !ok {
+		dnr.grpcAddrs[nhid] = raftAddress
+	}
+	dnr.mu.Unlock()
+}
+
+func (dnr *DynamicNodeRegistry) removeGRPCNodeHost(nhid string) {
+	dnr.mu.Lock()
+	delete(dnr.grpcAddrs, nhid)
 	dnr.mu.Unlock()
 }
 
 // RegisterTagProviderFn gets a callback function that can  be used to set tags.
 func (dnr *DynamicNodeRegistry) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {
-	dnr.setTagFn = setTagFn	
+	dnr.setTagFn = setTagFn
 }
 
 func (dnr *DynamicNodeRegistry) Close() error {
@@ -113,7 +142,7 @@ func (dnr *DynamicNodeRegistry) Close() error {
 func (dnr *DynamicNodeRegistry) NumMembers() int {
 	dnr.mu.RLock()
 	defer dnr.mu.RUnlock()
-	return len(dnr.nodeAddrs)
+	return len(dnr.raftAddrs)
 }
 
 // Add adds a new node with its known NodeHostID to the registry.
@@ -147,7 +176,7 @@ func (dnr *DynamicNodeRegistry) RemoveCluster(clusterID uint64) {
 			toRemove = append(toRemove, ni)
 		}
 	}
-        dnr.mu.RUnlock()
+	dnr.mu.RUnlock()
 
 	dnr.mu.Lock()
 	for _, nodeInfo := range toRemove {
@@ -157,10 +186,19 @@ func (dnr *DynamicNodeRegistry) RemoveCluster(clusterID uint64) {
 }
 
 func (dnr *DynamicNodeRegistry) getConnectionKey(addr string, clusterID uint64) string {
-        if dnr.partitioner == nil {
-                return addr
-        }
-        return fmt.Sprintf("%s-%d", addr, dnr.partitioner.GetPartitionID(clusterID))
+	if dnr.partitioner == nil {
+		return addr
+	}
+	return fmt.Sprintf("%s-%d", addr, dnr.partitioner.GetPartitionID(clusterID))
+}
+
+// ResolveGRPCAddress returns the current GRPC address for a nodeHostID.
+func (dnr *DynamicNodeRegistry) ResolveGRPCAddress(nhid string) (string, error) {
+	grpcAddr, ok := dnr.grpcAddrs[nhid]
+	if !ok {
+		return "", status.NotFoundError("target address unknown")
+	}
+	return grpcAddr, nil
 }
 
 // Resolve returns the current RaftAddress and connection key of the specified
@@ -171,7 +209,7 @@ func (dnr *DynamicNodeRegistry) getConnectionKey(addr string, clusterID uint64) 
 //     target, key, err := nodeTargets(clusterID, nodeID)
 // and then we take that target and lookup the actual raft address. Same as
 // "GetRaftAddress" method:
-//     addr, ok := nodeAddrs(target)
+//     addr, ok := raftAddrs(target)
 // Finally we return the address, partitionKey, and any error.
 func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {
 	dnr.mu.RLock()
@@ -188,7 +226,7 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 		return dnr.raftAddress, key, nil
 	}
 
-        addr, ok := dnr.nodeAddrs[target]
+	addr, ok := dnr.raftAddrs[target]
 	if !ok {
 		return "", "", status.NotFoundError("target address unknown")
 	}

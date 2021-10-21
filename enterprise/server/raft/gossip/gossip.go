@@ -2,14 +2,13 @@ package gossip
 
 import (
 	"sync"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
 )
-
 
 // A Broker listens to Member events and can set tags.
 type Broker interface {
@@ -31,8 +30,8 @@ type GossipManager struct {
 	serfEventChan chan serf.Event
 	brokers       []Broker
 
-	tagMu         sync.Mutex
-	tags          map[string]string
+	tagMu sync.Mutex
+	tags  map[string]string
 }
 
 func (gm *GossipManager) notifyBroker(broker Broker, eventType serf.EventType, members []serf.Member) {
@@ -109,14 +108,14 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 	serfConfig.MemberlistConfig = memberlistConfig
 
 	// this is the maximum value that serf supports.
-	serfConfig.UserEventSizeLimit = 9 * 1024 
+	serfConfig.UserEventSizeLimit = 9 * 1024
 
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
-		brokers: make([]Broker, 0),
+		brokers:       make([]Broker, 0),
 		serfEventChan: make(chan serf.Event, 16),
-		tagMu: sync.Mutex{},
-		tags: make(map[string]string, 0),
+		tagMu:         sync.Mutex{},
+		tags:          make(map[string]string, 0),
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan
 	go gossipMan.processEvents()

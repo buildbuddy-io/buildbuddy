@@ -279,17 +279,18 @@ func main() {
 
 	if rcc := configurator.GetRaftCacheConfig(); rcc != nil {
 		rcConfig := &raft_cache.Config{
-			RootDir:          rcc.RootDirectory,
-			ListenAddress:    rcc.ListenAddr,
-			Join:             rcc.Join,
-			HTTPPort:         rcc.HTTPPort,
-			GRPCPort:         rcc.GRPCPort,
+			RootDir:       rcc.RootDirectory,
+			ListenAddress: rcc.ListenAddr,
+			Join:          rcc.Join,
+			HTTPPort:      rcc.HTTPPort,
+			GRPCPort:      rcc.GRPCPort,
 		}
 		rc, err := raft_cache.NewRaftCache(realEnv, rcConfig)
 		if err != nil {
 			log.Fatalf("Error enabling raft cache: %s", err.Error())
 		}
 		defer rc.Stop()
+		realEnv.SetCache(rc)
 	}
 
 	if mcTargets := configurator.GetCacheMemcacheTargets(); len(mcTargets) > 0 {

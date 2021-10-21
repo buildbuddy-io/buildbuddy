@@ -2,20 +2,43 @@ package client
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"math"
+	"sync"
+
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
-type apiConn struct {
-	rfpb.ApiClient
+type apiClientAndConn struct {
+	rfspb.ApiClient
 	conn *grpc.ClientConn
 }
 
 type APIClient struct {
-	env                   environment.Env
-	mu                    *sync.Mutex
-	clients               map[string]*apiConn
+	env     environment.Env
+	log     log.Logger
+	mu      sync.Mutex
+	clients map[string]*apiClientAndConn
 }
 
-func (c *CacheProxy) getClient(ctx context.Context, peer string) (rfpb.ApiClient, error) {
+func NewAPIClient(env environment.Env, name string) *APIClient {
+	return &APIClient{
+		env:     env,
+		log:     log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", name)),
+		clients: make(map[string]*apiClientAndConn, 0),
+	}
+}
+
+func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
@@ -27,15 +50,14 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (rfpb.ApiClient
 		return nil, err
 	}
 	client := rfspb.NewApiClient(conn)
-	c.clients[peer] = &dcClient{ApiClient: client, conn: conn}
+	c.clients[peer] = &apiClientAndConn{ApiClient: client, conn: conn}
 	return client, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	req := &dcpb.ReadRequest{
-		Isolation: isolation,
-		Key:       digestToKey(d),
-		Offset:    offset,
+func (c *APIClient) RemoteReader(ctx context.Context, peer string, fileRecord *rfpb.FileRecord, offset int64) (io.ReadCloser, error) {
+	req := &rfpb.ReadRequest{
+		FileRecord: fileRecord,
+		Offset:     offset,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -75,38 +97,32 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *d
 	err = <-firstError
 
 	// If we get an EOF, and we're expecting one - don't return an error.
-	if err == io.EOF && d.GetSizeBytes() == offset {
+	if err == io.EOF && fileRecord.GetDigest().GetSizeBytes() == offset {
 		return reader, nil
 	}
 	return reader, err
 }
 
 type streamWriteCloser struct {
-	stream        dcpb.DistributedCache_WriteClient
-	key           *dcpb.Key
-	isolation     *dcpb.Isolation
-	handoffPeer   string
+	stream        rfspb.Api_WriteClient
+	fileRecord    *rfpb.FileRecord
 	bytesUploaded int64
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
-	req := &dcpb.WriteRequest{
-		Isolation:   wc.isolation,
-		Key:         wc.key,
+	req := &rfpb.WriteRequest{
+		FileRecord:  wc.fileRecord,
 		Data:        data,
 		FinishWrite: false,
-		HandoffPeer: wc.handoffPeer,
 	}
 	err := wc.stream.Send(req)
 	return len(data), err
 }
 
 func (wc *streamWriteCloser) Close() error {
-	req := &dcpb.WriteRequest{
-		Isolation:   wc.isolation,
-		Key:         wc.key,
+	req := &rfpb.WriteRequest{
+		FileRecord:  wc.fileRecord,
 		FinishWrite: true,
-		HandoffPeer: wc.handoffPeer,
 	}
 	if err := wc.stream.Send(req); err != nil {
 		return err
@@ -115,19 +131,7 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
-	// Stopping a write mid-stream is difficult because Write streams are
-	// unidirectional. The server can close the stream early, but this does
-	// not necessarily save the client any work. So, to attempt to reduce
-	// duplicate writes, we call Contains before writing a new digest, and
-	// if it already exists, we'll return a devnull writecloser so no bytes
-	// are transmitted over the network.
-	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
-		if alreadyExists, err := c.RemoteContains(ctx, peer, isolation, d); err == nil && alreadyExists {
-			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
-			return devnull.NewWriteCloser(), nil
-		}
-	}
+func (c *APIClient) RemoteWriter(ctx context.Context, peer string, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -137,11 +141,89 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		return nil, err
 	}
 	wc := &streamWriteCloser{
-		isolation:     isolation,
-		handoffPeer:   handoffPeer,
-		key:           digestToKey(d),
+		fileRecord:    fileRecord,
 		bytesUploaded: 0,
 		stream:        stream,
 	}
 	return wc, nil
+}
+
+type multiWriteCloser struct {
+	ctx           context.Context
+	fileRecord    *rfpb.FileRecord
+	log           log.Logger
+	closers       map[string]io.WriteCloser
+	mu            sync.Mutex
+	totalNumPeers int
+}
+
+func fileRecordLogString(f *rfpb.FileRecord) string {
+	return fmt.Sprintf("%s/%s/%d", f.GetIsolation().GetCacheType(), f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes())
+}
+
+func (mc *multiWriteCloser) Write(data []byte) (int, error) {
+	eg, _ := errgroup.WithContext(mc.ctx)
+	for _, wc := range mc.closers {
+		wc := wc
+		eg.Go(func() error {
+			n, err := wc.Write(data)
+			if err != nil {
+				return err
+			}
+			if n != len(data) {
+				return io.ErrShortWrite
+			}
+			return nil
+		})
+	}
+
+	return len(data), eg.Wait()
+}
+
+func (mc *multiWriteCloser) Close() error {
+	eg, _ := errgroup.WithContext(mc.ctx)
+	for _, wc := range mc.closers {
+		wc := wc
+		eg.Go(func() error {
+			if err := wc.Close(); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+	err := eg.Wait()
+	if err == nil {
+		peers := make([]string, len(mc.closers))
+		for peer := range mc.closers {
+			peers = append(peers, peer)
+		}
+		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", fileRecordLogString(mc.fileRecord), peers)
+	}
+	return err
+}
+
+func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+	mwc := &multiWriteCloser{
+		ctx:        ctx,
+		log:        c.log,
+		fileRecord: fileRecord,
+		closers:    make(map[string]io.WriteCloser, 0),
+	}
+	for _, peer := range peers {
+		rwc, err := c.RemoteWriter(ctx, peer, fileRecord)
+		if err != nil {
+			log.Debugf("Error opening remote writer for %q to peer %q: %s", fileRecordLogString(fileRecord), peer, err)
+			continue
+		}
+		mwc.closers[peer] = rwc
+	}
+	if len(mwc.closers) < int(math.Ceil(float64(len(peers))/2)) {
+		openPeers := make([]string, len(mwc.closers))
+		for peer := range mwc.closers {
+			openPeers = append(openPeers, peer)
+		}
+		log.Debugf("Could not open enough remoteWriters for fileRecord %s. All peers: %s, opened: %s", fileRecordLogString(fileRecord), peers, openPeers)
+		return nil, status.UnavailableErrorf("Not enough peers (%d) available.", len(mwc.closers))
+	}
+	return mwc, nil
 }

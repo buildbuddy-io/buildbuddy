@@ -4,43 +4,43 @@ import (
 	"context"
 	"fmt"
 	"time"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/lni/dragonboat/v3"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/hashicorp/serf/serf"
-	"github.com/golang/protobuf/proto"
-	
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	"github.com/lni/dragonboat/v3"
+
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 type ClusterStarter struct {
 	// The nodehost and function used to create
 	// on disk statemachines for new clusters.
-	nodeHost  *dragonboat.NodeHost
-	createStateMachineFn   dbsm.CreateOnDiskStateMachineFunc
-	
+	nodeHost             *dragonboat.NodeHost
+	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
+
 	// the set of hosts passed to the Join arg
 	listenAddr string
-	join []string
+	join       []string
 
 	// map of grpc_address => node host ID
 	bootstrapInfo map[string]string
-	bootstrapped bool
+	bootstrapped  bool
 }
 
 func NewClusterStarter(nodeHost *dragonboat.NodeHost, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, listenAddr string, join []string) *ClusterStarter {
 	return &ClusterStarter{
-		nodeHost: nodeHost,
+		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
-		listenAddr: listenAddr,
-		join: join,
-		bootstrapInfo: make(map[string]string, 0),
-		bootstrapped: false,
+		listenAddr:           listenAddr,
+		join:                 join,
+		bootstrapInfo:        make(map[string]string, 0),
+		bootstrapped:         false,
 	}
 }
 
@@ -108,7 +108,6 @@ func (cs *ClusterStarter) MemberEvent(updateType serf.EventType, member *serf.Me
 	}
 
 	if len(cs.bootstrapInfo) == len(cs.join) {
-		log.Printf("len(cs.bootstrapInfo) [%d] == len(cs.join) [%d]", len(cs.bootstrapInfo), len(cs.join))
 		if err := cs.sendStartClusterRequests(); err == nil {
 			cs.bootstrapped = true
 		} else {
@@ -119,15 +118,16 @@ func (cs *ClusterStarter) MemberEvent(updateType serf.EventType, member *serf.Me
 
 type bootstrapNode struct {
 	grpcAddress string
-	nodeHostID string
-	index uint64
+	nodeHostID  string
+	index       uint64
 }
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bringup an initial cluster.
 func (cs *ClusterStarter) sendStartClusterRequests() error {
 	if cs.listenAddr != cs.join[0] {
 		return nil
-	}	
+	}
 
 	i := uint64(1)
 	initialMembers := make(map[uint64]string, 0)
@@ -135,14 +135,15 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 	for grpcAddress, nhid := range cs.bootstrapInfo {
 		nodes = append(nodes, bootstrapNode{
 			grpcAddress: grpcAddress,
-			nodeHostID: nhid,
-			index: i,
-		})			
+			nodeHostID:  nhid,
+			index:       i,
+		})
 		initialMembers[i] = nhid
 		i += 1
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	log.Debugf("I am %q sending cluster bringup requests to %+v", cs.listenAddr, nodes)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	for _, node := range nodes {
@@ -152,8 +153,8 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		}
 		client := rfspb.NewApiClient(conn)
 		_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
-			ClusterId: constants.InitialClusterID,
-			NodeId: node.index,
+			ClusterId:     constants.InitialClusterID,
+			NodeId:        node.index,
 			InitialMember: initialMembers,
 		})
 		if err != nil {
@@ -178,9 +179,8 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 }
 
 func setupTimeVal() []byte {
-	v, _ := proto.Marshal(&rfpb.KV{
-		Key: constants.InitClusterSetupTimeKey,
+	return rbuilder.DirectWriteRequestBuf(&rfpb.KV{
+		Key:   constants.InitClusterSetupTimeKey,
 		Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
 	})
-	return v
 }

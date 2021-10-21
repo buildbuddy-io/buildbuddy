@@ -18,4 +18,3 @@ func ParseAddress(addr string) (string, int, error) {
 	}
 	return host, int(port), nil
 }
-

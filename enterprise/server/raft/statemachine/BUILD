@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/statemachine",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
+        "//server/util/disk",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_golang_protobuf//proto:go_default_library",

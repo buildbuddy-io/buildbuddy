@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
@@ -69,6 +71,7 @@ type PebbleDiskStateMachine struct {
 	closed   bool
 
 	rootDir   string
+	fileDir   string
 	clusterID uint64
 	nodeID    uint64
 
@@ -146,6 +149,69 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.getLastAppliedIndex()
 }
 
+func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) error {
+	f, err := constants.FilePath(sm.fileDir, req.GetFileRecord())
+	if err != nil {
+		return err
+	}
+	protoBytes, err := proto.Marshal(req)
+	if err != nil {
+		return err
+	}
+	if exists, err := disk.FileExists(f); err == nil && exists {
+		return wb.Set([]byte(f), protoBytes, nil /*ignored write options*/)
+	}
+	return status.FailedPreconditionError("file did not exist")
+}
+
+func (sm *PebbleDiskStateMachine) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) error {
+	kv := req.GetKv()
+	return wb.Set(kv.Key, kv.Value, nil /*ignored write options*/)
+}
+
+func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
+	buf, err := sm.lookup(req.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	rsp := &rfpb.DirectReadResponse{
+		Kv: &rfpb.KV{
+			Key:   req.GetKey(),
+			Value: buf,
+		},
+	}
+	return rsp, nil
+}
+
+func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) error {
+	switch value := req.Value.(type) {
+	case *rfpb.RequestUnion_FileWrite:
+		return sm.fileWrite(wb, value.FileWrite)
+	case *rfpb.RequestUnion_DirectWrite:
+		return sm.directWrite(wb, value.DirectWrite)
+	default:
+		return status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
+	}
+}
+
+func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
+	rsp := &rfpb.ResponseUnion{}
+
+	switch value := req.Value.(type) {
+	case *rfpb.RequestUnion_DirectRead:
+		r, err := sm.directRead(value.DirectRead)
+		if err != nil {
+			return nil, err
+		}
+		rsp.Value = &rfpb.ResponseUnion_DirectRead{
+			DirectRead: r,
+		}
+	default:
+		return nil, status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
+	}
+	return rsp, nil
+}
+
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
 // is a list of continuous proposed and committed commands from clients, they
 // are provided together as a batch so the IOnDiskStateMachine implementation
@@ -196,12 +262,12 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 	defer wb.Close()
 
 	// Insert all of the data in the batch.
-	kv := &rfpb.KV{}
+	req := &rfpb.RequestUnion{}
 	for idx, entry := range entries {
-		if err := proto.Unmarshal(entry.Cmd, kv); err != nil {
+		if err := proto.Unmarshal(entry.Cmd, req); err != nil {
 			return nil, err
 		}
-		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
+		if err := sm.handlePropose(wb, req); err != nil {
 			return nil, err
 		}
 		entries[idx].Result = dbsm.Result{
@@ -245,15 +311,26 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
 func (sm *PebbleDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
-	kb, ok := key.([]byte)
+	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
-	val, err := sm.lookup(kb)
-	if status.IsNotFoundError(err) {
-		return nil, nil
+
+	req := &rfpb.RequestUnion{}
+	if err := proto.Unmarshal(reqBuf, req); err != nil {
+		return nil, err
 	}
-	return val, err
+
+	rsp, err := sm.handleRead(req)
+	if err != nil {
+		return nil, err
+	}
+
+	rspBuf, err := proto.Marshal(rsp)
+	if err != nil {
+		return nil, err
+	}
+	return rspBuf, nil
 }
 
 // Sync synchronizes all in-core state of the state machine to persisted
@@ -454,18 +531,19 @@ func (sm *PebbleDiskStateMachine) Close() error {
 }
 
 // CreatePebbleDiskStateMachine creates an ondisk statemachine.
-func CreatePebbleDiskStateMachine(rootDir string, clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
+func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
 	return &PebbleDiskStateMachine{
-		closedMu: &sync.RWMutex{},
+		closedMu:  &sync.RWMutex{},
 		rootDir:   rootDir,
+		fileDir:   fileDir,
 		clusterID: clusterID,
 		nodeID:    nodeID,
 	}
 }
 
 // Satisfy the interface gods.
-func MakeCreatePebbleDiskStateMachineFactory(rootDir string) dbsm.CreateOnDiskStateMachineFunc {
+func MakeCreatePebbleDiskStateMachineFactory(rootDir, fileDir string) dbsm.CreateOnDiskStateMachineFunc {
 	return func(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-		return CreatePebbleDiskStateMachine(rootDir, clusterID, nodeID)
+		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID)
 	}
 }
