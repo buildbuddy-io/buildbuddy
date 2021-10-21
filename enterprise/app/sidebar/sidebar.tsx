@@ -194,14 +194,14 @@ export default class SidebarComponent extends React.Component {
             onClick={this.navigateToHosts.bind(this)}>
             <img src="/image/hard-drive-white.svg" /> Hosts
           </div>
-          {capabilities.executors && this.props.user?.canCall("getExecutionNodes") && (
+          {router.canAccessExecutorsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isExecutorsSelected() ? "selected" : ""}`}
               onClick={this.navigateToExecutors.bind(this)}>
               <img src="/image/cloud-white.svg" /> Executors
             </div>
           )}
-          {capabilities.workflows && this.props.user?.canCall("getWorkflows") && (
+          {router.canAccessWorkflowsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isWorkflowsSelected() ? "selected" : ""}`}
               onClick={this.navigateToWorkflows.bind(this)}>
@@ -220,7 +220,7 @@ export default class SidebarComponent extends React.Component {
             onClick={() => router.navigateToSetup()}>
             <img src="/image/settings-white.svg" /> Setup
           </div>
-          {capabilities.usage && this.props.user?.canCall("getUsage") && (
+          {router.canAccessUsagePage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
               onClick={this.navigateToUsage.bind(this)}>
