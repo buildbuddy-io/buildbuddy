@@ -278,6 +278,13 @@ func (w *webhookNotifier) Start() {
 				continue
 			}
 
+			// Read the invocation from the source of truth used by the UI.
+			invocation, err := LookupInvocation(w.env, ctx, invocation.GetInvocationId())
+			if err != nil {
+				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
+				continue
+			}
+
 			for _, hook := range w.env.GetWebhooks() {
 				w.tasks <- &notifyWebhookTask{
 					hook:       hook,

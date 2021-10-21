@@ -140,16 +140,17 @@ type AzureConfig struct {
 }
 
 type integrationsConfig struct {
-	Slack SlackConfig      `yaml:"slack"`
-	GCS   GCSWebhookConfig `yaml:"gcs"`
+	Slack            SlackConfig            `yaml:"slack"`
+	InvocationUpload InvocationUploadConfig `yaml:"invocation_upload"`
 }
 
 type SlackConfig struct {
 	WebhookURL string `yaml:"webhook_url" usage:"A Slack webhook url to post build update messages to."`
 }
 
-type GCSWebhookConfig struct {
-	CredentialsJSON string `yaml:"credentials" usage:"Credentials JSON for the service account used to authenticate to GCS when GCS is used as a webhook target. ** Enterprise only **"`
+type InvocationUploadConfig struct {
+	Enabled            bool   `yaml:"enabled" usage:"Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **"`
+	GCSCredentialsJSON string `yaml:"gcs_credentials" usage:"Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **"`
 }
 
 type GCSCacheConfig struct {
@@ -653,8 +654,8 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 	return &c.gc.Integrations.Slack
 }
 
-func (c *Configurator) GetIntegrationsGCSConfig() *GCSWebhookConfig {
-	return &c.gc.Integrations.GCS
+func (c *Configurator) GetIntegrationsInvocationUploadConfig() *InvocationUploadConfig {
+	return &c.gc.Integrations.InvocationUpload
 }
 
 func (c *Configurator) GetBuildEventProxyHosts() []string {
