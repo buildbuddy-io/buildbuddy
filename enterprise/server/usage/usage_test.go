@@ -12,8 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -164,12 +163,12 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 
 	assert.ElementsMatch(t, []*tables.Usage{
 		{
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
 			GroupID:         "GR1",
 			Region:          "us-west1",
 			// We wrote 2 collection periods, so data should be final up to the 3rd
 			// collection period.
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection3Start),
+			FinalBeforeUsec: usage1Collection3Start.UnixMicro(),
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits:           1001 + 2,
 				ActionCacheHits:        10 + 20,
@@ -231,19 +230,19 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	// so usage rows should be finalized up to the second collection period.
 	assert.ElementsMatch(t, []*tables.Usage{
 		{
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
 			GroupID:         "GR1",
 			Region:          "us-west1",
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 1,
 			},
 		},
 		{
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
 			GroupID:         "GR2",
 			Region:          "us-west1",
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 10,
 			},
@@ -283,8 +282,8 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
 			UsageCounts: tables.UsageCounts{
 				CASCacheHits: 1,
 			},
@@ -362,8 +361,8 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection3Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection3Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1001},
 		},
 	}, usages)
@@ -403,15 +402,15 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 		{
 			GroupID:         "GR1",
 			Region:          "europe-north1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 100},
 		},
 		{
 			GroupID:         "GR1",
 			Region:          "us-west1",
-			PeriodStartUsec: timeutil.ToUsec(usage1Start),
-			FinalBeforeUsec: timeutil.ToUsec(usage1Collection2Start),
+			PeriodStartUsec: usage1Start.UnixMicro(),
+			FinalBeforeUsec: usage1Collection2Start.UnixMicro(),
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
 		},
 	}, usages)

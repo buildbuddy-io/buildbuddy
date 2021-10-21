@@ -157,7 +157,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = dbHandle.Exec(
-		"UPDATE Groups SET github_token = ? WHERE group_id = ?",
+		`UPDATE `+"`Groups`"+` SET github_token = ? WHERE group_id = ?`,
 		accessTokenResponse.AccessToken, groupID).Error
 	if err != nil {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("Error linking github account to user: %v", err))

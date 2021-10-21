@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
 	"github.com/golang/protobuf/proto"
@@ -911,7 +910,7 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 	props := map[string]interface{}{
 		redisTaskProtoField:       serializedTask,
 		redisTaskMetadataField:    serializedMetadata,
-		redisTaskQueuedAtUsec:     timeutil.ToUsec(time.Now()),
+		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),
 		redisTaskAttempCountField: 0,
 	}
 	c, err := s.rdb.HSet(ctx, redisKeyForTask(taskID), props).Result()
@@ -1097,7 +1096,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		taskID:          taskID,
 		metadata:        metadata,
 		serializedTask:  serializedTask,
-		queuedTimestamp: timeutil.FromUsec(queuedAtUsec),
+		queuedTimestamp: time.UnixMicro(queuedAtUsec),
 		attemptCount:    attemptCount,
 	}, nil
 }
@@ -1413,7 +1412,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		if err := s.deleteClaimedTask(ctx, taskID); err != nil {
 			return err
 		}
-		return status.ResourceExhaustedErrorf("Task already attempted %d times.", task.attemptCount)
+		return status.ResourceExhaustedErrorf("Task %q already attempted %d times.", taskID, task.attemptCount)
 	}
 	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
 	log.Debugf("ReEnqueueTask RPC for task %q", taskID)

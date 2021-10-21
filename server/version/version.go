@@ -33,7 +33,7 @@ func Print() {
 }
 
 func AppVersion() string {
-	if version != "{VERSION}" {
+	if version != "" && version != "{VERSION}" {
 		return version
 	}
 	var versionBytes []byte
@@ -54,7 +54,7 @@ func GoVersion() string {
 }
 
 func Commit() string {
-	if commitSha != "{COMMIT_SHA}" {
+	if commitSha != "" && commitSha != "{COMMIT_SHA}" {
 		return commitSha
 	}
 	return unknownValue

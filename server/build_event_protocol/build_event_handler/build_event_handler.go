@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -387,18 +388,23 @@ func (e *EventChannel) Close() {
 	e.onClose()
 }
 
-func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
-	if !e.beValues.BuildFinished() {
-		return e.FinalizeInvocation(iid)
+func (e *EventChannel) FinalizeInvocation(iid string) error {
+	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 3*time.Second)
+	defer cancel()
+
+	invocation := &inpb.Invocation{
+		InvocationId:     iid,
+		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	e.statusReporter.ReportDisconnect(ctx)
+
+	if !e.beValues.BuildFinished() {
+		log.Warningf("Invocation %s lacks a BuildFinished event, marking as disconnected.", iid)
+		e.statusReporter.ReportDisconnect(ctx)
+		invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	}
 
 	if err := e.pw.Flush(ctx); err != nil {
 		return err
-	}
-	invocation := &inpb.Invocation{
-		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_DISCONNECTED_INVOCATION_STATUS,
 	}
 
 	err := e.fillInvocationFromEvents(ctx, iid, invocation)
@@ -419,7 +425,6 @@ func (e *EventChannel) MarkInvocationDisconnected(ctx context.Context, iid strin
 	}
 
 	e.statsRecorder.MarkFinalized(invocation)
-
 	return nil
 }
 
@@ -467,42 +472,6 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 func md5Int64(text string) int64 {
 	hash := md5.Sum([]byte(text))
 	return int64(binary.BigEndian.Uint64(hash[:8]))
-}
-
-func (e *EventChannel) FinalizeInvocation(iid string) error {
-	if err := e.pw.Flush(e.ctx); err != nil {
-		return err
-	}
-	invocation := &inpb.Invocation{
-		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
-	}
-	err := e.fillInvocationFromEvents(e.ctx, iid, invocation)
-	if err != nil {
-		return err
-	}
-	if e.logWriter != nil {
-		if err := e.logWriter.Close(); err != nil {
-			return err
-		}
-		invocation.LastChunkId = e.logWriter.GetLastChunkId()
-	}
-
-	ti := tableInvocationFromProto(invocation, iid)
-	recordInvocationMetrics(ti)
-	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
-		return err
-	}
-
-	e.statsRecorder.MarkFinalized(invocation)
-	if searcher := e.env.GetInvocationSearchService(); searcher != nil {
-		go func() {
-			if err := searcher.IndexInvocation(context.Background(), invocation); err != nil {
-				log.Warningf("Error indexing invocation: %s", err)
-			}
-		}()
-	}
-	return nil
 }
 
 func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {

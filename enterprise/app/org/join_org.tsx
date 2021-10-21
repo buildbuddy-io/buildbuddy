@@ -12,7 +12,7 @@ export interface JoinOrgComponentProps {
 
 interface State {
   status: "INITIAL_LOAD" | "NOT_FOUND" | "READY" | "ALREADY_EXISTS" | "JOINING_GROUP" | "REQUEST_SUBMITTED";
-  error?: string;
+  error?: BuildBuddyError;
   org?: grp.GetGroupResponse;
 }
 
@@ -53,7 +53,7 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     } catch (e) {
       const error = BuildBuddyError.parse(e);
       if (error.code === "AlreadyExists") {
-        this.setState({ status: "ALREADY_EXISTS", error: error.description });
+        this.setState({ status: "ALREADY_EXISTS", error });
         return;
       } else {
         throw e;
@@ -95,9 +95,9 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
             <div className="submit-result already-joined">
-              <div>{this.state.error}</div>
+              <div>{this.state.error.description}</div>
               {/* TODO: Return a better status code to differentiate already requested vs. already in */}
-              {this.state.error.includes("already in") && (
+              {this.state.error.description.includes("already in") && (
                 <div>
                   <FilledButton className="button" onClick={this.onViewBuildsClicked.bind(this)}>
                     View builds

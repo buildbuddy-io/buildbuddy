@@ -4,11 +4,9 @@ import (
 	"context"
 	"io"
 	"sort"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
@@ -72,11 +70,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			log.Warningf("Marking invocation %q as disconnected: %s", streamID.InvocationId, e)
-			ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
-			defer cancel()
-			if err := channel.MarkInvocationDisconnected(ctx, streamID.InvocationId); err != nil {
-				log.Warningf("Error marking invocation %q as disconnected: %s", streamID.InvocationId, err)
+			log.Warningf("Disconnecting invocation %q: %s", streamID.InvocationId, e)
+			if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
+				log.Warningf("Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
 			}
 		}
 		return e
