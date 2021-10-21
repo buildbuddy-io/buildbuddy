@@ -360,12 +360,11 @@ func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) 
 }
 
 func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
-	multiRsp, err := c.RemoteContainsMulti(ctx, peer, isolation, []*repb.Digest{d})
+	missing, err := c.RemoteFindMissing(ctx, peer, isolation, []*repb.Digest{d})
 	if err != nil {
 		return false, err
 	}
-	exists, ok := multiRsp[d]
-	return ok && exists, nil
+	return len(missing) == 0, nil
 }
 
 func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
