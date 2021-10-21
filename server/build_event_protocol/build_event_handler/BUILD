@@ -25,6 +25,7 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/background",
+        "//server/util/db",
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",

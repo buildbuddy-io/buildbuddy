@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -518,6 +519,25 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if isStartedEvent(&bazelBuildEvent) {
 		isFirstStartedEvent := !e.hasReceivedStartedEvent
 		e.hasReceivedStartedEvent = true
+		if isFirstStartedEvent {
+			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
+			if err == nil {
+				// We are retrying a previous invocation.
+				if inv.InvocationStatus != int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) && inv.InvocationStatus != int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+					// The invocation is neither disconnected nor in-progress, it is not
+					// valid to retry.
+					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
+				} else if time.UnixMicro(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
+					// The invocation was last updated over 4 hours ago; it is not valid
+					// to retry.
+					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+				}
+			} else if !db.IsRecordNotFound(err) {
+				// RecordNotFound means this invocation has never existed, which is not
+				// an error. All other errors are real errors.
+				return err
+			}
+		}
 		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 		ti := &tables.Invocation{
 			InvocationID:     iid,
