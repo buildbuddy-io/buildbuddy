@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -36,6 +37,7 @@ type CacheProxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
+	bufferPool            *bytebufferpool.Pool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*dcClient
@@ -49,6 +51,7 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		env:        env,
 		cache:      c,
 		log:        log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
+		bufferPool: bytebufferpool.New(readBufSizeBytes),
 		listenAddr: listenAddr,
 		mu:         &sync.Mutex{},
 		// server goes here
@@ -178,6 +181,30 @@ func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiR
 	return rsp, nil
 }
 
+func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	if err != nil {
+		return nil, err
+	}
+	digests := make([]*repb.Digest, 0)
+	for _, k := range req.GetKey() {
+		digests = append(digests, digestFromKey(k))
+	}
+	cache, err := c.getCache(ctx, req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	missing, err := cache.FindMissing(ctx, digests)
+	if err != nil {
+		return nil, err
+	}
+	rsp := &dcpb.FindMissingResponse{}
+	for _, d := range missing {
+		rsp.Missing = append(rsp.Missing, digestToKey(d))
+	}
+	return rsp, nil
+}
+
 // IsolationToString returns a compact representation of the Isolation proto suitable for logging.
 func IsolationToString(isolation *dcpb.Isolation) string {
 	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
@@ -255,8 +282,9 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
-	copyBuf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
+	copyBuf := c.bufferPool.Get(bufSize)
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	c.bufferPool.Put(copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", IsolationToString(req.GetIsolation())+d.GetHash(), up)
 	return err
 }
@@ -366,6 +394,34 @@ func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer string, isola
 		}
 	}
 	return resultMap, nil
+}
+
+func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
+	req := &dcpb.FindMissingRequest{
+		Isolation: isolation,
+	}
+	hashDigests := make(map[string]*repb.Digest, len(digests))
+	for _, d := range digests {
+		key := digestToKey(d)
+		hashDigests[d.GetHash()] = d
+		req.Key = append(req.Key, key)
+	}
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := client.FindMissing(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	var missing []*repb.Digest
+	for _, k := range rsp.GetMissing() {
+		missing = append(missing, &repb.Digest{
+			Hash:      k.GetKey(),
+			SizeBytes: k.GetSizeBytes(),
+		})
+	}
+	return missing, nil
 }
 
 func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

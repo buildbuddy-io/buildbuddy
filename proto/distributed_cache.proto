@@ -58,6 +58,15 @@ message ContainsMultiResponse {
   repeated KeysFound keys_found = 1;
 }
 
+message FindMissingRequest {
+  Isolation isolation = 1;
+  repeated Key key = 2;
+}
+
+message FindMissingResponse {
+  repeated Key missing = 1;
+}
+
 message KV {
   Key key = 1;
   bytes value = 2;
@@ -83,6 +92,7 @@ service DistributedCache {
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
   rpc ContainsMulti(ContainsMultiRequest) returns (ContainsMultiResponse);
+  rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }

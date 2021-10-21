@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -336,7 +335,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 
 		groupID = g.GroupID
 		res := tx.Exec(`
-			UPDATE Groups SET name = ?, url_identifier = ?, owned_domain = ?, sharing_enabled = ?, 
+			UPDATE `+"`Groups`"+` SET name = ?, url_identifier = ?, owned_domain = ?, sharing_enabled = ?, 
 				use_group_owned_executors = ?
 			WHERE group_id = ?`,
 			g.Name, g.URLIdentifier, g.OwnedDomain, g.SharingEnabled, g.UseGroupOwnedExecutors,
@@ -361,9 +360,21 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 		if existing != nil {
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
+		row := &struct{ Count int64 }{}
+		err = tx.Raw(
+			"SELECT COUNT(*) AS count FROM UserGroups WHERE group_group_id = ?", groupID,
+		).Take(row).Error
+		if err != nil {
+			return err
+		}
+		r := role.Default
+		// If no existing users in the group, promote to admin automatically.
+		if row.Count == 0 {
+			r = role.Admin
+		}
 		return tx.Exec(
 			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
-			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
+			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
 		).Error
 	})
 }
@@ -718,8 +729,8 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 		WHERE 
 			u.created_at_usec >= ? AND
 			u.created_at_usec < ?`,
-		timeutil.ToUsec(time.Now().Truncate(24*time.Hour).Add(-24*time.Hour)),
-		timeutil.ToUsec(time.Now().Truncate(24*time.Hour)))
+		time.Now().Truncate(24*time.Hour).Add(-24*time.Hour).UnixMicro(),
+		time.Now().Truncate(24*time.Hour).UnixMicro())
 
 	if err := counts.Take(stat).Error; err != nil {
 		return err

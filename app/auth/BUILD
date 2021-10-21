@@ -4,10 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "auth",
-    srcs = glob(["*.ts"]),
+    srcs = ["auth_service.ts"],
     deps = [
+        ":user",
         "//app/capabilities",
         "//app/errors",
+        "//app/router",
         "//app/service",
         "//app/util:errors",
         "//proto:context_ts_proto",
@@ -15,6 +17,17 @@ ts_library(
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
         "@npm//rxjs",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "user",
+    srcs = ["user.ts"],
+    deps = [
+        "//app/service",
+        "//proto:group_ts_proto",
+        "//proto:user_id_ts_proto",
         "@npm//tslib",
     ],
 )

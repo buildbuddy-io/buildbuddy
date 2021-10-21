@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
@@ -491,7 +490,7 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 				g.use_group_owned_executors,
 				g.saml_idp_metadata_url,
 				ug.role
-			FROM Groups AS g, UserGroups AS ug
+			FROM `+"`Groups`"+` AS g, UserGroups AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
 			AND ug.user_user_id = ?
@@ -925,7 +924,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 			SubID:        ut.GetSubID(),
 			AccessToken:  oauth2Token.AccessToken,
 			RefreshToken: refreshToken,
-			ExpiryUsec:   timeutil.ToUsec(expireTime),
+			ExpiryUsec:   expireTime.UnixMicro(),
 		}
 		if authDB := a.env.GetAuthDB(); authDB != nil {
 			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {

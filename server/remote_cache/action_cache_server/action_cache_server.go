@@ -39,15 +39,12 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
-	foundMap, err := cache.ContainsMulti(ctx, digests)
+	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
 	}
-	for _, d := range digests {
-		found, ok := foundMap[d]
-		if !ok || !found {
-			return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", d)
-		}
+	if len(missing) > 0 {
+		return status.NotFoundErrorf("ActionResult output file: '%s' not found in cache", missing[0])
 	}
 	return nil
 }

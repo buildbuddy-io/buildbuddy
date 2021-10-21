@@ -199,7 +199,7 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	gormLogger := logger.New(
 		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
 		logger.Config{
-			SlowThreshold: 200 * time.Millisecond,
+			SlowThreshold: 500 * time.Millisecond,
 			LogLevel:      logger.Warn,
 			// Disable log colors when structured logging is enabled.
 			Colorful: !configurator.GetAppEnableStructuredLogging(),
