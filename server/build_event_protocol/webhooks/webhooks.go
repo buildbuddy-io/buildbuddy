@@ -24,17 +24,17 @@ const (
 	gcsReadWriteScope = "https://www.googleapis.com/auth/devstorage.read_write"
 )
 
-type protoUploadHook struct {
+type invocationUploadHook struct {
 	env environment.Env
 }
 
-// NewProtoUploadHook returns a webhook that uploads the invocation proto
+// NewInvocationUploadHook returns a webhook that uploads the invocation proto
 // contents to the webhook target using an HTTP PUT request.
-func NewProtoUploadHook(env environment.Env) interfaces.Webhook {
-	return &protoUploadHook{env}
+func NewInvocationUploadHook(env environment.Env) interfaces.Webhook {
+	return &invocationUploadHook{env}
 }
 
-func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocation) error {
+func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocation) error {
 	groupID := in.GetAcl().GetGroupId()
 	if groupID == "" {
 		return nil
@@ -123,11 +123,11 @@ func (h *protoUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invocatio
 // this returns a token source that generates tokens for the configured service
 // account. Otherwise, it returns nil, which is properly handled by the oauth
 // client.
-func (h *protoUploadHook) getTokenSource(ctx context.Context, u *url.URL) (oauth2.TokenSource, error) {
+func (h *invocationUploadHook) getTokenSource(ctx context.Context, u *url.URL) (oauth2.TokenSource, error) {
 	if !strings.HasSuffix(u.Host, "."+gcsDomain) {
 		return nil, nil
 	}
-	credsJSON := h.env.GetConfigurator().GetIntegrationsGCSConfig().CredentialsJSON
+	credsJSON := h.env.GetConfigurator().GetIntegrationsInvocationUploadConfig().GCSCredentialsJSON
 	if credsJSON == "" {
 		return nil, nil
 	}

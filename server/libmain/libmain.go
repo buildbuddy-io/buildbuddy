@@ -173,7 +173,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 			hooks = append(hooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
 		}
 	}
-	hooks = append(hooks, webhooks.NewProtoUploadHook(realEnv))
+	if configurator.GetIntegrationsInvocationUploadConfig().Enabled {
+		hooks = append(hooks, webhooks.NewInvocationUploadHook(realEnv))
+	}
 	realEnv.SetWebhooks(hooks)
 
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
