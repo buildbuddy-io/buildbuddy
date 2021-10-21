@@ -319,7 +319,7 @@ class Router {
    * Routes the user to a new page if they don't have the ability to access the
    * current page.
    */
-  reroute(user: User | null) {
+  rerouteIfNecessary(user: User | null) {
     const fallbackPath = this.getFallbackPath(user);
     if (fallbackPath === null) return;
 

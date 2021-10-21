@@ -94,7 +94,7 @@ export class AuthService {
     this.updateRequestContext();
     // Ensure that the user we are about to emit will see a route they are
     // authorized to view.
-    router.reroute(user);
+    router.rerouteIfNecessary(user);
     this.userStream.next(user);
   }
 
