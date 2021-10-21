@@ -1,10 +1,8 @@
 package webhooks
 
 import (
-	"bytes"
+	"compress/gzip"
 	"context"
-	"crypto/md5"
-	"encoding/base64"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/jsonpb"
 	"golang.org/x/oauth2"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -61,24 +59,40 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	if !strings.HasSuffix(u.Path, "/") {
 		u.Path += "/"
 	}
-	u.Path += in.GetInvocationId()
+	u.Path += in.GetInvocationId() + ".json"
 
-	payload, err := proto.Marshal(in)
-	if err != nil {
-		return err
-	}
 	tokenSource, err := h.getTokenSource(ctx, u)
 	if err != nil {
 		return err
 	}
 	client := oauth2.NewClient(ctx, tokenSource)
-	req, err := http.NewRequest(http.MethodPut, u.String(), bytes.NewReader(payload))
+
+	// Set up a pipeline of proto -> jsonpb -> gzip -> request body
+	jsonpbPipeReader, jsonpbPipeWriter := io.Pipe()
+	go func() {
+		marshaler := &jsonpb.Marshaler{}
+		err := marshaler.Marshal(jsonpbPipeWriter, in)
+		jsonpbPipeWriter.CloseWithError(err)
+	}()
+
+	gzipPipeReader, gzipPipeWriter := io.Pipe()
+	go func() {
+		gzw := gzip.NewWriter(gzipPipeWriter)
+		_, err := io.Copy(gzw, jsonpbPipeReader)
+		if err != nil {
+			gzipPipeWriter.CloseWithError(err)
+			return
+		}
+		err = gzw.Close()
+		gzipPipeWriter.CloseWithError(err)
+	}()
+
+	req, err := http.NewRequest(http.MethodPut, u.String(), gzipPipeReader)
 	if err != nil {
 		return err
 	}
-	md5Sum := md5.Sum(payload)
-	req.Header.Add("Content-Type", "application/octet-stream")
-	req.Header.Add("Content-MD5", base64.StdEncoding.EncodeToString(md5Sum[:]))
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Content-Encoding", "gzip")
 
 	log.Infof("Uploading invocation proto to: %s", u.String())
 	res, err := client.Do(req)
