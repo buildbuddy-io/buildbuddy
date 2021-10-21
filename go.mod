@@ -27,7 +27,6 @@ require (
 	github.com/elastic/gosigar v0.11.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/go-git/go-git/v5 v5.2.0
-	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
 	github.com/go-redsync/redsync/v4 v4.4.1
