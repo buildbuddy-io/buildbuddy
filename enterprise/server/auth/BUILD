@@ -23,7 +23,6 @@ go_library(
         "//server/util/random",
         "//server/util/role",
         "//server/util/status",
-        "//server/util/timeutil",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_dgrijalva_jwt_go//:jwt-go",
         "@org_golang_google_grpc//credentials",

@@ -11,7 +11,6 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/role",
-        "//server/util/timeutil",
         "@io_gorm_gorm//:gorm",
     ],
 )

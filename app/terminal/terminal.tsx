@@ -16,7 +16,9 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
           rowHeight={20}
           lineClassName="terminal-line"
           follow={true}
-          text={this.props.value || "No build logs..."}
+          // Ensure a trailing blank line to prevent the horizontal scrollbar
+          // from covering up the last line of logs.
+          text={(this.props.value || "No build logs...") + "\n\n"}
           // This spread works around lightTheme not being included in @types/react-lazylog
           // (it's a custom prop we added in our fork).
           {...{ lightTheme: this.props.lightTheme }}

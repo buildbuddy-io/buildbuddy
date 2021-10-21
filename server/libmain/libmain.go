@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -165,14 +166,17 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 
-	webhooks := make([]interfaces.Webhook, 0)
+	hooks := make([]interfaces.Webhook, 0)
 	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
 		if sc.WebhookURL != "" {
-			webhooks = append(webhooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
+			hooks = append(hooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
 		}
 	}
-	realEnv.SetWebhooks(webhooks)
+	if configurator.GetIntegrationsInvocationUploadConfig().Enabled {
+		hooks = append(hooks, webhooks.NewInvocationUploadHook(realEnv))
+	}
+	realEnv.SetWebhooks(hooks)
 
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	for _, target := range configurator.GetBuildEventProxyHosts() {

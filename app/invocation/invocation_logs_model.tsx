@@ -21,7 +21,7 @@ export default class InvocationLogsModel {
 
   // Length of the log prefix which has already been persisted. The remainder of
   // the log is considered "live" and may be updated on subsequent fetches.
-	private stableLogLength = 0;
+  private stableLogLength = 0;
 
   constructor(private invocationId: string) {}
 
@@ -54,11 +54,11 @@ export default class InvocationLogsModel {
       )
     ).subscribe({
       next: (response) => {
-				this.logs = this.logs.slice(0, this.stableLogLength)
+        this.logs = this.logs.slice(0, this.stableLogLength);
         this.logs = this.logs + new TextDecoder().decode(response.buffer || new Uint8Array());
-				if (!response.live) {
-					this.stableLogLength = this.logs.length;
-				}
+        if (!response.live) {
+          this.stableLogLength = this.logs.length;
+        }
 
         // Empty next chunk ID means the invocation is complete and we've reached
         // the end of the log.
