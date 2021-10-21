@@ -289,27 +289,27 @@ class Router {
     this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 
-  canAccessExecutorsPage(user: User) {
+  canAccessExecutorsPage(user: User | null) {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
-  canAccessUsagePage(user: User) {
+  canAccessUsagePage(user: User | null) {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage(user: User) {
+  canAccessWorkflowsPage(user: User | null) {
     return capabilities.workflows && Boolean(user?.canCall("getWorkflows"));
   }
 
-  canAccessOrgDetailsPage(user: User) {
+  canAccessOrgDetailsPage(user: User | null) {
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgMembersPage(user: User) {
+  canAccessOrgMembersPage(user: User | null) {
     return Boolean(user?.canCall("updateGroupUsers"));
   }
 
-  canAccessOrgGitHubLinkPage(user: User) {
+  canAccessOrgGitHubLinkPage(user: User | null) {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.
     return Boolean(user?.canCall("updateGroup"));
@@ -319,7 +319,7 @@ class Router {
    * Routes the user to a new page if they don't have the ability to access the
    * current page.
    */
-  reroute(user: User) {
+  reroute(user: User | null) {
     const fallbackPath = this.getFallbackPath(user);
     if (fallbackPath === null) return;
 
@@ -327,7 +327,7 @@ class Router {
     window.history.replaceState({}, "", newUrl);
   }
 
-  private getFallbackPath(user: User): string | null {
+  private getFallbackPath(user: User | null): string | null {
     const path = window.location.pathname;
 
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
