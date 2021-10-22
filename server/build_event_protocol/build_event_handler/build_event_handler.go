@@ -519,6 +519,25 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if isStartedEvent(&bazelBuildEvent) {
 		isFirstStartedEvent := !e.hasReceivedStartedEvent
 		e.hasReceivedStartedEvent = true
+		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+
+		if auth := e.env.GetAuthenticator(); auth != nil {
+			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
+			if err != nil {
+				return err
+			}
+			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
+				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
+				authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
+				if authError != nil {
+					if err, ok := authError.(error); ok {
+						return err
+					}
+					return status.UnknownError(fmt.Sprintf("%v", authError))
+				}
+			}
+		}
+
 		if isFirstStartedEvent {
 			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
 			if err == nil {
@@ -538,29 +557,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 		}
-		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
-		}
-
-		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
-			if err != nil {
-				return err
-			}
-			if apiKey := auth.ParseAPIKeyFromString(options); apiKey != "" {
-				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
-				authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
-				if authError != nil {
-					if err, ok := authError.(error); ok {
-						return err
-					}
-					return status.UnknownError(fmt.Sprintf("%v", authError))
-				}
-			}
 		}
 
 		if e.logWriter != nil {
