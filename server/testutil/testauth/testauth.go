@@ -183,6 +183,15 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	return ctx
 }
 
+func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
+	jwt, _ := ctx.Value(jwtHeader).(string)
+	return jwt
+}
+
+func (a *TestAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
+	return context.WithValue(ctx, jwtHeader, jwt)
+}
+
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
 	userInfo, ok := a.testUsers[userID]
 	if !ok {
