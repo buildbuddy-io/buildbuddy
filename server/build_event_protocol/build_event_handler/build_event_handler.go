@@ -172,7 +172,10 @@ func (r *statsRecorder) MarkFinalized(ctx context.Context, invocation *inpb.Invo
 			invocation.GetInvocationId())
 		return
 	}
-	jwt, _ := ctx.Value("x-buildbuddy-jwt").(string)
+	jwt := ""
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		jwt = auth.TrustedJWTFromAuthContext(ctx)
+	}
 	req := &recordStatsTask{
 		jwt:        jwt,
 		invocation: invocation,
