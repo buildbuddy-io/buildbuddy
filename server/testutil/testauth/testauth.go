@@ -184,7 +184,10 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 }
 
 func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	jwt, _ := ctx.Value(jwtHeader).(string)
+	jwt, ok := ctx.Value(jwtHeader).(string)
+	if !ok {
+		return ""
+	}
 	return jwt
 }
 

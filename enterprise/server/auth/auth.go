@@ -611,7 +611,10 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 }
 
 func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	jwt, _ := ctx.Value(contextTokenStringKey).(string)
+	jwt, ok := ctx.Value(contextTokenStringKey).(string)
+	if !ok {
+		return ""
+	}
 	return jwt
 }
 
