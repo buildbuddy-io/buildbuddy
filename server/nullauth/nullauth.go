@@ -50,3 +50,11 @@ func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
 	return nil, nil
 }
+
+func (a *NullAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
+	return ""
+}
+
+func (a *NullAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
+	return ctx
+}

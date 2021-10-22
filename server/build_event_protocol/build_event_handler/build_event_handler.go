@@ -75,7 +75,7 @@ type BuildEventHandler struct {
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	openChannels := &sync.WaitGroup{}
-	statsRecorded := make(chan *inpb.Invocation, 4096)
+	statsRecorded := make(chan *recordStatsTask, 4096)
 	statsRecorder := newStatsRecorder(env, openChannels, statsRecorded)
 	webhookNotifier := newWebhookNotifier(env, statsRecorded)
 
@@ -130,6 +130,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 // invocation. These tasks are enqueued to statsRecorder and executed in the
 // background.
 type recordStatsTask struct {
+	jwt        string
 	invocation *inpb.Invocation
 
 	// createdAt is the time at which this task was created.
@@ -141,9 +142,9 @@ type recordStatsTask struct {
 type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
-	// statsRecorded is a channel that should be notified after the statsRecorder
-	// collects stats and flushes them to the DB.
-	statsRecorded chan<- *inpb.Invocation
+	// statsRecorded is a channel that is notified after each recordStatsTask is
+	// completed by this statsRecorder.
+	statsRecorded chan<- *recordStatsTask
 	eg            errgroup.Group
 
 	mu      sync.Mutex // protects(tasks, stopped)
@@ -151,7 +152,7 @@ type statsRecorder struct {
 	stopped bool
 }
 
-func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRecorded chan<- *inpb.Invocation) *statsRecorder {
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRecorded chan<- *recordStatsTask) *statsRecorder {
 	return &statsRecorder{
 		env:           env,
 		openChannels:  openChannels,
@@ -160,7 +161,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRe
 	}
 }
 
-func (r *statsRecorder) MarkFinalized(invocation *inpb.Invocation) {
+func (r *statsRecorder) MarkFinalized(ctx context.Context, invocation *inpb.Invocation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -171,7 +172,9 @@ func (r *statsRecorder) MarkFinalized(invocation *inpb.Invocation) {
 			invocation.GetInvocationId())
 		return
 	}
+	jwt, _ := ctx.Value("x-buildbuddy-jwt").(string)
 	req := &recordStatsTask{
+		jwt:        jwt,
 		invocation: invocation,
 		createdAt:  time.Now(),
 	}
@@ -209,7 +212,7 @@ func (r *statsRecorder) Start() {
 				// Once cache stats are populated, notify the statsRecorded channel in a
 				// non-blocking fashion.
 				select {
-				case r.statsRecorded <- task.invocation:
+				case r.statsRecorded <- task:
 					break
 				default:
 					log.Warningf("Failed to notify stats recorder listeners: channel buffer is full")
@@ -239,12 +242,17 @@ func (r *statsRecorder) Stop() {
 
 type notifyWebhookTask struct {
 	hook       interfaces.Webhook
+	jwt        string
 	invocation *inpb.Invocation
 }
 
-func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
+func notifyWithTimeout(ctx context.Context, env environment.Env, t *notifyWebhookTask) error {
 	ctx, cancel := context.WithTimeout(ctx, webhookNotifyTimeout)
 	defer cancel()
+	// Run the webhook using the authenticated user from the build event stream.
+	if auth := env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, t.jwt)
+	}
 	return t.hook.NotifyComplete(ctx, t.invocation)
 }
 
@@ -252,13 +260,13 @@ func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
 // and notifies webhooks.
 type webhookNotifier struct {
 	env           environment.Env
-	statsRecorded <-chan *inpb.Invocation
+	statsRecorded <-chan *recordStatsTask
 
 	tasks chan *notifyWebhookTask
 	eg    errgroup.Group
 }
 
-func newWebhookNotifier(env environment.Env, statsRecorded <-chan *inpb.Invocation) *webhookNotifier {
+func newWebhookNotifier(env environment.Env, statsRecorded <-chan *recordStatsTask) *webhookNotifier {
 	return &webhookNotifier{
 		env:           env,
 		statsRecorded: statsRecorded,
@@ -273,18 +281,20 @@ func (w *webhookNotifier) Start() {
 	w.eg.Go(func() error {
 		// Listen for invocations that have been finalized by the stats recorder,
 		// and start a notify webhook task for each webhook.
-		for invocation := range w.statsRecorded {
+		for task := range w.statsRecorded {
 			// Don't call webhooks for disconnected invocations.
-			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+			if task.invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
 				continue
 			}
 
-			// Read the invocation from the source of truth used by the UI.
-			// Skip the perms check here since we've pre-authenticated.
-			invocation, err := lookupInvocation(
-				w.env, ctx, invocation.GetInvocationId(),
-				w.env.GetInvocationDB().LookupInvocationWithoutPermsCheck,
-			)
+			// Read the invocation from the source of truth used by the UI,
+			// authenticating with the same credentials used for the build event
+			// stream.
+			ctx := ctx
+			if auth := w.env.GetAuthenticator(); auth != nil {
+				ctx = auth.AuthContextFromTrustedJWT(ctx, task.jwt)
+			}
+			invocation, err := LookupInvocation(w.env, ctx, task.invocation.GetInvocationId())
 			if err != nil {
 				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				continue
@@ -292,6 +302,7 @@ func (w *webhookNotifier) Start() {
 
 			for _, hook := range w.env.GetWebhooks() {
 				w.tasks <- &notifyWebhookTask{
+					jwt:        task.jwt,
 					hook:       hook,
 					invocation: invocation,
 				}
@@ -303,7 +314,7 @@ func (w *webhookNotifier) Start() {
 	for i := 0; i < numWebhookNotifierWorkers; i++ {
 		w.eg.Go(func() error {
 			for task := range w.tasks {
-				if err := notifyWithTimeout(ctx, task); err != nil {
+				if err := notifyWithTimeout(ctx, w.env, task); err != nil {
 					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
 				}
 			}
@@ -436,7 +447,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	e.statsRecorder.MarkFinalized(invocation)
+	e.statsRecorder.MarkFinalized(e.ctx, invocation)
 	return nil
 }
 
@@ -683,13 +694,7 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
-	return lookupInvocation(env, ctx, iid, env.GetInvocationDB().LookupInvocation)
-}
-
-type lookupFunc func(ctx context.Context, iid string) (*tables.Invocation, error)
-
-func lookupInvocation(env environment.Env, ctx context.Context, iid string, lookup lookupFunc) (*inpb.Invocation, error) {
-	ti, err := lookup(ctx, iid)
+	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
 	}

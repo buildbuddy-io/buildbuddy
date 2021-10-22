@@ -610,6 +610,15 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 	return authContextFromClaims(ctx, claims, err)
 }
 
+func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
+	jwt, _ := ctx.Value(contextTokenStringKey).(string)
+	return jwt
+}
+
+func (a *OpenIDAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
+	return context.WithValue(ctx, contextTokenStringKey, jwt)
+}
+
 func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey string) (*Claims, error) {
 	akg, err := a.lookupAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err != nil {
