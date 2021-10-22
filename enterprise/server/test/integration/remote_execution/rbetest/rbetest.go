@@ -534,11 +534,12 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetAuthenticator(r.newTestAuthenticator())
 
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
+	executorConfig.Pool = options.Pool
+
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}
-	executorConfig.Pool = options.Pool
 	env.SetFileCache(fc)
 
 	localServer, startLocalServer := env.LocalGRPCServer()

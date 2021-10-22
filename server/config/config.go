@@ -256,7 +256,7 @@ type RemoteExecutionConfig struct {
 
 type ExecutorConfig struct {
 	AppTarget                 string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	Pool                      string                    `yaml:"pool" usage:"Executor pool name. Takes priority over the MY_POOL env var."`
+	Pool                      string                    `yaml:"pool" usage:"Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified."`
 	RootDirectory             string                    `yaml:"root_directory" usage:"The root directory to use for build files."`
 	LocalCacheDirectory       string                    `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
 	LocalCacheSizeBytes       int64                     `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
