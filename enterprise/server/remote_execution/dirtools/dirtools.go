@@ -820,5 +820,5 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 func nodesEqual(a *repb.FileNode, b *repb.FileNode) bool {
 	return a.GetDigest().GetHash() == b.GetDigest().GetHash() &&
 		a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes() &&
-		a.GetIsExecutable() == b.IsExecutable()
+		a.GetIsExecutable() == b.GetIsExecutable()
 }
