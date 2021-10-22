@@ -163,6 +163,14 @@ func (a *SAMLAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 	return a.fallback.AuthContextFromAPIKey(ctx, apiKey)
 }
 
+func (a *SAMLAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
+	return a.fallback.AuthContextFromTrustedJWT(ctx, jwt)
+}
+
+func (a *SAMLAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
+	return a.fallback.TrustedJWTFromAuthContext(ctx)
+}
+
 func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp.Middleware, error) {
 	slug := a.getSlugFromRequest(r)
 	if slug == "" {

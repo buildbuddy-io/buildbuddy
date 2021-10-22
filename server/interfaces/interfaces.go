@@ -122,6 +122,14 @@ type Authenticator interface {
 
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
+
+	// TrustedJWTFromAuthContext returns a JWT from the authenticated context,
+	// or empty string if the context is not authenticated.
+	TrustedJWTFromAuthContext(ctx context.Context) string
+
+	// AuthContextFromTrustedJWT returns an authenticated context using a JWT
+	// which has been previously authenticated.
+	AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context
 }
 
 type BuildEventChannel interface {
