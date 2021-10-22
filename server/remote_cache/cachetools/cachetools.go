@@ -399,7 +399,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	return d, nil
 }
 
-func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
+func (ul *BatchCASUploader) UploadFile(path string, executable bool) (*repb.Digest, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -411,7 +411,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 
 	// Add output files to the filecache.
 	if ul.fileCache != nil {
-		ul.fileCache.AddFile(d, path)
+		ul.fileCache.AddFile(&repb.FileNode{Digest: d, IsExecutable: executable}, path)
 	}
 
 	// Note: uploader.Upload will close the file.
@@ -509,18 +509,19 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				Digest: d,
 			})
 		} else if entry.Type().IsRegular() {
-			d, err := ul.UploadFile(path)
+			info, err := entry.Info()
 			if err != nil {
 				return nil, nil, err
 			}
-			info, err := entry.Info()
+			executable := info.Mode()&0100 != 0
+			d, err := ul.UploadFile(path, executable)
 			if err != nil {
 				return nil, nil, err
 			}
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:         name,
 				Digest:       d,
-				IsExecutable: info.Mode()&0100 != 0,
+				IsExecutable: executable,
 			})
 		} else if entry.Type()&os.ModeSymlink == os.ModeSymlink {
 			target, err := os.Readlink(path)
