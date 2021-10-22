@@ -13,8 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 type TaskLeaser struct {
@@ -110,19 +108,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	return ctx, serializedTask, err
 }
 
-func isBazelRetryableError(taskError error) bool {
-	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
-		return true
-	}
-	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
-		if len(gstatus.Convert(taskError).Details()) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *TaskLeaser) Close(taskErr error) error {
+func (t *TaskLeaser) Close(taskErr error, retry bool) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.log.Infof("TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
@@ -132,7 +118,7 @@ func (t *TaskLeaser) Close(taskErr error) error {
 	}
 	close(t.quit) // This cancels our lease-keep-alive background goroutine.
 
-	closeLeaseCleanly := taskErr == nil || isBazelRetryableError(taskErr)
+	closeLeaseCleanly := taskErr == nil || !retry
 	closedCleanly := false
 
 	if closeLeaseCleanly {

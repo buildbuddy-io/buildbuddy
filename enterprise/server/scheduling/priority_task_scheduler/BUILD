@@ -21,6 +21,7 @@ go_library(
         "//server/util/tracing",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_prometheus_client_golang//prometheus",
+        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

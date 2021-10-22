@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -267,24 +268,78 @@ func propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.E
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) error {
+type statusStream struct {
+	clientStream repb.Execution_PublishOperationClient
+	finalOp      *longrunning.Operation
+}
+
+func newStatusStream(clientStream repb.Execution_PublishOperationClient) *statusStream {
+	s := &statusStream{clientStream: clientStream}
+	return s
+}
+
+func (s *statusStream) Context() context.Context {
+	return s.clientStream.Context()
+}
+
+func (s *statusStream) Send(operation *longrunning.Operation) error {
+	if operation.GetDone() {
+		s.finalOp = operation
+		return nil
+	}
+	return s.clientStream.Send(operation)
+}
+
+func (s *statusStream) OperationFinished() error {
+	if s.finalOp == nil {
+		return nil
+	}
+	return s.clientStream.Send(s.finalOp)
+}
+
+func isBazelRetryableError(taskError error) bool {
+	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
+		return true
+	}
+	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
+		if len(gstatus.Convert(taskError).Details()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetryInternally(taskError error) bool {
+	// retry internally if bazel won't retry this failure
+	return !isBazelRetryableError(taskError)
+}
+
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
-		return status.FailedPreconditionError("Execution client not configured")
+		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
 	ctx = propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)
-		return err
+		return false, err
 	}
-	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
+
+	statusStream := newStatusStream(clientStream)
+
+	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, statusStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
+		shouldRetry := shouldRetryInternally(err)
+		if !shouldRetry {
+			statusStream.OperationFinished()
+		}
 		_, _ = clientStream.CloseAndRecv()
-		return err
+		return shouldRetryInternally(err), err
 	}
+	statusStream.OperationFinished()
 	_, err = clientStream.CloseAndRecv()
-	return err
+	return false, err
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
@@ -383,15 +438,15 @@ func (q *PriorityTaskScheduler) handleTask() {
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
 			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err.Error())
-			taskLease.Close(nil)
+			taskLease.Close(nil, false)
 			return
 		}
-		err = q.runTask(ctx, execTask)
+		retry, err := q.runTask(ctx, execTask)
 		if err != nil {
 			q.log.Errorf("Error running task %q: %s", reservation.GetTaskId(), err.Error())
 		}
 		// err can be nil and that's ok! Task will be retried if it's not.
-		taskLease.Close(err)
+		taskLease.Close(err, retry)
 	}()
 }
 
