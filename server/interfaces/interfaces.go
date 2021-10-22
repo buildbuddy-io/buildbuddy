@@ -200,6 +200,7 @@ type InvocationDB interface {
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
+	SetNowFunc(now func() time.Time)
 }
 
 type APIKeyGroup interface {
