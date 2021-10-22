@@ -76,6 +76,72 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 	}
 }
 
+func TestParse_OS(t *testing.T) {
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue string
+	}{
+		{"", "linux"},
+		{"linux", "linux"},
+		{"darwin", "darwin"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: testCase.rawValue},
+		}}
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.OS)
+	}
+
+	// Empty case
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
+	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	assert.Equal(t, "linux", platformProps.OS)
+}
+
+func TestParse_Arch(t *testing.T) {
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue string
+	}{
+		{"", "amd64"},
+		{"amd64", "amd64"},
+		{"arm64", "arm64"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "Arch", Value: testCase.rawValue},
+		}}
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.Arch)
+	}
+
+	// Empty case
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
+	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	assert.Equal(t, "amd64", platformProps.Arch)
+}
+
+func TestParse_Pool(t *testing.T) {
+	for _, testCase := range []struct {
+		rawValue      string
+		expectedValue string
+	}{
+		{"", ""},
+		{"default", ""},
+		{"my-pool", "my-pool"},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: testCase.rawValue},
+		}}
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.Pool)
+	}
+
+	// Empty case
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
+	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	assert.Equal(t, "", platformProps.Pool)
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property
