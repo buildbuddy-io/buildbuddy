@@ -608,7 +608,7 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	if executeResponse.GetCachedResult() {
 		return nil
 	}
-	_, err := s.env.GetSchedulerClient().MarkTaskExecuted(ctx, &scpb.MarkTaskExecutedRequest{
+	_, err := s.env.GetSchedulerService().MarkTaskExecuted(ctx, &scpb.MarkTaskExecutedRequest{
 		TaskId:     taskID,
 		ExecutorId: executeResponse.GetResult().GetExecutionMetadata().GetExecutorId(),
 	})
