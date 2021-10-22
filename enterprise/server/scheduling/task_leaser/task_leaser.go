@@ -13,8 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 type TaskLeaser struct {
@@ -58,9 +56,10 @@ func (t *TaskLeaser) pingServer() ([]byte, error) {
 	return rsp.GetSerializedTask(), nil
 }
 
-func (t *TaskLeaser) reEnqueueTask(ctx context.Context) error {
+func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 	req := &scpb.ReEnqueueTaskRequest{
 		TaskId: t.taskID,
+		Reason: reason,
 	}
 	if apiKey := t.env.GetConfigurator().GetExecutorConfig().APIKey; apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, apiKey)
@@ -110,56 +109,56 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	return ctx, serializedTask, err
 }
 
-func isBazelRetryableError(taskError error) bool {
-	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
-		return true
-	}
-	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
-		if len(gstatus.Convert(taskError).Details()) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *TaskLeaser) Close(taskErr error) error {
+func (t *TaskLeaser) Close(taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.log.Infof("TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
 	if t.closed {
 		t.log.Infof("TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
-		return nil
 	}
 	close(t.quit) // This cancels our lease-keep-alive background goroutine.
 
-	closeLeaseCleanly := taskErr == nil || isBazelRetryableError(taskErr)
-	closedCleanly := false
-
-	if closeLeaseCleanly {
-		req := &scpb.LeaseTaskRequest{
-			TaskId:   t.taskID,
-			Finalize: true,
-		}
-		t.stream.Send(req)
-		for {
-			rsp, err := t.stream.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.log.Warningf("TaskLeaser %q: got non-EOF err: %s", t.taskID, err)
-				break
-			}
-			closedCleanly = rsp.GetClosedCleanly()
-		}
+	req := &scpb.LeaseTaskRequest{
+		TaskId: t.taskID,
 	}
 
-	if closeLeaseCleanly && !closedCleanly {
-		t.log.Warningf("TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
+	shouldReEnqueue := false
+
+	// We can finalize the task if the execution was successful, or if it failed and we're not going to retry it.
+	// Otherwise, we should release the lease without finalizing the task so that it can be retried.
+	if taskErr == nil || !retry {
+		req.Finalize = true
+	} else {
+		req.Release = true
+		shouldReEnqueue = true
+	}
+	if err := t.stream.Send(req); err != nil {
+		log.Warningf("Could not send request: %s", err)
+	}
+	closedCleanly := false
+	for {
+		rsp, err := t.stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.log.Warningf("TaskLeaser %q: got non-EOF err: %s", t.taskID, err)
+			break
+		}
+		closedCleanly = rsp.GetClosedCleanly()
 	}
 
 	if !closedCleanly {
-		if err := t.reEnqueueTask(context.Background()); err != nil {
+		t.log.Warningf("TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
+		shouldReEnqueue = true
+	}
+
+	if shouldReEnqueue {
+		reason := ""
+		if taskErr != nil {
+			reason = taskErr.Error()
+		}
+		if err := t.reEnqueueTask(context.Background(), reason); err != nil {
 			t.log.Warningf("TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
 		} else {
 			t.log.Infof("TaskLeaser %q: Successfully re-enqueued.", t.taskID)
@@ -169,5 +168,4 @@ func (t *TaskLeaser) Close(taskErr error) error {
 	}
 
 	t.closed = true
-	return taskErr
 }

@@ -33,6 +33,7 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
+	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -147,11 +148,27 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) error {
+func isBazelRetryableError(taskError error) bool {
+	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
+		return true
+	}
+	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
+		if len(gstatus.Convert(taskError).Details()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetry(taskError error) bool {
+	return !isBazelRetryableError(taskError)
+}
+
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
-		return status.FailedPreconditionError("No connection to cache backend.")
+		return false, status.FailedPreconditionError("No connection to cache backend.")
 	}
 
 	ctx, span := tracing.StartSpan(ctx)
@@ -164,7 +181,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	acClient := s.env.GetActionCacheClient()
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
-	finishWithErrFn := operation.GetFinishWithErrFunc(stream, taskID, adInstanceDigest)
+	finishWithErrFn := func(finalErr error) (retry bool, err error) {
+		if shouldRetry(finalErr) {
+			return true, finalErr
+		}
+		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
+			return false, err
+		}
+		return false, finalErr
+	}
 
 	md := &repb.ExecutedActionMetadata{
 		Worker:               s.name,
@@ -175,14 +200,14 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	if !req.GetSkipCacheLookup() {
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
-			return err // CHECK (these errors should not happen).
+			return false, err // CHECK (these errors should not happen).
 		}
 		actionResult, err := cachetools.GetActionResult(ctx, acClient, adInstanceDigest)
 		if err == nil {
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, nil /*=summary*/, codes.OK)); err != nil {
-				return err // CHECK (these errors should not happen).
+				return false, err // CHECK (these errors should not happen).
 			}
-			return nil
+			return false, nil
 		}
 	}
 
@@ -252,7 +277,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
 
 	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
-		return err // CHECK (these errors should not happen).
+		return false, err // CHECK (these errors should not happen).
 	}
 	md.ExecutionStartTimestamp = ptypes.TimestampNow()
 	maxDuration := infiniteDuration
@@ -282,7 +307,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			updateTicker.Stop()
 		case <-updateTicker.C:
 			if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
-				return status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
+				return false, status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
 			}
 		}
 	}
@@ -359,7 +384,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		return finishWithErrFn(err) // CHECK (these errors should not happen).
 	}
 	finishedCleanly = true
-	return nil
+	return false, nil
 }
 
 func observeStageDuration(stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {

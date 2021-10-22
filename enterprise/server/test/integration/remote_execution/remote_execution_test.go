@@ -745,3 +745,15 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 		assert.Equal(t, "newExecutor", res.Executor, "[%s] should have been executed on new executor", cmd.Name)
 	}
 }
+
+func TestCommandWithMissingInputRootDigest(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	cmd := rbe.Execute(&repb.Command{Arguments: []string{"echo"}}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
+	err := cmd.MustFail()
+	require.Contains(t, err.Error(), "already attempted")
+	require.Contains(t, err.Error(), "not found in cache")
+}
