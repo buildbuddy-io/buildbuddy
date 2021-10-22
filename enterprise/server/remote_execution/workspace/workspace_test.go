@@ -154,13 +154,13 @@ func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.Digest{}
+		ws.Inputs[file] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.Digest{
-		"KEEPME":         &repb.Digest{},
-		"foo/KEEPME":     &repb.Digest{},
-		"foo/bar/KEEPME": &repb.Digest{}}
+	keep := map[string]*repb.FileNode{
+		"KEEPME":         &repb.FileNode{},
+		"foo/KEEPME":     &repb.FileNode{},
+		"foo/bar/KEEPME": &repb.FileNode{}}
 
 	err := ws.CleanInputsIfNecessary(keep)
 	require.NoError(t, err)
@@ -185,13 +185,13 @@ func TestCleanInputsIfNecessary_CleanAll(t *testing.T) {
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.Digest{}
+		ws.Inputs[file] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.Digest{
-		"KEEPME":         &repb.Digest{},
-		"foo/KEEPME":     &repb.Digest{},
-		"foo/bar/KEEPME": &repb.Digest{}}
+	keep := map[string]*repb.FileNode{
+		"KEEPME":         &repb.FileNode{},
+		"foo/KEEPME":     &repb.FileNode{},
+		"foo/bar/KEEPME": &repb.FileNode{}}
 
 	ws.CleanInputsIfNecessary(keep)
 
@@ -215,13 +215,13 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
-		ws.Inputs[file] = &repb.Digest{}
+		ws.Inputs[file] = &repb.FileNode{}
 	}
 
-	keep := map[string]*repb.Digest{
-		"KEEPME":         &repb.Digest{},
-		"foo/KEEPME":     &repb.Digest{},
-		"foo/bar/KEEPME": &repb.Digest{}}
+	keep := map[string]*repb.FileNode{
+		"KEEPME":         &repb.FileNode{},
+		"foo/KEEPME":     &repb.FileNode{},
+		"foo/bar/KEEPME": &repb.FileNode{}}
 
 	err := ws.CleanInputsIfNecessary(keep)
 	require.NoError(t, err)
