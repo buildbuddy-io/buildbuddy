@@ -290,14 +290,7 @@ func (w *webhookNotifier) Start() {
 				continue
 			}
 
-			// Read the invocation from the source of truth used by the UI,
-			// authenticating with the same credentials used for the build event
-			// stream.
-			ctx := ctx
-			if auth := w.env.GetAuthenticator(); auth != nil {
-				ctx = auth.AuthContextFromTrustedJWT(ctx, task.jwt)
-			}
-			invocation, err := LookupInvocation(w.env, ctx, task.invocation.GetInvocationId())
+			invocation, err := w.lookupInvocation(ctx, task)
 			if err != nil {
 				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				continue
@@ -332,6 +325,13 @@ func (w *webhookNotifier) Stop() {
 	if err := w.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
+}
+
+func (w *webhookNotifier) lookupInvocation(ctx context.Context, task *recordStatsTask) (*inpb.Invocation, error) {
+	if auth := w.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, task.jwt)
+	}
+	return LookupInvocation(w.env, ctx, task.invocation.GetInvocationId())
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
