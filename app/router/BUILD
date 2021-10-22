@@ -6,6 +6,7 @@ ts_library(
     name = "router",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/auth:user",
         "//app/capabilities",
         "//app/format",
         "@npm//tslib",

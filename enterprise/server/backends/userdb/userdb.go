@@ -360,9 +360,21 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 		if existing != nil {
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
+		row := &struct{ Count int64 }{}
+		err = tx.Raw(
+			"SELECT COUNT(*) AS count FROM UserGroups WHERE group_group_id = ?", groupID,
+		).Take(row).Error
+		if err != nil {
+			return err
+		}
+		r := role.Default
+		// If no existing users in the group, promote to admin automatically.
+		if row.Count == 0 {
+			r = role.Admin
+		}
 		return tx.Exec(
 			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
-			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), uint32(role.Default),
+			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
 		).Error
 	})
 }

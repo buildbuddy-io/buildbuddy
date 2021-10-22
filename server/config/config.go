@@ -140,16 +140,17 @@ type AzureConfig struct {
 }
 
 type integrationsConfig struct {
-	Slack SlackConfig      `yaml:"slack"`
-	GCS   GCSWebhookConfig `yaml:"gcs"`
+	Slack            SlackConfig            `yaml:"slack"`
+	InvocationUpload InvocationUploadConfig `yaml:"invocation_upload"`
 }
 
 type SlackConfig struct {
 	WebhookURL string `yaml:"webhook_url" usage:"A Slack webhook url to post build update messages to."`
 }
 
-type GCSWebhookConfig struct {
-	CredentialsJSON string `yaml:"credentials" usage:"Credentials JSON for the service account used to authenticate to GCS when GCS is used as a webhook target. ** Enterprise only **"`
+type InvocationUploadConfig struct {
+	Enabled            bool   `yaml:"enabled" usage:"Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **"`
+	GCSCredentialsJSON string `yaml:"gcs_credentials" usage:"Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **"`
 }
 
 type GCSCacheConfig struct {
@@ -285,6 +286,7 @@ type ExecutorConfig struct {
 	DefaultImage              string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
 	WarmupTimeoutSecs         int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
 	StartupWarmupMaxWaitSecs  int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
+	ExclusiveTaskScheduling   bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
 }
 
 type ContainerRegistryConfig struct {
@@ -661,8 +663,8 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 	return &c.gc.Integrations.Slack
 }
 
-func (c *Configurator) GetIntegrationsGCSConfig() *GCSWebhookConfig {
-	return &c.gc.Integrations.GCS
+func (c *Configurator) GetIntegrationsInvocationUploadConfig() *InvocationUploadConfig {
+	return &c.gc.Integrations.InvocationUpload
 }
 
 func (c *Configurator) GetBuildEventProxyHosts() []string {
