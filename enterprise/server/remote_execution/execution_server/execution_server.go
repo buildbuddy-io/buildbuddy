@@ -42,19 +42,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	// The default operating system platform value, Linux.
-	defaultPlatformOSValue = "linux"
-	// The default architecture cpu architecture value, amd64.
-	defaultPlatformArchValue = "amd64"
-	// The key in Bazel platform properties that specifies operating system.
-	platformOSKey = "OSFamily"
-	// The key in Bazel platform properties that specifies executor cpu architecture.
-	platformArchKey = "Arch"
-	// The key in Bazel platform properties that specifies executor pool.
-	platformPoolKey = "Pool"
-)
-
 func timestampToMicros(tsPb *tspb.Timestamp) int64 {
 	ts, _ := ptypes.Timestamp(tsPb)
 	return ts.UnixMicro()
@@ -317,29 +304,15 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	taskSize := tasksize.Estimate(command)
 
-	os := defaultPlatformOSValue
-	arch := defaultPlatformArchValue
-	pool := ""
-	platformProps := append(command.GetPlatform().GetProperties(), platformPropOverrides...)
-	for _, property := range platformProps {
-		if property.Name == platformOSKey {
-			os = strings.ToLower(property.Value)
-		}
-		if property.Name == platformPoolKey && property.Value != platform.DefaultPoolValue {
-			pool = strings.ToLower(property.Value)
-		}
-		if property.Name == platformArchKey {
-			arch = strings.ToLower(property.Value)
-		}
-	}
+	props := platform.ParseProperties(executionTask)
 
-	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, os)
+	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS)
 	if err != nil {
 		return "", err
 	}
 
-	if pool == "" {
-		pool = defaultPool
+	if props.Pool == "" {
+		props.Pool = defaultPool
 	}
 
 	taskGroupID := interfaces.AuthAnonymousUser
@@ -348,9 +321,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:              os,
-		Arch:            arch,
-		Pool:            pool,
+		Os:              props.OS,
+		Arch:            props.Arch,
+		Pool:            props.Pool,
 		TaskSize:        taskSize,
 		ExecutorGroupId: executorGroupID,
 		TaskGroupId:     taskGroupID,
