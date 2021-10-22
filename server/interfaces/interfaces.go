@@ -74,10 +74,6 @@ const (
 	AuthAnonymousUser = "ANON"
 )
 
-// TrustedJWT is an opaque token representing a JWT which has been authenticated
-// and has not been tampered with.
-type TrustedJWT interface{}
-
 type Authenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
@@ -207,7 +203,6 @@ type InvocationDB interface {
 	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error
 	UpdateInvocationACL(ctx context.Context, authenticatedUser *UserInfo, invocationID string, acl *aclpb.ACL) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
-	LookupInvocationWithoutPermsCheck(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error

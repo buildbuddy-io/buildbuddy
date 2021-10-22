@@ -104,8 +104,8 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 }
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
-	ti, err := d.LookupInvocationWithoutPermsCheck(ctx, invocationID)
-	if err != nil {
+	ti := &tables.Invocation{}
+	if err := d.h.Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
@@ -116,14 +116,6 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 		if err := perms.AuthorizeRead(&u, getACL(ti)); err != nil {
 			return nil, err
 		}
-	}
-	return ti, nil
-}
-
-func (d *InvocationDB) LookupInvocationWithoutPermsCheck(ctx context.Context, invocationID string) (*tables.Invocation, error) {
-	ti := &tables.Invocation{}
-	if err := d.h.Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
-		return nil, err
 	}
 	return ti, nil
 }
