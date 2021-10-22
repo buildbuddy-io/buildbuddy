@@ -74,10 +74,6 @@ const (
 	AuthAnonymousUser = "ANON"
 )
 
-// TrustedJWT is an opaque token representing a JWT which has been authenticated
-// and has not been tampered with.
-type TrustedJWT interface{}
-
 type Authenticator interface {
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
