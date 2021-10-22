@@ -705,7 +705,8 @@ type CommandResult struct {
 	Stderr string
 }
 
-// Wait blocks until the command has finished executing.
+// getResult blocks until the command either finishes executing or encounters
+// an execution error.
 func (c *Command) getResult() (*CommandResult, error) {
 	timeout := time.NewTimer(defaultWaitTimeout)
 	for {
@@ -725,7 +726,7 @@ func (c *Command) getResult() (*CommandResult, error) {
 			ctx = c.env.WithUserID(ctx, c.userID)
 			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, result)
 			if err != nil {
-				return nil, status.UnknownErrorf("could not fetch stdout and/or stderr: %s", err.Error())
+				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
 			}
 			return &CommandResult{
 				CommandResult: result,
@@ -733,20 +734,23 @@ func (c *Command) getResult() (*CommandResult, error) {
 				Stderr:        stderr,
 			}, nil
 		case <-timeout.C:
-			return nil, status.DeadlineExceededErrorf("command %q did not finish within the timeout", c.Name)
+			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))
+			return nil, nil
 		}
 	}
 }
 
-// Wait waits for the command to succeed. If it fails, the test fails.
+// Wait blocks until the command has finished executing.
 func (c *Command) Wait() *CommandResult {
 	result, err := c.getResult()
 	require.NoError(c.env.t, err)
 	return result
 }
 
-// MustFail returns the error returned by the command. If the command does not
-// return an error, the test fails.
+// MustFail asserts that the command encounters an execution error, and returns
+// the resulting error. Note that if the command runs to completion and returns
+// a non-zero exit code, this is considered a successful execution, not an
+// execution error.
 func (c *Command) MustFail() error {
 	_, err := c.getResult()
 	require.Error(c.env.t, err)
