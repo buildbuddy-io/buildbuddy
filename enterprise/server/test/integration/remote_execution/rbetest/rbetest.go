@@ -706,14 +706,15 @@ type CommandResult struct {
 }
 
 // getResult blocks until the command either finishes executing or encounters
-// an execution error.
+// an execution error. It fails the test immediately if an error occurs that
+// is not a remote execution error.
 func (c *Command) getResult() (*CommandResult, error) {
 	timeout := time.NewTimer(defaultWaitTimeout)
 	for {
 		select {
 		case result, ok := <-c.StatusChannel():
 			if !ok {
-				return nil, status.UnknownErrorf("command %q did not send a result", c.Name)
+				assert.FailNow(c.env.t, fmt.Sprintf("command %q did not send a result", c.Name))
 			}
 			if result.Stage != repb.ExecutionStage_COMPLETED {
 				continue
