@@ -280,7 +280,11 @@ func (w *webhookNotifier) Start() {
 			}
 
 			// Read the invocation from the source of truth used by the UI.
-			invocation, err := LookupInvocation(w.env, ctx, invocation.GetInvocationId())
+			// Skip the perms check here since we've pre-authenticated.
+			invocation, err := lookupInvocation(
+				w.env, ctx, invocation.GetInvocationId(),
+				w.env.GetInvocationDB().LookupInvocationWithoutPermsCheck,
+			)
 			if err != nil {
 				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				continue
@@ -679,7 +683,13 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
-	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
+	return lookupInvocation(env, ctx, iid, env.GetInvocationDB().LookupInvocation)
+}
+
+type lookupFunc func(ctx context.Context, iid string) (*tables.Invocation, error)
+
+func lookupInvocation(env environment.Env, ctx context.Context, iid string, lookup lookupFunc) (*inpb.Invocation, error) {
+	ti, err := lookup(ctx, iid)
 	if err != nil {
 		return nil, err
 	}
