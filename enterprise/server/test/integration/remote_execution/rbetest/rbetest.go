@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -398,6 +399,8 @@ type ExecutorOptions struct {
 	Name string
 	// Optional API key to be sent by executor
 	APIKey string
+	// Optional Pool name for the executor
+	Pool string
 	// Optional server to be used for task leasing, cache requests, etc
 	// If not specified the executor will connect to a random server.
 	Server                       *BuildBuddyServer
@@ -536,6 +539,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}
+	executorConfig.Pool = options.Pool
 	env.SetFileCache(fc)
 
 	localServer, startLocalServer := env.LocalGRPCServer()
@@ -702,37 +706,51 @@ type CommandResult struct {
 }
 
 // Wait blocks until the command has finished executing.
-func (c *Command) Wait() *CommandResult {
+func (c *Command) getResult() (*CommandResult, error) {
 	timeout := time.NewTimer(defaultWaitTimeout)
 	for {
 		select {
-		case status, ok := <-c.StatusChannel():
+		case result, ok := <-c.StatusChannel():
 			if !ok {
-				assert.FailNow(c.env.t, fmt.Sprintf("command %q did not send a result", c.Name))
+				return nil, status.UnknownErrorf("command %q did not send a result", c.Name)
 			}
-			if status.Stage != repb.ExecutionStage_COMPLETED {
+			if result.Stage != repb.ExecutionStage_COMPLETED {
 				continue
 			}
 			timeout.Stop()
-			if status.Err != nil {
-				assert.FailNowf(c.env.t, fmt.Sprintf("command %q did not finish succesfully", c.Name), status.Err.Error())
+			if result.Err != nil {
+				return nil, result.Err
 			}
 			ctx := context.Background()
 			ctx = c.env.WithUserID(ctx, c.userID)
-			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, status)
+			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, result)
 			if err != nil {
-				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
+				return nil, status.UnknownErrorf("could not fetch stdout and/or stderr: %s", err.Error())
 			}
 			return &CommandResult{
-				CommandResult: status,
+				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
-			}
+			}, nil
 		case <-timeout.C:
-			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))
-			return nil
+			return nil, status.DeadlineExceededErrorf("command %q did not finish within the timeout", c.Name)
 		}
 	}
+}
+
+// Wait waits for the command to succeed. If it fails, the test fails.
+func (c *Command) Wait() *CommandResult {
+	result, err := c.getResult()
+	require.NoError(c.env.t, err)
+	return result
+}
+
+// MustFail returns the error returned by the command. If the command does not
+// return an error, the test fails.
+func (c *Command) MustFail() error {
+	_, err := c.getResult()
+	require.Error(c.env.t, err)
+	return err
 }
 
 func (c *Command) WaitAccepted() {
@@ -828,6 +846,9 @@ type ExecuteOpts struct {
 	InputRootDir string
 	// UserID is the ID of the authenticated user that should execute the command.
 	UserID string
+	// RemoteHeaders is a set of remote headers to append to the outgoing gRPC
+	// context when executing the command.
+	RemoteHeaders map[string]string
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -835,10 +856,12 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	if opts.UserID != "" {
 		ctx = r.WithUserID(ctx, opts.UserID)
 	}
-
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
 	if err != nil {
 		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
+	}
+	for header, value := range opts.RemoteHeaders {
+		ctx = metadata.AppendToOutgoingContext(ctx, header, value)
 	}
 
 	var inputRootDigest *repb.Digest

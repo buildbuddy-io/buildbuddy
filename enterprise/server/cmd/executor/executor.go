@@ -109,6 +109,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Fatal("Executor config not found")
 	}
 
+	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
+		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
+	}
+
 	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv)
 	if err == nil {
 		realEnv.SetAuthenticator(authenticator)
