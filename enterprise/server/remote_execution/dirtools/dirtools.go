@@ -262,10 +262,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
-			node := &repb.FileNode{
-				Digest:       uploadableFile.ad.Digest,
-				IsExecutable: uploadableFile.info.Mode()&0100 != 0,
-			}
+			node := uploadableFile.FileNode()
 			fc.AddFile(node, uploadableFile.fullFilePath)
 		}
 

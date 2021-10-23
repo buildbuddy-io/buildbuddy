@@ -104,8 +104,8 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (*repb
 		return nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
 	}
 
-	parthParts := strings.Split(fullPath, string(filepath.Separator))
-	nameParts := strings.Split(parthParts[len(parthParts)-1], ".")
+	name := filepath.Base(fullPath)
+	nameParts := strings.Split(name, ".")
 	return &repb.FileNode{
 		IsExecutable: len(nameParts) > 1 && nameParts[1] == executableSuffix,
 		Digest: &repb.Digest{
