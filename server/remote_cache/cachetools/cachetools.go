@@ -552,6 +552,6 @@ func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName s
 	return uploadProtoToCache(ctx, ac, instanceName, in)
 }
 
-func isExecutable(info *os.FileInfo) bool {
+func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
