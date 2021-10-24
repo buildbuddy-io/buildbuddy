@@ -162,20 +162,25 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		}
 	}
 
+	proposedFirstVal := false
 	var err error
-	for {
+	for !proposedFirstVal {
 		select {
 		case <-ctx.Done():
 			return err
 		case <-time.After(100 * time.Millisecond):
 			sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
 			_, err = cs.nodeHost.SyncPropose(ctx, sesh, setupTimeVal())
-			log.Printf("SyncPropose returned err: %s", err)
 			if err == nil {
-				return nil
+				proposedFirstVal = true
 			}
 		}
 	}
+
+	// Set the last cluster ID to 1
+	sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
+	_, err = cs.nodeHost.SyncPropose(ctx, sesh, rbuilder.IncrementBuf(constants.LastClusterIDKey, 1))
+	return err
 }
 
 func setupTimeVal() []byte {

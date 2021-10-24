@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
@@ -78,6 +79,36 @@ type PebbleDiskStateMachine struct {
 	lastAppliedIndex uint64
 }
 
+func uint64ToBytes(i uint64) []byte {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, i)
+	return buf
+}
+
+func bytesToUint64(buf []byte) uint64 {
+	return binary.LittleEndian.Uint64(buf)
+}
+
+func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
+	buf, closer, err := wb.Get(query)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, status.NotFoundErrorf("Key not found: %s", err)
+		}
+		return nil, err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return nil, status.NotFoundError("Key not found (empty)")
+	}
+
+	// We need to copy the value from pebble before
+	// closer is closed.
+	val := make([]byte, len(buf))
+	copy(val, buf)
+	return val, nil
+}
+
 func (sm *PebbleDiskStateMachine) lookup(query []byte) ([]byte, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
@@ -114,7 +145,7 @@ func (sm *PebbleDiskStateMachine) getLastAppliedIndex() (uint64, error) {
 	if len(val) == 0 {
 		return 0, nil
 	}
-	return binary.LittleEndian.Uint64(val), nil
+	return bytesToUint64(val), nil
 }
 
 func (sm *PebbleDiskStateMachine) getDBDir() string {
@@ -149,24 +180,24 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.getLastAppliedIndex()
 }
 
-func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) error {
+func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	f, err := constants.FilePath(sm.fileDir, req.GetFileRecord())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	protoBytes, err := proto.Marshal(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
-		return wb.Set([]byte(f), protoBytes, nil /*ignored write options*/)
+		return &rfpb.FileWriteResponse{}, wb.Set([]byte(f), protoBytes, nil /*ignored write options*/)
 	}
-	return status.FailedPreconditionError("file did not exist")
+	return nil, status.FailedPreconditionError("file did not exist")
 }
 
-func (sm *PebbleDiskStateMachine) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) error {
+func (sm *PebbleDiskStateMachine) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
-	return wb.Set(kv.Key, kv.Value, nil /*ignored write options*/)
+	return &rfpb.DirectWriteResponse{}, wb.Set(kv.Key, kv.Value, nil /*ignored write options*/)
 }
 
 func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
@@ -183,15 +214,65 @@ func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb
 	return rsp, nil
 }
 
-func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) error {
+func (sm *PebbleDiskStateMachine) increment(wb *pebble.Batch, req *rfpb.IncrementRequest) (*rfpb.IncrementResponse, error) {
+	if len(req.GetKey()) == 0 {
+		return nil, status.InvalidArgumentError("Increment requires a valid key.")
+	}
+	buf, err := batchLookup(wb, req.GetKey())
+	if err != nil {
+		if !status.IsNotFoundError(err) {
+			return nil, err
+		}
+	}
+	var val uint64
+	if status.IsNotFoundError(err) {
+		val = 0
+	} else {
+		val = bytesToUint64(buf)
+	}
+	val += req.GetDelta()
+
+	if err := wb.Set(req.GetKey(), uint64ToBytes(val), nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	return &rfpb.IncrementResponse{
+		Key:   req.GetKey(),
+		Value: val,
+	}, nil
+}
+
+func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
+	rsp := &rfpb.ResponseUnion{}
+
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_FileWrite:
-		return sm.fileWrite(wb, value.FileWrite)
+		r, err := sm.fileWrite(wb, value.FileWrite)
+		if err != nil {
+			return nil, err
+		}
+		rsp.Value = &rfpb.ResponseUnion_FileWrite{
+			FileWrite: r,
+		}
 	case *rfpb.RequestUnion_DirectWrite:
-		return sm.directWrite(wb, value.DirectWrite)
+		r, err := sm.directWrite(wb, value.DirectWrite)
+		if err != nil {
+			return nil, err
+		}
+		rsp.Value = &rfpb.ResponseUnion_DirectWrite{
+			DirectWrite: r,
+		}
+	case *rfpb.RequestUnion_Increment:
+		r, err := sm.increment(wb, value.Increment)
+		if err != nil {
+			return nil, err
+		}
+		rsp.Value = &rfpb.ResponseUnion_Increment{
+			Increment: r,
+		}
 	default:
-		return status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
+		return nil, status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
 	}
+	return rsp, nil
 }
 
 func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
@@ -258,7 +339,7 @@ func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) (*rfpb.Resp
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
-	wb := sm.db.NewBatch()
+	wb := sm.db.NewIndexedBatch()
 	defer wb.Close()
 
 	// Insert all of the data in the batch.
@@ -267,17 +348,25 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 		if err := proto.Unmarshal(entry.Cmd, req); err != nil {
 			return nil, err
 		}
-		if err := sm.handlePropose(wb, req); err != nil {
+		log.Printf("Update: request union: %+v", req)
+		rsp, err := sm.handlePropose(wb, req)
+		if err != nil {
 			return nil, err
 		}
+		log.Printf("Update: response union: %+v", rsp)
+		rspBuf, err := proto.Marshal(rsp)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Update: result data: %+v", rspBuf)
 		entries[idx].Result = dbsm.Result{
 			Value: uint64(len(entries[idx].Cmd)),
+			Data:  rspBuf,
 		}
 	}
 	// Also make sure to update the last applied index.
 	lastEntry := entries[len(entries)-1]
-	appliedIndex := make([]byte, 8)
-	binary.LittleEndian.PutUint64(appliedIndex, lastEntry.Index)
+	appliedIndex := uint64ToBytes(lastEntry.Index)
 	if err := wb.Set([]byte(appliedIndexKey), appliedIndex, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}

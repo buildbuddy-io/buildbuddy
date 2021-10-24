@@ -64,3 +64,14 @@ func FileWriteRequestBuf(fileRecord *rfpb.FileRecord) []byte {
 		},
 	})
 }
+
+func IncrementBuf(key []byte, delta uint64) []byte {
+	return MustMarshal(&rfpb.RequestUnion{
+		Value: &rfpb.RequestUnion_Increment{
+			Increment: &rfpb.IncrementRequest{
+				Key:   key,
+				Delta: delta,
+			},
+		},
+	})
+}

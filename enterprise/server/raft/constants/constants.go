@@ -30,6 +30,7 @@ var (
 	LocalPrefix  = keys.Key{localPrefixByte}
 	SystemPrefix = keys.Key{systemPrefixByte}
 
+	NextClusterIDKey        = keys.MakeKey(SystemPrefix, []byte("last_cluster_id"))
 	InitClusterSetupTimeKey = keys.MakeKey(SystemPrefix, []byte("initial_cluster_initialization_time"))
 )
 

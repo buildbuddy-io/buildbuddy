@@ -38,15 +38,13 @@ message FileWriteRequest {
   FileRecord file_record = 1;
 }
 
-message FileWriteResponse {
-}
+message FileWriteResponse {}
 
 message DirectWriteRequest {
   KV kv = 1;
 }
 
-message DirectWriteResponse {
-}
+message DirectWriteResponse {}
 
 message DirectReadRequest {
   bytes key = 1;
@@ -56,6 +54,16 @@ message DirectReadResponse {
   KV kv = 1;
 }
 
+message IncrementRequest {
+  bytes key = 1;
+  uint64 delta = 2;  // how much to increment by.
+}
+
+message IncrementResponse {
+  bytes key = 1;
+  uint64 value = 2;
+}
+
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion.
 message RequestUnion {
@@ -63,6 +71,7 @@ message RequestUnion {
     FileWriteRequest file_write = 1;
     DirectWriteRequest direct_write = 2;
     DirectReadRequest direct_read = 3;
+    IncrementRequest increment = 4;
   }
 }
 
@@ -74,6 +83,7 @@ message ResponseUnion {
     FileWriteResponse file_write = 1;
     DirectWriteResponse direct_write = 2;
     DirectReadResponse direct_read = 3;
+    IncrementResponse increment = 4;
   }
 }
 
@@ -84,9 +94,9 @@ message ResponseUnion {
 ////////////////////////////////////////////////////////////////////////////////
 
 message StartClusterRequest {
-	uint64 cluster_id = 1;
-	uint64 node_id = 2;
-	map<uint64, string> initial_member = 3;
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+  map<uint64, string> initial_member = 3;
 }
 
 message StartClusterResponse {}
