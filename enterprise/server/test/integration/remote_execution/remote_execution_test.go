@@ -363,6 +363,28 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	require.Equal(t, 0, res.ExitCode)
 }
 
+func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "FoO"},
+			{Name: "OSFamily", Value: "LiNuX"},
+			{Name: "Arch", Value: "AmD64"},
+		},
+	}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"pwd"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{})
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+}
+
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
