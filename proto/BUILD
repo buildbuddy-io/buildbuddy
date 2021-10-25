@@ -95,7 +95,10 @@ proto_library(
     srcs = [
         "raft.proto",
     ],
-    deps = [":remote_execution_proto"],
+    deps = [
+        ":remote_execution_proto",
+        "@go_googleapis//google/rpc:status_proto",
+    ],
 )
 
 proto_library(
@@ -478,6 +481,7 @@ go_proto_library(
     proto = ":raft_proto",
     deps = [
         ":remote_execution_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
 

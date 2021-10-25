@@ -314,8 +314,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 
 	rwc := &raftWriteCloser{mwc, func() error {
 		sesh := rc.nodeHost.GetNoOPSession(constants.InitialClusterID)
-		_, err = rc.nodeHost.SyncPropose(ctx, sesh, rbuilder.FileWriteRequestBuf(fileRecord))
-		log.Printf("SyncPropose returned err: %s", err)
+		_, err := rbuilder.ResponseUnion(rc.nodeHost.SyncPropose(ctx, sesh, rbuilder.FileWriteRequestBuf(fileRecord)))
 		return err
 	}}
 

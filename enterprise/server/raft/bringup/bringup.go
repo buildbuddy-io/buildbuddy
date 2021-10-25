@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 
@@ -177,10 +179,43 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		}
 	}
 
+	return cs.setupInitialMetadata(ctx, constants.InitialClusterID)
+}
+
+func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID uint64) error {
 	// Set the last cluster ID to 1
 	sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
-	_, err = cs.nodeHost.SyncPropose(ctx, sesh, rbuilder.IncrementBuf(constants.LastClusterIDKey, 1))
-	return err
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, rbuilder.IncrementBuf(constants.LastClusterIDKey, 1)); err != nil {
+		return err
+	}
+
+	// Set the range of this first cluster to [minbyte, maxbyte)
+	rangeReplica := &rfpb.RangeDescriptor{
+		Left:  keys.Key{constants.MinByte},
+		Right: keys.Key{constants.MaxByte},
+	}
+	membership, err := cs.nodeHost.GetClusterMembership(ctx, constants.InitialClusterID)
+	if err != nil {
+		return err
+	}
+	for nodeID, _ := range membership.Nodes {
+		rangeReplica.InternalReplicas = append(rangeReplica.InternalReplicas, &rfpb.ReplicaDescriptor{
+			ClusterId: constants.InitialClusterID,
+			NodeId:    nodeID,
+		})
+	}
+	buf, err := proto.Marshal(rangeReplica)
+	if err != nil {
+		return err
+	}
+	rangeWriteCmd := rbuilder.DirectWriteRequestBuf(&rfpb.KV{
+		Key:   constants.LocalRangeKey,
+		Value: buf,
+	})
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, rangeWriteCmd); err != nil {
+		return err
+	}
+	return nil
 }
 
 func setupTimeVal() []byte {

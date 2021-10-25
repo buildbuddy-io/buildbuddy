@@ -7,12 +7,16 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/rangemap",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//statemachine",
+        "@go_googleapis//google/rpc:status_go_proto",
+        "@org_golang_google_grpc//status",
     ],
 )

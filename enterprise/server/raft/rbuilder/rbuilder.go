@@ -5,6 +5,8 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
+	gstatus "google.golang.org/grpc/status"
 )
 
 // TODO(tylerw): find a more elegant way of dealing with these kinds
@@ -74,4 +76,19 @@ func IncrementBuf(key []byte, delta uint64) []byte {
 			},
 		},
 	})
+}
+
+func ResponseUnion(result dbsm.Result, err error) (*rfpb.ResponseUnion, error) {
+	if err != nil {
+		return nil, err
+	}
+	rsp := &rfpb.ResponseUnion{}
+	if err := proto.Unmarshal(result.Data, rsp); err != nil {
+		return nil, err
+	}
+	s := gstatus.FromProto(rsp.GetStatus())
+	if s.Err() != nil {
+		return nil, s.Err()
+	}
+	return rsp, nil
 }

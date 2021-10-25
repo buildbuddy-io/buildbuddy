@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/golang/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -113,4 +114,43 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	sesh := s.nodeHost.GetNoOPSession(req.GetReplica().GetClusterId())
+	buf, err := proto.Marshal(req.GetRequest())
+	if err != nil {
+		return nil, err
+	}
+	rrsp, err := s.nodeHost.SyncPropose(ctx, sesh, buf)
+	if err != nil {
+		return nil, err
+	}
+	ru := &rfpb.ResponseUnion{}
+	if err := proto.Unmarshal(rrsp.Data, ru); err != nil {
+		return nil, err
+	}
+	return &rfpb.SyncProposeResponse{
+		Response: ru,
+	}, nil
+}
+
+func (s *Server) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
+	buf, err := proto.Marshal(req.GetRequest())
+	if err != nil {
+		return nil, err
+	}
+	rrsp, err := s.nodeHost.SyncRead(ctx, req.GetReplica().GetClusterId(), buf)
+	if err != nil {
+		return nil, err
+	}
+	ru := &rfpb.ResponseUnion{}
+	if buf, ok := rrsp.([]byte); ok {
+		if err := proto.Unmarshal(buf, ru); err != nil {
+			return nil, err
+		}
+	}
+	return &rfpb.SyncReadResponse{
+		Response: ru,
+	}, nil
 }

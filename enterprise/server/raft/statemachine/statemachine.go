@@ -9,18 +9,18 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
-)
-
-const (
-	appliedIndexKey = "lastAppliedIndex"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 // KVs are stored directly in Pebble by the raft state machine, so the key and
@@ -77,6 +77,9 @@ type PebbleDiskStateMachine struct {
 	nodeID    uint64
 
 	lastAppliedIndex uint64
+
+	rangeMu         sync.RWMutex
+	rangeDescriptor *rangemap.Range
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -109,6 +112,54 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
+func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
+	sm.rangeMu.RLock()
+	alreadySet := sm.rangeDescriptor != nil
+	sm.rangeMu.RUnlock()
+	if alreadySet {
+		return nil
+	}
+
+	buf, err := sm.lookup(constants.LocalRangeKey)
+	if err != nil {
+		return err
+	}
+	rangeDescriptor := &rfpb.RangeDescriptor{}
+	if err := proto.Unmarshal(buf, rangeDescriptor); err != nil {
+		return err
+	}
+	sm.rangeMu.Lock()
+	if sm.rangeDescriptor == nil {
+		sm.rangeDescriptor = &rangemap.Range{
+			Left:  rangeDescriptor.GetLeft(),
+			Right: rangeDescriptor.GetRight(),
+		}
+	}
+	sm.rangeMu.Unlock()
+	return nil
+}
+
+func (sm *PebbleDiskStateMachine) checkRange(wb *pebble.Batch, key []byte) error {
+	sm.checkAndSetRangeDescriptor()
+
+	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
+	if sm.rangeDescriptor == nil {
+		return status.FailedPreconditionError("range descriptor not yet set for this store")
+	}
+	if !sm.rangeDescriptor.Contains(key) {
+		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.rangeDescriptor, string(key))
+	}
+	return nil
+}
+
+func (sm *PebbleDiskStateMachine) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
+	if err := sm.checkRange(wb, key); err != nil {
+		return err
+	}
+	return wb.Set(key, val, nil /*ignored write options*/)
+}
+
 func (sm *PebbleDiskStateMachine) lookup(query []byte) ([]byte, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
@@ -135,7 +186,7 @@ func (sm *PebbleDiskStateMachine) lookup(query []byte) ([]byte, error) {
 }
 
 func (sm *PebbleDiskStateMachine) getLastAppliedIndex() (uint64, error) {
-	val, err := sm.lookup([]byte(appliedIndexKey))
+	val, err := sm.lookup([]byte(constants.LastAppliedIndexKey))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return 0, nil
@@ -166,7 +217,6 @@ func (sm *PebbleDiskStateMachine) getDBDir() string {
 // Open is called shortly after the Raft node is started. The Update method
 // and the Lookup method will not be called before the completion of the Open
 // method.
-
 func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	db, err := pebble.Open(sm.getDBDir(), &pebble.Options{})
 	if err != nil {
@@ -190,7 +240,7 @@ func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWrit
 		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
-		return &rfpb.FileWriteResponse{}, wb.Set([]byte(f), protoBytes, nil /*ignored write options*/)
+		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, []byte(f), protoBytes)
 	}
 	return nil, status.FailedPreconditionError("file did not exist")
 }
@@ -241,36 +291,35 @@ func (sm *PebbleDiskStateMachine) increment(wb *pebble.Batch, req *rfpb.Incremen
 	}, nil
 }
 
+func statusProto(err error) *statuspb.Status {
+	s, _ := gstatus.FromError(err)
+	return s.Proto()
+}
+
 func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_FileWrite:
 		r, err := sm.fileWrite(wb, value.FileWrite)
-		if err != nil {
-			return nil, err
-		}
 		rsp.Value = &rfpb.ResponseUnion_FileWrite{
 			FileWrite: r,
 		}
+		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_DirectWrite:
 		r, err := sm.directWrite(wb, value.DirectWrite)
-		if err != nil {
-			return nil, err
-		}
 		rsp.Value = &rfpb.ResponseUnion_DirectWrite{
 			DirectWrite: r,
 		}
+		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Increment:
 		r, err := sm.increment(wb, value.Increment)
-		if err != nil {
-			return nil, err
-		}
 		rsp.Value = &rfpb.ResponseUnion_Increment{
 			Increment: r,
 		}
+		rsp.Status = statusProto(err)
 	default:
-		return nil, status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
+		rsp.Status = statusProto(status.UnimplementedErrorf("Request handling for %+v not implemented.", req))
 	}
 	return rsp, nil
 }
@@ -358,7 +407,6 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Update: result data: %+v", rspBuf)
 		entries[idx].Result = dbsm.Result{
 			Value: uint64(len(entries[idx].Cmd)),
 			Data:  rspBuf,
@@ -367,7 +415,7 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 	// Also make sure to update the last applied index.
 	lastEntry := entries[len(entries)-1]
 	appliedIndex := uint64ToBytes(lastEntry.Index)
-	if err := wb.Set([]byte(appliedIndexKey), appliedIndex, nil /*ignored write options*/); err != nil {
+	if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 
@@ -556,7 +604,7 @@ func (sm *PebbleDiskStateMachine) RecoverFromSnapshot(r io.Reader, quit <-chan s
 	wb := sm.db.NewBatch()
 	defer wb.Close()
 
-	if err := wb.DeleteRange([]byte{0}, []byte{255}, nil /*ignored write options*/); err != nil {
+	if err := wb.DeleteRange(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
 		return err
 	}
 
