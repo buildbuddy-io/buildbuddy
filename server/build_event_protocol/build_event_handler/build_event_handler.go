@@ -75,9 +75,9 @@ type BuildEventHandler struct {
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	openChannels := &sync.WaitGroup{}
-	statsRecorded := make(chan *inpb.Invocation, 4096)
-	statsRecorder := newStatsRecorder(env, openChannels, statsRecorded)
-	webhookNotifier := newWebhookNotifier(env, statsRecorded)
+	onStatsRecorded := make(chan *invocationJWT, 4096)
+	statsRecorder := newStatsRecorder(env, openChannels, onStatsRecorded)
+	webhookNotifier := newWebhookNotifier(env, onStatsRecorded)
 
 	statsRecorder.Start()
 	webhookNotifier.Start()
@@ -126,12 +126,19 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 }
 
+// invocationJWT represents an invocation ID as well as the JWT granting access
+// to it. It should only be used for background tasks that need access to the
+// JWT after the build event stream is already closed.
+type invocationJWT struct {
+	id  string
+	jwt string
+}
+
 // recordStatsTask contains the info needed to record the stats for an
 // invocation. These tasks are enqueued to statsRecorder and executed in the
 // background.
 type recordStatsTask struct {
-	invocation *inpb.Invocation
-
+	*invocationJWT
 	// createdAt is the time at which this task was created.
 	createdAt time.Time
 }
@@ -141,26 +148,29 @@ type recordStatsTask struct {
 type statsRecorder struct {
 	env          environment.Env
 	openChannels *sync.WaitGroup
-	// statsRecorded is a channel that should be notified after the statsRecorder
-	// collects stats and flushes them to the DB.
-	statsRecorded chan<- *inpb.Invocation
-	eg            errgroup.Group
+	// onStatsRecorded is a channel for this statsRecorder to notify after
+	// recording stats for each invocation. Invocations sent on this channel are
+	// considered "finalized".
+	onStatsRecorded chan<- *invocationJWT
+	eg              errgroup.Group
 
 	mu      sync.Mutex // protects(tasks, stopped)
 	tasks   chan *recordStatsTask
 	stopped bool
 }
 
-func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, statsRecorded chan<- *inpb.Invocation) *statsRecorder {
+func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStatsRecorded chan<- *invocationJWT) *statsRecorder {
 	return &statsRecorder{
-		env:           env,
-		openChannels:  openChannels,
-		statsRecorded: statsRecorded,
-		tasks:         make(chan *recordStatsTask, 4096),
+		env:             env,
+		openChannels:    openChannels,
+		onStatsRecorded: onStatsRecorded,
+		tasks:           make(chan *recordStatsTask, 4096),
 	}
 }
 
-func (r *statsRecorder) MarkFinalized(invocation *inpb.Invocation) {
+// Enqueue enqueues a task for the given invocation's stats to be recorded
+// once they are available.
+func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -171,9 +181,16 @@ func (r *statsRecorder) MarkFinalized(invocation *inpb.Invocation) {
 			invocation.GetInvocationId())
 		return
 	}
+	jwt := ""
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		jwt = auth.TrustedJWTFromAuthContext(ctx)
+	}
 	req := &recordStatsTask{
-		invocation: invocation,
-		createdAt:  time.Now(),
+		invocationJWT: &invocationJWT{
+			id:  invocation.GetInvocationId(),
+			jwt: jwt,
+		},
+		createdAt: time.Now(),
 	}
 	select {
 	case r.tasks <- req:
@@ -193,10 +210,9 @@ func (r *statsRecorder) Start() {
 				// finalized, rather than relative to now. Otherwise each worker would be
 				// unnecessarily throttled.
 				time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
-				ti := &tables.Invocation{InvocationID: task.invocation.GetInvocationId()}
-				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocation.GetInvocationId()); stats != nil {
+				ti := &tables.Invocation{InvocationID: task.invocationJWT.id}
+				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
-					task.invocation.CacheStats = stats
 				}
 				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
@@ -204,12 +220,12 @@ func (r *statsRecorder) Start() {
 				// Cleanup regardless of whether the stats are flushed successfully to
 				// the DB (since we won't retry the flush and we don't need these stats
 				// for any other purpose).
-				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocation.GetInvocationId())
+				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
 
-				// Once cache stats are populated, notify the statsRecorded channel in a
-				// non-blocking fashion.
+				// Once cache stats are populated, notify the onStatsRecorded channel in
+				// a non-blocking fashion.
 				select {
-				case r.statsRecorded <- task.invocation:
+				case r.onStatsRecorded <- task.invocationJWT:
 					break
 				default:
 					log.Warningf("Failed to notify stats recorder listeners: channel buffer is full")
@@ -222,7 +238,7 @@ func (r *statsRecorder) Start() {
 
 func (r *statsRecorder) Stop() {
 	// Wait for all EventHandler channels to be closed to ensure there will be
-	// no more calls to MarkFinalized.
+	// no more calls to Enqueue.
 	r.openChannels.Wait()
 
 	r.mu.Lock()
@@ -234,35 +250,46 @@ func (r *statsRecorder) Stop() {
 		log.Error(err.Error())
 	}
 
-	close(r.statsRecorded)
+	close(r.onStatsRecorded)
 }
 
 type notifyWebhookTask struct {
-	hook       interfaces.Webhook
+	// hook is the webhook to notify of a completed invocation.
+	hook interfaces.Webhook
+	// invocationJWT contains the invocation ID and JWT for the invocation.
+	*invocationJWT
+	// invocation is the complete invocation looked up from the invocationJWT.
 	invocation *inpb.Invocation
 }
 
-func notifyWithTimeout(ctx context.Context, t *notifyWebhookTask) error {
+func notifyWithTimeout(ctx context.Context, env environment.Env, t *notifyWebhookTask) error {
 	ctx, cancel := context.WithTimeout(ctx, webhookNotifyTimeout)
 	defer cancel()
+	// Run the webhook using the authenticated user from the build event stream.
+	ij := t.invocationJWT
+	if auth := env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
+	}
 	return t.hook.NotifyComplete(ctx, t.invocation)
 }
 
 // webhookNotifier listens for invocations to be finalized (including stats)
 // and notifies webhooks.
 type webhookNotifier struct {
-	env           environment.Env
-	statsRecorded <-chan *inpb.Invocation
+	env environment.Env
+	// invocations is a channel of finalized invocations. On each invocation
+	// sent to this channel, we notify all configured webhooks.
+	invocations <-chan *invocationJWT
 
 	tasks chan *notifyWebhookTask
 	eg    errgroup.Group
 }
 
-func newWebhookNotifier(env environment.Env, statsRecorded <-chan *inpb.Invocation) *webhookNotifier {
+func newWebhookNotifier(env environment.Env, invocations <-chan *invocationJWT) *webhookNotifier {
 	return &webhookNotifier{
-		env:           env,
-		statsRecorded: statsRecorded,
-		tasks:         make(chan *notifyWebhookTask, 4096),
+		env:         env,
+		invocations: invocations,
+		tasks:       make(chan *notifyWebhookTask, 4096),
 	}
 }
 
@@ -271,25 +298,25 @@ func (w *webhookNotifier) Start() {
 	ctx := context.Background()
 
 	w.eg.Go(func() error {
-		// Listen for invocations that have been finalized by the stats recorder,
-		// and start a notify webhook task for each webhook.
-		for invocation := range w.statsRecorded {
-			// Don't call webhooks for disconnected invocations.
-			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
-				continue
-			}
-
-			// Read the invocation from the source of truth used by the UI.
-			invocation, err := LookupInvocation(w.env, ctx, invocation.GetInvocationId())
+		// Listen for invocations that have been finalized and start a notify
+		// webhook task for each webhook.
+		for ij := range w.invocations {
+			invocation, err := w.lookupInvocation(ctx, ij)
 			if err != nil {
 				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				continue
 			}
 
+			// Don't call webhooks for disconnected invocations.
+			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+				continue
+			}
+
 			for _, hook := range w.env.GetWebhooks() {
 				w.tasks <- &notifyWebhookTask{
-					hook:       hook,
-					invocation: invocation,
+					hook:          hook,
+					invocationJWT: ij,
+					invocation:    invocation,
 				}
 			}
 		}
@@ -299,7 +326,7 @@ func (w *webhookNotifier) Start() {
 	for i := 0; i < numWebhookNotifierWorkers; i++ {
 		w.eg.Go(func() error {
 			for task := range w.tasks {
-				if err := notifyWithTimeout(ctx, task); err != nil {
+				if err := notifyWithTimeout(ctx, w.env, task); err != nil {
 					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
 				}
 			}
@@ -314,6 +341,13 @@ func (w *webhookNotifier) Stop() {
 	if err := w.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
+}
+
+func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJWT) (*inpb.Invocation, error) {
+	if auth := w.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
+	}
+	return LookupInvocation(w.env, ctx, ij.id)
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
@@ -432,7 +466,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	e.statsRecorder.MarkFinalized(invocation)
+	e.statsRecorder.Enqueue(e.ctx, invocation)
 	return nil
 }
 
