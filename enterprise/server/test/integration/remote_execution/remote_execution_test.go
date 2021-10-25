@@ -230,6 +230,44 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	require.Equal(t, 0, res.ExitCode)
 }
 
+func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServers(3)
+	for i := 0; i < 5; i++ {
+		rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "preserve-workspace", Value: "true"},
+			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{
+		UserID: rbe.UserID1,
+		RemoteHeaders: map[string]string{
+			"x-buildbuddy-platform.pool": "foo",
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"touch", "foo.txt"},
+		Platform:  platform,
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+
+	cmd = rbe.Execute(&repb.Command{
+		Arguments: []string{"stat", "foo.txt"},
+		Platform:  platform,
+	}, opts)
+	res = cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+}
+
 func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -242,6 +280,87 @@ func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
 	assert.Equal(t, "hello\n", res.Stdout, "stdout should be propagated")
 	assert.Equal(t, "bye\n", res.Stderr, "stderr should be propagated")
+}
+
+func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "foo"},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output_dir"},
+		OutputFiles:       []string{"output.txt"},
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+}
+
+func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "bar"})
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "foo"},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output_dir"},
+		OutputFiles:       []string{"output.txt"},
+	}, opts)
+	err := cmd.MustFail()
+
+	require.Contains(t, err.Error(), `No registered executors in pool "foo"`)
+}
+
+func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
+		},
+	}
+	opts := &rbetest.ExecuteOpts{
+		RemoteHeaders: map[string]string{
+			"x-buildbuddy-platform.pool": "foo",
+		},
+	}
+
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output_dir"},
+		OutputFiles:       []string{"output.txt"},
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
 }
 
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
