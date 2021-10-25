@@ -17,6 +17,5 @@ go_library(
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
