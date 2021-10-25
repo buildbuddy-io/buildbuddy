@@ -208,6 +208,7 @@ type InvocationDB interface {
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
+	SetNowFunc(now func() time.Time)
 }
 
 type APIKeyGroup interface {
@@ -377,8 +378,8 @@ type RemoteExecutionService interface {
 }
 
 type FileCache interface {
-	FastLinkFile(d *repb.Digest, outputPath string) bool
-	AddFile(d *repb.Digest, existingFilePath string)
+	FastLinkFile(f *repb.FileNode, outputPath string) bool
+	AddFile(f *repb.FileNode, existingFilePath string)
 	WaitForDirectoryScanToComplete()
 }
 
