@@ -137,8 +137,9 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         })
       )
       .then(() => {
-        // After changing your own role within an org, refresh the page to trigger
-        // group reselection or login page as appropriate.
+        // After changing your own role within an org, refresh the page to
+        // trigger a user refresh and redirect, in case this settings page is no
+        // longer accessible.
         if (this.state.selectedUserIds.has(this.props.user.displayUser.userId.id)) {
           window.location.reload();
           return;
