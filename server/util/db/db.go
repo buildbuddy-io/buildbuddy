@@ -420,7 +420,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 	timestampExpr := fieldName + `/1000000`
 	if h.dialect == sqliteDialect {
-		return `STRFTIME(DATE(` + timestampExpr + `), '%Y-%m')`
+		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
 	}
 	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
 }
