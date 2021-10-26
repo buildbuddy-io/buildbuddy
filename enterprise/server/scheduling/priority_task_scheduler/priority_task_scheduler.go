@@ -383,7 +383,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
 			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err.Error())
-			taskLease.Close(nil, false)
+			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
 		retry, err := q.runTask(ctx, execTask)

@@ -1189,7 +1189,11 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 
 		done := req.GetFinalize() || req.GetRelease()
+
 		if req.GetFinalize() && claimed {
+			// Finalize deletes the task (and implicitly releases the lease).
+			// It implies that no further work will/can be attempted for this task.
+
 			err := s.deleteClaimedTask(ctx, taskID)
 			if err == nil {
 				claimed = false
@@ -1198,6 +1202,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				log.Warningf("Could not delete claimed task %q: %s", taskID, err)
 			}
 		} else if req.GetRelease() && claimed {
+			// Release removes the claim on the task without deleting the task.
+
 			err := s.unclaimTask(ctx, taskID)
 			if err == nil {
 				claimed = false

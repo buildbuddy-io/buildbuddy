@@ -19,11 +19,11 @@ message LeaseTaskRequest {
   // will be returned containing the serialized task and duration of the lease.
   string task_id = 1;
 
-  // Indicates that the leased task has been completed.
+  // Indicates that the leased task has been completed and can be deleted.
   // Mutually exclusive with `release`.
   bool finalize = 2;
 
-  // Indicates that the lease should be released without finalizing the task.
+  // Indicates that the lease should be released without finalizing (deleting) the task.
   // Mutually exclusive with `finalize`.
   bool release = 3;
 }
