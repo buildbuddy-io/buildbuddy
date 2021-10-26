@@ -137,6 +137,12 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         })
       )
       .then(() => {
+        // After changing your own role within an org, refresh the page to trigger
+        // group reselection or login page as appropriate.
+        if (this.state.selectedUserIds.has(this.props.user.displayUser.userId.id)) {
+          window.location.reload();
+          return;
+        }
         alertService.success("Changes applied successfully.");
         this.setState({
           isEditRoleModalVisible: false,
