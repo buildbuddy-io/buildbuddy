@@ -26,7 +26,6 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
     rpcService.service
       .getUsage(new usage.GetUsageRequest())
       .then((response) => {
-        console.log(response);
         if (response.usage.length === 0) {
           throw new Error("Server did not return usage data.");
         }
