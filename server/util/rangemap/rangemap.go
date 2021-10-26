@@ -9,7 +9,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-var RangeOverlapError = errors.New("Range overlap")
+var (
+	RangeOverlapError      = errors.New("Range overlap")
+	RangeDoesNotExistError = errors.New("Range does not exist")
+)
 
 // Ranges are [inclusive,exclusive)
 type Range struct {
@@ -30,7 +33,7 @@ func (r *Range) Contains(key []byte) bool {
 	lessThanRight := bytes.Compare(key, r.Right) == -1
 
 	contained := greaterThanOrEqualToLeft && lessThanRight
-	log.Printf("Checking if %s contains %q returned %t", r, string(key), contained)
+	log.Debugf("Checking if %s contains %q returned %t", r, string(key), contained)
 	return contained
 }
 
@@ -45,20 +48,12 @@ func New() *RangeMap {
 }
 
 func (rm *RangeMap) Add(left, right []byte, value interface{}) error {
-	i := sort.Search(len(rm.ranges), func(i int) bool {
+	insertIndex := sort.Search(len(rm.ranges), func(i int) bool {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
 		c := bytes.Compare(rm.ranges[i].Left, right)
 		b := c >= 0
 		return b
 	})
-
-	insertIndex := i
-
-	newRange := &Range{
-		Left:  left,
-		Right: right,
-		Val:   value,
-	}
 
 	// if we're inserting anywhere but the very beginning, ensure that
 	// we don't overlap with the range before us.
@@ -69,17 +64,23 @@ func (rm *RangeMap) Add(left, right []byte, value interface{}) error {
 		}
 	}
 
+	newRange := &Range{
+		Left:  left,
+		Right: right,
+		Val:   value,
+	}
+
 	if insertIndex >= len(rm.ranges) {
 		rm.ranges = append(rm.ranges, newRange)
 	} else {
 		rm.ranges = append(rm.ranges[:insertIndex+1], rm.ranges[insertIndex:]...)
 		rm.ranges[insertIndex] = newRange
 	}
-	log.Printf("Added new range: %s", newRange)
+	log.Debugf("Added new range: %s", newRange)
 	return nil
 }
 
-func (rm *RangeMap) Remove(left, right []byte) {
+func (rm *RangeMap) Remove(left, right []byte) error {
 	deleteIndex := -1
 	for i, r := range rm.ranges {
 		if bytes.Compare(left, r.Left) == 0 && bytes.Compare(right, r.Right) == 0 {
@@ -87,13 +88,43 @@ func (rm *RangeMap) Remove(left, right []byte) {
 			break
 		}
 	}
-	if deleteIndex != -1 {
-		rm.ranges = append(rm.ranges[:deleteIndex], rm.ranges[deleteIndex+1:]...)
+	if deleteIndex == -1 {
+		return RangeDoesNotExistError
 	}
+	rm.ranges = append(rm.ranges[:deleteIndex], rm.ranges[deleteIndex+1:]...)
+	return nil
 }
 
-func (rm *RangeMap) Get(key []byte) interface{} {
-	log.Printf("Get called for %q, %s", string(key), rm)
+func (rm *RangeMap) Get(left, right []byte) *Range {
+	if len(rm.ranges) == 0 {
+		return nil
+	}
+
+	// Search returns the smallest i for which func returns true.
+	// We want the smallest range that is bigger than this key
+	// aka, starts AFTER this key, and then we'll go one left of it
+	i := sort.Search(len(rm.ranges), func(i int) bool {
+		//  0 if a==b, -1 if a < b, and +1 if a > b
+		return bytes.Compare(rm.ranges[i].Left, left) > 0
+	})
+
+	// This is safe anyway because of how sort.Search works, but
+	// be clear so readers see this won't hit an out of range panic.
+	if i > 0 {
+		i -= 1
+	}
+
+	r := rm.ranges[i]
+	leftEq := bytes.Compare(r.Left, left) == 0
+	rightEq := bytes.Compare(r.Right, right) == 0
+	if leftEq && rightEq {
+		return r
+	}
+	return nil
+}
+
+func (rm *RangeMap) Lookup(key []byte) interface{} {
+	log.Debugf("Get called for %q, %s", string(key), rm)
 	if len(rm.ranges) == 0 {
 		return nil
 	}

@@ -9,6 +9,7 @@ go_library(
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
+        "//server/interfaces",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/rangemap",

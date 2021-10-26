@@ -101,6 +101,10 @@ message ReplicaDescriptor {
   uint64 node_id = 2;
 }
 
+message RangeSet {
+  repeated RangeDescriptor ranges = 1;
+}
+
 message RangeDescriptor {
   bytes left = 1;
   bytes right = 2;

@@ -12,6 +12,7 @@ go_library(
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:telemetry_go_proto",

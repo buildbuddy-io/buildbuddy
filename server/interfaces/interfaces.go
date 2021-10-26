@@ -18,6 +18,7 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -596,4 +597,9 @@ type DistributedLock interface {
 
 	// Unlock releases the lock.
 	Unlock(ctx context.Context) error
+}
+
+type RangeTracker interface {
+	AddRange(rd *rfpb.RangeDescriptor)
+	RemoveRange(rd *rfpb.RangeDescriptor)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -71,15 +72,17 @@ type PebbleDiskStateMachine struct {
 	closedMu *sync.RWMutex // PROTECTS(closed)
 	closed   bool
 
-	rootDir   string
-	fileDir   string
-	clusterID uint64
-	nodeID    uint64
+	rootDir      string
+	fileDir      string
+	clusterID    uint64
+	nodeID       uint64
+	rangeTracker interfaces.RangeTracker
 
 	lastAppliedIndex uint64
 
 	rangeMu         sync.RWMutex
-	rangeDescriptor *rangemap.Range
+	rangeDescriptor *rfpb.RangeDescriptor
+	mappedRange     *rangemap.Range
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -114,9 +117,10 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 
 func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 	sm.rangeMu.RLock()
-	alreadySet := sm.rangeDescriptor != nil
+	alreadySet := sm.mappedRange != nil
 	sm.rangeMu.RUnlock()
 	if alreadySet {
+		log.Printf("Range descriptor is already set.")
 		return nil
 	}
 
@@ -129,10 +133,14 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 		return err
 	}
 	sm.rangeMu.Lock()
-	if sm.rangeDescriptor == nil {
-		sm.rangeDescriptor = &rangemap.Range{
+	if sm.mappedRange == nil {
+		sm.rangeDescriptor = rangeDescriptor
+		sm.mappedRange = &rangemap.Range{
 			Left:  rangeDescriptor.GetLeft(),
 			Right: rangeDescriptor.GetRight(),
+		}
+		if sm.rangeTracker != nil {
+			sm.rangeTracker.AddRange(sm.rangeDescriptor)
 		}
 	}
 	sm.rangeMu.Unlock()
@@ -144,11 +152,11 @@ func (sm *PebbleDiskStateMachine) checkRange(wb *pebble.Batch, key []byte) error
 
 	sm.rangeMu.RLock()
 	defer sm.rangeMu.RUnlock()
-	if sm.rangeDescriptor == nil {
+	if sm.mappedRange == nil {
 		return status.FailedPreconditionError("range descriptor not yet set for this store")
 	}
-	if !sm.rangeDescriptor.Contains(key) {
-		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.rangeDescriptor, string(key))
+	if !sm.mappedRange.Contains(key) {
+		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
 	}
 	return nil
 }
@@ -664,23 +672,33 @@ func (sm *PebbleDiskStateMachine) Close() error {
 		return nil
 	}
 	sm.closed = true
+
+	sm.rangeMu.Lock()
+	rangeDescriptor := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
+	if sm.rangeTracker != nil && rangeDescriptor != nil {
+		sm.rangeTracker.RemoveRange(rangeDescriptor)
+	}
+
 	return sm.db.Close()
 }
 
 // CreatePebbleDiskStateMachine creates an ondisk statemachine.
-func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
+func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker) dbsm.IOnDiskStateMachine {
 	return &PebbleDiskStateMachine{
-		closedMu:  &sync.RWMutex{},
-		rootDir:   rootDir,
-		fileDir:   fileDir,
-		clusterID: clusterID,
-		nodeID:    nodeID,
+		closedMu:     &sync.RWMutex{},
+		rootDir:      rootDir,
+		fileDir:      fileDir,
+		clusterID:    clusterID,
+		nodeID:       nodeID,
+		rangeTracker: rangeTracker,
 	}
 }
 
 // Satisfy the interface gods.
-func MakeCreatePebbleDiskStateMachineFactory(rootDir, fileDir string) dbsm.CreateOnDiskStateMachineFunc {
+func MakeCreatePebbleDiskStateMachineFactory(rootDir, fileDir string, rangeTracker interfaces.RangeTracker) dbsm.CreateOnDiskStateMachineFunc {
 	return func(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID)
+		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID, rangeTracker)
 	}
 }

@@ -55,7 +55,7 @@ func TestAddOverlapError(t *testing.T) {
 	require.Equal(t, rangemap.RangeOverlapError, err)
 }
 
-func TestGetSingleRange(t *testing.T) {
+func TestLookupSingleRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		err := r.Add([]byte(left), []byte(right), id)
@@ -64,10 +64,10 @@ func TestGetSingleRange(t *testing.T) {
 
 	// Single range
 	addRange("a", "z", 1)
-	require.Equal(t, 1, r.Get([]byte("a")))
+	require.Equal(t, 1, r.Lookup([]byte("a")))
 }
 
-func TestGetMultiRange(t *testing.T) {
+func TestLookupMultiRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		err := r.Add([]byte(left), []byte(right), id)
@@ -84,19 +84,19 @@ func TestGetMultiRange(t *testing.T) {
 	addRange("g", "h", 7)
 	addRange("h", "iiii", 8)
 
-	require.Equal(t, 1, r.Get([]byte("a")))
-	require.Equal(t, 2, r.Get([]byte("b")))
-	require.Equal(t, 3, r.Get([]byte("c")))
-	require.Equal(t, 4, r.Get([]byte("d")))
-	require.Equal(t, 5, r.Get([]byte("e")))
-	require.Equal(t, 6, r.Get([]byte("f")))
-	require.Equal(t, 7, r.Get([]byte("g")))
-	require.Equal(t, 8, r.Get([]byte("h")))
-	require.Equal(t, 8, r.Get([]byte("i")))
-	require.Equal(t, nil, r.Get([]byte("z")))
+	require.Equal(t, 1, r.Lookup([]byte("a")))
+	require.Equal(t, 2, r.Lookup([]byte("b")))
+	require.Equal(t, 3, r.Lookup([]byte("c")))
+	require.Equal(t, 4, r.Lookup([]byte("d")))
+	require.Equal(t, 5, r.Lookup([]byte("e")))
+	require.Equal(t, 6, r.Lookup([]byte("f")))
+	require.Equal(t, 7, r.Lookup([]byte("g")))
+	require.Equal(t, 8, r.Lookup([]byte("h")))
+	require.Equal(t, 8, r.Lookup([]byte("i")))
+	require.Equal(t, nil, r.Lookup([]byte("z")))
 }
 
-func TestGetSparseRange(t *testing.T) {
+func TestLookupSparseRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		err := r.Add([]byte(left), []byte(right), id)
@@ -108,12 +108,12 @@ func TestGetSparseRange(t *testing.T) {
 	// f-m is missing
 	addRange("m", "z", 2)
 
-	require.Equal(t, 1, r.Get([]byte("d")))
-	require.Equal(t, nil, r.Get([]byte("g")))
-	require.Equal(t, 2, r.Get([]byte("m")))
+	require.Equal(t, 1, r.Lookup([]byte("d")))
+	require.Equal(t, nil, r.Lookup([]byte("g")))
+	require.Equal(t, 2, r.Lookup([]byte("m")))
 }
 
-func TestGetNarrowRange(t *testing.T) {
+func TestLookupNarrowRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		err := r.Add([]byte(left), []byte(right), id)
@@ -123,10 +123,48 @@ func TestGetNarrowRange(t *testing.T) {
 	addRange("aaaa", "aaac", 1)
 	addRange("aaad", "ffff", 2)
 
-	require.Equal(t, 1, r.Get([]byte("aaab")))
-	require.Equal(t, nil, r.Get([]byte("aaac")))
-	require.Equal(t, 2, r.Get([]byte("aaae")))
-	require.Equal(t, 2, r.Get([]byte("bbbb")))
+	require.Equal(t, 1, r.Lookup([]byte("aaab")))
+	require.Equal(t, nil, r.Lookup([]byte("aaac")))
+	require.Equal(t, 2, r.Lookup([]byte("aaae")))
+	require.Equal(t, 2, r.Lookup([]byte("bbbb")))
+}
+
+func TestGet(t *testing.T) {
+	r := rangemap.New()
+	addRange := func(left, right string, id int) {
+		err := r.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	addRange("aaaa", "aaac", 1)
+	addRange("aaad", "ffff", 2)
+
+	r1 := r.Get([]byte("aaaa"), []byte("aaac"))
+	r2 := r.Get([]byte("aaad"), []byte("ffff"))
+	require.Equal(t, 1, r1.Val)
+	require.Equal(t, 2, r2.Val)
+	require.Nil(t, r.Get([]byte("ffff"), []byte("z")))
+}
+
+func TestRemove(t *testing.T) {
+	r := rangemap.New()
+	addRange := func(left, right string, id int) {
+		err := r.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	// Sparse ranges
+	addRange("a", "z", 1)
+
+	require.Equal(t, 1, r.Lookup([]byte("d")))
+
+	err := r.Remove([]byte("a"), []byte("z"))
+	require.Nil(t, err)
+
+	err = r.Remove([]byte("a"), []byte("z"))
+	require.NotNil(t, err)
+
+	require.Equal(t, nil, r.Lookup([]byte("d")))
 }
 
 func TestClear(t *testing.T) {

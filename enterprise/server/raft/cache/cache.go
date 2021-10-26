@@ -20,11 +20,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -70,6 +72,8 @@ type RaftCache struct {
 	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
 
 	isolation *rfpb.Isolation
+
+	localStoreRanges []*rfpb.RangeDescriptor
 }
 
 // We need to provide a factory method that creates the DynamicNodeRegistry, and
@@ -86,6 +90,40 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	rc.gossipManager.AddBroker(r)
 	rc.registry = r
 	return r, nil
+}
+
+func (rc *RaftCache) broadcastRanges() error {
+	rangeSet := &rfpb.RangeSet{
+		Ranges: rc.localStoreRanges,
+	}
+	buf, err := proto.Marshal(rangeSet)
+	if err != nil {
+		return err
+	}
+	compressedBuf, err := compression.CompressFlate(buf, 9 /*=max compression*/)
+	if err != nil {
+		return err
+	}
+	rc.setTagFn(constants.StoredRangesTag, string(compressedBuf))
+	return nil
+}
+
+// We need to implement the RangeTracker interface so that stores opened and
+// closed on this node will notify us when their range appears and disappears.
+// We'll use this information to drive the range tags we broadcast.
+func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
+	rc.localStoreRanges = append(rc.localStoreRanges, rd)
+	rc.broadcastRanges()
+}
+
+func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
+	for i, t := range rc.localStoreRanges {
+		if t == rd {
+			rc.localStoreRanges = append(rc.localStoreRanges[:i], rc.localStoreRanges[i+1:]...)
+			return
+		}
+	}
+	rc.broadcastRanges()
 }
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
@@ -118,11 +156,11 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// Quiet the raft logs
 	dbLogger.GetLogger("raft").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("rsm").SetLevel(dbLogger.WARNING)
-	dbLogger.GetLogger("transport").SetLevel(dbLogger.WARNING)
-	dbLogger.GetLogger("dragonboat").SetLevel(dbLogger.WARNING)
-	dbLogger.GetLogger("raftpb").SetLevel(dbLogger.WARNING)
-	dbLogger.GetLogger("logdb").SetLevel(dbLogger.WARNING)
+	dbLogger.GetLogger("rsm").SetLevel(dbLogger.ERROR)
+	dbLogger.GetLogger("transport").SetLevel(dbLogger.ERROR)
+	dbLogger.GetLogger("dragonboat").SetLevel(dbLogger.ERROR)
+	dbLogger.GetLogger("raftpb").SetLevel(dbLogger.ERROR)
+	dbLogger.GetLogger("logdb").SetLevel(dbLogger.ERROR)
 
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
@@ -132,7 +170,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
-		RTTMillisecond: 10,
+		RTTMillisecond: 1,
 		RaftAddress:    rc.raftAddress,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: rc,
@@ -158,7 +196,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.
-	rc.createStateMachineFn = statemachine.MakeCreatePebbleDiskStateMachineFactory(pebbleLogDir, fileDir)
+	rc.createStateMachineFn = statemachine.MakeCreatePebbleDiskStateMachineFactory(pebbleLogDir, fileDir, rc)
 	apiServer, err := api.NewServer(fileDir, nodeHost, rc.createStateMachineFn)
 	if err != nil {
 		return nil, err
