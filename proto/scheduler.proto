@@ -23,7 +23,8 @@ message LeaseTaskRequest {
   // Mutually exclusive with `release`.
   bool finalize = 2;
 
-  // Indicates that the lease should be released without finalizing (deleting) the task.
+  // Indicates that the lease should be released without finalizing (deleting)
+  // the task.
   // Mutually exclusive with `finalize`.
   bool release = 3;
 }
