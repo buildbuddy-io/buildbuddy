@@ -51,3 +51,19 @@ describe("formatWithCommas", () => {
     expect(format.formatWithCommas(new Long(1234567, 0))).toEqual("1,234,567");
   });
 });
+
+describe("bytes", () => {
+  it("should abbreviate large numbers", () => {
+    expect(format.bytes(0)).toEqual("0B");
+    expect(format.bytes(99)).toEqual("99B");
+    expect(format.bytes(100)).toEqual("0.10KB");
+    expect(format.bytes(1e6 - 1)).toEqual("1000.00KB");
+    expect(format.bytes(1e6)).toEqual("1.00MB");
+    expect(format.bytes(1e9 - 1)).toEqual("1000.00MB");
+    expect(format.bytes(1e9)).toEqual("1.00GB");
+    expect(format.bytes(1e12 - 1)).toEqual("1000.00GB");
+    expect(format.bytes(1e12)).toEqual("1.00TB");
+    expect(format.bytes(1e15 - 1)).toEqual("1000.00TB");
+    expect(format.bytes(1e15)).toEqual("1.00PB");
+  });
+});
