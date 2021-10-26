@@ -376,6 +376,7 @@ type RemoteExecutionService interface {
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
+	MarkExecutionFailed(ctx context.Context, taskID string, reason error) error
 }
 
 type FileCache interface {

@@ -328,6 +328,12 @@ class Router {
   }
 
   private getFallbackPath(user: User | null): string | null {
+    // Require the user to create an org if they are logged in but not part of
+    // an org.
+    if (user !== null && !user.groups?.length) {
+      return Path.createOrgPath;
+    }
+
     const path = window.location.pathname;
 
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {

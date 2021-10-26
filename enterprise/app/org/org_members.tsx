@@ -174,6 +174,12 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         })
       )
       .then(() => {
+        // After removing yourself from an org, refresh the page to trigger
+        // group reselection or login page as appropriate.
+        if (this.state.selectedUserIds.has(this.props.user.displayUser.userId.id)) {
+          window.location.reload();
+          return;
+        }
         alertService.success("Changes applied successfully.");
         this.setState({
           isRemoveModalVisible: false,

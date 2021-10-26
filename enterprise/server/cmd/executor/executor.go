@@ -90,6 +90,8 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 				connState := conn.GetState()
 				if connState == connectivity.Ready {
 					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
 				}
 				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 			},
@@ -184,6 +186,8 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 					connState := conn.GetState()
 					if connState == connectivity.Ready {
 						return nil
+					} else if connState == connectivity.Idle {
+						conn.Connect()
 					}
 					return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 				},

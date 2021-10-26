@@ -517,6 +517,32 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 	}
 }
 
+func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
+	remoteInstanceName, d, err := digest.ExtractDigestFromDownloadResourceName(taskID)
+	if err != nil {
+		log.Warningf("Could not parse taskID: %s", err)
+		return err
+	}
+	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, digest.NewInstanceNameDigest(d, remoteInstanceName), reason)
+	if err != nil {
+		return err
+	}
+	data, err := proto.Marshal(op)
+	if err != nil {
+		return err
+	}
+	if err := s.streamPubSub.Publish(ctx, redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+		log.Warningf("MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
+		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
+	}
+
+	if err := s.updateExecution(ctx, taskID, operation.ExtractStage(op), op); err != nil {
+		log.Warningf("MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
+		return err
+	}
+	return nil
+}
+
 func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperationServer) error {
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {

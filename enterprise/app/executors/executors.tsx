@@ -5,7 +5,6 @@ import { User } from "../../../app/auth/auth_service";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import ExecutorCardComponent from "./executor_card";
 import { Subscription } from "rxjs";
-import capabilities from "../../../app/capabilities/capabilities";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { FilledButton } from "../../../app/components/button/button";
@@ -71,6 +70,7 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
 }
 
 interface ExecutorSetupProps {
+  user: User;
   executorKeys: api_key.IApiKey[];
   executors: scheduler.IExecutionNode[];
   schedulerUri: string;
@@ -88,11 +88,13 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
           <div>
             <p>There are no API keys with the executor capability configured for your organization.</p>
             <p>API keys are used to authorize self-hosted executors.</p>
-            <FilledButton className="manage-keys-button">
-              <a href="/settings/" onClick={onClickLink.bind("/settings")}>
-                Manage keys
-              </a>
-            </FilledButton>
+            {this.props.user.canCall("createApiKey") && (
+              <FilledButton className="manage-keys-button">
+                <a href="/settings/org/api-keys" onClick={onClickLink.bind("/settings/org/api-keys")}>
+                  Manage keys
+                </a>
+              </FilledButton>
+            )}
           </div>
         )}
         {this.props.executorKeys.length > 0 && (
@@ -296,6 +298,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
             <p>Self-hosted executors are enabled, but there are no executors connected.</p>
             <p>Follow the instructions below to deploy your executors.</p>
             <ExecutorSetup
+              user={this.props.user}
               executorKeys={this.state.executorKeys}
               executors={this.state.nodes}
               schedulerUri={this.state.schedulerUri}
@@ -318,6 +321,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
           <h1>You're currently using BuildBuddy Cloud executors.</h1>
           <p>See the instructions below if you'd like to use self-hosted executors.</p>
           <ExecutorSetup
+            user={this.props.user}
             executorKeys={this.state.executorKeys}
             executors={this.state.nodes}
             schedulerUri={this.state.schedulerUri}

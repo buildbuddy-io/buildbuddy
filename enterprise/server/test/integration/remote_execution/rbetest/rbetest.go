@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -854,6 +855,8 @@ type ExecuteOpts struct {
 	// RemoteHeaders is a set of remote headers to append to the outgoing gRPC
 	// context when executing the command.
 	RemoteHeaders map[string]string
+	// If true, the command will reference a missing input root digest.
+	SimulateMissingDigest bool
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -870,10 +873,15 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	}
 
 	var inputRootDigest *repb.Digest
-	if opts.InputRootDir != "" {
-		inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)
+	if opts.SimulateMissingDigest {
+		// Generate a digest, but don't upload it.
+		inputRootDigest, _ = testdigest.NewRandomDigestBuf(r.t, 1234)
 	} else {
-		inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(ctx)
+		if opts.InputRootDir != "" {
+			inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)
+		} else {
+			inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(ctx)
+		}
 	}
 
 	name := strings.Join(command.GetArguments(), " ")

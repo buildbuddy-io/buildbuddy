@@ -116,9 +116,9 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	}
 
 	return &Properties{
-		OS:                        stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName),
-		Arch:                      stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture),
-		Pool:                      pool,
+		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
+		Pool:                      strings.ToLower(pool),
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),

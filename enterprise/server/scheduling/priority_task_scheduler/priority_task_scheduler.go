@@ -267,24 +267,24 @@ func propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.E
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) error {
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
-		return status.FailedPreconditionError("Execution client not configured")
+		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
 	ctx = propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)
-		return err
+		return false, err
 	}
-	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
+	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
 		_, _ = clientStream.CloseAndRecv()
-		return err
+		return retry, err
 	}
 	_, err = clientStream.CloseAndRecv()
-	return err
+	return false, err
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
@@ -383,15 +383,14 @@ func (q *PriorityTaskScheduler) handleTask() {
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
 			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err.Error())
-			taskLease.Close(nil)
+			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
-		err = q.runTask(ctx, execTask)
+		retry, err := q.runTask(ctx, execTask)
 		if err != nil {
-			q.log.Errorf("Error running task %q: %s", reservation.GetTaskId(), err.Error())
+			q.log.Errorf("Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
-		// err can be nil and that's ok! Task will be retried if it's not.
-		taskLease.Close(err)
+		taskLease.Close(err, retry)
 	}()
 }
 
