@@ -82,7 +82,9 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div className="usage-resource-name">Content addressable storage cache hits</div>
                   <div className="usage-value">{formatWithCommas(usage.casCacheHits)}</div>
                   <div className="usage-resource-name">Total bytes downloaded from cache</div>
-                  <div className="usage-value">{formatBytes(usage.totalDownloadSizeBytes)}</div>
+                  <div className="usage-value" title={usage.totalDownloadSizeBytes}>
+                    {formatBytes(usage.totalDownloadSizeBytes)}
+                  </div>
                 </div>
               </div>
             </div>
