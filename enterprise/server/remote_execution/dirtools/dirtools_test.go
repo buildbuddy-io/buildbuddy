@@ -20,7 +20,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func Test_DownloadTree(t *testing.T) {
+func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testTempDir(t)
 	instanceName := "foo"
@@ -65,13 +65,13 @@ func Test_DownloadTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.NotNil(t, info, "transfers are not nil")
-	assert.Equal(t, info.FileCount, int64(2), "two files were transferred")
+	assert.Equal(t, int64(2), info.FileCount, "two files were transferred")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
 }
 
-func Test_DownloadTree_EmptyDigest(t *testing.T) {
+func TestDownloadTreeEmptyDigest(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testTempDir(t)
 	instanceName := "foo"
@@ -128,7 +128,7 @@ func Test_DownloadTree_EmptyDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.NotNil(t, info, "transfers are not nil")
-	assert.Equal(t, info.FileCount, int64(3), "three files were transferred")
+	assert.Equal(t, int64(3), info.FileCount, "three files were transferred")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-empty-directory"), "my-empty-directory should exist")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-notempty-directory"), "my-notempty-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-notempty-directory/fileA.txt"), "fileA.txt should exist")
@@ -172,9 +172,8 @@ func testTempDir(t *testing.T) string {
 }
 
 func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceName, data string) *repb.Digest {
-	dataString := data
-	dataBytes := []byte(dataString)
-	hashString := hash.String(dataString)
+	dataBytes := []byte(data)
+	hashString := hash.String(data)
 	d := &repb.Digest{
 		Hash:      hashString,
 		SizeBytes: int64(len(dataBytes)),
