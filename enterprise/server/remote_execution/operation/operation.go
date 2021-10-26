@@ -77,25 +77,23 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func GetFinishWithErrFunc(stream StreamLike, taskID string, adInstanceDigest *digest.InstanceNameDigest) FinishWithErrorFunc {
-	return func(finalErr error) error {
-		stage := repb.ExecutionStage_COMPLETED
-		if op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr); err == nil {
-			log.Warningf("Failed action %q (returning err: %s via operation)", taskID, finalErr)
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.InstanceNameDigest, finalErr error) error {
+	stage := repb.ExecutionStage_COMPLETED
+	if op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr); err == nil {
+		log.Warningf("Failed action %q (returning err: %s via operation)", taskID, finalErr)
 
-			select {
-			case <-stream.Context().Done():
-				log.Warningf("Attempted finish with err on %q but context is done.", taskID)
-				return status.UnavailableErrorf("Context cancelled: %s", stream.Context().Err())
-			default:
-				if err := stream.Send(op); err != nil {
-					log.Errorf("Error sending operation %+v on stream", op)
-					return err
-				}
+		select {
+		case <-stream.Context().Done():
+			log.Warningf("Attempted finish with err on %q but context is done.", taskID)
+			return status.UnavailableErrorf("Context cancelled: %s", stream.Context().Err())
+		default:
+			if err := stream.Send(op); err != nil {
+				log.Errorf("Error sending operation %+v on stream", op)
+				return err
 			}
 		}
-		return finalErr
 	}
+	return finalErr
 }
 
 func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSummary, code codes.Code) *repb.ExecuteResponse {

@@ -35,6 +35,7 @@ go_library(
         "//server/tables",
         "//server/testutil/app",
         "//server/testutil/testauth",
+        "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/grpc_client",
