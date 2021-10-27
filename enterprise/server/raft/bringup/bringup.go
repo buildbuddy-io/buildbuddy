@@ -199,7 +199,7 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 		return err
 	}
 	for nodeID, _ := range membership.Nodes {
-		rangeReplica.InternalReplicas = append(rangeReplica.InternalReplicas, &rfpb.ReplicaDescriptor{
+		rangeReplica.Replicas = append(rangeReplica.Replicas, &rfpb.ReplicaDescriptor{
 			ClusterId: constants.InitialClusterID,
 			NodeId:    nodeID,
 		})

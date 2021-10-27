@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/gossip"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/statemachine"
@@ -69,6 +70,7 @@ type RaftCache struct {
 	nodeHost             *dragonboat.NodeHost
 	apiServer            *api.Server
 	apiClient            *client.APIClient
+	rangeCache           *rangecache.RangeCache
 	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
 
 	isolation *rfpb.Isolation
@@ -129,8 +131,9 @@ func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	log.Debugf("conf is: %+v", conf)
 	rc := &RaftCache{
-		env:  env,
-		conf: conf,
+		env:        env,
+		conf:       conf,
+		rangeCache: rangecache.New(),
 	}
 
 	if len(conf.Join) < 3 {
@@ -223,6 +226,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// register us to get callbacks
 	// and broadcast some basic tags
 	rc.gossipManager.AddBroker(rc)
+	rc.gossipManager.AddBroker(rc.rangeCache)
 	rc.setTagFn(constants.NodeHostIDTag, nodeHost.ID())
 	rc.setTagFn(constants.RaftAddressTag, rc.raftAddress)
 	rc.setTagFn(constants.GRPCAddressTag, grpcAddress)
@@ -237,6 +241,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 }
 
 func (rc *RaftCache) Check(ctx context.Context) error {
+	// We are ready to serve when:
+	//  - we're able to read meta1 range
+	// TODO(tylerw): fix health check.
+
 	// raft library will complain if sync read context does not
 	// have a timeout set, so ensure there is one.
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)

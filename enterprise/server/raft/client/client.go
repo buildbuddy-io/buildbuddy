@@ -54,6 +54,10 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 	return client, nil
 }
 
+func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, error) {
+	return c.getClient(ctx, peer)
+}
+
 func (c *APIClient) RemoteReader(ctx context.Context, peer string, fileRecord *rfpb.FileRecord, offset int64) (io.ReadCloser, error) {
 	req := &rfpb.ReadRequest{
 		FileRecord: fileRecord,

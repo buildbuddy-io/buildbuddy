@@ -11,7 +11,7 @@ func TestAddOrdering(t *testing.T) {
 	r := rangemap.New()
 
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -41,24 +41,35 @@ func TestAddOverlapError(t *testing.T) {
 	r := rangemap.New()
 
 	var err error
-	err = r.Add([]byte("a"), []byte("c"), 1)
+	_, err = r.Add([]byte("a"), []byte("c"), 1)
 	require.Nil(t, err)
 
-	err = r.Add([]byte("b"), []byte("f"), 2)
+	_, err = r.Add([]byte("b"), []byte("f"), 2)
 	require.Equal(t, rangemap.RangeOverlapError, err)
 	r.Clear()
 
-	err = r.Add([]byte("a"), []byte("z"), 1)
+	_, err = r.Add([]byte("a"), []byte("z"), 1)
 	require.Nil(t, err)
 
-	err = r.Add([]byte("bbbb"), []byte("cccc"), 2)
+	_, err = r.Add([]byte("bbbb"), []byte("cccc"), 2)
+	require.Equal(t, rangemap.RangeOverlapError, err)
+}
+
+func TestAddDuplicateError(t *testing.T) {
+	r := rangemap.New()
+
+	var err error
+	_, err = r.Add([]byte("a"), []byte("c"), 1)
+	require.Nil(t, err)
+
+	_, err = r.Add([]byte("a"), []byte("c"), 1)
 	require.Equal(t, rangemap.RangeOverlapError, err)
 }
 
 func TestLookupSingleRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -70,7 +81,7 @@ func TestLookupSingleRange(t *testing.T) {
 func TestLookupMultiRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -99,7 +110,7 @@ func TestLookupMultiRange(t *testing.T) {
 func TestLookupSparseRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -116,7 +127,7 @@ func TestLookupSparseRange(t *testing.T) {
 func TestLookupNarrowRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -132,7 +143,7 @@ func TestLookupNarrowRange(t *testing.T) {
 func TestGet(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -146,10 +157,28 @@ func TestGet(t *testing.T) {
 	require.Nil(t, r.Get([]byte("ffff"), []byte("z")))
 }
 
+func TestGetOverlapping(t *testing.T) {
+	r := rangemap.New()
+	addRange := func(left, right string, id int) {
+		_, err := r.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	addRange("a", "e", 1)
+	addRange("e", "i", 2)
+	addRange("m", "q", 3)
+
+	overlap := r.GetOverlapping([]byte("d"), []byte("m"))
+
+	require.Equal(t, 1, overlap[0].Val)
+	require.Equal(t, 2, overlap[1].Val)
+	require.Equal(t, 3, overlap[2].Val)
+}
+
 func TestRemove(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
-		err := r.Add([]byte(left), []byte(right), id)
+		_, err := r.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -171,7 +200,7 @@ func TestClear(t *testing.T) {
 	r := rangemap.New()
 
 	var err error
-	err = r.Add([]byte("a"), []byte("c"), 1)
+	_, err = r.Add([]byte("a"), []byte("c"), 1)
 	require.Nil(t, err)
 	require.Equal(t, 1, len(r.Ranges()))
 

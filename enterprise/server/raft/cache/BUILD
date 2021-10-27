@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/gossip",
+        "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/statemachine",

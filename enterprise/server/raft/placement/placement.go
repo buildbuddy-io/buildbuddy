@@ -1,9 +1,7 @@
 package placement
 
 import (
-	"sync"
+// TODO
 )
 
 type Driver struct{}
-
-func (d *Driver) GetReplicas()

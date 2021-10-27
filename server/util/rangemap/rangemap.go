@@ -47,7 +47,7 @@ func New() *RangeMap {
 	}
 }
 
-func (rm *RangeMap) Add(left, right []byte, value interface{}) error {
+func (rm *RangeMap) Add(left, right []byte, value interface{}) (*Range, error) {
 	insertIndex := sort.Search(len(rm.ranges), func(i int) bool {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
 		c := bytes.Compare(rm.ranges[i].Left, right)
@@ -60,7 +60,7 @@ func (rm *RangeMap) Add(left, right []byte, value interface{}) error {
 	prevRangeIndex := insertIndex - 1
 	if len(rm.ranges) > 0 && prevRangeIndex >= 0 {
 		if bytes.Compare(rm.ranges[prevRangeIndex].Right, left) > 0 {
-			return RangeOverlapError
+			return nil, RangeOverlapError
 		}
 	}
 
@@ -77,7 +77,7 @@ func (rm *RangeMap) Add(left, right []byte, value interface{}) error {
 		rm.ranges[insertIndex] = newRange
 	}
 	log.Debugf("Added new range: %s", newRange)
-	return nil
+	return newRange, nil
 }
 
 func (rm *RangeMap) Remove(left, right []byte) error {
@@ -121,6 +121,30 @@ func (rm *RangeMap) Get(left, right []byte) *Range {
 		return r
 	}
 	return nil
+}
+
+func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
+	if len(rm.ranges) == 0 {
+		return nil
+	}
+
+	// Search returns the smallest i for which func returns true.
+	// We want the smallest range that is bigger than this key
+	// aka, starts AFTER this key, and then we'll go one left of it
+	leftIndex := sort.Search(len(rm.ranges), func(i int) bool {
+		//  0 if a==b, -1 if a < b, and +1 if a > b
+		return bytes.Compare(rm.ranges[i].Left, left) > 0
+	})
+
+	// Search returns the smallest i for which func returns true.
+	// We want the smallest range that is bigger than this key
+	// aka, starts AFTER this key, and then we'll go one left of it
+	rightIndex := sort.Search(len(rm.ranges), func(i int) bool {
+		//  0 if a==b, -1 if a < b, and +1 if a > b
+		return bytes.Compare(rm.ranges[i].Left, right) > 0
+	})
+
+	return rm.ranges[leftIndex-1 : rightIndex]
 }
 
 func (rm *RangeMap) Lookup(key []byte) interface{} {

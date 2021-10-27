@@ -110,7 +110,9 @@ message RangeDescriptor {
   bytes right = 2;
 
   uint64 range_id = 3;
-  repeated ReplicaDescriptor internal_replicas = 4;
+  repeated ReplicaDescriptor replicas = 4;
+
+  uint64 generation = 5;
 }
 
 // SyncPropose, in proto form.

@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -16,83 +17,69 @@ import (
 type RangeCache struct {
 	rangeMu sync.RWMutex
 
-	// Keep a rangemap that maps from ranges to rangeValues.
+	// Keep a rangemap that maps from ranges to descriptors.
 	rangeMap *rangemap.RangeMap
-
-	// Keep a reverse map that lets us easily remove a node from the
-	// rangeMap when a node leaves the cluster. This list may contain
-	// dupes.
-	nodeRanges map[string][]*rangemap.Range
 }
 
 func New() *RangeCache {
 	return &RangeCache{
-		rangeMu:    sync.RWMutex{},
-		rangeMap:   rangemap.New(),
-		nodeRanges: make(map[string][]*rangemap.Range, 0),
+		rangeMu:  sync.RWMutex{},
+		rangeMap: rangemap.New(),
 	}
 }
 
-// This value is stored by rangeMap.
-type rangeValue struct {
-	// An easily indexable set of the hosts in this range.
-	members map[string]string
-}
-
-func (rc *RangeCache) removeRanges(grpcAddress string) error {
-	rc.rangeMu.Lock()
-	defer rc.rangeMu.Unlock()
-
-	log.Debugf("removing %q from ranges", grpcAddress)
-	for _, r := range rc.nodeRanges[grpcAddress] {
-		rv, ok := r.Val.(*rangeValue)
-		if !ok {
-			log.Debugf("skipping !ok rval")
-			continue
-		}
-		delete(rv.members, grpcAddress)
-		log.Debugf("rv.members is now: %+v", rv.members)
-		if len(rv.members) == 0 {
-			// ignore error, if this range isn't in the map anymore
-			// that's ok.
-			log.Debugf("removing from rangemap b/c no members left.")
-			rc.rangeMap.Remove(r.Left, r.Right)
-		}
-	}
-	delete(rc.nodeRanges, grpcAddress)
-	return nil
-}
-
-func (rc *RangeCache) updateRange(grpcAddress string, rangeDescriptor *rfpb.RangeDescriptor) error {
+func (rc *RangeCache) updateRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
 	rc.rangeMu.Lock()
 	defer rc.rangeMu.Unlock()
 
 	left := rangeDescriptor.GetLeft()
 	right := rangeDescriptor.GetRight()
+	newDescriptor := proto.Clone(rangeDescriptor).(*rfpb.RangeDescriptor)
 
-	log.Debugf("Adding %q to rangemap with descriptor: %+v", grpcAddress, rangeDescriptor)
 	r := rc.rangeMap.Get(left, right)
 	if r == nil {
-		err := rc.rangeMap.Add(left, right, &rangeValue{map[string]string{
-			grpcAddress: grpcAddress,
-		}})
-		if err != nil {
-			return err
+		// Easy add, there were no overlaps.
+		_, err := rc.rangeMap.Add(left, right, newDescriptor)
+		if err == nil {
+			return nil
 		}
-		rc.nodeRanges[grpcAddress] = append(rc.nodeRanges[grpcAddress], rc.rangeMap.Get(left, right))
+
+		// If this range overlaps, we'll check it against the overlapping
+		// ranges and possibly delete them or if they are newer, then we'll
+		// ignore this update.
+		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
+			v, ok := overlappingRange.Val.(*rfpb.RangeDescriptor)
+			if !ok {
+				continue
+			}
+			if v.GetGeneration() >= newDescriptor.GetGeneration() {
+				log.Debugf("Ignoring rangeDescriptor %+v, current generation: %d", newDescriptor, v.GetGeneration())
+				return nil
+			}
+		}
+
+		// If we got here, all overlapping ranges are older, so we're gonna
+		// delete them and replace with the new one.
+		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
+			rc.rangeMap.Remove(overlappingRange.Left, overlappingRange.Right)
+		}
+		_, err = rc.rangeMap.Add(left, right, newDescriptor)
+		return err
 	} else {
-		rv, ok := r.Val.(*rangeValue)
+		oldDescriptor, ok := r.Val.(*rfpb.RangeDescriptor)
 		if !ok {
 			return status.FailedPreconditionError("Val was not a rangeVal")
 		}
-		rv.members[grpcAddress] = grpcAddress
+		if newDescriptor.GetGeneration() > oldDescriptor.GetGeneration() {
+			r.Val = newDescriptor
+		}
 	}
 	return nil
 }
 
-func (rc *RangeCache) updateRanges(grpcAddress string, rangeset *rfpb.RangeSet) error {
+func (rc *RangeCache) updateRanges(nhid string, rangeset *rfpb.RangeSet) error {
 	for _, rangeDescriptor := range rangeset.GetRanges() {
-		if err := rc.updateRange(grpcAddress, rangeDescriptor); err != nil {
+		if err := rc.updateRange(nhid, rangeDescriptor); err != nil {
 			return err
 		}
 	}
@@ -106,7 +93,7 @@ func (rc *RangeCache) RegisterTagProviderFn(setTagFn func(tagName, tagValue stri
 
 // MemberEvent is called when a node joins, leaves, or is updated.
 func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member) {
-	grpcAddress, ok := member.Tags[constants.GRPCAddressTag]
+	nhid, ok := member.Tags[constants.NodeHostIDTag]
 	if !ok {
 		return
 	}
@@ -114,35 +101,36 @@ func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
 		if tagData, ok := member.Tags[constants.StoredRangesTag]; ok {
+			rawBuf, err := compression.DecompressFlate([]byte(tagData))
+			if err != nil {
+				log.Errorf("error decompressing rangeset: %s", err)
+				return
+			}
 			rangeset := &rfpb.RangeSet{}
-			if err := proto.Unmarshal([]byte(tagData), rangeset); err != nil {
+			if err := proto.Unmarshal(rawBuf, rangeset); err != nil {
 				log.Errorf("unparsable rangeset: %s", err)
 				return
 			}
-			rc.removeRanges(grpcAddress)
-			rc.updateRanges(grpcAddress, rangeset)
+			if err := rc.updateRanges(nhid, rangeset); err != nil {
+				log.Errorf("Error updating ranges: %s", err)
+			}
 		}
-	case serf.EventMemberLeave:
-		rc.removeRanges(grpcAddress)
 	default:
 		break
 	}
 }
 
-func (rc *RangeCache) UpdateStaleRange(grpcAddress string, rangeDescriptor *rfpb.RangeDescriptor) error {
-	rc.removeRanges(grpcAddress)
-	return rc.updateRange(grpcAddress, rangeDescriptor)
+func (rc *RangeCache) UpdateStaleRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
+	return rc.updateRange(nhid, rangeDescriptor)
 }
 
-func (rc *RangeCache) Get(key []byte) string {
+func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
 
 	val := rc.rangeMap.Lookup(key)
-	if rv, ok := val.(*rangeValue); ok {
-		for _, member := range rv.members {
-			return member
-		}
+	if rv, ok := val.(*rfpb.RangeDescriptor); ok {
+		return rv
 	}
-	return ""
+	return nil
 }
