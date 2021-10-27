@@ -63,14 +63,14 @@ func NewBufferedProtoWriter(bs interfaces.Blobstore, streamID string, bufferSize
 	}
 }
 
-func chunkName(streamID string, sequenceNumber int) string {
+func ChunkName(streamID string, sequenceNumber int) string {
 	chunkFileName := fmt.Sprintf("%s-%d.chunk", streamID, sequenceNumber)
 	return filepath.Join(streamID, "/chunks/", chunkFileName)
 }
 
 func DeleteBufferedProto(ctx context.Context, bs interfaces.Blobstore, streamID string) error {
 	for i := 0; ; i++ {
-		blobName := chunkName(streamID, i)
+		blobName := ChunkName(streamID, i)
 		if exists, err := bs.BlobExists(ctx, blobName); err != nil {
 			return err
 		} else if !exists {
@@ -88,7 +88,7 @@ func (w *BufferedProtoWriter) internalFlush(ctx context.Context) error {
 		return nil
 	}
 
-	tmpFilePath := chunkName(w.streamID, w.writeSequenceNumber)
+	tmpFilePath := ChunkName(w.streamID, w.writeSequenceNumber)
 	if _, err := w.bs.WriteBlob(ctx, tmpFilePath, w.writeBuf.Bytes()); err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (q *blobQueue) pushNewFuture(ctx context.Context) {
 	go func() {
 		defer close(future)
 
-		tmpFilePath := chunkName(q.streamID, sequenceNumber)
+		tmpFilePath := ChunkName(q.streamID, sequenceNumber)
 		data, err := q.blobstore.ReadBlob(ctx, tmpFilePath)
 		future <- blobReadResult{
 			data: data,

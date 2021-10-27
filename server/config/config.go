@@ -486,7 +486,6 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 
 type Configurator struct {
 	gc             *generalConfig
-	fullConfigPath string
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
@@ -495,7 +494,6 @@ func NewConfigurator(configFilePath string) (*Configurator, error) {
 		return nil, err
 	}
 	return &Configurator{
-		fullConfigPath: configFilePath,
 		gc:             conf,
 	}, nil
 }
