@@ -7,8 +7,6 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Go
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "8e968b5fcea1d2d64071872b12737bbb5514524ee5f0a4f54f5920266c261acb",
@@ -119,9 +117,6 @@ load(
 )
 
 _go_image_repos()
-
-# rules_foreign_cc
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "rules_foreign_cc",
@@ -256,4 +251,31 @@ http_archive(
     sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
     strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
+)
+
+# Web testing
+
+http_archive(
+    name = "io_bazel_rules_webtesting",
+    sha256 = "e9abb7658b6a129740c0b3ef6f5a2370864e102a5ba5ffca2cea565829ed825a",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/releases/download/0.3.5/rules_webtesting.tar.gz",
+    ],
+)
+
+load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
+
+web_test_repositories()
+
+load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
+
+browser_repositories(chromium = True)
+
+load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
+
+web_test_go_repositories()
+
+buildbuddy(
+    name = "buildbuddy_webdriver_toolchain",
+    docker_image = "docker://gcr.io/flame-public/rbe-webdriver@sha256:d7cf2332429dc2fca3fea127e18683129e44061ff04734bdc06392238ee6c1d7",
 )

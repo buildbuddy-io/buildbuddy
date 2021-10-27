@@ -16,3 +16,13 @@ actions:
           - "master"
     bazel_commands:
       - test //enterprise/server/test/performance/cache:cache_test --config=workflows
+  - name: Browser tests
+    triggers:
+      push:
+        branches:
+          - "master"
+    bazel_commands:
+      - >-
+        test --config=workflows-webdriver
+        //server/test/webdriver/setup:setup_test
+        //server/test/webdriver/invocation:invocation_test
