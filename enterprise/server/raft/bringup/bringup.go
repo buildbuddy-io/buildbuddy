@@ -190,7 +190,7 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 	}
 
 	// Set the range of this first cluster to [minbyte, maxbyte)
-	rangeReplica := &rfpb.RangeDescriptor{
+	rangeDescriptor := &rfpb.RangeDescriptor{
 		Left:  keys.Key{constants.MinByte},
 		Right: keys.Key{constants.MaxByte},
 	}
@@ -199,20 +199,20 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 		return err
 	}
 	for nodeID, _ := range membership.Nodes {
-		rangeReplica.Replicas = append(rangeReplica.Replicas, &rfpb.ReplicaDescriptor{
+		rangeDescriptor.Replicas = append(rangeDescriptor.Replicas, &rfpb.ReplicaDescriptor{
 			ClusterId: constants.InitialClusterID,
 			NodeId:    nodeID,
 		})
 	}
-	buf, err := proto.Marshal(rangeReplica)
+	buf, err := proto.Marshal(rangeDescriptor)
 	if err != nil {
 		return err
 	}
-	rangeWriteCmd := rbuilder.DirectWriteRequestBuf(&rfpb.KV{
+	writeRangeDescriptorCmd := rbuilder.DirectWriteRequestBuf(&rfpb.KV{
 		Key:   constants.LocalRangeKey,
 		Value: buf,
 	})
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, rangeWriteCmd); err != nil {
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, writeRangeDescriptorCmd); err != nil {
 		return err
 	}
 	return nil

@@ -21,11 +21,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
@@ -94,28 +94,22 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	return r, nil
 }
 
-func (rc *RaftCache) broadcastRanges() error {
-	rangeSet := &rfpb.RangeSet{
-		Ranges: rc.localStoreRanges,
-	}
-	buf, err := proto.Marshal(rangeSet)
-	if err != nil {
-		return err
-	}
-	compressedBuf, err := compression.CompressFlate(buf, 9 /*=max compression*/)
-	if err != nil {
-		return err
-	}
-	rc.setTagFn(constants.StoredRangesTag, string(compressedBuf))
-	return nil
-}
-
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
 	rc.localStoreRanges = append(rc.localStoreRanges, rd)
-	rc.broadcastRanges()
+
+	// Broadcast the meta1 range.
+	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
+	if r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.MaxByte}) {
+		buf, err := proto.Marshal(rd)
+		if err != nil {
+			log.Errorf("Error marshing meta1 range descriptor: %s", err)
+			return
+		}
+		rc.setTagFn(constants.Meta1RangeTag, string(buf))
+	}
 }
 
 func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
@@ -125,7 +119,6 @@ func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
 			return
 		}
 	}
-	rc.broadcastRanges()
 }
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {

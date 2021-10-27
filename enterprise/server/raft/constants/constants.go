@@ -12,10 +12,10 @@ import (
 
 // Gossip (broadcast) constants
 const (
-	NodeHostIDTag   = "node_host_id"
-	RaftAddressTag  = "raft_address"
-	GRPCAddressTag  = "grpc_address"
-	StoredRangesTag = "stored_ranges"
+	NodeHostIDTag  = "node_host_id"
+	RaftAddressTag = "raft_address"
+	GRPCAddressTag = "grpc_address"
+	Meta1RangeTag  = "meta1_range"
 )
 
 // Key range contants

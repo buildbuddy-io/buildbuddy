@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/util/compression",
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
@@ -24,7 +23,6 @@ go_test(
         ":rangecache",
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/util/compression",
         "//server/util/log",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",

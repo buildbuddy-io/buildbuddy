@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -77,15 +76,6 @@ func (rc *RangeCache) updateRange(nhid string, rangeDescriptor *rfpb.RangeDescri
 	return nil
 }
 
-func (rc *RangeCache) updateRanges(nhid string, rangeset *rfpb.RangeSet) error {
-	for _, rangeDescriptor := range rangeset.GetRanges() {
-		if err := rc.updateRange(nhid, rangeDescriptor); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // RegisterTagProviderFn gets a callback function that can  be used to set tags.
 func (rc *RangeCache) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {
 	// no-op, we only consume tags, we don't send them.
@@ -100,18 +90,13 @@ func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member
 
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		if tagData, ok := member.Tags[constants.StoredRangesTag]; ok {
-			rawBuf, err := compression.DecompressFlate([]byte(tagData))
-			if err != nil {
-				log.Errorf("error decompressing rangeset: %s", err)
-				return
-			}
-			rangeset := &rfpb.RangeSet{}
-			if err := proto.Unmarshal(rawBuf, rangeset); err != nil {
+		if tagData, ok := member.Tags[constants.Meta1RangeTag]; ok {
+			rd := &rfpb.RangeDescriptor{}
+			if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
 				log.Errorf("unparsable rangeset: %s", err)
 				return
 			}
-			if err := rc.updateRanges(nhid, rangeset); err != nil {
+			if err := rc.updateRange(nhid, rd); err != nil {
 				log.Errorf("Error updating ranges: %s", err)
 			}
 		}
@@ -120,7 +105,7 @@ func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member
 	}
 }
 
-func (rc *RangeCache) UpdateStaleRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
+func (rc *RangeCache) UpdateRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
 	return rc.updateRange(nhid, rangeDescriptor)
 }
 
