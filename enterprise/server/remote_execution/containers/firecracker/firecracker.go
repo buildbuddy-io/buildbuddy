@@ -1,5 +1,5 @@
-//go:build linux && !android
-// +build linux,!android
+// +build linux
+// +build !android
 
 package firecracker
 
