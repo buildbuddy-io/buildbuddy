@@ -11,23 +11,26 @@ config_setting(
 
 esbuild(
     name = "app_bundle",
-    args = [
-        "--resolve-extensions=.mjs,.js",
-        "--loader:.ttf=binary",
-        "--loader:.css=binary",
-        "--external:@octokit/webhooks",
-    ],
-    define = ["process.env.NODE_ENV=\"production\""],
+    args = {
+        "resolveExtensions": [
+            ".mjs",
+            ".js",
+        ],
+        "loader": {
+            ".ttf": "binary",
+            ".css": "binary",
+        },
+        "external": [
+            "@octokit/webhooks",
+        ],
+    },
+    define = {"process.env.NODE_ENV": '"production"'},
     entry_points = [
         "app.tsx",
     ],
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,
-    }),
-    tool = select({
-        "@bazel_tools//src/conditions:darwin": "@esbuild_darwin//:bin/esbuild",
-        "@bazel_tools//src/conditions:linux_x86_64": "@esbuild_linux//:bin/esbuild",
     }),
     deps = [
         ":enterprise_app",
