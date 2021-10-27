@@ -12,6 +12,7 @@ go_library(
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:target_go_proto",
         "//proto:usage_go_proto",

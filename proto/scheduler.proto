@@ -49,6 +49,9 @@ message TaskSize {
 
   // The task's estimated cpu usage.
   int64 estimated_milli_cpu = 2;
+
+  // The task's estimated disk space requirement (beyond task inputs).
+  int64 estimated_free_disk_bytes = 3;
 }
 
 message SchedulingMetadata {

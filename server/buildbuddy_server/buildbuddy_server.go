@@ -28,6 +28,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
@@ -731,6 +732,14 @@ func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
+
+func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
+	if rs := s.env.GetRunnerService(); rs != nil {
+		return rs.Run(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
 	if us := s.env.GetUsageService(); us != nil {
 		return us.GetUsage(ctx, req)
