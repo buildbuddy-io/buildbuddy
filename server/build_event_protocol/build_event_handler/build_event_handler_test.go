@@ -628,6 +628,11 @@ func TestRetryOnComplete(t *testing.T) {
 	err := channel.HandleEvent(request)
 	assert.NoError(t, err)
 
+	// Write some stuff to disk so we can verify it gets removed on retry
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2 + 1), ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
 	// Send workspace status event with commit sha (which causes a flush)
 	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), "test-invocation-id", 2)
 	err = channel.HandleEvent(request)
@@ -655,11 +660,27 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
+	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId("test-invocation-id"))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
 	// Attempt to start a new invocation with the same id
 	channel = handler.OpenChannel(ctx, "test-invocation-id")
 	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 1)
 	err = channel.HandleEvent(request)
 	assert.True(t, status.IsAlreadyExistsError(err), err)
+
+	// Make sure old files were not deleted
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId("test-invocation-id"))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
 }
 
 func TestRetryOnDisconnect(t *testing.T) {
@@ -771,6 +792,11 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	err := channel.HandleEvent(request)
 	assert.NoError(t, err)
 
+	// Write some stuff to disk so we can verify it gets removed on retry
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2 + 1), ""), "test-invocation-id", 2)
+	err = channel.HandleEvent(request)
+	assert.NoError(t, err)
+
 	// Send workspace status event with commit sha (which causes a flush)
 	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), "test-invocation-id", 2)
 	err = channel.HandleEvent(request)
@@ -793,6 +819,13 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
+	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId("test-invocation-id"))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
 	// Reset the time for the database
 	te.GetInvocationDB().SetNowFunc(time.Now)
 
@@ -801,4 +834,13 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 1)
 	err = channel.HandleEvent(request)
 	assert.True(t, status.IsAlreadyExistsError(err), err)
+
+	// Make sure old files were not deleted
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId("test-invocation-id"))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
 }
