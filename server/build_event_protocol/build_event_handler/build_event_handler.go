@@ -280,6 +280,10 @@ type webhookNotifier struct {
 	// invocations is a channel of finalized invocations. On each invocation
 	// sent to this channel, we notify all configured webhooks.
 	invocations <-chan *invocationJWT
+	// doneSendingTasks receives a signal after the invocations channel is closed
+	// and all buffered invocations in the channel have been processed, meaning
+	// no more tasks will be sent on the tasks channel.
+	doneSendingTasks chan struct{}
 
 	tasks chan *notifyWebhookTask
 	eg    errgroup.Group
@@ -287,9 +291,10 @@ type webhookNotifier struct {
 
 func newWebhookNotifier(env environment.Env, invocations <-chan *invocationJWT) *webhookNotifier {
 	return &webhookNotifier{
-		env:         env,
-		invocations: invocations,
-		tasks:       make(chan *notifyWebhookTask, 4096),
+		env:              env,
+		invocations:      invocations,
+		doneSendingTasks: make(chan struct{}),
+		tasks:            make(chan *notifyWebhookTask, 4096),
 	}
 }
 
@@ -320,6 +325,7 @@ func (w *webhookNotifier) Start() {
 				}
 			}
 		}
+		w.doneSendingTasks <- struct{}{}
 		return nil
 	})
 
@@ -336,6 +342,8 @@ func (w *webhookNotifier) Start() {
 }
 
 func (w *webhookNotifier) Stop() {
+	// Make sure we are done sending tasks on the task channel before we close it.
+	<-w.doneSendingTasks
 	close(w.tasks)
 
 	if err := w.eg.Wait(); err != nil {
