@@ -98,11 +98,16 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	return app
 }
 
+// GRPCAddress returns the gRPC address pointing to the app instance.
+func (a *App) GRPCAddress() string {
+	return fmt.Sprintf("grpc://localhost:%d", a.gRPCPort)
+}
+
 // BESBazelFlags returns the Bazel flags required to upload build logs to the App.
 func (a *App) BESBazelFlags() []string {
 	return []string{
 		fmt.Sprintf("--bes_results_url=http://localhost:%d/invocation/", a.httpPort),
-		fmt.Sprintf("--bes_backend=grpc://localhost:%d", a.gRPCPort),
+		fmt.Sprintf("--bes_backend=%s", a.GRPCAddress()),
 	}
 }
 

@@ -118,7 +118,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	us1 := findGroupUser(t, "US1", groupUsers)
 	require.Equal(t, grpb.Group_ADMIN_ROLE, us1.Role, "first user added to the default group should be made an admin")
 	us2 := findGroupUser(t, "US2", groupUsers)
-	require.Equal(t, grpb.Group_ADMIN_ROLE, us2.Role, "second user added to the default group should have the default role")
+	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "second user added to the default group should have the default role")
 }
 
 func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
@@ -162,8 +162,7 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "US1's group should have 2 members after adding US2")
 	us2 := findGroupUser(t, "US2", groupUsers)
-	// TODO(bduffany): This should be DEVELOPER once we have a user management UI.
-	require.Equal(t, grpb.Group_ADMIN_ROLE, us2.Role, "users should have default role after being added to another group")
+	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "users should have default role after being added to another group")
 }
 
 func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {

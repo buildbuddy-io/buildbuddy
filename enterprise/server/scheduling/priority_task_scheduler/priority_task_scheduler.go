@@ -276,15 +276,17 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)
-		return false, err
+		return true, err
 	}
 	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
 		_, _ = clientStream.CloseAndRecv()
 		return retry, err
 	}
-	_, err = clientStream.CloseAndRecv()
-	return false, err
+	if _, err = clientStream.CloseAndRecv(); err != nil {
+		return true, err
+	}
+	return false, nil
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {

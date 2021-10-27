@@ -782,6 +782,9 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := disk.EnsureDirectoryExists(newRoot); err != nil {
 				return err
 			}
+			if child.GetDigest().Hash == digest.EmptySha256 && child.GetDigest().SizeBytes == 0 {
+				continue
+			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
 			if !ok {
 				return digest.MissingDigestError(child.GetDigest())
