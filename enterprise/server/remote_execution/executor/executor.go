@@ -186,7 +186,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			return true, finalErr
 		}
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
-			return false, err
+			return true, err
 		}
 		return false, finalErr
 	}
@@ -200,12 +200,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	if !req.GetSkipCacheLookup() {
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
-			return false, err // CHECK (these errors should not happen).
+			return true, err
 		}
 		actionResult, err := cachetools.GetActionResult(ctx, acClient, adInstanceDigest)
 		if err == nil {
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, nil /*=summary*/, codes.OK)); err != nil {
-				return false, err // CHECK (these errors should not happen).
+				return true, err
 			}
 			return false, nil
 		}
@@ -277,7 +277,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
 
 	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
-		return false, err // CHECK (these errors should not happen).
+		return true, err
 	}
 	md.ExecutionStartTimestamp = ptypes.TimestampNow()
 	maxDuration := infiniteDuration
@@ -307,7 +307,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			updateTicker.Stop()
 		case <-updateTicker.C:
 			if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
-				return false, status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
+				return true, status.UnavailableErrorf("could not publish periodic execution update for %q: %s", taskID, err)
 			}
 		}
 	}
