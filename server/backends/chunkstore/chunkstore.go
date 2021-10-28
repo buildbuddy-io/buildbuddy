@@ -301,7 +301,7 @@ func (r *chunkstoreReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	// If the offset is before the current offset (and not within the current chunk),
-	// reset the offset too the beginning of the file
+	// reset the offset to the beginning of the file
 	if offset < r.off {
 		r.chunkIndex = r.startIndex
 		r.chunk = []byte{}
@@ -476,10 +476,17 @@ func (l *writeLoop) readFromWriteChannel() *WriteRequest {
 	case req, open := <-l.writeChannel:
 		l.open = open
 		if l.open {
+			// only handle the request if the channel is open; if it's closed the
+			// request will be nil.
 			if req.Chunk == nil {
+				// nil chunk is a flush request
 				l.flushTime = time.Unix(0, 0)
 			} else {
+				// this is either a write request or (in the case of an empty chunk) a
+				// no-op to retrieve the current LastChunkId in case of a flush.
 				if req.VolatileTail != nil {
+					// the correct way to empty the tail is to pass []byte{}; the tail may
+					// never be nil, so nil indicates that the tail ought not change.
 					l.volatileTail = req.VolatileTail
 				}
 				l.chunk = append(l.chunk, req.Chunk...)
@@ -507,18 +514,18 @@ func (l *writeLoop) run() {
 			l.chunk = append(l.chunk, l.volatileTail...)
 			l.lastWriteSize = len(l.volatileTail)
 		}
-		var err error
-		for err == nil && len(l.chunk) >= l.writeBlockSize {
+		for l.writeError == nil && len(l.chunk) >= l.writeBlockSize {
 			// Write blocks until we have fewer than writeBlockSize bytes remaining
 			// or we encounter a write error.
-			err = l.write()
+			l.write()
 		}
 		// We do not attempt to write if we have already encountered a write error
 		// in this iteration of the loop, and instead we simply move on.
 		// If the file is empty and we are closing it, we must write an empty chunk.
 		// Otherwise, if we have data cached to write and we are either flushing or
-		// closing the file, we need to write a chunk.
-		if err == nil && ((!l.open && l.chunkIndex == 0) || (len(l.chunk) > 0 && (time.Now().After(l.flushTime) || !l.open))) {
+		// closing the file, we need to write a chunk. The iterative writes above
+		// guarantee, absent an error, that chunk will be writeBlockSize or shorter.
+		if l.writeError == nil && ((!l.open && l.chunkIndex == 0) || (len(l.chunk) > 0 && (time.Now().After(l.flushTime) || !l.open))) {
 			l.write()
 		}
 		if len(l.chunk) == 0 {
