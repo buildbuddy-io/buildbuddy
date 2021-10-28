@@ -95,11 +95,6 @@ func (wt *WebTester) screenshot(tag string) error {
 	return nil
 }
 
-// Driver returns the underlying webdriver.
-func (wd *WebTester) Driver() selenium.WebDriver {
-	return wd.driver
-}
-
 // Element wraps selenium.WebElement, failing the test instead of returning
 // errors for all of its API methods.
 type Element struct {
@@ -107,20 +102,15 @@ type Element struct {
 	webElement selenium.WebElement
 }
 
-// Click clicks the element.
+// Click clicks on the element.
 func (el *Element) Click() {
 	err := el.webElement.Click()
 	require.NoError(el.t, err)
 }
 
-// Text returns the text in the element.
+// Text returns the text of the element.
 func (el *Element) Text() string {
 	txt, err := el.webElement.Text()
 	require.NoError(el.t, err)
 	return txt
-}
-
-// WebElement returns the underlying selenium.WebElement.
-func (el *Element) WebElement() selenium.WebElement {
-	return el.webElement
 }
