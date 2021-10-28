@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -59,6 +60,10 @@ const (
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 
+	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
+	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
+	EstimatedFreeDiskPropertyName     = "EstimatedFreeDiskBytes"
+
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
 	ContainerdContainerType  ContainerType = "containerd"
@@ -70,6 +75,8 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
+	EstimatedComputeUnits     int64
+	EstimatedFreeDiskBytes    int64
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -119,6 +126,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
+		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedFreeDiskBytes:    int64Prop(m, EstimatedFreeDiskPropertyName, 0),
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
@@ -306,6 +315,19 @@ func boolProp(props map[string]string, name string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return strings.EqualFold(val, "true")
+}
+
+func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	i, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as int64: %s", name, err)
+		return defaultValue
+	}
+	return i
 }
 
 func stringListProp(props map[string]string, name string) []string {

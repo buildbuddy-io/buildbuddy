@@ -10,7 +10,6 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -139,8 +138,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "container-image", Value: runnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
-				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
-				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: platform.EstimatedFreeDiskPropertyName, Value: "10000000000"}, // 10GB
 			},
 		},
 	}
