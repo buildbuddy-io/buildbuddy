@@ -586,8 +586,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					// to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
 				}
-				protofile.DeleteBufferedProto(e.ctx, e.env.GetBlobstore(), iid)
-				chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid))
+				if err := protofile.DeleteBufferedProto(e.ctx, e.env.GetBlobstore(), iid); err != nil {
+					return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
+				}
+				if err := chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid)); err != nil {
+					return status.WrapErrorf(err, "Failed to delete existing event log when retrying invocation %s", iid)
+				}
 			} else if !db.IsRecordNotFound(err) {
 				// RecordNotFound means this invocation has never existed, which is not
 				// an error. All other errors are real errors.
