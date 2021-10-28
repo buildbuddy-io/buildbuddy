@@ -53,7 +53,9 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 }
 
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	c.DeleteBlob(ctx, blobName)
+	if err := c.DeleteBlob(ctx, blobName); err != nil {
+		return 0, err
+	}
 	w := c.Writer(ctx, blobName, nil)
 	bytesWritten, err := w.Write(data)
 	if err != nil {
