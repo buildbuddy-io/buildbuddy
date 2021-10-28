@@ -1,7 +1,6 @@
 package tasksize
 
 import (
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
