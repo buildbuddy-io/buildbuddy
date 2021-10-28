@@ -3,10 +3,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "role_filter",
     srcs = ["role_filter.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/role_filter",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/role_filter",
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/interfaces",
+        "//server/util/alert",
         "//server/util/authutil",
         "//server/util/perms",
         "//server/util/request_context",

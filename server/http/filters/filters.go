@@ -14,8 +14,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
-	"github.com/buildbuddy-io/buildbuddy/server/http/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -96,6 +96,17 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := env.GetAuthenticator().AuthenticatedHTTPContext(w, r)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if err := role_filter.AuthorizeBuildBuddyServiceRPC(ctx, env, r.URL.Path, role_filter.HTTPGroupSelector); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -213,7 +224,7 @@ func wrapHandler(env environment.Env, next http.Handler, wrapFns *[]wrapFn) http
 func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix string, handlers *protolet.HTTPHandlers) http.Handler {
 	return wrapHandler(env, handlers.RequestHandler, &[]wrapFn{
 		Gzip,
-		func(h http.Handler) http.Handler { return role_filter.AuthorizeSelectedGroupRole(env, h) },
+		func(h http.Handler) http.Handler { return AuthorizeSelectedGroupRole(env, h) },
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
 		// The request message is parsed before authentication since the request_context
 		// field needs to be authenticated if it's present.

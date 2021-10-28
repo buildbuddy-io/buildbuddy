@@ -2,10 +2,12 @@ package filters
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -120,6 +122,20 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 	return contextReplacingUnaryServerInterceptor(ctxFn)
 }
 
+func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
+			if err := role_filter.AuthorizeBuildBuddyServiceRPC(ctx, env, methodName, role_filter.GRPCGroupSelector); err != nil {
+				return nil, err
+			}
+		}
+
+		return handler(ctx, req)
+	}
+}
+
 // requestIDStreamInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -195,6 +211,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
+		roleAuthUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
 	)
 }
