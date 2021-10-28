@@ -439,7 +439,7 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
-	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 3*time.Second)
+	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
 	defer cancel()
 
 	invocation := &inpb.Invocation{
