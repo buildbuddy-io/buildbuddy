@@ -68,19 +68,25 @@ func ChunkName(streamID string, sequenceNumber int) string {
 	return filepath.Join(streamID, "/chunks/", chunkFileName)
 }
 
-func DeleteBufferedProto(ctx context.Context, bs interfaces.Blobstore, streamID string) error {
+func DeleteExistingChunks(ctx context.Context, bs interfaces.Blobstore, streamID string) error {
+	// delete blobs from back to front so that this process is recoverable in case
+	// of failure (delete error, server crash, etc.)
+	var blobsToDelete []string
 	for i := 0; ; i++ {
 		blobName := ChunkName(streamID, i)
 		if exists, err := bs.BlobExists(ctx, blobName); err != nil {
 			return err
 		} else if !exists {
-			return nil
+			break
 		}
-		err := bs.DeleteBlob(ctx, blobName)
-		if err != nil {
+		blobsToDelete = append([]string{blobName}, blobsToDelete...)
+	}
+	for _, blobName := range blobsToDelete {
+		if err := bs.DeleteBlob(ctx, blobName); err != nil {
 			return err
 		}
 	}
+	return nil
 }
 
 func (w *BufferedProtoWriter) internalFlush(ctx context.Context) error {

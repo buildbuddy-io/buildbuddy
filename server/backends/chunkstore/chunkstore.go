@@ -68,18 +68,24 @@ func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte
 }
 
 func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
-	index := uint16(0)
+	// delete blobs from back to front so that this process is recoverable in case
+	// of failure (delete error, server crash, etc.)
+	i := uint16(math.MaxUint16)
 	for {
-		if exists, err := c.ChunkExists(ctx, blobName, index); err != nil {
+		if exists, err := c.ChunkExists(ctx, blobName, i+1); err != nil {
 			return err
 		} else if !exists {
-			return nil
+			break
 		}
-		if err := c.deleteChunk(ctx, blobName, index); err != nil {
+		i++
+	}
+	for i != uint16(math.MaxUint16) {
+		if err := c.deleteChunk(ctx, blobName, i); err != nil {
 			return err
 		}
-		index++
+		i--
 	}
+	return nil
 }
 
 func ChunkIndexAsStringId(index uint16) string {
