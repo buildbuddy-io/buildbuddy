@@ -125,7 +125,7 @@ func (l *Loader) unpackManifest() error {
 	defer os.RemoveAll(tmpDir)
 
 	manifestPath := filepath.Join(tmpDir, ManifestFileName)
-	if !l.env.GetFileCache().FastLinkFile(manifestDigest, manifestPath) {
+	if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(manifestDigest), manifestPath) {
 		return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 	}
 	buf, err := os.ReadFile(manifestPath)
@@ -154,7 +154,7 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 		}
 	}
 	for filename, dk := range l.manifest.CachedFiles {
-		if !l.env.GetFileCache().FastLinkFile(dk.ToDigest(), filepath.Join(outputDirectory, filename)) {
+		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
 			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
 		}
 	}
@@ -195,7 +195,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 			Hash:      hash.String(ad.GetHash() + filename),
 			SizeBytes: int64(info.Size()),
 		}
-		env.GetFileCache().AddFile(fileNameDigest, f)
+		env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
 		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
 	}
 
@@ -212,6 +212,13 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 		Hash:      hash.String(ad.GetHash() + ManifestFileName),
 		SizeBytes: int64(101),
 	}
-	env.GetFileCache().AddFile(manifestDigest, manifestPath)
+	env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
 	return ad, nil
+}
+
+func fileNodeFromDigest(d *repb.Digest) *repb.FileNode {
+	return &repb.FileNode{
+		Digest:       d,
+		IsExecutable: false,
+	}
 }

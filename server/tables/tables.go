@@ -3,7 +3,6 @@ package tables
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -74,14 +73,14 @@ type Model struct {
 // Timestamps are hard and differing sql implementations do... a lot. Too much.
 // So, we handle this in go-code and set as the timestamp in microseconds.
 func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
-	nowUsec := time.Now().UnixMicro()
+	nowUsec := tx.Config.NowFunc().UnixMicro()
 	m.CreatedAtUsec = nowUsec
 	m.UpdatedAtUsec = nowUsec
 	return nil
 }
 
 func (m *Model) BeforeUpdate(tx *gorm.DB) (err error) {
-	m.UpdatedAtUsec = time.Now().UnixMicro()
+	m.UpdatedAtUsec = tx.Config.NowFunc().UnixMicro()
 	return nil
 }
 

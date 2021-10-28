@@ -156,13 +156,14 @@ type PriorityTaskScheduler struct {
 	rootContext   context.Context
 	rootCancel    context.CancelFunc
 
-	mu                    sync.Mutex
-	q                     *taskQueue
-	activeTaskCancelFuncs map[*context.CancelFunc]struct{}
-	ramBytesCapacity      int64
-	ramBytesUsed          int64
-	cpuMillisCapacity     int64
-	cpuMillisUsed         int64
+	mu                      sync.Mutex
+	q                       *taskQueue
+	activeTaskCancelFuncs   map[*context.CancelFunc]struct{}
+	ramBytesCapacity        int64
+	ramBytesUsed            int64
+	cpuMillisCapacity       int64
+	cpuMillisUsed           int64
+	exclusiveTaskScheduling bool
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
@@ -177,19 +178,21 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
 	}
 
+	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
-		env:                   env,
-		log:                   sublog,
-		q:                     newTaskQueue(),
-		exec:                  exec,
-		newTaskSignal:         make(chan struct{}, 1),
-		rootContext:           rootContext,
-		rootCancel:            rootCancel,
-		activeTaskCancelFuncs: make(map[*context.CancelFunc]struct{}, 0),
-		shuttingDown:          false,
-		ramBytesCapacity:      ramBytesCapacity,
-		cpuMillisCapacity:     cpuMillisCapacity,
+		env:                     env,
+		log:                     sublog,
+		q:                       newTaskQueue(),
+		exec:                    exec,
+		newTaskSignal:           make(chan struct{}, 1),
+		rootContext:             rootContext,
+		rootCancel:              rootCancel,
+		activeTaskCancelFuncs:   make(map[*context.CancelFunc]struct{}, 0),
+		shuttingDown:            false,
+		ramBytesCapacity:        ramBytesCapacity,
+		cpuMillisCapacity:       cpuMillisCapacity,
+		exclusiveTaskScheduling: executorConfig.ExclusiveTaskScheduling,
 	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
@@ -264,24 +267,26 @@ func propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.E
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) error {
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
-		return status.FailedPreconditionError("Execution client not configured")
+		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
 	ctx = propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)
-		return err
+		return true, err
 	}
-	if err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
+	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
 		_, _ = clientStream.CloseAndRecv()
-		return err
+		return retry, err
 	}
-	_, err = clientStream.CloseAndRecv()
-	return err
+	if _, err = clientStream.CloseAndRecv(); err != nil {
+		return true, err
+	}
+	return false, nil
 }
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
@@ -311,6 +316,12 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	knownRAMremaining := q.ramBytesCapacity - q.ramBytesUsed
 	knownCPUremaining := q.cpuMillisCapacity - q.cpuMillisUsed
 	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
+
+	// If we're running in exclusiveTaskScheduling mode, only ever allow one task to run at
+	// a time. Otherwise fall through to the logic below.
+	if willFit && q.exclusiveTaskScheduling && len(q.activeTaskCancelFuncs) >= 1 {
+		return false
+	}
 
 	if willFit {
 		q.log.Infof("ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.q.Len())
@@ -374,15 +385,14 @@ func (q *PriorityTaskScheduler) handleTask() {
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
 			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err.Error())
-			taskLease.Close(nil)
+			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
-		err = q.runTask(ctx, execTask)
+		retry, err := q.runTask(ctx, execTask)
 		if err != nil {
-			q.log.Errorf("Error running task %q: %s", reservation.GetTaskId(), err.Error())
+			q.log.Errorf("Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
-		// err can be nil and that's ok! Task will be retried if it's not.
-		taskLease.Close(err)
+		taskLease.Close(err, retry)
 	}()
 }
 

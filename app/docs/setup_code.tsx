@@ -207,13 +207,15 @@ export default class SetupCodeComponent extends React.Component {
               <>This BuildBuddy installation requires authentication, but no API keys are set up.</>
             )}
           </div>
-          <div>
-            <FilledButton className="manage-keys-button">
-              <a href="/settings/" onClick={this.onClickLink.bind(this, "/settings")}>
-                Manage keys
-              </a>
-            </FilledButton>
-          </div>
+          {this.state.user.canCall("createApiKey") && (
+            <div>
+              <FilledButton className="manage-keys-button">
+                <a href="/settings/org/api-keys" onClick={this.onClickLink.bind(this, "/settings/org/api-keys")}>
+                  Manage keys
+                </a>
+              </FilledButton>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -199,7 +199,7 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	gormLogger := logger.New(
 		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
 		logger.Config{
-			SlowThreshold: 200 * time.Millisecond,
+			SlowThreshold: 500 * time.Millisecond,
 			LogLevel:      logger.Warn,
 			// Disable log colors when structured logging is enabled.
 			Colorful: !configurator.GetAppEnableStructuredLogging(),
@@ -420,7 +420,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 	timestampExpr := fieldName + `/1000000`
 	if h.dialect == sqliteDialect {
-		return `STRFTIME(DATE(` + timestampExpr + `), '%Y-%m')`
+		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
 	}
 	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
 }

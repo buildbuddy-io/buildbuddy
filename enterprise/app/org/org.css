@@ -10,6 +10,12 @@
   margin-bottom: 32px;
 }
 
+.organization-page .callout {
+  background-color: #ffe082;
+  padding: 16px 32px;
+  border-radius: 8px;
+}
+
 .organization-form {
   max-width: 600px;
 }

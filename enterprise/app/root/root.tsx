@@ -137,7 +137,7 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = !!this.state.user && !code;
+    let sidebar = Boolean(this.state.user) && Boolean(this.state.user.groups?.length) && !code;
     let menu = !sidebar && !code && !this.state.loading;
 
     return (

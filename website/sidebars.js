@@ -21,6 +21,16 @@ module.exports = {
       "enterprise-api",
     ],
     Monitoring: ["prometheus-metrics"],
+    Architecture: [
+      "architecture-overview", 
+      "architecture-data-storage", 
+      "architecture-build-event-write", 
+      "architecture-build-event-read",
+      "architecture-cache-write", 
+      "architecture-cache-read",
+      "architecture-remote-execution", 
+      "architecture-self-hosted-executor"
+    ],
     Configuration: [
       "config",
       "config-samples",

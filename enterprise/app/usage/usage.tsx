@@ -4,7 +4,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { usage } from "../../../proto/usage_ts_proto";
 import Select, { Option } from "../../../app/components/select/select";
-import { formatWithCommas } from "../../../app/format/format";
+import { formatWithCommas, bytes as formatBytes } from "../../../app/format/format";
 
 export interface UsageProps {
   user?: User;
@@ -81,7 +81,9 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div className="usage-resource-name">Content addressable storage cache hits</div>
                   <div className="usage-value">{formatWithCommas(usage.casCacheHits)}</div>
                   <div className="usage-resource-name">Total bytes downloaded from cache</div>
-                  <div className="usage-value">{formatWithCommas(usage.totalDownloadSizeBytes)}</div>
+                  <div className="usage-value" title={formatWithCommas(usage.totalDownloadSizeBytes)}>
+                    {formatBytes(usage.totalDownloadSizeBytes)}
+                  </div>
                 </div>
               </div>
             </div>

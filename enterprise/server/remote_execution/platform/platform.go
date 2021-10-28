@@ -24,6 +24,7 @@ const (
 	//     x-buildbuddy-platform.container-registry-username: _json_key
 	overrideHeaderPrefix = "x-buildbuddy-platform."
 
+	poolPropertyName = "Pool"
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
@@ -51,6 +52,10 @@ const (
 	operatingSystemPropertyName = "OSFamily"
 	defaultOperatingSystemName  = "linux"
 	darwinOperatingSystemName   = "darwin"
+
+	cpuArchitecturePropertyName = "Arch"
+	defaultCPUArchitecture      = "amd64"
+
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 
@@ -63,6 +68,8 @@ const (
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
 	OS                        string
+	Arch                      string
+	Pool                      string
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -101,8 +108,17 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	for _, prop := range task.GetPlatformOverrides().GetProperties() {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
 	}
+
+	pool := stringProp(m, poolPropertyName, "")
+	// Treat the explicit default pool value as empty string
+	if pool == DefaultPoolValue {
+		pool = ""
+	}
+
 	return &Properties{
-		OS:                        stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName),
+		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
+		Pool:                      strings.ToLower(pool),
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),

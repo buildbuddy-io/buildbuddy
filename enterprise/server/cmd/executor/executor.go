@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -35,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
-
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -90,6 +90,8 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 				connState := conn.GetState()
 				if connState == connectivity.Ready {
 					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
 				}
 				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 			},
@@ -107,6 +109,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	executorConfig := configurator.GetExecutorConfig()
 	if executorConfig == nil {
 		log.Fatal("Executor config not found")
+	}
+
+	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
+		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
 
 	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv)
@@ -180,6 +186,8 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 					connState := conn.GetState()
 					if connState == connectivity.Ready {
 						return nil
+					} else if connState == connectivity.Idle {
+						conn.Connect()
 					}
 					return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 				},

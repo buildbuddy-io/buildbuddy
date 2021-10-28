@@ -242,7 +242,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
 				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
-					if err := h.scheduler.reEnqueueTask(ctx, taskID, 1 /*=numReplicas*/); err != nil {
+					if err := h.scheduler.reEnqueueTask(ctx, taskID, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
 						log.Warningf("Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
 					}
 				}
@@ -930,6 +930,10 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 	return nil
 }
 
+func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) error {
+	return s.rdb.Del(ctx, redisKeyForTask(taskID)).Err()
+}
+
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & has been deleted.
 	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{redisKeyForTask(taskID)}).Result()
@@ -1106,7 +1110,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ctx := stream.Context()
 	lastCheckin := time.Now()
 	claimed := false
-	closing := false
 	taskID := ""
 
 	executorID := "unknown"
@@ -1185,14 +1188,28 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			rsp.SerializedTask = task.serializedTask
 		}
 
-		closing = req.GetFinalize()
-		if closing && claimed {
+		done := req.GetFinalize() || req.GetRelease()
+
+		if req.GetFinalize() && claimed {
+			// Finalize deletes the task (and implicitly releases the lease).
+			// It implies that no further work will/can be attempted for this task.
+
 			err := s.deleteClaimedTask(ctx, taskID)
 			if err == nil {
 				claimed = false
 				log.Infof("LeaseTask task %q successfully finalized by %q", taskID, executorID)
 			} else {
 				log.Warningf("Could not delete claimed task %q: %s", taskID, err)
+			}
+		} else if req.GetRelease() && claimed {
+			// Release removes the claim on the task without deleting the task.
+
+			err := s.unclaimTask(ctx, taskID)
+			if err == nil {
+				claimed = false
+				log.Infof("LeaseTask task %q successfully released by %q", taskID, executorID)
+			} else {
+				log.Warningf("Could not release lease for task %q: %s", taskID, err)
 			}
 		}
 
@@ -1201,7 +1218,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}
-		if closing {
+		if done {
 			break
 		}
 	}
@@ -1400,7 +1417,7 @@ func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numReplicas int) error {
+func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numReplicas int, reason string) error {
 	if taskID == "" {
 		return status.FailedPreconditionError("A task_id is required")
 	}
@@ -1409,10 +1426,17 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		return err
 	}
 	if task.attemptCount >= maxTaskAttemptCount {
-		if err := s.deleteClaimedTask(ctx, taskID); err != nil {
+		if err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
-		return status.ResourceExhaustedErrorf("Task %q already attempted %d times.", taskID, task.attemptCount)
+		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, task.attemptCount)
+		if reason != "" {
+			msg += " Last failure: " + reason
+		}
+		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(msg)); err != nil {
+			log.Warningf("Could not mark execution failed for task %q: %s", taskID, err)
+		}
+		return status.ResourceExhaustedErrorf(msg)
 	}
 	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
 	log.Debugf("ReEnqueueTask RPC for task %q", taskID)
@@ -1433,7 +1457,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
-	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask); err != nil {
+	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask, req.GetReason()); err != nil {
 		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err
 	}

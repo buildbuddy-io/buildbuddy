@@ -28,6 +28,7 @@ go_library(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/resources",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",

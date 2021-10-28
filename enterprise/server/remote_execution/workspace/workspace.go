@@ -41,10 +41,10 @@ type Workspace struct {
 	Opts      *Opts
 	vfs       *vfs.VFS
 	// Action input files known to exist in the workspace, as a map of
-	// workspace-relative paths to digests.
+	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
 	// to make sure this map accurately reflects the filesystem.
-	Inputs map[string]*repb.Digest
+	Inputs map[string]*repb.FileNode
 
 	mu       sync.Mutex // protects(removing)
 	removing bool
@@ -72,7 +72,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		env:     env,
 		rootDir: rootDir,
 		Opts:    opts,
-		Inputs:  map[string]*repb.Digest{},
+		Inputs:  map[string]*repb.FileNode{},
 	}, nil
 }
 
@@ -137,8 +137,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 			return txInfo, err
 		}
 
-		for path, digest := range txInfo.Transfers {
-			ws.Inputs[path] = digest
+		for path, node := range txInfo.Transfers {
+			ws.Inputs[path] = node
 		}
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
@@ -146,19 +146,19 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	return txInfo, err
 }
 
-func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.Digest) error {
+func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
 	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
-	inputFilesToCleanUp := make(map[string]*repb.Digest)
+	inputFilesToCleanUp := make(map[string]*repb.FileNode)
 	// Curly braces indicate a comma separated list of patterns: https://pkg.go.dev/github.com/gobwas/glob#Compile
 	glob, err := glob.Compile(fmt.Sprintf("{%s}", ws.Opts.CleanInputs), os.PathSeparator)
 	if err != nil {
 		return status.FailedPreconditionErrorf("Invalid glob {%s} used for input cleaning: %s", ws.Opts.CleanInputs, err.Error())
 	}
-	for path, digest := range ws.Inputs {
+	for path, node := range ws.Inputs {
 		if ws.Opts.CleanInputs == "*" || glob.Match(path) {
-			inputFilesToCleanUp[path] = digest
+			inputFilesToCleanUp[path] = node
 		}
 	}
 	for path, _ := range keep {

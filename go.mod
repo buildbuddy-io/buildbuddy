@@ -27,7 +27,6 @@ require (
 	github.com/elastic/gosigar v0.11.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/go-git/go-git/v5 v5.2.0
-	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
 	github.com/go-redsync/redsync/v4 v4.4.1
@@ -74,7 +73,7 @@ require (
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba // indirect
 	google.golang.org/api v0.50.0
 	google.golang.org/genproto v0.0.0-20210721163202-f1cecdd8b78a
-	google.golang.org/grpc v1.39.0
+	google.golang.org/grpc v1.41.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/driver/mysql v1.0.4

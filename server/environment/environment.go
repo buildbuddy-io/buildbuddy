@@ -71,6 +71,7 @@ type Env interface {
 	GetKeyValStore() interfaces.KeyValStore
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
+	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
 	GetUsageTracker() interfaces.UsageTracker

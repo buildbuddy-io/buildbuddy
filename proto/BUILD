@@ -242,6 +242,7 @@ proto_library(
         ":execution_stats_proto",
         ":group_proto",
         ":invocation_proto",
+        ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
         ":usage_proto",
@@ -457,6 +458,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "runner_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/runner",
+    proto = ":runner_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "invocation_policy_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/blaze.invocation_policy",
     proto = ":invocation_policy_proto",
@@ -502,6 +512,7 @@ go_proto_library(
         ":execution_stats_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":runner_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",
         ":usage_go_proto",

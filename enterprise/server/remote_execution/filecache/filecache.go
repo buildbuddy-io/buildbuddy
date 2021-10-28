@@ -44,6 +44,8 @@ import (
 // outputPath and return true. If no file is found in the cache, fileCache
 // will return false.
 
+const executableSuffix = "executable"
+
 type fileCache struct {
 	rootDir     string
 	lock        sync.RWMutex
@@ -93,22 +95,23 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	return c, nil
 }
 
-func (c *fileCache) filecachePath(d *repb.Digest) string {
-	return filepath.Join(c.rootDir, d.GetHash())
+func (c *fileCache) filecachePath(node *repb.FileNode) string {
+	return filepath.Join(c.rootDir, key(node))
 }
 
-func (c *fileCache) digestFromPathAndSize(fullPath string, sizeBytes int64) (*repb.Digest, error) {
+func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (*repb.FileNode, error) {
 	if !strings.HasPrefix(fullPath, c.rootDir) {
 		return nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
 	}
 
-	parts := strings.Split(fullPath, string(filepath.Separator))
-	digestHash := parts[len(parts)-1]
-
-	return &repb.Digest{
-		Hash:      digestHash,
-		SizeBytes: sizeBytes,
-	}, nil
+	name := filepath.Base(fullPath)
+	nameParts := strings.Split(name, ".")
+	return &repb.FileNode{
+		IsExecutable: len(nameParts) > 1 && nameParts[1] == executableSuffix,
+		Digest: &repb.Digest{
+			Hash:      nameParts[0],
+			SizeBytes: sizeBytes,
+		}}, nil
 }
 
 func (c *fileCache) scanDir() {
@@ -129,11 +132,11 @@ func (c *fileCache) scanDir() {
 			}
 			return err
 		}
-		roughDigest, err := c.digestFromPathAndSize(path, info.Size())
+		node, err := c.nodeFromPathAndSize(path, info.Size())
 		if err != nil {
 			return err
 		}
-		c.AddFile(roughDigest, path)
+		c.AddFile(node, path)
 		return nil
 	}
 	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
@@ -143,10 +146,18 @@ func (c *fileCache) scanDir() {
 	close(c.dirScanDone)
 }
 
-func (c *fileCache) FastLinkFile(d *repb.Digest, outputPath string) bool {
+func key(node *repb.FileNode) string {
+	suffix := ""
+	if node.GetIsExecutable() {
+		suffix = "." + executableSuffix
+	}
+	return node.GetDigest().GetHash() + suffix
+}
+
+func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	e, ok := c.l.Get(d.GetHash())
+	e, ok := c.l.Get(key(node))
 	if !ok {
 		return false
 	}
@@ -161,15 +172,15 @@ func (c *fileCache) FastLinkFile(d *repb.Digest, outputPath string) bool {
 	return true
 }
 
-func (c *fileCache) AddFile(d *repb.Digest, existingFilePath string) {
+func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	fp := c.filecachePath(d)
+	fp := c.filecachePath(node)
 	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
 		log.Warningf("Error adding file to filecache: %s", err.Error())
 		return
 	}
-	c.l.Add(d.GetHash(), &entry{sizeBytes: d.GetSizeBytes(), value: fp})
+	c.l.Add(key(node), &entry{sizeBytes: node.GetDigest().GetSizeBytes(), value: fp})
 }
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {

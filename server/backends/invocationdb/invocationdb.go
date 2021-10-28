@@ -200,3 +200,7 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 		return nil
 	})
 }
+
+func (d *InvocationDB) SetNowFunc(now func() time.Time) {
+	d.h.DB.Config.NowFunc = now
+}

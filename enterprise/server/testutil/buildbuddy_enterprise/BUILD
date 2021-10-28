@@ -10,5 +10,8 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise",
     visibility = ["//visibility:public"],
-    deps = ["//server/testutil/app"],
+    deps = [
+        "//enterprise/server/testutil/testredis",
+        "//server/testutil/app",
+    ],
 )

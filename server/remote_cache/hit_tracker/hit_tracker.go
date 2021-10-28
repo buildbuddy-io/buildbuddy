@@ -196,6 +196,10 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 			metrics.CacheTypeLabel: ct,
 		}).Observe(float64(dur.Microseconds()))
 
+		if err := h.recordCacheUsage(d, actionCounter); err != nil {
+			return err
+		}
+
 		if h.c == nil || h.iid == "" {
 			return nil
 		}
@@ -207,10 +211,6 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 			return err
 		}
 		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(timeCounter), dur.Microseconds()); err != nil {
-			return err
-		}
-
-		if err := h.recordCacheUsage(d, actionCounter); err != nil {
 			return err
 		}
 

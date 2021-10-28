@@ -19,6 +19,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
@@ -122,6 +123,14 @@ type Authenticator interface {
 
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
+
+	// TrustedJWTFromAuthContext returns a JWT from the authenticated context,
+	// or empty string if the context is not authenticated.
+	TrustedJWTFromAuthContext(ctx context.Context) string
+
+	// AuthContextFromTrustedJWT returns an authenticated context using a JWT
+	// which has been previously authenticated.
+	AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context
 }
 
 type BuildEventChannel interface {
@@ -200,6 +209,7 @@ type InvocationDB interface {
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
+	SetNowFunc(now func() time.Time)
 }
 
 type APIKeyGroup interface {
@@ -290,6 +300,10 @@ type WorkflowService interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
+type RunnerService interface {
+	Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error)
+}
+
 type GitProviders []GitProvider
 
 type GitProvider interface {
@@ -366,11 +380,12 @@ type RemoteExecutionService interface {
 	Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
+	MarkExecutionFailed(ctx context.Context, taskID string, reason error) error
 }
 
 type FileCache interface {
-	FastLinkFile(d *repb.Digest, outputPath string) bool
-	AddFile(d *repb.Digest, existingFilePath string)
+	FastLinkFile(f *repb.FileNode, outputPath string) bool
+	AddFile(f *repb.FileNode, existingFilePath string)
 	WaitForDirectoryScanToComplete()
 }
 

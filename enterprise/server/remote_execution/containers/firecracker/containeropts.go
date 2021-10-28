@@ -13,6 +13,9 @@ type ContainerOpts struct {
 	// The amount of RAM, in MB, to allocate to this VM.
 	MemSizeMB int64
 
+	// The amount of slack space to allocate on disk when the VM is created.
+	DiskSlackSpaceMB int64
+
 	// Whether or not to enable networking.
 	EnableNetworking bool
 

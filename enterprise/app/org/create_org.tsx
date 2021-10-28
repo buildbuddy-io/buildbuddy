@@ -39,6 +39,9 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
       <div className="organization-page">
         <div className="container">
           <div className="organization-page-title">Create organization</div>
+          {this.props.user && !Boolean(this.props.user.groups?.length) && (
+            <p className="callout">You are logged in, but not part of any organization. Create one to continue.</p>
+          )}
           <form autoComplete="off" className="organization-form" onSubmit={this.onSubmit.bind(this)}>
             {this.renderFields()}
             <FilledButton

@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -398,6 +399,8 @@ type ExecutorOptions struct {
 	Name string
 	// Optional API key to be sent by executor
 	APIKey string
+	// Optional Pool name for the executor
+	Pool string
 	// Optional server to be used for task leasing, cache requests, etc
 	// If not specified the executor will connect to a random server.
 	Server                       *BuildBuddyServer
@@ -532,6 +535,8 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetAuthenticator(r.newTestAuthenticator())
 
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
+	executorConfig.Pool = options.Pool
+
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
@@ -701,38 +706,57 @@ type CommandResult struct {
 	Stderr string
 }
 
-// Wait blocks until the command has finished executing.
-func (c *Command) Wait() *CommandResult {
+// getResult blocks until the command either finishes executing or encounters
+// an execution error. It fails the test immediately if an error occurs that
+// is not a remote execution error.
+func (c *Command) getResult() (*CommandResult, error) {
 	timeout := time.NewTimer(defaultWaitTimeout)
 	for {
 		select {
-		case status, ok := <-c.StatusChannel():
+		case result, ok := <-c.StatusChannel():
 			if !ok {
 				assert.FailNow(c.env.t, fmt.Sprintf("command %q did not send a result", c.Name))
 			}
-			if status.Stage != repb.ExecutionStage_COMPLETED {
+			if result.Stage != repb.ExecutionStage_COMPLETED {
 				continue
 			}
 			timeout.Stop()
-			if status.Err != nil {
-				assert.FailNowf(c.env.t, fmt.Sprintf("command %q did not finish succesfully", c.Name), status.Err.Error())
+			if result.Err != nil {
+				return nil, result.Err
 			}
 			ctx := context.Background()
 			ctx = c.env.WithUserID(ctx, c.userID)
-			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, status)
+			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, result)
 			if err != nil {
 				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
 			}
 			return &CommandResult{
-				CommandResult: status,
+				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
-			}
+			}, nil
 		case <-timeout.C:
 			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))
-			return nil
+			return nil, nil
 		}
 	}
+}
+
+// Wait blocks until the command has finished executing.
+func (c *Command) Wait() *CommandResult {
+	result, err := c.getResult()
+	require.NoError(c.env.t, err)
+	return result
+}
+
+// MustFail asserts that the command encounters an execution error, and returns
+// the resulting error. Note that if the command runs to completion and returns
+// a non-zero exit code, this is considered a successful execution, not an
+// execution error.
+func (c *Command) MustFail() error {
+	_, err := c.getResult()
+	require.Error(c.env.t, err)
+	return err
 }
 
 func (c *Command) WaitAccepted() {
@@ -828,6 +852,11 @@ type ExecuteOpts struct {
 	InputRootDir string
 	// UserID is the ID of the authenticated user that should execute the command.
 	UserID string
+	// RemoteHeaders is a set of remote headers to append to the outgoing gRPC
+	// context when executing the command.
+	RemoteHeaders map[string]string
+	// If true, the command will reference a missing input root digest.
+	SimulateMissingDigest bool
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -835,17 +864,24 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	if opts.UserID != "" {
 		ctx = r.WithUserID(ctx, opts.UserID)
 	}
-
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
 	if err != nil {
 		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
 	}
+	for header, value := range opts.RemoteHeaders {
+		ctx = metadata.AppendToOutgoingContext(ctx, header, value)
+	}
 
 	var inputRootDigest *repb.Digest
-	if opts.InputRootDir != "" {
-		inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)
+	if opts.SimulateMissingDigest {
+		// Generate a digest, but don't upload it.
+		inputRootDigest, _ = testdigest.NewRandomDigestBuf(r.t, 1234)
 	} else {
-		inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(ctx)
+		if opts.InputRootDir != "" {
+			inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)
+		} else {
+			inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(ctx)
+		}
 	}
 
 	name := strings.Join(command.GetArguments(), " ")
