@@ -150,6 +150,11 @@ type Blobstore interface {
 	BlobExists(ctx context.Context, blobName string) (bool, error)
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
 	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
+
+	// DeleteBlob does not return an error if the blob does not exist; some
+	// blobstores do not distinguish on return between deleting an existing blob
+	// and calling delete on a non-existent blob, so this is the only way to
+	// provide a consistent interface.
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
