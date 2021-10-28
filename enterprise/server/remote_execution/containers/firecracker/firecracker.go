@@ -98,10 +98,6 @@ const (
 	// once -- it would cause an error.
 	maxVMSPerHost = 1000
 
-	// Workspace slack space is how much extra space will be allocated in the
-	// workspace disk image beyond the size of the existing files.
-	workspaceSlackBytes = 100 * 1e6 // 100MB
-
 	// The path in the guest where VFS is mounted.
 	guestVFSMountDir = "/vfs"
 )
@@ -269,6 +265,7 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 type Constants struct {
 	NumCPUs          int64
 	MemSizeMB        int64
+	DiskSlackSpaceMB int64
 	EnableNetworking bool
 	DebugMode        bool
 }
@@ -347,6 +344,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		constants: Constants{
 			NumCPUs:          opts.NumCPUs,
 			MemSizeMB:        opts.MemSizeMB,
+			DiskSlackSpaceMB: opts.DiskSlackSpaceMB,
 			EnableNetworking: opts.EnableNetworking,
 			DebugMode:        opts.DebugMode,
 		},
@@ -467,7 +465,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	cmd := c.getJailerCommand(ctx)
+	vmCtx := context.Background()
+	cmd := c.getJailerCommand(vmCtx)
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithProcessRunner(cmd),
@@ -502,13 +501,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		if err != nil {
 			return err
 		}
-		if err := ext4.DirectoryToImage(ctx, workspaceDirOverride, workspaceFileInChroot, workspaceSizeBytes+workspaceSlackBytes); err != nil {
+		if err := ext4.DirectoryToImage(ctx, workspaceDirOverride, workspaceFileInChroot, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
 			return err
 		}
 	}
 	c.workspaceFSPath = workspaceFileInChroot
 
-	machine, err := fcclient.NewMachine(ctx, cfg, machineOpts...)
+	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
@@ -891,7 +890,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 	wsPath := filepath.Join(containerHome, workspaceFSName)
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackBytes); err != nil {
+	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
 		return err
 	}
 	c.workspaceFSPath = wsPath
@@ -912,16 +911,18 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
+	vmCtx := context.Background()
+
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
-		fcclient.WithProcessRunner(c.getJailerCommand(ctx)),
+		fcclient.WithProcessRunner(c.getJailerCommand(vmCtx)),
 	}
 
-	m, err := fcclient.NewMachine(ctx, *fcCfg, machineOpts...)
+	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
-	if err := m.Start(ctx); err != nil {
+	if err := m.Start(vmCtx); err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
 	c.machine = m
