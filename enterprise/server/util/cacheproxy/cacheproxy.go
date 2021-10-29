@@ -129,6 +129,7 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 		// failfast setting. This can happen when a replica goes away due to a rollout (or any other reason).
 		isReady := client.conn.GetState() == connectivity.Ready
 		if client.wasEverReady && !isReady {
+			client.conn.Connect()
 			return nil, status.UnavailableErrorf("connection to peer %q is not ready", peer)
 		}
 		client.wasEverReady = client.wasEverReady || isReady
