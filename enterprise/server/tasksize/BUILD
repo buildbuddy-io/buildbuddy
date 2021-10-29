@@ -11,5 +11,6 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//server/util/log",
     ],
 )

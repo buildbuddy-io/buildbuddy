@@ -57,6 +57,11 @@ message RunRequest {
   // Example: "build :server"
   // Example: "test //..."
   string bazel_command = 4;
+
+  // The remote instance name. Everything happens within this namespace, so
+  // changing this key will mean hitting a different cache and remote executor.
+  // Optional.
+  string instance_name = 5;
 }
 
 message RunResponse {

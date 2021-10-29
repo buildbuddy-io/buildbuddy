@@ -52,6 +52,8 @@ var (
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
+		// Runners,
+		"Run",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.

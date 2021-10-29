@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -144,6 +145,12 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		github.NewProvider(),
 		bitbucket.NewProvider(),
 	})
+
+	runnerService, err := hostedrunner.New(env)
+	if err != nil {
+		log.Fatalf("Error setting up runner: %s", err)
+	}
+	env.SetRunnerService(runnerService)
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

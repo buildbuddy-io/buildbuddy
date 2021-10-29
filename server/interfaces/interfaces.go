@@ -19,6 +19,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
@@ -150,6 +151,11 @@ type Blobstore interface {
 	BlobExists(ctx context.Context, blobName string) (bool, error)
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
 	WriteBlob(ctx context.Context, blobName string, data []byte) (int, error)
+
+	// DeleteBlob does not return an error if the blob does not exist; some
+	// blobstores do not distinguish on return between deleting an existing blob
+	// and calling delete on a non-existent blob, so this is the only way to
+	// provide a consistent interface.
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
@@ -297,6 +303,10 @@ type WorkflowService interface {
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+type RunnerService interface {
+	Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error)
 }
 
 type GitProviders []GitProvider
