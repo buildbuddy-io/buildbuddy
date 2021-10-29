@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -100,10 +101,6 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		chunkFileSizeBytes = defaultChunkFileSizeBytes
 	}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
-	var logWriter *eventlog.EventLogWriter
-	if b.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-		logWriter = eventlog.NewEventLogWriter(ctx, b.env.GetBlobstore(), b.env.GetKeyValStore(), iid)
-	}
 
 	b.openChannels.Add(1)
 	onClose := func() {
@@ -121,7 +118,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		hasReceivedStartedEvent: false,
 		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
-		logWriter:               logWriter,
+		logWriter:               nil,
 		onClose:                 onClose,
 	}
 }
@@ -584,7 +581,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
 			if err == nil {
 				// We are retrying a previous invocation.
-				if inv.InvocationStatus != int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) && inv.InvocationStatus != int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+				if inv.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
 					// The invocation is neither disconnected nor in-progress, it is not
 					// valid to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
@@ -593,10 +590,19 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					// to retry.
 					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
 				}
+				if err := protofile.DeleteExistingChunks(e.ctx, e.env.GetBlobstore(), iid); err != nil {
+					return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
+				}
+				if err := chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid)); err != nil {
+					return status.WrapErrorf(err, "Failed to delete existing event log when retrying invocation %s", iid)
+				}
 			} else if !db.IsRecordNotFound(err) {
 				// RecordNotFound means this invocation has never existed, which is not
 				// an error. All other errors are real errors.
 				return err
+			}
+			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid)
 			}
 		}
 

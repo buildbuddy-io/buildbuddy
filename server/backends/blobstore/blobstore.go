@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -228,6 +229,9 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	err = disk.DeleteFile(ctx, fullPath)
 	recordDeleteMetrics(diskLabel, start, err)
+	if os.IsNotExist(err) {
+		return nil
+	}
 	return err
 }
 
@@ -305,6 +309,9 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	err := g.bucketHandle.Object(blobName).Delete(ctx)
 	recordDeleteMetrics(gcsLabel, start, err)
+	if err == storage.ErrObjectNotExist {
+		return nil
+	}
 	return err
 }
 
