@@ -7,6 +7,7 @@ import * as monaco from "monaco-editor";
 import { Octokit } from "octokit";
 import DiffMatchPatch from "diff-match-patch";
 import { createPullRequest } from "octokit-plugin-create-pull-request";
+import { runner } from "../../../proto/runner_ts_proto";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -188,25 +189,32 @@ export default class CodeComponent extends React.Component<Props> {
       });
   }
 
-  // TODO(siggisim): Make the build button work
   handleBuildClicked() {
-    console.log("original:");
-    console.log(this.state.originalFileContents);
-    console.log("new:");
-    console.log(this.editor.getValue());
-    console.log("patch:");
-    if (this.state.originalFileContents && this.editor.getValue()) {
-      console.log(dmp.patch_toText(dmp.patch_make(this.state.originalFileContents, this.editor.getValue())));
-    }
+    let request = new runner.RunRequest();
+    request.gitRepo = new runner.RunRequest.GitRepo();
+    request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
+    // TODO(siggisim): fill out more repo status
+    request.bazelCommand = "build //...";
 
-    alert(dmp.patch_toText(dmp.patch_make(this.state.originalFileContents, this.editor.getValue())));
-
-    alert("Coming soon!");
+    rpcService.service.run(request).then((response: runner.RunResponse) => {
+      alert(response);
+    }).catch((error: any) => {
+      alert(error);
+    });
   }
 
-  // TODO(siggisim): Implement a test button
   handleTestClicked() {
-    this.handleBuildClicked();
+    let request = new runner.RunRequest();
+    request.gitRepo = new runner.RunRequest.GitRepo();
+    request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
+    // TODO(siggisim): fill out more repo status
+    request.bazelCommand = "test //...";
+
+    rpcService.service.run(request).then((response: runner.RunResponse) => {
+      alert(response);
+    }).catch((error: any) => {
+      alert(error);
+    });
   }
 
   async handleReviewClicked() {
