@@ -47,7 +47,7 @@ func New(env environment.Env) (*runnerService, error) {
 	}, nil
 }
 
-func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
+func (r *runnerService) lookupAPIKey(ctx context.Context, selectedGroup string) (string, error) {
 	auth := r.env.GetAuthenticator()
 	if auth == nil {
 		return "", status.FailedPreconditionError("Auth was not configured but is required")
@@ -56,12 +56,19 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if u.GetGroupID() == "" {
+	group := u.GetGroupID()
+	if selectedGroup != "" {
+		for _, membership := range u.GetGroupMemberships() {
+			if membership.GroupID == selectedGroup {
+				group = selectedGroup
+			}
+		}
+	}
+	if group == "" {
 		return "", status.FailedPreconditionError("Authenticated user did not have a group ID")
 	}
-
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", u.GetGroupID())
+	q.AddWhereClause("group_id = ?", group)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := r.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
@@ -89,7 +96,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	apiKey, err := r.lookupAPIKey(ctx)
+	apiKey, err := r.lookupAPIKey(ctx, req.GetRequestContext().GetGroupId())
 	if err != nil {
 		return nil, err
 	}
