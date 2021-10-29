@@ -13,6 +13,7 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/service",
+        "//proto:runner_ts_proto",
         "@npm//@types/diff-match-patch",
         "@npm//@types/react",
         "@npm//diff-match-patch",
