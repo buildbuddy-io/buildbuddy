@@ -38,6 +38,7 @@ type RealEnv struct {
 	taskRouter                       interfaces.TaskRouter
 	healthChecker                    interfaces.HealthChecker
 	workflowService                  interfaces.WorkflowService
+	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
@@ -309,6 +310,12 @@ func (r *RealEnv) GetWorkflowService() interfaces.WorkflowService {
 }
 func (r *RealEnv) SetWorkflowService(wf interfaces.WorkflowService) {
 	r.workflowService = wf
+}
+func (r *RealEnv) GetRunnerService() interfaces.RunnerService {
+	return r.runnerService
+}
+func (r *RealEnv) SetRunnerService(wf interfaces.RunnerService) {
+	r.runnerService = wf
 }
 func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 	return r.gitProviders

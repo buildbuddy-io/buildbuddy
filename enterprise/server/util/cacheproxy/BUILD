@@ -22,6 +22,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//reflection",
     ],
 )

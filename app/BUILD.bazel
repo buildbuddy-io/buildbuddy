@@ -13,18 +13,17 @@ config_setting(
 
 esbuild(
     name = "app_bundle",
-    args = [
-        "--resolve-extensions=.mjs,.js",
-    ],
-    define = ["process.env.NODE_ENV=\"production\""],
+    args = {
+        "resolveExtensions": [
+            ".mjs",
+            ".js",
+        ],
+    },
+    define = {"process.env.NODE_ENV": '"production"'},
     entry_points = ["app.tsx"],
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,
-    }),
-    tool = select({
-        "@bazel_tools//src/conditions:darwin": "@esbuild_darwin//:bin/esbuild",
-        "@bazel_tools//src/conditions:linux_x86_64": "@esbuild_linux//:bin/esbuild",
     }),
     deps = [
         ":app",

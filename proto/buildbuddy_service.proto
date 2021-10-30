@@ -6,6 +6,7 @@ import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
+import "proto/runner.proto";
 import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
@@ -78,6 +79,9 @@ service BuildBuddyService {
   rpc ExecuteWorkflow(workflow.ExecuteWorkflowRequest)
       returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
+
+  // Runner API
+  rpc Run(runner.RunRequest) returns (runner.RunResponse);
 
   // Eventlog API
   rpc GetEventLogChunk(eventlog.GetEventLogChunkRequest)

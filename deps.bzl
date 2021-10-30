@@ -20,11 +20,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:WX1yoOaKQfddO/mLzdV4wptyWgoH/6hwLs7QHTixo0I=",
         version = "v0.0.0-20180901003855-c20040233aed",
     )
-
-    # esbuild
-
-    _ESBUILD_VERSION = "0.11.5"  # reminder: update SHAs below when changing this value
-
     go_repository(
         name = "cc_mvdan_lint",
         importpath = "mvdan.cc/lint",
@@ -3842,25 +3837,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:VpgP7xuJadIUuKccphEpTJnWhS2jkQyMt6Y7pJCD7fY=",
         version = "v0.0.0-20190408044501-666a987793e9",
     )
-    http_archive(
-        name = "esbuild_darwin",
-        urls = [
-            "https://registry.npmjs.org/esbuild-darwin-64/-/esbuild-darwin-64-%s.tgz" % _ESBUILD_VERSION,
-        ],
-        strip_prefix = "package",
-        build_file_content = """exports_files(["bin/esbuild"])""",
-        sha256 = "98436890727bdb0d4beddd9c9e07d0aeff0e8dfe0169f85e568eca0dd43f665e",
-    )
 
-    http_archive(
-        name = "esbuild_linux",
-        urls = [
-            "https://registry.npmjs.org/esbuild-linux-64/-/esbuild-linux-64-%s.tgz" % _ESBUILD_VERSION,
-        ],
-        strip_prefix = "package",
-        build_file_content = """exports_files(["bin/esbuild"])""",
-        sha256 = "113c2e84895f4422a3676db4e15d9f01b2b4fac041edab25284fdb9574ba58a0",
-    )
     go_repository(
         name = "in_gopkg_airbrake_gobrake_v2",
         importpath = "gopkg.in/airbrake/gobrake.v2",
