@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/statemachine"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -62,15 +63,18 @@ type RaftCache struct {
 	conf *Config
 
 	raftAddress string
+	grpcAddress string
 
 	registry      *registry.DynamicNodeRegistry
 	gossipManager *gossip.GossipManager
 	setTagFn      func(tagName, tagValue string) error
 
-	nodeHost             *dragonboat.NodeHost
-	apiServer            *api.Server
-	apiClient            *client.APIClient
-	rangeCache           *rangecache.RangeCache
+	nodeHost   *dragonboat.NodeHost
+	apiServer  *api.Server
+	apiClient  *client.APIClient
+	rangeCache *rangecache.RangeCache
+	sender     *sender.Sender
+
 	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
 
 	isolation *rfpb.Isolation
@@ -83,7 +87,7 @@ type RaftCache struct {
 // it will call this method to create the registry a and use it until nodehost
 // close.
 func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r, err := registry.NewDynamicNodeRegistry(nhid, rc.raftAddress, streamConnections, v)
+	r, err := registry.NewDynamicNodeRegistry(nhid, rc.raftAddress, rc.grpcAddress, streamConnections, v)
 	if err != nil {
 		return nil, err
 	}
@@ -94,31 +98,75 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	return r, nil
 }
 
+func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
+	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
+	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.MaxByte - 1})
+}
+
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
 	rc.localStoreRanges = append(rc.localStoreRanges, rd)
 
-	// Broadcast the meta1 range.
-	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	if r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.MaxByte}) {
+	if containsMetaRange(rd) {
+		// If we own the metarange, use gossip to notify other nodes
+		// of that fact.
 		buf, err := proto.Marshal(rd)
 		if err != nil {
-			log.Errorf("Error marshing meta1 range descriptor: %s", err)
+			log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
-		rc.setTagFn(constants.Meta1RangeTag, string(buf))
+		rc.setTagFn(constants.MetaRangeTag, string(buf))
 	}
 }
 
 func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
+	// If we had the metarange and no longer do, clear that tag.
 	for i, t := range rc.localStoreRanges {
 		if t == rd {
 			rc.localStoreRanges = append(rc.localStoreRanges[:i], rc.localStoreRanges[i+1:]...)
 			return
 		}
 	}
+
+	if containsMetaRange(rd) {
+		rc.setTagFn(constants.MetaRangeTag, "")
+	}
+}
+
+type nullLogger struct{}
+
+func (nullLogger) SetLevel(dbLogger.LogLevel)                  {}
+func (nullLogger) Debugf(format string, args ...interface{})   {}
+func (nullLogger) Infof(format string, args ...interface{})    {}
+func (nullLogger) Warningf(format string, args ...interface{}) {}
+func (nullLogger) Errorf(format string, args ...interface{})   {}
+func (nullLogger) Panicf(format string, args ...interface{})   {}
+
+type dbCompatibleLogger struct {
+	log.Logger
+}
+
+// Don't panic in server code.
+func (l *dbCompatibleLogger) Panicf(format string, args ...interface{}) {
+	l.Errorf(format, args...)
+}
+
+// Ignore SetLevel commands.
+func (l *dbCompatibleLogger) SetLevel(level dbLogger.LogLevel) {}
+
+func init() {
+	dbLogger.SetLoggerFactory(func(pkgName string) dbLogger.ILogger {
+		switch pkgName {
+		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
+			// Make the raft library be quieter.
+			return &nullLogger{}
+		default:
+			l := log.NamedSubLogger(pkgName)
+			return &dbCompatibleLogger{l}
+		}
+	})
 }
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
@@ -140,7 +188,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 	rc.raftAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.HTTPPort))
-	grpcAddress := net.JoinHostPort(listenHost, strconv.Itoa(conf.GRPCPort))
+	rc.grpcAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.GRPCPort))
 
 	// Initialize a gossip manager, which will contact other nodes
 	// and exchange information.
@@ -150,19 +198,17 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.gossipManager = gossipManager
 
-	// Quiet the raft logs
-	dbLogger.GetLogger("raft").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("rsm").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("transport").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("dragonboat").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("raftpb").SetLevel(dbLogger.ERROR)
-	dbLogger.GetLogger("logdb").SetLevel(dbLogger.ERROR)
-
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
 	// NodeRegistryFactory that allows raft to resolve other nodehosts that
 	// may have changed IP addresses after restart, but still contain the
 	// same data they did previously.
+	//
+	// Because not all nodes are members of every raft cluster, we contact
+	// nodes maintaining the meta range, who broadcast their presence, and
+	// use the metarange to find which other clusters / nodes contain which
+	// keys. The rangeCache is where this information is cached, and the
+	// sender interface is what makes it simple to use.
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
@@ -207,7 +253,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	reflection.Register(grpcServer)
 	rfspb.RegisterApiServer(grpcServer, rc.apiServer)
 
-	lis, err := net.Listen("tcp", grpcAddress)
+	lis, err := net.Listen("tcp", rc.grpcAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -216,44 +262,42 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}()
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 
-	// register us to get callbacks
-	// and broadcast some basic tags
+	// Register us to get callbacks and broadcast some basic tags.
 	rc.gossipManager.AddBroker(rc)
 	rc.gossipManager.AddBroker(rc.rangeCache)
 	rc.setTagFn(constants.NodeHostIDTag, nodeHost.ID())
 	rc.setTagFn(constants.RaftAddressTag, rc.raftAddress)
-	rc.setTagFn(constants.GRPCAddressTag, grpcAddress)
+	rc.setTagFn(constants.GRPCAddressTag, rc.grpcAddress)
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.createStateMachineFn, conf.ListenAddress, conf.Join)
 	clusterStarter.InitializeClusters()
 	rc.gossipManager.AddBroker(clusterStarter)
+	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 
 	return rc, nil
 }
 
 func (rc *RaftCache) Check(ctx context.Context) error {
-	// We are ready to serve when:
-	//  - we're able to read meta1 range
-	// TODO(tylerw): fix health check.
-
-	// raft library will complain if sync read context does not
-	// have a timeout set, so ensure there is one.
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	// We are ready to serve when we know which nodes contain the meta range
+	// and can contact those nodes. We test this by doing a SyncRead of the
+	// initial cluster setup time key/val which is stored in the Meta Range.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	readCmd := rbuilder.DirectReadRequestBuf(constants.InitClusterSetupTimeKey)
-	rsp, err := rc.nodeHost.SyncRead(ctx, constants.InitialClusterID, readCmd)
-	if err != nil {
+	key := constants.InitClusterSetupTimeKey
+	readReq := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+		Key: key,
+	}).ToProto()
+
+	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Replica: rd,
+			Batch:   readReq,
+		})
 		return err
-	}
-	kv := rbuilder.DirectReadResponse(rsp)
-	log.Printf("KV direct read response: %+v", kv)
-	if string(kv.GetKey()) == string(constants.InitClusterSetupTimeKey) {
-		return nil
-	}
-	return status.FailedPreconditionError("Malformed value type")
+	})
 }
 
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
@@ -291,20 +335,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.
 	}, nil
 }
 
-// Next Steps (for tomorrow):
-//  - implement reader
-//  - write a test that writes some data, kills a node, writes more data, brings
-//    it back up and ensures that all data is correctly replicated after some time
-//  - write a test that writes data, nukes a nude, brings up a new one, and
-//    ensures that all data is correctly replicated
 func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	// - look in meta1 (which is gossiped everywhere) to find meta2 for our key
-	// - look in meta2 to find the the range owners for our key
-	// - connect to the range members, and do a linearizable read
-	//   rangeOwner does:
-	//    - ReadIndex
-	// 	- ReadLocal
-	// 	- return file
 	return nil, nil
 }
 
@@ -321,40 +352,32 @@ func (rwc *raftWriteCloser) Close() error {
 }
 
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	// - look in meta1 (which is gossiped everywhere) to find meta2 for our key
-	// - look in meta2 to find the the range owners for our key
-	//   - GetClusterMembership to get the current cluster membership
-	//   - write the file to each member of the cluster
-	//   - syncPropose a write to add the file to pebble
-	start := time.Now()
-	membership, err := rc.nodeHost.GetClusterMembership(ctx, constants.InitialClusterID)
-	if err != nil {
-		return nil, err
-	}
-	peers := make([]string, 0, len(membership.Nodes))
-	for _, nodeHostID := range membership.Nodes {
-		grpcAddress, err := rc.registry.ResolveGRPCAddress(nodeHostID)
-		if err != nil {
-			log.Errorf("Skipping nodeHost: %q", nodeHostID)
-			continue
-		}
-		log.Printf("member: nodeID: %s, grpcAddress: %q", nodeHostID, grpcAddress)
-		peers = append(peers, grpcAddress)
-	}
-	log.Errorf("Took %s to get cluster membership", time.Since(start))
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
 		return nil, err
 	}
+	fileKey := []byte(d.GetHash()) // TODO(tylerw): use fileRecord.Key()?
+	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
+	if err != nil {
+		return nil, err
+	}
+
 	mwc, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
 	if err != nil {
 		return nil, err
 	}
 
 	rwc := &raftWriteCloser{mwc, func() error {
-		sesh := rc.nodeHost.GetNoOPSession(constants.InitialClusterID)
-		_, err := rbuilder.ResponseUnion(rc.nodeHost.SyncPropose(ctx, sesh, rbuilder.FileWriteRequestBuf(fileRecord)))
-		return err
+		writeReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: fileRecord,
+		}).ToProto()
+		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+				Replica: rd,
+				Batch:   writeReq,
+			})
+			return err
+		})
 	}}
 
 	return rwc, nil

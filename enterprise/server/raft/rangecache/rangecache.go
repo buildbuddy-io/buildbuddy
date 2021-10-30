@@ -27,7 +27,7 @@ func New() *RangeCache {
 	}
 }
 
-func (rc *RangeCache) updateRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
+func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	rc.rangeMu.Lock()
 	defer rc.rangeMu.Unlock()
 
@@ -83,20 +83,15 @@ func (rc *RangeCache) RegisterTagProviderFn(setTagFn func(tagName, tagValue stri
 
 // MemberEvent is called when a node joins, leaves, or is updated.
 func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member) {
-	nhid, ok := member.Tags[constants.NodeHostIDTag]
-	if !ok {
-		return
-	}
-
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		if tagData, ok := member.Tags[constants.Meta1RangeTag]; ok {
+		if tagData, ok := member.Tags[constants.MetaRangeTag]; ok {
 			rd := &rfpb.RangeDescriptor{}
 			if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
 				log.Errorf("unparsable rangeset: %s", err)
 				return
 			}
-			if err := rc.updateRange(nhid, rd); err != nil {
+			if err := rc.updateRange(rd); err != nil {
 				log.Errorf("Error updating ranges: %s", err)
 			}
 		}
@@ -105,8 +100,8 @@ func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member
 	}
 }
 
-func (rc *RangeCache) UpdateRange(nhid string, rangeDescriptor *rfpb.RangeDescriptor) error {
-	return rc.updateRange(nhid, rangeDescriptor)
+func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
+	return rc.updateRange(rangeDescriptor)
 }
 
 func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {

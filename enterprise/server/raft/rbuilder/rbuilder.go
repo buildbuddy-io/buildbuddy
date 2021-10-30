@@ -31,6 +31,86 @@ func MustUnmarshal(rsp interface{}, m proto.Message) {
 	}
 }
 
+type BatchBuilder struct {
+	cmd *rfpb.BatchCmdRequest
+}
+
+func NewBatchBuilder() *BatchBuilder {
+	return &BatchBuilder{
+		cmd: &rfpb.BatchCmdRequest{},
+	}
+}
+
+func (b *BatchBuilder) Add(m proto.Message) *BatchBuilder {
+	if b.cmd == nil {
+		b.cmd = &rfpb.BatchCmdRequest{}
+	}
+
+	req := &rfpb.RequestUnion{}
+	switch value := m.(type) {
+	case *rfpb.FileWriteRequest:
+		req.Value = &rfpb.RequestUnion_FileWrite{
+			FileWrite: value,
+		}
+	case *rfpb.DirectReadRequest:
+		req.Value = &rfpb.RequestUnion_DirectRead{
+			DirectRead: value,
+		}
+	case *rfpb.DirectWriteRequest:
+		req.Value = &rfpb.RequestUnion_DirectWrite{
+			DirectWrite: value,
+		}
+	case *rfpb.IncrementRequest:
+		req.Value = &rfpb.RequestUnion_Increment{
+			Increment: value,
+		}
+	case *rfpb.ScanRequest:
+		req.Value = &rfpb.RequestUnion_Scan{
+			Scan: value,
+		}
+	default:
+		log.Errorf("BatchBuilder.Add handling for %+v not implemented.", m)
+		return b
+	}
+
+	b.cmd.Union = append(b.cmd.Union, req)
+	return b
+}
+
+func (b *BatchBuilder) ToProto() *rfpb.BatchCmdRequest {
+	return b.cmd
+}
+
+func (b *BatchBuilder) ToBuf() []byte {
+	return MustMarshal(b.cmd)
+}
+
+type BatchResponse struct {
+	cmd *rfpb.BatchCmdResponse
+}
+
+func NewBatchResponse(val interface{}) *BatchResponse {
+	cmd := &rfpb.BatchCmdResponse{}
+	MustUnmarshal(val, cmd)
+	return &BatchResponse{
+		cmd: cmd,
+	}
+}
+
+func (r *BatchResponse) DirectReadResponse(n int) *rfpb.DirectReadResponse {
+	if n >= len(r.cmd.GetUnion()) {
+		return nil
+	}
+	return r.cmd.GetUnion()[n].GetDirectRead()
+}
+
+func (r *BatchResponse) ScanResponse(n int) *rfpb.ScanResponse {
+	if n >= len(r.cmd.GetUnion()) {
+		return nil
+	}
+	return r.cmd.GetUnion()[n].GetScan()
+}
+
 func DirectWriteRequestBuf(kv *rfpb.KV) []byte {
 	return MustMarshal(&rfpb.RequestUnion{
 		Value: &rfpb.RequestUnion_DirectWrite{

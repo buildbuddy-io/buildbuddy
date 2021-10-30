@@ -18,7 +18,9 @@ import (
 type DynamicNodeRegistry struct {
 	nhid        string
 	raftAddress string
-	setTagFn    func(tagName, tagValue string) error
+	grpcAddress string
+
+	setTagFn func(tagName, tagValue string) error
 
 	validator   dbConfig.TargetValidator
 	partitioner *fixedPartitioner
@@ -42,10 +44,11 @@ type DynamicNodeRegistry struct {
 // hand this to the raft library when we set things up. It will create a single
 // DynamicNodeRegistry and use it to resolve all other raft nodes until the
 // process shuts down.
-func NewDynamicNodeRegistry(nhid, raftAddress string, streamConnections uint64, v dbConfig.TargetValidator) (*DynamicNodeRegistry, error) {
+func NewDynamicNodeRegistry(nhid, raftAddress, grpcAddress string, streamConnections uint64, v dbConfig.TargetValidator) (*DynamicNodeRegistry, error) {
 	dnr := &DynamicNodeRegistry{
 		nhid:        nhid,
 		raftAddress: raftAddress,
+		grpcAddress: grpcAddress,
 		validator:   v,
 		mu:          sync.RWMutex{},
 		nodeTargets: make(map[raftio.NodeInfo]string, 0),
@@ -201,6 +204,16 @@ func (dnr *DynamicNodeRegistry) ResolveGRPCAddress(nhid string) (string, error) 
 	return grpcAddr, nil
 }
 
+func (dnr *DynamicNodeRegistry) resolveNHID(clusterID uint64, nodeID uint64) (string, string, error) {
+	nodeInfo := raftio.GetNodeInfo(clusterID, nodeID)
+	target, ok := dnr.nodeTargets[nodeInfo]
+	if !ok {
+		return "", "", status.NotFoundError("target address unknown")
+	}
+	key := dnr.getConnectionKey(target, clusterID)
+	return target, key, nil
+}
+
 // Resolve returns the current RaftAddress and connection key of the specified
 // node. It returns ErrUnknownTarget when the RaftAddress is unknown.
 
@@ -215,18 +228,36 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 	dnr.mu.RLock()
 	defer dnr.mu.RUnlock()
 
-	nodeInfo := raftio.GetNodeInfo(clusterID, nodeID)
-	target, ok := dnr.nodeTargets[nodeInfo]
-	if !ok {
-		return "", "", status.NotFoundError("target address unknown")
+	target, key, err := dnr.resolveNHID(clusterID, nodeID)
+	if err != nil {
+		return "", "", err
 	}
-	key := dnr.getConnectionKey(target, clusterID)
 
 	if target == dnr.nhid {
 		return dnr.raftAddress, key, nil
 	}
 
 	addr, ok := dnr.raftAddrs[target]
+	if !ok {
+		return "", "", status.NotFoundError("target address unknown")
+	}
+	return addr, key, nil
+}
+
+func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error) {
+	dnr.mu.RLock()
+	defer dnr.mu.RUnlock()
+
+	target, key, err := dnr.resolveNHID(clusterID, nodeID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if target == dnr.nhid {
+		return dnr.grpcAddress, key, nil
+	}
+
+	addr, ok := dnr.grpcAddrs[target]
 	if !ok {
 		return "", "", status.NotFoundError("target address unknown")
 	}

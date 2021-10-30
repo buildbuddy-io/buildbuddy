@@ -65,20 +65,39 @@ message IncrementResponse {
   uint64 value = 2;
 }
 
+message ScanRequest {
+  bytes left = 1;
+  bytes right = 2;
+
+  enum ScanType {
+    UNDEFINED_SCAN_TYPE = 0;
+    SEEKLT_SCAN_TYPE = 1;
+    SEEKGE_SCAN_TYPE = 2;
+  }
+  ScanType scan_type = 3;
+}
+
+message ScanResponse {
+  repeated KV kvs = 1;
+}
+
 // Raft CMD API, used to encode raft commands that are replicated via raft and
-// written to a log. Everything written via SyncPropose must be a RequestUnion.
+// written to a log. Everything written via SyncPropose must be a RequestUnion
+// wrapped in a BatchCmdRequest..
 message RequestUnion {
   oneof value {
     FileWriteRequest file_write = 1;
     DirectWriteRequest direct_write = 2;
     DirectReadRequest direct_read = 3;
     IncrementRequest increment = 4;
+    ScanRequest scan = 5;
   }
 }
 
 // Raft CMD API, used to encode raft commands that are replicated via raft and
-// written to a log. Everything passed to SyncRead must be a RequestUnion and
-// everything returned will be a ResponseUnion.
+// written to a log. Everything passed to SyncRead must be a RequestUnion
+// wrapped in a BatchCmdRequest and everything returned will be a
+// BatchCmdResponse.
 message ResponseUnion {
   google.rpc.Status status = 1;
 
@@ -87,7 +106,16 @@ message ResponseUnion {
     DirectWriteResponse direct_write = 3;
     DirectReadResponse direct_read = 4;
     IncrementResponse increment = 5;
+    ScanResponse scan = 6;
   }
+}
+
+message BatchCmdRequest {
+  repeated RequestUnion union = 1;
+}
+
+message BatchCmdResponse {
+  repeated ResponseUnion union = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -118,19 +146,21 @@ message RangeDescriptor {
 // SyncPropose, in proto form.
 message SyncProposeRequest {
   ReplicaDescriptor replica = 1;
-  RequestUnion request = 2;
+
+  BatchCmdRequest batch = 2;
 }
+
 message SyncProposeResponse {
-  ResponseUnion response = 1;
+  BatchCmdResponse batch = 1;
 }
 
 // SyncRead, in proto form.
 message SyncReadRequest {
   ReplicaDescriptor replica = 1;
-  RequestUnion request = 2;
+  BatchCmdRequest batch = 2;
 }
 message SyncReadResponse {
-  ResponseUnion response = 1;
+  BatchCmdResponse batch = 1;
 }
 
 message StartClusterRequest {

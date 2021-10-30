@@ -208,19 +208,31 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 	if err != nil {
 		return err
 	}
-	writeRangeDescriptorCmd := rbuilder.DirectWriteRequestBuf(&rfpb.KV{
-		Key:   constants.LocalRangeKey,
-		Value: buf,
+	// This entry goes to meta1.
+	batch := rbuilder.NewBatchBuilder()
+	batch = batch.Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+			Value: buf,
+		},
 	})
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, writeRangeDescriptorCmd); err != nil {
+	batch = batch.Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: buf,
+		},
+	})
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, batch.ToBuf()); err != nil {
 		return err
 	}
 	return nil
 }
 
 func setupTimeVal() []byte {
-	return rbuilder.DirectWriteRequestBuf(&rfpb.KV{
-		Key:   constants.InitClusterSetupTimeKey,
-		Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-	})
+	return rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.InitClusterSetupTimeKey,
+			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+		},
+	}).ToBuf()
 }

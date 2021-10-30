@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -73,6 +74,7 @@ func allHealthy(caches ...*raft_cache.RaftCache) bool {
 		if err := c.Check(context.Background()); err != nil {
 			return false
 		}
+		log.Printf("%+v is healthy!", c)
 	}
 	return true
 }
@@ -151,14 +153,23 @@ func TestWriter(t *testing.T) {
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
 	require.Nil(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	writeCloser, err := cache.Writer(ctx, d)
-	require.Nil(t, err)
-	n, err := writeCloser.Write(buf)
-	require.Nil(t, err)
-	require.Equal(t, n, len(buf))
-	err = writeCloser.Close()
-	require.Nil(t, err, err)
+	for i := 0; i < 100; i++ {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		writeCloser, err := cache.Writer(ctx, d)
+		require.Nil(t, err, err)
+		n, err := writeCloser.Write(buf)
+		require.Nil(t, err)
+		require.Equal(t, n, len(buf))
+		err = writeCloser.Close()
+		require.Nil(t, err, err)
+	}
 }
+
+// Next Steps:
+//  - implement reader
+//  - write a test that writes some data, kills a node, writes more data, brings
+//    it back up and ensures that all data is correctly replicated after some time
+//  - write a test that writes data, nukes a nude, brings up a new one, and
+//    ensures that all data is correctly replicated

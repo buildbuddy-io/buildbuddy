@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
@@ -118,39 +119,44 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 
 func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	sesh := s.nodeHost.GetNoOPSession(req.GetReplica().GetClusterId())
-	buf, err := proto.Marshal(req.GetRequest())
+	buf, err := proto.Marshal(req.GetBatch())
 	if err != nil {
 		return nil, err
 	}
-	rrsp, err := s.nodeHost.SyncPropose(ctx, sesh, buf)
+	raftResponse, err := s.nodeHost.SyncPropose(ctx, sesh, buf)
 	if err != nil {
 		return nil, err
 	}
-	ru := &rfpb.ResponseUnion{}
-	if err := proto.Unmarshal(rrsp.Data, ru); err != nil {
+	batchResponse := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
 		return nil, err
 	}
 	return &rfpb.SyncProposeResponse{
-		Response: ru,
+		Batch: batchResponse,
 	}, nil
 }
 
 func (s *Server) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	buf, err := proto.Marshal(req.GetRequest())
+	buf, err := proto.Marshal(req.GetBatch())
 	if err != nil {
 		return nil, err
 	}
-	rrsp, err := s.nodeHost.SyncRead(ctx, req.GetReplica().GetClusterId(), buf)
+	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetReplica().GetClusterId(), buf)
 	if err != nil {
 		return nil, err
 	}
-	ru := &rfpb.ResponseUnion{}
-	if buf, ok := rrsp.([]byte); ok {
-		if err := proto.Unmarshal(buf, ru); err != nil {
-			return nil, err
-		}
+
+	buf, ok := raftResponseIface.([]byte)
+	if !ok {
+		return nil, status.FailedPreconditionError("SyncRead returned a non-[]byte response.")
 	}
+
+	batchResponse := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(buf, batchResponse); err != nil {
+		return nil, err
+	}
+
 	return &rfpb.SyncReadResponse{
-		Response: ru,
+		Batch: batchResponse,
 	}, nil
 }

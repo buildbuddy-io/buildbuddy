@@ -15,20 +15,20 @@ const (
 	NodeHostIDTag  = "node_host_id"
 	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
-	Meta1RangeTag  = "meta1_range"
+	MetaRangeTag   = "meta_range"
 )
 
 // Key range contants
 const (
-	// Anything written between \x01 and \x02 is a local key
-	// so range will be ignored.
+	// Anything written between \x01 and \x02 is a localstore only key so
+	// will not be replicated.
 	localPrefixByte = '\x01'
 	localMaxByte    = '\x02'
 
-	// Anything written between \x02 and \x03 is a meta1 key
-	// and will live on cluster 1 and never be split.
-	meta1PrefixByte = localMaxByte
-	meta1MaxByte    = '\x03'
+	// Anything written between \x02 and \x03 is a metarange key and will
+	// live on cluster 1 and never be split.
+	metaPrefixByte = localMaxByte
+	metaMaxByte    = '\x03'
 
 	// Anything else (from \x03 onward)  will fall into normal,
 	// splittable ranges.
@@ -44,14 +44,14 @@ const (
 
 // Key constants (some of these have to be vars because of how they are made.
 var (
-	LocalPrefix = keys.Key{localPrefixByte}
-	Meta1Prefix = keys.Key{meta1PrefixByte}
+	LocalPrefix     = keys.Key{localPrefixByte}
+	MetaRangePrefix = keys.Key{metaPrefixByte}
 
 	// The last clusterID that was generated.
-	LastClusterIDKey = keys.MakeKey(Meta1Prefix, []byte("last_cluster_id"))
+	LastClusterIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_cluster_id"))
 
 	// When the first cluster was initially set up.
-	InitClusterSetupTimeKey = keys.MakeKey(Meta1Prefix, []byte("initial_cluster_initialization_time"))
+	InitClusterSetupTimeKey = keys.MakeKey(MetaRangePrefix, []byte("initial_cluster_initialization_time"))
 
 	// The last index that was applied by a statemachine.
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))

@@ -80,6 +80,7 @@ type PebbleDiskStateMachine struct {
 
 	lastAppliedIndex uint64
 
+	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
 	mappedRange     *rangemap.Range
@@ -120,7 +121,6 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 	alreadySet := sm.mappedRange != nil
 	sm.rangeMu.RUnlock()
 	if alreadySet {
-		log.Printf("Range descriptor is already set.")
 		return nil
 	}
 
@@ -139,9 +139,7 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 			Left:  rangeDescriptor.GetLeft(),
 			Right: rangeDescriptor.GetRight(),
 		}
-		if sm.rangeTracker != nil {
-			sm.rangeTracker.AddRange(sm.rangeDescriptor)
-		}
+		sm.rangeTracker.AddRange(sm.rangeDescriptor)
 	}
 	sm.rangeMu.Unlock()
 	return nil
@@ -235,6 +233,7 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.closed = false
 	sm.closedMu.Unlock()
 
+	go sm.checkAndSetRangeDescriptor()
 	return sm.getLastAppliedIndex()
 }
 
@@ -299,12 +298,49 @@ func (sm *PebbleDiskStateMachine) increment(wb *pebble.Batch, req *rfpb.Incremen
 	}, nil
 }
 
+func (sm *PebbleDiskStateMachine) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
+	if len(req.GetLeft()) == 0 {
+		return nil, status.InvalidArgumentError("Increment requires a valid key.")
+	}
+
+	iterOpts := &pebble.IterOptions{}
+	if req.GetRight() != nil {
+		iterOpts.UpperBound = req.GetRight()
+	} else {
+		iterOpts.UpperBound = keys.Key(req.GetLeft()).Next()
+	}
+
+	iter := sm.db.NewIter(iterOpts)
+	var t bool
+
+	switch req.GetScanType() {
+	case rfpb.ScanRequest_SEEKLT_SCAN_TYPE:
+		t = iter.SeekLT(req.GetLeft())
+	case rfpb.ScanRequest_SEEKGE_SCAN_TYPE:
+		t = iter.SeekGE(req.GetLeft())
+	default:
+		t = iter.SeekGE(req.GetLeft())
+	}
+
+	rsp := &rfpb.ScanResponse{}
+	for ; t; t = iter.Next() {
+		if t {
+			rsp.Kvs = append(rsp.Kvs, &rfpb.KV{
+				Key:   iter.Key(),
+				Value: iter.Value(),
+			})
+		}
+	}
+	iter.Close()
+	return rsp, nil
+}
+
 func statusProto(err error) *statuspb.Status {
 	s, _ := gstatus.FromError(err)
 	return s.Proto()
 }
 
-func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
+func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
@@ -327,27 +363,31 @@ func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.Requ
 		}
 		rsp.Status = statusProto(err)
 	default:
-		rsp.Status = statusProto(status.UnimplementedErrorf("Request handling for %+v not implemented.", req))
+		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
-	return rsp, nil
+	return rsp
 }
 
-func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) (*rfpb.ResponseUnion, error) {
+func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_DirectRead:
 		r, err := sm.directRead(value.DirectRead)
-		if err != nil {
-			return nil, err
-		}
 		rsp.Value = &rfpb.ResponseUnion_DirectRead{
 			DirectRead: r,
 		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_Scan:
+		r, err := sm.scan(value.Scan)
+		rsp.Value = &rfpb.ResponseUnion_Scan{
+			Scan: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
-		return nil, status.UnimplementedErrorf("Request handling for %+v not implemented.", req)
+		rsp.Status = statusProto(status.UnimplementedErrorf("Read handling for %+v not implemented.", req))
 	}
-	return rsp, nil
+	return rsp
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -400,18 +440,20 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 	defer wb.Close()
 
 	// Insert all of the data in the batch.
-	req := &rfpb.RequestUnion{}
+	batchCmdReq := &rfpb.BatchCmdRequest{}
 	for idx, entry := range entries {
-		if err := proto.Unmarshal(entry.Cmd, req); err != nil {
+		if err := proto.Unmarshal(entry.Cmd, batchCmdReq); err != nil {
 			return nil, err
 		}
-		log.Printf("Update: request union: %+v", req)
-		rsp, err := sm.handlePropose(wb, req)
-		if err != nil {
-			return nil, err
+		batchCmdRsp := &rfpb.BatchCmdResponse{}
+		for _, union := range batchCmdReq.GetUnion() {
+			sm.log.Debugf("Update: request union: %+v", union)
+			rsp := sm.handlePropose(wb, union)
+			sm.log.Debugf("Update: response union: %+v", rsp)
+			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
-		log.Printf("Update: response union: %+v", rsp)
-		rspBuf, err := proto.Marshal(rsp)
+
+		rspBuf, err := proto.Marshal(batchCmdRsp)
 		if err != nil {
 			return nil, err
 		}
@@ -434,6 +476,9 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 		return nil, status.FailedPreconditionError("lastApplied not moving forward")
 	}
 	sm.lastAppliedIndex = lastEntry.Index
+
+	sm.checkAndSetRangeDescriptor() // error is ignored.
+
 	return entries, nil
 }
 
@@ -461,17 +506,19 @@ func (sm *PebbleDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	req := &rfpb.RequestUnion{}
-	if err := proto.Unmarshal(reqBuf, req); err != nil {
+	batchCmdReq := &rfpb.BatchCmdRequest{}
+	if err := proto.Unmarshal(reqBuf, batchCmdReq); err != nil {
 		return nil, err
 	}
-
-	rsp, err := sm.handleRead(req)
-	if err != nil {
-		return nil, err
+	batchCmdRsp := &rfpb.BatchCmdResponse{}
+	for _, req := range batchCmdReq.GetUnion() {
+		sm.log.Debugf("Lookup: request union: %+v", req)
+		rsp := sm.handleRead(req)
+		sm.log.Debugf("Lookup: response union: %+v", rsp)
+		batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 	}
 
-	rspBuf, err := proto.Marshal(rsp)
+	rspBuf, err := proto.Marshal(batchCmdRsp)
 	if err != nil {
 		return nil, err
 	}
@@ -693,6 +740,7 @@ func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uin
 		clusterID:    clusterID,
 		nodeID:       nodeID,
 		rangeTracker: rangeTracker,
+		log:          log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 	}
 }
 

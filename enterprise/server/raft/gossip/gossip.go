@@ -1,6 +1,8 @@
 package gossip
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -92,8 +94,25 @@ func (gm *GossipManager) Shutdown() error {
 	return gm.serfInstance.Shutdown()
 }
 
+type logWriter struct {
+	log.Logger
+}
+
+func (lw *logWriter) Write(d []byte) (int, error) {
+	s := strings.TrimSuffix(string(d), "\n")
+	if strings.Contains(s, "[DEBUG]") {
+		//		log.Debugf(s)
+	} else if strings.Contains(s, "[INFO]") {
+		log.Infof(s)
+	}
+
+	return len(d), nil
+}
+
 func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error) {
 	log.Printf("Starting GossipManager on %q", bindAddress)
+
+	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", bindAddress))
 
 	bindAddr, bindPort, err := network.ParseAddress(bindAddress)
 	if err != nil {
@@ -102,11 +121,12 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 	memberlistConfig := memberlist.DefaultLANConfig()
 	memberlistConfig.BindAddr = bindAddr
 	memberlistConfig.BindPort = bindPort
+	memberlistConfig.LogOutput = &logWriter{subLog}
 
 	serfConfig := serf.DefaultConfig()
 	serfConfig.NodeName = bindAddress
 	serfConfig.MemberlistConfig = memberlistConfig
-
+	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.
 	serfConfig.UserEventSizeLimit = 9 * 1024
 

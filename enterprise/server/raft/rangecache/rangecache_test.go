@@ -17,7 +17,7 @@ import (
 // grpcAddr := rangeCache.Get(key)
 // for {
 // 	if grpcAddr == nil {
-// 		grpcAddr = readRangeFromMeta1(key)
+// 		grpcAddr = readRangeFromMeta(key)
 // 		rangeCache.Update(key, grpcAddr)
 // 	}
 // 	rsp, err := sendRequest(grpcAddr &req{})
@@ -34,23 +34,14 @@ func init() {
 	})
 }
 
-func rangeLeaveEvent(nhid string) (serf.EventType, *serf.Member) {
-	member := &serf.Member{
-		Tags: map[string]string{
-			constants.NodeHostIDTag: nhid,
-		},
-	}
-	return serf.EventMemberLeave, member
-}
-
-func meta1RangeEvent(t *testing.T, nhid string, rangeDescriptor *rfpb.RangeDescriptor) (serf.EventType, *serf.Member) {
+func metaRangeEvent(t *testing.T, nhid string, rangeDescriptor *rfpb.RangeDescriptor) (serf.EventType, *serf.Member) {
 	buf, err := proto.Marshal(rangeDescriptor)
 	if err != nil {
 		t.Fatalf("error marshaling proto: %s", err)
 	}
 	member := &serf.Member{
 		Tags: map[string]string{
-			constants.Meta1RangeTag: string(buf),
+			constants.MetaRangeTag:  string(buf),
 			constants.NodeHostIDTag: nhid,
 		},
 	}
@@ -62,7 +53,7 @@ func TestMemberEvent(t *testing.T) {
 	rc := rangecache.New()
 
 	// Advertise a (fake) range advertisement.
-	rc.MemberEvent(meta1RangeEvent(t, "nhid-11", &rfpb.RangeDescriptor{
+	rc.MemberEvent(metaRangeEvent(t, "nhid-11", &rfpb.RangeDescriptor{
 		Left:       []byte{constants.MinByte},
 		Right:      []byte{constants.MaxByte},
 		Generation: 1,
@@ -97,9 +88,9 @@ func TestMultipleNodesInRange(t *testing.T) {
 	}
 
 	// Advertise a few (fake) range advertisements.
-	rc.MemberEvent(meta1RangeEvent(t, nodes[0], rd))
-	rc.MemberEvent(meta1RangeEvent(t, nodes[1], rd))
-	rc.MemberEvent(meta1RangeEvent(t, nodes[2], rd))
+	rc.MemberEvent(metaRangeEvent(t, nodes[0], rd))
+	rc.MemberEvent(metaRangeEvent(t, nodes[1], rd))
+	rc.MemberEvent(metaRangeEvent(t, nodes[2], rd))
 
 	rr := rc.Get([]byte("m"))
 	require.NotNil(t, rr)
@@ -123,7 +114,7 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	}
 
 	// Advertise a (fake) range advertisement.
-	rc.MemberEvent(meta1RangeEvent(t, "nhid-11", rd1))
+	rc.MemberEvent(metaRangeEvent(t, "nhid-11", rd1))
 
 	rd2 := &rfpb.RangeDescriptor{
 		Left:       []byte{constants.MinByte},
@@ -137,7 +128,7 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	}
 
 	// Now advertise again, with a higher generation this time.
-	rc.MemberEvent(meta1RangeEvent(t, "nhid-11", rd2))
+	rc.MemberEvent(metaRangeEvent(t, "nhid-11", rd2))
 
 	rr := rc.Get([]byte("m"))
 	require.NotNil(t, rr)
@@ -161,7 +152,7 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 	}
 
 	// Advertise a (fake) range advertisement.
-	rc.MemberEvent(meta1RangeEvent(t, "nhid-11", rd1))
+	rc.MemberEvent(metaRangeEvent(t, "nhid-11", rd1))
 
 	rd2 := &rfpb.RangeDescriptor{
 		Left:       []byte("a"),
@@ -175,7 +166,7 @@ func TestRangeStaleMemberEvent(t *testing.T) {
 	}
 
 	// Send another member event with the stale advertisement.
-	rc.MemberEvent(meta1RangeEvent(t, "nhid-11", rd2))
+	rc.MemberEvent(metaRangeEvent(t, "nhid-11", rd2))
 
 	// Expect that the range update was not accepted.
 	require.Nil(t, rc.Get([]byte("m")))

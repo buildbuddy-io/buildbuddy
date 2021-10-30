@@ -148,7 +148,6 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 }
 
 func (rm *RangeMap) Lookup(key []byte) interface{} {
-	log.Debugf("Get called for %q, %s", string(key), rm)
 	if len(rm.ranges) == 0 {
 		return nil
 	}
