@@ -2,21 +2,18 @@ package gossip_test
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/hashicorp/serf/serf"
 	"github.com/stretchr/testify/require"
 )
 
 type testBroker struct {
-	memberEvent     func(updateType serf.EventType, member *serf.Member)
-	consumeMetadata func(name string, payload []byte)
-	sendMetadataCB  func(name string, payload []byte) error
+	memberEvent func(updateType serf.EventType, member *serf.Member)
+	sendTagFn   func(tagName, tagValue string) error
 }
 
 func (b *testBroker) MemberEvent(updateType serf.EventType, member *serf.Member) {
@@ -25,16 +22,12 @@ func (b *testBroker) MemberEvent(updateType serf.EventType, member *serf.Member)
 	}
 }
 
-func (b *testBroker) RegisterMetadataProvider(sendMetadataCB func(name string, payload []byte) error) {
-	b.sendMetadataCB = sendMetadataCB
+func (b *testBroker) RegisterTagProviderFn(setTag func(tagName, tagValue string) error) {
+	b.sendTagFn = setTag
 }
-func (b *testBroker) SendMetadata(name string, payload []byte) error {
-	return b.sendMetadataCB(name, payload)
-}
-func (b *testBroker) ConsumeMetadata(name string, payload []byte) {
-	if b.consumeMetadata != nil {
-		b.consumeMetadata(name, payload)
-	}
+
+func (b *testBroker) SetTag(tagName, tagValue string) error {
+	return b.sendTagFn(tagName, tagValue)
 }
 
 func localAddr(t *testing.T) string {
@@ -74,54 +67,30 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-func TestMetadata(t *testing.T) {
+func TestSendTag(t *testing.T) {
 	node1Addr := localAddr(t)
-	node1Broker := &testBroker{}
-	node1 := newGossipManager(t, node1Addr, nil /*=seeds*/, node1Broker)
+	broker1 := &testBroker{}
+	node1 := newGossipManager(t, node1Addr, nil /*=seeds*/, broker1)
 	defer node1.Shutdown()
 
-	var wg sync.WaitGroup
-	mu := sync.Mutex{}
-	sentMetadata := make(map[string][]byte, 0)
-	consumeMetadataCB := func(name string, gotPayload []byte) {
-		mu.Lock()
-		defer mu.Unlock()
-		sentPayload, ok := sentMetadata[name]
-		require.True(t, ok)
-		require.Equal(t, sentPayload, gotPayload)
-		delete(sentMetadata, name)
-		wg.Done()
+	sawTag := make(chan struct{})
+	memberEventCB := func(updateType serf.EventType, member *serf.Member) {
+		tagVal, ok := member.Tags["testTagName"]
+		if ok && tagVal == "testTagValue" {
+			close(sawTag)
+		}
 	}
 
-	node2Broker := &testBroker{
-		consumeMetadata: consumeMetadataCB,
-	}
-	node2 := newGossipManager(t, localAddr(t), []string{node1Addr}, node2Broker)
+	node2 := newGossipManager(t, localAddr(t), []string{node1Addr}, &testBroker{memberEvent: memberEventCB})
 	defer node2.Shutdown()
 
-	// send a bunch of metadata and wait for it to be received, timeout
-	// after 10 seconds.
-	for i := 0; i < 10; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 2<<i)
-		mu.Lock()
-		sentMetadata[d.GetHash()] = buf
-		mu.Unlock()
-
-		err := node1Broker.SendMetadata(d.GetHash(), buf)
-		require.Nil(t, err)
-		wg.Add(1)
-	}
-
-	doneChannel := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(doneChannel)
-	}()
+	err := broker1.SetTag("testTagName", "testTagValue")
+	require.Nil(t, err)
 
 	select {
 	case <-time.After(10 * time.Second):
-		t.Fatalf("Not all metadata was received. Missing: %d", len(sentMetadata))
-	case <-doneChannel:
+		t.Fatalf("Timed out waiting for tags to be received")
+	case <-sawTag:
 		break
 	}
 }

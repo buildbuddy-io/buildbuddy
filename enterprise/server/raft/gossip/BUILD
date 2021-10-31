@@ -19,7 +19,6 @@ go_test(
     deps = [
         ":gossip",
         "//server/testutil/app",
-        "//server/testutil/testdigest",
         "@com_github_hashicorp_serf//serf",
         "@com_github_stretchr_testify//require",
     ],
