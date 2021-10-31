@@ -3,12 +3,16 @@ package api
 import (
 	"context"
 	"io"
+	"net"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -23,6 +27,8 @@ type Server struct {
 	fileDir              string
 	nodeHost             *dragonboat.NodeHost
 	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
+
+	grpcServer *grpc.Server
 }
 
 func NewServer(fileDir string, nodeHost *dragonboat.NodeHost, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc) (*Server, error) {
@@ -32,6 +38,28 @@ func NewServer(fileDir string, nodeHost *dragonboat.NodeHost, createStateMachine
 		createStateMachineFn: createStateMachineFn,
 	}
 	return s, nil
+}
+
+func (s *Server) Start(grpcAddress string) error {
+	// grpcServer is responsible for presenting an API to manage raft nodes
+	// on each host, as well as an API to shuffle data around between nodes,
+	// outside of raft.
+	s.grpcServer = grpc.NewServer()
+	reflection.Register(s.grpcServer)
+	rfspb.RegisterApiServer(s.grpcServer, s)
+
+	lis, err := net.Listen("tcp", grpcAddress)
+	if err != nil {
+		return err
+	}
+	go func() {
+		s.grpcServer.Serve(lis)
+	}()
+	return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
 func (s *Server) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {

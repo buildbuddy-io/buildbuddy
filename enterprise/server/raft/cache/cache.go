@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -32,8 +31,6 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -246,21 +243,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.apiServer = apiServer
 	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
 
-	// grpcServer is responsible for presenting an API to manage raft nodes
-	// on each host, as well as an API to shuffle data around between nodes,
-	// outside of raft.
-	grpcServer := grpc.NewServer()
-	reflection.Register(grpcServer)
-	rfspb.RegisterApiServer(grpcServer, rc.apiServer)
-
-	lis, err := net.Listen("tcp", rc.grpcAddress)
-	if err != nil {
+	if err := rc.apiServer.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}
-	go func() {
-		grpcServer.Serve(lis)
-	}()
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 
 	// Register us to get callbacks and broadcast some basic tags.
 	rc.gossipManager.AddBroker(rc)
@@ -276,6 +261,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.gossipManager.AddBroker(clusterStarter)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return rc.Stop()
+	})
 	return rc, nil
 }
 
@@ -292,7 +280,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	}).ToProto()
 
 	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
-		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Replica: rd,
 			Batch:   readReq,
 		})
@@ -336,7 +324,25 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return nil, nil
+	fileRecord, err := rc.makeFileRecord(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	fileKey := []byte(d.GetHash()) // TODO(tylerw): use fileRecord.Key()?
+	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, peer := range peers {
+		r, err := rc.apiClient.RemoteReader(ctx, peer, fileRecord, offset)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return r, nil
+	}
+	return nil, lastErr
 }
 
 type raftWriteCloser struct {
@@ -395,8 +401,9 @@ func (rc *RaftCache) MemberEvent(updateType serf.EventType, member *serf.Member)
 
 func (rc *RaftCache) Stop() error {
 	rc.nodeHost.Stop()
-	rc.gossipManager.Leave()
+	//rc.gossipManager.Leave() // makes testing slow, do we need this?
 	rc.gossipManager.Shutdown()
+	rc.apiServer.Shutdown(context.Background())
 	return nil
 }
 

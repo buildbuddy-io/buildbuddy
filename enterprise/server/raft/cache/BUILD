@@ -22,7 +22,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/network",
         "//server/util/prefix",
@@ -35,8 +34,6 @@ go_library(
         "@com_github_lni_dragonboat_v3//logger",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_lni_dragonboat_v3//statemachine",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//reflection",
     ],
 )
 
@@ -45,6 +42,7 @@ go_test(
     srcs = ["cache_test.go"],
     deps = [
         ":cache",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/app",
         "//server/testutil/testauth",
@@ -55,5 +53,6 @@ go_test(
         "//server/util/prefix",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
