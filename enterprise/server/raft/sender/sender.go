@@ -56,9 +56,12 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Errorf("Error getting api conn: %s", err)
 			continue
 		}
-		batchReq := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+		batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 			Left: keys.RangeMetaKey(key),
 		}).ToProto()
+		if err != nil {
+			return nil, err
+		}
 		rsp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Replica: replica,
 			Batch:   batchReq,
@@ -66,9 +69,9 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 		if err != nil {
 			continue
 		}
-		scanRsp := rbuilder.NewBatchResponse(rsp).ScanResponse(0)
-		if scanRsp == nil {
-			log.Errorf("empty scan response: %+v", rsp)
+		scanRsp, err := rbuilder.NewBatchResponse(rsp).ScanResponse(0)
+		if err != nil {
+			log.Errorf("Error reading scan response: %s", err)
 			continue
 		}
 		for _, kv := range scanRsp.GetKvs() {

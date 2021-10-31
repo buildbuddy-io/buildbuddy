@@ -164,15 +164,24 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		}
 	}
 
+	setupTimeBuf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.InitClusterSetupTimeKey,
+			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+		},
+	}).ToBuf()
+	if err != nil {
+		return err
+	}
+
 	proposedFirstVal := false
-	var err error
 	for !proposedFirstVal {
 		select {
 		case <-ctx.Done():
 			return err
 		case <-time.After(100 * time.Millisecond):
 			sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
-			_, err = cs.nodeHost.SyncPropose(ctx, sesh, setupTimeVal())
+			_, err = cs.nodeHost.SyncPropose(ctx, sesh, setupTimeBuf)
 			if err == nil {
 				proposedFirstVal = true
 			}
@@ -185,7 +194,17 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID uint64) error {
 	// Set the last cluster ID to 1
 	sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, rbuilder.IncrementBuf(constants.LastClusterIDKey, 1)); err != nil {
+
+	reqBuf, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   constants.LastClusterIDKey,
+		Delta: 1,
+	}).ToBuf()
+
+	if err != nil {
+		return err
+	}
+
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, reqBuf); err != nil {
 		return err
 	}
 
@@ -204,7 +223,7 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 			NodeId:    nodeID,
 		})
 	}
-	buf, err := proto.Marshal(rangeDescriptor)
+	rdBuf, err := proto.Marshal(rangeDescriptor)
 	if err != nil {
 		return err
 	}
@@ -213,26 +232,22 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
-			Value: buf,
+			Value: rdBuf,
 		},
 	})
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeKey,
-			Value: buf,
+			Value: rdBuf,
 		},
 	})
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, batch.ToBuf()); err != nil {
+	reqBuf, err = batch.ToBuf()
+	if err != nil {
+		return err
+	}
+
+	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, reqBuf); err != nil {
 		return err
 	}
 	return nil
-}
-
-func setupTimeVal() []byte {
-	return rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.InitClusterSetupTimeKey,
-			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-		},
-	}).ToBuf()
 }

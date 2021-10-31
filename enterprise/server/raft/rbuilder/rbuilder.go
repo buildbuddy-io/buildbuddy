@@ -1,7 +1,7 @@
 package rbuilder
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -9,41 +9,28 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-// TODO(tylerw): find a more elegant way of dealing with these kinds
-// of errors.
-func MustMarshal(m proto.Message) []byte {
-	buf, err := proto.Marshal(m)
-	if err != nil {
-		log.Errorf("Error marshaling proto: %s", err)
-		return nil
-	}
-	return buf
-}
-
-func MustUnmarshal(rsp interface{}, m proto.Message) {
-	buf, ok := rsp.([]byte)
-	if !ok {
-		log.Errorf("Could not coerce value to []byte.")
-		return
-	}
-	if err := proto.Unmarshal(buf, m); err != nil {
-		log.Errorf("Error unmarshaling proto: %s", err)
-	}
-}
-
 type BatchBuilder struct {
 	cmd *rfpb.BatchCmdRequest
+	err error
 }
 
 func NewBatchBuilder() *BatchBuilder {
 	return &BatchBuilder{
 		cmd: &rfpb.BatchCmdRequest{},
+		err: nil,
 	}
 }
 
-func (b *BatchBuilder) Add(m proto.Message) *BatchBuilder {
-	if b.cmd == nil {
-		b.cmd = &rfpb.BatchCmdRequest{}
+func (bb *BatchBuilder) setErr(err error) {
+	if bb.err != nil {
+		return
+	}
+	bb.err = err
+}
+
+func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
+	if bb.cmd == nil {
+		bb.cmd = &rfpb.BatchCmdRequest{}
 	}
 
 	req := &rfpb.RequestUnion{}
@@ -69,93 +56,76 @@ func (b *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 			Scan: value,
 		}
 	default:
-		log.Errorf("BatchBuilder.Add handling for %+v not implemented.", m)
-		return b
+		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
+		return bb
 	}
 
-	b.cmd.Union = append(b.cmd.Union, req)
-	return b
+	bb.cmd.Union = append(bb.cmd.Union, req)
+	return bb
 }
 
-func (b *BatchBuilder) ToProto() *rfpb.BatchCmdRequest {
-	return b.cmd
+func (bb *BatchBuilder) ToProto() (*rfpb.BatchCmdRequest, error) {
+	if bb.err != nil {
+		return nil, bb.err
+	}
+	return bb.cmd, nil
 }
 
-func (b *BatchBuilder) ToBuf() []byte {
-	return MustMarshal(b.cmd)
+func (bb *BatchBuilder) ToBuf() ([]byte, error) {
+	if bb.err != nil {
+		return nil, bb.err
+	}
+	return proto.Marshal(bb.cmd)
 }
 
 type BatchResponse struct {
 	cmd *rfpb.BatchCmdResponse
+	err error
+}
+
+func (br *BatchResponse) setErr(err error) {
+	if br.err != nil {
+		return
+	}
+	br.err = err
 }
 
 func NewBatchResponse(val interface{}) *BatchResponse {
-	cmd := &rfpb.BatchCmdResponse{}
-	MustUnmarshal(val, cmd)
-	return &BatchResponse{
-		cmd: cmd,
+	br := &BatchResponse{
+		cmd: &rfpb.BatchCmdResponse{},
+	}
+
+	buf, ok := val.([]byte)
+	if !ok {
+		br.setErr(status.FailedPreconditionError("Could not coerce value to []byte."))
+	}
+	if err := proto.Unmarshal(buf, br.cmd); err != nil {
+		br.setErr(err)
+	}
+
+	return br
+}
+
+func (br *BatchResponse) checkIndex(n int) {
+	if n >= len(br.cmd.GetUnion()) {
+		br.setErr(status.FailedPreconditionErrorf("batch did not contain %d elements", n))
 	}
 }
 
-func (r *BatchResponse) DirectReadResponse(n int) *rfpb.DirectReadResponse {
-	if n >= len(r.cmd.GetUnion()) {
-		return nil
+func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
 	}
-	return r.cmd.GetUnion()[n].GetDirectRead()
+	return br.cmd.GetUnion()[n].GetDirectRead(), nil
 }
 
-func (r *BatchResponse) ScanResponse(n int) *rfpb.ScanResponse {
-	if n >= len(r.cmd.GetUnion()) {
-		return nil
+func (br *BatchResponse) ScanResponse(n int) (*rfpb.ScanResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
 	}
-	return r.cmd.GetUnion()[n].GetScan()
-}
-
-func DirectWriteRequestBuf(kv *rfpb.KV) []byte {
-	return MustMarshal(&rfpb.RequestUnion{
-		Value: &rfpb.RequestUnion_DirectWrite{
-			DirectWrite: &rfpb.DirectWriteRequest{
-				Kv: kv,
-			},
-		},
-	})
-}
-
-func DirectReadRequestBuf(key []byte) []byte {
-	return MustMarshal(&rfpb.RequestUnion{
-		Value: &rfpb.RequestUnion_DirectRead{
-			DirectRead: &rfpb.DirectReadRequest{
-				Key: key,
-			},
-		},
-	})
-}
-
-func DirectReadResponse(val interface{}) *rfpb.KV {
-	rsp := &rfpb.ResponseUnion{}
-	MustUnmarshal(val, rsp)
-	return rsp.GetDirectRead().GetKv()
-}
-
-func FileWriteRequestBuf(fileRecord *rfpb.FileRecord) []byte {
-	return MustMarshal(&rfpb.RequestUnion{
-		Value: &rfpb.RequestUnion_FileWrite{
-			FileWrite: &rfpb.FileWriteRequest{
-				FileRecord: fileRecord,
-			},
-		},
-	})
-}
-
-func IncrementBuf(key []byte, delta uint64) []byte {
-	return MustMarshal(&rfpb.RequestUnion{
-		Value: &rfpb.RequestUnion_Increment{
-			Increment: &rfpb.IncrementRequest{
-				Key:   key,
-				Delta: delta,
-			},
-		},
-	})
+	return br.cmd.GetUnion()[n].GetScan(), nil
 }
 
 func ResponseUnion(result dbsm.Result, err error) (*rfpb.ResponseUnion, error) {

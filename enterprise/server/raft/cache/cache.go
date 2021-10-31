@@ -275,10 +275,12 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	defer cancel()
 
 	key := constants.InitClusterSetupTimeKey
-	readReq := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
 	}).ToProto()
-
+	if err != nil {
+		return err
+	}
 	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
 		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Replica: rd,
@@ -374,9 +376,12 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	}
 
 	rwc := &raftWriteCloser{mwc, func() error {
-		writeReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
 			FileRecord: fileRecord,
 		}).ToProto()
+		if err != nil {
+			return err
+		}
 		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
 			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Replica: rd,
