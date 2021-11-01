@@ -21,5 +21,8 @@ actions:
       push:
         branches:
           - "master"
+      pull_request:
+        branches:
+          - "master"
     bazel_commands:
       - test //... --config=workflows --test_tag_filters=+webdriver
