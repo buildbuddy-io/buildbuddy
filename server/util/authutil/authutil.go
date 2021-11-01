@@ -31,8 +31,8 @@ func AuthorizeGroupRole(u interfaces.UserInfo, groupID string, allowedRoles role
 	return nil
 }
 
-// EffectiveGroup returns the group ID effective for the request context, given
-// an authenticated user.
+// EffectiveGroup returns the group membership effective for the request
+// context, given an authenticated user.
 func EffectiveGroup(ctx context.Context, u interfaces.UserInfo) (*interfaces.GroupMembership, error) {
 	// u.GetGroupID() will be non-empty for API key auth (gRPC-based) if
 	// authentication was successful (which it should be, since we have a valid
