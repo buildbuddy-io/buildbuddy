@@ -153,5 +153,5 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 		}
 		return lastErr
 	}
-	return status.UnavailableErrorf("Run failed. (%d attempts)", len(rangeDescriptor.GetReplicas()))
+	return status.UnavailableErrorf("Run failed. (%d attempts): %s", len(rangeDescriptor.GetReplicas()), lastErr)
 }
