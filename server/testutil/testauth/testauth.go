@@ -71,6 +71,8 @@ func (c *TestUser) GetUseGroupOwnedExecutors() bool {
 
 // TestUsers creates a map of test users from arguments of the form:
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN
+//
+// All users are created with Admin role within each group, to ease testing of admin-only APIs.
 func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	if len(vals)%2 != 0 {
 		log.Errorf("You're calling TestUsers wrong!")
@@ -84,7 +86,7 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 			u.GroupID = val
 			u.AllowedGroups = []string{val}
 			u.GroupMemberships = []*interfaces.GroupMembership{
-				{GroupID: val, Role: role.Default},
+				{GroupID: val, Role: role.Admin},
 			}
 			u.Capabilities = capabilities.DefaultAuthenticatedUserCapabilities
 			testUsers[u.UserID] = u
