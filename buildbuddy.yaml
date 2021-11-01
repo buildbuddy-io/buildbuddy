@@ -25,4 +25,6 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+webdriver
+      # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/958):
+      # See if we can remove --remote_download_outputs=toplevel
+      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
