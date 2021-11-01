@@ -35,7 +35,7 @@ const (
 	numReadWorkers = 16
 )
 
-func getEventLogPathFromInvocationId(invocationId string) string {
+func GetEventLogPathFromInvocationId(invocationId string) string {
 	return invocationId + "/chunks/log/eventlog"
 }
 
@@ -52,7 +52,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
-	eventLogPath := getEventLogPathFromInvocationId(req.InvocationId)
+	eventLogPath := GetEventLogPathFromInvocationId(req.InvocationId)
 
 	// Get the id of the last chunk on disk after the last id stored in the db
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
@@ -269,7 +269,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 }
 
 func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string) *EventLogWriter {
-	eventLogPath := getEventLogPathFromInvocationId(invocationId)
+	eventLogPath := GetEventLogPathFromInvocationId(invocationId)
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}

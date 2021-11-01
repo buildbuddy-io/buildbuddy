@@ -761,3 +761,8 @@ ts_proto_library(
     name = "remote_execution_ts_proto",
     proto = ":remote_execution_proto",
 )
+
+ts_proto_library(
+    name = "runner_ts_proto",
+    proto = ":runner_proto",
+)

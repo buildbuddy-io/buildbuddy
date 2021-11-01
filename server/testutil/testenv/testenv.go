@@ -44,6 +44,7 @@ app:
 database:
   data_source: "sqlite3://:memory:"
 storage:
+  enable_chunked_event_logs: true
   disk:
     root_directory: "{{.TestRootDir}}/storage"
 cache:
