@@ -51,7 +51,7 @@ def go_web_test_suite(
     wrapped_test_name = name + "_wrapped_test"
 
     exec_properties = {
-        "container-image": "docker://gcr.io/flame-public/rbe-webdriver@sha256:4d8f50903122f52b44042827ce07c9f2b4f688d840df0c94f5ce7bf0cd9dfcf1",
+        "container-image": "docker://marketplace.gcr.io/google/rbe-ubuntu16-04-webtest@sha256:0b8fa87db4b8e5366717a7164342a029d1348d2feea7ecc4b18c780bc2507059",
     }
 
     go_test(
