@@ -8,11 +8,23 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows
+      - test //... --config=workflows --test_tag_filters=-performance,-webdriver
   - name: Benchmark
     triggers:
       push:
         branches:
           - "master"
     bazel_commands:
-      - test //enterprise/server/test/performance/cache:cache_test --config=workflows
+      - test //... --config=workflows --test_tag_filters=+performance
+  - name: Browser tests
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/958):
+      # See if we can remove --remote_download_outputs=toplevel
+      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver

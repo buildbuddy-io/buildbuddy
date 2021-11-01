@@ -229,6 +229,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.24.3",
     )
     go_repository(
+        name = "com_github_bazelbuild_rules_webtesting",
+        importpath = "github.com/bazelbuild/rules_webtesting",
+        sum = "h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=",
+        version = "v0.2.0",
+    )
+
+    go_repository(
         name = "com_github_beevik_etree",
         importpath = "github.com/beevik/etree",
         sum = "h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=",
@@ -344,6 +351,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/BurntSushi/xgb",
         sum = "h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=",
         version = "v0.0.0-20160522181843-27f122750802",
+    )
+    go_repository(
+        name = "com_github_burntsushi_xgbutil",
+        importpath = "github.com/BurntSushi/xgbutil",
+        sum = "h1:4ZrkT/RzpnROylmoQL57iVUL57wGKTR5O6KpVnbm2tA=",
+        version = "v0.0.0-20160919175755-f7c97cef3b4e",
     )
 
     go_repository(
@@ -1464,6 +1477,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=",
         version = "v17.0.0+incompatible",
     )
+    go_repository(
+        name = "com_github_google_go_github_v27",
+        importpath = "github.com/google/go-github/v27",
+        sum = "h1:N/EEqsvJLgqTbepTiMBz+12KhwLovv6YvwpRezd+4Fg=",
+        version = "v27.0.4",
+    )
+
     go_repository(
         name = "com_github_google_go_querystring",
         importpath = "github.com/google/go-querystring",
@@ -3082,6 +3102,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:Xr9gkxfOP0KQWXKNqmwe8vEeSUiUj4Rlee9CMVX2ZUQ=",
         version = "v0.0.0-20200416190851-d7f85be797a2",
     )
+    go_repository(
+        name = "com_github_tebeka_selenium",
+        importpath = "github.com/tebeka/selenium",
+        sum = "h1:cNziB+etNgyH/7KlNI7RMC1ua5aH1+5wUlFQyzeMh+w=",
+        version = "v0.9.9",
+    )
+
     go_repository(
         name = "com_github_tetafro_godot",
         importpath = "github.com/tetafro/godot",

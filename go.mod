@@ -91,8 +91,10 @@ require (
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
+	github.com/bazelbuild/rules_webtesting v0.2.0 // indirect
 	github.com/beevik/etree v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/containerd/continuity v0.1.0 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
@@ -162,6 +164,7 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/russellhaering/goxmldsig v1.1.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
+	github.com/tebeka/selenium v0.9.9 // indirect
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	github.com/willf/bitset v1.1.11 // indirect
 	github.com/xanzy/ssh-agent v0.2.1 // indirect
