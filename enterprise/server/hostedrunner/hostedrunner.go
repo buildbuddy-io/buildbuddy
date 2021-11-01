@@ -49,7 +49,6 @@ func New(env environment.Env) (*runnerService, error) {
 }
 
 func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
-	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
 	auth := r.env.GetAuthenticator()
 	if auth == nil {
 		return "", status.FailedPreconditionError("Auth was not configured but is required")
@@ -62,6 +61,7 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
 	q.AddWhereClause("group_id = ?", group.GroupID)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
@@ -139,7 +139,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
 				{Name: "container-image", Value: runnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
+				// {Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
 				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
 			},

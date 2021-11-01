@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 // AuthorizeGroupRole checks whether the given user has any of the allowed roles
