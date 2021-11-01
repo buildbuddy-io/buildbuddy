@@ -287,8 +287,3 @@ browser_repositories(chromium = True)
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
 
 web_test_go_repositories()
-
-buildbuddy(
-    name = "buildbuddy_webdriver_toolchain",
-    docker_image = "docker://gcr.io/flame-public/rbe-webdriver@sha256:d7cf2332429dc2fca3fea127e18683129e44061ff04734bdc06392238ee6c1d7",
-)

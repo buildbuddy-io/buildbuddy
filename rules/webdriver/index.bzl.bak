@@ -1,0 +1,75 @@
+# Based on
+# https://github.com/bazelbuild/rules_webtesting/blob/6b47a3f11b7f302c2620a3552cf8eea8855e8c9e/web/internal/wrap_web_test_suite.bzl
+#
+# Differences:
+# - Set exec_properties on the web_test_suite to ensure selenium deps are installed
+# - Set tags to defaults that make sense for our use case
+# - shard_count is a required arg
+
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@io_bazel_rules_webtesting//web:web.bzl", "web_test_suite")
+
+DEFAULT_WRAPPED_TEST_TAGS = ("manual", "noci")
+
+DEFAULT_TEST_SUITE_TAGS = ("manual",)
+
+def go_web_test_suite(
+        name,
+        shard_count,
+        browsers = None,
+        args = None,
+        browser_overrides = None,
+        config = None,
+        flaky = None,
+        local = None,
+        size = None,
+        tags = None,
+        test_suite_tags = DEFAULT_TEST_SUITE_TAGS,
+        timeout = None,
+        visibility = None,
+        web_test_data = None,
+        wrapped_test_tags = DEFAULT_WRAPPED_TEST_TAGS,
+        **kwargs):
+    browsers = browsers or [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ]
+    tags = tags or ["browser", "native"]
+    size = size or "large"
+    wrapped_test_name = name + "_wrapped_test"
+
+    go_test(
+        name = wrapped_test_name,
+        args = args,
+        flaky = flaky,
+        local = local,
+        shard_count = shard_count,
+        size = size,
+        tags = wrapped_test_tags,
+        timeout = timeout,
+        visibility = ["//visibility:private"],
+        # exec_properties = {
+        #     "container-image": "docker://gcr.io/flame-public/rbe-webdriver@sha256:6ffc95cbcc6435316990e9dcd46c49741e2f8bf9e8f6e490169ef1797a9cee9f",
+        # },
+        **kwargs
+    )
+
+    web_test_suite(
+        name = name,
+        args = args,
+        browsers = browsers,
+        browser_overrides = browser_overrides,
+        config = config,
+        data = web_test_data,
+        flaky = flaky,
+        local = local,
+        shard_count = shard_count,
+        size = size,
+        tags = tags,
+        test = wrapped_test_name,
+        test_suite_tags = test_suite_tags,
+        timeout = timeout,
+        visibility = visibility,
+        exec_properties = {
+            "container-image": "docker://gcr.io/flame-public/rbe-webdriver@sha256:6ffc95cbcc6435316990e9dcd46c49741e2f8bf9e8f6e490169ef1797a9cee9f",
+        },
+    )

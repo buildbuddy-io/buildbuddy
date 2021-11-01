@@ -8,21 +8,18 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows
+      - test //... --config=workflows --test_tag_filters=-performance,-webdriver
   - name: Benchmark
     triggers:
       push:
         branches:
           - "master"
     bazel_commands:
-      - test //enterprise/server/test/performance/cache:cache_test --config=workflows
+      - test //... --config=workflows --test_tag_filters=+performance
   - name: Browser tests
     triggers:
       push:
         branches:
           - "master"
     bazel_commands:
-      - >-
-        test --config=workflows-webdriver
-        //server/test/webdriver/setup:setup_test
-        //server/test/webdriver/invocation:invocation_test
+      - test //... --config=workflows --test_tag_filters=+webdriver
