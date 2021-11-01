@@ -139,7 +139,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
 				{Name: "container-image", Value: runnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
-				// {Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
 				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
 			},
