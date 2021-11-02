@@ -56,16 +56,16 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
 	c.DeleteBlob(ctx, blobName)
 	w := c.Writer(ctx, blobName, nil)
-	bytesWritten, err := w.Write(data)
+	bytesWritten, err := w.Write(ctx, data)
 	if err != nil {
 		return bytesWritten, err
 	}
-	bytesFlushed, err := w.Flush()
+	bytesFlushed, err := w.Flush(ctx)
 	if err != nil {
 		return bytesWritten + bytesFlushed, err
 	}
 
-	return bytesWritten + bytesFlushed, w.Close()
+	return bytesWritten + bytesFlushed, w.Close(ctx)
 }
 
 func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -381,7 +381,6 @@ type ChunkstoreWriterOptions struct {
 }
 
 type ChunkstoreWriter struct {
-	ctx                  context.Context
 	writeChannel         chan *WriteRequest
 	writeResultChannel   chan *WriteResult
 	blobName             string
@@ -412,42 +411,39 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	}
 }
 
-func (w *ChunkstoreWriter) GetLastChunkIndex() uint16 {
+func (w *ChunkstoreWriter) GetLastChunkIndex(ctx context.Context) uint16 {
 	// Call Write with an empty buffer to update lastChunkIndex without triggering
 	// an actual write to blobstore, which lets us get an updated index in case a
 	// timeout-based flush has happened between now and the last call to Write.
-	w.Write([]byte{})
+	w.Write(ctx, []byte{})
 	return w.lastChunkIndex
 }
 
-func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
-	return w.WriteWithTail(p, []byte{})
+func (w *ChunkstoreWriter) Write(ctx context.Context, p []byte) (int, error) {
+	return w.WriteWithTail(ctx, p, []byte{})
 }
 
-func (w *ChunkstoreWriter) WriteWithTail(p []byte, tail []byte) (int, error) {
+func (w *ChunkstoreWriter) WriteWithTail(ctx context.Context, p []byte, tail []byte) (int, error) {
 	if w.closed {
 		return 0, nil
 	}
-	w.writeChannel <- &WriteRequest{ctx: w.ctx, Chunk: p, VolatileTail: tail}
+	w.writeChannel <- &WriteRequest{ctx: ctx, Chunk: p, VolatileTail: tail}
 	return w.readFromWriteResultChannel()
 }
 
-func (w *ChunkstoreWriter) Flush() (int, error) {
-	return w.Write(nil)
+func (w *ChunkstoreWriter) Flush(ctx context.Context) (int, error) {
+	return w.Write(ctx, nil)
 }
 
-func (w *ChunkstoreWriter) Close() error {
+func (w *ChunkstoreWriter) Close(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
+	w.Flush(ctx)
 	close(w.writeChannel)
 	_, err := w.readFromWriteResultChannel()
 	w.closed = true
 	return err
-}
-
-func (w *ChunkstoreWriter) SetContext(ctx context.Context) {
-	w.ctx = ctx
 }
 
 type writeLoop struct {
@@ -594,7 +590,6 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 	}
 
 	writer := &ChunkstoreWriter{
-		ctx:                  ctx,
 		blobName:             blobName,
 		writeChannel:         make(chan *WriteRequest),
 		writeResultChannel:   make(chan *WriteResult),

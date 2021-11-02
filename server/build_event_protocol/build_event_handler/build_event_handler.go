@@ -459,11 +459,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
-		e.logWriter.SetContext(ctx)
-		if err := e.logWriter.Close(); err != nil {
+		if err := e.logWriter.Close(ctx); err != nil {
 			return err
 		}
-		invocation.LastChunkId = e.logWriter.GetLastChunkId()
+		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
@@ -615,7 +614,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if e.logWriter != nil {
-			ti.LastChunkId = e.logWriter.GetLastChunkId()
+			ti.LastChunkId = e.logWriter.GetLastChunkId(e.ctx)
 		}
 		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
 			return err
@@ -662,8 +661,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
-			e.logWriter.Write([]byte(p.Progress.Stderr))
-			e.logWriter.Write([]byte(p.Progress.Stdout))
+			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
+			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
 			// For now, write logs to both chunks and the invocation proto
 			// p.Progress.Stderr = ""
 			// p.Progress.Stdout = ""
@@ -712,7 +711,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	if e.logWriter != nil {
-		invocationProto.LastChunkId = e.logWriter.GetLastChunkId()
+		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
