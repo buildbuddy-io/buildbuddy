@@ -459,6 +459,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
+		e.logWriter.SetContext(ctx)
 		if err := e.logWriter.Close(); err != nil {
 			return err
 		}
@@ -471,7 +472,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 
-	e.statsRecorder.Enqueue(e.ctx, invocation)
+	e.statsRecorder.Enqueue(ctx, invocation)
 	return nil
 }
 

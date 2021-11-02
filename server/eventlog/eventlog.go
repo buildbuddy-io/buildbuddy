@@ -273,9 +273,9 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
-	var writeHook func(writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, timeout, open bool)
+	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, open bool)
 	if c != nil {
-		writeHook = func(writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, timeout, open bool) {
+		writeHook = func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, open bool) {
 			if !open {
 				keyval.SetProto(ctx, c, eventLogPath, nil)
 				return
@@ -319,6 +319,10 @@ type EventLogWriter struct {
 
 func (w *EventLogWriter) GetLastChunkId() string {
 	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex())
+}
+
+func (w *EventLogWriter) SetContext(ctx context.Context) {
+	w.chunkstoreWriter.SetContext(ctx)
 }
 
 type WriteWithTailCloser interface {
