@@ -215,7 +215,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
 	}
-	if err := r.PrepareForTask(ctx, task); err != nil {
+	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
 	}
 

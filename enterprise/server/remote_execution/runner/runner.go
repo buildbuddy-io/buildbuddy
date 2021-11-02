@@ -146,6 +146,8 @@ type CommandRunner struct {
 	// VFSServer holds the RPC server that serves FUSE filesystem requests.
 	VFSServer *vfs_server.Server
 
+	// task is the current task assigned to the runner.
+	task *repb.ExecutionTask
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -168,8 +170,8 @@ func (r *CommandRunner) pullCredentials() container.PullCredentials {
 	return container.GetPullCredentials(r.env, r.PlatformProperties)
 }
 
-func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
-	r.Workspace.SetTask(task)
+func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
+	r.Workspace.SetTask(r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
@@ -410,6 +412,13 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 			"stats_failed",
 		}
 	}
+	// If memory usage stats are not implemented, fall back to the task size
+	// estimate.
+	if stats.MemoryUsageBytes == 0 {
+		estimate := tasksize.Estimate(r.task.GetCommand())
+		stats.MemoryUsageBytes = estimate.GetEstimatedMemoryBytes()
+	}
+
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
 		return &labeledError{
 			RunnerMaxMemoryExceeded,
@@ -433,17 +442,16 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.pausedRunnerCount() >= p.maxRunnerCount {
-		if p.maxRunnerCount <= 0 {
-			return &labeledError{
-				status.InternalError("pool max runner count is <= 0; this should never happen"),
-				"max_runner_count_zero",
-			}
+	if p.maxRunnerCount <= 0 {
+		return &labeledError{
+			status.InternalError("pool max runner count is <= 0; this should never happen"),
+			"max_runner_count_zero",
 		}
+	}
+
+	for p.pausedRunnerCount() >= p.maxRunnerCount ||
+		p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
 		// Evict the oldest (first) paused runner to make room for the new one.
-		// Note the two conditionals above imply that
-		// p.pausedRunnerCount() >= p.maxRunnerCount > 0, so there's now at least
-		// 1 paused runner in the list that can be evicted.
 		evictIndex := -1
 		for i, r := range p.runners {
 			if r.state == paused {
@@ -625,6 +633,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 		if r != nil {
 			log.Info("Reusing workspace for task.")
+			r.task = task
 			r.PlatformProperties = props
 			return r, nil
 		}
@@ -669,6 +678,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		env:                p.env,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
+		task:               task,
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
@@ -813,6 +823,16 @@ func (p *Pool) pausedRunnerCount() int {
 		}
 	}
 	return n
+}
+
+func (p *Pool) pausedRunnerMemoryUsageBytes() int64 {
+	b := int64(0)
+	for _, r := range p.runners {
+		if r.state == paused {
+			b += r.memoryUsageBytes
+		}
+	}
+	return b
 }
 
 // Shutdown removes all runners from the pool and prevents new ones from
