@@ -73,7 +73,7 @@ const (
 	defaultRunnerDiskSizeLimitBytes = 16e9
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
-	defaultRunnerMemoryLimitBytes = 9e9
+	defaultRunnerMemoryLimitBytes = tasksize.WorkflowMemEstimate
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
