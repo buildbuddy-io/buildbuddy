@@ -68,7 +68,7 @@ func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
 }
 
 func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string) *inpb.Invocation {
-	for {
+	for delay := 50 * time.Millisecond; delay < 120*time.Second; delay *= 2 {
 		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
 			RequestContext: reqCtx,
 			Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
@@ -83,8 +83,10 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 			return inv
 		}
 
-		<-time.After(50 * time.Millisecond)
+		time.Sleep(delay)
 	}
+	require.FailNowf(t, "timeout", "Test timed out waiting for invocation %q to complete", invocationID)
+	return nil
 }
 
 func actionCount(t *testing.T, inv *inpb.Invocation) int {

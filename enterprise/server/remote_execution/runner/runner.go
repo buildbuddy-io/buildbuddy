@@ -71,6 +71,9 @@ const (
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	defaultRunnerDiskSizeLimitBytes = 16e9
+	// How much memory a runner is allowed to use before we decide that it
+	// can't be added to the pool and must be cleaned up instead.
+	defaultRunnerMemoryLimitBytes = 9e9
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
@@ -941,7 +944,10 @@ func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
 
 	mem := cfg.MaxRunnerMemoryUsageBytes
 	if mem == 0 {
-		mem = int64(float64(totalRAMBytes) / float64(count))
+		mem = defaultRunnerMemoryLimitBytes
+		if mem > totalRAMBytes {
+			mem = totalRAMBytes
+		}
 	} else if mem < 0 {
 		// < 0 means no limit.
 		mem = math.MaxInt64
