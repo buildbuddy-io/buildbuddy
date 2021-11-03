@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -395,8 +397,11 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		fmt.Sprintf("--action_name=%s", req.GetActionName()),
 		fmt.Sprintf("--invocation_id=%s", invocationID),
 	}
-
-	executionID, err := ws.executeWorkflow(ctx, wf, wd, extraCIRunnerArgs)
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
+	if err != nil {
+		return nil, err
+	}
+	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, extraCIRunnerArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -671,10 +676,10 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	return k, nil
 }
 
-func (ws *workflowService) parseRequest(r *http.Request) (*interfaces.WebhookData, error) {
+func (ws *workflowService) gitProviderForRequest(r *http.Request) (interfaces.GitProvider, error) {
 	for _, provider := range ws.env.GetGitProviders() {
 		if provider.MatchWebhookRequest(r) {
-			return provider.ParseWebhookData(r)
+			return provider, nil
 		}
 	}
 	return nil, status.UnimplementedErrorf("failed to classify Git provider from webhook request: %+v", r)
@@ -693,12 +698,33 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 	return nil
 }
 
+// fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
+// default BuildBuddyConfig if one is not set up.
+func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, key *tables.APIKey, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
+	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, webhookData.SHA)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			appConf := ws.env.GetConfigurator()
+			return config.GetDefault(
+				webhookData.TargetBranch, appConf.GetAppEventsAPIURL(),
+				appConf.GetAppBuildBuddyURL()+"/invocation/", key.Value,
+			), nil
+		}
+		return nil, err
+	}
+	return config.NewConfig(bytes.NewReader(b))
+}
+
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
 	ctx := r.Context()
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
-	webhookData, err := ws.parseRequest(r)
+	gitProvider, err := ws.gitProviderForRequest(r)
+	if err != nil {
+		return err
+	}
+	webhookData, err := gitProvider.ParseWebhookData(r)
 	if err != nil {
 		return err
 	}
@@ -709,18 +735,34 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	_, err = ws.executeWorkflow(ctx, wf, webhookData, nil /*=extraCIRunnerArgs*/)
-	return err
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
+	if err != nil {
+		return err
+	}
+	// Fetch the workflow config (buildbuddy.yaml) and start a CI runner execution
+	// for each action matching the webhook event.
+	cfg, err := ws.fetchWorkflowConfig(ctx, apiKey, gitProvider, wf, webhookData)
+	if err != nil {
+		return err
+	}
+	for _, action := range cfg.Actions {
+		if !config.MatchesAnyTrigger(action, webhookData.EventName, webhookData.TargetBranch) {
+			continue
+		}
+		extraCIRunnerArgs := []string{"--action_name=" + action.Name}
+		_, err := ws.executeWorkflow(ctx, apiKey, wf, webhookData, extraCIRunnerArgs)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, extraCIRunnerArgs []string) (string, error) {
-	key, err := ws.apiKeyForWorkflow(ctx, wf)
-	if err != nil {
-		return "", err
-	}
+func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, extraCIRunnerArgs []string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
-	if ctx, err = prefix.AttachUserPrefixToContext(ctx, ws.env); err != nil {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
+	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd)

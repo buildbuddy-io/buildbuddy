@@ -179,7 +179,16 @@ func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string {
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
-	ctx = context.WithValue(ctx, testAuthenticationHeader, a.testUsers[apiKey])
+	u := a.testUsers[apiKey]
+	ctx = context.WithValue(ctx, testAuthenticationHeader, u)
+	if u != nil {
+		jwt, err := TestJWTForUserID(u.GetUserID())
+		if err != nil {
+			log.Errorf("failed to create test JWT: %s", err)
+		} else {
+			ctx = context.WithValue(ctx, jwtHeader, jwt)
+		}
+	}
 	return ctx
 }
 

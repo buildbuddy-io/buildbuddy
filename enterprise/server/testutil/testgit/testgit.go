@@ -26,6 +26,8 @@ const (
 type FakeProvider struct {
 	RegisteredWebhookURL  string
 	UnregisteredWebhookID string
+	WebhookData           *interfaces.WebhookData
+	FileContents          map[string]string
 }
 
 func NewFakeProvider() *FakeProvider {
@@ -39,7 +41,10 @@ func (p *FakeProvider) MatchWebhookRequest(req *http.Request) bool {
 	return true
 }
 func (p *FakeProvider) ParseWebhookData(req *http.Request) (*interfaces.WebhookData, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	if p.WebhookData == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return p.WebhookData, nil
 }
 func (p *FakeProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
 	p.RegisteredWebhookURL = webhookURL
@@ -48,6 +53,13 @@ func (p *FakeProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL
 func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error {
 	p.UnregisteredWebhookID = webhookID
 	return nil
+}
+func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
+	contents, ok := p.FileContents[filePath]
+	if !ok {
+		return nil, status.NotFoundError("Not found")
+	}
+	return []byte(contents), nil
 }
 
 // MakeTempRepo initializes a Git repository with the given file contents, and
