@@ -154,7 +154,6 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 // root. If linking fails, it falls back to a slow copy.
 func (ws *Workspace) LinkCIRunner() error {
 	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
-	log.Infof("Provisioning CI runner to %s", destPath)
 	exists, err := disk.FileExists(destPath)
 	if err != nil {
 		return err
