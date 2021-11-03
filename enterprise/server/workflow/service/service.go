@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
