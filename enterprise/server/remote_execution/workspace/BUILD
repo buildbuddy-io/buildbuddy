@@ -8,7 +8,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/dirtools",
-        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
         "//proto:remote_execution_go_proto",
         "//server/environment",
