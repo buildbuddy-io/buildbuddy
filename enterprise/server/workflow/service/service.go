@@ -48,8 +48,6 @@ const (
 )
 
 var (
-	fetchWorkflowConfigBeforeExecution = flag.Bool("fetch_workflow_config_before_execution", false, "Whether to fetch the workflow config before executing the workflow and spawn the CI runner based on the workflow config.")
-
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 )
 
@@ -740,10 +738,6 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
-		return err
-	}
-	if !*fetchWorkflowConfigBeforeExecution {
-		_, err = ws.executeWorkflow(ctx, apiKey, wf, webhookData, nil /*=extraCIRunnerArgs*/)
 		return err
 	}
 	// Fetch the workflow config (buildbuddy.yaml) and start a CI runner execution

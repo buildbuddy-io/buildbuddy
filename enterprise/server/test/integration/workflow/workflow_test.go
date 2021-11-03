@@ -146,8 +146,6 @@ func (w *TestResponseWriter) Write(p []byte) (int, error) {
 }
 
 func TestCreateAndTriggerViaWebhook(t *testing.T) {
-	flags.Set(t, "fetch_workflow_config_before_execution", "true")
-
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
