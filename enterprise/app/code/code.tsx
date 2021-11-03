@@ -189,15 +189,32 @@ export default class CodeComponent extends React.Component<Props> {
       });
   }
 
+  getRemoteExecutorEndpoint() {
+    // TODO(siggisim): get the correct cross-environment value here.
+    return "remote.buildbuddy.dev";
+  }
+
+  getJobCount() {
+    return 200;
+  }
+  
+  getContainerImage() {
+    return "docker://gcr.io/flame-public/buildbuddy-ci-runner:latest";
+  }
+
+  getBazelFlags() {
+    return `--remote_executor=${this.getRemoteExecutorEndpoint()} --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
+  }
+
   handleBuildClicked() {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
     // TODO(siggisim): fill out more repo status
-    request.bazelCommand = "build //...";
+    request.bazelCommand = `build //... ${this.getBazelFlags()}`;
 
     rpcService.service.run(request).then((response: runner.RunResponse) => {
-      alert(response);
+      window.open(`/invocation/${response.invocationId}`,'_blank');
     }).catch((error: any) => {
       alert(error);
     });
@@ -208,10 +225,10 @@ export default class CodeComponent extends React.Component<Props> {
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
     // TODO(siggisim): fill out more repo status
-    request.bazelCommand = "test //...";
+    request.bazelCommand = "test //... ${this.getBazelFlags()}";
 
     rpcService.service.run(request).then((response: runner.RunResponse) => {
-      alert(response);
+      window.open(`/invocation/${response.invocationId}`,'_blank');
     }).catch((error: any) => {
       alert(error);
     });
