@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -544,26 +545,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-
-	runnerBinName := "buildbuddy_ci_runner"
-	runnerBinFile, err := runnerBinaryFile()
-	if err != nil {
-		return nil, err
-	}
-	runnerBinDigest, err := cachetools.UploadBytesToCAS(ctx, cache, instanceName, runnerBinFile)
-	if err != nil {
-		return nil, err
-	}
-	dir := &repb.Directory{
-		Files: []*repb.FileNode{
-			{
-				Name:         runnerBinName,
-				Digest:       runnerBinDigest,
-				IsExecutable: true,
-			},
-		},
-	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, dir)
+	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{})
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +561,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
-			"./" + runnerBinName,
+			// NOTE: The executor is responsible for making sure this
+			// buildbuddy_ci_runner binary exists at the workspace root. It does so
+			// whenever it sees the `workflow-id` platform property.
+			"./buildbuddy_ci_runner",
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
 			"--commit_sha=" + wd.SHA,

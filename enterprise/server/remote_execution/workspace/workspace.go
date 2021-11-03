@@ -4,17 +4,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -22,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -144,6 +149,46 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
+}
+
+// LinkCIRunner attempts to link the BuildBuddy CI runner into the workspace
+// root. If linking fails, it falls back to a slow copy.
+func (ws *Workspace) LinkCIRunner() error {
+	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
+	log.Infof("Provisioning CI runner to %s", destPath)
+	exists, err := disk.FileExists(destPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	srcPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
+	if err != nil {
+		return err
+	}
+	// Get the real path first, since the runfile may be a symlink.
+	realSrcPath, err := filepath.EvalSymlinks(srcPath)
+	if err != nil {
+		return err
+	}
+
+	if err := fastcopy.FastCopy(realSrcPath, destPath); err == nil {
+		return nil
+	}
+
+	srcFile, err := os.Open(realSrcPath)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0555)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+	_, err = io.Copy(destFile, srcFile)
+	return err
 }
 
 func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {

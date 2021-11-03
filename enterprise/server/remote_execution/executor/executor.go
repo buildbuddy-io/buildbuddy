@@ -266,12 +266,18 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	rxInfo := &dirtools.TransferInfo{}
-	// Don't download inputs if the FUSE-based filesystem is enabled.
+	// Don't download inputs or provision the CI runner if the FUSE-based
+	// filesystem is enabled.
 	// TODO(vadim): integrate VFS stats
 	if r.VFS == nil {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
 		if err != nil {
 			return finishWithErrFn(err)
+		}
+		if r.PlatformProperties.WorkflowID != "" {
+			if err := r.Workspace.LinkCIRunner(); err != nil {
+				return finishWithErrFn(err)
+			}
 		}
 	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
