@@ -363,6 +363,7 @@ type WriteRequest struct {
 	ctx          context.Context
 	Chunk        []byte
 	VolatileTail []byte
+	Close        bool
 }
 
 type WriteResult struct {
@@ -371,10 +372,11 @@ type WriteResult struct {
 	LastChunkIndex uint16
 	Timeout        bool
 	BytesFlushed   int
+	Close          bool
 }
 
 type ChunkstoreWriterOptions struct {
-	WriteHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte, bool)
+	WriteHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
 	NoSplitWrite         bool
@@ -390,24 +392,25 @@ type ChunkstoreWriter struct {
 }
 
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
-	for {
-		select {
-		case result, open := <-w.writeResultChannel:
-			if !open {
-				if !w.closed {
-					close(w.writeChannel)
-					w.closed = true
-				}
-				return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
+	select {
+	case result, open := <-w.writeResultChannel:
+		if !open || result.Close {
+			if !w.closed {
+				close(w.writeChannel)
+				w.closed = true
 			}
-			w.lastChunkIndex = result.LastChunkIndex
-			if result.Timeout {
-				continue
+			if result != nil && result.Err != nil {
+				return 0, result.Err
 			}
-			return result.Size, result.Err
-		case <-time.After(w.writeTimeoutDuration):
-			return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
+			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
+		w.lastChunkIndex = result.LastChunkIndex
+		if result.Timeout {
+			return w.readFromWriteResultChannel()
+		}
+		return result.Size, result.Err
+	case <-time.After(w.writeTimeoutDuration):
+		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
 
@@ -439,10 +442,11 @@ func (w *ChunkstoreWriter) Close(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
-	w.Flush(ctx)
-	close(w.writeChannel)
+	w.writeChannel <- &WriteRequest{ctx: ctx, Close: true}
 	_, err := w.readFromWriteResultChannel()
-	w.closed = true
+	if status.IsUnavailableError(err) {
+		return nil
+	}
 	return err
 }
 
@@ -450,7 +454,7 @@ type writeLoop struct {
 	writeResultChannel   chan *WriteResult
 	writeChannel         chan *WriteRequest
 	chunkstore           *Chunkstore
-	writeHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte, bool)
+	writeHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	blobName             string
 	writeBlockSize       int
 	writeTimeoutDuration time.Duration
@@ -485,7 +489,7 @@ func (l *writeLoop) run(ctx context.Context) {
 		// Get the write request for this iteration.
 		select {
 		case req, open = <-l.writeChannel:
-			if open {
+			if req != nil {
 				// We received a write request; update the context, chunk, and tail.
 				ctx = req.ctx
 				if req.Chunk == nil {
@@ -500,6 +504,9 @@ func (l *writeLoop) run(ctx context.Context) {
 				}
 				chunk = append(chunk, req.Chunk...)
 				lastWriteSize = len(req.Chunk)
+				if req.Close {
+					open = false
+				}
 			}
 		case <-time.After(time.Until(flushTime)):
 			// We timed out waiting for a write request. Flush the contents of the
@@ -560,12 +567,12 @@ func (l *writeLoop) run(ctx context.Context) {
 		// flush all the bytes, but they will still be buffered to be written after
 		// we return. Thus, any and all write failures are instead reported in the
 		// error object as opposed to reflected in the number of bytes written.
-		result := &WriteResult{Size: lastWriteSize, Err: err, LastChunkIndex: chunkIndex - 1, Timeout: timeout, BytesFlushed: bytesFlushed}
+		result := &WriteResult{Size: lastWriteSize, Err: err, LastChunkIndex: chunkIndex - 1, Timeout: timeout, BytesFlushed: bytesFlushed, Close: !open}
 		l.writeResultChannel <- result
 
 		if l.writeHook != nil {
 			// All work has been done for this write; trigger the writeHook
-			l.writeHook(ctx, req, result, chunk, volatileTail, open)
+			l.writeHook(ctx, req, result, chunk, volatileTail)
 		}
 	}
 	close(l.writeResultChannel)
@@ -580,7 +587,7 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 	if co != nil && co.WriteTimeoutDuration != 0 {
 		writeTimeoutDuration = co.WriteTimeoutDuration
 	}
-	var writeHook func(context.Context, *WriteRequest, *WriteResult, []byte, []byte, bool)
+	var writeHook func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	if co != nil {
 		writeHook = co.WriteHook
 	}
@@ -591,8 +598,8 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 
 	writer := &ChunkstoreWriter{
 		blobName:             blobName,
-		writeChannel:         make(chan *WriteRequest),
-		writeResultChannel:   make(chan *WriteResult),
+		writeChannel:         make(chan *WriteRequest, 2),
+		writeResultChannel:   make(chan *WriteResult, 2),
 		writeTimeoutDuration: writeTimeoutDuration,
 	}
 

@@ -273,10 +273,10 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
-	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, open bool)
+	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
 	if c != nil {
-		writeHook = func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, open bool) {
-			if !open {
+		writeHook = func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
+			if writeResult.Close {
 				keyval.SetProto(ctx, c, eventLogPath, nil)
 				return
 			}

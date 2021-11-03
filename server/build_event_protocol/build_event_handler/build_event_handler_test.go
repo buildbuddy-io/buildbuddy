@@ -483,7 +483,6 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	// Finalize the invocation
 	err = channel.FinalizeInvocation("test-invocation-id")
 	assert.NoError(t, err)
-	cancel()
 
 	// Make sure it gets finalized properly
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
@@ -567,7 +566,6 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	// Finalize the invocation
 	err = channel.FinalizeInvocation("test-invocation-id")
 	assert.NoError(t, err)
-	cancel()
 
 	// Make sure it gets finalized properly
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), "test-invocation-id")
