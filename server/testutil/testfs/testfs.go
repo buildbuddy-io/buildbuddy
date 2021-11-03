@@ -14,17 +14,42 @@ import (
 
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
-func MakeTempDir(t testing.TB) string {
-	tmpDir, err := os.MkdirTemp("", "buildbuddy-test-*")
+func MakeTempDir(t testing.TB, dir string) string {
+	if dir == "" {
+		dir = os.Getenv("TEST_TMPDIR")
+	}
+	tmpDir, err := os.MkdirTemp(dir, "buildbuddy-test-*")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
+		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
 	})
 	return tmpDir
+}
+
+func MakeTempFile(t testing.TB, dir, pattern string) string {
+	if dir == "" {
+		dir = os.Getenv("TEST_TMPDIR")
+	}
+	if pattern == "" {
+		pattern = "buildbuddy-test-*"
+	}
+	tmpFile, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		assert.FailNow(t, "failed to create temp file", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		assert.FailNow(t, "failed to close temp file", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(tmpFile.Name()); err != nil && !os.IsNotExist(err) {
+			assert.FailNow(t, "failed to clean up temp file", err)
+		}
+	})
+	return tmpFile.Name()
 }
 
 func CopyFile(t testing.TB, src, destRootDir, destPath string) {

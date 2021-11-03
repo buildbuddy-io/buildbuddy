@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -17,6 +16,7 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 )
 
 const (
@@ -48,13 +48,7 @@ type App struct {
 // The given command path and config file path refer to the workspace-relative runfile
 // paths of the BuildBuddy server binary and config file, respectively.
 func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
-	dataDir, err := ioutil.TempDir("/tmp", "buildbuddy-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(dataDir)
-	})
+	dataDir := testfs.MakeTempDir(t, "")
 	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
 		httpPort:       FreePort(t),
@@ -91,8 +85,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		app.exited = true
 		app.err = err
 	}()
-	err = app.waitForReady()
-	if err != nil {
+	if err := app.waitForReady(); err != nil {
 		t.Fatal(app.fmtErrorWithLogs(err))
 	}
 	return app

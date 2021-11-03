@@ -111,7 +111,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
-	tmpDir := testfs.MakeTempDir(t)
+	tmpDir := testfs.MakeTempDir(t, "")
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
 		"f1.input": "A",
 		"f2.input": "B",
@@ -133,7 +133,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 
 	require.Equal(t, "AB", res.Stdout)
 
-	tmpDir = testfs.MakeTempDir(t)
+	tmpDir = testfs.MakeTempDir(t, "")
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
 		// Overwrite "a.input" with "B" so that we attempt to link over "a.input"
 		// from the filecache ("B" should exist in the filecache since it was
@@ -159,7 +159,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
-	tmpDir := testfs.MakeTempDir(t)
+	tmpDir := testfs.MakeTempDir(t, "")
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
 		"f1.input": "A",
 		"f2.input": "A",
@@ -181,7 +181,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 
 	require.Equal(t, "AA", res.Stdout)
 
-	tmpDir = testfs.MakeTempDir(t)
+	tmpDir = testfs.MakeTempDir(t, "")
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
 		"f1.input": "B",
 		"f2.input": "B",
@@ -405,7 +405,7 @@ func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 }
 
 func TestBasicActionIO(t *testing.T) {
-	tmpDir := testfs.MakeTempDir(t)
+	tmpDir := testfs.MakeTempDir(t, "")
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
 		"greeting.input":       "Hello ",
 		"child/farewell.input": "Goodbye ",
@@ -462,7 +462,7 @@ func TestBasicActionIO(t *testing.T) {
 }
 
 func TestComplexActionIO(t *testing.T) {
-	tmpDir := testfs.MakeTempDir(t)
+	tmpDir := testfs.MakeTempDir(t, "")
 	// Write a mix of small and large files, to ensure we can handle batching
 	// lots of small files that fit within the gRPC limit, as well as individual
 	// that exceed the gRPC limit.

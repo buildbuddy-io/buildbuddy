@@ -51,6 +51,7 @@ go_test(
         "//server/config",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",

@@ -3,9 +3,7 @@ package cache_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -91,16 +90,7 @@ func getMemoryCache(t testing.TB) interfaces.Cache {
 }
 
 func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
-	testRootDir, err := ioutil.TempDir("/tmp", "diskcache_test_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(testRootDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+	testRootDir := testfs.MakeTempDir(t, "")
 	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)

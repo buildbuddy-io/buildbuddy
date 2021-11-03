@@ -33,6 +33,7 @@ go_test(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/digest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/hash",
         "//server/util/prefix",
         "@com_github_stretchr_testify//assert",

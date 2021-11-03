@@ -19,6 +19,7 @@ go_test(
         ":ext4",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
+        "//server/testutil/testfs",
         "//server/util/disk",
     ],
 )
