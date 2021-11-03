@@ -33,8 +33,6 @@ import (
 const (
 	// Name of the dir into which the repo is cloned.
 	repoDirName = "repo-root"
-	// Path where we expect to find actions config, relative to the repo root.
-	actionsConfigPath = "buildbuddy.yaml"
 
 	defaultGitRemoteName = "origin"
 	forkGitRemoteName    = "fork"
@@ -55,11 +53,6 @@ const (
 	// progressFlushThresholdBytes specifies how full the log buffer
 	// should be before we force a flush, regardless of the flush interval.
 	progressFlushThresholdBytes = 1_000
-
-	// Webhook event names
-
-	pushEventName        = "push"
-	pullRequestEventName = "pull_request"
 
 	// Bazel binary constants
 
@@ -183,7 +176,7 @@ func main() {
 		// If no action was specified; filter to configured actions that
 		// match any trigger.
 		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
-			match := matchesAnyTrigger(action, *triggerEvent, *targetBranch)
+			match := config.MatchesAnyTrigger(action, *triggerEvent, *targetBranch)
 			if !match {
 				log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
 			}
@@ -819,46 +812,21 @@ func invocationURL(invocationID string) string {
 }
 
 func readConfig() (*config.BuildBuddyConfig, error) {
-	f, err := os.Open(actionsConfigPath)
+	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return getDefaultConfig(), nil
+			return config.GetDefault(
+				*targetBranch, *besBackend, *besResultsURL,
+				os.Getenv(buildbuddyAPIKeyEnvVarName),
+			), nil
 		}
-		return nil, status.FailedPreconditionErrorf("open %q: %s", actionsConfigPath, err)
+		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}
 	c, err := config.NewConfig(f)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("read %q: %s", actionsConfigPath, err)
+		return nil, status.FailedPreconditionErrorf("read %q: %s", config.FilePath, err)
 	}
 	return c, nil
-}
-
-func getDefaultConfig() *config.BuildBuddyConfig {
-	// By default, test all targets when any branch is pushed.
-	// TODO: Consider running a bazel query to find only the targets that are
-	// affected by the changed files.
-	return &config.BuildBuddyConfig{
-		Actions: []*config.Action{
-			{
-				Name: "Test all targets",
-				Triggers: &config.Triggers{
-					Push: &config.PushTrigger{Branches: []string{*targetBranch}},
-				},
-				BazelCommands: []string{
-					// TOOD: Consider enabling remote_cache and remote_executor along with
-					// recommended RBE flags.
-					fmt.Sprintf(
-						"test //... "+
-							"--build_metadata=ROLE=CI "+
-							"--bes_backend=%s --bes_results_url=%s "+
-							"--remote_header=x-buildbuddy-api-key=%s",
-						*besBackend, *besResultsURL,
-						os.Getenv(buildbuddyAPIKeyEnvVarName),
-					),
-				},
-			},
-		},
-	}
 }
 
 func gitRemoteName(repoURL string) string {
@@ -866,29 +834,6 @@ func gitRemoteName(repoURL string) string {
 		return defaultGitRemoteName
 	}
 	return forkGitRemoteName
-}
-
-func matchesAnyTrigger(action *config.Action, event, branch string) bool {
-	if action.Triggers == nil {
-		return false
-	}
-	if pushCfg := action.Triggers.Push; pushCfg != nil && event == pushEventName {
-		return matchesAnyBranch(pushCfg.Branches, branch)
-	}
-
-	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == pullRequestEventName {
-		return matchesAnyBranch(prCfg.Branches, branch)
-	}
-	return false
-}
-
-func matchesAnyBranch(branches []string, branch string) bool {
-	for _, b := range branches {
-		if b == branch {
-			return true
-		}
-	}
-	return false
 }
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
