@@ -12,15 +12,9 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// A Broker listens to Member events and can set tags.
-type Broker interface {
-	// NodeEvent is called when a node joins, leaves, or is
-	// updated.
-	MemberEvent(updateType serf.EventType, member *serf.Member)
-
-	// RegisterTagProviderFn gets a callback function that can
-	// be used to set tags. Setting a tag to nil removes it.
-	RegisterTagProviderFn(setTag func(tagName, tagValue string) error)
+// A Broker listens for serf events.
+type Listener interface {
+	OnEvent(eventType serf.EventType, event serf.Event)
 }
 
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
@@ -30,55 +24,36 @@ type Broker interface {
 type GossipManager struct {
 	serfInstance  *serf.Serf
 	serfEventChan chan serf.Event
-	brokers       []Broker
+	listeners     []Listener
 
 	tagMu sync.Mutex
 	tags  map[string]string
-}
-
-func (gm *GossipManager) notifyBroker(broker Broker, eventType serf.EventType, members []serf.Member) {
-	for _, member := range members {
-		broker.MemberEvent(eventType, &member)
-	}
-}
-func (gm *GossipManager) notifyBrokers(eventType serf.EventType, members []serf.Member) {
-	for _, broker := range gm.brokers {
-		gm.notifyBroker(broker, eventType, members)
-	}
 }
 
 func (gm *GossipManager) processEvents() {
 	for {
 		select {
 		case event := <-gm.serfEventChan:
-			if memberEvent, ok := event.(serf.MemberEvent); ok {
-				gm.notifyBrokers(memberEvent.EventType(), memberEvent.Members)
+			for _, listener := range gm.listeners {
+				listener.OnEvent(event.EventType(), event)
 			}
 		}
 	}
 }
 
-func (gm *GossipManager) AddBroker(broker Broker) {
-	if broker == nil {
-		log.Error("broker cannot be nil")
+func (gm *GossipManager) AddListener(listener Listener) {
+	if listener == nil {
+		log.Error("listener cannot be nil")
 		return
 	}
-	broker.RegisterTagProviderFn(func(tagName, tagValue string) error {
-		gm.tagMu.Lock()
-		defer gm.tagMu.Unlock()
-		log.Printf("Setting tag %q = %q", tagName, tagValue)
-		if tagValue == "" {
-			delete(gm.tags, tagName)
-		} else {
-			gm.tags[tagName] = tagValue
-		}
-		return gm.serfInstance.SetTags(gm.tags)
-	})
-	gm.brokers = append(gm.brokers, broker)
-
-	// The broker may be added after the gossip manager has already been
-	// started, so notify it of already connected nodes.
-	gm.notifyBroker(broker, serf.EventMemberUpdate, gm.Members())
+	// The listener may be added after the gossip manager has already been
+	// started, so notify it of any already connected nodes.
+	existingMembersEvent := serf.MemberEvent{
+		Type:    serf.EventMemberUpdate,
+		Members: gm.serfInstance.Members(),
+	}
+	listener.OnEvent(existingMembersEvent.Type, existingMembersEvent)
+	gm.listeners = append(gm.listeners, listener)
 }
 
 func (gm *GossipManager) LocalMember() serf.Member {
@@ -93,7 +68,28 @@ func (gm *GossipManager) Leave() error {
 func (gm *GossipManager) Shutdown() error {
 	return gm.serfInstance.Shutdown()
 }
+func (gm *GossipManager) SetTag(tagName, tagValue string) error {
+	gm.tagMu.Lock()
+	defer gm.tagMu.Unlock()
+	log.Debugf("Setting tag %q = %q", tagName, tagValue)
+	if tagValue == "" {
+		delete(gm.tags, tagName)
+	} else {
+		gm.tags[tagName] = tagValue
+	}
+	return gm.serfInstance.SetTags(gm.tags)
+}
 
+func (gm *GossipManager) SendUserEvent(name string, payload []byte, coalesce bool) error {
+	return gm.serfInstance.UserEvent(name, payload, coalesce)
+}
+
+func (gm *GossipManager) Query(name string, payload []byte, params *serf.QueryParam) (*serf.QueryResponse, error) {
+	return gm.serfInstance.Query(name, payload, params)
+}
+
+// Adapt our log writer into one that is compatible with
+// serf.
 type logWriter struct {
 	log.Logger
 }
@@ -132,7 +128,7 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
-		brokers:       make([]Broker, 0),
+		listeners:     make([]Listener, 0),
 		serfEventChan: make(chan serf.Event, 16),
 		tagMu:         sync.Mutex{},
 		tags:          make(map[string]string, 0),

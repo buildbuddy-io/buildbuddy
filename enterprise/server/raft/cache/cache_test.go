@@ -157,13 +157,26 @@ func TestAutoBringup(t *testing.T) {
 
 	env := testenv.GetTestEnv(t)
 
+	var rc1, rc2, rc3 *raft_cache.RaftCache
+	eg := errgroup.Group{}
+
 	// startup 3 cache nodes
-	rc1, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-	require.Nil(t, err)
-	rc2, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-	require.Nil(t, err)
-	rc3, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
-	require.Nil(t, err)
+	eg.Go(func() error {
+		var err error
+		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
+		return err
+	})
+	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
 	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)
@@ -178,13 +191,26 @@ func TestReaderAndWriter(t *testing.T) {
 
 	env, _, ctx := getEnvAuthAndCtx(t)
 
+	var rc1, rc2, rc3 *raft_cache.RaftCache
+	eg := errgroup.Group{}
+
 	// startup 3 cache nodes
-	rc1, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-	require.Nil(t, err)
-	rc2, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-	require.Nil(t, err)
-	rc3, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
-	require.Nil(t, err)
+	eg.Go(func() error {
+		var err error
+		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
+		return err
+	})
+	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
 	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)

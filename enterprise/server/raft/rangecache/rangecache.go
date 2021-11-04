@@ -76,23 +76,21 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return nil
 }
 
-// RegisterTagProviderFn gets a callback function that can  be used to set tags.
-func (rc *RangeCache) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {
-	// no-op, we only consume tags, we don't send them.
-}
-
-// MemberEvent is called when a node joins, leaves, or is updated.
-func (rc *RangeCache) MemberEvent(updateType serf.EventType, member *serf.Member) {
+// OnEvent is called when a node joins, leaves, or is updated.
+func (rc *RangeCache) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		if tagData, ok := member.Tags[constants.MetaRangeTag]; ok {
-			rd := &rfpb.RangeDescriptor{}
-			if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
-				log.Errorf("unparsable rangeset: %s", err)
-				return
-			}
-			if err := rc.updateRange(rd); err != nil {
-				log.Errorf("Error updating ranges: %s", err)
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			if tagData, ok := member.Tags[constants.MetaRangeTag]; ok {
+				rd := &rfpb.RangeDescriptor{}
+				if err := proto.Unmarshal([]byte(tagData), rd); err != nil {
+					log.Errorf("unparsable rangeset: %s", err)
+					return
+				}
+				if err := rc.updateRange(rd); err != nil {
+					log.Errorf("Error updating ranges: %s", err)
+				}
 			}
 		}
 	default:

@@ -36,7 +36,7 @@ type ClusterStarter struct {
 }
 
 func NewClusterStarter(nodeHost *dragonboat.NodeHost, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, listenAddr string, join []string) *ClusterStarter {
-	return &ClusterStarter{
+	cs := &ClusterStarter{
 		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
 		listenAddr:           listenAddr,
@@ -44,6 +44,7 @@ func NewClusterStarter(nodeHost *dragonboat.NodeHost, createStateMachineFn dbsm.
 		bootstrapInfo:        make(map[string]string, 0),
 		bootstrapped:         false,
 	}
+	return cs
 }
 
 func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
@@ -82,26 +83,26 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	return nil
 }
 
-// RegisterTagProviderFn gets a callback function that can  be used to set tags.
-func (cs *ClusterStarter) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {}
-
-// MemberEvent is called when a node joins, leaves, or is updated. This
+// OnEvent is called when a node joins, leaves, or is updated. This
 // function is effectively a no-op if this node is not node[0] in the join list
 // (the one responsible for orchestrating the initial cluster bringup) or if
 // this node was already bootstrapped from stored cluster state on disk.
-func (cs *ClusterStarter) MemberEvent(updateType serf.EventType, member *serf.Member) {
+func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
 	if cs.bootstrapped {
 		return
 	}
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		address := fmt.Sprintf("%s:%d", member.Addr.String(), member.Port)
-		for _, joinPeer := range cs.join {
-			if joinPeer == address {
-				nhid := member.Tags[constants.NodeHostIDTag]
-				grpcAddress := member.Tags[constants.GRPCAddressTag]
-				if grpcAddress != "" && nhid != "" {
-					cs.bootstrapInfo[grpcAddress] = nhid
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			address := fmt.Sprintf("%s:%d", member.Addr.String(), member.Port)
+			for _, joinPeer := range cs.join {
+				if joinPeer == address {
+					nhid := member.Tags[constants.NodeHostIDTag]
+					grpcAddress := member.Tags[constants.GRPCAddressTag]
+					if grpcAddress != "" && nhid != "" {
+						cs.bootstrapInfo[grpcAddress] = nhid
+					}
 				}
 			}
 		}
@@ -109,6 +110,7 @@ func (cs *ClusterStarter) MemberEvent(updateType serf.EventType, member *serf.Me
 		break
 	}
 
+	log.Printf("cs.bootstrapInfo is now: %+v", cs.bootstrapInfo)
 	if len(cs.bootstrapInfo) == len(cs.join) {
 		if err := cs.sendStartClusterRequests(); err == nil {
 			cs.bootstrapped = true
@@ -160,6 +162,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 			InitialMember: initialMembers,
 		})
 		if err != nil {
+			log.Errorf("Start cluster returned err: %s", err)
 			return err
 		}
 	}

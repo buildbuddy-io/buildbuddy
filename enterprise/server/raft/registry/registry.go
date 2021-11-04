@@ -20,8 +20,6 @@ type DynamicNodeRegistry struct {
 	raftAddress string
 	grpcAddress string
 
-	setTagFn func(tagName, tagValue string) error
-
 	validator   dbConfig.TargetValidator
 	partitioner *fixedPartitioner
 
@@ -72,31 +70,37 @@ func (p *fixedPartitioner) GetPartitionID(clusterID uint64) uint64 {
 	return clusterID % p.capacity
 }
 
-// MemberEvent is called when a node joins, leaves, or is updated.
-func (dnr *DynamicNodeRegistry) MemberEvent(updateType serf.EventType, member *serf.Member) {
+// OnEvent is called when a node joins, leaves, or is updated.
+func (dnr *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
-			if raftAddress, ok := member.Tags[constants.RaftAddressTag]; ok {
-				if raftAddress != "" {
-					dnr.addRaftNodeHost(nhid, raftAddress)
-				} else {
-					dnr.removeRaftNodeHost(nhid)
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
+				if raftAddress, ok := member.Tags[constants.RaftAddressTag]; ok {
+					if raftAddress != "" {
+						dnr.addRaftNodeHost(nhid, raftAddress)
+					} else {
+						dnr.removeRaftNodeHost(nhid)
+					}
 				}
-			}
 
-			if grpcAddress, ok := member.Tags[constants.GRPCAddressTag]; ok {
-				if grpcAddress != "" {
-					dnr.addGRPCNodeHost(nhid, grpcAddress)
-				} else {
-					dnr.removeGRPCNodeHost(nhid)
+				if grpcAddress, ok := member.Tags[constants.GRPCAddressTag]; ok {
+					if grpcAddress != "" {
+						dnr.addGRPCNodeHost(nhid, grpcAddress)
+					} else {
+						dnr.removeGRPCNodeHost(nhid)
+					}
 				}
 			}
 		}
 	case serf.EventMemberLeave:
-		if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
-			dnr.removeRaftNodeHost(nhid)
-			dnr.removeGRPCNodeHost(nhid)
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			if nhid, ok := member.Tags[constants.NodeHostIDTag]; ok {
+				dnr.removeRaftNodeHost(nhid)
+				dnr.removeGRPCNodeHost(nhid)
+			}
 		}
 	default:
 		break
@@ -133,13 +137,8 @@ func (dnr *DynamicNodeRegistry) removeGRPCNodeHost(nhid string) {
 	dnr.mu.Unlock()
 }
 
-// RegisterTagProviderFn gets a callback function that can  be used to set tags.
-func (dnr *DynamicNodeRegistry) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {
-	dnr.setTagFn = setTagFn
-}
-
 func (dnr *DynamicNodeRegistry) Close() error {
-	return dnr.setTagFn(constants.RaftAddressTag, "")
+	return nil
 }
 
 func (dnr *DynamicNodeRegistry) NumMembers() int {

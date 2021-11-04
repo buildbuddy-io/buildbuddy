@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
-	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
@@ -64,7 +63,6 @@ type RaftCache struct {
 
 	registry      *registry.DynamicNodeRegistry
 	gossipManager *gossip.GossipManager
-	setTagFn      func(tagName, tagValue string) error
 
 	nodeHost   *dragonboat.NodeHost
 	apiServer  *api.Server
@@ -90,7 +88,7 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	}
 	// Register the node registry with the gossip manager so it gets updates
 	// on node membership.
-	rc.gossipManager.AddBroker(r)
+	rc.gossipManager.AddListener(r)
 	rc.registry = r
 	return r, nil
 }
@@ -114,7 +112,7 @@ func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
 			log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
-		rc.setTagFn(constants.MetaRangeTag, string(buf))
+		rc.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
 }
 
@@ -128,7 +126,7 @@ func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
 	}
 
 	if containsMetaRange(rd) {
-		rc.setTagFn(constants.MetaRangeTag, "")
+		rc.gossipManager.SetTag(constants.MetaRangeTag, "")
 	}
 }
 
@@ -248,17 +246,16 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 
 	// Register us to get callbacks and broadcast some basic tags.
-	rc.gossipManager.AddBroker(rc)
-	rc.gossipManager.AddBroker(rc.rangeCache)
-	rc.setTagFn(constants.NodeHostIDTag, nodeHost.ID())
-	rc.setTagFn(constants.RaftAddressTag, rc.raftAddress)
-	rc.setTagFn(constants.GRPCAddressTag, rc.grpcAddress)
+	rc.gossipManager.AddListener(rc.rangeCache)
+	rc.gossipManager.SetTag(constants.NodeHostIDTag, nodeHost.ID())
+	rc.gossipManager.SetTag(constants.RaftAddressTag, rc.raftAddress)
+	rc.gossipManager.SetTag(constants.GRPCAddressTag, rc.grpcAddress)
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.createStateMachineFn, conf.ListenAddress, conf.Join)
 	clusterStarter.InitializeClusters()
-	rc.gossipManager.AddBroker(clusterStarter)
+	rc.gossipManager.AddListener(clusterStarter)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -392,16 +389,6 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	}}
 
 	return rwc, nil
-}
-
-// RegisterTagProviderFn gets a callback function that can  be used to set tags.
-func (rc *RaftCache) RegisterTagProviderFn(setTagFn func(tagName, tagValue string) error) {
-	rc.setTagFn = setTagFn
-}
-
-// MemberEvent is called when a node joins, leaves, or is updated.
-func (rc *RaftCache) MemberEvent(updateType serf.EventType, member *serf.Member) {
-	return
 }
 
 func (rc *RaftCache) Stop() error {
