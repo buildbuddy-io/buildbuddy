@@ -435,19 +435,18 @@ func (e *EventChannel) Close() {
 	e.onClose()
 }
 
-func (e *EventChannel) FinalizeInvocation(iid string) error {
+func (e *EventChannel) FinalizeInvocation(iid string, status inpb.Invocation_InvocationStatus) error {
 	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
 	defer cancel()
 
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
+		InvocationStatus: status,
 	}
 
-	if !e.beValues.BuildFinished() {
-		log.Warningf("Invocation %s lacks a BuildFinished event, marking as disconnected.", iid)
+	if status == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+		log.Warningf("Reporting disconnected status for invocation %s.", iid)
 		e.statusReporter.ReportDisconnect(ctx)
-		invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
 	}
 
 	if err := e.pw.Flush(ctx); err != nil {

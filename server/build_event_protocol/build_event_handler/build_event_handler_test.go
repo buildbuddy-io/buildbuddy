@@ -353,7 +353,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 	assert.NoError(t, err)
 
 	// Make sure it gets finalized properly
@@ -481,7 +481,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	cancel()
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 	assert.NoError(t, err)
 	cancel()
 
@@ -524,7 +524,7 @@ func TestFinishedFinalize(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 	assert.NoError(t, err)
 	cancel()
 
@@ -565,7 +565,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	cancel()
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	assert.NoError(t, err)
 	cancel()
 
@@ -603,7 +603,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	assert.NoError(t, err)
 	cancel()
 
@@ -651,7 +651,7 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 	assert.NoError(t, err)
 
 	// Make sure it gets finalized properly
@@ -715,7 +715,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	assert.NoError(t, err)
 
 	// Make sure it gets finalized properly
@@ -765,7 +765,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 	assert.NoError(t, err)
 
 	// Make sure it gets finalized properly
@@ -810,7 +810,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
-	err = channel.FinalizeInvocation("test-invocation-id")
+	err = channel.FinalizeInvocation("test-invocation-id", inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	assert.NoError(t, err)
 
 	// Make sure it gets finalized properly
