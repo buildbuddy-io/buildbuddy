@@ -266,8 +266,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	rxInfo := &dirtools.TransferInfo{}
-	// Don't download inputs or provision the CI runner if the FUSE-based
-	// filesystem is enabled.
+	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
+	// enabled.
 	// TODO(vadim): integrate VFS stats
 	if r.VFS == nil {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
