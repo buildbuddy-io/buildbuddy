@@ -673,8 +673,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
-	// For everything else, just save the event to our buffer and keep on
-	// chugging.
+	// For everything else, just save the event to our buffer and keep on chugging.
 	if err := e.pw.WriteProtoToStream(e.ctx, event); err != nil {
 		return err
 	}
