@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -58,17 +57,12 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				return d.createInvocation(tx, ctx, ti)
+			if !db.IsRecordNotFound(err) {
+				return err
 			}
-		} else {
-			err := tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
-			if err != nil {
-				log.Warningf("Error updating invocation %s: %s", ti.InvocationID, err.Error())
-				// TODO(tylerw): return an error here!
-			}
+			return d.createInvocation(tx, ctx, ti)
 		}
-		return nil
+		return tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
 	})
 }
 
