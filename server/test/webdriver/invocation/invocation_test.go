@@ -37,7 +37,7 @@ func TestInvocationPage_SuccessfulInvocation_BESOnly(t *testing.T) {
 	logs := wt.Find(".terminal").Text()
 
 	assert.Contains(t, logs, "Streaming build results to:")
-	assert.Contains(t, logs, "Build completed successfully")
+	assert.Contains(t, logs, "Target //:a up-to-date:")
 }
 
 func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
@@ -66,5 +66,5 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	logs := wt.Find(".terminal").Text()
 
 	assert.Contains(t, logs, "Streaming build results to:")
-	assert.Contains(t, logs, "Build did NOT complete successfully")
+	assert.Contains(t, logs, "Target //:a failed to build")
 }
