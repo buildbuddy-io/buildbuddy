@@ -275,7 +275,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			return finishWithErrFn(err)
 		}
 		if r.PlatformProperties.WorkflowID != "" {
-			if err := r.Workspace.LinkCIRunner(); err != nil {
+			if err := r.Workspace.AddCIRunner(); err != nil {
 				return finishWithErrFn(err)
 			}
 		}

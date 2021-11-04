@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -150,9 +149,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	return txInfo, err
 }
 
-// LinkCIRunner attempts to link the BuildBuddy CI runner into the workspace
-// root. If linking fails, it falls back to a slow copy.
-func (ws *Workspace) LinkCIRunner() error {
+// AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
+// already exist.
+func (ws *Workspace) AddCIRunner() error {
 	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
 	exists, err := disk.FileExists(destPath)
 	if err != nil {
@@ -170,11 +169,9 @@ func (ws *Workspace) LinkCIRunner() error {
 	if err != nil {
 		return err
 	}
-
-	if err := fastcopy.FastCopy(realSrcPath, destPath); err == nil {
-		return nil
-	}
-
+	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
+	// The CI runner binary may be on a different device than the runner workspace
+	// so we'd have to put it somewhere on the same device before fastcopying.
 	srcFile, err := os.Open(realSrcPath)
 	if err != nil {
 		return err
