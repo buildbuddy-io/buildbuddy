@@ -137,7 +137,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 		if err := stream.Send(rsp); err != nil {
 			log.Warningf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
-			return disconnectWithErr(err)
+			return err
 		}
 	}
 	return nil
