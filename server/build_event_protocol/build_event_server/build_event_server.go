@@ -125,7 +125,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	if channel != nil {
 		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
 			log.Warningf("Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
-			return disconnectWithErr(err)
+			return err
 		}
 	}
 
