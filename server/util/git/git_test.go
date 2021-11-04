@@ -33,6 +33,7 @@ func TestStripRepoURLCredentials(t *testing.T) {
 		expected string
 	}{
 		{"https://github.com/org/repo.git", "https://github.com/org/repo.git"},
+		{" \r\n\t https://USER:PASS@github.com/org/repo.git\r\n\t  ", "https://github.com/org/repo.git"},
 		{"https://USER:PASS@github.com/org/repo.git", "https://github.com/org/repo.git"},
 		{"https://PASS:@github.com/org/repo.git", "https://github.com/org/repo.git"},
 		{"https://:PASS@gitlab.com/org/repo", "https://gitlab.com/org/repo"},
@@ -57,6 +58,7 @@ func TestOwnerRepoFromRepoURL(t *testing.T) {
 	for _, url := range []string{
 		"https://github.com/org/repo.git",
 		"https://USER:PASS@github.com/org/repo.git",
+		"  https://USER:PASS@github.com/org/repo.git \r\n",
 		"https://PASS:@github.com/org/repo.git",
 		"https://:PASS@gitlab.com/org/repo",
 		"http://USER:PASS@github.com/org/repo.git",
@@ -78,6 +80,7 @@ func TestNormalizeRepoURL(t *testing.T) {
 		"ssh://github.com/buildbuddy-io/buildbuddy",
 		"ssh://github.com/buildbuddy-io/buildbuddy.git",
 		"git://github.com/buildbuddy-io/buildbuddy",
+		"   git://github.com/buildbuddy-io/buildbuddy \r\n\t  ",
 		"git://github.com/buildbuddy-io/buildbuddy.git",
 		"git@github.com:buildbuddy-io/buildbuddy.git",
 		"https://NOTREALTOKEN:@github.com/buildbuddy-io/buildbuddy",
