@@ -47,7 +47,7 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "exit 1")`,
 	})
-	buildArgs := append([]string{"//:a"}, app.BESBazelFlags()...)
+	buildArgs := append([]string{"//:a", "--show_progress=0"}, app.BESBazelFlags()...)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 
@@ -66,5 +66,5 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	logs := wt.Find(".terminal").Text()
 
 	assert.Contains(t, logs, "Streaming build results to:")
-	assert.Contains(t, logs, "Build did NOT complete successfully")
+	assert.Contains(t, logs, "ERROR:")
 }
