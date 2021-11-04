@@ -579,6 +579,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 		if isFirstStartedEvent {
 			inv, err := e.env.GetInvocationDB().LookupInvocation(e.ctx, iid)
+			if err != nil && !db.IsRecordNotFound(err) {
+				// RecordNotFound means this invocation has never existed, which is not
+				// an error. All other errors are real errors.
+				return err
+			}
 			if err == nil {
 				// We are retrying a previous invocation.
 				if inv.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
@@ -596,10 +601,6 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				if err := chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid)); err != nil {
 					return status.WrapErrorf(err, "Failed to delete existing event log when retrying invocation %s", iid)
 				}
-			} else if !db.IsRecordNotFound(err) {
-				// RecordNotFound means this invocation has never existed, which is not
-				// an error. All other errors are real errors.
-				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid)
