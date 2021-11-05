@@ -76,4 +76,5 @@ type Env interface {
 	GetUsageService() interfaces.UsageService
 	GetUsageTracker() interfaces.UsageTracker
 	GetXCodeLocator() interfaces.XcodeLocator
+	GetFileResolver() fs.FS
 }

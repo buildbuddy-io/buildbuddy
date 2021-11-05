@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise:bundle",
         "//enterprise/server/auth",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/memcache",

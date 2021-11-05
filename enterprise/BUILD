@@ -55,6 +55,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
     visibility = ["//enterprise:__subpackages__"],
     deps = [
+        "//server/util/fileresolver",
         "//server/util/log",
     ],
 )
