@@ -1,6 +1,6 @@
-package(default_visibility = [":__subpackages__"])
-
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = [":__subpackages__"])
 
 filegroup(
     name = "config_files",
@@ -56,6 +56,5 @@ go_library(
     visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//server/util/fileresolver",
-        "//server/util/log",
     ],
 )
