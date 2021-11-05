@@ -2,12 +2,10 @@ package webtester
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
 	"github.com/bazelbuild/rules_webtesting/go/webtest"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tebeka/selenium"
@@ -77,16 +75,20 @@ func (wt *WebTester) screenshot(tag string) error {
 	// TEST_UNDECLARED_OUTPUTS_DIR is usually defined by Bazel. If this test is
 	// run outside of Bazel for whatever reason, this will just be an empty
 	// string, which is interpreted by CreateTemp as "use the OS-default temp dir"
-	screenshotFile := testfs.MakeTempFile(wt.t, os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), fmt.Sprintf("%s.%s.screenshot-*.png", wt.t.Name(), tag))
+	screenshotFile, err := os.CreateTemp(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), fmt.Sprintf("%s.%s.screenshot-*.png", wt.t.Name(), tag))
+	if err != nil {
+		return err
+	}
+	defer screenshotFile.Close()
 
 	sc, err := wt.driver.Screenshot()
 	if err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile(screenshotFile, sc, 0644); err != nil {
+	if _, err := screenshotFile.Write(sc); err != nil {
 		return err
 	}
-	wt.t.Logf("Screenshot saved to %s", screenshotFile)
+	wt.t.Logf("Screenshot saved to %s", screenshotFile.Name())
 	return nil
 }
 

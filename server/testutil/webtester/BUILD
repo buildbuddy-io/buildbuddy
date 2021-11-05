@@ -9,7 +9,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/webtester",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_github_tebeka_selenium//:selenium",
