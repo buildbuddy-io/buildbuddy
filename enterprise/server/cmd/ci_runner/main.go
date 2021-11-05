@@ -28,12 +28,12 @@ import (
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -684,7 +684,7 @@ func (ws *workspace) setup(ctx context.Context) error {
 	return ws.sync(ctx)
 }
 
-func (ws *workspace) applyPatch(ctx context.Context, digestString string, bsClient bspb.ByteStreamClient) error {
+func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, digestString string) error {
 	d, err := digest.Parse(digestString)
 	if err != nil {
 		return err
@@ -772,7 +772,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 		bsClient := bspb.NewByteStreamClient(conn)
 		for _, digestString := range patchDigests {
-			if err := ws.applyPatch(ctx, digestString, bsClient); err != nil {
+			if err := ws.applyPatch(ctx, bsClient, digestString); err != nil {
 				return err
 			}
 		}
