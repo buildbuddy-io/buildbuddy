@@ -133,6 +133,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			"--pushed_branch=master",
 			"--target_branch=master",
 			"--invocation_id=" + invocationID,
+			"--report_live_repo_setup_progress",
 		},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
