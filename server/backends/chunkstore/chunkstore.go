@@ -395,10 +395,8 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open || result.Close {
-			if !w.closed {
-				close(w.writeChannel)
-				w.closed = true
-			}
+			close(w.writeChannel)
+			w.closed = true
 			if result != nil && result.Err != nil {
 				return 0, result.Err
 			}
@@ -542,16 +540,19 @@ func (l *writeLoop) run(ctx context.Context) {
 		}
 		// We do not attempt to write if we have already encountered a write error
 		// in this iteration of the loop, and instead we simply move on.
-		// If the file is empty and we are closing it, we must write an empty chunk.
-		// Otherwise, if we have data cached to write and we are either flushing or
-		// closing the file, we need to write a chunk.
-		if err == nil && ((!open && chunkIndex == 0) || (len(chunk) > 0 && (time.Now().After(flushTime) || !open))) {
-			var n int
-			n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
-			if err == nil {
-				bytesFlushed += n
-				chunk = chunk[n:]
-				chunkIndex++
+		// If we're closing the file and haven't written a chunk (chunkIndex == 0)
+		// or there is data cached to write, we must write the chunk to disk.
+		// Otherwise, if it is time to flush the file and there is data to write,
+		// we must write the chunk to disk.
+		if err == nil {
+			if !open && (chunkIndex == 0 || len(chunk) > 0) || time.Now().After(flushTime) && len(chunk) > 0 {
+				var n int
+				n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
+				if err == nil {
+					bytesFlushed += n
+					chunk = chunk[n:]
+					chunkIndex++
+				}
 			}
 		}
 		if len(chunk) == 0 {
@@ -597,8 +598,10 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 	}
 
 	writer := &ChunkstoreWriter{
-		blobName:             blobName,
-		writeChannel:         make(chan *WriteRequest, 2),
+		blobName:     blobName,
+		writeChannel: make(chan *WriteRequest, 2),
+		// writeResultChannel must be length 2 so that both a timeout event and a
+		// close event could be simultaneously queued.
 		writeResultChannel:   make(chan *WriteResult, 2),
 		writeTimeoutDuration: writeTimeoutDuration,
 	}
