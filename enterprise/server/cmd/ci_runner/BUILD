@@ -33,7 +33,9 @@ go_binary(
     static = "on",
 )
 
-# Workaround an issue that embedsrcs does not work with go_binary targets.
+# The ci_runner target does not appear in the resulting bundle when adding it
+# directly to embedsrcs of //enterprise:bundle. This genrule works around that
+# issue.
 genrule(
     name = "embedsrcs_compatible_ci_runner",
     srcs = [":ci_runner"],
