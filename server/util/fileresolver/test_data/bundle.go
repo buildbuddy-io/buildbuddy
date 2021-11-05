@@ -1,4 +1,4 @@
-package bundle_and_runfiles
+package bundle
 
 import "embed"
 

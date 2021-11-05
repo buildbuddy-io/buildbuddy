@@ -140,11 +140,11 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
 	// If fileReader is still nil, the file was not found, so return an error.
 	if f == nil {
 		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
 	}
+	defer f.Close()
 
 	// Compute the file hash to determine the new location where it should be written.
 	h := sha256.New()
