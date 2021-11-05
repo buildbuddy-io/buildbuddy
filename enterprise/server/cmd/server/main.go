@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mockoauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -54,6 +56,7 @@ import (
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
 var (
@@ -110,8 +113,15 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
 
+	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+	if env.GetConfigurator().GetMockOauthIssuer() != nil {
+		authConfigs = append(
+			authConfigs,
+			mockoauth.Provider(env),
+		)
+	}
 	var authenticator interfaces.Authenticator
-	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
+	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env, authConfigs)
 	if err == nil {
 		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
 			log.Info("SAML auth configured.")
@@ -336,5 +346,15 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
+	if realEnv.GetConfigurator().GetMockOauthIssuer() != nil {
+		oauth, err := mockoauth.NewMockOauth(realEnv)
+		if err != nil {
+			log.Fatalf("Error initializing mock oauth: %s", err)
+		}
+		realEnv.GetAdditionalMuxEntries()[oauth.AuthorizationEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize))
+		realEnv.GetAdditionalMuxEntries()[oauth.TokenEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken))
+		realEnv.GetAdditionalMuxEntries()[oauth.JwksEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks))
+		realEnv.GetAdditionalMuxEntries()["/.well-known/openid-configuration"] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration))
+	}
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }

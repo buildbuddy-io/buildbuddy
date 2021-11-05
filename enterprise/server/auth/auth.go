@@ -226,9 +226,11 @@ type authenticator interface {
 type oidcAuthenticator struct {
 	oauth2Config *oauth2.Config
 	oidcConfig   *oidc.Config
-	provider     *oidc.Provider
+	Provider     *oidc.Provider
 	issuer       string
 	slug         string
+	initialize   func() error
+	initError    error
 }
 
 func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error) {
@@ -243,25 +245,40 @@ func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error
 }
 
 func (a *oidcAuthenticator) getIssuer() string {
+	if err := a.initialize(); err != nil {
+		return ""
+	}
 	return a.issuer
 }
 
 func (a *oidcAuthenticator) getSlug() string {
+	if err := a.initialize(); err != nil {
+		return ""
+	}
 	return a.slug
 }
 
 func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	if err := a.initialize(); err != nil {
+		return ""
+	}
 	return a.oauth2Config.AuthCodeURL(state, opts...)
 }
 
 func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	if err := a.initialize(); err != nil {
+		return nil, err
+	}
 	return a.oauth2Config.Exchange(ctx, code, opts...)
 }
 
 func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
+	if err := a.initialize(); err != nil {
+		return nil, err
+	}
 	conf := a.oidcConfig
 	conf.SkipExpiryCheck = !checkExpiry
-	validToken, err := a.provider.Verifier(conf).Verify(ctx, jwt)
+	validToken, err := a.Provider.Verifier(conf).Verify(ctx, jwt)
 	if err != nil {
 		return nil, err
 	}
@@ -346,10 +363,6 @@ type OpenIDAuthenticator struct {
 func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
-		provider, err := oidc.NewProvider(ctx, authConfig.IssuerURL)
-		if err != nil {
-			return nil, err
-		}
 		oidcConfig := &oidc.Config{
 			ClientID:        authConfig.ClientID,
 			SkipExpiryCheck: false,
@@ -359,17 +372,32 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			ClientID:     authConfig.ClientID,
 			ClientSecret: authConfig.ClientSecret,
 			RedirectURL:  authURL.String(),
-			Endpoint:     provider.Endpoint(),
 			// "openid" is a required scope for OpenID Connect flows.
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		}
-		authenticators = append(authenticators, &oidcAuthenticator{
+		var once sync.Once
+		authenticator := &oidcAuthenticator{
 			slug:         authConfig.Slug,
 			issuer:       authConfig.IssuerURL,
 			oauth2Config: oauth2Config,
 			oidcConfig:   oidcConfig,
-			provider:     provider,
-		})
+		}
+		// initialize on-demand, since our mock oauth provider won't be reachable until the server starts
+		authenticator.initialize = func() error {
+			once.Do(
+				func() {
+					var provider *oidc.Provider
+					if provider, authenticator.initError = oidc.NewProvider(ctx, authConfig.IssuerURL); authenticator.initError == nil {
+						oauth2Config.Endpoint = provider.Endpoint()
+						authenticator.Provider = provider
+					} else {
+						log.Errorf("Error Initializing auth: %v", authenticator.initError)
+					}
+				},
+			)
+			return authenticator.initError
+		}
+		authenticators = append(authenticators, authenticator)
 	}
 	return authenticators, nil
 }
@@ -416,8 +444,7 @@ func newForTesting(ctx context.Context, env environment.Env, testAuthenticator a
 	return oia, nil
 }
 
-func NewOpenIDAuthenticator(ctx context.Context, env environment.Env) (*OpenIDAuthenticator, error) {
-	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfigs []config.OauthProvider) (*OpenIDAuthenticator, error) {
 	if len(authConfigs) == 0 {
 		return nil, status.FailedPreconditionErrorf("No auth providers specified in config!")
 	}

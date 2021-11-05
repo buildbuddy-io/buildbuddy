@@ -2,6 +2,7 @@ package real_environment
 
 import (
 	"io/fs"
+	"net/http"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -77,6 +78,7 @@ type RealEnv struct {
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
+	additionalMuxEntries             map[string]http.Handler
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -84,7 +86,8 @@ func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
 		configurator:  c,
 		healthChecker: h,
 
-		executionClients: make(map[string]*executionClientConfig, 0),
+		executionClients:     make(map[string]*executionClientConfig, 0),
+		additionalMuxEntries: make(map[string]http.Handler, 0),
 	}
 }
 
@@ -369,4 +372,8 @@ func (r *RealEnv) GetFileResolver() fs.FS {
 
 func (r *RealEnv) SetFileResolver(fr fs.FS) {
 	r.fileResolver = fr
+}
+
+func (r *RealEnv) GetAdditionalMuxEntries() map[string]http.Handler {
+	return r.additionalMuxEntries
 }

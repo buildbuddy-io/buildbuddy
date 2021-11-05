@@ -2,6 +2,7 @@ package environment
 
 import (
 	"io/fs"
+	"net/http"
 
 	"github.com/go-redis/redis/v8"
 
@@ -86,4 +87,5 @@ type Env interface {
 	//
 	// See server/util/fileresolver/fileresolver.go
 	GetFileResolver() fs.FS
+	GetAdditionalMuxEntries() map[string]http.Handler
 }

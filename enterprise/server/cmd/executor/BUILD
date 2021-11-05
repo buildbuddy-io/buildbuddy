@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/composable_cache",
+        "//enterprise/server/mockoauth",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/scheduling/priority_task_scheduler",
