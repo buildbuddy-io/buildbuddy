@@ -22,7 +22,13 @@ go_library(
     name = "bundle",
     srcs = ["bundle.go"],
     data = [":runfiles"],
-    embedsrcs = [":embedsrcs"],
+    embedsrcs = [
+        "BUILD",
+        "bundle.go",
+        "embedded_dir/embedded_child.txt",
+        "embedded_file.txt",
+        "runfile.txt",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/fileresolver/test_data",
     visibility = ["//visibility:public"],
 )
