@@ -71,7 +71,7 @@ func (gm *GossipManager) Shutdown() error {
 func (gm *GossipManager) SetTag(tagName, tagValue string) error {
 	gm.tagMu.Lock()
 	defer gm.tagMu.Unlock()
-	log.Debugf("Setting tag %q = %q", tagName, tagValue)
+	//	log.Debugf("Setting tag %q = %q", tagName, tagValue)
 	if tagValue == "" {
 		delete(gm.tags, tagName)
 	} else {
@@ -99,7 +99,7 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	if strings.Contains(s, "[DEBUG]") {
 		//		log.Debugf(s)
 	} else if strings.Contains(s, "[INFO]") {
-		log.Infof(s)
+		//		log.Infof(s)
 	}
 
 	return len(d), nil

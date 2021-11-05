@@ -14,6 +14,7 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",

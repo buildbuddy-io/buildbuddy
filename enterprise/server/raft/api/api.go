@@ -65,8 +65,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
-	if err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.createStateMachineFn, rc); err != nil {
-		return nil, err
+	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.createStateMachineFn, rc)
+	if err != nil {
+		switch err {
+		case dragonboat.ErrClusterAlreadyExist:
+			return nil, status.AlreadyExistsError(err.Error())
+		default:
+			return nil, err
+		}
 	}
 	return &rfpb.StartClusterResponse{}, nil
 }

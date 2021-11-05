@@ -16,6 +16,9 @@ const (
 	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
 	MetaRangeTag   = "meta_range"
+
+	RegistryUpdateEvent = "registry_update_event"
+	RegistryQueryEvent  = "registry_query_event"
 )
 
 // Key range contants

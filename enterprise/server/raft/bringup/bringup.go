@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
@@ -79,7 +80,7 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	// in the Join list have announced themselves to us.
 	cs.bootstrapped = clustersAlreadyConfigured > 0
 
-	log.Printf("%d clusters already configured. bootstrapped: %t", clustersAlreadyConfigured, cs.bootstrapped)
+	log.Printf("%q %d clusters already configured. bootstrapped: %t", cs.listenAddr, clustersAlreadyConfigured, cs.bootstrapped)
 	return nil
 }
 
@@ -162,8 +163,10 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 			InitialMember: initialMembers,
 		})
 		if err != nil {
-			log.Errorf("Start cluster returned err: %s", err)
-			return err
+			if !status.IsAlreadyExistsError(err) {
+				log.Errorf("Start cluster returned err: %s", err)
+				return err
+			}
 		}
 	}
 
@@ -181,6 +184,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 	for !proposedFirstVal {
 		select {
 		case <-ctx.Done():
+			log.Printf("ctx is done, returning err")
 			return err
 		case <-time.After(100 * time.Millisecond):
 			sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
@@ -188,6 +192,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 			if err == nil {
 				proposedFirstVal = true
 			}
+			log.Printf("cs.nodeHost.SyncPropose returned err: %s", err)
 		}
 	}
 

@@ -82,7 +82,7 @@ type RaftCache struct {
 // it will call this method to create the registry a and use it until nodehost
 // close.
 func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-	r, err := registry.NewDynamicNodeRegistry(nhid, rc.raftAddress, rc.grpcAddress, streamConnections, v)
+	r, err := registry.NewDynamicNodeRegistry(nhid, rc.raftAddress, rc.grpcAddress, rc.gossipManager, streamConnections, v)
 	if err != nil {
 		return nil, err
 	}
