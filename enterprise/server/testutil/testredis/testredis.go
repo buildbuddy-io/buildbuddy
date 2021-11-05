@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path"
 	"runtime"
 	"strings"
 	"sync/atomic"
