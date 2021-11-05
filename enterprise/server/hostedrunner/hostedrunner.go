@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -115,26 +116,45 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
+
+	var patchDigests []string
+	for _, patch := range req.GetRepoState().GetPatch() {
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), []byte(patch))
+		if err != nil {
+			return nil, err
+		}
+		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
+	}
+
 	conf := r.env.GetConfigurator()
+	args := []string{
+		"./" + runnerName,
+		"--bes_backend=" + conf.GetAppEventsAPIURL(),
+		"--cache_backend=" + conf.GetAppCacheAPIURL(),
+		"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
+		"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--bazel_sub_command=" + req.GetBazelCommand(),
+		"--pushed_branch=master",
+		"--target_branch=master",
+		"--invocation_id=" + invocationID,
+		"--report_live_repo_setup_progress",
+	}
+	if req.GetInstanceName() != "" {
+		args = append(args, "--remote_instance_name="+req.GetInstanceName())
+	}
+	for _, patchDigest := range patchDigests {
+		args = append(args, "--patch_digest="+patchDigest)
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
 			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 		},
-		Arguments: []string{
-			"./" + runnerName,
-			"--bes_backend=" + conf.GetAppEventsAPIURL(),
-			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-			"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--bazel_sub_command=" + req.GetBazelCommand(),
-			"--pushed_branch=master",
-			"--target_branch=master",
-			"--invocation_id=" + invocationID,
-			"--report_live_repo_setup_progress",
-		},
+		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
