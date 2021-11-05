@@ -2,7 +2,6 @@ package enterprise
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,37 +12,6 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
-
-func PrintTree() {
-	fmt.Println("Enterprise bundle contents:")
-	printDir(".", 0, true)
-	fmt.Println("======")
-}
-
-func printDir(path string, depth int, isDir bool) error {
-	indent := ""
-	for i := 0; i < depth; i++ {
-		indent += "  "
-	}
-	suffix := ""
-	if isDir {
-		suffix = "/"
-	}
-	fmt.Println(indent + filepath.Base(path) + suffix)
-	if !isDir {
-		return nil
-	}
-	children, err := all.ReadDir(path)
-	if err != nil {
-		return err
-	}
-	for _, child := range children {
-		if err := printDir(filepath.Join(path, child.Name()), depth+1, child.IsDir()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // NB: We cannot embed "static", "bazel-out", etc here, because when this
 // package is built as dependency of the enterprise package, those files

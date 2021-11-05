@@ -33,7 +33,7 @@ go_binary(
     static = "on",
 )
 
-# Hack to work around an issue that embedsrcs does not work with go_binary targets.
+# Workaround an issue that embedsrcs does not work with go_binary targets.
 genrule(
     name = "embeddable_ci_runner",
     srcs = [":ci_runner"],
