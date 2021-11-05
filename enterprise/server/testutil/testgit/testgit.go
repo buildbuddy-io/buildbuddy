@@ -56,7 +56,7 @@ func (p *FakeProvider) UnregisterWebhook(ctx context.Context, accessToken, repoU
 // The repository contents are automatically deleted in the test cleanup phase.
 // Returns the path to the repo and the SHA of the initial commit.
 func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA string) {
-	path = testfs.MakeTempDir(t, "")
+	path = testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, path, contents)
 	for fileRelPath := range contents {
 		filePath := filepath.Join(path, fileRelPath)
@@ -77,7 +77,7 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 // MakeTempRepoClone makes a clone of the git repo at the given path, and cleans
 // up the copy after the test is complete.
 func MakeTempRepoClone(t testing.TB, path string) string {
-	copyPath := testfs.MakeTempDir(t, "")
+	copyPath := testfs.MakeTempDir(t)
 	testshell.Run(t, copyPath, fmt.Sprintf(`git clone file://%q .`, path))
 	configure(t, copyPath)
 	return copyPath

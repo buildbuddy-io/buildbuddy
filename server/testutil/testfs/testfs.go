@@ -3,6 +3,7 @@ package testfs
 import (
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,11 +15,8 @@ import (
 
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
-func MakeTempDir(t testing.TB, dir string) string {
-	if dir == "" {
-		dir = os.Getenv("TEST_TMPDIR")
-	}
-	tmpDir, err := os.MkdirTemp(dir, "buildbuddy-test-*")
+func MakeTempDir(t testing.TB) string {
+	tmpDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
@@ -30,14 +28,35 @@ func MakeTempDir(t testing.TB, dir string) string {
 	return tmpDir
 }
 
-func MakeTempFile(t testing.TB, dir, pattern string) string {
-	if dir == "" {
-		dir = os.Getenv("TEST_TMPDIR")
+func MakeDirAll(t testing.TB, rootDir, childPath string) string {
+	dir := path.Join(rootDir, childPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		assert.FailNow(t, "failed to make all dir", err)
+	}
+	return dir
+}
+
+func MakeSocket(t testing.TB, socketName string) string {
+	socketDir, err := os.MkdirTemp("/tmp", "buildbuddy-test-*")
+	if err != nil {
+		assert.FailNow(t, "failed to create temp dir", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(socketDir); err != nil && !os.IsNotExist(err) {
+			assert.FailNow(t, "failed to clean up temp dir", err)
+		}
+	})
+	return path.Join(socketDir, socketName)
+}
+
+func MakeTempFile(t testing.TB, rootDir, pattern string) string {
+	if rootDir == "" {
+		rootDir = os.Getenv("TEST_TMPDIR")
 	}
 	if pattern == "" {
 		pattern = "buildbuddy-test-*"
 	}
-	tmpFile, err := os.CreateTemp(dir, pattern)
+	tmpFile, err := os.CreateTemp(rootDir, pattern)
 	if err != nil {
 		assert.FailNow(t, "failed to create temp file", err)
 	}

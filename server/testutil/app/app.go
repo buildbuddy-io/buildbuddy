@@ -48,7 +48,7 @@ type App struct {
 // The given command path and config file path refer to the workspace-relative runfile
 // paths of the BuildBuddy server binary and config file, respectively.
 func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
-	dataDir := testfs.MakeTempDir(t, "")
+	dataDir := testfs.MakeTempDir(t)
 	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
 		httpPort:       FreePort(t),

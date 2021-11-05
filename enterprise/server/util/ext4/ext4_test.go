@@ -31,7 +31,7 @@ func randomDir(subDirs []string) string {
 
 func TestE2E(t *testing.T) {
 	ctx := context.Background()
-	rootDir := testfs.MakeTempDir(t, "")
+	rootDir := testfs.MakeTempDir(t)
 	allowedPaths := []string{"a", "b", "c", "d", "e", "f"}
 
 	// Create a "random" looking directory full of random digests.
@@ -55,7 +55,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	// Create a new (empty) directory and unpack the image file to the new directory.
-	newRoot := testfs.MakeTempDir(t, "")
+	newRoot := testfs.MakeTempDir(t)
 	if err := ext4.ImageToDirectory(ctx, imageFile, newRoot); err != nil {
 		t.Fatal(err)
 	}

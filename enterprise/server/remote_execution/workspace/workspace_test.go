@@ -19,7 +19,7 @@ import (
 
 func newWorkspace(t *testing.T, opts *workspace.Opts) *workspace.Workspace {
 	te := testenv.GetTestEnv(t)
-	root := testfs.MakeTempDir(t, "")
+	root := testfs.MakeTempDir(t)
 	ws, err := workspace.New(te, root, opts)
 	if err != nil {
 		t.Fatal(err)

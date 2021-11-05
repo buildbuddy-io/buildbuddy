@@ -90,7 +90,7 @@ func getMemoryCache(t testing.TB) interfaces.Cache {
 }
 
 func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
-	testRootDir := testfs.MakeTempDir(t, "")
+	testRootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)

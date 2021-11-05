@@ -161,7 +161,7 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 }
 
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--trigger_event=push",
@@ -186,7 +186,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 }
 
 func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsToBES(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
 
 	runnerFlags := []string{
@@ -214,7 +214,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 }
 
 func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--trigger_event=push",
@@ -247,7 +247,7 @@ func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t
 }
 
 func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)
@@ -284,7 +284,7 @@ func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 }
 
 func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
@@ -339,7 +339,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 }
 
 func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndBuildBuddyYAML)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)
@@ -384,7 +384,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 }
 
 func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t, "")
+	wsPath := testfs.MakeTempDir(t)
 
 	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	pushedRepoPath := testgit.MakeTempRepoClone(t, targetRepoPath)

@@ -60,7 +60,7 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 
 func newServer(t *testing.T) (*vfs_server.Server, string) {
 	env := testenv.GetTestEnv(t)
-	tmpDir := testfs.MakeTempDir(t, "")
+	tmpDir := testfs.MakeTempDir(t)
 
 	server := vfs_server.New(env, tmpDir)
 	return server, tmpDir

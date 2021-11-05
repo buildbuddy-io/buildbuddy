@@ -53,7 +53,7 @@ func newTask() *repb.ExecutionTask {
 }
 
 func newWorkspace(t *testing.T, env *testenv.TestEnv) *workspace.Workspace {
-	tmpDir := testfs.MakeTempDir(t, "")
+	tmpDir := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, tmpDir, &workspace.Opts{})
 	if err != nil {
 		t.Fatal(err)

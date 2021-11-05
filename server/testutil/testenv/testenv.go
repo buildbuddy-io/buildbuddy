@@ -127,7 +127,7 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 var currentConfigurator *config.Configurator
 
 func GetTestEnv(t testing.TB) *TestEnv {
-	testRootDir := testfs.MakeTempDir(t, "")
+	testRootDir := testfs.MakeTempDir(t)
 	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {
 		t.Fatal(err)

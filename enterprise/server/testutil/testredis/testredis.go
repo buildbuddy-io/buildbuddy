@@ -45,8 +45,7 @@ func Start(t testing.TB) string {
 	}
 
 	// redis socket must be in /tmp, redis won't read socket files in arbitrary locations
-	socketDir := testfs.MakeTempDir(t, "/tmp")
-	socketPath := path.Join(socketDir, "redis.sock")
+	socketPath := testfs.MakeSocket(t, "redis.sock")
 	target := fmt.Sprintf("unix://%s", socketPath)
 
 	ctx, cancel := context.WithCancel(context.Background())

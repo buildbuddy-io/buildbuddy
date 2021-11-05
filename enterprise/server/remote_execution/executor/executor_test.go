@@ -34,7 +34,7 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 	if rootDirFlag == nil {
 		t.Fatal("Missing --executor.root_directory flag.")
 	}
-	dir := testfs.MakeTempDir(t, "")
+	dir := testfs.MakeTempDir(t)
 
 	f, err := os.Create(fmt.Sprintf("%s/world.txt", dir))
 	if err != nil {

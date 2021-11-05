@@ -36,8 +36,8 @@ func TestDockerRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket}
 	ctx := context.Background()
@@ -72,8 +72,8 @@ func TestDockerLifecycleControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket}
 	ctx := context.Background()

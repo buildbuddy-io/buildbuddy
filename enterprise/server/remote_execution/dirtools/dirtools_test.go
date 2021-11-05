@@ -21,7 +21,7 @@ import (
 
 func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
-	tmpDir := testfs.MakeTempDir(t, "")
+	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
 	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
 	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
@@ -72,7 +72,7 @@ func TestDownloadTree(t *testing.T) {
 
 func TestDownloadTreeEmptyDigest(t *testing.T) {
 	env, ctx := testEnv(t)
-	tmpDir := testfs.MakeTempDir(t, "")
+	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
 
 	fileDigest := setFile(t, env, ctx, instanceName, "mytestdata")

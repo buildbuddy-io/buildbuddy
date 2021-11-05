@@ -34,14 +34,14 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 }
 
 func Test_Filecache(t *testing.T) {
-	fcDir := testfs.MakeTempDir(t, "")
+	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	baseDir := testfs.MakeTempDir(t, "")
+	baseDir := testfs.MakeTempDir(t)
 	// Write a non-executable file
 	writeFile(t, baseDir, "my/fun/file", false)
 

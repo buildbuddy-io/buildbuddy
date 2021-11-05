@@ -32,7 +32,7 @@ import (
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	diskCacheSize := 10_000_000_000 // 10GB
-	testRootDir := testfs.MakeTempDir(t, "")
+	testRootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
 	if err != nil {
 		t.Error(err)
@@ -76,8 +76,8 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 func TestFirecrackerRun(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -120,8 +120,8 @@ func TestFirecrackerRun(t *testing.T) {
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -182,8 +182,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	env := getTestEnv(ctx, t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -246,7 +246,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 
-	rootDir := testfs.MakeTempDir(t, "")
+	rootDir := testfs.MakeTempDir(t)
 	subDirs := []string{"a", "b", "c", "d", "e"}
 	files := make([]string, 0, numFiles)
 
@@ -307,8 +307,8 @@ func TestFirecrackerFileMapping(t *testing.T) {
 func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := testfs.MakeTempDir(t, "")
-	workDir := testfs.MakeTempDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {

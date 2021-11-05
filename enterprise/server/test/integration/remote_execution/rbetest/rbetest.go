@@ -122,7 +122,7 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 	if err != nil {
 		assert.FailNow(r.t, "unable to find test binary in runfiles", err.Error())
 	}
-	rootDir := testfs.MakeTempDir(r.t, "")
+	rootDir := testfs.MakeTempDir(r.t)
 	testfs.CopyFile(r.t, rfp, rootDir, testCommandBinaryName)
 	return r.uploadInputRoot(ctx, rootDir)
 }
@@ -680,7 +680,7 @@ func (r *Env) waitForExecutorRegistration() {
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
-	tmpDir := testfs.MakeTempDir(r.t, "")
+	tmpDir := testfs.MakeTempDir(r.t)
 
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 	env.SetByteStreamClient(r.GetByteStreamClient())

@@ -52,7 +52,7 @@ func shutdown(ctx context.Context, t *testing.T, workspaceDir string) {
 }
 
 func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
-	workspaceDir := testfs.MakeTempDir(t, "")
+	workspaceDir := testfs.MakeTempDir(t)
 	t.Cleanup(func() {
 		// Run Bazel shutdown so that the server process associated with the temp
 		// workspace doesn't stick around. The bazel server eventually shuts down
