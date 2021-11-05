@@ -35,7 +35,7 @@ go_binary(
 
 # Workaround an issue that embedsrcs does not work with go_binary targets.
 genrule(
-    name = "embeddable_ci_runner",
+    name = "embedsrcs_compatible_ci_runner",
     srcs = [":ci_runner"],
     outs = ["buildbuddy_ci_runner"],
     cmd_bash = "cp $(SRCS) $@",
