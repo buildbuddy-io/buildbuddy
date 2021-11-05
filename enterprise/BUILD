@@ -1,6 +1,6 @@
-package(default_visibility = [":__subpackages__"])
-
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = [":__subpackages__"])
 
 filegroup(
     name = "config_files",
@@ -47,6 +47,7 @@ go_library(
     ] + select({
         ":fastbuild": [],
         "//conditions:default": [
+            "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
             "//enterprise/app:sha",
@@ -56,5 +57,6 @@ go_library(
     visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//server/util/log",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

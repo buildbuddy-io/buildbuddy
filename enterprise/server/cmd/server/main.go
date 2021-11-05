@@ -56,11 +56,16 @@ import (
 )
 
 var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
-	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
+	configFile           = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
+	serverType           = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
+	debugPrintBundleTree = flag.Bool("debug_print_enterprise_bundle_tree", false, "")
 )
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+	if *debugPrintBundleTree {
+		bundle.PrintTree()
+	}
+
 	// Ensure we always override the app filesystem because the enterprise
 	// binary bundles a different app than the OS one does.
 	// The static filesystem is the same, however, so we set it if the flag

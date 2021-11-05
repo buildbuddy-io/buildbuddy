@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
-	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -160,19 +160,14 @@ func (ws *Workspace) AddCIRunner() error {
 	if exists {
 		return nil
 	}
-	srcPath, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
-	if err != nil {
-		return err
-	}
-	// Get the real path first, since the runfile may be a symlink.
-	realSrcPath, err := filepath.EvalSymlinks(srcPath)
+	bundleFS, err := bundle.Get()
 	if err != nil {
 		return err
 	}
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := os.Open(realSrcPath)
+	srcFile, err := bundleFS.Open("server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}

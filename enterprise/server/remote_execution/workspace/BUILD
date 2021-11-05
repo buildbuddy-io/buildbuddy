@@ -3,10 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "workspace",
     srcs = ["workspace.go"],
-    data = ["//enterprise/server/cmd/ci_runner"],
+    data = ["//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise:bundle",
         "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/vfs",
         "//proto:remote_execution_go_proto",
@@ -19,7 +20,6 @@ go_library(
         "//server/util/tracing",
         "@com_github_gobwas_glob//:glob",
         "@com_github_google_uuid//:uuid",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_x_sync//errgroup",
     ],
 )

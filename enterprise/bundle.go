@@ -2,11 +2,48 @@ package enterprise
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
+	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
+
+func PrintTree() {
+	fmt.Println("Enterprise bundle contents:")
+	printDir(".", 0, true)
+	fmt.Println("======")
+}
+
+func printDir(path string, depth int, isDir bool) error {
+	indent := ""
+	for i := 0; i < depth; i++ {
+		indent += "  "
+	}
+	suffix := ""
+	if isDir {
+		suffix = "/"
+	}
+	fmt.Println(indent + filepath.Base(path) + suffix)
+	if !isDir {
+		return nil
+	}
+	children, err := all.ReadDir(path)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if err := printDir(filepath.Join(path, child.Name()), depth+1, child.IsDir()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // NB: We cannot embed "static", "bazel-out", etc here, because when this
 // package is built as dependency of the enterprise package, those files
@@ -26,10 +63,34 @@ func (a *aliasFS) Open(name string) (fs.File, error) {
 	if ok {
 		return a.FS.Open(fileAlias)
 	}
-	return a.FS.Open(name)
+	f, err := a.FS.Open(name)
+	// If the file does not exist, attempt to read it from runfiles.
+	// Otherwise, return the original result.
+	if err != nil && os.IsNotExist(err) {
+		// Fall back to bazel runfiles. Note the limitation here that we can only get
+		// runfiles under the enterprise dir.
+		runfile, err := bazelgo.Runfile(filepath.Join("enterprise", name))
+		if err == nil {
+			return os.Open(runfile)
+		}
+	}
+	return f, err
 }
 
+var (
+	getOnce sync.Once
+	getFS   fs.FS
+	getErr  error
+)
+
 func Get() (fs.FS, error) {
+	getOnce.Do(func() {
+		getFS, getErr = get()
+	})
+	return getFS, getErr
+}
+
+func get() (fs.FS, error) {
 	afs := &aliasFS{
 		FS:            all,
 		remappedPaths: make(map[string]string, 0),
