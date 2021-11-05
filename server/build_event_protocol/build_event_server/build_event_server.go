@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
