@@ -15,18 +15,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
+	"google.golang.org/grpc/metadata"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -68,18 +75,21 @@ const (
 )
 
 var (
-	besBackend      = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	besResultsURL   = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL   = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch    = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	commitSHA       = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL   = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch    = flag.String("target_branch", "", "Branch to check action triggers against.")
-	workflowID      = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName      = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID    = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
-	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
+	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
+	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
+	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	patchDigests       flagutil.StringSliceFlag
 
 	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
@@ -90,6 +100,10 @@ var (
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
+
+func init() {
+	flag.Var(&patchDigests, "patch_digest", "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+}
 
 type workspace struct {
 	// Whether the workspace setup phase duration and logs were reported as part
@@ -141,6 +155,9 @@ func main() {
 	}
 
 	ctx := context.Background()
+	if ws.buildbuddyAPIKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
+	}
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
@@ -667,6 +684,27 @@ func (ws *workspace) setup(ctx context.Context) error {
 	return ws.sync(ctx)
 }
 
+func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, digestString string) error {
+	d, err := digest.Parse(digestString)
+	if err != nil {
+		return err
+	}
+	patchFile := d.GetHash()
+	f, err := os.OpenFile(patchFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	if err := cachetools.GetBlob(ctx, bsClient, digest.NewInstanceNameDigest(d, *remoteInstanceName), f); err != nil {
+		_ = f.Close()
+		return err
+	}
+	_ = f.Close()
+	if err := git(ctx, ws.log, "apply", patchFile); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ws *workspace) sync(ctx context.Context) error {
 	// Setup config before we do anything.
 	if err := ws.config(ctx); err != nil {
@@ -724,6 +762,19 @@ func (ws *workspace) sync(ctx context.Context) error {
 				"Merge conflict between branches %q and %q.\n\n%s",
 				*pushedBranch, *targetBranch, errMsg,
 			)
+		}
+	}
+
+	if len(patchDigests) > 0 {
+		conn, err := grpc_client.DialTarget(*cacheBackend)
+		if err != nil {
+			return err
+		}
+		bsClient := bspb.NewByteStreamClient(conn)
+		for _, digestString := range patchDigests {
+			if err := ws.applyPatch(ctx, bsClient, digestString); err != nil {
+				return err
+			}
 		}
 	}
 
