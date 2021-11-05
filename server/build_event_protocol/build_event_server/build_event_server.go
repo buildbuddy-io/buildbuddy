@@ -73,7 +73,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
 			log.Warningf("Disconnecting invocation %q: %s", streamID.InvocationId, e)
-			if err := channel.FinalizeInvocation(streamID.InvocationId, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS); err != nil {
+			if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
 				log.Warningf("Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
 			}
 		}
@@ -124,7 +124,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	}
 
 	if channel != nil {
-		if err := channel.FinalizeInvocation(streamID.GetInvocationId(), inpb.Invocation_COMPLETE_INVOCATION_STATUS); err != nil {
+		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
 			log.Warningf("Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
 			return err
 		}
