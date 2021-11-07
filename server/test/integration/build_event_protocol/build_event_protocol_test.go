@@ -22,6 +22,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
@@ -45,28 +46,27 @@ func TestBuildWithBESFlags_Success(t *testing.T) {
 	assert.Contains(t, result.Stderr, "Build completed successfully")
 }
 
-// Baseline test to make sure a build can succeed using a bepProxy that doesn't
-// try to inject any errors.
-func TestBuildWithRetry_Baseline(t *testing.T) {
-	app := buildbuddy.Run(t)
-	bepClient := app.PublishBuildEventClient(t)
-	proxy := StartBEPProxy(t, bepClient)
-	ctx := context.Background()
-	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
-	buildFlags := append([]string{"//:hello.txt"}, app.BESBazelFlags()...)
-	buildFlags = append(buildFlags, "--bes_backend="+proxy.GRPCAddress())
+func TestBuildWithRetry_InjectFailureAfterBuildStarted(t *testing.T) {
+	testInjectFailureAfterBazelEvent(t, &bespb.BuildEvent_Started{})
+}
 
-	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+func TestBuildWithRetry_InjectFailureAfterProgress(t *testing.T) {
+	testInjectFailureAfterBazelEvent(t, &bespb.BuildEvent_Progress{})
+}
 
-	assert.NoError(t, result.Error)
-	assert.Contains(t, result.Stderr, "Build completed successfully")
+func TestBuildWithRetry_InjectFailureAfterWorkspaceStatus(t *testing.T) {
+	testInjectFailureAfterBazelEvent(t, &bespb.BuildEvent_WorkspaceStatus{})
 }
 
 func TestBuildWithRetry_InjectFailureAfterBuildFinished(t *testing.T) {
+	testInjectFailureAfterBazelEvent(t, &bespb.BuildEvent_Finished{})
+}
+
+func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg interface{}) {
 	app := buildbuddy.Run(t)
 	bepClient := app.PublishBuildEventClient(t)
 	proxy := StartBEPProxy(t, bepClient)
-	proxy.FailOnce(AfterForwardBazelEvent(&bespb.BuildEvent_Finished{}))
+	proxy.FailOnce(AfterForwardBazelEvent(t, payloadMsg))
 
 	ctx := context.Background()
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
@@ -75,19 +75,51 @@ func TestBuildWithRetry_InjectFailureAfterBuildFinished(t *testing.T) {
 
 	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
-	assert.NoError(t, result.Error)
+	require.NoError(t, result.Error)
 	assert.Contains(t, result.Stderr, "Build completed successfully")
+	bbService := app.BuildBuddyServiceClient(t)
+	res, err := bbService.GetInvocation(
+		context.Background(),
+		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: result.InvocationID}})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(res.Invocation), 0)
+	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
+	assert.Equal(t, true, res.Invocation[0].Success)
 }
 
+// StreamEvent represents an event occuring in the stream proxy as it forwards
+// messages between the client and server during a streaming RPC. Exactly one
+// of ServerRecv or ClientRecv will be non-nil.
 type StreamEvent struct {
-	ServerRecv   *serverRecv
-	ClientRecv   *clientRecv
+	// WasForwarded marks whether the event has yet been forwarded to its
+	// destination. For every message, a StreamEvent will be fired both before
+	// and after forwarding.
 	WasForwarded bool
+
+	// ServerRecv contains the message received from the server to be forwarded
+	// to the client, if applicable.
+	ServerRecv *serverRecv
+
+	// ClientRecv contains the message received from the client to be forwarded
+	// to the server, if applicable.
+	ClientRecv *clientRecv
 }
 
+// StreamErrorInjector inspects a stream event and optionally returns an error
+// to be returned to the client.
 type StreamErrorInjector func(*StreamEvent) error
 
-func AfterForwardBazelEvent(payloadType interface{}) StreamErrorInjector {
+// AfterForwardBazelEvent returns an error injector that injects an error after
+// a Bazel event with the same payload type as the given message is successfully
+// forwarded to the build event server. The given message must be assignable to
+// BuildEvent.Payload, otherwise the test immediately fails.
+func AfterForwardBazelEvent(t *testing.T, payloadMsg interface{}) StreamErrorInjector {
+	payloadType := reflect.TypeOf(payloadMsg)
+	payloadSuperType := reflect.TypeOf(&(&bespb.BuildEvent{}).Payload).Elem()
+	if !payloadType.AssignableTo(payloadSuperType) {
+		require.FailNowf(t, "invalid argument", "%s is not assignable to %s", payloadType, payloadSuperType)
+		return nil
+	}
 	return func(event *StreamEvent) error {
 		if !event.WasForwarded || event.ClientRecv == nil || event.ClientRecv.req == nil {
 			return nil
@@ -100,9 +132,8 @@ func AfterForwardBazelEvent(payloadType interface{}) StreamErrorInjector {
 		if bazelEvent == nil {
 			return nil
 		}
-		fmt.Println("FORWARDED BAZEL EVENT:", reflect.TypeOf(bazelEvent.GetPayload()))
 		if reflect.TypeOf(bazelEvent.GetPayload()).AssignableTo(reflect.TypeOf(payloadType)) {
-			return status.UnknownError("Proxy: Injected error for test")
+			return status.UnavailableError("Proxy: Injected error for test")
 		}
 		return nil
 	}
@@ -112,10 +143,10 @@ func AfterForwardBazelEvent(payloadType interface{}) StreamErrorInjector {
 // messages directly. It allows injecting errors into the stream to ensure that
 // they are handled properly.
 type BEPProxyServer struct {
-	t                *testing.T
-	backend          pepb.PublishBuildEventClient
-	port             int
-	failurePredicate StreamErrorInjector
+	t             *testing.T
+	backend       pepb.PublishBuildEventClient
+	port          int
+	errorInjector StreamErrorInjector
 }
 
 func StartBEPProxy(t *testing.T, backend pepb.PublishBuildEventClient) *BEPProxyServer {
@@ -155,16 +186,17 @@ func (p *BEPProxyServer) GRPCAddress() string {
 }
 
 func (p *BEPProxyServer) FailOnce(f StreamErrorInjector) {
-	p.failurePredicate = f
+	p.errorInjector = f
 }
 
-func (p *BEPProxyServer) maybeFail(event *StreamEvent) error {
-	if p.failurePredicate == nil {
+func (p *BEPProxyServer) maybeInjectError(event *StreamEvent) error {
+	if p.errorInjector == nil {
 		return nil
 	}
-	if err := p.failurePredicate(event); err != nil {
-		// Zero out the failure condition so we only return it once.
-		p.failurePredicate = nil
+	if err := p.errorInjector(event); err != nil {
+		// Clear the error injector after it injects an error, to ensure we inject
+		// the error only once per stream proxy instance.
+		p.errorInjector = nil
 		return err
 	}
 	return nil
@@ -217,11 +249,12 @@ func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEve
 		}
 	}()
 
-	for {
+	for clientRecvs != nil || serverRecvs != nil {
 		select {
 		case msg, ok := <-clientRecvs:
 			if !ok {
 				clientRecvs = nil
+				continue
 			}
 			if msg.err == io.EOF {
 				err := server.CloseSend()
@@ -231,17 +264,18 @@ func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEve
 			}
 			require.NoError(p.t, msg.err, "unexpected error from Bazel")
 			p.t.Logf("Proxy: bazel ==> BB: %v", msg)
-			if err := p.maybeFail(&StreamEvent{ClientRecv: msg}); err != nil {
+			if err := p.maybeInjectError(&StreamEvent{ClientRecv: msg}); err != nil {
 				return err
 			}
 			err := server.Send(msg.req)
 			require.NoError(p.t, err, "unexpected error forwarding the build event to BB")
-			if err := p.maybeFail(&StreamEvent{ClientRecv: msg, WasForwarded: true}); err != nil {
+			if err := p.maybeInjectError(&StreamEvent{ClientRecv: msg, WasForwarded: true}); err != nil {
 				return err
 			}
 		case msg, ok := <-serverRecvs:
 			if !ok {
 				serverRecvs = nil
+				continue
 			}
 			if msg.err == io.EOF {
 				return nil
@@ -250,16 +284,19 @@ func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEve
 				return msg.err
 			}
 			p.t.Logf("Proxy: bazel <-- BB: %v", msg)
-			if err := p.maybeFail(&StreamEvent{ServerRecv: msg}); err != nil {
+			if err := p.maybeInjectError(&StreamEvent{ServerRecv: msg}); err != nil {
 				return err
 			}
 			err := client.Send(msg.res)
-			if err := p.maybeFail(&StreamEvent{ServerRecv: msg, WasForwarded: false}); err != nil {
+			if err := p.maybeInjectError(&StreamEvent{ServerRecv: msg, WasForwarded: true}); err != nil {
 				return err
 			}
 			require.NoError(p.t, err, "unexpected error forwarding reply to bazel")
 		}
 	}
+
+	require.FailNow(p.t, "expected either EOF or error from server")
+	return nil
 }
 
 type clientRecv struct {
