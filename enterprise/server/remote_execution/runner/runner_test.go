@@ -43,6 +43,7 @@ var (
 func newTask() *repb.ExecutionTask {
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
+			Arguments: []string{"pwd"},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
@@ -50,6 +51,14 @@ func newTask() *repb.ExecutionTask {
 			},
 		},
 	}
+}
+
+func newWorkflowTask() *repb.ExecutionTask {
+	t := newTask()
+	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+		Name: "workflow-id", Value: "WF123",
+	})
+	return t
 }
 
 func newWorkspace(t *testing.T, env *testenv.TestEnv) *workspace.Workspace {
@@ -93,18 +102,9 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, userID string) con
 	return context.WithValue(ctx, "x-buildbuddy-jwt", jwt)
 }
 
-func runMinimalCommand(t *testing.T, r *runner.CommandRunner) {
-	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"pwd"}})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-}
-
-func runShellCommand(t *testing.T, r *runner.CommandRunner, command string) {
-	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"sh", "-c", command}})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
+func mustRun(t *testing.T, r *runner.CommandRunner) {
+	res := r.Run(context.Background())
+	require.NoError(t, res.Error)
 }
 
 func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *runner.Pool {
@@ -120,7 +120,7 @@ func mustGet(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.Ex
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 	require.Equal(t, initialActiveCount+1, pool.ActiveRunnerCount())
-	runMinimalCommand(t, r)
+	mustRun(t, r)
 	return r
 }
 
@@ -139,8 +139,14 @@ func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool
 
 	mustAdd(t, ctx, pool, r)
 
-	require.Equal(t, initialPausedCount+1, pool.PausedRunnerCount())
-	require.Equal(t, initialCount, pool.RunnerCount())
+	require.Equal(
+		t, initialPausedCount+1, pool.PausedRunnerCount(),
+		"pooled runner count should increase by 1 after adding without eviction",
+	)
+	require.Equal(
+		t, initialCount, pool.RunnerCount(),
+		"total runner count (pooled + active) should stay the same after adding without eviction",
+	)
 }
 
 func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
@@ -149,8 +155,14 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r
 
 	mustAdd(t, ctx, pool, r)
 
-	require.Equal(t, initialPausedCount, pool.PausedRunnerCount())
-	require.Equal(t, initialCount-1, pool.RunnerCount())
+	require.Equal(
+		t, initialPausedCount, pool.PausedRunnerCount(),
+		"pooled runner count should stay the same after adding with eviction",
+	)
+	require.Equal(
+		t, initialCount-1, pool.RunnerCount(),
+		"total runner count (pooled + active) should decrease by 1 after adding with eviction",
+	)
 }
 
 func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
@@ -268,7 +280,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 
 	require.NoError(t, err)
 
-	runMinimalCommand(t, r)
+	mustRun(t, r)
 
 	err = pool.Add(context.Background(), r)
 
@@ -324,17 +336,45 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
 
+func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
+		MaxRunnerCount:            unlimited,
+		MaxRunnerMemoryUsageBytes: 16 * 1e9,
+		MaxRunnerDiskSizeBytes:    unlimited,
+	})
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Get 3 runners for workflow tasks.
+	r1 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
+	r2 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
+	r3 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
+
+	// Try adding all of them to the pool. 3rd runner should result in eviction,
+	// since the estimated memory usage for bare runners is 8GB, and the pool can
+	// only fit 2 * 8GB = 16GB worth of runners.
+	mustAddWithoutEviction(t, ctx, pool, r1)
+	mustAddWithoutEviction(t, ctx, pool, r2)
+	mustAddWithEviction(t, ctx, pool, r3)
+
+	// Now take one from the pool and put it back; this should not evict.
+	r4 := mustGetPausedRunner(t, ctx, pool, newWorkflowTask())
+	mustAddWithoutEviction(t, ctx, pool, r4)
+}
+
 func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	task := newTask()
+	task.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
+	r, err := pool.Get(ctx, task)
 
 	require.NoError(t, err)
 
 	go func() {
-		runShellCommand(t, r, `touch foo.txt && sleep infinity`)
+		mustRun(t, r)
 	}()
 	// Poll for foo.txt to exist.
 	for {
@@ -359,6 +399,3 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
 	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
 }
-
-// TODO: Test mem limit. We currently don't compute mem usage for bare runners,
-// so there's not a great way to test this yet.
