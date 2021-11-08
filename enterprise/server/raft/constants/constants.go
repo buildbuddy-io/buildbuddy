@@ -63,6 +63,10 @@ var (
 	LocalRangeKey = keys.MakeKey(LocalPrefix, []byte("range"))
 )
 
+func FileKey(r *rfpb.FileRecord) []byte {
+	return []byte(r.GetDigest().GetHash())
+}
+
 // TODO(tylerw): This is obviously not a "constant". Move it to the right place.
 func FilePath(fileDir string, r *rfpb.FileRecord) (string, error) {
 	// This function cannot change without a data migration.

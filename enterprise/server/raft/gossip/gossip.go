@@ -97,9 +97,9 @@ type logWriter struct {
 func (lw *logWriter) Write(d []byte) (int, error) {
 	s := strings.TrimSuffix(string(d), "\n")
 	if strings.Contains(s, "[DEBUG]") {
-		//		log.Debugf(s)
+		log.Debugf(s)
 	} else if strings.Contains(s, "[INFO]") {
-		//		log.Infof(s)
+		log.Infof(s)
 	}
 
 	return len(d), nil

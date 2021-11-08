@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -95,13 +94,15 @@ func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.
 }
 
 func allHealthy(caches ...*raft_cache.RaftCache) bool {
-	for _, c := range caches {
-		if err := c.Check(context.Background()); err != nil {
-			log.Printf("%+v is not yet healthy: %s", c, err)
-			return false
-		}
+	eg := errgroup.Group{}
+	for _, cache := range caches {
+		cache := cache
+		eg.Go(func() error {
+			return cache.Check(context.Background())
+		})
 	}
-	return true
+	err := eg.Wait()
+	return err == nil
 }
 
 func parallelShutdown(caches ...*raft_cache.RaftCache) {
@@ -132,7 +133,7 @@ func waitForHealthy(t *testing.T, timeout time.Duration, caches ...*raft_cache.R
 	case <-done:
 		break
 	case <-time.After(timeout):
-		t.Fatalf("Caches did not become healthy after %s", timeout)
+		t.Fatalf("Caches [%d] did not become healthy after %s, %+v", len(caches), timeout, caches[0])
 	}
 }
 
@@ -304,7 +305,7 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	numNodes := 3
+	numNodes := 5
 	addrs := make([]string, 0, numNodes)
 	for i := 0; i < numNodes; i++ {
 		addrs = append(addrs, localAddr(t))
@@ -355,5 +356,5 @@ func TestDistributedRanges(t *testing.T) {
 		defer cancel()
 		readAndCompareDigest(t, ctx, cache, d)
 	}
-	//	waitForShutdown(t, 1*time.Second, raftCaches...)
+	waitForShutdown(t, 3*time.Second, raftCaches...)
 }

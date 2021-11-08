@@ -155,9 +155,9 @@ func (l *dbCompatibleLogger) SetLevel(level dbLogger.LogLevel) {}
 func init() {
 	dbLogger.SetLoggerFactory(func(pkgName string) dbLogger.ILogger {
 		switch pkgName {
-		//		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
-		//			// Make the raft library be quieter.
-		//			return &nullLogger{}
+		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
+			// Make the raft library be quieter.
+			return &nullLogger{}
 		default:
 			l := log.NamedSubLogger(pkgName)
 			return &dbCompatibleLogger{l}
@@ -166,7 +166,6 @@ func init() {
 }
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
-	log.Debugf("conf is: %+v", conf)
 	rc := &RaftCache{
 		env:        env,
 		conf:       conf,
@@ -193,6 +192,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 	rc.gossipManager = gossipManager
+
+	// Register the range cache to get callbacks.
+	rc.gossipManager.AddListener(rc.rangeCache)
 
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
@@ -231,23 +233,22 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// is managed entirely by the raft statemachine.
 	fileDir := filepath.Join(conf.RootDir, "files")
 
+	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
+	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
+
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.
-	rc.createStateMachineFn = statemachine.MakeCreatePebbleDiskStateMachineFactory(pebbleLogDir, fileDir, rc)
+	rc.createStateMachineFn = statemachine.NewStateMachineFactory(pebbleLogDir, fileDir, rc, rc.sender, rc.apiClient)
 	apiServer, err := api.NewServer(fileDir, nodeHost, rc.createStateMachineFn)
 	if err != nil {
 		return nil, err
 	}
 	rc.apiServer = apiServer
-	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
-
 	if err := rc.apiServer.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}
 
-	// Register us to get callbacks and broadcast some basic tags.
-	rc.gossipManager.AddListener(rc.rangeCache)
 	rc.gossipManager.SetTag(constants.NodeHostIDTag, nodeHost.ID())
 	rc.gossipManager.SetTag(constants.RaftAddressTag, rc.raftAddress)
 	rc.gossipManager.SetTag(constants.GRPCAddressTag, rc.grpcAddress)
@@ -256,7 +257,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// bootstrap a new one based on the join params in the config.
 	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.createStateMachineFn, conf.ListenAddress, conf.Join)
 	rc.gossipManager.AddListener(clusterStarter)
-	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 
 	clusterStarter.InitializeClusters()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -328,8 +328,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	if err != nil {
 		return nil, err
 	}
-	fileKey := []byte(d.GetHash()) // TODO(tylerw): use fileRecord.Key()?
-	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
+	peers, err := rc.sender.GetAllNodes(ctx, constants.FileKey(fileRecord))
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +361,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	fileKey := []byte(d.GetHash()) // TODO(tylerw): use fileRecord.Key()?
+	fileKey := constants.FileKey(fileRecord)
 	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
 	if err != nil {
 		return nil, err

@@ -2,14 +2,17 @@ package statemachine
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -72,12 +75,13 @@ type PebbleDiskStateMachine struct {
 	closedMu *sync.RWMutex // PROTECTS(closed)
 	closed   bool
 
-	rootDir      string
-	fileDir      string
-	clusterID    uint64
-	nodeID       uint64
-	rangeTracker interfaces.RangeTracker
-
+	rootDir          string
+	fileDir          string
+	clusterID        uint64
+	nodeID           uint64
+	rangeTracker     interfaces.RangeTracker
+	sender           *sender.Sender
+	apiClient        *client.APIClient
 	lastAppliedIndex uint64
 
 	log             log.Logger
@@ -237,6 +241,41 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.getLastAppliedIndex()
 }
 
+func (sm *PebbleDiskStateMachine) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
+	peers, err := sm.sender.GetAllNodes(ctx, constants.FileKey(fileRecord))
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for _, peer := range peers {
+		r, err := sm.apiClient.RemoteReader(ctx, peer, fileRecord, 0 /*=offset*/)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		file, err := constants.FilePath(sm.fileDir, fileRecord)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		wc, err := disk.FileWriter(ctx, file)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if _, err := io.Copy(wc, r); err != nil {
+			lastErr = err
+			continue
+		}
+		if err := wc.Close(); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
 func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	f, err := constants.FilePath(sm.fileDir, req.GetFileRecord())
 	if err != nil {
@@ -244,6 +283,13 @@ func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWrit
 	}
 	protoBytes, err := proto.Marshal(req)
 	if err != nil {
+		return nil, err
+	}
+	if exists, err := disk.FileExists(f); err == nil && exists {
+		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, []byte(f), protoBytes)
+	}
+	if err := sm.readFileFromPeer(context.Background(), req.GetFileRecord()); err != nil {
+		log.Errorf("ReadFileFromPeer failed: %s", err)
 		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
@@ -732,7 +778,7 @@ func (sm *PebbleDiskStateMachine) Close() error {
 }
 
 // CreatePebbleDiskStateMachine creates an ondisk statemachine.
-func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker) dbsm.IOnDiskStateMachine {
+func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
 	return &PebbleDiskStateMachine{
 		closedMu:     &sync.RWMutex{},
 		rootDir:      rootDir,
@@ -740,13 +786,15 @@ func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uin
 		clusterID:    clusterID,
 		nodeID:       nodeID,
 		rangeTracker: rangeTracker,
+		sender:       sender,
+		apiClient:    apiClient,
 		log:          log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 	}
 }
 
 // Satisfy the interface gods.
-func MakeCreatePebbleDiskStateMachineFactory(rootDir, fileDir string, rangeTracker interfaces.RangeTracker) dbsm.CreateOnDiskStateMachineFunc {
+func NewStateMachineFactory(rootDir, fileDir string, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.CreateOnDiskStateMachineFunc {
 	return func(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID, rangeTracker)
+		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID, rangeTracker, sender, apiClient)
 	}
 }

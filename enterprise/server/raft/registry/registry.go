@@ -150,6 +150,7 @@ func (dnr *DynamicNodeRegistry) handleGossipQuery(query *serf.Query) {
 	if err := query.Respond(buf); err != nil {
 		dnr.log.Debugf("Error responding to gossip query: %s", err)
 	}
+	dnr.log.Debugf("Responded to registry query for %d %d!", rq.GetClusterId(), rq.GetNodeId())
 }
 
 // OnEvent is called when a node joins, leaves, or is updated.
@@ -396,6 +397,7 @@ func (dnr *DynamicNodeRegistry) resolveWithGossip(clusterID uint64, nodeID uint6
 			continue
 		}
 		dnr.processRegistryUpdate(update)
+		break // exit as soon as any other node answers our query
 	}
 	return dnr.resolveNHID(clusterID, nodeID)
 }
@@ -419,7 +421,7 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
-		dnr.log.Warningf("Resolve %d %d returning err: %s", clusterID, nodeID, err)
+		dnr.log.Errorf("Error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 
@@ -445,6 +447,7 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
+		dnr.log.Errorf("ResolveGRPC error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 
@@ -456,7 +459,9 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 	addr, ok := dnr.grpcAddrs[target]
 	dnr.mu.RUnlock()
 	if !ok {
+		dnr.log.Errorf("ResolveGRPC %d %d returning NotFoundError", clusterID, nodeID)
 		return "", "", status.NotFoundError("target address unknown")
 	}
+
 	return addr, key, nil
 }

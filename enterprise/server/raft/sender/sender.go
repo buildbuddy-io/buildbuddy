@@ -137,6 +137,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 	for _, replica := range rangeDescriptor.GetReplicas() {
 		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
+			log.Printf("ResolveGRPC returned err: %s, continuing", err)
 			lastErr = err
 			continue
 		}
