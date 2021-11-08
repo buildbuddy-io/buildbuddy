@@ -52,7 +52,8 @@ const (
 	repoTokenEnvVarName        = "REPO_TOKEN"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
-	noExitCode = -1
+	noExitCode         = -1
+	failedExitCodeName = "Failed"
 
 	// progressFlushInterval specifies how often we should flush
 	// each Bazel command's output while it is running.
@@ -142,8 +143,9 @@ type buildEventReporter struct {
 	bep    *build_event_publisher.Publisher
 	log    *invocationLog
 
-	invocationID        string
-	startEventPublished bool
+	invocationID          string
+	startTime             time.Time
+	cancelBackgroundFlush func()
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -163,15 +165,20 @@ func newBuildEventReporter(ctx context.Context, apiKey string) *buildEventReport
 	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid}
 }
 
+func (r *buildEventReporter) InvocationID() string {
+	return r.invocationID
+}
+
 func (r *buildEventReporter) Publish(event *bespb.BuildEvent) error {
 	return r.bep.Publish(event)
 }
 
-func (r *buildEventReporter) PublishStarted(startTime time.Time) error {
-	if r.startEventPublished {
+func (r *buildEventReporter) Start(startTime time.Time) error {
+	if !r.startTime.IsZero() {
+		// Already started.
 		return nil
 	}
-	r.startEventPublished = true
+	r.startTime = startTime
 
 	optionsDescription := ""
 	if r.apiKey != "" {
@@ -193,7 +200,62 @@ func (r *buildEventReporter) PublishStarted(startTime time.Time) error {
 			OptionsDescription: optionsDescription,
 		}},
 	}
-	return r.bep.Publish(startedEvent)
+	if err := r.bep.Publish(startedEvent); err != nil {
+		return err
+	}
+
+	// Flush whenever the log buffer fills past a certain threshold.
+	r.log.writeListener = func() {
+		if size := r.log.Len(); size >= progressFlushThresholdBytes {
+			r.FlushProgress() // ignore error; it will surface in `bep.Wait()`
+		}
+	}
+	stopFlushingProgress := r.StartBackgroundProgressFlush()
+	r.cancelBackgroundFlush = stopFlushingProgress
+	return nil
+}
+
+func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
+	if r.cancelBackgroundFlush != nil {
+		r.cancelBackgroundFlush()
+	}
+
+	r.FlushProgress()
+	r.Publish(&bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
+		Children: []*bespb.BuildEventId{
+			{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
+		},
+		Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
+			OverallSuccess: exitCode == 0,
+			ExitCode: &bespb.BuildFinished_ExitCode{
+				Name: exitCodeName,
+				Code: int32(exitCode),
+			},
+			FinishTimeMillis: time.Now().UnixMilli(),
+		}},
+	})
+	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
+	// NB: This is the last message -- if more are added afterwards, be sure to
+	// update the `LastMessage` flag
+	r.Publish(&bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
+		Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
+			Log: []*bespb.File{
+				{Name: "elapsed time", File: &bespb.File_Contents{Contents: []byte(string(fmt.Sprintf("%.6f", elapsedTimeSeconds)))}},
+			},
+		}},
+		LastMessage: true,
+	})
+
+	if err := r.Wait(); err != nil {
+		// If we don't publish a build event successfully, then the status may not be
+		// reported to the Git provider successfully. Terminate with a code indicating
+		// that the executor can retry the action, so that we have another chance.
+		return status.UnavailableErrorf("failed to publish build event: %s", err)
+	}
+
+	return nil
 }
 
 func (r *buildEventReporter) FlushProgress() error {
@@ -293,15 +355,21 @@ func main() {
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
 		buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey)
-		if err := buildEventReporter.PublishStarted(ws.startTime); err != nil {
+		if err := buildEventReporter.Start(ws.startTime); err != nil {
 			fatal(status.WrapError(err, "could not publish started event"))
 		}
 	}
 	if err := ws.setup(ctx, buildEventReporter); err != nil {
+		if buildEventReporter != nil {
+			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
+		}
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
 	cfg, err := readConfig()
 	if err != nil {
+		if buildEventReporter != nil {
+			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
+		}
 		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
 	}
 
@@ -354,7 +422,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		ar := &actionRunner{
 			action:       action,
 			reporter:     buildEventReporter,
-			invocationID: buildEventReporter.invocationID,
+			invocationID: buildEventReporter.InvocationID(),
 			hostname:     ws.hostname,
 			username:     ws.username,
 		}
@@ -365,60 +433,46 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		if !ws.reportedInitMetrics {
 			ws.reportedInitMetrics = true
 			// Print the setup logs to the first action's logs.
-			ar.reporter.log.Printf("Setup completed in %s", startTime.Sub(ws.startTime))
+			ar.reporter.Printf("Setup completed in %s", startTime.Sub(ws.startTime))
 			startTime = ws.startTime
 			b, _ := io.ReadAll(&ws.logBuf)
 			ws.logBuf.Reset()
 			if len(b) > 0 {
-				ar.reporter.log.Printf("Setup logs:")
-				ar.reporter.log.Printf(string(b))
+				ar.reporter.Printf("Setup logs:")
+				ar.reporter.Printf(string(b))
 			}
 		}
 
+		if err := ar.reporter.Start(startTime); err != nil {
+			if err := ar.reporter.Stop(noExitCode, failedExitCodeName); err != nil {
+				fatal(err)
+			}
+			return
+		}
+
 		if err := ar.Run(ctx, ws, startTime); err != nil {
-			ar.reporter.log.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
+			ar.reporter.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
 			exitCode = getExitCode(err)
 			// TODO: More descriptive exit code names, so people have a better
 			// sense of what happened without even needing to open the invocation.
-			exitCodeName = "Failed"
+			exitCodeName = failedExitCodeName
 		}
 
-		// Ignore errors from the events published here; they'll be surfaced in `bep.Wait()`
-		ar.reporter.FlushProgress()
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
-			Children: []*bespb.BuildEventId{
-				{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
-			},
-			Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
-				OverallSuccess: exitCode == 0,
-				ExitCode: &bespb.BuildFinished_ExitCode{
-					Name: exitCodeName,
-					Code: int32(exitCode),
-				},
-				FinishTimeMillis: time.Now().UnixMilli(),
-			}},
-		})
-		elapsedTimeSeconds := float64(time.Since(startTime)) / float64(time.Second)
-		// NB: This is the last message -- if more are added afterwards, be sure to
-		// update the `LastMessage` flag
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
-			Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
-				Log: []*bespb.File{
-					{Name: "elapsed time", File: &bespb.File_Contents{Contents: []byte(string(fmt.Sprintf("%.6f", elapsedTimeSeconds)))}},
-				},
-			}},
-			LastMessage: true,
-		})
-
-		if err := ar.reporter.Wait(); err != nil {
-			// If we don't publish a build event successfully, then the status may not be
-			// reported to the Git provider successfully. Terminate with a code indicating
-			// that the executor can retry the action, so that we have another chance.
-			fatal(status.UnavailableErrorf("failed to publish build event for action %q: %s", action.Name, err))
+		if err := ar.reporter.Stop(exitCode, exitCodeName); err != nil {
+			fatal(err)
 		}
 	}
+}
+
+func (r *buildEventReporter) Write(b []byte) (int, error) {
+	return r.log.Write(b)
+}
+
+func (r *buildEventReporter) Println(vals ...interface{}) {
+	r.log.Println(vals...)
+}
+func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
+	r.log.Printf(format, vals...)
 }
 
 type invocationLog struct {
@@ -456,7 +510,7 @@ type actionRunner struct {
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
-	ar.reporter.log.Printf("Running action %q", ar.action.Name)
+	ar.reporter.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
 	log.Infof("Invocation URL:  %s", invocationURL(ar.invocationID))
@@ -464,13 +518,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
 	// `buildEventPublisher.Wait()`
-
-	if err := ar.reporter.PublishStarted(startTime); err != nil {
-		return err
-	}
-	if err := ar.reporter.FlushProgress(); err != nil {
-		return nil
-	}
 
 	wfc := &bespb.WorkflowConfigured{
 		WorkflowId:         *workflowID,
@@ -548,15 +595,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		return ws.setupError
 	}
 
-	// Flush whenever the log buffer fills past a certain threshold.
-	ar.reporter.log.writeListener = func() {
-		if size := ar.reporter.log.Len(); size >= progressFlushThresholdBytes {
-			ar.reporter.FlushProgress() // ignore error; it will surface in `bep.Wait()`
-		}
-	}
-	stopFlushingProgress := ar.reporter.StartBackgroundProgressFlush()
-	defer stopFlushingProgress()
-
 	for i, bazelCmd := range ar.action.BazelCommands {
 		cmdStartTime := time.Now()
 
@@ -568,16 +606,16 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
-		printCommandLine(ar.reporter.log, bazeliskBinaryName, args...)
+		printCommandLine(ar.reporter, bazeliskBinaryName, args...)
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
 		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
 
-		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter.log)
+		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
-			ar.reporter.log.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
 
 		// Publish the status of each command as well as the finish time.
@@ -684,15 +722,8 @@ func filterActions(actions []*config.Action, fn func(action *config.Action) bool
 
 func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) error {
 	if reporter != nil {
-		// Flush whenever the log buffer fills past a certain threshold.
-		reporter.log.writeListener = func() {
-			if size := reporter.log.Len(); size >= progressFlushThresholdBytes {
-				reporter.FlushProgress() // ignore error; it will surface in `bep.Wait()`
-			}
-		}
-		ws.log = reporter.log
-		stop := reporter.StartBackgroundProgressFlush()
-		defer stop()
+		// If we have a reporter, stream the logs through it instead of buffering them until later.
+		ws.log = reporter
 	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
