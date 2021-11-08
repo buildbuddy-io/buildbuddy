@@ -151,13 +151,13 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, apiKey string, forcedInvocationID string) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		iid = newUUID()
 	}
 
-	bep, err := build_event_publisher.New(*besBackend, apiKey, iid)
+	bep, err := build_event_publisher.New(besBackend, apiKey, iid)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
@@ -351,7 +351,7 @@ func main() {
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
-		ber, err := newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
 		if err != nil {
 			fatal(err)
 		}
@@ -413,7 +413,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
-			ber, err := newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
 			if err != nil {
 				fatal(err)
 			}
