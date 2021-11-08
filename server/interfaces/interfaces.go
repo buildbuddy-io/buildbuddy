@@ -134,7 +134,7 @@ type Authenticator interface {
 }
 
 type BuildEventChannel interface {
-	FinalizeInvocation(iid string, status inpb.Invocation_InvocationStatus) error
+	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	Close()
 }

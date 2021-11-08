@@ -400,6 +400,10 @@ type EventChannel struct {
 	hasReceivedStartedEvent bool
 	logWriter               *eventlog.EventLogWriter
 	onClose                 func()
+	// isVoid determines whether all EventChannel operations are NOPs. This is set
+	// when we're retrying an invocation that is already complete, or is
+	// incomplete but was created too far in the past.
+	isVoid bool
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -435,9 +439,18 @@ func (e *EventChannel) Close() {
 	e.onClose()
 }
 
-func (e *EventChannel) FinalizeInvocation(iid string, status inpb.Invocation_InvocationStatus) error {
+func (e *EventChannel) FinalizeInvocation(iid string) error {
+	if e.isVoid {
+		return nil
+	}
+
 	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
 	defer cancel()
+
+	status := inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	if e.beValues.BuildFinished() {
+		status = inpb.Invocation_COMPLETE_INVOCATION_STATUS
+	}
 
 	invocation := &inpb.Invocation{
 		InvocationId:     iid,
@@ -533,6 +546,10 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	if e.isVoid {
+		return nil
+	}
+
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
@@ -583,11 +600,15 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				if inv.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
 					// The invocation is neither disconnected nor in-progress, it is not
 					// valid to retry.
-					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
+					log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is completed.", iid)
+					e.isVoid = true
+					return nil
 				} else if time.UnixMicro(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
 					// The invocation was last updated over 4 hours ago; it is not valid
 					// to retry.
-					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+					log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+					e.isVoid = true
+					return nil
 				}
 				if err := protofile.DeleteExistingChunks(e.ctx, e.env.GetBlobstore(), iid); err != nil {
 					return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
