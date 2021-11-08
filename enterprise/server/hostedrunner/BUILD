@@ -20,7 +20,6 @@ go_library(
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
-        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_grpc//status",
     ],
 )

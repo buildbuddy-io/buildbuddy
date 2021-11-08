@@ -1,14 +1,17 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+package(
+    default_visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
+)
+
 go_library(
     name = "main",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/workflow/config",
@@ -30,10 +33,13 @@ go_binary(
     embed = [":main"],
     pure = "on",
     static = "on",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
+)
+
+genrule(
+    name = "embedsrcs_compatible_ci_runner",
+    srcs = [":ci_runner"],
+    outs = ["buildbuddy_ci_runner"],
+    cmd_bash = "cp $(SRCS) $@",
 )
 
 # Note: the CI runner image only includes the setup needed for the CI runner;
@@ -43,18 +49,10 @@ container_image(
     name = "ci_runner_image",
     base = "@ci_runner_image//image:dockerfile_image.tar",
     tags = ["manual"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
 )
 
 container_image(
     name = "ci_runner_debug_image",
     base = "@ci_runner_debug_image//image:dockerfile_image.tar",
     tags = ["manual"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
 )

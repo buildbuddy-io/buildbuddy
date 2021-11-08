@@ -42,6 +42,7 @@ go_library(
         "//enterprise:licenses",
         "//:config_files",
         "//static",
+        "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
         "//enterprise/vmsupport/bin:vmlinux",
         "//enterprise/vmsupport/bin:initrd.cpio",
     ] + select({

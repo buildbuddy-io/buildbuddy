@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -36,7 +35,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
