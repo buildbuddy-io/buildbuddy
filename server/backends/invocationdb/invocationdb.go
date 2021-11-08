@@ -66,9 +66,9 @@ func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.
 				return err
 			}
 			if err := d.createInvocation(tx, ctx, ti); err != nil {
-				created = true
 				return err
 			}
+			created = true
 			return nil
 		}
 		return tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
