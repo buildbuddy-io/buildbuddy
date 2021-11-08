@@ -43,6 +43,7 @@ var (
 func newTask() *repb.ExecutionTask {
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
+			Arguments: []string{"pwd"},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
@@ -101,18 +102,9 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, userID string) con
 	return context.WithValue(ctx, "x-buildbuddy-jwt", jwt)
 }
 
-func runMinimalCommand(t *testing.T, r *runner.CommandRunner) {
-	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"pwd"}})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
-}
-
-func runShellCommand(t *testing.T, r *runner.CommandRunner, command string) {
-	res := r.Run(context.Background(), &repb.Command{Arguments: []string{"sh", "-c", command}})
-	if res.Error != nil {
-		t.Fatal(res.Error)
-	}
+func mustRun(t *testing.T, r *runner.CommandRunner) {
+	res := r.Run(context.Background())
+	require.NoError(t, res.Error)
 }
 
 func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *runner.Pool {
@@ -128,7 +120,7 @@ func mustGet(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.Ex
 	r, err := pool.Get(ctx, task)
 	require.NoError(t, err)
 	require.Equal(t, initialActiveCount+1, pool.ActiveRunnerCount())
-	runMinimalCommand(t, r)
+	mustRun(t, r)
 	return r
 }
 
@@ -288,7 +280,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 
 	require.NoError(t, err)
 
-	runMinimalCommand(t, r)
+	mustRun(t, r)
 
 	err = pool.Add(context.Background(), r)
 
@@ -375,12 +367,14 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	task := newTask()
+	task.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
+	r, err := pool.Get(ctx, task)
 
 	require.NoError(t, err)
 
 	go func() {
-		runShellCommand(t, r, `touch foo.txt && sleep infinity`)
+		mustRun(t, r)
 	}()
 	// Poll for foo.txt to exist.
 	for {

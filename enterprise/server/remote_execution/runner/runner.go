@@ -200,11 +200,13 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
 	}
+
+	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through

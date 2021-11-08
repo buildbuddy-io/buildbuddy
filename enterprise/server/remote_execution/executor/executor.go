@@ -294,7 +294,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
-		cmdResultChan <- r.Run(ctx, task.GetCommand())
+		cmdResultChan <- r.Run(ctx)
 	}()
 
 	// Run a timer that periodically sends update messages back
