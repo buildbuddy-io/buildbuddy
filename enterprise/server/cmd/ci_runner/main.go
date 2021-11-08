@@ -151,8 +151,8 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, apiKey string) *buildEventReporter {
-	iid := *invocationID
+func newBuildEventReporter(ctx context.Context, apiKey string, forcedInvocationID string) *buildEventReporter {
+	iid := forcedInvocationID
 	if iid == "" {
 		iid = newUUID()
 	}
@@ -210,7 +210,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			r.FlushProgress() // ignore error; it will surface in `bep.Wait()`
 		}
 	}
-	stopFlushingProgress := r.StartBackgroundProgressFlush()
+	stopFlushingProgress := r.startBackgroundProgressFlush()
 	r.cancelBackgroundFlush = stopFlushingProgress
 	return nil
 }
@@ -218,6 +218,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 	if r.cancelBackgroundFlush != nil {
 		r.cancelBackgroundFlush()
+		r.cancelBackgroundFlush = nil
 	}
 
 	r.FlushProgress()
@@ -248,7 +249,7 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 		LastMessage: true,
 	})
 
-	if err := r.Wait(); err != nil {
+	if err := r.bep.Wait(); err != nil {
 		// If we don't publish a build event successfully, then the status may not be
 		// reported to the Git provider successfully. Terminate with a code indicating
 		// that the executor can retry the action, so that we have another chance.
@@ -299,11 +300,7 @@ func (r *buildEventReporter) nextProgressEvent() (*bespb.BuildEvent, error) {
 	}, nil
 }
 
-func (r *buildEventReporter) Wait() error {
-	return r.bep.Wait()
-}
-
-func (r *buildEventReporter) StartBackgroundProgressFlush() func() {
+func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 	stop := make(chan struct{}, 1)
 	go func() {
 		for {
@@ -354,7 +351,7 @@ func main() {
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
-		buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey)
+		buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
 		if err := buildEventReporter.Start(ws.startTime); err != nil {
 			fatal(status.WrapError(err, "could not publish started event"))
 		}
@@ -412,7 +409,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
-			buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey)
+			buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
 		}
 
 		// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
@@ -420,11 +417,10 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		// the user to see in the invocation UI needs to go in that log, instead of
 		// the global `log.Print`.
 		ar := &actionRunner{
-			action:       action,
-			reporter:     buildEventReporter,
-			invocationID: buildEventReporter.InvocationID(),
-			hostname:     ws.hostname,
-			username:     ws.username,
+			action:   action,
+			reporter: buildEventReporter,
+			hostname: ws.hostname,
+			username: ws.username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -502,18 +498,17 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action       *config.Action
-	reporter     *buildEventReporter
-	invocationID string
-	username     string
-	hostname     string
+	action   *config.Action
+	reporter *buildEventReporter
+	username string
+	hostname string
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
 	ar.reporter.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Infof("Invocation URL:  %s", invocationURL(ar.invocationID))
+	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
 	// NOTE: In this func we return immediately with an error of nil if event publishing fails,
 	// because that error is instead surfaced in the caller func when calling
