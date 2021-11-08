@@ -139,6 +139,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--pushed_branch=master",
 		"--target_branch=master",
 		"--invocation_id=" + invocationID,
+		"--report_live_repo_setup_progress",
 	}
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
