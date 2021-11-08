@@ -200,6 +200,7 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
+// Run runs the task that is currently bound to the command runner.
 func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
@@ -585,8 +586,8 @@ func (p *Pool) WarmupDefaultImage() {
 	}
 }
 
-// Get returns a runner that can be used to execute the given task. The caller
-// must call TryRecycle on the returned runner when done using it.
+// Get returns a runner bound to the the given task. The caller must call
+// TryRecycle on the returned runner when done using it.
 //
 // If the task has runner recycling enabled then it attempts to find a runner
 // from the pool that can execute the task. If runner recycling is disabled or
