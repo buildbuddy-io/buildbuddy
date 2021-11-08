@@ -151,7 +151,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, apiKey string, forcedInvocationID string) *buildEventReporter {
+func newBuildEventReporter(ctx context.Context, apiKey string, forcedInvocationID string) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		iid = newUUID()
@@ -159,10 +159,10 @@ func newBuildEventReporter(ctx context.Context, apiKey string, forcedInvocationI
 
 	bep, err := build_event_publisher.New(*besBackend, apiKey, iid)
 	if err != nil {
-		fatal(status.UnavailableErrorf("failed to initialize build event publisher: %s", err))
+		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
-	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid}
+	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -351,7 +351,11 @@ func main() {
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
-		buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+		ber, err := newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+		if err != nil {
+			fatal(err)
+		}
+		buildEventReporter = ber
 		if err := buildEventReporter.Start(ws.startTime); err != nil {
 			fatal(status.WrapError(err, "could not publish started event"))
 		}
@@ -409,7 +413,11 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
-			buildEventReporter = newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+			ber, err := newBuildEventReporter(ctx, ws.buildbuddyAPIKey, *invocationID)
+			if err != nil {
+				fatal(err)
+			}
+			buildEventReporter = ber
 		}
 
 		// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
