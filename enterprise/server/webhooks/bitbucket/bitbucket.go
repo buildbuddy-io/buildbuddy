@@ -111,6 +111,10 @@ func (*bitbucketGitProvider) UnregisterWebhook(ctx context.Context, accessToken,
 	return status.UnimplementedError("Not implemented")
 }
 
+func (*bitbucketGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func unmarshalBody(r *http.Request, payload interface{}) error {
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {

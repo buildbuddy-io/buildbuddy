@@ -3,11 +3,14 @@ package workflows_test
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
@@ -44,14 +47,18 @@ actions:
 	}
 )
 
-func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
+func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
 	env := rbetest.NewRBETestEnv(t)
+	var workflowService interfaces.WorkflowService
 
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(env *testenv.TestEnv) {
 			env.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			env.SetGitProviders([]interfaces.GitProvider{gp})
-			env.SetWorkflowService(service.NewWorkflowService(env))
+			workflowService = service.NewWorkflowService(env)
+			env.SetWorkflowService(workflowService)
+			iss := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
+			env.SetInvocationSearchService(iss)
 		},
 	})
 	// Use bare execution -- Docker isn't supported in tests yet.
@@ -64,11 +71,33 @@ func newWorkflowsTestEnv(t *testing.T, gp interfaces.GitProvider) *rbetest.Env {
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
 
 	env.AddExecutors(10)
-	return env
+	return env, workflowService
+}
+
+func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+			RequestContext: reqCtx,
+			Query:          &inpb.InvocationQuery{GroupId: reqCtx.GetGroupId()},
+		})
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			require.NoError(t, err)
+		}
+		for _, in := range searchResp.GetInvocation() {
+			if in.GetRole() == "CI_RUNNER" {
+				return in.GetInvocationId()
+			}
+		}
+
+		time.Sleep(delay)
+	}
+
+	require.FailNowf(t, "timeout", "Timed out waiting for workflow invocation to be created")
+	return ""
 }
 
 func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string) *inpb.Invocation {
-	for delay := 50 * time.Millisecond; delay < 120*time.Second; delay *= 2 {
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
 			RequestContext: reqCtx,
 			Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
@@ -85,7 +114,8 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 
 		time.Sleep(delay)
 	}
-	require.FailNowf(t, "timeout", "Test timed out waiting for invocation %q to complete", invocationID)
+
+	require.FailNowf(t, "timeout", "Timed out waiting for invocation to complete")
 	return nil
 }
 
@@ -99,9 +129,72 @@ func actionCount(t *testing.T, inv *inpb.Invocation) int {
 	return n
 }
 
+// TestResponseWriter is an http.ResponseWriter that fails the test if an
+// HTTP error code is written, but otherwise discards all data written to it.
+type TestResponseWriter struct {
+	t *testing.T
+}
+
+func (w *TestResponseWriter) WriteHeader(statusCode int) {
+	require.Less(w.t, statusCode, 400, "Wrote HTTP status %d", statusCode)
+}
+func (w *TestResponseWriter) Header() http.Header {
+	return nil
+}
+func (w *TestResponseWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func TestCreateAndTriggerViaWebhook(t *testing.T) {
+	fakeGitProvider := testgit.NewFakeProvider()
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	// Create the workflow
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
+		RequestContext: reqCtx,
+		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+	})
+	require.NoError(t, err)
+
+	// Set up the fake git provider so that GetFileContents can return the
+	// buildbuddy.yaml from our test repo
+	fakeGitProvider.FileContents = simpleRepoContents
+	// Configure the fake webhook data to be parsed from the response, then
+	// trigger the webhook.
+	fakeGitProvider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		PushedRepoURL: repoURL,
+		PushedBranch:  "master",
+		SHA:           commitSHA,
+		TargetRepoURL: repoURL,
+		TargetBranch:  "master",
+		IsTrusted:     true,
+	}
+
+	req, err := http.NewRequest("POST", createResp.GetWebhookUrl(), nil /*=body*/)
+	require.NoError(t, err)
+	workflowService.ServeHTTP(&TestResponseWriter{t}, req)
+
+	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+	inv := waitForInvocationComplete(t, ctx, bb, reqCtx, iid)
+
+	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
+	require.Equal(t, repoURL, inv.GetRepoUrl())
+	require.Equal(t, commitSHA, inv.GetCommitSha())
+	require.Equal(t, "CI_RUNNER", inv.GetRole())
+}
+
 func TestCreateAndExecute(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
-	env := newWorkflowsTestEnv(t, fakeGitProvider)
+	env, _ := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
 	repoURL := fmt.Sprintf("file://%s", repoPath)

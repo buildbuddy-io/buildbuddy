@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/alert",
+        "//server/util/flagutil",
         "//server/util/log",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],

@@ -8,7 +8,10 @@ go_library(
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
-    deps = ["@in_gopkg_yaml_v2//:yaml_v2"],
+    deps = [
+        "//enterprise/server/webhooks/webhook_data",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+    ],
 )
 
 go_test(

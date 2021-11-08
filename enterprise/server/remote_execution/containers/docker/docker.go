@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
@@ -35,6 +37,8 @@ var (
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
 	defaultDockerUlimit          = int64(65535)
+
+	debugStreamCommandOutputs = flag.Bool("docker_debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
 type DockerOptions struct {
@@ -247,10 +251,16 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 }
 
 func copyOutputs(reader io.Reader, result *interfaces.CommandResult) error {
-	var stdout, stderr bytes.Buffer
-	_, err := stdcopy.StdCopy(&stdout, &stderr, reader)
-	result.Stdout = stdout.Bytes()
-	result.Stderr = stderr.Bytes()
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
+	if *debugStreamCommandOutputs {
+		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
+	}
+
+	_, err := stdcopy.StdCopy(stdout, stderr, reader)
+	result.Stdout = stdoutBuf.Bytes()
+	result.Stderr = stderrBuf.Bytes()
 	return err
 }
 

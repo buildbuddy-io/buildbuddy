@@ -2,6 +2,7 @@ package hostedrunner
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -47,7 +49,7 @@ func New(env environment.Env) (*runnerService, error) {
 	}, nil
 }
 
-func (r *runnerService) lookupAPIKey(ctx context.Context, selectedGroup string) (string, error) {
+func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	auth := r.env.GetAuthenticator()
 	if auth == nil {
 		return "", status.FailedPreconditionError("Auth was not configured but is required")
@@ -56,19 +58,12 @@ func (r *runnerService) lookupAPIKey(ctx context.Context, selectedGroup string) 
 	if err != nil {
 		return "", err
 	}
-	group := u.GetGroupID()
-	if selectedGroup != "" {
-		for _, membership := range u.GetGroupMemberships() {
-			if membership.GroupID == selectedGroup {
-				group = selectedGroup
-			}
-		}
-	}
-	if group == "" {
-		return "", status.FailedPreconditionError("Authenticated user did not have a group ID")
+	group, err := authutil.EffectiveGroup(ctx, u)
+	if err != nil {
+		return "", err
 	}
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", group)
+	q.AddWhereClause("group_id = ?", group.GroupID)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := r.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
@@ -96,7 +91,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	apiKey, err := r.lookupAPIKey(ctx, req.GetRequestContext().GetGroupId())
+	apiKey, err := r.lookupAPIKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -121,25 +116,44 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
+
+	var patchDigests []string
+	for _, patch := range req.GetRepoState().GetPatch() {
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), []byte(patch))
+		if err != nil {
+			return nil, err
+		}
+		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
+	}
+
 	conf := r.env.GetConfigurator()
+	args := []string{
+		"./" + runnerName,
+		"--bes_backend=" + conf.GetAppEventsAPIURL(),
+		"--cache_backend=" + conf.GetAppCacheAPIURL(),
+		"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
+		"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--bazel_sub_command=" + req.GetBazelCommand(),
+		"--pushed_branch=master",
+		"--target_branch=master",
+		"--invocation_id=" + invocationID,
+	}
+	if req.GetInstanceName() != "" {
+		args = append(args, "--remote_instance_name="+req.GetInstanceName())
+	}
+	for _, patchDigest := range patchDigests {
+		args = append(args, "--patch_digest="+patchDigest)
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
 			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 		},
-		Arguments: []string{
-			"./" + runnerName,
-			"--bes_backend=" + conf.GetAppEventsAPIURL(),
-			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-			"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--bazel_sub_command=" + req.GetBazelCommand(),
-			"--pushed_branch=master",
-			"--target_branch=master",
-			"--invocation_id=" + invocationID,
-		},
+		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
