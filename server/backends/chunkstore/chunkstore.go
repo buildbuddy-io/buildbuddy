@@ -54,7 +54,9 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 }
 
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	c.DeleteBlob(ctx, blobName)
+	if err := c.DeleteBlob(ctx, blobName); err != nil {
+		return 0, err
+	}
 	w := c.Writer(ctx, blobName, nil)
 	bytesWritten, err := w.Write(ctx, data)
 	if err != nil {
@@ -308,7 +310,7 @@ func (r *chunkstoreReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	// If the offset is before the current offset (and not within the current chunk),
-	// reset the offset too the beginning of the file
+	// reset the offset to the beginning of the file
 	if offset < r.off {
 		r.chunkIndex = r.startIndex
 		r.chunk = []byte{}
@@ -544,6 +546,8 @@ func (l *writeLoop) run(ctx context.Context) {
 		// or there is data cached to write, we must write the chunk to disk.
 		// Otherwise, if it is time to flush the file and there is data to write,
 		// we must write the chunk to disk.
+		// The iterative writes above guarantee, absent an error, that chunk will be
+		// writeBlockSize or shorter.
 		if err == nil {
 			if !open && (chunkIndex == 0 || len(chunk) > 0) || time.Now().After(flushTime) && len(chunk) > 0 {
 				var n int

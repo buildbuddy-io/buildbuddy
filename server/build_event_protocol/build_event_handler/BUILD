@@ -58,7 +58,6 @@ go_test(
         "//server/testutil/testclock",
         "//server/testutil/testenv",
         "//server/util/protofile",
-        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//assert",

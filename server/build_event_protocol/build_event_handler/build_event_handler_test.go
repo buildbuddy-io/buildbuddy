@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
@@ -669,7 +668,7 @@ func TestRetryOnComplete(t *testing.T) {
 	channel = handler.OpenChannel(ctx, "test-invocation-id")
 	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 1)
 	err = channel.HandleEvent(request)
-	assert.True(t, status.IsAlreadyExistsError(err), err)
+	assert.NoError(t, err)
 
 	// Make sure old files were not deleted
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
@@ -831,7 +830,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	channel = handler.OpenChannel(ctx, "test-invocation-id")
 	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), "test-invocation-id", 1)
 	err = channel.HandleEvent(request)
-	assert.True(t, status.IsAlreadyExistsError(err), err)
+	assert.NoError(t, err)
 
 	// Make sure old files were not deleted
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName("test-invocation-id", 0))
@@ -840,5 +839,4 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId("test-invocation-id"))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-
 }
