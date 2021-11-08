@@ -147,7 +147,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 		}
 		lastErr = fn(client, replica)
 		if lastErr != nil {
-			if status.IsOutOfRangeError(lastErr) {
+			if status.IsOutOfRangeError(lastErr) || status.IsUnavailableError(lastErr) {
 				continue
 			}
 		}

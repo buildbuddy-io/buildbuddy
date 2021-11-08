@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
@@ -152,14 +153,28 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 }
 
 func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	log.Warningf("SyncPropose (server) got request")
 	sesh := s.nodeHost.GetNoOPSession(req.GetReplica().GetClusterId())
 	buf, err := proto.Marshal(req.GetBatch())
 	if err != nil {
 		return nil, err
 	}
-	raftResponse, err := s.nodeHost.SyncPropose(ctx, sesh, buf)
-	if err != nil {
-		return nil, err
+	var raftResponse dbsm.Result
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		log.Printf("retrier start")
+		raftResponse, err = s.nodeHost.SyncPropose(ctx, sesh, buf)
+		log.Printf("rr: %+v, err: %s", raftResponse, err)
+		if err != nil {
+			log.Errorf("SyncPropose err: %s", err)
+			if err == dragonboat.ErrClusterNotReady {
+				log.Errorf("continuing, got cluster not ready err...")
+				continue
+			}
+			return nil, err
+		}
+		log.Printf("retrier end")
+		break
 	}
 	batchResponse := &rfpb.BatchCmdResponse{}
 	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {

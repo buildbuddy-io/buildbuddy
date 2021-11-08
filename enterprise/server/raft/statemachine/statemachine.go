@@ -447,9 +447,9 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 		}
 		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		for _, union := range batchCmdReq.GetUnion() {
-			//			sm.log.Debugf("Update: request union: %+v", union)
+			sm.log.Debugf("Update: request union: %+v", union)
 			rsp := sm.handlePropose(wb, union)
-			//			sm.log.Debugf("Update: response union: %+v", rsp)
+			sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 
@@ -512,9 +512,9 @@ func (sm *PebbleDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 	}
 	batchCmdRsp := &rfpb.BatchCmdResponse{}
 	for _, req := range batchCmdReq.GetUnion() {
-		//		sm.log.Debugf("Lookup: request union: %+v", req)
+		sm.log.Debugf("Lookup: request union: %+v", req)
 		rsp := sm.handleRead(req)
-		//		sm.log.Debugf("Lookup: response union: %+v", rsp)
+		sm.log.Debugf("Lookup: response union: %+v", rsp)
 		batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 	}
 

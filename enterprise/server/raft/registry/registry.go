@@ -3,6 +3,7 @@ package registry
 import (
 	"fmt"
 	"sync"
+	//	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/gossip"
@@ -23,6 +24,7 @@ type DynamicNodeRegistry struct {
 	raftAddress string
 	grpcAddress string
 
+	log           log.Logger
 	gossipManager *gossip.GossipManager
 	validator     dbConfig.TargetValidator
 	partitioner   *fixedPartitioner
@@ -55,6 +57,7 @@ func NewDynamicNodeRegistry(nhid, raftAddress, grpcAddress string, gossipManager
 		raftAddress:     raftAddress,
 		grpcAddress:     grpcAddress,
 		validator:       v,
+		log:             log.NamedSubLogger(nhid),
 		gossipManager:   gossipManager,
 		mu:              sync.RWMutex{},
 		nodeDescriptors: make(map[raftio.NodeInfo]*tsNodeDescriptor, 0),
@@ -102,45 +105,59 @@ func (dnr *DynamicNodeRegistry) processRegistryUpdate(update *rfpb.RegistryUpdat
 	}
 }
 
+func (dnr *DynamicNodeRegistry) assembleRegistryUpdate(clusterID, nodeID uint64, allTargets bool) *rfpb.RegistryUpdate {
+	rsp := &rfpb.RegistryUpdate{
+		Nhid:        dnr.nhid,
+		GrpcAddress: dnr.grpcAddress,
+		RaftAddress: dnr.raftAddress,
+	}
+	for nodeInfo, target := range dnr.nodeTargets {
+		if !allTargets && nodeInfo.ClusterID != clusterID {
+			continue
+		}
+		if !allTargets && nodeInfo.NodeID != nodeID {
+			continue
+		}
+		rsp.Adds = append(rsp.Adds, &rfpb.RegistryUpdate_Add{
+			ClusterId: nodeInfo.ClusterID,
+			NodeId:    nodeInfo.NodeID,
+			Target:    target,
+		})
+	}
+	return rsp
+}
+
+func (dnr *DynamicNodeRegistry) handleGossipQuery(query *serf.Query) {
+	if query.Name != constants.RegistryQueryEvent {
+		return
+	}
+	if query.Payload == nil {
+		return
+	}
+	rq := &rfpb.RegistryQuery{}
+	if err := proto.Unmarshal(query.Payload, rq); err != nil {
+		return
+	}
+	rsp := dnr.assembleRegistryUpdate(rq.GetClusterId(), rq.GetNodeId(), false)
+	if len(rsp.GetAdds()) == 0 {
+		dnr.log.Debugf("Ignoring registry query for %d %d, don't know about that target.", rq.GetClusterId(), rq.GetNodeId())
+		return
+	}
+	buf, err := proto.Marshal(rsp)
+	if err != nil {
+		return
+	}
+	if err := query.Respond(buf); err != nil {
+		dnr.log.Debugf("Error responding to gossip query: %s", err)
+	}
+}
+
 // OnEvent is called when a node joins, leaves, or is updated.
 func (dnr *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventQuery:
 		query, _ := event.(*serf.Query)
-		if query.Name != constants.RegistryQueryEvent {
-			return
-		}
-		if query.Payload != nil {
-			rq := &rfpb.RegistryQuery{}
-			if err := proto.Unmarshal(query.Payload, rq); err != nil {
-				log.Warningf("error unmarshaling registry query payload: %s", err)
-				return
-			}
-			nodeInfo := raftio.GetNodeInfo(rq.GetClusterId(), rq.GetNodeId())
-			target, ok := dnr.nodeTargets[nodeInfo]
-			if !ok {
-				log.Debugf("Ignoring registry query for %d %d, don't know about that target.", rq.GetClusterId(), rq.GetNodeId())
-				return
-			}
-			rsp := &rfpb.RegistryUpdate{
-				Adds: []*rfpb.RegistryUpdate_Add{{
-					ClusterId: rq.GetClusterId(),
-					NodeId:    rq.GetNodeId(),
-					Target:    target,
-				}},
-				Nhid:        dnr.nhid,
-				GrpcAddress: dnr.grpcAddress,
-				RaftAddress: dnr.raftAddress,
-			}
-			buf, err := proto.Marshal(rsp)
-			if err != nil {
-				log.Warningf("Error marshaling node descriptor to reply: %s", err)
-				return
-			}
-			if err := query.Respond(buf); err != nil {
-				log.Warningf("Error responding to gossip query: %s", err)
-			}
-		}
+		dnr.handleGossipQuery(query)
 	case serf.EventUser:
 		userEvent, _ := event.(serf.UserEvent)
 		if userEvent.Name != constants.RegistryUpdateEvent {
@@ -148,10 +165,23 @@ func (dnr *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Ev
 		}
 		update := &rfpb.RegistryUpdate{}
 		if err := proto.Unmarshal(userEvent.Payload, update); err != nil {
-			log.Warningf("Error unmarshaling registry update: %s", err)
 			return
 		}
 		dnr.processRegistryUpdate(update)
+	case serf.EventMemberJoin, serf.EventMemberUpdate:
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			nhid, nhidOK := member.Tags[constants.NodeHostIDTag]
+			if !nhidOK {
+				continue
+			}
+			if raftAddr, ok := member.Tags[constants.RaftAddressTag]; ok {
+				dnr.addRaftNodeHost(nhid, raftAddr)
+			}
+			if grpcAddr, ok := member.Tags[constants.GRPCAddressTag]; ok {
+				dnr.addGRPCNodeHost(nhid, grpcAddr)
+			}
+		}
 	default:
 		break
 	}
@@ -159,8 +189,8 @@ func (dnr *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Ev
 
 func (dnr *DynamicNodeRegistry) addRaftNodeHost(nhid, raftAddress string) {
 	dnr.mu.Lock()
-	_, ok := dnr.raftAddrs[nhid]
-	if !ok {
+	existing, ok := dnr.raftAddrs[nhid]
+	if !ok || existing != raftAddress {
 		dnr.raftAddrs[nhid] = raftAddress
 	}
 	dnr.mu.Unlock()
@@ -172,11 +202,11 @@ func (dnr *DynamicNodeRegistry) removeRaftNodeHost(nhid string) {
 	dnr.mu.Unlock()
 }
 
-func (dnr *DynamicNodeRegistry) addGRPCNodeHost(nhid, raftAddress string) {
+func (dnr *DynamicNodeRegistry) addGRPCNodeHost(nhid, grpcAddress string) {
 	dnr.mu.Lock()
 	_, ok := dnr.grpcAddrs[nhid]
 	if !ok {
-		dnr.grpcAddrs[nhid] = raftAddress
+		dnr.grpcAddrs[nhid] = grpcAddress
 	}
 	dnr.mu.Unlock()
 }
@@ -212,7 +242,7 @@ func (dnr *DynamicNodeRegistry) gossipAdd(clusterID, nodeID uint64, target strin
 			}},
 		})
 		if err != nil {
-			log.Warningf("Error sending registry update: %s", err)
+			dnr.log.Warningf("Error sending registry update: %s", err)
 		}
 	}()
 }
@@ -226,7 +256,7 @@ func (dnr *DynamicNodeRegistry) gossipRemove(clusterID, nodeID uint64) {
 			}},
 		})
 		if err != nil {
-			log.Warningf("Error sending registry update: %s", err)
+			dnr.log.Warningf("Error sending registry update: %s", err)
 		}
 	}()
 }
@@ -239,7 +269,7 @@ func (dnr *DynamicNodeRegistry) gossipRemoveCluster(clusterID uint64) {
 			}},
 		})
 		if err != nil {
-			log.Warningf("Error sending registry update: %s", err)
+			dnr.log.Warningf("Error sending registry update: %s", err)
 		}
 	}()
 }
@@ -261,27 +291,35 @@ func (dnr *DynamicNodeRegistry) add(clusterID uint64, nodeID uint64, target stri
 // Add adds a new node with its known NodeHostID to the registry.
 func (dnr *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string) {
 	if dnr.validator != nil && !dnr.validator(target) {
-		log.Errorf("Add(%d, %d, %q) failed, target did not validate.", clusterID, nodeID, target)
+		dnr.log.Errorf("Add(%d, %d, %q) failed, target did not validate.", clusterID, nodeID, target)
 		return
 	}
 	added := dnr.add(clusterID, nodeID, target)
 	if added {
+		// Only gossip the add if it's new to us.
 		dnr.gossipAdd(clusterID, nodeID, target)
 	}
 }
 
-func (dnr *DynamicNodeRegistry) remove(clusterID uint64, nodeID uint64) {
+func (dnr *DynamicNodeRegistry) remove(clusterID uint64, nodeID uint64) bool {
 	nodeInfo := raftio.GetNodeInfo(clusterID, nodeID)
 
 	dnr.mu.Lock()
-	delete(dnr.nodeTargets, nodeInfo)
-	dnr.mu.Unlock()
+	defer dnr.mu.Unlock()
+	if _, ok := dnr.nodeTargets[nodeInfo]; ok {
+		delete(dnr.nodeTargets, nodeInfo)
+		return true
+	}
+	return false
 }
 
 // Remove removes the specified node from the registry.
 func (dnr *DynamicNodeRegistry) Remove(clusterID uint64, nodeID uint64) {
-	dnr.remove(clusterID, nodeID)
-	dnr.gossipRemove(clusterID, nodeID)
+	removed := dnr.remove(clusterID, nodeID)
+	if removed {
+		// Only gossip the remove if it's new to us.
+		dnr.gossipRemove(clusterID, nodeID)
+	}
 }
 
 func (dnr *DynamicNodeRegistry) removeCluster(clusterID uint64) {
@@ -355,7 +393,6 @@ func (dnr *DynamicNodeRegistry) resolveWithGossip(clusterID uint64, nodeID uint6
 		}
 		update := &rfpb.RegistryUpdate{}
 		if err := proto.Unmarshal(nodeRsp.Payload, update); err != nil {
-			log.Warningf("Error unmarshaling registry update proto: %s", err)
 			continue
 		}
 		dnr.processRegistryUpdate(update)
@@ -374,7 +411,7 @@ func (dnr *DynamicNodeRegistry) resolveWithGossip(clusterID uint64, nodeID uint6
 //     addr, ok := raftAddrs(target)
 // Finally we return the address, partitionKey, and any error.
 func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {
-	// try to resolve locally
+	// try to resolve locally first
 	target, key, err := dnr.resolveNHID(clusterID, nodeID)
 	if err != nil {
 		// if that fails, try to resolve with gossip
@@ -382,6 +419,7 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
+		dnr.log.Warningf("Resolve %d %d returning err: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 

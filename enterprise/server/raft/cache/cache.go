@@ -102,6 +102,7 @@ func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
+	log.Errorf("AddRange called!")
 	rc.localStoreRanges = append(rc.localStoreRanges, rd)
 
 	if containsMetaRange(rd) {
@@ -154,9 +155,9 @@ func (l *dbCompatibleLogger) SetLevel(level dbLogger.LogLevel) {}
 func init() {
 	dbLogger.SetLoggerFactory(func(pkgName string) dbLogger.ILogger {
 		switch pkgName {
-		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
-			// Make the raft library be quieter.
-			return &nullLogger{}
+		//		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
+		//			// Make the raft library be quieter.
+		//			return &nullLogger{}
 		default:
 			l := log.NamedSubLogger(pkgName)
 			return &dbCompatibleLogger{l}
@@ -254,10 +255,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.createStateMachineFn, conf.ListenAddress, conf.Join)
-	clusterStarter.InitializeClusters()
 	rc.gossipManager.AddListener(clusterStarter)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 
+	clusterStarter.InitializeClusters()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop()
 	})
@@ -380,14 +381,15 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 			return err
 		}
 		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+			log.Errorf("Bout to run SyncPropose")
 			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Replica: rd,
 				Batch:   writeReq,
 			})
+			log.Errorf("SyncPropose returned err: %s", err)
 			return err
 		})
 	}}
-
 	return rwc, nil
 }
 

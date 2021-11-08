@@ -202,6 +202,8 @@ func (mc *multiWriteCloser) Close() error {
 			peers = append(peers, peer)
 		}
 		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", fileRecordLogString(mc.fileRecord), peers)
+	} else {
+		log.Errorf("MWC is returning err: %s", err)
 	}
 	return err
 }
@@ -216,7 +218,7 @@ func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord 
 	for _, peer := range peers {
 		rwc, err := c.RemoteWriter(ctx, peer, fileRecord)
 		if err != nil {
-			log.Debugf("Error opening remote writer for %q to peer %q: %s", fileRecordLogString(fileRecord), peer, err)
+			log.Debugf("Skipping write %q to peer %q because: %s", fileRecordLogString(fileRecord), peer, err)
 			continue
 		}
 		mwc.closers[peer] = rwc

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	//	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -95,6 +97,7 @@ func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.
 func allHealthy(caches ...*raft_cache.RaftCache) bool {
 	for _, c := range caches {
 		if err := c.Check(context.Background()); err != nil {
+			log.Printf("%+v is not yet healthy: %s", c, err)
 			return false
 		}
 	}
@@ -121,7 +124,7 @@ func waitForHealthy(t *testing.T, timeout time.Duration, caches ...*raft_cache.R
 				close(done)
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 		}
 	}()
 
@@ -235,15 +238,28 @@ func TestCacheShutdown(t *testing.T) {
 
 	env, _, ctx := getEnvAuthAndCtx(t)
 
+	var rc1, rc2, rc3 *raft_cache.RaftCache
+	eg := errgroup.Group{}
+
 	// startup 3 cache nodes
-	rc1, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
-	require.Nil(t, err)
-	rc2, err := raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
-	require.Nil(t, err)
+	eg.Go(func() error {
+		var err error
+		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
+		return err
+	})
 
 	rc3Config := getCacheConfig(t, l3, join)
-	rc3, err := raft_cache.NewRaftCache(env, rc3Config)
-	require.Nil(t, err)
+	eg.Go(func() error {
+		var err error
+		rc3, err = raft_cache.NewRaftCache(env, rc3Config)
+		return err
+	})
+	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
 	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)
@@ -253,7 +269,7 @@ func TestCacheShutdown(t *testing.T) {
 
 	digestsWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		writeDigest(t, ctx, cache, d, buf)
@@ -283,5 +299,61 @@ func TestCacheShutdown(t *testing.T) {
 		defer cancel()
 		readAndCompareDigest(t, ctx, cache, d)
 	}
+
 	waitForShutdown(t, 1*time.Second, rc1, rc2, rc3)
+}
+
+func TestDistributedRanges(t *testing.T) {
+	numNodes := 3
+	addrs := make([]string, 0, numNodes)
+	for i := 0; i < numNodes; i++ {
+		addrs = append(addrs, localAddr(t))
+	}
+	join := addrs[:3]
+	env, _, ctx := getEnvAuthAndCtx(t)
+
+	mu := sync.Mutex{}
+	raftCaches := make([]*raft_cache.RaftCache, 0)
+	eg := errgroup.Group{}
+	for i := 0; i < numNodes; i++ {
+		localAddr := addrs[i]
+		eg.Go(func() error {
+			c, err := raft_cache.NewRaftCache(env, getCacheConfig(t, localAddr, join))
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			raftCaches = append(raftCaches, c)
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		t.Fatalf("Err starting caches: %s", err)
+	}
+	waitForHealthy(t, 10*time.Second, raftCaches...)
+
+	digests := make([]*repb.Digest, 0)
+	for i := 0; i < 10; i++ {
+		rc := raftCaches[rand.Intn(len(raftCaches))]
+		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+		require.Nil(t, err)
+
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		writeDigest(t, ctx, cache, d, buf)
+	}
+
+	for _, d := range digests {
+		rc := raftCaches[rand.Intn(len(raftCaches))]
+		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+		require.Nil(t, err)
+
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		readAndCompareDigest(t, ctx, cache, d)
+	}
+	//	waitForShutdown(t, 1*time.Second, raftCaches...)
 }
