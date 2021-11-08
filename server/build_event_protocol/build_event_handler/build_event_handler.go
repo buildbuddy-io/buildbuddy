@@ -211,7 +211,7 @@ func (r *statsRecorder) Start() {
 				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
 				}
-				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+				if _, err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
 				}
 				// Cleanup regardless of whether the stats are flushed successfully to
@@ -479,7 +479,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 
 	ti := tableInvocationFromProto(invocation, iid)
 	recordInvocationMetrics(ti)
-	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if _, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
 
@@ -636,14 +636,16 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		if e.logWriter != nil {
 			ti.LastChunkId = e.logWriter.GetLastChunkId(e.ctx)
 		}
-		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
+		created, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti)
+		if err != nil {
 			return err
 		}
 
 		// Since this is the Started event and we just parsed the API key, now is
 		// a good time to record invocation usage for the group. Sanity check that
-		// this is the first started event (to safeguard against overcounting).
-		if ut := e.env.GetUsageTracker(); ut != nil && isFirstStartedEvent {
+		// we just inserted a new row into the DB, to guarantee that we don't
+		// increment the usage on invocation retries.
+		if ut := e.env.GetUsageTracker(); ut != nil && created {
 			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
 				log.Warningf("Failed to record invocation usage: %s", err)
 			}
@@ -734,7 +736,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
-	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if _, err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
 	return nil
