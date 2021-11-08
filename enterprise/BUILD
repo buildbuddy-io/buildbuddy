@@ -42,7 +42,6 @@ go_library(
         "//enterprise:licenses",
         "//:config_files",
         "//static",
-        "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
         "//enterprise/vmsupport/bin:vmlinux",
         "//enterprise/vmsupport/bin:initrd.cpio",
     ] + select({
@@ -51,6 +50,7 @@ go_library(
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
             "//enterprise/app:sha",
+            "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
         ],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
