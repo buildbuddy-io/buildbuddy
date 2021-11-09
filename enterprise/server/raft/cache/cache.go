@@ -394,7 +394,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 
 func (rc *RaftCache) Stop() error {
 	rc.nodeHost.Stop()
-	//rc.gossipManager.Leave() // makes testing slow, do we need this?
+	// rc.gossipManager.Leave()
 	rc.gossipManager.Shutdown()
 	rc.apiServer.Shutdown(context.Background())
 	return nil

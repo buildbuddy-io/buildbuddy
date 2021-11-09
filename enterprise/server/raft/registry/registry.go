@@ -230,7 +230,7 @@ func (dnr *DynamicNodeRegistry) gossipUpdate(up *rfpb.RegistryUpdate) error {
 	if err != nil {
 		return err
 	}
-	return dnr.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf, false)
+	return dnr.gossipManager.SendUserEvent(constants.RegistryUpdateEvent, buf, true)
 }
 
 func (dnr *DynamicNodeRegistry) gossipAdd(clusterID, nodeID uint64, target string) {

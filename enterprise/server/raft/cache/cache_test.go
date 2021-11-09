@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -117,7 +118,8 @@ func parallelShutdown(caches ...*raft_cache.RaftCache) {
 	eg.Wait()
 }
 
-func waitForHealthy(t *testing.T, timeout time.Duration, caches ...*raft_cache.RaftCache) {
+func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
+	timeout := 2 * time.Second * time.Duration(len(caches))
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -125,7 +127,7 @@ func waitForHealthy(t *testing.T, timeout time.Duration, caches ...*raft_cache.R
 				close(done)
 				return
 			}
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
@@ -137,7 +139,9 @@ func waitForHealthy(t *testing.T, timeout time.Duration, caches ...*raft_cache.R
 	}
 }
 
-func waitForShutdown(t *testing.T, timeout time.Duration, caches ...*raft_cache.RaftCache) {
+func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
+	timeout := 2 * time.Second * time.Duration(len(caches))
+	log.Printf("waitForShutdown called")
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)
@@ -182,8 +186,8 @@ func TestAutoBringup(t *testing.T) {
 	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
-	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)
-	waitForShutdown(t, 1*time.Second, rc1, rc2, rc3)
+	waitForHealthy(t, rc1, rc2, rc3)
+	waitForShutdown(t, rc1, rc2, rc3)
 }
 
 func TestReaderAndWriter(t *testing.T) {
@@ -216,7 +220,7 @@ func TestReaderAndWriter(t *testing.T) {
 	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
-	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)
+	waitForHealthy(t, rc1, rc2, rc3)
 
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
 	require.Nil(t, err)
@@ -228,7 +232,7 @@ func TestReaderAndWriter(t *testing.T) {
 		writeDigest(t, ctx, cache, d, buf)
 		readAndCompareDigest(t, ctx, cache, d)
 	}
-	waitForShutdown(t, 1*time.Second, rc1, rc2, rc3)
+	waitForShutdown(t, rc1, rc2, rc3)
 }
 
 func TestCacheShutdown(t *testing.T) {
@@ -263,7 +267,7 @@ func TestCacheShutdown(t *testing.T) {
 	require.Nil(t, eg.Wait())
 
 	// wait for them all to become healthy
-	waitForHealthy(t, 3*time.Second, rc1, rc2, rc3)
+	waitForHealthy(t, rc1, rc2, rc3)
 
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
 	require.Nil(t, err)
@@ -278,7 +282,7 @@ func TestCacheShutdown(t *testing.T) {
 	}
 
 	// shutdown one node
-	waitForShutdown(t, 1*time.Second, rc3)
+	waitForShutdown(t, rc3)
 
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -290,7 +294,7 @@ func TestCacheShutdown(t *testing.T) {
 
 	rc3, err = raft_cache.NewRaftCache(env, rc3Config)
 	require.Nil(t, err)
-	waitForHealthy(t, 3*time.Second, rc3)
+	waitForHealthy(t, rc3)
 
 	cache, err = rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
 	require.Nil(t, err)
@@ -301,7 +305,7 @@ func TestCacheShutdown(t *testing.T) {
 		readAndCompareDigest(t, ctx, cache, d)
 	}
 
-	waitForShutdown(t, 1*time.Second, rc1, rc2, rc3)
+	waitForShutdown(t, rc1, rc2, rc3)
 }
 
 func TestDistributedRanges(t *testing.T) {
@@ -333,7 +337,7 @@ func TestDistributedRanges(t *testing.T) {
 	if err := eg.Wait(); err != nil {
 		t.Fatalf("Err starting caches: %s", err)
 	}
-	waitForHealthy(t, 10*time.Second, raftCaches...)
+	waitForHealthy(t, raftCaches...)
 
 	digests := make([]*repb.Digest, 0)
 	for i := 0; i < 10; i++ {
@@ -356,5 +360,6 @@ func TestDistributedRanges(t *testing.T) {
 		defer cancel()
 		readAndCompareDigest(t, ctx, cache, d)
 	}
-	waitForShutdown(t, 3*time.Second, raftCaches...)
+
+	waitForShutdown(t, raftCaches...)
 }
