@@ -237,7 +237,7 @@ export default class CodeComponent extends React.Component<Props> {
     let state = new runner.RunRequest.RepoState();
     // TODO(siggisim): add commit sha
     for (let path of this.state.changes.keys()) {
-      state.patch.push(diff.createPatch(path, this.state.originalFileContents.get(path), this.state.changes.get(path)));
+      state.patch.push(diff.createTwoFilesPatch(`a/${path}`, `b/${path}`, this.state.originalFileContents.get(path), this.state.changes.get(path)));
     }
     return state;
   }
