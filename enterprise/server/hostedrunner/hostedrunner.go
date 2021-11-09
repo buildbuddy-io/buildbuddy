@@ -139,6 +139,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--pushed_branch=master",
 		"--target_branch=master",
 		"--invocation_id=" + invocationID,
+		"--report_live_repo_setup_progress",
 	}
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
@@ -161,7 +162,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
-				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
+				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "20000000000"}, // 20GB
 			},
 		},
 	}

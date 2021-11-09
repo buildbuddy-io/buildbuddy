@@ -144,9 +144,6 @@ type BuildEventHandler interface {
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.
-// Implementations should return "os"-compatible package type errors, for
-// example, if a file does not exist on Read, the blobstore should return an
-// "os.ErrNotExist" error.
 type Blobstore interface {
 	BlobExists(ctx context.Context, blobName string) (bool, error)
 	ReadBlob(ctx context.Context, blobName string) ([]byte, error)
@@ -206,7 +203,7 @@ type Cache interface {
 
 type InvocationDB interface {
 	// Invocations API
-	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error
+	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) (bool, error)
 	UpdateInvocationACL(ctx context.Context, authenticatedUser *UserInfo, invocationID string, acl *aclpb.ACL) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
