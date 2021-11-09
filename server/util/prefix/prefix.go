@@ -21,10 +21,8 @@ func addPrefix(prefix, key string) string {
 func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
 	if auth := env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			if u.GetGroupID() != "" {
-				return addPrefix(u.GetGroupID(), key), nil
-			} else if u.GetUserID() != "" {
-				return addPrefix(u.GetUserID(), key), nil
+			if gm, err := authutil.EffectiveGroup(ctx, u); err == nil {
+				return addPrefix(gm.GroupID, key), nil
 			}
 		}
 	}
