@@ -5,7 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -22,9 +21,10 @@ func addPrefix(prefix, key string) string {
 func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (string, error) {
 	if auth := env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
-			if gm, err := authutil.EffectiveGroup(ctx, u); err == nil {
-				return addPrefix(gm.GroupID, key), nil
+			if u.GetGroupID() == "" {
+				return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
 			}
+			return addPrefix(u.GetGroupID(), key), nil
 		}
 	}
 

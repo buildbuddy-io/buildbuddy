@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -58,12 +57,8 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	group, err := authutil.EffectiveGroup(ctx, u)
-	if err != nil {
-		return "", err
-	}
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", group.GroupID)
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := r.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
