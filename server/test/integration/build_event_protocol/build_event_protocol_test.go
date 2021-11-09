@@ -7,7 +7,6 @@ import (
 	"net"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -18,7 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -159,13 +157,7 @@ func StartBEPProxy(t *testing.T, backend pepb.PublishBuildEventClient) *BEPProxy
 	require.NoError(t, err, "failed to start BES proxy")
 	port := lis.Addr().(*net.TCPAddr).Port
 
-	server := grpc.NewServer(
-		// Set to avoid errors: Bandwidth exhausted HTTP/2 error code: ENHANCE_YOUR_CALM Received Goaway too_many_pings
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second, // If a client pings more than once every 10 seconds, terminate the connection
-			PermitWithoutStream: true,             // Allow pings even when there are no active streams
-		}),
-	)
+	server := grpc.NewServer()
 	pepb.RegisterPublishBuildEventServer(server, proxy)
 	go func() {
 		t.Logf("Proxy: Listening on 0.0.0.0:%d", port)
@@ -185,6 +177,9 @@ func (p *BEPProxyServer) GRPCAddress() string {
 	return fmt.Sprintf("grpc://localhost:%d", p.port)
 }
 
+// FailOncec registers an error injector that can fire at most once for this
+// proxy server instance. In other words, it is unregistered after returning an
+// error for the first time.
 func (p *BEPProxyServer) FailOnce(f StreamErrorInjector) {
 	p.errorInjector = f
 }
