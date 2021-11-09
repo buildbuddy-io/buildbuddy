@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -42,6 +43,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/test/bufconn"
 
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -114,6 +116,12 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
+
+	bundleFS, err := bundle.Get()
+	if err != nil {
+		log.Fatalf("Failed to initialize bundle: %s", err)
+	}
+	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 
 	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv)
 	if err == nil {

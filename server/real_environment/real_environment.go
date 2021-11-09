@@ -76,6 +76,7 @@ type RealEnv struct {
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
+	fileResolver                     fs.FS
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -360,4 +361,12 @@ func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client *redis.Client) {
 
 func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() *redis.Client {
 	return r.remoteExecutionRedisPubSubClient
+}
+
+func (r *RealEnv) GetFileResolver() fs.FS {
+	return r.fileResolver
+}
+
+func (r *RealEnv) SetFileResolver(fr fs.FS) {
+	r.fileResolver = fr
 }

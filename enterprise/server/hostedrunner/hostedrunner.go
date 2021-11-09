@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -28,23 +27,22 @@ import (
 )
 
 const (
-	runnerBinaryRunfile  = "enterprise/server/cmd/ci_runner/ci_runner_/ci_runner"
+	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
 	runnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
 )
 
 type runnerService struct {
-	env              environment.Env
-	runnerBinaryPath string
+	env environment.Env
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	runnerPath, err := bazel.Runfile(runnerBinaryRunfile)
+	f, err := env.GetFileResolver().Open(runnerPath)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
+		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
+	defer f.Close()
 	return &runnerService{
-		env:              env,
-		runnerBinaryPath: runnerPath,
+		env: env,
 	}, nil
 }
 
@@ -90,7 +88,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
-	binaryBlob, err := os.ReadFile(r.runnerBinaryPath)
+	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +97,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(r.runnerBinaryPath)
+	runnerName := filepath.Base(runnerPath)
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,
