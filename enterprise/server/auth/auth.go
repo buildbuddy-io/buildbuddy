@@ -652,7 +652,7 @@ func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*C
 	eg := ""
 	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetGroupId() != "" {
 		for _, g := range u.Groups {
-			if g.Group.Group == c.GetGroupID() {
+			if g.Group.GroupID == c.GetGroupId() {
 				eg = c.GetGroupId()
 			}
 		}
