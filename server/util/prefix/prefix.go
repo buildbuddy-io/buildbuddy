@@ -22,7 +22,7 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 	if auth := env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
 			if u.GetGroupID() == "" {
-				return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")				
+				return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
 			}
 			return addPrefix(u.GetGroupID(), key), nil
 		}
