@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"gopkg.in/yaml.v2"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 // === IMPORTANT ===
@@ -24,9 +27,10 @@ type BuildBuddyConfig struct {
 }
 
 type Action struct {
-	Name          string    `yaml:"name"`
-	Triggers      *Triggers `yaml:"triggers"`
-	BazelCommands []string  `yaml:"bazel_commands"`
+	Name                 string            `yaml:"name"`
+	Triggers             *Triggers         `yaml:"triggers"`
+	RunnerExecProperties map[string]string `yaml:"runner_exec_properties"`
+	BazelCommands        []string          `yaml:"bazel_commands"`
 }
 
 type Triggers struct {
@@ -93,6 +97,21 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 		return matchesAnyBranch(prCfg.Branches, branch)
 	}
 	return false
+}
+
+// RunnerExecProperties converts the runner_exec_properties map in the
+// action config to a platform properties list.
+func RunnerExecProperties(action *Action) []*repb.Platform_Property {
+	execProps := make([]*repb.Platform_Property, len(action.RunnerExecProperties))
+	for name, value := range action.RunnerExecProperties {
+		execProps = append(execProps, &repb.Platform_Property{
+			Name: name, Value: value,
+		})
+	}
+	sort.Slice(execProps, func(i, j int) bool {
+		return execProps[i].Name < execProps[j].Name
+	})
+	return execProps
 }
 
 func matchesAnyBranch(branches []string, branch string) bool {

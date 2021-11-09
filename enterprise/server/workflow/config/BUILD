@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/webhooks/webhook_data",
+        "//proto:remote_execution_go_proto",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )

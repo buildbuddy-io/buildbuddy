@@ -142,6 +142,29 @@ func TestParse_Pool(t *testing.T) {
 	assert.Equal(t, "", platformProps.Pool)
 }
 
+func TestParse_MultiplePropsWithEquivalentNames_LaterPropsTakePrecedence(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "WORKFLOW-ID", Value: "THIS_WORKFLOW_ID_SHOULD_BE_OVERRIDDEN"},
+		{Name: "Pool", Value: "THIS_POOL_SHOULD_BE_OVERRIDDEN"},
+		{Name: "workflow-id", Value: "WF123"},
+		{Name: "OSFamily", Value: "THIS_OSFAMILY_SHOULD_BE_OVERRIDDEN"},
+		{Name: "pool", Value: "workflow-pool"},
+		// Note: Empty property values should clear earlier ones, and if applicable,
+		// the default value will be applied.
+		{Name: "osfamily", Value: ""},
+		{Name: "container-image", Value: "THIS_CONTAINER_IMAGE_SHOULD_BE_OVERRIDDEN"},
+		{Name: "container-image", Value: "THIS_CONTAINER_IMAGE_SHOULD_BE_OVERRIDDEN_TOO"},
+		{Name: "container-image", Value: "docker://gcr.io/foo/bar"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	parsed := platform.ParseProperties(task)
+
+	assert.Equal(t, "linux", parsed.OS)
+	assert.Equal(t, "workflow-pool", parsed.Pool)
+	assert.Equal(t, "WF123", parsed.WorkflowID)
+	assert.Equal(t, "docker://gcr.io/foo/bar", parsed.ContainerImage)
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property

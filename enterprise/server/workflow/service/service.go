@@ -376,7 +376,14 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		}
 	}
 
-	// Execute
+	// Lookup API key
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a WebhookData to match the original webhook event that triggered
+	// this workflow.
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
@@ -388,6 +395,34 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		SHA:           req.GetCommitSha(),
 		IsTrusted:     req.GetTargetRepoUrl() == req.GetPushedRepoUrl(),
 	}
+
+	// Fetch buildbuddy.yaml and parse the action config from it.
+	// Use the pushed repo URL since in the PR case, it contains the workflow
+	// config for the PR (if the buildbuddy.yaml is being edited in the PR).
+	repoURL, err := gitutil.ParseRepoURL(req.GetPushedRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	gitProvider, err := ws.providerForRepo(repoURL)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := ws.fetchWorkflowConfig(ctx, apiKey, gitProvider, wf, wd)
+	if err != nil {
+		return nil, err
+	}
+	var action *config.Action
+	for _, a := range cfg.Actions {
+		if a.Name == req.GetActionName() {
+			action = a
+			break
+		}
+	}
+	if action == nil {
+		return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
+	}
+
+	// Execute
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -397,11 +432,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		fmt.Sprintf("--action_name=%s", req.GetActionName()),
 		fmt.Sprintf("--invocation_id=%s", invocationID),
 	}
-	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
-	if err != nil {
-		return nil, err
-	}
-	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, extraCIRunnerArgs)
+	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, action, extraCIRunnerArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +575,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, extraArgs []string) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, workflowAction *config.Action, extraArgs []string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -581,6 +612,26 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}...)
 	}
 	conf := ws.env.GetConfigurator()
+
+	overridablePlatformProps := []*repb.Platform_Property{
+		{Name: "Pool", Value: ws.workflowsPoolName()},
+		{Name: "container-image", Value: ws.workflowsImage()},
+	}
+	userPlatformProps := config.RunnerExecProperties(workflowAction)
+	nonOverridablePlatformProps := []*repb.Platform_Property{
+		// Reuse the docker container for the CI runner across executions if
+		// possible, and also keep the git repo around so it doesn't need to be
+		// re-cloned each time.
+		{Name: "recycle-runner", Value: "true"},
+		{Name: "preserve-workspace", Value: "true"},
+		// Pass the workflow ID to the executor so that it can try to assign
+		// this task to a runner which has previously executed the workflow.
+		{Name: "workflow-id", Value: wf.WorkflowID},
+	}
+
+	platformProps := append(overridablePlatformProps, userPlatformProps...)
+	platformProps = append(platformProps, nonOverridablePlatformProps...)
+
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -597,20 +648,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.workflowsPoolName()},
-				{Name: "container-image", Value: ws.workflowsImage()},
-				// Reuse the docker container for the CI runner across executions if
-				// possible, and also keep the git repo around so it doesn't need to be
-				// re-cloned each time.
-				{Name: "recycle-runner", Value: "true"},
-				{Name: "preserve-workspace", Value: "true"},
-				// Pass the workflow ID to the executor so that it can try to assign
-				// this task to a runner which has previously executed the workflow.
-				{Name: "workflow-id", Value: wf.WorkflowID},
-			},
-		},
+		Platform: &repb.Platform{Properties: platformProps},
 	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
@@ -750,7 +788,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 			continue
 		}
 		extraCIRunnerArgs := []string{"--action_name=" + action.Name}
-		_, err := ws.executeWorkflow(ctx, apiKey, wf, webhookData, extraCIRunnerArgs)
+		_, err := ws.executeWorkflow(ctx, apiKey, wf, webhookData, action, extraCIRunnerArgs)
 		if err != nil {
 			return err
 		}
@@ -759,14 +797,14 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 }
 
 // starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, workflowAction *config.Action, extraCIRunnerArgs []string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
 	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, extraCIRunnerArgs)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, workflowAction, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
 	}
