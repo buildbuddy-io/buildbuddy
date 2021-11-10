@@ -7,6 +7,7 @@ import (
 	"path"
 	"testing"
 	"time"
+    "encoding/base64"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -17,10 +18,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
 const (
@@ -398,4 +401,68 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	require.Equal(t, 0, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
 	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
+}
+
+func newPersistentRunnerTask(t *testing.T, key, arg string) *repb.ExecutionTask {
+	resp := &wkpb.WorkResponse{}
+	buf := proto.NewBuffer( /* buf */ nil)
+	if err := buf.EncodeMessage(resp); err != nil {
+		t.Fatal(err)
+	}
+	encodedResponse := base64.StdEncoding.EncodeToString([]byte(buf.Bytes()))
+	return &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: append([]string{"sh", "-c", `for run in {1..5}; do echo "`+encodedResponse+`" | base64 --decode && sleep 1; done`}, arg),
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "persistentWorkerKey", Value: key},
+					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
+				},
+			},
+		},
+	}
+}
+
+func TestRunnerPool_PersistentWorker(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Make a new persistent worker
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", ""))
+	require.NoError(t, err)
+	mustRun(t, r)
+	pool.TryRecycle(r, true)
+	assert.Equal(t, 1, pool.PausedRunnerCount())
+
+	// Reuse the persistent worker
+	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", ""))
+	require.NoError(t, err)
+	mustRun(t, r)
+	pool.TryRecycle(r, true)
+	assert.Equal(t, 1, pool.PausedRunnerCount())
+
+	// Try a persistent worker with a new key
+	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", ""))
+	require.NoError(t, err)
+	mustRun(t, r)
+	time.Sleep(2 * time.Second)
+	pool.TryRecycle(r, true)
+	assert.Equal(t, 2, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Persistent runner with unknown flagfile
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile"))
+	require.NoError(t, err)
+	res := r.Run(context.Background())
+	require.Error(t, res.Error)
+
+	// Make sure that after trying to recycle doesn't put the worker back in the pool.
+	pool.TryRecycle(r, true)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
 }

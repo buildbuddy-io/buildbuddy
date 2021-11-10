@@ -1023,6 +1023,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 
 	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
 
+	execContext, cancel := context.WithCancel(ctx)
 	// If it's our first rodeo, create the persistent worker.
 	if r.stdinWriter == nil || r.stdoutReader == nil {
 		stdinReader, stdinWriter := io.Pipe()
@@ -1033,13 +1034,19 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-			r.doNotReuse = true
 		}()
 	}
+
+	r.doNotReuse = true
+	defer func() {
+		if r.doNotReuse {
+			cancel()
+		}
+	}()
 
 	// We've got a worker - now let's build a work request.
 	requestProto := &wkpb.WorkRequest{
@@ -1103,6 +1110,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	// Populate the result from the response proto.
 	result.Stderr = []byte(responseProto.Output)
 	result.ExitCode = int(responseProto.ExitCode)
+	r.doNotReuse = false
 	return result
 }
 
