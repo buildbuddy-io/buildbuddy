@@ -4,18 +4,16 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -29,7 +27,7 @@ import (
 )
 
 const (
-	runnerBinaryRunfile  = "enterprise/server/cmd/ci_runner/ci_runner_/ci_runner"
+	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
 	RunnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
 )
 
@@ -39,13 +37,13 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	runnerPath, err := bazel.Runfile(runnerBinaryRunfile)
+	f, err := env.GetFileResolver().Open(runnerPath)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
+		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
+	defer f.Close()
 	return &runnerService{
-		env:              env,
-		runnerBinaryPath: runnerPath,
+		env: env,
 	}, nil
 }
 
@@ -58,12 +56,8 @@ func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	group, err := authutil.EffectiveGroup(ctx, u)
-	if err != nil {
-		return "", err
-	}
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", group.GroupID)
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := r.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
@@ -95,7 +89,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
-	binaryBlob, err := os.ReadFile(r.runnerBinaryPath)
+	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +98,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(r.runnerBinaryPath)
+	runnerName := filepath.Base(runnerPath)
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,
@@ -162,7 +156,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
-				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
+				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "20000000000"}, // 20GB
 			},
 		},
 	}

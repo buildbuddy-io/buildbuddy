@@ -203,7 +203,7 @@ type Cache interface {
 
 type InvocationDB interface {
 	// Invocations API
-	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) error
+	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) (bool, error)
 	UpdateInvocationACL(ctx context.Context, authenticatedUser *UserInfo, invocationID string, acl *aclpb.ACL) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)

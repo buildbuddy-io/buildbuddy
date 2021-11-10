@@ -21,6 +21,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
+        "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
         "@com_github_coreos_go_oidc//:go-oidc",
