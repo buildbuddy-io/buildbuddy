@@ -172,7 +172,7 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	if err := disk.EnsureDirectoryExists(bundleOutputDir); err != nil {
 		return "", err
 	}
-	if out, err := exec.CommandContext(ctx, "umoci", "unpack", "--rootless", "--image", ociImageDir, bundleOutputDir).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "umoci", "raw", "unpack", "--rootless", "--image", ociImageDir, bundleOutputDir).CombinedOutput(); err != nil {
 		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
 	}
 
