@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -85,11 +86,12 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			realEnv.SetAppFilesystem(appFS)
 		}
 	}
+	bundleFS, err := bundle.Get()
+	if err != nil {
+		log.Fatalf("Error getting bundle FS: %s", err)
+	}
+	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 	if realEnv.GetAppFilesystem() == nil {
-		bundleFS, err := bundle.Get()
-		if err != nil {
-			log.Fatalf("Error getting bundle FS: %s", err)
-		}
 		if realEnv.GetAppFilesystem() == nil {
 			appFS, err := fs.Sub(bundleFS, "app")
 			if err != nil {

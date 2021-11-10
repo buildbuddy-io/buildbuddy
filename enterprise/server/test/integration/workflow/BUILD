@@ -3,7 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "workflow_test",
     srcs = ["workflow_test.go"],
+    shard_count = 2,
     deps = [
+        "//enterprise/server/invocation_search_service",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/testgit",
         "//enterprise/server/workflow/service",

@@ -5,7 +5,7 @@ import SidebarNodeComponent from "./code_sidebar_node";
 import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
 import { Octokit } from "octokit";
-import DiffMatchPatch from "diff-match-patch";
+import * as diff from "diff";
 import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
 
@@ -25,15 +25,13 @@ interface State {
   treeShaToChildrenMap: Map<string, any[]>;
   treeShaToPathMap: Map<string, string>;
   fullPathToModelMap: Map<string, any>;
-  originalFileContents: string;
+  originalFileContents: Map<string, string>;
   currentFilePath: string;
   changes: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
 
   requestingReview: boolean;
 }
-
-const dmp = new DiffMatchPatch.diff_match_patch();
 
 // TODO(siggisim): Implement build and test
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
@@ -51,7 +49,7 @@ export default class CodeComponent extends React.Component<Props> {
     treeShaToChildrenMap: new Map<string, any[]>(),
     treeShaToPathMap: new Map<string, string>(),
     fullPathToModelMap: new Map<string, any>(),
-    originalFileContents: "",
+    originalFileContents: new Map<string, any>(),
     currentFilePath: "",
     changes: new Map<string, string>(),
     pathToIncludeChanges: new Map<string, boolean>(),
@@ -98,7 +96,7 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   handleContentChanged() {
-    if (this.state.originalFileContents === this.editor.getValue()) {
+    if (this.state.originalFileContents.get(this.state.currentFilePath) === this.editor.getValue()) {
       this.state.changes.delete(this.state.currentFilePath);
       this.state.pathToIncludeChanges.delete(this.state.currentFilePath);
     } else if (this.state.currentFilePath) {
@@ -179,7 +177,8 @@ export default class CodeComponent extends React.Component<Props> {
       .then((response: any) => {
         console.log(response);
         let fileContents = atob(response.data.content);
-        this.setState({ currentFilePath: fullPath, originalFileContents: fileContents, changes: this.state.changes });
+        this.state.originalFileContents.set(fullPath, fileContents);
+        this.setState({ currentFilePath: fullPath, originalFileContents: this.state.originalFileContents, changes: this.state.changes });
         let model = this.state.fullPathToModelMap.get(fullPath);
         if (!model) {
           model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
@@ -189,15 +188,32 @@ export default class CodeComponent extends React.Component<Props> {
       });
   }
 
+  getRemoteExecutorEndpoint() {
+    // TODO(siggisim): get the correct cross-environment value here.
+    return "remote.buildbuddy.dev";
+  }
+
+  getJobCount() {
+    return 200;
+  }
+  
+  getContainerImage() {
+    return "docker://gcr.io/flame-public/buildbuddy-ci-runner:latest";
+  }
+
+  getBazelFlags() {
+    return `--remote_executor=${this.getRemoteExecutorEndpoint()} --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
+  }
+
   handleBuildClicked() {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
-    // TODO(siggisim): fill out more repo status
-    request.bazelCommand = "build //...";
+    request.bazelCommand = `build //... ${this.getBazelFlags()}`;
+    request.repoState = this.getRepoState()
 
     rpcService.service.run(request).then((response: runner.RunResponse) => {
-      alert(response);
+      window.open(`/invocation/${response.invocationId}`,'_blank');
     }).catch((error: any) => {
       alert(error);
     });
@@ -207,14 +223,23 @@ export default class CodeComponent extends React.Component<Props> {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
-    // TODO(siggisim): fill out more repo status
-    request.bazelCommand = "test //...";
+    request.bazelCommand = `test //... ${this.getBazelFlags()}`;
+    request.repoState = this.getRepoState()
 
     rpcService.service.run(request).then((response: runner.RunResponse) => {
-      alert(response);
+      window.open(`/invocation/${response.invocationId}`,'_blank');
     }).catch((error: any) => {
       alert(error);
     });
+  }
+
+  getRepoState() {
+    let state = new runner.RunRequest.RepoState();
+    // TODO(siggisim): add commit sha
+    for (let path of this.state.changes.keys()) {
+      state.patch.push(diff.createTwoFilesPatch(`a/${path}`, `b/${path}`, this.state.originalFileContents.get(path), this.state.changes.get(path)));
+    }
+    return state;
   }
 
   async handleReviewClicked() {
@@ -272,7 +297,8 @@ export default class CodeComponent extends React.Component<Props> {
         model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fileName));
         this.state.fullPathToModelMap.set(fileName, model);
       }
-      this.setState({ currentFilePath: fileName, originalFileContents: "", changes: this.state.changes }, () => {
+      this.state.originalFileContents.set(fileName, "");
+      this.setState({ currentFilePath: fileName, originalFileContents: this.state.originalFileContents, changes: this.state.changes }, () => {
         this.editor.setModel(model);
         this.handleContentChanged();
       });
