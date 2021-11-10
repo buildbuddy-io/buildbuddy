@@ -2,12 +2,12 @@ package runner_test
 
 import (
 	"context"
+	"encoding/base64"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
 	"time"
-    "encoding/base64"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -17,8 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/uuid"
 	"github.com/golang/protobuf/proto"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -412,7 +412,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg string) *repb.ExecutionTask 
 	encodedResponse := base64.StdEncoding.EncodeToString([]byte(buf.Bytes()))
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
-			Arguments: append([]string{"sh", "-c", `for run in {1..5}; do echo "`+encodedResponse+`" | base64 --decode && sleep 1; done`}, arg),
+			Arguments: append([]string{"sh", "-c", `for run in {1..5}; do echo "` + encodedResponse + `" | base64 --decode && sleep 1; done`}, arg),
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
