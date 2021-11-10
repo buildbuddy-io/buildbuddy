@@ -28,11 +28,12 @@ import (
 
 const (
 	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-	runnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
+	RunnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
 )
 
 type runnerService struct {
-	env environment.Env
+	env              environment.Env
+	runnerBinaryPath string
 }
 
 func New(env environment.Env) (*runnerService, error) {
@@ -151,7 +152,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
-				{Name: "container-image", Value: runnerContainerImage},
+				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},

@@ -104,7 +104,7 @@ func (s *Executor) Name() string {
 }
 
 func (s *Executor) Warmup() {
-	s.runnerPool.WarmupDefaultImage()
+	s.runnerPool.WarmupImages()
 }
 
 func diffTimestamps(startPb, endPb *tspb.Timestamp) time.Duration {
