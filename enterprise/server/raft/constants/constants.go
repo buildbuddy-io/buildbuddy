@@ -19,6 +19,7 @@ const (
 
 	RegistryUpdateEvent = "registry_update_event"
 	RegistryQueryEvent  = "registry_query_event"
+	AutoBringupEvent    = "auto_bringup_event"
 )
 
 // Key range contants

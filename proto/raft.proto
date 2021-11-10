@@ -154,6 +154,17 @@ message RegistryQuery {
   uint64 node_id = 2;
 }
 
+// The auto-bringup protocol is very simple: if no previous data is found on
+// startup, the first node in the sorted "join" set will query other nodes
+// until it finds all other members of the join set. If they have previous data
+// then they do not respond to the bringup query. If all nodes respond, then
+// the first node sends them a StartCluster request and provisions the initial
+// cluster.
+message BringupResponse {
+  string nhid = 1;
+  string grpc_address = 2;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Raft meta-API, used by placement driver to manage data locations etc.

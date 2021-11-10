@@ -255,7 +255,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.createStateMachineFn, conf.ListenAddress, conf.Join)
+	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.grpcAddress, rc.createStateMachineFn, rc.gossipManager)
 	rc.gossipManager.AddListener(clusterStarter)
 
 	clusterStarter.InitializeClusters()

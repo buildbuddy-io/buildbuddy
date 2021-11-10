@@ -3,9 +3,12 @@ package bringup
 import (
 	"context"
 	"fmt"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/gossip"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -27,24 +30,34 @@ type ClusterStarter struct {
 	nodeHost             *dragonboat.NodeHost
 	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
 
-	// the set of hosts passed to the Join arg
-	listenAddr string
-	join       []string
+	grpcAddr string
 
-	// map of grpc_address => node host ID
-	bootstrapInfo map[string]string
-	bootstrapped  bool
+	// the set of hosts passed to the Join arg
+	listenAddr    string
+	join          []string
+	gossipManager *gossip.GossipManager
+
+	bootstrapped bool
+
+	// a mutex that protects the function sending bringup
+	// requests so we only attempt one auto bringup at a time.
+	sendingStartRequestsMu sync.Mutex
+
+	log log.Logger
 }
 
-func NewClusterStarter(nodeHost *dragonboat.NodeHost, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, listenAddr string, join []string) *ClusterStarter {
+func NewClusterStarter(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) *ClusterStarter {
 	cs := &ClusterStarter{
 		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
-		listenAddr:           listenAddr,
-		join:                 join,
-		bootstrapInfo:        make(map[string]string, 0),
+		grpcAddr:             grpcAddr,
+		listenAddr:           gossipMan.ListenAddr,
+		join:                 gossipMan.Join,
+		gossipManager:        gossipMan,
 		bootstrapped:         false,
+		log:                  log.NamedSubLogger(nodeHost.ID()),
 	}
+	sort.Strings(cs.join)
 	return cs
 }
 
@@ -53,13 +66,13 @@ func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
 	clustersAlreadyConfigured := 0
 	for _, logInfo := range nodeHostInfo.LogInfo {
 		if cs.nodeHost.HasNodeInfo(logInfo.ClusterID, logInfo.NodeID) {
-			log.Printf("NodeHost %q had info for cluster: %d, node: %d.", cs.nodeHost.ID(), logInfo.ClusterID, logInfo.NodeID)
+			cs.log.Infof("Had info for cluster: %d, node: %d.", logInfo.ClusterID, logInfo.NodeID)
 			r := raftConfig.GetRaftConfig(logInfo.ClusterID, logInfo.NodeID)
 			if err := cs.nodeHost.StartOnDiskCluster(nil, false /*=join*/, cs.createStateMachineFn, r); err != nil {
 				return clustersAlreadyConfigured, err
 			}
 			clustersAlreadyConfigured += 1
-			log.Printf("NodeHost %q recreated cluster: %d, node: %d.", cs.nodeHost.ID(), logInfo.ClusterID, logInfo.NodeID)
+			cs.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ClusterID, logInfo.NodeID)
 		}
 	}
 	return clustersAlreadyConfigured, nil
@@ -79,45 +92,74 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	// happen. If so, bringup will be triggered when all of the nodes
 	// in the Join list have announced themselves to us.
 	cs.bootstrapped = clustersAlreadyConfigured > 0
+	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
 
-	log.Printf("%q %d clusters already configured. bootstrapped: %t", cs.listenAddr, clustersAlreadyConfigured, cs.bootstrapped)
+	if cs.listenAddr != cs.join[0] {
+		return nil
+	}
+
+	go func() {
+		for !cs.bootstrapped {
+			if err := cs.attemptQueryAndBringupOnce(); err != nil {
+				cs.log.Errorf("attemptQueryAndBringupOnce err: %s", err)
+			} else {
+				cs.bootstrapped = true
+			}
+		}
+	}()
 	return nil
 }
 
-// OnEvent is called when a node joins, leaves, or is updated. This
-// function is effectively a no-op if this node is not node[0] in the join list
-// (the one responsible for orchestrating the initial cluster bringup) or if
-// this node was already bootstrapped from stored cluster state on disk.
+// Runs one round of the algorithm that queries gossip for other bringup nodes
+// and attempts cluster bringup.
+func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
+	rsp, err := cs.gossipManager.Query(constants.AutoBringupEvent, nil, nil)
+	if err != nil {
+		return err
+	}
+	bootstrapInfo := make(map[string]string, 0)
+	for nodeRsp := range rsp.ResponseCh() {
+		if nodeRsp.Payload == nil {
+			continue
+		}
+		br := &rfpb.BringupResponse{}
+		if err := proto.Unmarshal(nodeRsp.Payload, br); err != nil {
+			continue
+		}
+		if br.GetNhid() == "" || br.GetGrpcAddress() == "" {
+			continue
+		}
+		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
+		if len(bootstrapInfo) == len(cs.join) {
+			return cs.sendStartClusterRequests(bootstrapInfo)
+		}
+	}
+	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)
+}
+
 func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
 	if cs.bootstrapped {
 		return
 	}
 	switch updateType {
-	case serf.EventMemberJoin, serf.EventMemberUpdate:
-		memberEvent, _ := event.(serf.MemberEvent)
-		for _, member := range memberEvent.Members {
-			address := fmt.Sprintf("%s:%d", member.Addr.String(), member.Port)
-			for _, joinPeer := range cs.join {
-				if joinPeer == address {
-					nhid := member.Tags[constants.NodeHostIDTag]
-					grpcAddress := member.Tags[constants.GRPCAddressTag]
-					if grpcAddress != "" && nhid != "" {
-						cs.bootstrapInfo[grpcAddress] = nhid
-					}
-				}
-			}
+	case serf.EventQuery:
+		query, _ := event.(*serf.Query)
+		if query.Name != constants.AutoBringupEvent {
+			return
+		}
+		rsp := &rfpb.BringupResponse{
+			Nhid:        cs.nodeHost.ID(),
+			GrpcAddress: cs.grpcAddr,
+		}
+		buf, err := proto.Marshal(rsp)
+		if err != nil {
+			return
+		}
+		if err := query.Respond(buf); err != nil {
+			cs.log.Debugf("Error responding to gossip query: %s", err)
 		}
 	default:
 		break
-	}
-
-	log.Printf("cs.bootstrapInfo is now: %+v", cs.bootstrapInfo)
-	if len(cs.bootstrapInfo) == len(cs.join) {
-		if err := cs.sendStartClusterRequests(); err == nil {
-			cs.bootstrapped = true
-		} else {
-			log.Printf("Error setting up initial cluster: %s", err)
-		}
 	}
 }
 
@@ -129,15 +171,14 @@ type bootstrapNode struct {
 
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bringup an initial cluster.
-func (cs *ClusterStarter) sendStartClusterRequests() error {
-	if cs.listenAddr != cs.join[0] {
-		return nil
-	}
+func (cs *ClusterStarter) sendStartClusterRequests(bootstrapInfo map[string]string) error {
+	cs.sendingStartRequestsMu.Lock()
+	defer cs.sendingStartRequestsMu.Unlock()
 
 	i := uint64(1)
 	initialMembers := make(map[uint64]string, 0)
-	nodes := make([]bootstrapNode, 0, len(cs.bootstrapInfo))
-	for grpcAddress, nhid := range cs.bootstrapInfo {
+	nodes := make([]bootstrapNode, 0, len(bootstrapInfo))
+	for nhid, grpcAddress := range bootstrapInfo {
 		nodes = append(nodes, bootstrapNode{
 			grpcAddress: grpcAddress,
 			nodeHostID:  nhid,
@@ -147,7 +188,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		i += 1
 	}
 
-	log.Debugf("I am %q sending cluster bringup requests to %+v", cs.listenAddr, nodes)
+	cs.log.Debugf("I am %q sending cluster bringup requests to %+v", cs.listenAddr, nodes)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -164,7 +205,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 		})
 		if err != nil {
 			if !status.IsAlreadyExistsError(err) {
-				log.Errorf("Start cluster returned err: %s", err)
+				cs.log.Errorf("Start cluster returned err: %s", err)
 				return err
 			}
 		}
@@ -184,7 +225,6 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 	for !proposedFirstVal {
 		select {
 		case <-ctx.Done():
-			log.Printf("ctx is done, returning err")
 			return err
 		case <-time.After(100 * time.Millisecond):
 			sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
@@ -192,7 +232,7 @@ func (cs *ClusterStarter) sendStartClusterRequests() error {
 			if err == nil {
 				proposedFirstVal = true
 			}
-			log.Printf("cs.nodeHost.SyncPropose returned err: %s", err)
+			cs.log.Infof("cs.nodeHost.SyncPropose returned err: %s", err)
 		}
 	}
 

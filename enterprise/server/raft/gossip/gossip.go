@@ -26,6 +26,9 @@ type GossipManager struct {
 	serfEventChan chan serf.Event
 	listeners     []Listener
 
+	ListenAddr string
+	Join       []string
+
 	tagMu sync.Mutex
 	tags  map[string]string
 }
@@ -107,12 +110,12 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error) {
-	log.Printf("Starting GossipManager on %q", bindAddress)
+func NewGossipManager(listenAddress string, join []string) (*GossipManager, error) {
+	log.Printf("Starting GossipManager on %q", listenAddress)
 
-	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", bindAddress))
+	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", listenAddress))
 
-	bindAddr, bindPort, err := network.ParseAddress(bindAddress)
+	bindAddr, bindPort, err := network.ParseAddress(listenAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +125,7 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 	memberlistConfig.LogOutput = &logWriter{subLog}
 
 	serfConfig := serf.DefaultConfig()
-	serfConfig.NodeName = bindAddress
+	serfConfig.NodeName = listenAddress
 	serfConfig.MemberlistConfig = memberlistConfig
 	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.
@@ -134,6 +137,8 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 		serfEventChan: make(chan serf.Event, 16),
 		tagMu:         sync.Mutex{},
 		tags:          make(map[string]string, 0),
+		ListenAddr:    listenAddress,
+		Join:          join,
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan
 	go gossipMan.processEvents()
@@ -143,15 +148,15 @@ func NewGossipManager(bindAddress string, seeds []string) (*GossipManager, error
 		return nil, err
 	}
 
-	otherSeeds := make([]string, 0, len(seeds))
-	for _, seed := range seeds {
-		if seed != bindAddress {
-			otherSeeds = append(otherSeeds, seed)
+	otherNodes := make([]string, 0, len(join))
+	for _, node := range join {
+		if node != listenAddress {
+			otherNodes = append(otherNodes, node)
 		}
 	}
-	if len(otherSeeds) > 0 {
-		log.Debugf("I am %q, attempting to join %+v", bindAddress, otherSeeds)
-		_, err := serfInstance.Join(otherSeeds, false)
+	if len(otherNodes) > 0 {
+		log.Debugf("I am %q, attempting to join %+v", listenAddress, otherNodes)
+		_, err := serfInstance.Join(otherNodes, false)
 		if err != nil {
 			log.Debugf("Join failed: %s", err)
 		}

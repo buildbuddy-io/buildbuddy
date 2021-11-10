@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/gossip",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
