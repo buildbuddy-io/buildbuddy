@@ -922,6 +922,7 @@ code .comment {
 
 .terminal {
   height: 300px;
+  margin-top: -49px; 
   overflow-x: auto;
 }
 
@@ -933,6 +934,29 @@ code .comment {
   font-size: 14px;
   font-family: "Source Code Pro", monospace;
   color: #fff;
+}
+
+.build-logs-card .title {
+  z-index: 1;
+  position: relative;
+  pointer-events: none;
+}
+
+.react-lazylog-searchbar {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .terminal {
+    margin-top: 0;
+  }
+  .react-lazylog-searchbar {
+    display: none !important;
+  }
+}
+
+.react-lazylog-searchbar-input {
+  border-radius: 4px;
 }
 
 .light-terminal .terminal-line {
