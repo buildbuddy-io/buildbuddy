@@ -425,7 +425,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg string, resp *wkpb.WorkRespo
 func TestRunnerPool_PersistentWorker(t *testing.T) {
 	resp := &wkpb.WorkResponse{
 		ExitCode: 0,
-		Output: "Test output!",
+		Output:   "Test output!",
 	}
 
 	env := newTestEnv(t)
