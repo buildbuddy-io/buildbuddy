@@ -176,6 +176,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 }
 
 func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apipb.GetLogResponse, error) {
+	// No need for user here because user filters will be applied by LookupInvocation.
 	if _, err := s.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
@@ -190,7 +191,7 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 	}
 
 	return &apipb.GetLogResponse{
-		Log: &apipb.Log{ Contents: inv.ConsoleBuffer },
+		Log: &apipb.Log{Contents: inv.ConsoleBuffer},
 	}, nil
 }
 
