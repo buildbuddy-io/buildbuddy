@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -140,8 +139,7 @@ func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
 }
 
 func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
-	timeout := 2 * time.Second * time.Duration(len(caches))
-	log.Printf("waitForShutdown called")
+	timeout := 3 * time.Second * time.Duration(len(caches))
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)
