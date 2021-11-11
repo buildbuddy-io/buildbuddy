@@ -14,6 +14,7 @@ export default class TerminalComponent extends React.Component<TerminalProps> {
           selectableLines={true}
           caseInsensitive={true}
           rowHeight={20}
+          enableSearch={true}
           lineClassName="terminal-line"
           follow={true}
           // Ensure a trailing blank line to prevent the horizontal scrollbar
