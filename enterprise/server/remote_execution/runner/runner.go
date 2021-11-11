@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -529,8 +530,40 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 	}
 }
 
-func (p *Pool) WarmupDefaultImage() {
+func (p *Pool) warmupImage(ctx context.Context, containerType platform.ContainerType, image string) error {
 	start := time.Now()
+	plat := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: image},
+			{Name: "workload-isolation-type", Value: string(containerType)},
+		},
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"echo", "'warmup'"},
+			Platform:  plat,
+		},
+	}
+	platProps := platform.ParseProperties(task)
+	c, err := p.newContainer(ctx, platProps, task.GetCommand())
+	if err != nil {
+		log.Errorf("Error warming up %q: %s", containerType, err)
+		return err
+	}
+
+	creds := container.GetPullCredentials(p.env, platProps)
+	err = container.PullImageIfNecessary(
+		ctx, p.env, p.imageCacheAuth,
+		c, creds, platProps.ContainerImage,
+	)
+	if err != nil {
+		return err
+	}
+	log.Infof("Warmup: %s pulled image %q in %s", containerType, image, time.Since(start))
+	return nil
+}
+
+func (p *Pool) WarmupImages() {
 	config := p.env.GetConfigurator().GetExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 2 minute to succeed.
@@ -542,44 +575,21 @@ func (p *Pool) WarmupDefaultImage() {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
 	for _, containerType := range executorProps.SupportedIsolationTypes {
 		containerType := containerType
 		image := platform.DefaultContainerImage
 		if config.DefaultImage != "" {
 			image = config.DefaultImage
 		}
-		plat := &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: image},
-				{Name: "workload-isolation-type", Value: string(containerType)},
-			},
-		}
-		task := &repb.ExecutionTask{
-			Command: &repb.Command{
-				Arguments: []string{"echo", "'warmup'"},
-				Platform:  plat,
-			},
-		}
-		platProps := platform.ParseProperties(task)
-		c, err := p.newContainer(egCtx, platProps, task.GetCommand())
-		if err != nil {
-			log.Errorf("Error warming up %q: %s", containerType, err)
-			return
-		}
-
 		eg.Go(func() error {
-			creds := container.GetPullCredentials(p.env, platProps)
-			err := container.PullImageIfNecessary(
-				egCtx, p.env, p.imageCacheAuth,
-				c, creds, platProps.ContainerImage,
-			)
-			if err != nil {
-				return err
-			}
-			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
-			return nil
+			return p.warmupImage(ctx, containerType, image)
 		})
+		if containerType == platform.FirecrackerContainerType {
+			eg.Go(func() error {
+				return p.warmupImage(ctx, containerType, strings.TrimPrefix(hostedrunner.RunnerContainerImage, platform.DockerPrefix))
+			})
+		}
 	}
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error warming up containers: %s", err)
@@ -1023,6 +1033,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 
 	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
 
+	execContext, cancel := context.WithCancel(ctx)
 	// If it's our first rodeo, create the persistent worker.
 	if r.stdinWriter == nil || r.stdoutReader == nil {
 		stdinReader, stdinWriter := io.Pipe()
@@ -1033,13 +1044,19 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-			r.doNotReuse = true
 		}()
 	}
+
+	r.doNotReuse = true
+	defer func() {
+		if r.doNotReuse {
+			cancel()
+		}
+	}()
 
 	// We've got a worker - now let's build a work request.
 	requestProto := &wkpb.WorkRequest{
@@ -1103,6 +1120,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	// Populate the result from the response proto.
 	result.Stderr = []byte(responseProto.Output)
 	result.ExitCode = int(responseProto.ExitCode)
+	r.doNotReuse = false
 	return result
 }
 
