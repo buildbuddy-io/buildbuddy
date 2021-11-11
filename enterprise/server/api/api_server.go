@@ -130,7 +130,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	// Filter to only selected targets.
 	targets := []*apipb.Target{}
 	for _, target := range targetMap {
-		if targetMatchesTargetSelector(target.GetId(), req.GetSelector()) {
+		if targetMatchesTargetSelector(target, req.GetSelector()) {
 			targets = append(targets, target)
 		}
 	}
@@ -325,9 +325,17 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	return nil
 }
 
-// Returns true if a selector has an empty target ID or matches the target's ID
-func targetMatchesTargetSelector(id *apipb.Target_Id, selector *apipb.TargetSelector) bool {
-	return selector.TargetId == "" || selector.TargetId == id.TargetId
+// Returns true if a selector has an empty target ID or matches the target's ID or tag
+func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
+	if selector.Tag != "" {
+		for _, tag := range target.GetTag() {
+			if tag == selector.Tag {
+				return true
+			}
+		}
+		return false
+	}
+	return selector.TargetId == "" || selector.TargetId == target.GetId().TargetId
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
