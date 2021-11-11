@@ -403,8 +403,7 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
 }
 
-func newPersistentRunnerTask(t *testing.T, key, arg string) *repb.ExecutionTask {
-	resp := &wkpb.WorkResponse{}
+func newPersistentRunnerTask(t *testing.T, key, arg string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
 	buf := proto.NewBuffer( /* buf */ nil)
 	if err := buf.EncodeMessage(resp); err != nil {
 		t.Fatal(err)
@@ -412,7 +411,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg string) *repb.ExecutionTask 
 	encodedResponse := base64.StdEncoding.EncodeToString([]byte(buf.Bytes()))
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
-			Arguments: append([]string{"sh", "-c", `for run in {1..5}; do echo "` + encodedResponse + `" | base64 --decode && sleep 1; done`}, arg),
+			Arguments: append([]string{"sh", "-c", `echo ` + encodedResponse + encodedResponse + ` | base64 --decode`}, arg),
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
@@ -424,29 +423,42 @@ func newPersistentRunnerTask(t *testing.T, key, arg string) *repb.ExecutionTask 
 }
 
 func TestRunnerPool_PersistentWorker(t *testing.T) {
+	resp := &wkpb.WorkResponse{
+		ExitCode: 0,
+		Output: "Test output!",
+	}
+
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
 	// Make a new persistent worker
-	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", ""))
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", resp))
 	require.NoError(t, err)
-	mustRun(t, r)
+	res := r.Run(context.Background())
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, []byte(resp.Output), res.Stderr)
 	pool.TryRecycle(r, true)
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 
 	// Reuse the persistent worker
-	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", ""))
+	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", resp))
 	require.NoError(t, err)
-	mustRun(t, r)
+	res = r.Run(context.Background())
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, []byte(resp.Output), res.Stderr)
 	pool.TryRecycle(r, true)
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 
 	// Try a persistent worker with a new key
-	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", ""))
+	r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", "", resp))
 	require.NoError(t, err)
-	mustRun(t, r)
-	time.Sleep(2 * time.Second)
+	res = r.Run(context.Background())
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, []byte(resp.Output), res.Stderr)
 	pool.TryRecycle(r, true)
 	assert.Equal(t, 2, pool.PausedRunnerCount())
 }
@@ -457,7 +469,7 @@ func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
 	// Persistent runner with unknown flagfile
-	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile"))
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile", &wkpb.WorkResponse{}))
 	require.NoError(t, err)
 	res := r.Run(context.Background())
 	require.Error(t, res.Error)
