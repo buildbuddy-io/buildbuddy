@@ -63,6 +63,44 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
 }
 ```
 
+## GetLog
+
+The `GetLog` endpoint allows you to fetch build logs associated with an invocation ID. View full [Log proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/log.proto).
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/GetLog
+```
+
+### Service
+
+```protobuf
+// Retrieves the logs for a specific invocation.
+rpc GetLog(GetLogRequest) returns (GetLogResponse);
+```
+
+### Example cURL request
+
+```bash
+curl -d '{"selector": {"invocation_id":"c6b2b6de-c7bb-4dd9-b7fd-a530362f0845"}}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/GetLog
+```
+
+Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c7bb-4dd9-b7fd-a530362f0845` with your own values.
+
+### Example cURL response
+
+```json
+{
+  "log": {
+    "contents": "\u001b[32mINFO: \u001b[0mStreaming build results to: https://app.buildbuddy.io/invocation/c6b2b6de-c7bb-4dd9-b7fd-a530362f0845\n\u001b[33mDEBUG: \u001b[0m/private/var/tmp/_bazel_siggi/d74b389565ce91f59e5b1330988b81f0/external/io_grpc_grpc_java/java_grpc_library.bzl:195:14: Multiple values in 'deps' is deprecated in google_devtools_remoteexecution_v1test_remote_execution_java_grpc\n\u001b[33mDEBUG: \u001b[0m/private/var/tmp/_bazel_siggi/d74b3895654ce91f9e5b1300988b81f0/external/io_grpc_grpc_java/java_grpc_library.bzl:195:14: Multiple values in 'deps' is deprecated in remote_execution_java_grpc\n\u001b[33mDEBUG: \u001b[0m/private/var/tmp/_bazel_siggi/d74b3895654ce91f9e5b1300988b81f0/external/io_grpc_grpc_java/java_grpc_library.bzl:82:14: in srcs attribute of @remoteapis//:remote_execution_java_grpc: Proto source with label @remoteapis//build/bazel/remote/execution/v2:remote_execution_proto should be in same package as consuming rule\n\u001b[32mINFO: \u001b[0mAnalyzed 9 targets (52 packages loaded, 1700 targets configured).\n\u001b[32mINFO: \u001b[0mFound 9 targets...\n\u001b[32mINFO: \u001b[0mFrom Generating Descriptor Set proto_library @googleapis//:google_watch_v1_proto:\ngoogle/watcher/v1/watch.proto:21:1: warning: Import google/protobuf/empty.proto but not used.\n\u001b[32mINFO: \u001b[0mElapsed time: 2.615s, Critical Path: 1.21s\n\u001b[32mINFO: \u001b[0m32 processes: 16 internal, 11 darwin-sandbox, 5 worker.\n\u001b[32mINFO:\u001b[0m Build completed successfully, 32 total actions\n"
+  }
+}
+```
+
 ### GetInvocationRequest
 
 ```protobuf

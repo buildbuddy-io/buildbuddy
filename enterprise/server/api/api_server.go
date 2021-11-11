@@ -175,6 +175,26 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 	}, nil
 }
 
+func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apipb.GetLogResponse, error) {
+	// No need for user here because user filters will be applied by LookupInvocation.
+	if _, err := s.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
+
+	if req.GetSelector().GetInvocationId() == "" {
+		return nil, status.InvalidArgumentErrorf("LogSelector must contain a valid invocation_id")
+	}
+
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &apipb.GetLogResponse{
+		Log: &apipb.Log{Contents: inv.ConsoleBuffer},
+	}, nil
+}
+
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
 	ctx := server.Context()
 	if _, err := s.checkPreconditions(ctx); err != nil {
