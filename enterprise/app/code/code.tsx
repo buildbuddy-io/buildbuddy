@@ -33,7 +33,8 @@ interface State {
   requestingReview: boolean;
 }
 
-// TODO(siggisim): Implement build and test
+const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
+
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
 // TODO(siggisim): Add currently selected file name
@@ -41,7 +42,7 @@ interface State {
 export default class CodeComponent extends React.Component<Props> {
   props: Props;
 
-  state: State = {
+  state: State = localStorage.getItem(LOCAL_STORAGE_STATE_KEY) ? JSON.parse(localStorage.getItem(LOCAL_STORAGE_STATE_KEY), stateReviver) as State : {
     owner: "",
     repo: "",
     repoResponse: undefined,
@@ -90,6 +91,10 @@ export default class CodeComponent extends React.Component<Props> {
       theme: "vs",
     });
 
+    if (this.state.currentFilePath) { 
+      this.editor.setModel(this.state.fullPathToModelMap.get(this.state.currentFilePath));
+    } 
+
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
     });
@@ -107,7 +112,9 @@ export default class CodeComponent extends React.Component<Props> {
     }
     this.setState({ changes: this.state.changes });
     console.log(this.state.changes);
-    // TODO(siggisim): serialize these changes to localStorage or to server and pull them back out.
+
+    // TODO(siggisim): store this in cache.
+    localStorage.setItem(LOCAL_STORAGE_STATE_KEY, JSON.stringify(this.state, stateReplacer));
   }
 
   componentWillUnmount() {
@@ -419,3 +426,41 @@ self.MonacoEnvironment = {
       importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.25.2/min/vs/base/worker/workerMain.js');`)}`;
   },
 };
+
+// This replaces any non-serializable objects in state with serializable models.
+function stateReplacer(key: any, value: any) {
+  if (key == "fullPathToModelMap") {
+    return {
+      dataType: 'ModelMap',
+      value: Array.from(value.entries()).map((e: any) => {
+        return {
+        dataType: 'Model',
+        key: e[0],
+        value: e[1].getValue(),
+        uri: e[1].uri,
+        }
+      }),
+    };
+  }
+  if(value instanceof Map) {
+    return {
+      dataType: 'Map',
+      value: Array.from(value.entries()),
+    };
+  }
+  return value;
+}
+
+// This revives any non-serializable objects in state from their seralized form.
+function stateReviver(key: any, value: any) {
+  if(typeof value === 'object' && value !== null) {
+    if (value.dataType === 'Map') {
+      return new Map(value.value);
+    }
+    if (value.dataType === 'ModelMap') {
+      console.log(value.value.map((e: any) => e.uri.path));
+      return new Map(value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, undefined, e.uri.path)]));
+    }
+  }
+  return value;
+}
