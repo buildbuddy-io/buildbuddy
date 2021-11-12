@@ -11,6 +11,7 @@ go_test(
         "//proto:publish_build_event_go_proto",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",

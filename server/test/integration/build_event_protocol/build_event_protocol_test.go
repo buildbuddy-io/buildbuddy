@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/ptypes"
@@ -177,7 +178,7 @@ func (p *BEPProxyServer) GRPCAddress() string {
 	return fmt.Sprintf("grpc://localhost:%d", p.port)
 }
 
-// FailOncec registers an error injector that can fire at most once for this
+// FailOnce registers an error injector that can fire at most once for this
 // proxy server instance. In other words, it is unregistered after returning an
 // error for the first time.
 func (p *BEPProxyServer) FailOnce(f StreamErrorInjector) {
