@@ -30,6 +30,10 @@ const (
 	readyCheckTimeout = 30 * time.Second
 )
 
+var (
+	portLeaser freePortLeaser
+)
+
 // App is a handle on a BuildBuddy server scoped to a test case, which provides
 // basic facilities for connecting to the server and running builds against it.
 type App struct {
@@ -146,16 +150,7 @@ func runfile(t *testing.T, path string) string {
 }
 
 func FreePort(t testing.TB) int {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return portLeaser.Lease(t)
 }
 
 func (a *App) waitForReady() error {
@@ -196,4 +191,37 @@ func isOK(resp *http.Response) (bool, error) {
 		return false, err
 	}
 	return string(body) == "OK", nil
+}
+
+type freePortLeaser struct {
+	leasedPorts map[int]struct{}
+	mu          sync.Mutex
+}
+
+func (p *freePortLeaser) findAPort(t testing.TB) int {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func (p *freePortLeaser) Lease(t testing.TB) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.leasedPorts == nil {
+		p.leasedPorts = make(map[int]struct{}, 0)
+	}
+	for {
+		port := p.findAPort(t)
+		if _, ok := p.leasedPorts[port]; !ok {
+			p.leasedPorts[port] = struct{}{}
+			return port
+		}
+	}
 }
