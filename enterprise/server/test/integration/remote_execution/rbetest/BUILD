@@ -7,6 +7,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise:bundle",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
@@ -38,6 +39,7 @@ go_library(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/fileresolver",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/log",

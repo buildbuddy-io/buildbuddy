@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "workspace",
     srcs = ["workspace.go"],
+    data = ["//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     visibility = ["//visibility:public"],
     deps = [
