@@ -199,13 +199,13 @@ func (p *BEPProxyServer) maybeInjectError(event *StreamEvent) error {
 }
 
 func (p *BEPProxyServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*empty.Empty, error) {
-	p.log.Info("Proxy: /PublishLifecycleEvent")
+	log.Info("Proxy: /PublishLifecycleEvent")
 
 	return p.backend.PublishLifecycleEvent(ctx, req)
 }
 
 func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
-	p.log.Info("Proxy: /PublishBuildToolEventStream")
+	log.Info("Proxy: /PublishBuildToolEventStream")
 
 	ctx := client.Context()
 
@@ -259,7 +259,7 @@ func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEve
 				continue
 			}
 			require.NoError(p.t, msg.err, "unexpected error from Bazel")
-			p.log.Debugf("Proxy: bazel ==> BB: %v", msg)
+			log.Debugf("Proxy: bazel ==> BB: %v", msg)
 			if err := p.maybeInjectError(&StreamEvent{ClientRecv: msg}); err != nil {
 				return err
 			}
@@ -279,7 +279,7 @@ func (p *BEPProxyServer) PublishBuildToolEventStream(client pepb.PublishBuildEve
 			if msg.err != nil {
 				return msg.err
 			}
-			p.log.Debugf("Proxy: bazel <-- BB: %v", msg)
+			log.Debugf("Proxy: bazel <-- BB: %v", msg)
 			if err := p.maybeInjectError(&StreamEvent{ServerRecv: msg}); err != nil {
 				return err
 			}
