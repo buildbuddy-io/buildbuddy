@@ -15,9 +15,13 @@ const WRAP_LOCAL_STORAGE_VALUE = "wrap";
 const ANSI_STYLES_REGEX = /\x1b\[[\d;]+?m/g;
 
 export default class TerminalComponent extends React.Component<TerminalProps, TerminalState> {
-  state = { wrap: localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === WRAP_LOCAL_STORAGE_VALUE };
+  state = { wrap: false };
 
   terminalRef = React.createRef<HTMLDivElement>();
+
+  componentDidMount() {
+    this.setState({ wrap: localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === WRAP_LOCAL_STORAGE_VALUE });
+  }
 
   render() {
     return (
