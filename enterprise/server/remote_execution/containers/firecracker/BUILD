@@ -67,6 +67,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//assert",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

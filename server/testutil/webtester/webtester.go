@@ -1,9 +1,7 @@
 package webtester
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"testing"
 
@@ -77,8 +75,7 @@ func (wt *WebTester) screenshot(tag string) error {
 	// TEST_UNDECLARED_OUTPUTS_DIR is usually defined by Bazel. If this test is
 	// run outside of Bazel for whatever reason, this will just be an empty
 	// string, which is interpreted by CreateTemp as "use the OS-default temp dir"
-	testScreenshotDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
-	screenshotFile, err := os.CreateTemp(testScreenshotDir, fmt.Sprintf("%s.%s.screenshot.png", wt.t.Name(), tag))
+	screenshotFile, err := os.CreateTemp(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), fmt.Sprintf("%s.%s.screenshot-*.png", wt.t.Name(), tag))
 	if err != nil {
 		return err
 	}
@@ -88,7 +85,7 @@ func (wt *WebTester) screenshot(tag string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(screenshotFile, bytes.NewReader(sc)); err != nil {
+	if _, err := screenshotFile.Write(sc); err != nil {
 		return err
 	}
 	wt.t.Logf("Screenshot saved to %s", screenshotFile.Name())

@@ -13,6 +13,7 @@ go_library(
         "//server/config",
         "//server/real_environment",
         "//server/rpc/filters",
+        "//server/testutil/testfs",
         "//server/util/db",
         "//server/util/grpc_client",
         "//server/util/healthcheck",

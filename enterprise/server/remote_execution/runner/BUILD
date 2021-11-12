@@ -53,6 +53,7 @@ go_test(
         "//server/config",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",

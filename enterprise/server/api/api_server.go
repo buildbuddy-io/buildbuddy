@@ -130,7 +130,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	// Filter to only selected targets.
 	targets := []*apipb.Target{}
 	for _, target := range targetMap {
-		if targetMatchesTargetSelector(target.GetId(), req.GetSelector()) {
+		if targetMatchesTargetSelector(target, req.GetSelector()) {
 			targets = append(targets, target)
 		}
 	}
@@ -172,6 +172,26 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 
 	return &apipb.GetActionResponse{
 		Action: actions,
+	}, nil
+}
+
+func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apipb.GetLogResponse, error) {
+	// No need for user here because user filters will be applied by LookupInvocation.
+	if _, err := s.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
+
+	if req.GetSelector().GetInvocationId() == "" {
+		return nil, status.InvalidArgumentErrorf("LogSelector must contain a valid invocation_id")
+	}
+
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	return &apipb.GetLogResponse{
+		Log: &apipb.Log{Contents: inv.ConsoleBuffer},
 	}, nil
 }
 
@@ -325,9 +345,17 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	return nil
 }
 
-// Returns true if a selector has an empty target ID or matches the target's ID
-func targetMatchesTargetSelector(id *apipb.Target_Id, selector *apipb.TargetSelector) bool {
-	return selector.TargetId == "" || selector.TargetId == id.TargetId
+// Returns true if a selector has an empty target ID or matches the target's ID or tag
+func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
+	if selector.Tag != "" {
+		for _, tag := range target.GetTag() {
+			if tag == selector.Tag {
+				return true
+			}
+		}
+		return false
+	}
+	return selector.TargetId == "" || selector.TargetId == target.GetId().TargetId
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID

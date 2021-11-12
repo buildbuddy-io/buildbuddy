@@ -142,6 +142,48 @@ func TestParse_Pool(t *testing.T) {
 	assert.Equal(t, "", platformProps.Pool)
 }
 
+func TestParse_EstimatedBCU(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		rawValue      string
+		expectedValue int64
+	}{
+		{"EstimatedComputeUnits", "", 0},
+		{"EstimatedComputeUnits", "NOT_AN_INT", 0},
+		{"EstimatedComputeUnits", "0", 0},
+		{"EstimatedComputeUnits", "1", 1},
+		{"EstimatedComputeUnits", " 1 ", 1},
+		{"estimatedcomputeunits", "1", 1},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: testCase.name, Value: testCase.rawValue},
+		}}
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedComputeUnits)
+	}
+}
+
+func TestParse_EstimatedFreeDisk(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		rawValue      string
+		expectedValue int64
+	}{
+		{"EstimatedFreeDiskBytes", "", 0},
+		{"EstimatedFreeDiskBytes", "NOT_AN_INT", 0},
+		{"EstimatedFreeDiskBytes", "0", 0},
+		{"EstimatedFreeDiskBytes", "1", 1},
+		{"EstimatedFreeDiskBytes", " 1 ", 1},
+		{"estimatedfreediskbytes", "1", 1},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: testCase.name, Value: testCase.rawValue},
+		}}
+		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedFreeDiskBytes)
+	}
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property
