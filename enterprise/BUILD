@@ -47,7 +47,6 @@ go_library(
     ] + select({
         ":fastbuild": [],
         "//conditions:default": [
-            "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
             "//enterprise/app:sha",
