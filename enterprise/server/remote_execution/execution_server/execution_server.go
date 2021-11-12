@@ -302,7 +302,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := tasksize.Estimate(command)
+	taskSize := tasksize.Estimate(executionTask)
 
 	props := platform.ParseProperties(executionTask)
 

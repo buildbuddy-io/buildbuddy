@@ -422,7 +422,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	// If memory usage stats are not implemented, fall back to the task size
 	// estimate.
 	if stats.MemoryUsageBytes == 0 {
-		estimate := tasksize.Estimate(r.task.GetCommand())
+		estimate := tasksize.Estimate(r.task)
 		stats.MemoryUsageBytes = estimate.GetEstimatedMemoryBytes()
 	}
 
@@ -545,7 +545,7 @@ func (p *Pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 	}
 	platProps := platform.ParseProperties(task)
-	c, err := p.newContainer(ctx, platProps, task.GetCommand())
+	c, err := p.newContainer(ctx, platProps, task)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
 		return err
@@ -655,7 +655,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
-	ctr, err := p.newContainer(ctx, props, task.GetCommand())
+	ctr, err := p.newContainer(ctx, props, task)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +707,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd *repb.Command) (*container.TracedCommandContainer, error) {
+func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ExecutionTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -720,7 +720,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, cmd
 	case platform.ContainerdContainerType:
 		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
-		sizeEstimate := tasksize.Estimate(cmd)
+		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			ActionWorkingDirectory: p.hostBuildRoot(),

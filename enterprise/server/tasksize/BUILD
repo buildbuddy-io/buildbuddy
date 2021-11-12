@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tasksize",
@@ -9,8 +9,19 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/util/log",
+    ],
+)
+
+go_test(
+    name = "tasksize_test",
+    srcs = ["tasksize_test.go"],
+    deps = [
+        ":tasksize",
+        "//proto:remote_execution_go_proto",
+        "@com_github_stretchr_testify//assert",
     ],
 )
