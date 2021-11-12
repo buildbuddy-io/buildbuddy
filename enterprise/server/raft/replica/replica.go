@@ -1,4 +1,4 @@
-package statemachine
+package replica
 
 import (
 	"bufio"

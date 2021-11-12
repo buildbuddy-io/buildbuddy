@@ -18,7 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/statemachine"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -239,7 +239,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.
-	rc.createStateMachineFn = statemachine.NewStateMachineFactory(pebbleLogDir, fileDir, rc, rc.sender, rc.apiClient)
+	rc.createStateMachineFn = replica.NewStateMachineFactory(pebbleLogDir, fileDir, rc, rc.sender, rc.apiClient)
 	apiServer, err := api.NewServer(fileDir, nodeHost, rc.createStateMachineFn)
 	if err != nil {
 		return nil, err
