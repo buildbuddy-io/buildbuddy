@@ -168,16 +168,15 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	}
 
 	// Make a directory to unpack the bundle to.
-	bundleOutputDir := filepath.Join(rootUnpackDir, "bundle")
-	if err := disk.EnsureDirectoryExists(bundleOutputDir); err != nil {
+	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
+	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
 		return "", err
 	}
-	if out, err := exec.CommandContext(ctx, "umoci", "unpack", "--rootless", "--image", ociImageDir, bundleOutputDir).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "umoci", "raw", "unpack", "--rootless", "--image", ociImageDir, rootFSDir).CombinedOutput(); err != nil {
 		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
 	}
 
 	// Take the rootfs and write it into an ext4 image.
-	rootFSDir := filepath.Join(bundleOutputDir, "rootfs")
 	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
 	if err != nil {
 		return "", err
