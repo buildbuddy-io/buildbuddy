@@ -68,6 +68,7 @@ func OwnerRepoFromRepoURL(repoURL string) (string, error) {
 }
 
 func ParseRepoURL(repo string) (*url.URL, error) {
+	repo = strings.TrimSpace(repo)
 	// We assume https:// when scheme is missing for all domains except localhost,
 	// which in most cases uses http:// since most people forgo the hassle of
 	// setting up HTTPS locally. We assume "github.com" if no scheme or domain is
@@ -138,6 +139,7 @@ func ParseRepoURL(repo string) (*url.URL, error) {
 }
 
 func NormalizeRepoURL(repo string) (*url.URL, error) {
+	repo = strings.TrimSpace(repo)
 	// We coerce https scheme for all domains except localhost. We remove the user
 	// info. We strip the ".git" suffix, if it exists.
 	repoURL, err := ParseRepoURL(repo)

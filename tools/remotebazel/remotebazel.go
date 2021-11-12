@@ -23,6 +23,7 @@ var (
 	apiKey             = flag.String("api_key", "", "The API key of the account that owns the action.")
 	remoteInstanceName = flag.String("remote_instance_name", "", "The remote instance name, if one should be used.")
 	repo               = flag.String("repo", "", "git repo URL")
+	patch              = flag.String("patch", "", "Optional patch to apply after checking out the repo")
 )
 
 const (
@@ -72,13 +73,23 @@ func main() {
 
 	log.Infof("Sending request...")
 
-	rsp, err := bbClient.Run(ctx, &rnpb.RunRequest{
+	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: *repo,
 		},
+		RepoState:    &rnpb.RunRequest_RepoState{},
 		BazelCommand: cmd,
 		InstanceName: *remoteInstanceName,
-	})
+	}
+	if *patch != "" {
+		patchContents, err := os.ReadFile(*patch)
+		if err != nil {
+			log.Fatalf("Could not read patch file: %s", err)
+		}
+		req.GetRepoState().Patch = append(req.GetRepoState().Patch, string(patchContents))
+	}
+
+	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
 		log.Fatalf("Error running command: %s", err)
 	}

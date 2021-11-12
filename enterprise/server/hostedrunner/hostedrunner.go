@@ -2,12 +2,12 @@ package hostedrunner
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	runnerBinaryRunfile  = "enterprise/server/cmd/ci_runner/ci_runner_/ci_runner"
-	runnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
+	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
+	RunnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
 )
 
 type runnerService struct {
@@ -37,17 +37,17 @@ type runnerService struct {
 }
 
 func New(env environment.Env) (*runnerService, error) {
-	runnerPath, err := bazel.Runfile(runnerBinaryRunfile)
+	f, err := env.GetFileResolver().Open(runnerPath)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
+		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
+	defer f.Close()
 	return &runnerService{
-		env:              env,
-		runnerBinaryPath: runnerPath,
+		env: env,
 	}, nil
 }
 
-func (r *runnerService) lookupAPIKey(ctx context.Context, selectedGroup string) (string, error) {
+func (r *runnerService) lookupAPIKey(ctx context.Context) (string, error) {
 	auth := r.env.GetAuthenticator()
 	if auth == nil {
 		return "", status.FailedPreconditionError("Auth was not configured but is required")
@@ -56,19 +56,8 @@ func (r *runnerService) lookupAPIKey(ctx context.Context, selectedGroup string) 
 	if err != nil {
 		return "", err
 	}
-	group := u.GetGroupID()
-	if selectedGroup != "" {
-		for _, membership := range u.GetGroupMemberships() {
-			if membership.GroupID == selectedGroup {
-				group = selectedGroup
-			}
-		}
-	}
-	if group == "" {
-		return "", status.FailedPreconditionError("Authenticated user did not have a group ID")
-	}
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", group)
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := r.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
@@ -96,11 +85,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	apiKey, err := r.lookupAPIKey(ctx, req.GetRequestContext().GetGroupId())
+	apiKey, err := r.lookupAPIKey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	binaryBlob, err := os.ReadFile(r.runnerBinaryPath)
+	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +98,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(r.runnerBinaryPath)
+	runnerName := filepath.Base(runnerPath)
 	dir := &repb.Directory{
 		Files: []*repb.FileNode{{
 			Name:         runnerName,
@@ -121,33 +110,53 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
+
+	var patchDigests []string
+	for _, patch := range req.GetRepoState().GetPatch() {
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), []byte(patch))
+		if err != nil {
+			return nil, err
+		}
+		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
+	}
+
 	conf := r.env.GetConfigurator()
+	args := []string{
+		"./" + runnerName,
+		"--bes_backend=" + conf.GetAppEventsAPIURL(),
+		"--cache_backend=" + conf.GetAppCacheAPIURL(),
+		"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
+		"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--bazel_sub_command=" + req.GetBazelCommand(),
+		"--pushed_branch=master",
+		"--target_branch=master",
+		"--invocation_id=" + invocationID,
+		"--report_live_repo_setup_progress",
+	}
+	if req.GetInstanceName() != "" {
+		args = append(args, "--remote_instance_name="+req.GetInstanceName())
+	}
+	for _, patchDigest := range patchDigests {
+		args = append(args, "--patch_digest="+patchDigest)
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
 			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
 		},
-		Arguments: []string{
-			"./" + runnerName,
-			"--bes_backend=" + conf.GetAppEventsAPIURL(),
-			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-			"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-			"--bazel_sub_command=" + req.GetBazelCommand(),
-			"--pushed_branch=master",
-			"--target_branch=master",
-			"--invocation_id=" + invocationID,
-		},
+		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
-				{Name: "container-image", Value: runnerContainerImage},
+				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
 				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
-				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "10000000000"}, // 10GB
+				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "20000000000"}, // 20GB
 			},
 		},
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -347,22 +348,6 @@ type OrgConfig struct {
 
 var sharedGeneralConfig generalConfig
 
-type stringSliceFlag []string
-
-func (i *stringSliceFlag) String() string {
-	return strings.Join(*i, ",")
-}
-
-// NOTE: string slice flags are *appended* to the values in the YAML,
-// instead of overriding them completely.
-
-func (i *stringSliceFlag) Set(values string) error {
-	for _, val := range strings.Split(values, ",") {
-		*i = append(*i, val)
-	}
-	return nil
-}
-
 type structSliceFlag struct {
 	dstSlice   reflect.Value
 	structType reflect.Type
@@ -420,8 +405,10 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
+				// NOTE: string slice flags are *appended* to the values in the YAML,
+				// instead of overriding them completely.
 				if slice, ok := f.Interface().([]string); ok {
-					sf := stringSliceFlag(slice)
+					sf := flagutil.StringSliceFlag(slice)
 					flag.Var(&sf, fqFieldName, docString)
 				}
 				continue

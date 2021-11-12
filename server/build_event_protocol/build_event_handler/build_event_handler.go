@@ -211,7 +211,7 @@ func (r *statsRecorder) Start() {
 				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
 				}
-				if err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+				if _, err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
 				}
 				// Cleanup regardless of whether the stats are flushed successfully to
@@ -400,6 +400,10 @@ type EventChannel struct {
 	hasReceivedStartedEvent bool
 	logWriter               *eventlog.EventLogWriter
 	onClose                 func()
+	// isVoid determines whether all EventChannel operations are NOPs. This is set
+	// when we're retrying an invocation that is already complete, or is
+	// incomplete but was created too far in the past.
+	isVoid bool
 }
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, iid string, invocation *inpb.Invocation) error {
@@ -436,18 +440,26 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
+	if e.isVoid {
+		return nil
+	}
+
 	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
 	defer cancel()
 
-	invocation := &inpb.Invocation{
-		InvocationId:     iid,
-		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
+	status := inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	if e.beValues.BuildFinished() {
+		status = inpb.Invocation_COMPLETE_INVOCATION_STATUS
 	}
 
-	if !e.beValues.BuildFinished() {
-		log.Warningf("Invocation %s lacks a BuildFinished event, marking as disconnected.", iid)
+	invocation := &inpb.Invocation{
+		InvocationId:     iid,
+		InvocationStatus: status,
+	}
+
+	if status == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+		log.Warningf("Reporting disconnected status for invocation %s.", iid)
 		e.statusReporter.ReportDisconnect(ctx)
-		invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
 	}
 
 	if err := e.pw.Flush(ctx); err != nil {
@@ -459,19 +471,19 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	if e.logWriter != nil {
-		if err := e.logWriter.Close(); err != nil {
+		if err := e.logWriter.Close(ctx); err != nil {
 			return err
 		}
-		invocation.LastChunkId = e.logWriter.GetLastChunkId()
+		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
 	ti := tableInvocationFromProto(invocation, iid)
 	recordInvocationMetrics(ti)
-	if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if _, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
 
-	e.statsRecorder.Enqueue(e.ctx, invocation)
+	e.statsRecorder.Enqueue(ctx, invocation)
 	return nil
 }
 
@@ -534,6 +546,10 @@ func (e *EventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamReques
 }
 
 func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
+	if e.isVoid {
+		return nil
+	}
+
 	seqNo := event.OrderedBuildEvent.SequenceNumber
 	streamID := event.OrderedBuildEvent.StreamId
 	iid := streamID.InvocationId
@@ -584,11 +600,15 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				if inv.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
 					// The invocation is neither disconnected nor in-progress, it is not
 					// valid to retry.
-					return status.AlreadyExistsErrorf("Invocation %s already exists and succeeded, so may not be retried.", iid)
+					log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is completed.", iid)
+					e.isVoid = true
+					return nil
 				} else if time.UnixMicro(inv.UpdatedAtUsec).Before(time.Now().Add(time.Hour * -4)) {
 					// The invocation was last updated over 4 hours ago; it is not valid
 					// to retry.
-					return status.AlreadyExistsErrorf("Invocation %s already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+					log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and was last updated over 4 hours ago, so may not be retried.", iid)
+					e.isVoid = true
+					return nil
 				}
 				if err := protofile.DeleteExistingChunks(e.ctx, e.env.GetBlobstore(), iid); err != nil {
 					return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
@@ -614,16 +634,18 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 
 		if e.logWriter != nil {
-			ti.LastChunkId = e.logWriter.GetLastChunkId()
+			ti.LastChunkId = e.logWriter.GetLastChunkId(e.ctx)
 		}
-		if err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti); err != nil {
+		created, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(e.ctx, ti)
+		if err != nil {
 			return err
 		}
 
 		// Since this is the Started event and we just parsed the API key, now is
 		// a good time to record invocation usage for the group. Sanity check that
-		// this is the first started event (to safeguard against overcounting).
-		if ut := e.env.GetUsageTracker(); ut != nil && isFirstStartedEvent {
+		// we just inserted a new row into the DB, to guarantee that we don't
+		// increment the usage on invocation retries.
+		if ut := e.env.GetUsageTracker(); ut != nil && created {
 			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
 				log.Warningf("Failed to record invocation usage: %s", err)
 			}
@@ -661,8 +683,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
-			e.logWriter.Write([]byte(p.Progress.Stderr))
-			e.logWriter.Write([]byte(p.Progress.Stdout))
+			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
+			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
 			// For now, write logs to both chunks and the invocation proto
 			// p.Progress.Stderr = ""
 			// p.Progress.Stdout = ""
@@ -711,10 +733,10 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return err
 	}
 	if e.logWriter != nil {
-		invocationProto.LastChunkId = e.logWriter.GetLastChunkId()
+		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
-	if err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
+	if _, err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
 	return nil

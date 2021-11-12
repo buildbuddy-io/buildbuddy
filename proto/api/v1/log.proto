@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package api.v1;
+
+// Request passed into GetLog
+message GetLogRequest {
+  // The selector defining which logs(s) to retrieve.
+  LogSelector selector = 1;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 3;
+}
+
+// Response from calling GetLog
+message GetLogResponse {
+  // Log matching the request, possibly capped by a server limit.
+  Log log = 1;
+
+  // Token to retrieve the next page of the log, or empty if there are no
+  // more logs.
+  string next_page_token = 2;
+}
+
+// Each Log represents a chunk of build logs.
+message Log {
+  // The resource ID components that identify the Log.
+  message Id {
+    // The Invocation ID.
+    string invocation_id = 1;
+  }
+
+  // The resource ID components that identify the Log.
+  Id id = 1;
+
+  // The contents of the log.
+  string contents = 3;
+}
+
+// The selector used to specify which logs to return.
+message LogSelector {
+  // Required: The Invocation ID.
+  // Return only the logs associated with this invocation ID.
+  string invocation_id = 1;
+}

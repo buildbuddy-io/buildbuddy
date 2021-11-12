@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/dgrijalva/jwt-go"
@@ -542,7 +543,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	return apkg, err
 }
 
-func userClaims(u *tables.User) *Claims {
+func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	for _, g := range u.Groups {
@@ -556,6 +557,7 @@ func userClaims(u *tables.User) *Claims {
 		UserID:           u.UserID,
 		GroupMemberships: groupMemberships,
 		AllowedGroups:    allowedGroups,
+		GroupID:          effectiveGroup,
 	}
 }
 
@@ -647,7 +649,15 @@ func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*C
 	if err != nil {
 		return nil, err
 	}
-	return userClaims(u), nil
+	eg := ""
+	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetGroupId() != "" {
+		for _, g := range u.Groups {
+			if g.Group.GroupID == c.GetGroupId() {
+				eg = c.GetGroupId()
+			}
+		}
+	}
+	return userClaims(u, eg), nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, authority string) (*Claims, error) {
