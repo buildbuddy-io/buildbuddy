@@ -13,8 +13,8 @@ go_library(
         "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
-        "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
+        "//enterprise/server/raft/store",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//proto:remote_execution_go_proto",
@@ -32,7 +32,6 @@ go_library(
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//logger",
         "@com_github_lni_dragonboat_v3//raftio",
-        "@com_github_lni_dragonboat_v3//statemachine",
     ],
 )
 

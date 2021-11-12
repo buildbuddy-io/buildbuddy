@@ -783,7 +783,7 @@ func (sm *PebbleDiskStateMachine) Close() error {
 }
 
 // CreatePebbleDiskStateMachine creates an ondisk statemachine.
-func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
+func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
 	return &PebbleDiskStateMachine{
 		closedMu:     &sync.RWMutex{},
 		rootDir:      rootDir,
@@ -797,9 +797,3 @@ func CreatePebbleDiskStateMachine(rootDir, fileDir string, clusterID, nodeID uin
 	}
 }
 
-// Satisfy the interface gods.
-func NewStateMachineFactory(rootDir, fileDir string, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.CreateOnDiskStateMachineFunc {
-	return func(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-		return CreatePebbleDiskStateMachine(rootDir, fileDir, clusterID, nodeID, rangeTracker, sender, apiClient)
-	}
-}

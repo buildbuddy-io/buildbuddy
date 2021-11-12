@@ -18,16 +18,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
@@ -36,7 +34,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 	dbLogger "github.com/lni/dragonboat/v3/logger"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 type Config struct {
@@ -65,12 +62,11 @@ type RaftCache struct {
 	gossipManager *gossip.GossipManager
 
 	nodeHost   *dragonboat.NodeHost
+	store      *store.Store
 	apiServer  *api.Server
 	apiClient  *client.APIClient
 	rangeCache *rangecache.RangeCache
 	sender     *sender.Sender
-
-	createStateMachineFn dbsm.CreateOnDiskStateMachineFunc
 
 	isolation *rfpb.Isolation
 
@@ -91,44 +87,6 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	rc.gossipManager.AddListener(r)
 	rc.registry = r
 	return r, nil
-}
-
-func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
-	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.MaxByte - 1})
-}
-
-// We need to implement the RangeTracker interface so that stores opened and
-// closed on this node will notify us when their range appears and disappears.
-// We'll use this information to drive the range tags we broadcast.
-func (rc *RaftCache) AddRange(rd *rfpb.RangeDescriptor) {
-	log.Errorf("AddRange called!")
-	rc.localStoreRanges = append(rc.localStoreRanges, rd)
-
-	if containsMetaRange(rd) {
-		// If we own the metarange, use gossip to notify other nodes
-		// of that fact.
-		buf, err := proto.Marshal(rd)
-		if err != nil {
-			log.Errorf("Error marshaling metarange descriptor: %s", err)
-			return
-		}
-		rc.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
-	}
-}
-
-func (rc *RaftCache) RemoveRange(rd *rfpb.RangeDescriptor) {
-	// If we had the metarange and no longer do, clear that tag.
-	for i, t := range rc.localStoreRanges {
-		if t == rd {
-			rc.localStoreRanges = append(rc.localStoreRanges[:i], rc.localStoreRanges[i+1:]...)
-			return
-		}
-	}
-
-	if containsMetaRange(rd) {
-		rc.gossipManager.SetTag(constants.MetaRangeTag, "")
-	}
 }
 
 type nullLogger struct{}
@@ -235,12 +193,12 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-
+	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
+	
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.
-	rc.createStateMachineFn = replica.NewStateMachineFactory(pebbleLogDir, fileDir, rc, rc.sender, rc.apiClient)
-	apiServer, err := api.NewServer(fileDir, nodeHost, rc.createStateMachineFn)
+	apiServer, err := api.NewServer(fileDir, nodeHost, rc.store.ReplicaFactoryFn)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +213,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.grpcAddress, rc.createStateMachineFn, rc.gossipManager)
+	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
 	rc.gossipManager.AddListener(clusterStarter)
 
 	clusterStarter.InitializeClusters()
