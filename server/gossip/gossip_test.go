@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/hashicorp/serf/serf"
 	"github.com/stretchr/testify/require"
