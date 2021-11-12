@@ -24,7 +24,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -160,14 +159,10 @@ func (ws *Workspace) AddCIRunner() error {
 	if exists {
 		return nil
 	}
-	bundleFS, err := bundle.Get()
-	if err != nil {
-		return err
-	}
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := bundleFS.Open("server/cmd/ci_runner/buildbuddy_ci_runner")
+	srcFile, err := ws.env.GetFileResolver().Open("server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}
