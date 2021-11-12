@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
@@ -115,6 +116,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
+	}
+	if err := resources.Configure(realEnv); err != nil {
+		log.Fatal(status.Message(err))
 	}
 
 	bundleFS, err := bundle.Get()

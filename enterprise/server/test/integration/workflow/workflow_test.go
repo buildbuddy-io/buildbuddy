@@ -61,6 +61,8 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			env.SetInvocationSearchService(iss)
 		},
 	})
+	// Configure executors so that we can run at least one workflow task.
+	flags.Set(t, "executor.memory_bytes", fmt.Sprintf("%d", 10_000_000_000))
 	// Use bare execution -- Docker isn't supported in tests yet.
 	flags.Set(t, "remote_execution.workflows_default_image", "none")
 	// Use a pre-built bazel instead of invoking bazelisk, which significantly
@@ -131,17 +133,25 @@ func actionCount(t *testing.T, inv *inpb.Invocation) int {
 
 // TestResponseWriter is an http.ResponseWriter that fails the test if an
 // HTTP error code is written, but otherwise discards all data written to it.
-type TestResponseWriter struct {
-	t *testing.T
+type testResponseWriter struct {
+	t      *testing.T
+	header map[string][]string
 }
 
-func (w *TestResponseWriter) WriteHeader(statusCode int) {
+func NewTestResponseWriter(t *testing.T) *testResponseWriter {
+	return &testResponseWriter{
+		t:      t,
+		header: make(map[string][]string),
+	}
+}
+
+func (w *testResponseWriter) WriteHeader(statusCode int) {
 	require.Less(w.t, statusCode, 400, "Wrote HTTP status %d", statusCode)
 }
-func (w *TestResponseWriter) Header() http.Header {
-	return nil
+func (w *testResponseWriter) Header() http.Header {
+	return w.header
 }
-func (w *TestResponseWriter) Write(p []byte) (int, error) {
+func (w *testResponseWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
@@ -181,7 +191,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 
 	req, err := http.NewRequest("POST", createResp.GetWebhookUrl(), nil /*=body*/)
 	require.NoError(t, err)
-	workflowService.ServeHTTP(&TestResponseWriter{t}, req)
+	workflowService.ServeHTTP(NewTestResponseWriter(t), req)
 
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
 	inv := waitForInvocationComplete(t, ctx, bb, reqCtx, iid)

@@ -280,6 +280,8 @@ type ExecutorConfig struct {
 	WarmupTimeoutSecs         int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
 	StartupWarmupMaxWaitSecs  int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
 	ExclusiveTaskScheduling   bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
+	MemoryBytes               int64                     `yaml:"memory_bytes" usage:"Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var."`
+	Millicpu                  int64                     `yaml:"millicpu" usage:"Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var."`
 }
 
 type ContainerRegistryConfig struct {
