@@ -13,13 +13,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -194,7 +194,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
-	
+
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.

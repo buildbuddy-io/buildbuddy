@@ -3,36 +3,36 @@ package store
 import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
-	
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
+
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 type Store struct {
-	rootDir          string
-	fileDir          string
+	rootDir string
+	fileDir string
 
-	nodeHost         *dragonboat.NodeHost
-	gossipManager    *gossip.GossipManager
-	sender           *sender.Sender
-	apiClient        *client.APIClient
+	nodeHost      *dragonboat.NodeHost
+	gossipManager *gossip.GossipManager
+	sender        *sender.Sender
+	apiClient     *client.APIClient
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
 	return &Store{
-		rootDir: rootDir,
-		fileDir: fileDir,
-		nodeHost: nodeHost,
+		rootDir:       rootDir,
+		fileDir:       fileDir,
+		nodeHost:      nodeHost,
 		gossipManager: gossipManager,
-		sender: sender,
-		apiClient: apiClient,
+		sender:        sender,
+		apiClient:     apiClient,
 	}
 }
 

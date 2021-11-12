@@ -796,4 +796,3 @@ func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfa
 		log:          log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 	}
 }
-
