@@ -138,14 +138,29 @@ func NewRBETestEnv(t *testing.T) *Env {
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
-	// Create a group for use in tests (this will also create an API key for the
-	// group).
+	// Create a user and group in the DB for use in tests (this will also create
+	// an API key for the group).
+	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real
+	// user log into the app to do all of this setup in a more sane way.
 	orgURLID := "test"
 	userID := "US1"
-	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(context.Background(), &tables.Group{
-		URLIdentifier: &orgURLID,
-		UserID:        "US1",
+	ctx := context.Background()
+	err := testEnv.GetUserDB().InsertUser(ctx, &tables.User{
+		UserID: userID,
+		Email:  "user@example.com",
 	})
+	require.NoError(t, err)
+	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(ctx, &tables.Group{
+		URLIdentifier: &orgURLID,
+		UserID:        userID,
+	})
+	require.NoError(t, err)
+	err = testEnv.GetUserDB().AddUserToGroup(ctx, userID, groupID)
+	require.NoError(t, err)
+	// Update the API key value to match the user ID, since the test authenticator
+	// treats user IDs and API keys the same.
+	err = testEnv.GetDBHandle().Exec(
+		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
 	require.NoError(t, err)
 	rbe := &Env{
 		testEnv:     testEnv,
@@ -444,6 +459,8 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
+	env.SetUserDB(r.testEnv.GetUserDB())
+	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers = append(r.buildBuddyServers, server)

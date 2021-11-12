@@ -922,7 +922,9 @@ code .comment {
 
 .terminal {
   height: 300px;
+  margin-top: -49px;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .terminal a {
@@ -933,6 +935,71 @@ code .comment {
   font-size: 14px;
   font-family: "Source Code Pro", monospace;
   color: #fff;
+}
+
+.terminal-actions {
+  right: 32px;
+  top: 22px;
+  position: absolute;
+  z-index: 1;
+}
+
+.terminal-actions img {
+  width: 18px;
+}
+
+.terminal-action {
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+  padding: 12px;
+  opacity: 0.6;
+}
+
+.terminal-action.active {
+  opacity: 1;
+}
+
+.build-logs-card {
+  position: relative;
+}
+
+.build-logs-card .title {
+  z-index: 1;
+  position: relative;
+  pointer-events: none;
+}
+
+.react-lazylog-searchbar {
+  margin-bottom: 8px;
+  margin-right: 80px;
+}
+
+.react-lazylog-searchbar-filter {
+  display: none;
+}
+
+@media (max-width: 940px) {
+  .terminal .react-lazylog-searchbar-input {
+    min-width: initial;
+    width: 140px;
+  }
+  .terminal .react-lazylog-searchbar-matches {
+    display: none;
+  }
+}
+
+@media (max-width: 525px) {
+  .terminal {
+    margin-top: 0;
+  }
+  .react-lazylog-searchbar {
+    display: none !important;
+  }
+}
+
+.react-lazylog-searchbar-input {
+  border-radius: 4px;
 }
 
 .light-terminal .terminal-line {

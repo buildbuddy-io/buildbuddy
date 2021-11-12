@@ -63,4 +63,8 @@ message TargetSelector {
   // Optional: The Target ID.
   // If set, only the target with this target id will be returned.
   string target_id = 2;
+
+  // Optional: Tag
+  // If set, only targets with this tag will be returned.
+  string tag = 3;
 }

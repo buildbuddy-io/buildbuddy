@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -54,22 +53,27 @@ func (d *InvocationDB) createInvocation(tx *db.DB, ctx context.Context, ti *tabl
 	return tx.Create(ti).Error
 }
 
-func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+// InsertOrUpdateInvocation checks whether an invocation with the same primary
+// key as the given invocation exists. If no such invocation exists, it will
+// create a new row with the given invocation properties. Otherwise, it will
+// update the existing invocation. It returns whether a new row was created.
+func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
+	created := false
+	err := d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
-				return d.createInvocation(tx, ctx, ti)
+			if !db.IsRecordNotFound(err) {
+				return err
 			}
-		} else {
-			err := tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
-			if err != nil {
-				log.Warningf("Error updating invocation %s: %s", ti.InvocationID, err.Error())
-				// TODO(tylerw): return an error here!
+			if err := d.createInvocation(tx, ctx, ti); err != nil {
+				return err
 			}
+			created = true
+			return nil
 		}
-		return nil
+		return tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
 	})
+	return created, err
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {

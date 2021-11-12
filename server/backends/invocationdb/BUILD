@@ -13,7 +13,6 @@ go_library(
         "//server/interfaces",
         "//server/tables",
         "//server/util/db",
-        "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",

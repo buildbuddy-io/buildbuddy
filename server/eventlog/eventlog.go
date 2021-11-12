@@ -273,10 +273,10 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
-	var writeHook func(writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, timeout, open bool)
+	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
 	if c != nil {
-		writeHook = func(writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte, timeout, open bool) {
-			if !open {
+		writeHook = func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
+			if writeResult.Close {
 				keyval.SetProto(ctx, c, eventLogPath, nil)
 				return
 			}
@@ -304,7 +304,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	return &EventLogWriter{
-		WriteCloser: &ANSICursorBufferWriter{
+		WriteCloserWithContext: &ANSICursorBufferWriter{
 			WriteWithTailCloser: cw,
 			screenWriter:        terminal.NewScreenWriter(),
 		},
@@ -312,18 +312,23 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	}
 }
 
+type WriteCloserWithContext interface {
+	Write(context.Context, []byte) (int, error)
+	Close(context.Context) error
+}
+
 type EventLogWriter struct {
-	io.WriteCloser
+	WriteCloserWithContext
 	chunkstoreWriter *chunkstore.ChunkstoreWriter
 }
 
-func (w *EventLogWriter) GetLastChunkId() string {
-	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex())
+func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {
+	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex(ctx))
 }
 
 type WriteWithTailCloser interface {
-	Close() error
-	WriteWithTail([]byte, []byte) (int, error)
+	Close(context.Context) error
+	WriteWithTail(context.Context, []byte, []byte) (int, error)
 }
 
 // Parses text passed into it as ANSI text and flushes it to the WriteCloser,
@@ -335,9 +340,9 @@ type ANSICursorBufferWriter struct {
 	screenWriter *terminal.ScreenWriter
 }
 
-func (w *ANSICursorBufferWriter) Write(p []byte) (int, error) {
+func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
 	if p == nil || len(p) == 0 {
-		return w.WriteWithTailCloser.WriteWithTail(p, nil)
+		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
 	if _, err := w.screenWriter.Write(p); err != nil {
 		return 0, err
@@ -346,9 +351,9 @@ func (w *ANSICursorBufferWriter) Write(p []byte) (int, error) {
 	if len(popped) != 0 {
 		popped = append(popped, '\n')
 	}
-	return w.WriteWithTailCloser.WriteWithTail(popped, w.screenWriter.RenderAsANSI())
+	return w.WriteWithTailCloser.WriteWithTail(ctx, popped, w.screenWriter.RenderAsANSI())
 }
 
-func (w *ANSICursorBufferWriter) Close() error {
-	return w.WriteWithTailCloser.Close()
+func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {
+	return w.WriteWithTailCloser.Close(ctx)
 }

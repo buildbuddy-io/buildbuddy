@@ -5,6 +5,7 @@ package api.v1;
 import "proto/api/v1/action.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
+import "proto/api/v1/log.proto";
 import "proto/api/v1/target.proto";
 
 // This is the public interface used to programatically retrieve information
@@ -30,6 +31,9 @@ service ApiService {
   // Retrieves a list of invocations or a specific invocation matching the given
   // request selector.
   rpc GetInvocation(GetInvocationRequest) returns (GetInvocationResponse);
+
+  // Retrieves the logs for a specific invocation.
+  rpc GetLog(GetLogRequest) returns (GetLogResponse);
 
   // Retrieves a list of targets or a specific target matching the given
   // request selector.

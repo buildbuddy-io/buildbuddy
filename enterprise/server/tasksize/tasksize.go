@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	testSizeEnvVar = "TEST_SIZE"
+	testSizeEnvVar        = "TEST_SIZE"
+	workflowIDPropertyKey = "workflow-id"
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyKey = "EstimatedComputeUnits"
 	EstimatedFreeDiskPropertyKey     = "EstimatedFreeDiskBytes"
@@ -21,6 +22,7 @@ const (
 	// This is the default resource estimate for a task that we can't
 	// otherwise determine the size for.
 	DefaultMemEstimate      = int64(400 * 1e6)
+	WorkflowMemEstimate     = int64(8 * 1e9)
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
@@ -61,6 +63,12 @@ func Estimate(cmd *repb.Command) *scpb.TaskSize {
 		if envVar.GetName() == testSizeEnvVar {
 			memEstimate, cpuEstimate = testSize(envVar.GetValue())
 			break
+		}
+	}
+	// Set default memory estimate based on whether this is a workflow.
+	for _, property := range cmd.GetPlatform().GetProperties() {
+		if strings.ToLower(property.Name) == workflowIDPropertyKey {
+			memEstimate = WorkflowMemEstimate
 		}
 	}
 	for _, property := range cmd.GetPlatform().GetProperties() {
