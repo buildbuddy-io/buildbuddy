@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -556,6 +557,8 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	bundleFS, err := bundle.Get()
 	require.NoError(r.t, err)
 	env.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
+	err = resources.Configure(env)
+	require.NoError(r.t, err)
 
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	executorConfig.Pool = options.Pool

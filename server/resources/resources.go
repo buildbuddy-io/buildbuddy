@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
 )
 
@@ -44,7 +46,6 @@ func setSysRAMBytes() {
 	mem := gosigar.Mem{}
 	mem.Get()
 	allocatedRAMBytes = int64(mem.ActualFree)
-	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 }
 
 func setSysMilliCPUCapacity() {
@@ -60,7 +61,27 @@ func setSysMilliCPUCapacity() {
 	cpuList.Get()
 	numCores := len(cpuList.List)
 	allocatedCPUMillis = int64(numCores * 1000)
+}
+
+func Configure(env environment.Env) error {
+	cfg := env.GetConfigurator().GetExecutorConfig()
+	if cfg.MemoryBytes > 0 {
+		if os.Getenv(memoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")
+		}
+		allocatedRAMBytes = cfg.MemoryBytes
+	}
+	if cfg.MilliCPU > 0 {
+		if os.Getenv(cpuEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and 'SYS_MILLICPU' environment variable may be set")
+		}
+		allocatedCPUMillis = cfg.MilliCPU
+	}
+
+	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
+
+	return nil
 }
 
 func GetSysFreeRAMBytes() int64 {

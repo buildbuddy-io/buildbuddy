@@ -36,6 +36,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
+        "//server/util/status",
         "//server/util/tracing",
         "//server/xcode",
         "@com_github_google_uuid//:uuid",
