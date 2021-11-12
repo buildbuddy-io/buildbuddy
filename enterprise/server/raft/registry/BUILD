@@ -7,8 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/gossip",
         "//proto:raft_go_proto",
+        "//server/gossip",
         "//server/util/log",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",

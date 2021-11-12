@@ -8,11 +8,11 @@ go_library(
     deps = [
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/gossip",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
+        "//server/gossip",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
