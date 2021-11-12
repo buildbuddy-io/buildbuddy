@@ -5,7 +5,6 @@ import (
 	"context"
 	"io/ioutil"
 	"net"
-	"os"
 	"path/filepath"
 	"testing"
 	"text/template"
@@ -15,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -127,16 +127,7 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 var currentConfigurator *config.Configurator
 
 func GetTestEnv(t testing.TB) *TestEnv {
-	testRootDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(testRootDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+	testRootDir := testfs.MakeTempDir(t)
 	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {
 		t.Fatal(err)

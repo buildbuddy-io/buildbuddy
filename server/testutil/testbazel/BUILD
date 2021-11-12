@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/testutil/testfs",
         "//server/util/bazel",
         "//server/util/log",
         "@com_github_stretchr_testify//require",

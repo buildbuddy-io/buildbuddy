@@ -30,6 +30,7 @@ go_test(
         ":workspace",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

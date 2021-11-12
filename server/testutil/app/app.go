@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -13,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"google.golang.org/grpc"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
 const (
@@ -34,8 +35,6 @@ const (
 type App struct {
 	// err is the error returned by `cmd.Wait()`.
 	err            error
-	stdout         bytes.Buffer
-	stderr         bytes.Buffer
 	httpPort       int
 	monitoringPort int
 	gRPCPort       int
@@ -48,13 +47,7 @@ type App struct {
 // The given command path and config file path refer to the workspace-relative runfile
 // paths of the BuildBuddy server binary and config file, respectively.
 func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
-	dataDir, err := ioutil.TempDir("/tmp", "buildbuddy-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(dataDir)
-	})
+	dataDir := testfs.MakeTempDir(t)
 	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
 		httpPort:       FreePort(t),
@@ -62,6 +55,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		monitoringPort: FreePort(t),
 	}
 	args := []string{
+		"--app.log_level=debug",
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
@@ -75,9 +69,8 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	}
 	args = append(args, commandArgs...)
 	cmd := exec.Command(runfile(t, commandPath), args...)
-	// TODO: Write server logs to files so they can be used to debug failed tests
-	cmd.Stdout = &app.stdout
-	cmd.Stderr = &app.stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +84,8 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		app.exited = true
 		app.err = err
 	}()
-	err = app.waitForReady()
-	if err != nil {
-		t.Fatal(app.fmtErrorWithLogs(err))
+	if err := app.waitForReady(); err != nil {
+		t.Fatal(err)
 	}
 	return app
 }
@@ -121,6 +113,17 @@ func (a *App) RemoteCacheBazelFlags() []string {
 	return []string{
 		fmt.Sprintf("--remote_cache=grpc://localhost:%d", a.gRPCPort),
 	}
+}
+
+func (a *App) PublishBuildEventClient(t *testing.T) pepb.PublishBuildEventClient {
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		conn.Close()
+	})
+	return pepb.NewPublishBuildEventClient(conn)
 }
 
 func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClient {
@@ -153,14 +156,6 @@ func FreePort(t testing.TB) int {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port
-}
-
-func (a *App) fmtErrorWithLogs(err error) error {
-	return fmt.Errorf(`%s
-=== STDOUT ===
-%s
-=== STDERR ===
-%s`, err, string(a.stdout.Bytes()), string(a.stderr.Bytes()))
 }
 
 func (a *App) waitForReady() error {

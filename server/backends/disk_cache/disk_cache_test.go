@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,26 +46,9 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	return ctx
 }
 
-func getTmpDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("/tmp", "buildbuddy_diskcache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
-
 func TestGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 
@@ -113,7 +95,7 @@ func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 
 func TestMultiGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -149,7 +131,7 @@ func TestMultiGetSet(t *testing.T) {
 
 func TestReadWrite(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -186,7 +168,7 @@ func TestReadWrite(t *testing.T) {
 
 func TestReadOffset(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -219,7 +201,7 @@ func TestReadOffset(t *testing.T) {
 
 func TestSizeLimit(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -258,7 +240,7 @@ func TestSizeLimit(t *testing.T) {
 
 func TestLRU(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -313,7 +295,7 @@ func TestLRU(t *testing.T) {
 
 func TestFileAtomicity(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
@@ -344,7 +326,7 @@ func TestFileAtomicity(t *testing.T) {
 
 func TestAsyncLoading(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
@@ -407,7 +389,7 @@ func TestJanitorThread(t *testing.T) {
 	maxSizeBytes := int64(10_000_000) // 10MB
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
@@ -447,7 +429,7 @@ func TestJanitorThread(t *testing.T) {
 
 func TestZeroLengthFiles(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
@@ -495,7 +477,7 @@ func TestZeroLengthFiles(t *testing.T) {
 
 func TestNonDefaultPartition(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 
 	// First API key is from a group that is not mapped to a custom partition.
 	testAPIKey1 := "AK1111"
@@ -602,7 +584,7 @@ func TestNonDefaultPartition(t *testing.T) {
 
 func TestV2Layout(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 
 	diskConfig := &config.DiskConfig{
@@ -632,7 +614,7 @@ func TestV2Layout(t *testing.T) {
 
 func TestV2LayoutMigration(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	testAPIKey := "AK2222"
 	testGroup := "GR7890"
 	testUsers := testauth.TestUsers(testAPIKey, testGroup)

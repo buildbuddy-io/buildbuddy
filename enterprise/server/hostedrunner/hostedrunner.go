@@ -10,7 +10,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -155,8 +154,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},
-				{Name: tasksize.EstimatedComputeUnitsPropertyKey, Value: "2"},
-				{Name: tasksize.EstimatedFreeDiskPropertyKey, Value: "20000000000"}, // 20GB
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
 		},
 	}
