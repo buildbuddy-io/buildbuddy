@@ -184,6 +184,11 @@ message ReplicaDescriptor {
   uint64 node_id = 2;
 }
 
+message Header {
+  ReplicaDescriptor replica = 1;
+  uint64 range_id = 2;
+}
+
 message RangeSet {
   repeated RangeDescriptor ranges = 1;
 }
@@ -200,7 +205,7 @@ message RangeDescriptor {
 
 // SyncPropose, in proto form.
 message SyncProposeRequest {
-  ReplicaDescriptor replica = 1;
+  Header header = 1;
 
   BatchCmdRequest batch = 2;
 }
@@ -211,7 +216,7 @@ message SyncProposeResponse {
 
 // SyncRead, in proto form.
 message SyncReadRequest {
-  ReplicaDescriptor replica = 1;
+  Header header = 1;
   BatchCmdRequest batch = 2;
 }
 message SyncReadResponse {

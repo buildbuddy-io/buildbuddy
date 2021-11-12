@@ -235,12 +235,16 @@ func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batc
 	}
 
 	node := bootstrapInfo.nodes[0]
-	writeReq := &rfpb.SyncProposeRequest{
+	header := &rfpb.Header{
 		Replica: &rfpb.ReplicaDescriptor{
 			ClusterId: bootstrapInfo.clusterID,
 			NodeId:    node.index,
 		},
-		Batch: rangeSetupTime,
+		RangeId: 0, // Can we set this? Does it exist yet?
+	}
+	writeReq := &rfpb.SyncProposeRequest{
+		Header: header,
+		Batch:  rangeSetupTime,
 	}
 
 	conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)

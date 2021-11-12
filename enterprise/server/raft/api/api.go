@@ -195,7 +195,7 @@ func (s *Server) syncProposeLocal(ctx context.Context, clusterID uint64, batch *
 
 func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	log.Warningf("SyncPropose (server) got request")
-	batchResponse, err := s.syncProposeLocal(ctx, req.GetReplica().GetClusterId(), req.GetBatch())
+	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func (s *Server) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb
 	if err != nil {
 		return nil, err
 	}
-	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetReplica().GetClusterId(), buf)
+	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetHeader().GetReplica().GetClusterId(), buf)
 	if err != nil {
 		return nil, err
 	}

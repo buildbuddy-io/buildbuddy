@@ -279,10 +279,10 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Replica: rd,
-			Batch:   readReq,
+			Header: h,
+			Batch:  readReq,
 		})
 		return err
 	})
@@ -398,11 +398,11 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		if err != nil {
 			return err
 		}
-		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 			log.Errorf("Bout to run SyncPropose")
 			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-				Replica: rd,
-				Batch:   writeReq,
+				Header: h,
+				Batch:  writeReq,
 			})
 			log.Errorf("SyncPropose returned err: %s", err)
 			return err

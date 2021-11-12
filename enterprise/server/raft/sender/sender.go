@@ -62,9 +62,13 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 		if err != nil {
 			return nil, err
 		}
-		rsp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
+		header := &rfpb.Header{
 			Replica: replica,
-			Batch:   batchReq,
+			RangeId: rangeDescriptor.GetRangeId(),
+		}
+		rsp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: header,
+			Batch:  batchReq,
 		})
 		if err != nil {
 			continue
@@ -127,7 +131,7 @@ func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]string, error) 
 	return allNodes, nil
 }
 
-func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error) error {
+func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient, h *rfpb.Header) error) error {
 	rangeDescriptor, err := s.getOrCreateRangeDescriptor(ctx, key)
 	if err != nil {
 		return err
@@ -146,7 +150,11 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 			lastErr = err
 			continue
 		}
-		lastErr = fn(client, replica)
+		header := &rfpb.Header{
+			Replica: replica,
+			RangeId: rangeDescriptor.GetRangeId(),
+		}
+		lastErr = fn(client, header)
 		if lastErr != nil {
 			if status.IsOutOfRangeError(lastErr) || status.IsUnavailableError(lastErr) {
 				continue
@@ -159,10 +167,10 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncProposeResponse
-	err := s.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-			Replica: rd,
-			Batch:   batchCmd,
+			Header: h,
+			Batch:  batchCmd,
 		})
 		if err != nil {
 			return err
