@@ -9,24 +9,12 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
-
-func testTempDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("", "buildbuddy_test_filecache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
 
 func writeFile(t *testing.T, base string, path string, executable bool) {
 	mod := fs.FileMode(0644)
@@ -46,14 +34,14 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 }
 
 func Test_Filecache(t *testing.T) {
-	fcDir := testTempDir(t)
+	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	baseDir := testTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
 	// Write a non-executable file
 	writeFile(t, baseDir, "my/fun/file", false)
 

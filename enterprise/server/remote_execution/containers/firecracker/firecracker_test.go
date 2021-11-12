@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/stretchr/testify/assert"
 
@@ -28,21 +29,10 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func makeDir(t *testing.T, prefix string) string {
-	dir, err := ioutil.TempDir(prefix, "d-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(dir)
-	})
-	return dir
-}
-
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	diskCacheSize := 10_000_000_000 // 10GB
-	testRootDir := makeDir(t, "/tmp")
+	testRootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
 	if err != nil {
 		t.Error(err)
@@ -86,8 +76,8 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 func TestFirecrackerRun(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := makeDir(t, "/tmp")
-	workDir := makeDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -130,8 +120,8 @@ func TestFirecrackerRun(t *testing.T) {
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := makeDir(t, "/tmp")
-	workDir := makeDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -192,8 +182,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	env := getTestEnv(ctx, t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	rootDir := makeDir(t, "/tmp")
-	workDir := makeDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -256,7 +246,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 
-	rootDir := makeDir(t, "/tmp")
+	rootDir := testfs.MakeTempDir(t)
 	subDirs := []string{"a", "b", "c", "d", "e"}
 	files := make([]string, 0, numFiles)
 
@@ -317,8 +307,8 @@ func TestFirecrackerFileMapping(t *testing.T) {
 func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
-	rootDir := makeDir(t, "/tmp")
-	workDir := makeDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {

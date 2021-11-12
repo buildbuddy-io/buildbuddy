@@ -3,7 +3,6 @@ package runner_test
 import (
 	"context"
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
@@ -65,15 +65,7 @@ func newWorkflowTask() *repb.ExecutionTask {
 }
 
 func newWorkspace(t *testing.T, env *testenv.TestEnv) *workspace.Workspace {
-	tmpDir, err := ioutil.TempDir("/tmp", "buildbuddy_test_runner_workspace_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Fatal(err)
-		}
-	})
+	tmpDir := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, tmpDir, &workspace.Opts{})
 	if err != nil {
 		t.Fatal(err)

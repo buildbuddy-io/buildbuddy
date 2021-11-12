@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
@@ -51,20 +52,17 @@ func shutdown(ctx context.Context, t *testing.T, workspaceDir string) {
 }
 
 func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
-	workspaceDir, err := ioutil.TempDir("", "bazel-workspace-*")
-	require.NoError(t, err, "failed to create bazel workspace dir")
+	workspaceDir := testfs.MakeTempDir(t)
 	t.Cleanup(func() {
 		// Run Bazel shutdown so that the server process associated with the temp
 		// workspace doesn't stick around. The bazel server eventually shuts down
 		// automatically, but we want to shut the server down ASAP so that high test
 		// volume doesn't cause tons of idle server processes to be running.
 		shutdown(context.Background(), t, workspaceDir)
-		err := os.RemoveAll(workspaceDir)
-		require.NoError(t, err, "failed to remove test workspace")
 	})
 	for path, fileContents := range contents {
 		fullPath := filepath.Join(workspaceDir, path)
-		err = os.MkdirAll(filepath.Dir(fullPath), 0777)
+		err := os.MkdirAll(filepath.Dir(fullPath), 0777)
 		require.NoError(t, err, "failed to create bazel workspace contents")
 		err = ioutil.WriteFile(fullPath, []byte(fileContents), 0777)
 		require.NoError(t, err, "failed to create bazel workspace contents")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -44,8 +43,8 @@ func Start(t testing.TB) string {
 		assert.FailNow(t, "redis binary not found in runfiles", err.Error())
 	}
 
-	socketDir := testfs.MakeTempDir(t)
-	socketPath := path.Join(socketDir, "redis.sock")
+	// redis socket must be in /tmp, redis won't read socket files in arbitrary locations
+	socketPath := testfs.MakeSocket(t, "redis.sock")
 	target := fmt.Sprintf("unix://%s", socketPath)
 
 	ctx, cancel := context.WithCancel(context.Background())

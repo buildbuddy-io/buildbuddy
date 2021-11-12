@@ -2,8 +2,6 @@ package dirtools_test
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -12,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +21,7 @@ import (
 
 func TestDownloadTree(t *testing.T) {
 	env, ctx := testEnv(t)
-	tmpDir := testTempDir(t)
+	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
 	fileADigest := setFile(t, env, ctx, instanceName, "mytestdataA")
 	fileBDigest := setFile(t, env, ctx, instanceName, "mytestdataB")
@@ -73,7 +72,7 @@ func TestDownloadTree(t *testing.T) {
 
 func TestDownloadTreeEmptyDigest(t *testing.T) {
 	env, ctx := testEnv(t)
-	tmpDir := testTempDir(t)
+	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
 
 	fileDigest := setFile(t, env, ctx, instanceName, "mytestdata")
@@ -156,19 +155,6 @@ func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
 	}
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	return env, ctx
-}
-
-func testTempDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("", "buildbuddy_test_dirtools_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
 }
 
 func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceName, data string) *repb.Digest {
