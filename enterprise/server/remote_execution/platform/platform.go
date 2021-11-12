@@ -68,7 +68,7 @@ const (
 	// managed Bazel + Firecracker because for Firecracker we need to decide ahead
 	// of time how big the workspace filesystem is going to be, and managed Bazel
 	// requires a relatively large amount of free space compared to typical actions.
-	EstimatedFreeDiskPropertyName     = "EstimatedFreeDiskBytes"
+	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
 
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
