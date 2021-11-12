@@ -222,9 +222,15 @@ message StartClusterRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
   map<uint64, string> initial_member = 3;
+
+  // The following commands will be SyncProposed on the local
+  // nodehost after the cluster has been created.
+  BatchCmdRequest batch = 4;
 }
 
-message StartClusterResponse {}
+message StartClusterResponse {
+  BatchCmdResponse batch = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

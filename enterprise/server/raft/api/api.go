@@ -68,14 +68,28 @@ func (s *Server) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest
 
 	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.createStateMachineFn, rc)
 	if err != nil {
-		switch err {
-		case dragonboat.ErrClusterAlreadyExist:
-			return nil, status.AlreadyExistsError(err.Error())
-		default:
-			return nil, err
+		if err == dragonboat.ErrClusterAlreadyExist {
+			err = status.AlreadyExistsError(err.Error())
+		}
+		return nil, err
+	}
+	amLeader := false
+	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		if clusterInfo.ClusterID == req.GetClusterId() && clusterInfo.IsLeader {
+			amLeader = true
+			break
 		}
 	}
-	return &rfpb.StartClusterResponse{}, nil
+	rsp := &rfpb.StartClusterResponse{}
+	if amLeader {
+		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
+		if err != nil {
+			return nil, err
+		}
+		rsp.Batch = batchResponse
+	}
+	return rsp, nil
 }
 
 type streamWriter struct {
@@ -152,19 +166,16 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 	return nil
 }
 
-func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	log.Warningf("SyncPropose (server) got request")
-	sesh := s.nodeHost.GetNoOPSession(req.GetReplica().GetClusterId())
-	buf, err := proto.Marshal(req.GetBatch())
+func (s *Server) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	sesh := s.nodeHost.GetNoOPSession(clusterID)
+	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 	var raftResponse dbsm.Result
 	retrier := retry.DefaultWithContext(ctx)
 	for retrier.Next() {
-		log.Printf("retrier start")
 		raftResponse, err = s.nodeHost.SyncPropose(ctx, sesh, buf)
-		log.Printf("rr: %+v, err: %s", raftResponse, err)
 		if err != nil {
 			log.Errorf("SyncPropose err: %s", err)
 			if err == dragonboat.ErrClusterNotReady {
@@ -173,11 +184,19 @@ func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) 
 			}
 			return nil, err
 		}
-		log.Printf("retrier end")
 		break
 	}
 	batchResponse := &rfpb.BatchCmdResponse{}
 	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
+		return nil, err
+	}
+	return batchResponse, err
+}
+
+func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	log.Warningf("SyncPropose (server) got request")
+	batchResponse, err := s.syncProposeLocal(ctx, req.GetReplica().GetClusterId(), req.GetBatch())
+	if err != nil {
 		return nil, err
 	}
 	return &rfpb.SyncProposeResponse{

@@ -127,7 +127,6 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 	if alreadySet {
 		return nil
 	}
-
 	buf, err := sm.lookup(constants.LocalRangeKey)
 	if err != nil {
 		return err
@@ -137,6 +136,8 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 		return err
 	}
 	sm.rangeMu.Lock()
+	log.Printf("rangeDescriptor is %+v", rangeDescriptor)
+	log.Printf("mappedRange is: %+v", sm.mappedRange)
 	if sm.mappedRange == nil {
 		sm.rangeDescriptor = rangeDescriptor
 		sm.mappedRange = &rangemap.Range{
@@ -242,7 +243,11 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 }
 
 func (sm *PebbleDiskStateMachine) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
-	peers, err := sm.sender.GetAllNodes(ctx, constants.FileKey(fileRecord))
+	fileKey, err := constants.FileKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	peers, err := sm.sender.GetAllNodes(ctx, fileKey)
 	if err != nil {
 		return err
 	}

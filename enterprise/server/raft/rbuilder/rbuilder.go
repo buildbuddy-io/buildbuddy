@@ -106,6 +106,12 @@ func NewBatchResponse(val interface{}) *BatchResponse {
 	return br
 }
 
+func NewBatchResponseFromProto(c *rfpb.BatchCmdResponse) *BatchResponse {
+	return &BatchResponse{
+		cmd: c,
+	}
+}
+
 func (br *BatchResponse) checkIndex(n int) {
 	if n >= len(br.cmd.GetUnion()) {
 		br.setErr(status.FailedPreconditionErrorf("batch did not contain %d elements", n))
@@ -118,6 +124,14 @@ func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, er
 		return nil, br.err
 	}
 	return br.cmd.GetUnion()[n].GetDirectRead(), nil
+}
+
+func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	return br.cmd.GetUnion()[n].GetIncrement(), nil
 }
 
 func (br *BatchResponse) ScanResponse(n int) (*rfpb.ScanResponse, error) {

@@ -156,3 +156,22 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 	}
 	return status.UnavailableErrorf("Run failed. (%d attempts): %s", len(rangeDescriptor.GetReplicas()), lastErr)
 }
+
+func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	var rsp *rfpb.SyncProposeResponse
+	err := s.Run(ctx, key, func(c rfspb.ApiClient, rd *rfpb.ReplicaDescriptor) error {
+		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Replica: rd,
+			Batch:   batchCmd,
+		})
+		if err != nil {
+			return err
+		}
+		rsp = r
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rsp.GetBatch(), nil
+}

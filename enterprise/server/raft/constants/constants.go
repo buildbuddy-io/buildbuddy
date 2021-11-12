@@ -62,10 +62,37 @@ var (
 
 	// The range that this statemachine holds.
 	LocalRangeKey = keys.MakeKey(LocalPrefix, []byte("range"))
+
+	// When this local range was set up.
+	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))
 )
 
-func FileKey(r *rfpb.FileRecord) []byte {
-	return []byte(r.GetDigest().GetHash())
+func FileKey(r *rfpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// filepaths look like this:
+	//   // {groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
+	segments := make([]string, 0, 4)
+	if r.GetGroupId() == "" {
+		return nil, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+	}
+	segments = append(segments, r.GetGroupId())
+
+	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
+		segments = append(segments, "cas")
+	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+		segments = append(segments, "ac")
+	} else {
+		return nil, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+	}
+	if len(r.GetDigest().GetHash()) > 4 {
+		segments = append(segments, r.GetDigest().GetHash()[:4])
+	} else {
+		return nil, status.FailedPreconditionError("Malformed digest; too short.")
+	}
+	segments = append(segments, r.GetDigest().GetHash())
+	return []byte(filepath.Join(segments...)), nil
 }
 
 // TODO(tylerw): This is obviously not a "constant". Move it to the right place.

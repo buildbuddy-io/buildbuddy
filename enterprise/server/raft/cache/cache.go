@@ -288,6 +288,18 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
+func (rc *RaftCache) GetSender() *sender.Sender {
+	return rc.sender
+}
+
+func (rc *RaftCache) GetNHID() string {
+	return rc.nodeHost.ID()
+}
+
+func (rc *RaftCache) GetGrpcAddress() string {
+	return rc.grpcAddress
+}
+
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
@@ -328,7 +340,11 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	if err != nil {
 		return nil, err
 	}
-	peers, err := rc.sender.GetAllNodes(ctx, constants.FileKey(fileRecord))
+	fileKey, err := constants.FileKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +377,10 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	fileKey := constants.FileKey(fileRecord)
+	fileKey, err := constants.FileKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
 	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
 	if err != nil {
 		return nil, err

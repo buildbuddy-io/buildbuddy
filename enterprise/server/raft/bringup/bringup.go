@@ -169,6 +169,103 @@ type bootstrapNode struct {
 	index       uint64
 }
 
+type ClusterBootstrapInfo struct {
+	clusterID      uint64
+	nodes          []bootstrapNode
+	initialMembers map[uint64]string
+	Replicas       []*rfpb.ReplicaDescriptor
+}
+
+func MakeBootstrapInfo(clusterID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
+	bi := &ClusterBootstrapInfo{
+		clusterID:      clusterID,
+		initialMembers: make(map[uint64]string, len(nodeGrpcAddrs)),
+		nodes:          make([]bootstrapNode, 0, len(nodeGrpcAddrs)),
+		Replicas:       make([]*rfpb.ReplicaDescriptor, 0, len(nodeGrpcAddrs)),
+	}
+	i := uint64(1)
+	for nhid, grpcAddress := range nodeGrpcAddrs {
+		bi.nodes = append(bi.nodes, bootstrapNode{
+			grpcAddress: grpcAddress,
+			nodeHostID:  nhid,
+			index:       i,
+		})
+		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
+			ClusterId: clusterID,
+			NodeId:    i,
+		})
+		bi.initialMembers[i] = nhid
+		i += 1
+	}
+	return bi
+}
+
+func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rfpb.BatchCmdRequest) error {
+	log.Warningf("Initializing cluster from bootstrapInfo: %+v", bootstrapInfo)
+	log.Debugf("Sending cluster bringup requests to %+v", bootstrapInfo.nodes)
+	for _, node := range bootstrapInfo.nodes {
+		conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
+		if err != nil {
+			return err
+		}
+		client := rfspb.NewApiClient(conn)
+		_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
+			ClusterId:     bootstrapInfo.clusterID,
+			NodeId:        node.index,
+			InitialMember: bootstrapInfo.initialMembers,
+			Batch:         batch,
+		})
+		if err != nil {
+			if !status.IsAlreadyExistsError(err) {
+				log.Errorf("Start cluster returned err: %s", err)
+				return err
+			}
+		}
+	}
+
+	// Now write the setup time.
+	rangeSetupTime, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeSetupTimeKey,
+			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+		},
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+
+	node := bootstrapInfo.nodes[0]
+	writeReq := &rfpb.SyncProposeRequest{
+		Replica: &rfpb.ReplicaDescriptor{
+			ClusterId: bootstrapInfo.clusterID,
+			NodeId:    node.index,
+		},
+		Batch: rangeSetupTime,
+	}
+
+	conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	client := rfspb.NewApiClient(conn)
+
+	proposedFirstVal := false
+	for !proposedFirstVal {
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(100 * time.Millisecond):
+			_, err := client.SyncPropose(ctx, writeReq)
+			if err == nil {
+				proposedFirstVal = true
+			}
+			log.Infof("SyncPropose returned err: %s", err)
+		}
+	}
+	return nil
+}
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bringup an initial cluster.
 func (cs *ClusterStarter) sendStartClusterRequests(bootstrapInfo map[string]string) error {
