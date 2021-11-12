@@ -162,7 +162,7 @@ func (ws *Workspace) AddCIRunner() error {
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ws.env.GetFileResolver().Open("server/cmd/ci_runner/buildbuddy_ci_runner")
+	srcFile, err := ws.env.GetFileResolver().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}
