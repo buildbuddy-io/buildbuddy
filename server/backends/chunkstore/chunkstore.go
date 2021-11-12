@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -53,33 +54,41 @@ func (c *Chunkstore) ReadBlob(ctx context.Context, blobName string) ([]byte, err
 }
 
 func (c *Chunkstore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	c.DeleteBlob(ctx, blobName)
+	if err := c.DeleteBlob(ctx, blobName); err != nil {
+		return 0, err
+	}
 	w := c.Writer(ctx, blobName, nil)
-	bytesWritten, err := w.Write(data)
+	bytesWritten, err := w.Write(ctx, data)
 	if err != nil {
 		return bytesWritten, err
 	}
-	bytesFlushed, err := w.Flush()
+	bytesFlushed, err := w.Flush(ctx)
 	if err != nil {
 		return bytesWritten + bytesFlushed, err
 	}
 
-	return bytesWritten + bytesFlushed, w.Close()
+	return bytesWritten + bytesFlushed, w.Close(ctx)
 }
 
 func (c *Chunkstore) DeleteBlob(ctx context.Context, blobName string) error {
-	index := uint16(0)
+	// delete blobs from back to front so that this process is recoverable in case
+	// of failure (delete error, server crash, etc.)
+	i := uint16(math.MaxUint16)
 	for {
-		if exists, err := c.ChunkExists(ctx, blobName, index); err != nil {
+		if exists, err := c.ChunkExists(ctx, blobName, i+1); err != nil {
 			return err
 		} else if !exists {
-			return nil
+			break
 		}
-		if err := c.deleteChunk(ctx, blobName, index); err != nil {
+		i++
+	}
+	for i != uint16(math.MaxUint16) {
+		if err := c.deleteChunk(ctx, blobName, i); err != nil {
 			return err
 		}
-		index++
+		i--
 	}
+	return nil
 }
 
 func ChunkIndexAsStringId(index uint16) string {
@@ -301,7 +310,7 @@ func (r *chunkstoreReader) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	// If the offset is before the current offset (and not within the current chunk),
-	// reset the offset too the beginning of the file
+	// reset the offset to the beginning of the file
 	if offset < r.off {
 		r.chunkIndex = r.startIndex
 		r.chunk = []byte{}
@@ -353,18 +362,23 @@ func (c *Chunkstore) ReverseReader(ctx context.Context, blobName string) (*chunk
 }
 
 type WriteRequest struct {
+	ctx          context.Context
 	Chunk        []byte
 	VolatileTail []byte
+	Close        bool
 }
 
 type WriteResult struct {
 	Err            error
 	Size           int
 	LastChunkIndex uint16
+	Timeout        bool
+	BytesFlushed   int
+	Close          bool
 }
 
 type ChunkstoreWriterOptions struct {
-	WriteHook            func(*WriteRequest, *WriteResult, []byte, []byte, bool, bool)
+	WriteHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
 	NoSplitWrite         bool
@@ -382,164 +396,188 @@ type ChunkstoreWriter struct {
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 	select {
 	case result, open := <-w.writeResultChannel:
-		if !open {
-			if !w.closed {
-				close(w.writeChannel)
-				w.closed = true
+		if !open || result.Close {
+			close(w.writeChannel)
+			w.closed = true
+			if result != nil && result.Err != nil {
+				return 0, result.Err
 			}
 			return 0, status.UnavailableErrorf("Error accessing %v: Already closed.", w.blobName)
 		}
 		w.lastChunkIndex = result.LastChunkIndex
+		if result.Timeout {
+			return w.readFromWriteResultChannel()
+		}
 		return result.Size, result.Err
 	case <-time.After(w.writeTimeoutDuration):
 		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
 
-func (w *ChunkstoreWriter) GetLastChunkIndex() uint16 {
+func (w *ChunkstoreWriter) GetLastChunkIndex(ctx context.Context) uint16 {
 	// Call Write with an empty buffer to update lastChunkIndex without triggering
 	// an actual write to blobstore, which lets us get an updated index in case a
 	// timeout-based flush has happened between now and the last call to Write.
-	w.Write([]byte{})
+	w.Write(ctx, []byte{})
 	return w.lastChunkIndex
 }
 
-func (w *ChunkstoreWriter) Write(p []byte) (int, error) {
-	return w.WriteWithTail(p, []byte{})
+func (w *ChunkstoreWriter) Write(ctx context.Context, p []byte) (int, error) {
+	return w.WriteWithTail(ctx, p, []byte{})
 }
 
-func (w *ChunkstoreWriter) WriteWithTail(p []byte, tail []byte) (int, error) {
+func (w *ChunkstoreWriter) WriteWithTail(ctx context.Context, p []byte, tail []byte) (int, error) {
 	if w.closed {
 		return 0, nil
 	}
-	w.writeChannel <- &WriteRequest{Chunk: p, VolatileTail: tail}
+	w.writeChannel <- &WriteRequest{ctx: ctx, Chunk: p, VolatileTail: tail}
 	return w.readFromWriteResultChannel()
 }
 
-func (w *ChunkstoreWriter) Flush() (int, error) {
-	return w.Write(nil)
+func (w *ChunkstoreWriter) Flush(ctx context.Context) (int, error) {
+	return w.Write(ctx, nil)
 }
 
-func (w *ChunkstoreWriter) Close() error {
+func (w *ChunkstoreWriter) Close(ctx context.Context) error {
 	if w.closed {
 		return nil
 	}
-	close(w.writeChannel)
+	w.writeChannel <- &WriteRequest{ctx: ctx, Close: true}
 	_, err := w.readFromWriteResultChannel()
-	w.closed = true
+	if status.IsUnavailableError(err) {
+		return nil
+	}
 	return err
 }
 
 type writeLoop struct {
-	flushTime            time.Time
-	writeError           error
-	ctx                  context.Context
-	volatileTail         []byte
 	writeResultChannel   chan *WriteResult
 	writeChannel         chan *WriteRequest
 	chunkstore           *Chunkstore
-	writeHook            func(*WriteRequest, *WriteResult, []byte, []byte, bool, bool)
+	writeHook            func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	blobName             string
-	chunk                []byte
 	writeBlockSize       int
-	bytesFlushed         int
-	lastWriteSize        int
 	writeTimeoutDuration time.Duration
-	chunkIndex           uint16
-	open                 bool
 	noSplitWrite         bool
-	timeout              bool
 }
 
-func (l *writeLoop) write() error {
+func (l *writeLoop) write(ctx context.Context, chunk []byte, chunkIndex uint16, lastWriteSize int) (int, error) {
 	size := l.writeBlockSize
-	if len(l.chunk) <= size {
-		size = len(l.chunk)
-	} else if l.noSplitWrite && l.lastWriteSize <= l.writeBlockSize {
-		size = len(l.chunk) - l.lastWriteSize
+	if len(chunk) <= size {
+		size = len(chunk)
+	} else if l.noSplitWrite && lastWriteSize <= l.writeBlockSize {
+		size = len(chunk) - lastWriteSize
 	}
-	bytesWritten, err := l.chunkstore.writeChunk(l.ctx, l.blobName, l.chunkIndex, l.chunk[:size])
-	if bytesWritten > 0 {
-		l.bytesFlushed += size
-		l.chunk = l.chunk[size:]
-		l.chunkIndex++
+	if _, err := l.chunkstore.writeChunk(ctx, l.blobName, chunkIndex, chunk[:size]); err != nil {
+		return 0, err
 	}
-	if err != nil {
-		l.writeError = err
-	}
-	return err
+	return size, nil
 }
 
-func (l *writeLoop) readFromWriteChannel() *WriteRequest {
-	l.timeout = false
-	select {
-	case req, open := <-l.writeChannel:
-		l.open = open
-		if l.open {
-			if req.Chunk == nil {
-				l.flushTime = time.Unix(0, 0)
-			} else {
-				if req.VolatileTail != nil {
-					l.volatileTail = req.VolatileTail
+func (l *writeLoop) run(ctx context.Context) {
+	flushTime := time.Now().Add(year)
+	open := true
+	chunk := []byte{}
+	volatileTail := []byte{}
+	chunkIndex := uint16(0)
+	for open {
+		timeout := false
+		lastWriteSize := 0
+		bytesFlushed := 0
+		var req *WriteRequest
+
+		// Get the write request for this iteration.
+		select {
+		case req, open = <-l.writeChannel:
+			if req != nil {
+				// We received a write request; update the context, chunk, and tail.
+				ctx = req.ctx
+				if req.Chunk == nil {
+					// nil Write is a manual flush
+					flushTime = time.Unix(0, 0)
 				}
-				l.chunk = append(l.chunk, req.Chunk...)
-				l.lastWriteSize = len(req.Chunk)
+				if req.VolatileTail != nil {
+					// nil Tail means don't overwrite the tail. This accompanies manual
+					// flushes and no-op writes (to get updated chunkIndex from potential
+					// automatic flushes).
+					volatileTail = req.VolatileTail
+				}
+				chunk = append(chunk, req.Chunk...)
+				lastWriteSize = len(req.Chunk)
+				if req.Close {
+					open = false
+				}
 			}
-		}
-		return req
-	case <-time.After(time.Until(l.flushTime)):
-		l.timeout = true
-		return nil
-	case <-l.ctx.Done():
-		l.open = false
-		return nil
-	}
-}
+		case <-time.After(time.Until(flushTime)):
+			// We timed out waiting for a write request. Flush the contents of the
+			// chunk to disk.
+			timeout = true
+		case <-ctx.Done():
+			open = false
 
-func (l *writeLoop) run() {
-	l.flushTime = time.Now().Add(year)
-	l.open = true
-	for l.open {
-		// Get the read request and update loop for this iteration.
-		req := l.readFromWriteChannel()
-		if !l.open {
+			// The context was canceled before the file was closed; extend the life of
+			// the context so we can flush the contents of the chunk and tail to disk.
+			var cancel func()
+			ctx, cancel = background.ExtendContextForFinalization(ctx, time.Second*10)
+			defer cancel()
+		}
+
+		if !open {
 			// We are closing the file, so any tail must be written lest it be lost.
-			l.chunk = append(l.chunk, l.volatileTail...)
-			l.lastWriteSize = len(l.volatileTail)
+			chunk = append(chunk, volatileTail...)
+			lastWriteSize = len(volatileTail)
+			volatileTail = []byte{}
 		}
 		var err error
-		for err == nil && len(l.chunk) >= l.writeBlockSize {
+		for err == nil && len(chunk) >= l.writeBlockSize {
 			// Write blocks until we have fewer than writeBlockSize bytes remaining
 			// or we encounter a write error.
-			err = l.write()
+			var n int
+			n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
+			if err == nil {
+				bytesFlushed += n
+				chunk = chunk[n:]
+				chunkIndex++
+			}
 		}
 		// We do not attempt to write if we have already encountered a write error
 		// in this iteration of the loop, and instead we simply move on.
-		// If the file is empty and we are closing it, we must write an empty chunk.
-		// Otherwise, if we have data cached to write and we are either flushing or
-		// closing the file, we need to write a chunk.
-		if err == nil && ((!l.open && l.chunkIndex == 0) || (len(l.chunk) > 0 && (time.Now().After(l.flushTime) || !l.open))) {
-			l.write()
+		// If we're closing the file and haven't written a chunk (chunkIndex == 0)
+		// or there is data cached to write, we must write the chunk to disk.
+		// Otherwise, if it is time to flush the file and there is data to write,
+		// we must write the chunk to disk.
+		// The iterative writes above guarantee, absent an error, that chunk will be
+		// writeBlockSize or shorter.
+		if err == nil {
+			if !open && (chunkIndex == 0 || len(chunk) > 0) || time.Now().After(flushTime) && len(chunk) > 0 {
+				var n int
+				n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
+				if err == nil {
+					bytesFlushed += n
+					chunk = chunk[n:]
+					chunkIndex++
+				}
+			}
 		}
-		if len(l.chunk) == 0 {
+		if len(chunk) == 0 {
 			// There is no data to write; we don't need to wake to flush data.
-			l.flushTime = time.Now().Add(year)
-		} else if time.Until(l.flushTime) > (l.writeTimeoutDuration) {
+			flushTime = time.Now().Add(year)
+		} else if time.Now().Add(l.writeTimeoutDuration).Before(flushTime) || bytesFlushed > 0 {
 			// There is data to write, we need to wake after a timeout to flush data.
-			l.flushTime = time.Now().Add(l.writeTimeoutDuration)
+			// If flushTime is further in the future than writeTimeoutDuration, or we
+			//just wrote data to disk, reset the flushTime.
+			flushTime = time.Now().Add(l.writeTimeoutDuration)
 		}
-		result := &WriteResult{Size: l.bytesFlushed, Err: l.writeError, LastChunkIndex: l.chunkIndex - 1}
-		if !l.timeout {
-			// This iteration was triggered by a call to Write or Close, return a
-			// write result. Since the write result contains the byte count and error
-			// (if any), we no longer wish to track those.
-			l.writeResultChannel <- result
-			l.writeError = nil
-			l.bytesFlushed = 0
-		}
+		// We report lastWriteSize as the number of bytes written because we may not
+		// flush all the bytes, but they will still be buffered to be written after
+		// we return. Thus, any and all write failures are instead reported in the
+		// error object as opposed to reflected in the number of bytes written.
+		result := &WriteResult{Size: lastWriteSize, Err: err, LastChunkIndex: chunkIndex - 1, Timeout: timeout, BytesFlushed: bytesFlushed, Close: !open}
+		l.writeResultChannel <- result
+
 		if l.writeHook != nil {
 			// All work has been done for this write; trigger the writeHook
-			l.writeHook(req, result, l.chunk, l.volatileTail, l.timeout, l.open)
+			l.writeHook(ctx, req, result, chunk, volatileTail)
 		}
 	}
 	close(l.writeResultChannel)
@@ -554,7 +592,7 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 	if co != nil && co.WriteTimeoutDuration != 0 {
 		writeTimeoutDuration = co.WriteTimeoutDuration
 	}
-	var writeHook func(*WriteRequest, *WriteResult, []byte, []byte, bool, bool)
+	var writeHook func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
 	if co != nil {
 		writeHook = co.WriteHook
 	}
@@ -564,17 +602,16 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 	}
 
 	writer := &ChunkstoreWriter{
-		blobName:             blobName,
-		writeChannel:         make(chan *WriteRequest),
-		writeResultChannel:   make(chan *WriteResult),
+		blobName:     blobName,
+		writeChannel: make(chan *WriteRequest, 2),
+		// writeResultChannel must be length 2 so that both a timeout event and a
+		// close event could be simultaneously queued.
+		writeResultChannel:   make(chan *WriteResult, 2),
 		writeTimeoutDuration: writeTimeoutDuration,
 	}
 
 	loop := &writeLoop{
 		chunkstore:           c,
-		ctx:                  ctx,
-		chunk:                []byte{},
-		volatileTail:         []byte{},
 		blobName:             blobName,
 		writeChannel:         writer.writeChannel,
 		writeResultChannel:   writer.writeResultChannel,
@@ -584,7 +621,7 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 		noSplitWrite:         noSplitWrite,
 	}
 
-	go loop.run()
+	go loop.run(ctx)
 
 	return writer
 }

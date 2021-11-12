@@ -32,7 +32,7 @@ const (
 
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
-	dockerPrefix               = "docker://"
+	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
@@ -62,6 +62,12 @@ const (
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
+
+	// EstimatedFreeDiskPropertyName specifies how much "scratch space" beyond the
+	// input files a task requires to be able to function. This is useful for
+	// managed Bazel + Firecracker because for Firecracker we need to decide ahead
+	// of time how big the workspace filesystem is going to be, and managed Bazel
+	// requires a relatively large amount of free space compared to typical actions.
 	EstimatedFreeDiskPropertyName     = "EstimatedFreeDiskBytes"
 
 	BareContainerType        ContainerType = "none"
@@ -256,13 +262,13 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
 			platformProps.ContainerImage = defaultContainerImage
-		} else if !strings.HasPrefix(platformProps.ContainerImage, dockerPrefix) {
+		} else if !strings.HasPrefix(platformProps.ContainerImage, DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
 			return status.InvalidArgumentError("Malformed container image string.")
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
-		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, dockerPrefix)
+		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
 	}
 
 	if strings.EqualFold(platformProps.OS, darwinOperatingSystemName) {

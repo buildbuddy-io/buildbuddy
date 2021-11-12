@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -71,6 +72,9 @@ const (
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	defaultRunnerDiskSizeLimitBytes = 16e9
+	// How much memory a runner is allowed to use before we decide that it
+	// can't be added to the pool and must be cleaned up instead.
+	defaultRunnerMemoryLimitBytes = tasksize.WorkflowMemEstimate
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
 	runnerMemUsageEstimateMultiplierBytes = 6.5
@@ -146,6 +150,8 @@ type CommandRunner struct {
 	// VFSServer holds the RPC server that serves FUSE filesystem requests.
 	VFSServer *vfs_server.Server
 
+	// task is the current task assigned to the runner.
+	task *repb.ExecutionTask
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -168,8 +174,8 @@ func (r *CommandRunner) pullCredentials() container.PullCredentials {
 	return container.GetPullCredentials(r.env, r.PlatformProperties)
 }
 
-func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.ExecutionTask) error {
-	r.Workspace.SetTask(task)
+func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
+	r.Workspace.SetTask(r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
@@ -195,11 +201,14 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context, task *repb.Execution
 	return nil
 }
 
-func (r *CommandRunner) Run(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+// Run runs the task that is currently bound to the command runner.
+func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
 	}
+
+	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
@@ -410,6 +419,13 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 			"stats_failed",
 		}
 	}
+	// If memory usage stats are not implemented, fall back to the task size
+	// estimate.
+	if stats.MemoryUsageBytes == 0 {
+		estimate := tasksize.Estimate(r.task.GetCommand())
+		stats.MemoryUsageBytes = estimate.GetEstimatedMemoryBytes()
+	}
+
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
 		return &labeledError{
 			RunnerMaxMemoryExceeded,
@@ -433,17 +449,16 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.pausedRunnerCount() >= p.maxRunnerCount {
-		if p.maxRunnerCount <= 0 {
-			return &labeledError{
-				status.InternalError("pool max runner count is <= 0; this should never happen"),
-				"max_runner_count_zero",
-			}
+	if p.maxRunnerCount <= 0 {
+		return &labeledError{
+			status.InternalError("pool max runner count is <= 0; this should never happen"),
+			"max_runner_count_zero",
 		}
+	}
+
+	for p.pausedRunnerCount() >= p.maxRunnerCount ||
+		p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
 		// Evict the oldest (first) paused runner to make room for the new one.
-		// Note the two conditionals above imply that
-		// p.pausedRunnerCount() >= p.maxRunnerCount > 0, so there's now at least
-		// 1 paused runner in the list that can be evicted.
 		evictIndex := -1
 		for i, r := range p.runners {
 			if r.state == paused {
@@ -515,8 +530,40 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 	}
 }
 
-func (p *Pool) WarmupDefaultImage() {
+func (p *Pool) warmupImage(ctx context.Context, containerType platform.ContainerType, image string) error {
 	start := time.Now()
+	plat := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "container-image", Value: image},
+			{Name: "workload-isolation-type", Value: string(containerType)},
+		},
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"echo", "'warmup'"},
+			Platform:  plat,
+		},
+	}
+	platProps := platform.ParseProperties(task)
+	c, err := p.newContainer(ctx, platProps, task.GetCommand())
+	if err != nil {
+		log.Errorf("Error warming up %q: %s", containerType, err)
+		return err
+	}
+
+	creds := container.GetPullCredentials(p.env, platProps)
+	err = container.PullImageIfNecessary(
+		ctx, p.env, p.imageCacheAuth,
+		c, creds, platProps.ContainerImage,
+	)
+	if err != nil {
+		return err
+	}
+	log.Infof("Warmup: %s pulled image %q in %s", containerType, image, time.Since(start))
+	return nil
+}
+
+func (p *Pool) WarmupImages() {
 	config := p.env.GetConfigurator().GetExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 2 minute to succeed.
@@ -528,52 +575,30 @@ func (p *Pool) WarmupDefaultImage() {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
 	for _, containerType := range executorProps.SupportedIsolationTypes {
 		containerType := containerType
 		image := platform.DefaultContainerImage
 		if config.DefaultImage != "" {
 			image = config.DefaultImage
 		}
-		plat := &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: image},
-				{Name: "workload-isolation-type", Value: string(containerType)},
-			},
-		}
-		task := &repb.ExecutionTask{
-			Command: &repb.Command{
-				Arguments: []string{"echo", "'warmup'"},
-				Platform:  plat,
-			},
-		}
-		platProps := platform.ParseProperties(task)
-		c, err := p.newContainer(egCtx, platProps, task)
-		if err != nil {
-			log.Errorf("Error warming up %q: %s", containerType, err)
-			return
-		}
 
 		eg.Go(func() error {
-			creds := container.GetPullCredentials(p.env, platProps)
-			err := container.PullImageIfNecessary(
-				egCtx, p.env, p.imageCacheAuth,
-				c, creds, platProps.ContainerImage,
-			)
-			if err != nil {
-				return err
-			}
-			log.Infof("Warmup: %s pulled default image %q in %s", containerType, image, time.Since(start))
-			return nil
+			return p.warmupImage(ctx, containerType, image)
 		})
+		if containerType == platform.FirecrackerContainerType {
+			eg.Go(func() error {
+				return p.warmupImage(ctx, containerType, strings.TrimPrefix(hostedrunner.RunnerContainerImage, platform.DockerPrefix))
+			})
+		}
 	}
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error warming up containers: %s", err)
 	}
 }
 
-// Get returns a runner that can be used to execute the given task. The caller
-// must call TryRecycle on the returned runner when done using it.
+// Get returns a runner bound to the the given task. The caller must call
+// TryRecycle on the returned runner when done using it.
 //
 // If the task has runner recycling enabled then it attempts to find a runner
 // from the pool that can execute the task. If runner recycling is disabled or
@@ -625,6 +650,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 		if r != nil {
 			log.Info("Reusing workspace for task.")
+			r.task = task
 			r.PlatformProperties = props
 			return r, nil
 		}
@@ -669,6 +695,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		env:                p.env,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
+		task:               task,
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
@@ -815,6 +842,16 @@ func (p *Pool) pausedRunnerCount() int {
 	return n
 }
 
+func (p *Pool) pausedRunnerMemoryUsageBytes() int64 {
+	b := int64(0)
+	for _, r := range p.runners {
+		if r.state == paused {
+			b += r.memoryUsageBytes
+		}
+	}
+	return b
+}
+
 // Shutdown removes all runners from the pool and prevents new ones from
 // being added.
 func (p *Pool) Shutdown(ctx context.Context) error {
@@ -921,7 +958,10 @@ func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
 
 	mem := cfg.MaxRunnerMemoryUsageBytes
 	if mem == 0 {
-		mem = int64(float64(totalRAMBytes) / float64(count))
+		mem = defaultRunnerMemoryLimitBytes
+		if mem > totalRAMBytes {
+			mem = totalRAMBytes
+		}
 	} else if mem < 0 {
 		// < 0 means no limit.
 		mem = math.MaxInt64
@@ -994,6 +1034,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 
 	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
 
+	execContext, cancel := context.WithCancel(ctx)
 	// If it's our first rodeo, create the persistent worker.
 	if r.stdinWriter == nil || r.stdoutReader == nil {
 		stdinReader, stdinWriter := io.Pipe()
@@ -1004,13 +1045,19 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
 			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-			r.doNotReuse = true
 		}()
 	}
+
+	r.doNotReuse = true
+	defer func() {
+		if r.doNotReuse {
+			cancel()
+		}
+	}()
 
 	// We've got a worker - now let's build a work request.
 	requestProto := &wkpb.WorkRequest{
@@ -1074,6 +1121,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	// Populate the result from the response proto.
 	result.Stderr = []byte(responseProto.Output)
 	result.ExitCode = int(responseProto.ExitCode)
+	r.doNotReuse = false
 	return result
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 
@@ -94,6 +95,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 
 		if err := channel.HandleEvent(in); err != nil {
+			if status.IsAlreadyExistsError(err) {
+				log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
+				return err
+			}
 			log.Warningf("Error handling event; this means a broken build command: %s", err)
 			return disconnectWithErr(err)
 		}
@@ -120,7 +125,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	if channel != nil {
 		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
 			log.Warningf("Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
-			return disconnectWithErr(err)
+			return err
 		}
 	}
 
@@ -132,7 +137,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		}
 		if err := stream.Send(rsp); err != nil {
 			log.Warningf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
-			return disconnectWithErr(err)
+			return err
 		}
 	}
 	return nil

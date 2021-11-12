@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -25,7 +26,7 @@ const (
 	NoExitCode = -2
 )
 
-func constructExecCommand(ctx context.Context, command *repb.Command, workDir string) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+func constructExecCommand(ctx context.Context, command *repb.Command, workDir string, in io.Reader, out io.Writer) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 	executable, args := splitExecutableArgs(command.GetArguments())
 	cmd := exec.CommandContext(ctx, executable, args...)
 	if workDir != "" {
@@ -33,7 +34,13 @@ func constructExecCommand(ctx context.Context, command *repb.Command, workDir st
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	if out != nil {
+		cmd.Stdout = io.MultiWriter(cmd.Stdout, out)
+	}
 	cmd.Stderr = &stderr
+	if in != nil {
+		cmd.Stdin = in
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
@@ -57,13 +64,13 @@ func RetryIfTextFileBusy(fn func() error) error {
 }
 
 // Run a command, retrying "text file busy" errors.
-func Run(ctx context.Context, command *repb.Command, workDir string) *interfaces.CommandResult {
+func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
-		cmd, stdoutBuf, stderrBuf = constructExecCommand(ctx, command, workDir)
+		cmd, stdoutBuf, stderrBuf = constructExecCommand(ctx, command, workDir, stdin, stdout)
 		return cmd.Run()
 	})
 

@@ -13,9 +13,10 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/service",
-        "@npm//@types/diff-match-patch",
+        "//proto:runner_ts_proto",
+        "@npm//@types/diff",
         "@npm//@types/react",
-        "@npm//diff-match-patch",
+        "@npm//diff",
         "@npm//monaco-editor",
         "@npm//octokit",
         "@npm//octokit-plugin-create-pull-request",

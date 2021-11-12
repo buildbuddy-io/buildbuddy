@@ -55,6 +55,7 @@
   padding: 16px;
   box-sizing: border-box;
   appearance: none;
+  -webkit-appearance: none;
   border: 1px solid gray;
   border-radius: 2px;
 }

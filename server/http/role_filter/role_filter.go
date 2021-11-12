@@ -37,6 +37,12 @@ var (
 		// Anonymous users can see the Bazel config required to use BuildBuddy, so
 		// don't require a group role.
 		"GetBazelConfig",
+		// API calls are role independent
+		"GetInvocation",
+		"GetLog",
+		"GetTarget",
+		"GetAction",
+		"GetFile",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected

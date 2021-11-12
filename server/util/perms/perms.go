@@ -188,13 +188,7 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 	if auth := env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil {
 			hasUser = true
-			if u.GetGroupID() != "" {
-				groupArgs := []interface{}{
-					GROUP_READ,
-					u.GetGroupID(),
-				}
-				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
-			} else if u.GetUserID() != "" {
+			if u.GetUserID() != "" {
 				groupArgs := []interface{}{
 					GROUP_READ,
 				}
@@ -207,6 +201,12 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 				groupQueryStr := fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id IN %s)", tablePrefix, tablePrefix, groupParamString)
 				o.AddOr(groupQueryStr, groupArgs...)
 				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
+			} else if u.GetGroupID() != "" {
+				groupArgs := []interface{}{
+					GROUP_READ,
+					u.GetGroupID(),
+				}
+				o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %sgroup_id = ?)", tablePrefix, tablePrefix), groupArgs...)
 			}
 			if u.IsAdmin() {
 				o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), ALL)

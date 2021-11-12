@@ -1,5 +1,5 @@
-// +build linux
-// +build !android
+//go:build linux && !android
+// +build linux,!android
 
 package firecracker
 
@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -36,7 +35,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -119,43 +117,15 @@ var (
 	vmIdxMu sync.Mutex
 )
 
-func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
-	sourcePath := ""
-
+func openFile(ctx context.Context, env environment.Env, fileName string) (io.ReadCloser, error) {
 	// If the file exists on the filesystem, use that.
-	if fp, err := exec.LookPath(fileName); err == nil {
-		log.Debugf("Located %q at %s", fileName, fp)
-		sourcePath = fp
+	if path, err := exec.LookPath(fileName); err == nil {
+		log.Debugf("Located %q at %s", fileName, path)
+		return os.Open(path)
 	}
 
-	// If the file exists in the binary runfiles, that works too.
-	if rfp, err := bazel.RunfilesPath(); err == nil {
-		targetFile := filepath.Join(rfp, "enterprise", fileName)
-		if exists, err := disk.FileExists(targetFile); err == nil && exists {
-			log.Debugf("Located %q at %s", fileName, targetFile)
-			sourcePath = targetFile
-		}
-	}
-
-	var fileReader io.Reader
-	if sourcePath != "" {
-		reader, err := disk.FileReader(ctx, sourcePath, 0, 0)
-		if err != nil {
-			return nil, err
-		}
-		fileReader = reader
-	}
-
-	// If file wasn't found, check the bundle, it may be available there.
-	if fileReader == nil {
-		if bundleFS, err := bundle.Get(); err == nil {
-			if f, err := bundleFS.Open(fileName); err == nil {
-				log.Debugf("Located %q in bundle", fileName)
-				fileReader = f
-			}
-		}
-	}
-	return fileReader, nil
+	// Otherwise try to find it in the bundle or runfiles.
+	return env.GetFileResolver().Open(fileName)
 }
 
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
@@ -163,19 +133,20 @@ func getFileReader(ctx context.Context, fileName string) (io.Reader, error) {
 // and returns a path to the file in the new location. Files are written in
 // a content-addressable-storage-based location, so when files are updated they
 // will be put into new paths.
-func putFileIntoDir(ctx context.Context, fileName, destDir string, mode fs.FileMode) (string, error) {
-	fileReader, err := getFileReader(ctx, fileName)
+func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir string, mode fs.FileMode) (string, error) {
+	f, err := openFile(ctx, env, fileName)
 	if err != nil {
 		return "", err
 	}
 	// If fileReader is still nil, the file was not found, so return an error.
-	if fileReader == nil {
+	if f == nil {
 		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
 	}
+	defer f.Close()
 
 	// Compute the file hash to determine the new location where it should be written.
 	h := sha256.New()
-	if _, err := io.Copy(h, fileReader); err != nil {
+	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
 	fileHash := fmt.Sprintf("%x", h.Sum(nil))
@@ -189,15 +160,16 @@ func putFileIntoDir(ctx context.Context, fileName, destDir string, mode fs.FileM
 		return casPath, nil
 	}
 	// Write the file to the new location if it does not exist there already.
-	fileReader, err = getFileReader(ctx, fileName)
+	f, err = openFile(ctx, env, fileName)
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
 	writer, err := disk.FileWriter(ctx, casPath)
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(writer, fileReader); err != nil {
+	if _, err := io.Copy(writer, f); err != nil {
 		return "", err
 	}
 	if err := writer.Close(); err != nil {
@@ -336,7 +308,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 	// Ensure our kernel and initrd exist on the same filesystem where we'll
 	// be jailing containers. This allows us to hardlink these files rather
 	// than copying them around over and over again.
-	if err := copyStaticFiles(context.Background(), opts.JailerRoot); err != nil {
+	if err := copyStaticFiles(context.Background(), env, opts.JailerRoot); err != nil {
 		return nil, err
 	}
 
@@ -689,13 +661,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 	return cfg, nil
 }
 
-func copyStaticFiles(ctx context.Context, workingDir string) error {
+func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string) error {
 	locateBinariesOnce.Do(func() {
-		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/initrd.cpio", workingDir, 0755)
+		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}
-		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, "vmsupport/bin/vmlinux", workingDir, 0755)
+		kernelImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/vmlinux", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
 		}

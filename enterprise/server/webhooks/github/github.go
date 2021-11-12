@@ -165,6 +165,30 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	}
 }
 
+func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return nil, err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	opts := &gh.RepositoryContentGetOptions{Ref: ref}
+	fileContent, _, rsp, err := client.Repositories.GetContents(ctx, owner, repo, filePath, opts)
+	if rsp.StatusCode == http.StatusNotFound {
+		return nil, status.NotFoundErrorf("%s: not found in %s", filePath, repoURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if fileContent == nil {
+		return nil, status.InvalidArgumentErrorf("%s does not point to a file within %s", filePath, repoURL)
+	}
+	s, err := fileContent.GetContent()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(s), nil
+}
+
 func webhookJSONPayload(r *http.Request) ([]byte, error) {
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("content-type"))
 	if err != nil {
