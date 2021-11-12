@@ -71,7 +71,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
     var element = document.createElement("a");
     const unstyledLogs = this.props.value.replace(ANSI_STYLES_REGEX, "");
     element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
-    element.setAttribute("download", "build_logs.log");
+    element.setAttribute("download", "build.log");
     element.style.display = "none";
     document.body.appendChild(element);
     element.click();
