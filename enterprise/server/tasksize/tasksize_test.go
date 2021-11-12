@@ -71,5 +71,4 @@ func TestEstimate_DiskSizePlatformProp_UsesPropValueForDiskSize(t *testing.T) {
 	assert.Equal(t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu)
 	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
-
 }

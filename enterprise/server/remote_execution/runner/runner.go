@@ -582,7 +582,6 @@ func (p *Pool) WarmupImages() {
 		if config.DefaultImage != "" {
 			image = config.DefaultImage
 		}
-
 		eg.Go(func() error {
 			return p.warmupImage(ctx, containerType, image)
 		})
