@@ -464,8 +464,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cncf_xds_go",
         importpath = "github.com/cncf/xds/go",
-        sum = "h1:OZmjad4L3H8ncOIR8rnb5MREYqG8ixi5+WbeUsquF0c=",
-        version = "v0.0.0-20210312221358-fbca930ec8ed",
+        sum = "h1:CevA8fI91PAnP8vpnXuB8ZYAZ5wqY86nAbxfgK8tWO4=",
+        version = "v0.0.0-20210805033703-aa0b78936158",
     )
 
     go_repository(
@@ -956,8 +956,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
         importpath = "github.com/envoyproxy/go-control-plane",
-        sum = "h1:dulLQAYQFYtG5MTplgNGHWuV2D+OBD+Z8lmDBmbLg+s=",
-        version = "v0.9.9-0.20210512163311-63b5d3c536b0",
+        sum = "h1:fP+fF0up6oPY49OrjPrhIJ8yQfdIM85NXMLkMg1EXVs=",
+        version = "v0.9.10-0.20210907150352-cf90f659a021",
     )
 
     go_repository(
@@ -1985,20 +1985,20 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hashicorp_mdns",
         importpath = "github.com/hashicorp/mdns",
-        sum = "h1:XFSOubp8KWB+Jd2PDyaX5xUd5bhSP/+pTDZVDMzZJM8=",
-        version = "v1.0.1",
+        sum = "h1:sY0CMhFmjIPDMlTB+HfymFHCaYLhgifZ0QhjaYKD/UQ=",
+        version = "v1.0.4",
     )
     go_repository(
         name = "com_github_hashicorp_memberlist",
         importpath = "github.com/hashicorp/memberlist",
-        sum = "h1:5+RffWKwqJ71YPu9mWsF7ZOscZmwfasdA8kbdC7AO2g=",
-        version = "v0.2.2",
+        sum = "h1:8+567mCcFDnS5ADl7lrpxPMWiFCElyUEeW0gtj34fMA=",
+        version = "v0.3.0",
     )
     go_repository(
         name = "com_github_hashicorp_serf",
         importpath = "github.com/hashicorp/serf",
-        sum = "h1:EBWvyu9tcRszt3Bxp3KNssBMP1KuHWyO51lz9+786iM=",
-        version = "v0.9.5",
+        sum = "h1:uuEX1kLR6aoda1TBttmJQKDLZE1Ob7KN0NPdE7EtCDc=",
+        version = "v0.9.6",
     )
     go_repository(
         name = "com_github_hpcloud_tail",
@@ -2711,8 +2711,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_miekg_dns",
         importpath = "github.com/miekg/dns",
-        sum = "h1:gPxPSwALAeHJSjarOs00QjVdV9QoBvc1D2ujQUr5BzU=",
-        version = "v1.1.26",
+        sum = "h1:WMszZWJG0XmzbK9FEmzH2TVcqYzFesusSIB41b8KHxY=",
+        version = "v1.1.41",
     )
     go_repository(
         name = "com_github_miekg_pkcs11",

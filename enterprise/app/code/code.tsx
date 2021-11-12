@@ -188,9 +188,12 @@ export default class CodeComponent extends React.Component<Props> {
       });
   }
 
-  getRemoteExecutorEndpoint() {
-    // TODO(siggisim): get the correct cross-environment value here.
-    return "remote.buildbuddy.dev";
+  getRemoteEndpoint() {
+    // TODO(siggisim): Support on-prem deployments.
+    if (window.location.origin.endsWith(".dev")) {
+      return "remote.buildbuddy.dev";
+    }
+    return "remote.buildbuddy.io";
   }
 
   getJobCount() {
@@ -202,7 +205,7 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   getBazelFlags() {
-    return `--remote_executor=${this.getRemoteExecutorEndpoint()} --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
+    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint} --bes_results_url=${window.location.origin}/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
   }
 
   handleBuildClicked() {
