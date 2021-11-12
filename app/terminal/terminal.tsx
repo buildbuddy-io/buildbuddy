@@ -10,8 +10,9 @@ interface TerminalState {
   wrap: boolean;
 }
 
-const wrapLocalStorageKey = "terminal-wrap";
-const wrapLocalStorageValue = "wrap";
+const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
+const WRAP_LOCAL_STORAGE_VALUE = "wrap";
+const ANSI_STYLES_REGEX = /\x1b\[[\d;]+?m/g;
 
 export default class TerminalComponent extends React.Component<TerminalProps, TerminalState> {
   state = { wrap: false };
@@ -19,7 +20,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   terminalRef = React.createRef<HTMLDivElement>();
 
   componentDidMount() {
-    this.setState({ wrap: localStorage.getItem(wrapLocalStorageKey) === wrapLocalStorageValue });
+    this.setState({ wrap: localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === WRAP_LOCAL_STORAGE_VALUE });
   }
 
   render() {
@@ -66,13 +67,14 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   handleWrapClicked() {
     let shouldWrap = !this.state.wrap;
-    localStorage.setItem(wrapLocalStorageKey, shouldWrap ? wrapLocalStorageValue : undefined);
+    localStorage.setItem(WRAP_LOCAL_STORAGE_KEY, shouldWrap ? WRAP_LOCAL_STORAGE_VALUE : undefined);
     this.setState({ wrap: shouldWrap });
   }
 
   handleDownloadClicked() {
     var element = document.createElement("a");
-    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(this.props.value));
+    const unstyledLogs = this.props.value.replace(ANSI_STYLES_REGEX, "");
+    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
     element.setAttribute("download", "build_logs.txt");
     element.style.display = "none";
     document.body.appendChild(element);

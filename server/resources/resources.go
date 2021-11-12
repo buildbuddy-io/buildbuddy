@@ -46,7 +46,6 @@ func setSysRAMBytes() {
 	mem := gosigar.Mem{}
 	mem.Get()
 	allocatedRAMBytes = int64(mem.ActualFree)
-	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 }
 
 func setSysMilliCPUCapacity() {
@@ -62,7 +61,6 @@ func setSysMilliCPUCapacity() {
 	cpuList.Get()
 	numCores := len(cpuList.List)
 	allocatedCPUMillis = int64(numCores * 1000)
-	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
 }
 
 func Configure(env environment.Env) error {
@@ -73,12 +71,16 @@ func Configure(env environment.Env) error {
 		}
 		allocatedRAMBytes = cfg.MemoryBytes
 	}
-	if cfg.Millicpu > 0 {
+	if cfg.MilliCPU > 0 {
 		if os.Getenv(cpuEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and 'SYS_MILLICPU' environment variable may be set")
 		}
-		allocatedCPUMillis = cfg.Millicpu
+		allocatedCPUMillis = cfg.MilliCPU
 	}
+
+	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
+	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
+
 	return nil
 }
 
