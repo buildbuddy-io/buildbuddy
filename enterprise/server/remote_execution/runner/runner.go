@@ -422,7 +422,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	// If memory usage stats are not implemented, fall back to the task size
 	// estimate.
 	if stats.MemoryUsageBytes == 0 {
-		estimate := tasksize.Estimate(r.task.GetCommand())
+		estimate := tasksize.Estimate(r.task)
 		stats.MemoryUsageBytes = estimate.GetEstimatedMemoryBytes()
 	}
 
@@ -545,7 +545,7 @@ func (p *Pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 	}
 	platProps := platform.ParseProperties(task)
-	c, err := p.newContainer(ctx, platProps, task.GetCommand())
+	c, err := p.newContainer(ctx, platProps, task)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
 		return err
