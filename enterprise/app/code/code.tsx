@@ -218,7 +218,7 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   getBazelFlags() {
-    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint} --bes_results_url=${
+    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint()} --bes_results_url=${
       window.location.origin
     }/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
   }
