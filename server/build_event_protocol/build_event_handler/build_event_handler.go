@@ -211,6 +211,10 @@ func (r *statsRecorder) Start() {
 				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
 				}
+				if scorecard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scorecard != nil {
+					//log.Printf("Collected scorecard: %+v", scorecard)
+				}
+
 				if _, err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 					log.Errorf("Failed to write cache stats for invocation: %s", err)
 				}
