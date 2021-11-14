@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -197,6 +198,34 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 	}
 }
 
+func scoreCardBlobName(invocationID string) string {
+	blobFileName := invocationID + "-scorecard.chunk"
+	return filepath.Join(invocationID, blobFileName)
+}
+
+func writeScoreCard(ctx context.Context, env environment.Env, invocationID string, scoreCard *capb.ScoreCard) error {
+	scoreCardBuf, err := proto.Marshal(scoreCard)
+	if err != nil {
+		return err
+	}
+	blobStore := env.GetBlobstore()
+	_, err = blobStore.WriteBlob(ctx, scoreCardBlobName(invocationID), scoreCardBuf)
+	return err
+}
+
+func readScoreCard(ctx context.Context, env environment.Env, invocationID string) (*capb.ScoreCard, error) {
+	blobStore := env.GetBlobstore()
+	buf, err := blobStore.ReadBlob(ctx, scoreCardBlobName(invocationID))
+	if err != nil {
+		return nil, err
+	}
+	sc := &capb.ScoreCard{}
+	if err := proto.Unmarshal(buf, sc); err != nil {
+		return nil, err
+	}
+	return sc, nil
+}
+
 func (r *statsRecorder) Start() {
 	r.eg = errgroup.Group{}
 	ctx := context.Background()
@@ -211,8 +240,10 @@ func (r *statsRecorder) Start() {
 				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 					fillInvocationFromCacheStats(stats, ti)
 				}
-				if scorecard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scorecard != nil {
-					//log.Printf("Collected scorecard: %+v", scorecard)
+				if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
+					if err := writeScoreCard(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
+						log.Errorf("Error writing scorecard blob: %s", err)
+					}
 				}
 
 				if _, err := r.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
@@ -769,30 +800,60 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		}
 	}
 
+	invocationMu := sync.Mutex{}
 	invocation := TableInvocationToProto(ti)
 
-	redactor := redact.NewStreamingRedactor(env)
-	parser := event_parser.NewStreamingEventParser()
-	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
-	for {
-		event := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, event)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Warningf("Error reading proto from log: %s", err)
-			return nil, err
-		}
-		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
-			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
-				return nil, err
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var scoreCard *capb.ScoreCard
+		// The cache ScoreCard is not stored in the table invocation, so we do this lookup
+		// after converting the table invocation to a proto invocation.
+		if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+			scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
+		} else {
+			if sc, err := readScoreCard(ctx, env, iid); err == nil {
+				scoreCard = sc
 			}
-			redactor.RedactMetadata(event.BuildEvent)
 		}
-		parser.ParseEvent(event)
+		if scoreCard != nil {
+			invocationMu.Lock()
+			invocation.ScoreCard = scoreCard
+			invocationMu.Unlock()
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		redactor := redact.NewStreamingRedactor(env)
+		parser := event_parser.NewStreamingEventParser()
+		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), iid)
+		for {
+			event := &inpb.InvocationEvent{}
+			err := pr.ReadProto(ctx, event)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Warningf("Error reading proto from log: %s", err)
+				return err
+			}
+			if ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
+				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+					return err
+				}
+				redactor.RedactMetadata(event.BuildEvent)
+			}
+			parser.ParseEvent(event)
+		}
+		invocationMu.Lock()
+		parser.FillInvocation(invocation)
+		invocationMu.Unlock()
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
-	parser.FillInvocation(invocation)
 	return invocation, nil
 }
 

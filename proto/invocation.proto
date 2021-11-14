@@ -9,6 +9,7 @@ import "google/protobuf/timestamp.proto";
 
 package invocation;
 
+// Next tag: 25
 message Invocation {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -74,6 +75,10 @@ message Invocation {
   // Any cache stats that were captured during this invocation.
   // May not be present if the buildbuddy cache was not used.
   cache.CacheStats cache_stats = 18;
+
+  // The scorecard, indicating any action cache misses.
+  // May not be present if the buildbuddy cache was not used.
+  cache.ScoreCard score_card = 24;
 
   // The role played by this invocation. Ex: "CI"
   string role = 19;
