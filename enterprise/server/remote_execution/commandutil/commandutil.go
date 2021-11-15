@@ -47,7 +47,7 @@ func constructExecCommand(ctx context.Context, command *repb.Command, workDir st
 	if in != nil {
 		cmd.Stdin = in
 	}
-	if *debugStreamCommandOutputs {
+	if *DebugStreamCommandOutputs {
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, os.Stdout)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, os.Stderr)
 	}
