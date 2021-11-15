@@ -12,10 +12,7 @@ export default class ScorecardCardComponent extends React.Component {
   getCacheAddress() {
     let address = this.props.model.optionsMap.get("remote_cache").replace("grpc://", "");
     address = address.replace("grpcs://", "");
-    if (this.props.model.optionsMap.get("remote_cache")) {
-      address = this.props.model.optionsMap.get("remote_cache").replace("grpc://", "");
-      address = address.replace("grpcs://", "");
-    }
+
     if (this.props.model.optionsMap.get("remote_instance_name")) {
       address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");
     }
@@ -45,7 +42,7 @@ export default class ScorecardCardComponent extends React.Component {
               </div>
             ))}
           </div>
-          {this.props.model.scoreCard.misses.length == 0 && <span>No artifacts</span>}
+          {this.props.model.scoreCard.misses.length == 0 && <span>No Misses</span>}
         </div>
       </div>
     );
