@@ -199,7 +199,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 }
 
 func scoreCardBlobName(invocationID string) string {
-	blobFileName := invocationID + "-scorecard.chunk"
+	blobFileName := invocationID + "-scorecard.pb"
 	return filepath.Join(invocationID, blobFileName)
 }
 

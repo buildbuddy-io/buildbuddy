@@ -25,6 +25,7 @@ export default class ScorecardCardComponent extends React.Component {
   }
 
   render() {
+    if (!this.props.model.scoreCard) return null;
     return (
       <div className="card scorecard">
         <img className="icon" src="/image/x-circle-regular.svg" />
