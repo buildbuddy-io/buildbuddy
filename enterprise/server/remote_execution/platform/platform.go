@@ -51,7 +51,8 @@ const (
 	enableVFSPropertyName            = "enable-vfs"
 
 	operatingSystemPropertyName = "OSFamily"
-	defaultOperatingSystemName  = "linux"
+	LinuxOperatingSystemName    = "linux"
+	defaultOperatingSystemName  = LinuxOperatingSystemName
 	darwinOperatingSystemName   = "darwin"
 
 	cpuArchitecturePropertyName = "Arch"
