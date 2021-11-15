@@ -767,6 +767,10 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 	if err := git(ctx, ws.log, "init"); err != nil {
 		return err
 	}
+	// Don't use a credential helper since we always use explicit credentials.
+	if err := git(ctx, ws.log, "config", "--local", "credential.helper", ""); err != nil {
+		return err
+	}
 	return ws.sync(ctx)
 }
 
