@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -37,8 +36,6 @@ var (
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
 	defaultDockerUlimit          = int64(65535)
-
-	debugStreamCommandOutputs = flag.Bool("docker_debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
 type DockerOptions struct {
@@ -254,7 +251,7 @@ func copyOutputs(reader io.Reader, result *interfaces.CommandResult) error {
 	var stdoutBuf, stderrBuf bytes.Buffer
 
 	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
-	if *debugStreamCommandOutputs {
+	if *commandutil.DebugStreamCommandOutputs {
 		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
 	}
 
