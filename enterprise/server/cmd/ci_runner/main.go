@@ -352,6 +352,13 @@ func main() {
 	}
 
 	if *shutdownAndExit {
+		// Bazel workspace does not exist; nothing to do.
+		if _, err := os.Stat(repoDirName); err != nil {
+			return
+		}
+		if err := os.Chdir(repoDirName); err != nil {
+			fatal(err)
+		}
 		if err := runCommand(ctx, *bazelCommand, []string{"shutdown"}, nil, os.Stderr); err != nil {
 			fatal(err)
 		}
