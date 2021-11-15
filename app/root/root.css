@@ -1167,6 +1167,22 @@ code .comment {
   margin-bottom: 8px;
 }
 
+.scorecard-target-name {
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  display: block;
+}
+
+.scorecard-action-id {
+  color: #757575;
+  margin-top: 8px;
+}
+
+.scorecard-action-id-list {
+  padding-left: 32px;
+}
+
 .stat-cards {
   display: flex;
   flex-wrap: wrap;

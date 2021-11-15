@@ -2,6 +2,9 @@ package hit_tracker
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"sort"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -15,6 +18,9 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
+var actionRegexp = regexp.MustCompile("^(?P<action_mnemonic>[[:alnum:]]*)\\((?P<target_id>.+)\\)/(?P<action_id>[[:alnum:]]+)$")
 
 type CacheMode int
 type counterType int
@@ -57,8 +63,16 @@ func cacheTypePrefix(actionCache bool, name string) string {
 	}
 }
 
+// counterKey returns a string key under which general invocation  metrics can
+// be accounted.
 func counterKey(iid string) string {
 	return "hit_tracker/" + iid
+}
+
+// targetMissesKey returns a string key under which target level hit metrics can
+// be accounted.
+func targetMissesKey(iid string) string {
+	return "hit_tracker/" + iid + "/misses"
 }
 
 func counterField(actionCache bool, ct counterType) string {
@@ -90,20 +104,36 @@ type HitTracker struct {
 	ctx         context.Context
 	iid         string
 	actionCache bool
+
+	// The request metadata, may be nil or incomplete.
+	requestMetadata *repb.RequestMetadata
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
 	return &HitTracker{
-		c:           env.GetMetricsCollector(),
-		usage:       env.GetUsageTracker(),
-		ctx:         ctx,
-		iid:         bazel_request.GetInvocationID(ctx),
-		actionCache: actionCache,
+		c:               env.GetMetricsCollector(),
+		usage:           env.GetUsageTracker(),
+		ctx:             ctx,
+		iid:             bazel_request.GetInvocationID(ctx),
+		actionCache:     actionCache,
+		requestMetadata: bazel_request.GetRequestMetadata(ctx),
 	}
 }
 
 func (h *HitTracker) counterKey() string {
 	return counterKey(h.iid)
+}
+
+func (h *HitTracker) targetMissesKey() string {
+	return targetMissesKey(h.iid)
+}
+
+func (h *HitTracker) targetField() string {
+	if h.requestMetadata == nil {
+		return ""
+	}
+	rmd := h.requestMetadata
+	return makeTargetField(rmd.GetActionMnemonic(), rmd.GetTargetId(), rmd.GetActionId())
 }
 
 func (h *HitTracker) counterField(ct counterType) string {
@@ -117,6 +147,10 @@ func (h *HitTracker) cacheTypeLabel() string {
 	return casLabel
 }
 
+func makeTargetField(actionMnemonic, targetID, actionID string) string {
+	return fmt.Sprintf("%s(%s)/%s", actionMnemonic, targetID, actionID)
+}
+
 // Example Usage:
 //
 // ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
@@ -124,14 +158,22 @@ func (h *HitTracker) cacheTypeLabel() string {
 //   log.Printf("Error counting cache miss.")
 // }
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
-	if h.c == nil || h.iid == "" {
-		return nil
-	}
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
 	}).Inc()
-	return h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Miss), 1)
+	if h.c == nil || h.iid == "" {
+		return nil
+	}
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Miss), 1); err != nil {
+		return err
+	}
+	if h.actionCache {
+		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
@@ -142,7 +184,10 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if h.c == nil || h.iid == "" {
 		return nil
 	}
-	return h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1)
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
+		return err
+	}
+	return nil
 }
 
 type closeFunction func() error
@@ -213,7 +258,11 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(timeCounter), dur.Microseconds()); err != nil {
 			return err
 		}
-
+		if h.actionCache && actionCounter == Miss {
+			if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }
@@ -265,6 +314,58 @@ func computeThroughputBytesPerSecond(sizeBytes, durationUsec int64) int64 {
 	}
 	dur := time.Duration(durationUsec * int64(time.Microsecond))
 	return int64(float64(sizeBytes) / dur.Seconds())
+}
+
+func parseTargetField(f string) (string, string, string) {
+	// parses a string like this:
+	// "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
+	match := actionRegexp.FindStringSubmatch(f)
+	if len(match) != 4 {
+		return "", "", ""
+	}
+	return match[1], match[2], match[3]
+}
+
+func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.ScoreCard {
+	c := env.GetMetricsCollector()
+	if c == nil || iid == "" {
+		return nil
+	}
+	sc := &capb.ScoreCard{}
+
+	misses, err := c.ReadCounts(ctx, targetMissesKey(iid))
+	if err != nil {
+		log.Warningf("Failed to collect score card: %s", err)
+		return sc
+	}
+	if misses == nil {
+		misses = make(map[string]int64)
+	}
+	sortedKeys := make([]string, 0, len(misses))
+	for targetField, _ := range misses {
+		sortedKeys = append(sortedKeys, targetField)
+	}
+	// TODO(tylerw): figure out pagination or something? For now, truncate
+	// the number of cache misses to 1K if there are more than that. Too
+	// many are not useful in the UI and we don't want to pay the storage
+	// cost either.
+	if len(sortedKeys) > 1000 {
+		sortedKeys = sortedKeys[:1000]
+	}
+	sort.Strings(sortedKeys)
+
+	for _, targetField := range sortedKeys {
+		mnemonic, targetID, actionID := parseTargetField(targetField)
+		if mnemonic == "" || targetID == "" || actionID == "" {
+			continue
+		}
+		sc.Misses = append(sc.Misses, &capb.ScoreCard_Result{
+			ActionMnemonic: mnemonic,
+			TargetId:       targetID,
+			ActionId:       actionID,
+		})
+	}
+	return sc
 }
 
 func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *capb.CacheStats {

@@ -489,7 +489,7 @@ type PubSub interface {
 //
 // No guarantees are made about durability of MetricsCollectors -- they may be
 // evicted from the backing store that maintains them (usually memcache or
-// redis), so they should *not* be used in critical path code.
+// redis), so they should *not* be used for data that requires durability.
 type MetricsCollector interface {
 	IncrementCount(ctx context.Context, key, field string, n int64) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
