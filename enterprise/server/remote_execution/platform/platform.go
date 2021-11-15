@@ -29,6 +29,9 @@ const (
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
+	// WorkflowsPoolValue is the value for the "Pool" platform property that
+	// selects the executor pool capable of executing workflows.
+	WorkflowsPoolValue = "workflows"
 
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"

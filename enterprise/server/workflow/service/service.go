@@ -646,7 +646,7 @@ func (ws *workflowService) workflowsPoolName() string {
 	if cfg != nil && cfg.WorkflowsPoolName != "" {
 		return cfg.WorkflowsPoolName
 	}
-	return platform.DefaultPoolValue
+	return platform.WorkflowsPoolValue
 }
 
 func (ws *workflowService) workflowsImage() string {
