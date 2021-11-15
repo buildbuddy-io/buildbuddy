@@ -767,10 +767,6 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 	if err := git(ctx, ws.log, "init"); err != nil {
 		return err
 	}
-	// Don't use a credential helper since we always use explicit credentials.
-	if err := git(ctx, ws.log, "config", "--local", "credential.helper", ""); err != nil {
-		return err
-	}
 	return ws.sync(ctx)
 }
 
@@ -902,7 +898,11 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
-	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
+	// Don't use a credential helper when fetching -- it's unnecessary since we've
+	// already configured credentials on the remote explicitly, and some
+	// credential helpers require user input in order to proceed, which is
+	// undesired.
+	fetchArgs := append([]string{"-c", "credential.helper=", "fetch", "--force", remoteName}, branches...)
 	if err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
