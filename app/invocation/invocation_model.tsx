@@ -15,6 +15,7 @@ export const InvocationStatus = invocation.Invocation.InvocationStatus;
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
+  scoreCard: cache.IScoreCard;
 
   consoleBuffer: string;
   targets: build_event_stream.BuildEvent[] = [];
@@ -62,8 +63,10 @@ export default class InvocationModel {
     model.cacheStats = invocations
       .map((invocation) => invocation.cacheStats)
       .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
+
     for (let invocation of invocations) {
       if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer;
+      if (invocation.scoreCard) model.scoreCard = invocation.scoreCard;
       for (let cl of invocation.structuredCommandLine) {
         model.structuredCommandLine.push(cl as command_line.CommandLine);
       }
@@ -133,7 +136,8 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine =
+            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
