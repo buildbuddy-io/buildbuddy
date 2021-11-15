@@ -345,7 +345,15 @@ func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.Score
 	for targetField, _ := range misses {
 		sortedKeys = append(sortedKeys, targetField)
 	}
+	// TODO(tylerw): figure out pagination or something? For now, truncate
+	// the number of cache misses to 1K if there are more than that. Too
+	// many are not useful in the UI and we don't want to pay the storage
+	// cost either.
+	if len(sortedKeys) > 1000 {
+		sortedKeys = sortedKeys[:1000]
+	}
 	sort.Strings(sortedKeys)
+
 	for _, targetField := range sortedKeys {
 		mnemonic, targetID, actionID := parseTargetField(targetField)
 		if mnemonic == "" || targetID == "" || actionID == "" {
