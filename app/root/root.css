@@ -1178,27 +1178,19 @@ code .comment {
 }
 
 .scorecard-target-name {
-  margin-top: 8px;
-  color: #757575;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
   display: block;
 }
 
 .scorecard-action-id {
-  display: block;
-  margin-top: 4px;
-  font-weight: 600;
-  text-decoration: underline;
+  color: #757575;
+  margin-top: 8px;
 }
 
 .scorecard-action-id-list {
   padding-left: 32px;
-  margin-bottom: 8px;
-}
-
-.scorecard-hidden-count {
-  color: #bdbdbd;
-  margin-top: 4px;
-  margin-bottom: 8px;
 }
 
 .stat-cards {
