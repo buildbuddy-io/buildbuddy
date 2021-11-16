@@ -944,6 +944,10 @@ code .comment {
   z-index: 1;
 }
 
+.dense .terminal-actions {
+  top: 4px;
+}
+
 .terminal-actions img {
   width: 18px;
 }
@@ -973,6 +977,13 @@ code .comment {
 .react-lazylog-searchbar {
   margin-bottom: 8px;
   margin-right: 80px;
+}
+
+.dense .react-lazylog-searchbar {
+  /* transform: translate(-12px, 14px); */
+  margin-bottom: 0;
+  margin-right: 96px;
+  margin-top: 14px;
 }
 
 .react-lazylog-searchbar-filter {
@@ -1168,19 +1179,27 @@ code .comment {
 }
 
 .scorecard-target-name {
-  font-weight: 600;
-  text-decoration: underline;
-  cursor: pointer;
+  margin-top: 8px;
+  color: #757575;
   display: block;
 }
 
 .scorecard-action-id {
-  color: #757575;
-  margin-top: 8px;
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 .scorecard-action-id-list {
   padding-left: 32px;
+  margin-bottom: 8px;
+}
+
+.scorecard-hidden-count {
+  color: #bdbdbd;
+  margin-top: 4px;
+  margin-bottom: 8px;
 }
 
 .stat-cards {
