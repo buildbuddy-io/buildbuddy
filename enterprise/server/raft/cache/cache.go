@@ -198,7 +198,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
 	// will live in a pebble database driven by this statemachine.
-	apiServer, err := api.NewServer(fileDir, nodeHost, rc.store.ReplicaFactoryFn)
+	apiServer, err := api.NewServer(fileDir, rc.store)
 	if err != nil {
 		return nil, err
 	}

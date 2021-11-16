@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -8,9 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 
+	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
@@ -64,4 +69,98 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor) {
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
 	return replica.New(s.rootDir, s.fileDir, clusterID, nodeID, s, s.sender, s.apiClient)
+}
+
+// TODO(check cluster has been added / dont care if it's published)
+
+func (s *Store) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	sesh := s.nodeHost.GetNoOPSession(clusterID)
+	buf, err := proto.Marshal(batch)
+	if err != nil {
+		return nil, err
+	}
+	var raftResponse dbsm.Result
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		raftResponse, err = s.nodeHost.SyncPropose(ctx, sesh, buf)
+		if err != nil {
+			log.Errorf("SyncPropose err: %s", err)
+			if err == dragonboat.ErrClusterNotReady {
+				log.Errorf("continuing, got cluster not ready err...")
+				continue
+			}
+			return nil, err
+		}
+		break
+	}
+	batchResponse := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
+		return nil, err
+	}
+	return batchResponse, err
+}
+
+func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
+	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
+
+	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.ReplicaFactoryFn, rc)
+	if err != nil {
+		if err == dragonboat.ErrClusterAlreadyExist {
+			err = status.AlreadyExistsError(err.Error())
+		}
+		return nil, err
+	}
+	amLeader := false
+	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		if clusterInfo.ClusterID == req.GetClusterId() && clusterInfo.IsLeader {
+			amLeader = true
+			break
+		}
+	}
+	rsp := &rfpb.StartClusterResponse{}
+	if amLeader {
+		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
+		if err != nil {
+			return nil, err
+		}
+		rsp.Batch = batchResponse
+	}
+	return rsp, nil
+}
+
+func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	log.Warningf("SyncPropose (server) got request")
+	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.SyncProposeResponse{
+		Batch: batchResponse,
+	}, nil
+}
+
+func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
+	buf, err := proto.Marshal(req.GetBatch())
+	if err != nil {
+		return nil, err
+	}
+	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetHeader().GetReplica().GetClusterId(), buf)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, ok := raftResponseIface.([]byte)
+	if !ok {
+		return nil, status.FailedPreconditionError("SyncRead returned a non-[]byte response.")
+	}
+
+	batchResponse := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(buf, batchResponse); err != nil {
+		return nil, err
+	}
+
+	return &rfpb.SyncReadResponse{
+		Batch: batchResponse,
+	}, nil
 }
