@@ -359,8 +359,9 @@ func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID ui
 
 	// Set the range of this first cluster to [minbyte, maxbyte)
 	rangeDescriptor := &rfpb.RangeDescriptor{
-		Left:  keys.Key{constants.MinByte},
-		Right: keys.Key{constants.MaxByte},
+		Left:    keys.Key{constants.MinByte},
+		Right:   keys.Key{constants.MaxByte},
+		RangeId: constants.InitialRangeID,
 	}
 	membership, err := cs.nodeHost.GetClusterMembership(ctx, constants.InitialClusterID)
 	if err != nil {

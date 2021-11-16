@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -28,6 +29,9 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	apiClient     *client.APIClient
+
+	mu           sync.RWMutex
+	activeRanges map[uint64]struct{}
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
@@ -38,6 +42,8 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		gossipManager: gossipManager,
 		sender:        sender,
 		apiClient:     apiClient,
+		mu:            sync.RWMutex{},
+		activeRanges:  make(map[uint64]struct{}),
 	}
 }
 
@@ -50,7 +56,10 @@ func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	log.Printf("AddRange: %+v", rd)
+	s.activeRanges[rd.GetRangeId()] = struct{}{}
 	if containsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -64,7 +73,17 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	log.Printf("RemoveRange: %+v", rd)
+	delete(s.activeRanges, rd.GetRangeId())
+}
+
+func (s *Store) RangeIsActive(rangeID uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.activeRanges[rangeID]
+	return ok
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
@@ -130,7 +149,10 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	log.Warningf("SyncPropose (server) got request")
+	log.Warningf("SyncPropose (server) got request: %+v", req)
+	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	}
 	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
 		return nil, err
@@ -141,6 +163,10 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
+	log.Warningf("SyncRead (server) got request: %+v", req)
+	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	}
 	buf, err := proto.Marshal(req.GetBatch())
 	if err != nil {
 		return nil, err

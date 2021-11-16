@@ -41,6 +41,7 @@ const (
 // Other constants
 const (
 	InitialClusterID = 1
+	InitialRangeID   = 1
 
 	MinByte = 0
 	MaxByte = math.MaxUint8
@@ -53,6 +54,9 @@ var (
 
 	// The last clusterID that was generated.
 	LastClusterIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_cluster_id"))
+
+	// The last rangeID that was generated.
+	LastRangeIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_range_id"))
 
 	// When the first cluster was initially set up.
 	InitClusterSetupTimeKey = keys.MakeKey(MetaRangePrefix, []byte("initial_cluster_initialization_time"))

@@ -2,6 +2,7 @@ package replica
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -120,19 +121,19 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
+func (sm *PebbleDiskStateMachine) maybeSetRange(key, val []byte) error {
 	sm.rangeMu.RLock()
 	alreadySet := sm.mappedRange != nil
 	sm.rangeMu.RUnlock()
 	if alreadySet {
 		return nil
 	}
-	buf, err := sm.lookup(constants.LocalRangeKey)
-	if err != nil {
-		return err
+	if bytes.Compare(key, constants.LocalRangeKey) != 0 {
+		return nil
 	}
+
 	rangeDescriptor := &rfpb.RangeDescriptor{}
-	if err := proto.Unmarshal(buf, rangeDescriptor); err != nil {
+	if err := proto.Unmarshal(val, rangeDescriptor); err != nil {
 		return err
 	}
 	sm.rangeMu.Lock()
@@ -150,24 +151,20 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() error {
 	return nil
 }
 
-func (sm *PebbleDiskStateMachine) checkRange(wb *pebble.Batch, key []byte) error {
-	sm.checkAndSetRangeDescriptor()
-
+func (sm *PebbleDiskStateMachine) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
-	if sm.mappedRange == nil {
-		return status.FailedPreconditionError("range descriptor not yet set for this store")
-	}
-	if !sm.mappedRange.Contains(key) {
+	rangeIsSet := sm.mappedRange != nil
+	if rangeIsSet && !sm.mappedRange.Contains(key) {
 		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
 	}
-	return nil
-}
+	sm.rangeMu.RUnlock()
 
-func (sm *PebbleDiskStateMachine) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
-	if err := sm.checkRange(wb, key); err != nil {
-		return err
+	if !rangeIsSet {
+		if err := sm.maybeSetRange(key, val); err != nil {
+			log.Errorf("Error setting range: %s", err)
+		}
 	}
+
 	return wb.Set(key, val, nil /*ignored write options*/)
 }
 
@@ -242,6 +239,15 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.getLastAppliedIndex()
 }
 
+func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() {
+	buf, err := sm.lookup(constants.LocalRangeKey)
+	if err != nil {
+		sm.log.Debugf("LocalRangeKey not found on replica")
+		return
+	}
+	sm.maybeSetRange(constants.LocalRangeKey, buf)
+}
+
 func (sm *PebbleDiskStateMachine) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
 	fileKey, err := constants.FileKey(fileRecord)
 	if err != nil {
@@ -305,7 +311,7 @@ func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWrit
 
 func (sm *PebbleDiskStateMachine) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
-	return &rfpb.DirectWriteResponse{}, wb.Set(kv.Key, kv.Value, nil /*ignored write options*/)
+	return &rfpb.DirectWriteResponse{}, sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 }
 
 func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
@@ -527,9 +533,6 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 		return nil, status.FailedPreconditionError("lastApplied not moving forward")
 	}
 	sm.lastAppliedIndex = lastEntry.Index
-
-	sm.checkAndSetRangeDescriptor() // error is ignored.
-
 	return entries, nil
 }
 
