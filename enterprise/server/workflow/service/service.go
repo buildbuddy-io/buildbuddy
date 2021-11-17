@@ -616,6 +616,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			Properties: []*repb.Platform_Property{
 				{Name: "Pool", Value: ws.workflowsPoolName()},
 				{Name: "OSFamily", Value: os},
+				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: "container-image", Value: containerImage},
 				// Reuse the docker container for the CI runner across executions if
 				// possible, and also keep the git repo around so it doesn't need to be
