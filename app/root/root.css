@@ -944,6 +944,10 @@ code .comment {
   z-index: 1;
 }
 
+.dense .terminal-actions {
+  top: 4px;
+}
+
 .terminal-actions img {
   width: 18px;
 }
@@ -973,6 +977,12 @@ code .comment {
 .react-lazylog-searchbar {
   margin-bottom: 8px;
   margin-right: 80px;
+}
+
+.dense .react-lazylog-searchbar {
+  margin-bottom: 0;
+  margin-right: 96px;
+  margin-top: 14px;
 }
 
 .react-lazylog-searchbar-filter {
