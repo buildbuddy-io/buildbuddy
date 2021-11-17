@@ -138,6 +138,10 @@ A named group of Bazel commands that run when triggered.
   Defaults to `"linux"`. `"darwin"` (macOS) is also supported, but
   requires using self-hosted Mac executors running on a dedicated
   `workflows` pool.
+- **`arch`** (`string`): The CPU architecture of the workflow runner.
+  Defaults to `"amd64"`. `"arm64"` is also supported when running under
+  `os: "darwin"`, but requires using self-hosted M1 Mac executors running
+  on a dedicated `workflows` pool.
 - **`bazel_commands`** (`string` list): Bazel commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
