@@ -60,7 +60,7 @@ Other points to note:
 
 ## Mac configuration
 
-By default, workflows will execute on BuildBuddy's shared Linux executors,
+By default, workflows will execute on BuildBuddy's Linux executors,
 but it is also possible to run workflows on macOS by using self-hosted
 executors.
 
