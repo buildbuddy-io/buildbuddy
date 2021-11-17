@@ -107,9 +107,9 @@ actions:
       - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
 ```
 
-4. That's it! Whenever any of the configured triggers are matched, one of
-   the Mac executors in the `workflows` pool should execute the
-   workflow, and BuildBuddy will publish the results to your branch.
+That's it! Whenever any of the configured triggers are matched, one of
+the Mac executors in the `workflows` pool should execute the
+workflow, and BuildBuddy will publish the results to your branch.
 
 ## buildbuddy.yaml schema
 
