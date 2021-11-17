@@ -27,6 +27,7 @@ type Action struct {
 	Name          string    `yaml:"name"`
 	Triggers      *Triggers `yaml:"triggers"`
 	OS            string    `yaml:"os"`
+	Arch          string    `yaml:"arch"`
 	BazelCommands []string  `yaml:"bazel_commands"`
 }
 
