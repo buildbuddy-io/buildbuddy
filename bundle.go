@@ -18,3 +18,5 @@ var all embed.FS
 func Get() (fs.FS, error) {
 	return fileresolver.GetBundleFS(all)
 }
+
+
