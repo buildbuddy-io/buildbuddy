@@ -87,13 +87,15 @@ executors.
    [Example config](#example-config) for a starting point.
 
 3. Set `os: "darwin"` on the workflow action that you would like to build
-   on macOS. Note: if you copy another action as a starting point, be sure
-   to give the new action a unique name:
+   on macOS. For M1 Macs, add `arch: "arm64"` as well. Note: if you
+   copy another action as a starting point, be sure to give the new action
+   a unique name:
 
 ```yaml
 actions:
   - name: "Test all targets (Mac)"
     os: "darwin" # <-- add this line
+    arch: "arm64" # <-- add this line for M1 Macs only
     triggers:
       push:
         branches:
