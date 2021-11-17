@@ -3,8 +3,10 @@ package commandutil
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -26,6 +28,10 @@ const (
 	NoExitCode = -2
 )
 
+var (
+	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+)
+
 func constructExecCommand(ctx context.Context, command *repb.Command, workDir string, in io.Reader, out io.Writer) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 	executable, args := splitExecutableArgs(command.GetArguments())
 	cmd := exec.CommandContext(ctx, executable, args...)
@@ -40,6 +46,10 @@ func constructExecCommand(ctx context.Context, command *repb.Command, workDir st
 	cmd.Stderr = &stderr
 	if in != nil {
 		cmd.Stdin = in
+	}
+	if *DebugStreamCommandOutputs {
+		cmd.Stdout = io.MultiWriter(cmd.Stdout, os.Stdout)
+		cmd.Stderr = io.MultiWriter(cmd.Stderr, os.Stderr)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	for _, envVar := range command.GetEnvironmentVariables() {

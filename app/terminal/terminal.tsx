@@ -31,7 +31,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             title="Wrap"
             onClick={this.handleWrapClicked.bind(this)}
             className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
-            <img src="/image/wrap-white.svg" />
+            <img src="/image/wrap-text-white.svg" />
           </button>
           <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
             <img src="/image/download-white.svg" />

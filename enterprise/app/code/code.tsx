@@ -33,7 +33,8 @@ interface State {
   requestingReview: boolean;
 }
 
-// TODO(siggisim): Implement build and test
+const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
+
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
 // TODO(siggisim): Add currently selected file name
@@ -41,21 +42,23 @@ interface State {
 export default class CodeComponent extends React.Component<Props> {
   props: Props;
 
-  state: State = {
-    owner: "",
-    repo: "",
-    repoResponse: undefined,
-    treeShaToExpanded: new Map<string, boolean>(),
-    treeShaToChildrenMap: new Map<string, any[]>(),
-    treeShaToPathMap: new Map<string, string>(),
-    fullPathToModelMap: new Map<string, any>(),
-    originalFileContents: new Map<string, any>(),
-    currentFilePath: "",
-    changes: new Map<string, string>(),
-    pathToIncludeChanges: new Map<string, boolean>(),
+  state: State = localStorage.getItem(LOCAL_STORAGE_STATE_KEY)
+    ? (JSON.parse(localStorage.getItem(LOCAL_STORAGE_STATE_KEY), stateReviver) as State)
+    : {
+        owner: "",
+        repo: "",
+        repoResponse: undefined,
+        treeShaToExpanded: new Map<string, boolean>(),
+        treeShaToChildrenMap: new Map<string, any[]>(),
+        treeShaToPathMap: new Map<string, string>(),
+        fullPathToModelMap: new Map<string, any>(),
+        originalFileContents: new Map<string, any>(),
+        currentFilePath: "",
+        changes: new Map<string, string>(),
+        pathToIncludeChanges: new Map<string, boolean>(),
 
-    requestingReview: false,
-  };
+        requestingReview: false,
+      };
 
   editor: any;
 
@@ -90,6 +93,10 @@ export default class CodeComponent extends React.Component<Props> {
       theme: "vs",
     });
 
+    if (this.state.currentFilePath) {
+      this.editor.setModel(this.state.fullPathToModelMap.get(this.state.currentFilePath));
+    }
+
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
     });
@@ -107,7 +114,9 @@ export default class CodeComponent extends React.Component<Props> {
     }
     this.setState({ changes: this.state.changes });
     console.log(this.state.changes);
-    // TODO(siggisim): serialize these changes to localStorage or to server and pull them back out.
+
+    // TODO(siggisim): store this in cache.
+    localStorage.setItem(LOCAL_STORAGE_STATE_KEY, JSON.stringify(this.state, stateReplacer));
   }
 
   componentWillUnmount() {
@@ -178,7 +187,11 @@ export default class CodeComponent extends React.Component<Props> {
         console.log(response);
         let fileContents = atob(response.data.content);
         this.state.originalFileContents.set(fullPath, fileContents);
-        this.setState({ currentFilePath: fullPath, originalFileContents: this.state.originalFileContents, changes: this.state.changes });
+        this.setState({
+          currentFilePath: fullPath,
+          originalFileContents: this.state.originalFileContents,
+          changes: this.state.changes,
+        });
         let model = this.state.fullPathToModelMap.get(fullPath);
         if (!model) {
           model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
@@ -199,13 +212,15 @@ export default class CodeComponent extends React.Component<Props> {
   getJobCount() {
     return 200;
   }
-  
+
   getContainerImage() {
     return "docker://gcr.io/flame-public/buildbuddy-ci-runner:latest";
   }
 
   getBazelFlags() {
-    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint} --bes_results_url=${window.location.origin}/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
+    return `--remote_executor=${this.getRemoteEndpoint()} --bes_backend=${this.getRemoteEndpoint()} --bes_results_url=${
+      window.location.origin
+    }/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
   }
 
   handleBuildClicked() {
@@ -213,13 +228,16 @@ export default class CodeComponent extends React.Component<Props> {
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
     request.bazelCommand = `build //... ${this.getBazelFlags()}`;
-    request.repoState = this.getRepoState()
+    request.repoState = this.getRepoState();
 
-    rpcService.service.run(request).then((response: runner.RunResponse) => {
-      window.open(`/invocation/${response.invocationId}`,'_blank');
-    }).catch((error: any) => {
-      alert(error);
-    });
+    rpcService.service
+      .run(request)
+      .then((response: runner.RunResponse) => {
+        window.open(`/invocation/${response.invocationId}`, "_blank");
+      })
+      .catch((error: any) => {
+        alert(error);
+      });
   }
 
   handleTestClicked() {
@@ -227,20 +245,30 @@ export default class CodeComponent extends React.Component<Props> {
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
     request.bazelCommand = `test //... ${this.getBazelFlags()}`;
-    request.repoState = this.getRepoState()
+    request.repoState = this.getRepoState();
 
-    rpcService.service.run(request).then((response: runner.RunResponse) => {
-      window.open(`/invocation/${response.invocationId}`,'_blank');
-    }).catch((error: any) => {
-      alert(error);
-    });
+    rpcService.service
+      .run(request)
+      .then((response: runner.RunResponse) => {
+        window.open(`/invocation/${response.invocationId}`, "_blank");
+      })
+      .catch((error: any) => {
+        alert(error);
+      });
   }
 
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
     // TODO(siggisim): add commit sha
     for (let path of this.state.changes.keys()) {
-      state.patch.push(diff.createTwoFilesPatch(`a/${path}`, `b/${path}`, this.state.originalFileContents.get(path), this.state.changes.get(path)));
+      state.patch.push(
+        diff.createTwoFilesPatch(
+          `a/${path}`,
+          `b/${path}`,
+          this.state.originalFileContents.get(path),
+          this.state.changes.get(path)
+        )
+      );
     }
     return state;
   }
@@ -301,10 +329,17 @@ export default class CodeComponent extends React.Component<Props> {
         this.state.fullPathToModelMap.set(fileName, model);
       }
       this.state.originalFileContents.set(fileName, "");
-      this.setState({ currentFilePath: fileName, originalFileContents: this.state.originalFileContents, changes: this.state.changes }, () => {
-        this.editor.setModel(model);
-        this.handleContentChanged();
-      });
+      this.setState(
+        {
+          currentFilePath: fileName,
+          originalFileContents: this.state.originalFileContents,
+          changes: this.state.changes,
+        },
+        () => {
+          this.editor.setModel(model);
+          this.handleContentChanged();
+        }
+      );
     }
   }
 
@@ -419,3 +454,41 @@ self.MonacoEnvironment = {
       importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.25.2/min/vs/base/worker/workerMain.js');`)}`;
   },
 };
+
+// This replaces any non-serializable objects in state with serializable models.
+function stateReplacer(key: any, value: any) {
+  if (key == "fullPathToModelMap") {
+    return {
+      dataType: "ModelMap",
+      value: Array.from(value.entries()).map((e: any) => {
+        return {
+          dataType: "Model",
+          key: e[0],
+          value: e[1].getValue(),
+          uri: e[1].uri,
+        };
+      }),
+    };
+  }
+  if (value instanceof Map) {
+    return {
+      dataType: "Map",
+      value: Array.from(value.entries()),
+    };
+  }
+  return value;
+}
+
+// This revives any non-serializable objects in state from their seralized form.
+function stateReviver(key: any, value: any) {
+  if (typeof value === "object" && value !== null) {
+    if (value.dataType === "Map") {
+      return new Map(value.value);
+    }
+    if (value.dataType === "ModelMap") {
+      console.log(value.value.map((e: any) => e.uri.path));
+      return new Map(value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, undefined, e.uri.path)]));
+    }
+  }
+  return value;
+}

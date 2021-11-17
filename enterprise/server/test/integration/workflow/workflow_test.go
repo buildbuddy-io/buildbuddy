@@ -208,6 +208,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 
 func TestCreateAndExecute(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
+	fakeGitProvider.FileContents = simpleRepoContents
 	env, _ := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
