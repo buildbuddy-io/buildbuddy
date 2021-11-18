@@ -224,13 +224,14 @@ type authenticator interface {
 }
 
 type oidcAuthenticator struct {
-	oauth2Config *oauth2.Config
-	oidcConfig   *oidc.Config
-	Provider     *oidc.Provider
-	issuer       string
-	slug         string
-	initialize   func() error
-	initError    error
+	oauth2Config  func() (*oauth2.Config, error)
+	_oauth2Config *oauth2.Config
+	oidcConfig    *oidc.Config
+	_provider     *oidc.Provider
+	provider      func() (*oidc.Provider, error)
+	issuer        string
+	slug          string
+	initError     error
 }
 
 func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error) {
@@ -245,40 +246,37 @@ func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error
 }
 
 func (a *oidcAuthenticator) getIssuer() string {
-	if err := a.initialize(); err != nil {
-		return ""
-	}
 	return a.issuer
 }
 
 func (a *oidcAuthenticator) getSlug() string {
-	if err := a.initialize(); err != nil {
-		return ""
-	}
 	return a.slug
 }
 
 func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
-	if err := a.initialize(); err != nil {
+	oauth2Config, err := a.oauth2Config()
+	if err != nil {
 		return ""
 	}
-	return a.oauth2Config.AuthCodeURL(state, opts...)
+	return oauth2Config.AuthCodeURL(state, opts...)
 }
 
 func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
-	if err := a.initialize(); err != nil {
+	oauth2Config, err := a.oauth2Config()
+	if err != nil {
 		return nil, err
 	}
-	return a.oauth2Config.Exchange(ctx, code, opts...)
+	return oauth2Config.Exchange(ctx, code, opts...)
 }
 
 func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
-	if err := a.initialize(); err != nil {
-		return nil, err
-	}
 	conf := a.oidcConfig
 	conf.SkipExpiryCheck = !checkExpiry
-	validToken, err := a.Provider.Verifier(conf).Verify(ctx, jwt)
+	provider, err := a.provider()
+	if err != nil {
+		return nil, err
+	}
+	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +284,11 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 }
 
 func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
-	src := a.oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken})
+	oauth2Config, err := a.oauth2Config()
+	if err != nil {
+		return nil, err
+	}
+	src := oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken})
 	return src.Token() // this actually renews the token
 }
 
@@ -375,28 +377,38 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			// "openid" is a required scope for OpenID Connect flows.
 			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 		}
-		var once sync.Once
 		authenticator := &oidcAuthenticator{
-			slug:         authConfig.Slug,
-			issuer:       authConfig.IssuerURL,
-			oauth2Config: oauth2Config,
-			oidcConfig:   oidcConfig,
+			slug:          authConfig.Slug,
+			issuer:        authConfig.IssuerURL,
+			_oauth2Config: oauth2Config,
+			oidcConfig:    oidcConfig,
 		}
-		// initialize on-demand, since our mock oauth provider won't be reachable until the server starts
-		authenticator.initialize = func() error {
-			once.Do(
+
+		// initialize provider and oauth2Config.Endpoint on-demand, since our mock oauth provider won't be reachable until the server starts
+		var oauth2ConfigOnce sync.Once
+		authenticator.oauth2Config = func() (*oauth2.Config, error) {
+			oauth2ConfigOnce.Do(
 				func() {
-					var provider *oidc.Provider
-					if provider, authenticator.initError = oidc.NewProvider(ctx, authConfig.IssuerURL); authenticator.initError == nil {
-						oauth2Config.Endpoint = provider.Endpoint()
-						authenticator.Provider = provider
-					} else {
+					if provider, err := authenticator.provider(); err == nil {
+						authenticator._oauth2Config.Endpoint = provider.Endpoint()
+					}
+				},
+			)
+			return authenticator._oauth2Config, authenticator.initError
+		}
+
+		var providerOnce sync.Once
+		authenticator.provider = func() (*oidc.Provider, error) {
+			providerOnce.Do(
+				func() {
+					if authenticator._provider, authenticator.initError = oidc.NewProvider(ctx, authConfig.IssuerURL); authenticator.initError != nil {
 						log.Errorf("Error Initializing auth: %v", authenticator.initError)
 					}
 				},
 			)
-			return authenticator.initError
+			return authenticator._provider, authenticator.initError
 		}
+
 		authenticators = append(authenticators, authenticator)
 	}
 	return authenticators, nil
