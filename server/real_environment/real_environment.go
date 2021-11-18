@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 
@@ -78,7 +79,7 @@ type RealEnv struct {
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
-	additionalMuxEntries             map[string]http.Handler
+	mux                              *tracing.HttpServeMux
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -86,8 +87,8 @@ func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
 		configurator:  c,
 		healthChecker: h,
 
-		executionClients:     make(map[string]*executionClientConfig, 0),
-		additionalMuxEntries: make(map[string]http.Handler, 0),
+		executionClients: make(map[string]*executionClientConfig, 0),
+		mux:              tracing.NewHttpServeMux(http.NewServeMux()),
 	}
 }
 
@@ -374,6 +375,6 @@ func (r *RealEnv) SetFileResolver(fr fs.FS) {
 	r.fileResolver = fr
 }
 
-func (r *RealEnv) GetAdditionalMuxEntries() map[string]http.Handler {
-	return r.additionalMuxEntries
+func (r *RealEnv) GetMux() *tracing.HttpServeMux {
+	return r.mux
 }

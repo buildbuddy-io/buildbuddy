@@ -141,13 +141,13 @@ func (o *selfAuth) IssuerURL() *url.URL {
 
 func (o *selfAuth) AuthorizationEndpoint() *url.URL {
 	u := o.IssuerURL()
-	u.Path = "/login/oauth/authorize"
+	u.Path = "/oauth/authorize"
 	return u
 }
 
 func (o *selfAuth) TokenEndpoint() *url.URL {
 	u := o.IssuerURL()
-	u.Path = "/login/oauth/access_token"
+	u.Path = "/oauth/access_token"
 	return u
 }
 
@@ -226,11 +226,11 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONResponse(w, r, &tokenJSON{
-			AccessToken:  "AccessToken",
-			RefreshToken: "RefreshToken",
-			ExpiresIn:    3600,
-			IdToken:      string(signed),
-		})
+		AccessToken:  "AccessToken",
+		RefreshToken: "RefreshToken",
+		ExpiresIn:    3600,
+		IdToken:      string(signed),
+	})
 }
 
 // Jwks handles requests to /.well-known/jwks.json, returning the keyset for our oauth

@@ -45,7 +45,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -385,7 +384,7 @@ func StartAndRunServices(env environment.Env) {
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
-	mux := tracing.NewHttpServeMux(http.NewServeMux())
+	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
@@ -419,10 +418,6 @@ func StartAndRunServices(env environment.Env) {
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
-	}
-
-	for path, handler := range env.GetAdditionalMuxEntries() {
-		mux.Handle(path, handler)
 	}
 
 	handler := http.Handler(mux)

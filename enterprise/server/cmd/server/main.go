@@ -25,11 +25,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
@@ -351,11 +351,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error initializing self auth: %s", err)
 		}
-		mux := realEnv.GetAdditionalMuxEntries()
-		mux[oauth.AuthorizationEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize))
-		mux[oauth.TokenEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken))
-		mux[oauth.JwksEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks))
-		mux["/.well-known/openid-configuration"] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration))
+		mux := realEnv.GetMux()
+		mux.Handle(oauth.AuthorizationEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
+		mux.Handle(oauth.TokenEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
+		mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
+		mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
 	}
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
