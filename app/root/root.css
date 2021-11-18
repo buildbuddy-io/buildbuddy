@@ -920,11 +920,14 @@ code .comment {
 
 /** Misc **/
 
+.terminal-container {
+  position: relative;
+}
+
 .terminal {
   height: 300px;
   margin-top: -49px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
 }
 
 .terminal a {
@@ -938,14 +941,23 @@ code .comment {
 }
 
 .terminal-actions {
-  right: 32px;
-  top: 22px;
+  right: 0;
   position: absolute;
   z-index: 1;
 }
 
-.dense .terminal-actions {
-  top: 4px;
+.light-terminal .terminal-actions {
+  filter: invert();
+}
+
+.light-terminal .react-lazylog-searchbar-input {
+  background-color: white;
+  border: 1px solid #eee;
+  color: black;
+}
+
+.light-terminal .react-lazylog-searchbar-input::placeholder {
+  color: #aaa;
 }
 
 .terminal-actions img {
@@ -974,9 +986,10 @@ code .comment {
   pointer-events: none;
 }
 
-.react-lazylog-searchbar {
-  margin-bottom: 8px;
+/* Duplicate class selector here is used to increase specificity */
+.react-lazylog-searchbar.react-lazylog-searchbar {
   margin-right: 80px;
+  background-color: transparent;
 }
 
 .dense .react-lazylog-searchbar {

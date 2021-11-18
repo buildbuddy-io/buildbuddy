@@ -25,7 +25,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   render() {
     return (
-      <>
+      <div className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""}`}>
         <div className="terminal-actions">
           <button
             title="Wrap"
@@ -53,7 +53,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             {...{ lightTheme: this.props.lightTheme }}
           />
         </div>
-      </>
+      </div>
     );
   }
 
