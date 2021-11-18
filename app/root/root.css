@@ -927,8 +927,6 @@ code .comment {
 .terminal {
   height: 300px;
   margin-top: -49px;
-  /* overflow-x: auto;
-  overflow-y: hidden; */
   overflow: visible;
 }
 
