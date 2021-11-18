@@ -50,7 +50,6 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
   - Private container registry support
   - A built-in Xcode locator in executors for discovering available Xcode versions
 
-
 ## Coming soon!
 
 In addition to all of these great new features, we've also been laying the groundwork for some big new features that we're working on:
