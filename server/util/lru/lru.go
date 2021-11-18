@@ -130,7 +130,6 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	}
 	// Check for existing item
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
 		ent.Value.(*Entry).value = value
 		return true
 	}
