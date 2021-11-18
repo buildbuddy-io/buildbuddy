@@ -37,6 +37,10 @@ body {
     overflow: auto;
   }
 
+  .left .page {
+    max-height: initial;
+  }  
+
   .dense .page,
   .page {
     flex-direction: column;
