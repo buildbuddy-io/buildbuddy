@@ -231,7 +231,6 @@ type oidcAuthenticator struct {
 	provider      func() (*oidc.Provider, error)
 	issuer        string
 	slug          string
-	initError     error
 }
 
 func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error) {
@@ -369,44 +368,46 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			ClientID:        authConfig.ClientID,
 			SkipExpiryCheck: false,
 		}
-		// Configure an OpenID Connect aware OAuth2 client.
-		oauth2Config := &oauth2.Config{
-			ClientID:     authConfig.ClientID,
-			ClientSecret: authConfig.ClientSecret,
-			RedirectURL:  authURL.String(),
-			// "openid" is a required scope for OpenID Connect flows.
-			Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
-		}
 		authenticator := &oidcAuthenticator{
-			slug:          authConfig.Slug,
-			issuer:        authConfig.IssuerURL,
-			_oauth2Config: oauth2Config,
-			oidcConfig:    oidcConfig,
+			slug:       authConfig.Slug,
+			issuer:     authConfig.IssuerURL,
+			oidcConfig: oidcConfig,
 		}
 
 		// initialize provider and oauth2Config.Endpoint on-demand, since our self oauth provider won't be reachable until the server starts
-		var oauth2ConfigOnce sync.Once
+		var oauth2ConfigMutex sync.Mutex
 		authenticator.oauth2Config = func() (*oauth2.Config, error) {
-			oauth2ConfigOnce.Do(
-				func() {
-					if provider, err := authenticator.provider(); err == nil {
-						authenticator._oauth2Config.Endpoint = provider.Endpoint()
+			oauth2ConfigMutex.Lock()
+			defer oauth2ConfigMutex.Unlock()
+			var err error
+			if authenticator._oauth2Config == nil {
+				var provider *oidc.Provider
+				if provider, err = authenticator.provider(); err == nil {
+					// Configure an OpenID Connect aware OAuth2 client.
+					authenticator._oauth2Config = &oauth2.Config{
+						ClientID:     authConfig.ClientID,
+						ClientSecret: authConfig.ClientSecret,
+						RedirectURL:  authURL.String(),
+						Endpoint:     provider.Endpoint(),
+						// "openid" is a required scope for OpenID Connect flows.
+						Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
 					}
-				},
-			)
-			return authenticator._oauth2Config, authenticator.initError
+				}
+			}
+			return authenticator._oauth2Config, err
 		}
 
-		var providerOnce sync.Once
+		var providerMutex sync.Mutex
 		authenticator.provider = func() (*oidc.Provider, error) {
-			providerOnce.Do(
-				func() {
-					if authenticator._provider, authenticator.initError = oidc.NewProvider(ctx, authConfig.IssuerURL); authenticator.initError != nil {
-						log.Errorf("Error Initializing auth: %v", authenticator.initError)
-					}
-				},
-			)
-			return authenticator._provider, authenticator.initError
+			providerMutex.Lock()
+			defer providerMutex.Unlock()
+			var err error
+			if authenticator._provider == nil {
+				if authenticator._provider, err = oidc.NewProvider(ctx, authConfig.IssuerURL); err != nil {
+					log.Errorf("Error Initializing auth: %v", err)
+				}
+			}
+			return authenticator._provider, err
 		}
 
 		authenticators = append(authenticators, authenticator)
