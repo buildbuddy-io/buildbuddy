@@ -569,6 +569,10 @@ type LRU interface {
 	// if the value was successfully added.
 	Add(key, value interface{}) bool
 
+	// Inserts a value into the back of the LRU. A boolean is returned that
+	// indicates if the value was successfully added.
+	PushBack(key, value interface{}) bool
+
 	// Gets a value from the LRU, returns a boolean indicating if the value
 	// was present.
 	Get(key interface{}) (interface{}, bool)

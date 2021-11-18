@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "lru",
@@ -11,5 +11,14 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_cespare_xxhash_v2//:xxhash",
+    ],
+)
+
+go_test(
+    name = "lru_test",
+    srcs = ["lru_test.go"],
+    deps = [
+        ":lru",
+        "@com_github_stretchr_testify//require",
     ],
 )
