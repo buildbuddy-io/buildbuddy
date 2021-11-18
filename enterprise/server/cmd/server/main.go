@@ -351,10 +351,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Error initializing mock oauth: %s", err)
 		}
-		realEnv.GetAdditionalMuxEntries()[oauth.AuthorizationEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize))
-		realEnv.GetAdditionalMuxEntries()[oauth.TokenEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken))
-		realEnv.GetAdditionalMuxEntries()[oauth.JwksEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks))
-		realEnv.GetAdditionalMuxEntries()["/.well-known/openid-configuration"] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration))
+		mux := realEnv.GetAdditionalMuxEntries()
+		mux[oauth.AuthorizationEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize))
+		mux[oauth.TokenEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken))
+		mux[oauth.JwksEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks))
+		mux["/.well-known/openid-configuration"] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration))
 	}
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
