@@ -181,9 +181,10 @@ export default class InvocationModel {
             }
           }
           if (option.optionName == "build_metadata") {
-            let pair = option.optionValue.split("=");
-            if (pair.length == 2) {
-              model.buildMetadataMap.set(pair[0], pair[1]);
+            let parts = option.optionValue.split("=");
+            if (parts.length >= 2) {
+              let key = parts.shift();
+              model.buildMetadataMap.set(key, parts.join("="));
             }
           }
         }
