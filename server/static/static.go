@@ -115,8 +115,8 @@ type FrontendTemplateData struct {
 
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
-	if env.GetConfigurator().GetMockOauthIssuer() != nil {
-		issuers = append(issuers, env.GetConfigurator().GetMockOauthIssuer().String())
+	if env.GetConfigurator().GetSelfAuthIssuer() != nil {
+		issuers = append(issuers, env.GetConfigurator().GetSelfAuthIssuer().String())
 	}
 	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
 	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,

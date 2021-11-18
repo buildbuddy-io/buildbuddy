@@ -214,7 +214,7 @@ type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
-	EnableMockOauth      bool            `yaml:"enable_mock_oauth" usage:"If true, enables a single user login via a mock oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
+	EnableSelfAuth      bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 }
 
 type OauthProvider struct {
@@ -737,8 +737,8 @@ func (c *Configurator) GetSAMLConfig() *SAMLConfig {
 	return &c.gc.Auth.SAMLConfig
 }
 
-func (c *Configurator) GetMockOauthIssuer() *url.URL {
-	if !c.gc.Auth.EnableMockOauth {
+func (c *Configurator) GetSelfAuthIssuer() *url.URL {
+	if !c.gc.Auth.EnableSelfAuth {
 		return nil
 	}
 	u, err := url.Parse(c.GetAppBuildBuddyURL())

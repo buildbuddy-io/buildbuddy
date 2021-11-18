@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "mockoauth",
-    srcs = ["mockoauth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/mockoauth",
+    name = "selfauth",
+    srcs = ["selfauth.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth",
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",

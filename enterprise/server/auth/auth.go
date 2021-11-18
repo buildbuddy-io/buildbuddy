@@ -384,7 +384,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			oidcConfig:    oidcConfig,
 		}
 
-		// initialize provider and oauth2Config.Endpoint on-demand, since our mock oauth provider won't be reachable until the server starts
+		// initialize provider and oauth2Config.Endpoint on-demand, since our self oauth provider won't be reachable until the server starts
 		var oauth2ConfigOnce sync.Once
 		authenticator.oauth2Config = func() (*oauth2.Config, error) {
 			oauth2ConfigOnce.Do(

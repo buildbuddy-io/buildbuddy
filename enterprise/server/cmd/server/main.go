@@ -25,7 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mockoauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -114,10 +114,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	configureFilesystemsOrDie(env)
 
 	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if env.GetConfigurator().GetMockOauthIssuer() != nil {
+	if env.GetConfigurator().GetSelfAuthIssuer() != nil {
 		authConfigs = append(
 			authConfigs,
-			mockoauth.Provider(env),
+			selfauth.Provider(env),
 		)
 	}
 	var authenticator interfaces.Authenticator
@@ -346,10 +346,10 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	if realEnv.GetConfigurator().GetMockOauthIssuer() != nil {
-		oauth, err := mockoauth.NewMockOauth(realEnv)
+	if realEnv.GetConfigurator().GetSelfAuthIssuer() != nil {
+		oauth, err := selfauth.NewSelfAuth(realEnv)
 		if err != nil {
-			log.Fatalf("Error initializing mock oauth: %s", err)
+			log.Fatalf("Error initializing self auth: %s", err)
 		}
 		mux := realEnv.GetAdditionalMuxEntries()
 		mux[oauth.AuthorizationEndpoint().Path] = httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize))

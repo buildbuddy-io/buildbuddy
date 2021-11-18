@@ -1,4 +1,4 @@
-package mockoauth
+package selfauth
 
 import (
 	"crypto/rsa"
@@ -28,7 +28,7 @@ func Provider(env environment.Env) config.OauthProvider {
 	}
 }
 
-type oauth2Mock struct {
+type selfAuth struct {
 	env           environment.Env
 	rsaPrivateKey jwk.RSAPrivateKey
 	rsaPublicKey  jwk.RSAPublicKey
@@ -51,7 +51,7 @@ type tokenJSON struct {
 	IdToken      string `json:"id_token"`
 }
 
-func NewMockOauth(env environment.Env) (*oauth2Mock, error) {
+func NewSelfAuth(env environment.Env) (*selfAuth, error) {
 	// generate the same key every time; this is not meant to secure or secret
 	var n, d, p, q big.Int
 	n.SetString(
@@ -118,51 +118,47 @@ func NewMockOauth(env environment.Env) (*oauth2Mock, error) {
 	if !ok {
 		return nil, status.InternalErrorf("Expected jwk.RSAPublicKey, got %T\n", jwkKey)
 	}
-	return &oauth2Mock{
+	return &selfAuth{
 		env:           env,
 		rsaPrivateKey: jwkPrivateKey,
 		rsaPublicKey:  jwkPublicKey,
 	}, nil
 }
 
-func (o *oauth2Mock) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.Request) {
-	writeJSONResponse(
-		w,
-		r,
-		&configurationJSON{
-			Issuer:                           o.IssuerURL().String(),
-			AuthorizationEndpoint:            o.AuthorizationEndpoint().String(),
-			TokenEndpoint:                    o.TokenEndpoint().String(),
-			JwksUri:                          o.JwksEndpoint().String(),
-			IdTokenSigningAlgValuesSupported: []string{"RS256"},
-		},
-	)
+func (o *selfAuth) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.Request) {
+	writeJSONResponse(w, r, &configurationJSON{
+		Issuer:                           o.IssuerURL().String(),
+		AuthorizationEndpoint:            o.AuthorizationEndpoint().String(),
+		TokenEndpoint:                    o.TokenEndpoint().String(),
+		JwksUri:                          o.JwksEndpoint().String(),
+		IdTokenSigningAlgValuesSupported: []string{"RS256"},
+	})
 }
 
-func (o *oauth2Mock) IssuerURL() *url.URL {
-	return o.env.GetConfigurator().GetMockOauthIssuer()
+func (o *selfAuth) IssuerURL() *url.URL {
+	return o.env.GetConfigurator().GetSelfAuthIssuer()
 }
 
-func (o *oauth2Mock) AuthorizationEndpoint() *url.URL {
+func (o *selfAuth) AuthorizationEndpoint() *url.URL {
 	u := o.IssuerURL()
 	u.Path = "/login/oauth/authorize"
 	return u
 }
 
-func (o *oauth2Mock) TokenEndpoint() *url.URL {
+func (o *selfAuth) TokenEndpoint() *url.URL {
 	u := o.IssuerURL()
 	u.Path = "/login/oauth/access_token"
 	return u
 }
 
-func (o *oauth2Mock) JwksEndpoint() *url.URL {
+func (o *selfAuth) JwksEndpoint() *url.URL {
 	u := o.IssuerURL()
 	u.Path = "/.well-known/jwks.json"
 	return u
 }
 
 // AuthCodeURL redirects to our own server.
-func (o *oauth2Mock) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+func (o *selfAuth) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
 	u := o.AuthorizationEndpoint()
 
 	v := url.Values{}
@@ -173,10 +169,10 @@ func (o *oauth2Mock) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) st
 }
 
 // OAuthAuthorize handles requests to /login/oauth/authorize.
-func (o *oauth2Mock) Authorize(w http.ResponseWriter, r *http.Request) {
+func (o *selfAuth) Authorize(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 
-	u := o.env.GetConfigurator().GetMockOauthIssuer()
+	u := o.env.GetConfigurator().GetSelfAuthIssuer()
 	u.Path = "/auth/"
 
 	v := url.Values{}
@@ -199,7 +195,7 @@ func writeJSONResponse(w http.ResponseWriter, r *http.Request, v interface{}) {
 }
 
 // AccessToken handles requests to /login/oauth/access_token, taking the code and returning a real token.
-func (o *oauth2Mock) AccessToken(w http.ResponseWriter, r *http.Request) {
+func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 	idKey := make([]byte, 32)
 	_, err := rand.Read(idKey)
 	if err != nil {
@@ -229,25 +225,17 @@ func (o *oauth2Mock) AccessToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writeJSONResponse(
-		w,
-		r,
-		&tokenJSON{
+	writeJSONResponse(w, r, &tokenJSON{
 			AccessToken:  "AccessToken",
 			RefreshToken: "RefreshToken",
 			ExpiresIn:    3600,
 			IdToken:      string(signed),
-		},
-	)
+		})
 }
 
 // Jwks handles requests to /.well-known/jwks.json, returning the keyset for our oauth
-func (o *oauth2Mock) Jwks(w http.ResponseWriter, r *http.Request) {
+func (o *selfAuth) Jwks(w http.ResponseWriter, r *http.Request) {
 	set := jwk.NewSet()
 	set.Add(o.rsaPublicKey)
-	writeJSONResponse(
-		w,
-		r,
-		set,
-	)
+	writeJSONResponse(w, r, set)
 }

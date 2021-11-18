@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mockoauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -129,10 +129,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 
 	authConfigs := realEnv.GetConfigurator().GetAuthOauthProviders()
-	if realEnv.GetConfigurator().GetMockOauthIssuer() != nil {
+	if realEnv.GetConfigurator().GetSelfAuthIssuer() != nil {
 		authConfigs = append(
 			authConfigs,
-			mockoauth.Provider(realEnv),
+			selfauth.Provider(realEnv),
 		)
 	}
 	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv, authConfigs)

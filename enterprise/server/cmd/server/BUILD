@@ -26,7 +26,7 @@ go_library(
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
-        "//enterprise/server/mockoauth",
+        "//enterprise/server/selfauth",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/saml",
         "//enterprise/server/scheduling/scheduler_server",
