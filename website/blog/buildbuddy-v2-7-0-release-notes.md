@@ -57,7 +57,7 @@ In addition to all of these great new features, we've also been laying the groun
 
  - A new caching infrastructure that will enable far more flexibility in where and how cache artifacts are stored.
  - Mac support for [BuildBuddy Workflows](https://blog.buildbuddy.io/blog/meet-buildbuddy-workflows/).
- - A managed cloud Bazel service that uses [Firecracker microVMs](https://firecracker-microvm.github.io/) that gives you warm, incremental Bazel instances in the cloud (right next to your RBE cluster) that spin up in milliseconds.
+ - A managed cloud Bazel service that uses [Firecracker microVMs](https://firecracker-microvm.github.io/) to give you warm, incremental Bazel instances in the cloud (right next to your RBE cluster) that spin up in milliseconds.
  - A web-based code editor built on top of VSCode (similar to [vscode.dev](https://vscode.dev/)) built entirely for Bazel that can kick off fully incremental RBE-enabled cloud Bazel builds & tests. If you're an ex-Googler who misses Cider &mdash; get excited!
 
 If you're interested in any of these upcoming features and would like to try them out &mdash; [sign up here for early access](https://buildbuddy.typeform.com/to/BZikT3Eu)!
