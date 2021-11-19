@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/api"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -68,9 +70,8 @@ type RaftCache struct {
 	rangeCache *rangecache.RangeCache
 	sender     *sender.Sender
 
-	isolation *rfpb.Isolation
-
-	localStoreRanges []*rfpb.RangeDescriptor
+	isolation    *rfpb.Isolation
+	shutdownOnce *sync.Once
 }
 
 // We need to provide a factory method that creates the DynamicNodeRegistry, and
@@ -125,15 +126,19 @@ func init() {
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc := &RaftCache{
-		env:        env,
-		conf:       conf,
-		rangeCache: rangecache.New(),
+		env:          env,
+		conf:         conf,
+		rangeCache:   rangecache.New(),
+		shutdownOnce: &sync.Once{},
 	}
 
 	if len(conf.Join) < 3 {
 		return nil, status.InvalidArgumentError("Join must contain at least 3 nodes.")
 	}
 
+	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
+		return nil, err
+	}
 	// Parse the listenAddress into host and port; we'll listen for grpc and
 	// raft traffic on the same interface but on different ports.
 	listenHost, _, err := network.ParseAddress(conf.ListenAddress)
@@ -370,10 +375,12 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 }
 
 func (rc *RaftCache) Stop() error {
-	rc.nodeHost.Stop()
-	// rc.gossipManager.Leave()
-	rc.gossipManager.Shutdown()
-	rc.apiServer.Shutdown(context.Background())
+	rc.shutdownOnce.Do(func() {
+		rc.nodeHost.Stop()
+		// rc.gossipManager.Leave()
+		rc.gossipManager.Shutdown()
+		rc.apiServer.Shutdown(context.Background())
+	})
 	return nil
 }
 

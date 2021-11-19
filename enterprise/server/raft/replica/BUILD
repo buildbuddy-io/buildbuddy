@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "replica",
@@ -21,5 +21,18 @@ go_library(
         "@com_github_lni_dragonboat_v3//statemachine",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "replica_test",
+    srcs = ["replica_test.go"],
+    deps = [
+        ":replica",
+        "//server/testutil/testdigest",
+        "//server/util/disk",
+        "//server/util/log",
+        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_stretchr_testify//require",
     ],
 )

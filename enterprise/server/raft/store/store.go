@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -31,11 +32,11 @@ type Store struct {
 	apiClient     *client.APIClient
 
 	mu           sync.RWMutex
-	activeRanges map[uint64]struct{}
+	activeRanges map[uint64]*rfpb.RangeDescriptor
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
-	return &Store{
+	store := &Store{
 		rootDir:       rootDir,
 		fileDir:       fileDir,
 		nodeHost:      nodeHost,
@@ -43,7 +44,28 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		sender:        sender,
 		apiClient:     apiClient,
 		mu:            sync.RWMutex{},
-		activeRanges:  make(map[uint64]struct{}),
+		activeRanges:  make(map[uint64]*rfpb.RangeDescriptor),
+	}
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				store.printClusterMembership()
+			}
+		}
+	}()
+	return store
+}
+
+func (s *Store) printClusterMembership() {
+	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
+	if nhInfo == nil {
+		log.Errorf("nodehost info was nil; skipping...")
+		return
+	}
+	for _, ci := range nhInfo.ClusterInfoList {
+		log.Printf("ClusterID: %d, NodeID: %d, Leader: %t", ci.ClusterID, ci.NodeID, ci.IsLeader)
 	}
 }
 
@@ -59,7 +81,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	log.Printf("AddRange: %+v", rd)
-	s.activeRanges[rd.GetRangeId()] = struct{}{}
+	s.activeRanges[rd.GetRangeId()] = rd
 	if containsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -149,7 +171,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	log.Warningf("SyncPropose (server) got request: %+v", req)
+	log.Debugf("SyncPropose (server) got request: %+v", req)
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 	}
@@ -163,7 +185,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	log.Warningf("SyncRead (server) got request: %+v", req)
+	log.Debugf("SyncRead (server) got request: %+v", req)
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 	}

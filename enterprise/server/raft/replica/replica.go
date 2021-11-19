@@ -368,6 +368,7 @@ func (sm *PebbleDiskStateMachine) scan(req *rfpb.ScanRequest) (*rfpb.ScanRespons
 	}
 
 	iter := sm.db.NewIter(iterOpts)
+	defer iter.Close()
 	var t bool
 
 	switch req.GetScanType() {
@@ -388,7 +389,6 @@ func (sm *PebbleDiskStateMachine) scan(req *rfpb.ScanRequest) (*rfpb.ScanRespons
 			})
 		}
 	}
-	iter.Close()
 	return rsp, nil
 }
 
@@ -611,16 +611,17 @@ func (sm *PebbleDiskStateMachine) PrepareSnapshot() (interface{}, error) {
 	if sm.closed {
 		return nil, status.FailedPreconditionError("db is closed.")
 	}
-	return sm.db.NewSnapshot(), nil
+	snap := sm.db.NewSnapshot()
+	return snap, nil
 }
 
-func saveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
+func SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
 	iter := snap.NewIter(&pebble.IterOptions{})
-	kv := &rfpb.KV{}
+	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
+		kv := &rfpb.KV{}
 		kv.Key = iter.Key()
 		kv.Value = iter.Value()
-
 		protoBytes, err := proto.Marshal(kv)
 		if err != nil {
 			return err
@@ -633,10 +634,55 @@ func saveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
 		if _, err := w.Write(varintBuf[:varintSize]); err != nil {
 			return err
 		}
+
 		// Then write the proto itself.
-		if _, err := w.Write(protoBytes); err != nil {
+		n, err := w.Write(protoBytes)
+		if err != nil {
 			return err
 		}
+		if int64(n) != msgLength {
+			return status.FailedPreconditionErrorf("wrote wrong number of bytes?")
+		}
+	}
+	return nil
+}
+
+func ApplySnapshotFromReader(r io.Reader, db *pebble.DB) error {
+	wb := db.NewBatch()
+	defer wb.Close()
+
+	// Delete everything in the current database first.
+	if err := wb.DeleteRange(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+		return err
+	}
+
+	readBuf := bufio.NewReader(r)
+	for {
+		count, err := binary.ReadVarint(readBuf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		protoBytes := make([]byte, count)
+		n, err := io.ReadFull(readBuf, protoBytes)
+		if err != nil {
+			return err
+		}
+		if int64(n) != count {
+			return status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n)
+		}
+		kv := &rfpb.KV{}
+		if err := proto.Unmarshal(protoBytes, kv); err != nil {
+			return err
+		}
+		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
+			return err
+		}
+	}
+	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -688,7 +734,7 @@ func (sm *PebbleDiskStateMachine) SaveSnapshot(preparedSnap interface{}, w io.Wr
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
-	return saveSnapshotToWriter(w, snap)
+	return SaveSnapshotToWriter(w, snap)
 }
 
 // RecoverFromSnapshot recovers the state of the IOnDiskStateMachine instance
@@ -710,32 +756,7 @@ func (sm *PebbleDiskStateMachine) SaveSnapshot(preparedSnap interface{}, w io.Wr
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *PebbleDiskStateMachine) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	wb := sm.db.NewBatch()
-	defer wb.Close()
-
-	if err := wb.DeleteRange(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
-		return err
-	}
-
-	readBuf := bufio.NewReader(r)
-	kv := &rfpb.KV{}
-	for {
-		count, err := binary.ReadVarint(readBuf)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-		}
-		protoBytes := make([]byte, count)
-		readBuf.Read(protoBytes)
-		if err := proto.Unmarshal(protoBytes, kv); err != nil {
-			return err
-		}
-		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
-			return err
-		}
-	}
-	if err := sm.db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := ApplySnapshotFromReader(r, sm.db); err != nil {
 		return err
 	}
 	newLastApplied, err := sm.getLastAppliedIndex()

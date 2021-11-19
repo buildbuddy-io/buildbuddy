@@ -22,6 +22,7 @@ go_library(
         "//server/gossip",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/network",
         "//server/util/prefix",
