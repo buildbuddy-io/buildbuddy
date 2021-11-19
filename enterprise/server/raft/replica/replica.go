@@ -71,7 +71,7 @@ import (
 // periodically snapshotted and thus causes negligible overheads for the system.
 // It also provides opportunities for the system to signal Raft Log compactions
 // to free up disk spaces.
-type PebbleDiskStateMachine struct {
+type Replica struct {
 	db       *pebble.DB
 	closedMu *sync.RWMutex // PROTECTS(closed)
 	closed   bool
@@ -121,7 +121,7 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (sm *PebbleDiskStateMachine) maybeSetRange(key, val []byte) error {
+func (sm *Replica) maybeSetRange(key, val []byte) error {
 	sm.rangeMu.RLock()
 	alreadySet := sm.mappedRange != nil
 	sm.rangeMu.RUnlock()
@@ -151,14 +151,14 @@ func (sm *PebbleDiskStateMachine) maybeSetRange(key, val []byte) error {
 	return nil
 }
 
-func (sm *PebbleDiskStateMachine) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
+func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
 	rangeIsSet := sm.mappedRange != nil
 	if rangeIsSet && !sm.mappedRange.Contains(key) {
+		sm.rangeMu.RUnlock()
 		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
 	}
 	sm.rangeMu.RUnlock()
-
 	if !rangeIsSet {
 		if err := sm.maybeSetRange(key, val); err != nil {
 			log.Errorf("Error setting range: %s", err)
@@ -168,7 +168,7 @@ func (sm *PebbleDiskStateMachine) rangeCheckedSet(wb *pebble.Batch, key, val []b
 	return wb.Set(key, val, nil /*ignored write options*/)
 }
 
-func (sm *PebbleDiskStateMachine) lookup(query []byte) ([]byte, error) {
+func (sm *Replica) lookup(query []byte) ([]byte, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
@@ -193,7 +193,7 @@ func (sm *PebbleDiskStateMachine) lookup(query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (sm *PebbleDiskStateMachine) getLastAppliedIndex() (uint64, error) {
+func (sm *Replica) getLastAppliedIndex() (uint64, error) {
 	val, err := sm.lookup([]byte(constants.LastAppliedIndexKey))
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -207,7 +207,7 @@ func (sm *PebbleDiskStateMachine) getLastAppliedIndex() (uint64, error) {
 	return bytesToUint64(val), nil
 }
 
-func (sm *PebbleDiskStateMachine) getDBDir() string {
+func (sm *Replica) getDBDir() string {
 	return filepath.Join(sm.rootDir,
 		fmt.Sprintf("cluster-%d", sm.clusterID),
 		fmt.Sprintf("node-%d", sm.nodeID))
@@ -225,7 +225,7 @@ func (sm *PebbleDiskStateMachine) getDBDir() string {
 // Open is called shortly after the Raft node is started. The Update method
 // and the Lookup method will not be called before the completion of the Open
 // method.
-func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
+func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	db, err := pebble.Open(sm.getDBDir(), &pebble.Options{})
 	if err != nil {
 		return 0, err
@@ -239,7 +239,7 @@ func (sm *PebbleDiskStateMachine) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.getLastAppliedIndex()
 }
 
-func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() {
+func (sm *Replica) checkAndSetRangeDescriptor() {
 	buf, err := sm.lookup(constants.LocalRangeKey)
 	if err != nil {
 		sm.log.Debugf("LocalRangeKey not found on replica")
@@ -248,7 +248,7 @@ func (sm *PebbleDiskStateMachine) checkAndSetRangeDescriptor() {
 	sm.maybeSetRange(constants.LocalRangeKey, buf)
 }
 
-func (sm *PebbleDiskStateMachine) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
+func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
 	fileKey, err := constants.FileKey(fileRecord)
 	if err != nil {
 		return err
@@ -287,7 +287,7 @@ func (sm *PebbleDiskStateMachine) readFileFromPeer(ctx context.Context, fileReco
 	return lastErr
 }
 
-func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
+func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	f, err := constants.FilePath(sm.fileDir, req.GetFileRecord())
 	if err != nil {
 		return nil, err
@@ -304,17 +304,21 @@ func (sm *PebbleDiskStateMachine) fileWrite(wb *pebble.Batch, req *rfpb.FileWrit
 		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
-		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, []byte(f), protoBytes)
+		fileKey, err := constants.FileKey(req.GetFileRecord())
+		if err != nil {
+			return nil, err
+		}
+		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
 	}
 	return nil, status.FailedPreconditionError("file did not exist")
 }
 
-func (sm *PebbleDiskStateMachine) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
+func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
 	return &rfpb.DirectWriteResponse{}, sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 }
 
-func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
+func (sm *Replica) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
 	buf, err := sm.lookup(req.GetKey())
 	if err != nil {
 		return nil, err
@@ -328,7 +332,7 @@ func (sm *PebbleDiskStateMachine) directRead(req *rfpb.DirectReadRequest) (*rfpb
 	return rsp, nil
 }
 
-func (sm *PebbleDiskStateMachine) increment(wb *pebble.Batch, req *rfpb.IncrementRequest) (*rfpb.IncrementResponse, error) {
+func (sm *Replica) increment(wb *pebble.Batch, req *rfpb.IncrementRequest) (*rfpb.IncrementResponse, error) {
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
@@ -355,7 +359,7 @@ func (sm *PebbleDiskStateMachine) increment(wb *pebble.Batch, req *rfpb.Incremen
 	}, nil
 }
 
-func (sm *PebbleDiskStateMachine) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
+func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
@@ -397,7 +401,7 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
@@ -425,7 +429,7 @@ func (sm *PebbleDiskStateMachine) handlePropose(wb *pebble.Batch, req *rfpb.Requ
 	return rsp
 }
 
-func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+func (sm *Replica) handleRead(req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
@@ -492,7 +496,7 @@ func (sm *PebbleDiskStateMachine) handleRead(req *rfpb.RequestUnion) *rfpb.Respo
 //
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
-func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	wb := sm.db.NewIndexedBatch()
 	defer wb.Close()
 
@@ -554,7 +558,7 @@ func (sm *PebbleDiskStateMachine) Update(entries []dbsm.Entry) ([]dbsm.Entry, er
 //
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
-func (sm *PebbleDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
+func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
@@ -588,7 +592,7 @@ func (sm *PebbleDiskStateMachine) Lookup(key interface{}) (interface{}, error) {
 //
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
-func (sm *PebbleDiskStateMachine) Sync() error {
+func (sm *Replica) Sync() error {
 	return nil
 }
 
@@ -605,7 +609,7 @@ func (sm *PebbleDiskStateMachine) Sync() error {
 //
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
-func (sm *PebbleDiskStateMachine) PrepareSnapshot() (interface{}, error) {
+func (sm *Replica) PrepareSnapshot() (interface{}, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
@@ -723,7 +727,7 @@ func ApplySnapshotFromReader(r io.Reader, db *pebble.DB) error {
 // errors, the IOnDiskStateMachine implementation should only return a non-nil
 // error when the system need to be immediately halted for critical errors,
 // e.g. disk error preventing you from saving the snapshot.
-func (sm *PebbleDiskStateMachine) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-chan struct{}) error {
+func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-chan struct{}) error {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
@@ -755,7 +759,7 @@ func (sm *PebbleDiskStateMachine) SaveSnapshot(preparedSnap interface{}, w io.Wr
 //
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
-func (sm *PebbleDiskStateMachine) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
+func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
 	if err := ApplySnapshotFromReader(r, sm.db); err != nil {
 		return err
 	}
@@ -787,7 +791,7 @@ func (sm *PebbleDiskStateMachine) RecoverFromSnapshot(r io.Reader, quit <-chan s
 // Other than setting up some internal flags to indicate that the
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
-func (sm *PebbleDiskStateMachine) Close() error {
+func (sm *Replica) Close() error {
 	sm.closedMu.Lock()
 	defer sm.closedMu.Unlock()
 	if sm.closed {
@@ -806,9 +810,9 @@ func (sm *PebbleDiskStateMachine) Close() error {
 	return sm.db.Close()
 }
 
-// CreatePebbleDiskStateMachine creates an ondisk statemachine.
+// CreateReplica creates an ondisk statemachine.
 func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
-	return &PebbleDiskStateMachine{
+	return &Replica{
 		closedMu:     &sync.RWMutex{},
 		rootDir:      rootDir,
 		fileDir:      fileDir,
