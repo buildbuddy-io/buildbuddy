@@ -114,7 +114,7 @@ func (c *LRU) Add(key, value interface{}) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, true)
+	c.addItem(pk, ck, value, true /*=front*/)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -135,7 +135,7 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, false)
+	c.addItem(pk, ck, value, false /*=front*/)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
