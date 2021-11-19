@@ -19,6 +19,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/bazelisk",
         "//server/util/flagutil",
         "//server/util/git",
         "//server/util/grpc_client",

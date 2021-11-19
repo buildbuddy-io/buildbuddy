@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -93,7 +95,7 @@ var (
 	patchDigests                flagutil.StringSliceFlag
 	reportLiveRepoSetupProgress = flag.Bool("report_live_repo_setup_progress", false, "If set, repo setup output will be streamed live to the invocation instead of being postponed until the action is run.")
 
-	bazelCommand      = flag.String("bazel_command", bazeliskBinaryName, "Bazel command to use.")
+	bazelCommand      = flag.String("bazel_command", "", "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
 	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
@@ -331,10 +333,6 @@ func main() {
 	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
 	ws.hostname, ws.username = getHostAndUserName()
 
-	if *bazelCommand == "" {
-		*bazelCommand = bazeliskBinaryName
-	}
-
 	ctx := context.Background()
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
@@ -347,6 +345,18 @@ func main() {
 	// Make sure PATH is set.
 	if err := ensurePath(); err != nil {
 		fatal(status.WrapError(err, "ensure PATH"))
+	}
+	// Make sure we have a bazel / bazelisk binary available.
+	if *bazelCommand == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			fatal(err)
+		}
+		bazeliskPath := filepath.Join(wd, bazeliskBinaryName)
+		if err := extractBazelisk(bazeliskPath); err != nil {
+			fatal(status.WrapError(err, "failed to extract bazelisk"))
+		}
+		*bazelCommand = bazeliskPath
 	}
 
 	var buildEventReporter *buildEventReporter
@@ -609,7 +619,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
-		printCommandLine(ar.reporter, bazeliskBinaryName, args...)
+		printCommandLine(ar.reporter, *bazelCommand, args...)
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
@@ -695,6 +705,28 @@ func ensurePath() error {
 		return nil
 	}
 	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+}
+
+// extractBazelisk copies the embedded bazelisk to the given path if it does
+// not already exist.
+func extractBazelisk(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	f, err := bazelisk.Open()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	dst, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, f); err != nil {
+		return err
+	}
+	return nil
 }
 
 func getHostAndUserName() (string, string) {
