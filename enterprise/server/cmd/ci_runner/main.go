@@ -348,11 +348,15 @@ func main() {
 	}
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		cmd, err := getBazeliskCommand()
+		wd, err := os.Getwd()
 		if err != nil {
-			fatal(status.WrapError(err, "get bazel command"))
+			fatal(err)
 		}
-		*bazelCommand = cmd
+		bazeliskPath := filepath.Join(wd, bazeliskBinaryName)
+		if err := extractBazelisk(bazeliskPath); err != nil {
+			fatal(status.WrapError(err, "failed to extract bazelisk"))
+		}
+		*bazelCommand = bazeliskPath
 	}
 
 	var buildEventReporter *buildEventReporter
@@ -703,37 +707,26 @@ func ensurePath() error {
 	return os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 }
 
-func getBazeliskCommand() (string, error) {
-	wd, err := os.Getwd()
+// extractBazelisk copies the embedded bazelisk to the given path if it does
+// not already exist.
+func extractBazelisk(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	f, err := bazelisk.Open()
 	if err != nil {
-		return "", err
+		return err
 	}
-	// If bazelisk is already in the workspace root, use that.
-	if _, err := os.Stat(bazeliskBinaryName); err != nil {
-		if !os.IsNotExist(err) {
-			return "", err
-		}
-	} else {
-		return filepath.Join(wd, bazeliskBinaryName), nil
+	defer f.Close()
+	dst, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	if err != nil {
+		return err
 	}
-	// If bazelisk is embedded, copy it to the workspace root, and use that.
-	if f, err := bazelisk.Open(); err == nil {
-		defer f.Close()
-		dst, err := os.OpenFile(bazeliskBinaryName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
-		if err != nil {
-			return "", err
-		}
-		defer dst.Close()
-		if _, err := io.Copy(dst, f); err != nil {
-			return "", err
-		}
-		return filepath.Join(wd, bazeliskBinaryName), nil
+	defer dst.Close()
+	if _, err := io.Copy(dst, f); err != nil {
+		return err
 	}
-	// If bazelisk is in PATH, use that.
-	if _, err := exec.LookPath(bazeliskBinaryName); err != nil {
-		return "", err
-	}
-	return bazeliskBinaryName, nil
+	return nil
 }
 
 func getHostAndUserName() (string, string) {

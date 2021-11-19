@@ -15,10 +15,7 @@ genrule(
 go_library(
     name = "bazelisk",
     srcs = ["bazelisk.go"],
-    embedsrcs = select({
-        "//:fastbuild": [":empty"],  # Need at least one file to embed
-        "//conditions:default": [":bazelisk-1.10.1"],
-    }),
+    embedsrcs = [":bazelisk-1.10.1"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazelisk",
     visibility = ["//visibility:public"],
 )
