@@ -114,7 +114,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	configureFilesystemsOrDie(env)
 
 	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if env.GetConfigurator().GetSelfAuthIssuer() != nil {
+	if env.GetConfigurator().GetSelfAuthEnabled() {
 		authConfigs = append(
 			authConfigs,
 			selfauth.Provider(env),
@@ -346,7 +346,7 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	if realEnv.GetConfigurator().GetSelfAuthIssuer() != nil {
+	if realEnv.GetConfigurator().GetSelfAuthEnabled() {
 		oauth, err := selfauth.NewSelfAuth(realEnv)
 		if err != nil {
 			log.Fatalf("Error initializing self auth: %s", err)

@@ -136,7 +136,7 @@ func (o *selfAuth) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.R
 }
 
 func (o *selfAuth) IssuerURL() *url.URL {
-	return o.env.GetConfigurator().GetSelfAuthIssuer()
+	return o.env.GetSelfAuthURL()
 }
 
 func (o *selfAuth) AuthorizationEndpoint() *url.URL {
@@ -172,7 +172,7 @@ func (o *selfAuth) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) stri
 func (o *selfAuth) Authorize(w http.ResponseWriter, r *http.Request) {
 	state := r.FormValue("state")
 
-	u := o.env.GetConfigurator().GetSelfAuthIssuer()
+	u := o.IssuerURL()
 	u.Path = "/auth/"
 
 	v := url.Values{}

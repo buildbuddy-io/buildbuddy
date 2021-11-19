@@ -129,7 +129,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 
 	authConfigs := realEnv.GetConfigurator().GetAuthOauthProviders()
-	if realEnv.GetConfigurator().GetSelfAuthIssuer() != nil {
+	if realEnv.GetConfigurator().GetSelfAuthEnabled() {
 		authConfigs = append(
 			authConfigs,
 			selfauth.Provider(realEnv),

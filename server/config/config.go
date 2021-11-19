@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -737,18 +736,8 @@ func (c *Configurator) GetSAMLConfig() *SAMLConfig {
 	return &c.gc.Auth.SAMLConfig
 }
 
-func (c *Configurator) GetSelfAuthIssuer() *url.URL {
-	if !c.gc.Auth.EnableSelfAuth {
-		return nil
-	}
-	u, err := url.Parse(c.GetAppBuildBuddyURL())
-	if err != nil {
-		u = &url.URL{
-			Scheme: "http",
-			Host:   "localhost",
-		}
-	}
-	return u
+func (c *Configurator) GetSelfAuthEnabled() bool {
+	return c.gc.Auth.EnableSelfAuth
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

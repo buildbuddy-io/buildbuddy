@@ -3,6 +3,7 @@ package real_environment
 import (
 	"io/fs"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -373,6 +374,17 @@ func (r *RealEnv) GetFileResolver() fs.FS {
 
 func (r *RealEnv) SetFileResolver(fr fs.FS) {
 	r.fileResolver = fr
+}
+
+func (r *RealEnv) GetSelfAuthURL() *url.URL {
+	u, err := url.Parse(r.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		u = &url.URL{
+			Scheme: "http",
+			Host:   "localhost",
+		}
+	}
+	return u
 }
 
 func (r *RealEnv) GetMux() *tracing.HttpServeMux {
