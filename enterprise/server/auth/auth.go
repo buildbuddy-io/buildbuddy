@@ -224,13 +224,13 @@ type authenticator interface {
 }
 
 type oidcAuthenticator struct {
-	oauth2Config  func() (*oauth2.Config, error)
-	_oauth2Config *oauth2.Config
-	oidcConfig    *oidc.Config
-	_provider     *oidc.Provider
-	provider      func() (*oidc.Provider, error)
-	issuer        string
-	slug          string
+	oauth2Config       func() (*oauth2.Config, error)
+	cachedOauth2Config *oauth2.Config
+	oidcConfig         *oidc.Config
+	cachedProvider     *oidc.Provider
+	provider           func() (*oidc.Provider, error)
+	issuer             string
+	slug               string
 }
 
 func extractToken(issuer, slug string, idToken *oidc.IDToken) (*userToken, error) {
@@ -380,11 +380,11 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			oauth2ConfigMutex.Lock()
 			defer oauth2ConfigMutex.Unlock()
 			var err error
-			if authenticator._oauth2Config == nil {
+			if authenticator.cachedOauth2Config == nil {
 				var provider *oidc.Provider
 				if provider, err = authenticator.provider(); err == nil {
 					// Configure an OpenID Connect aware OAuth2 client.
-					authenticator._oauth2Config = &oauth2.Config{
+					authenticator.cachedOauth2Config = &oauth2.Config{
 						ClientID:     authConfig.ClientID,
 						ClientSecret: authConfig.ClientSecret,
 						RedirectURL:  authURL.String(),
@@ -394,7 +394,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 					}
 				}
 			}
-			return authenticator._oauth2Config, err
+			return authenticator.cachedOauth2Config, err
 		}
 
 		var providerMutex sync.Mutex
@@ -402,12 +402,12 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			providerMutex.Lock()
 			defer providerMutex.Unlock()
 			var err error
-			if authenticator._provider == nil {
-				if authenticator._provider, err = oidc.NewProvider(ctx, authConfig.IssuerURL); err != nil {
+			if authenticator.cachedProvider == nil {
+				if authenticator.cachedProvider, err = oidc.NewProvider(ctx, authConfig.IssuerURL); err != nil {
 					log.Errorf("Error Initializing auth: %v", err)
 				}
 			}
-			return authenticator._provider, err
+			return authenticator.cachedProvider, err
 		}
 
 		authenticators = append(authenticators, authenticator)
