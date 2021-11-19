@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -89,5 +88,5 @@ type Env interface {
 	// See server/util/fileresolver/fileresolver.go
 	GetFileResolver() fs.FS
 	GetSelfAuthURL() *url.URL
-	GetMux() *tracing.HttpServeMux
+	GetMux() interfaces.HttpServeMux
 }

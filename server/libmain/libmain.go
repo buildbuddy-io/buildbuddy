@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -161,6 +162,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	configureFilesystemsOrDie(realEnv)
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetBlobstore(bs)

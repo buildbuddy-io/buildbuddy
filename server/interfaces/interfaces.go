@@ -26,6 +26,12 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
+//An interface representing a mux for handling/serving http requests.
+type HttpServeMux interface {
+  Handle(pattern string, handler http.Handler)
+  ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 // An interface representing the user info gleaned from an authorization header.
 type UserToken interface {
 	GetIssuer() string

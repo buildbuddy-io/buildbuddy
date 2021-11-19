@@ -2,7 +2,6 @@ package real_environment
 
 import (
 	"io/fs"
-	"net/http"
 	"net/url"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 
@@ -80,7 +78,7 @@ type RealEnv struct {
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
-	mux                              *tracing.HttpServeMux
+	mux                              interfaces.HttpServeMux
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -89,7 +87,6 @@ func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
 		healthChecker: h,
 
 		executionClients: make(map[string]*executionClientConfig, 0),
-		mux:              tracing.NewHttpServeMux(http.NewServeMux()),
 	}
 }
 
@@ -387,6 +384,10 @@ func (r *RealEnv) GetSelfAuthURL() *url.URL {
 	return u
 }
 
-func (r *RealEnv) GetMux() *tracing.HttpServeMux {
+func (r *RealEnv) GetMux() interfaces.HttpServeMux {
 	return r.mux
+}
+
+func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
+	r.mux = mux
 }
