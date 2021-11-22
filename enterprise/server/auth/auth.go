@@ -747,7 +747,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 		}
 	}
 
-	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
+	return nil, status.UnauthenticatedErrorf("gRPC request is missing credentials (acceptJWT=%v)", acceptJWT)
 }
 
 // AuthenticatedGRPCContext attempts to authenticate the gRPC request using peer info,
@@ -832,7 +832,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		claims := &Claims{}
 		_, err := jwt.ParseWithClaims(tokenString, claims, jwtKeyFunc)
 		if err != nil {
-			return nil, err
+			return nil, status.InvalidArgumentError("Invalid JWT: " + err.Error())
 		}
 		return claims, nil
 	}

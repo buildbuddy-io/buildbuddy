@@ -53,7 +53,13 @@ const (
 91730018799129514311446829422427875289219299697111385369890974620462640893041124
 96055193033777050480294158717308158411346743606932276164754948566436253186002112
 415611243927536855210038614935566984835254900497766783308172151277711`
+
+	keyID = `selfauth`
 )
+
+func init() {
+	jwt.Settings(jwt.WithFlattenAudience(true))
+}
 
 func Provider(env environment.Env) config.OauthProvider {
 	return config.OauthProvider{
@@ -206,6 +212,8 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	// Flattening audience because our current JWT library doesn't support
+	// array-valued "aud" claims.
 	token := jwt.New()
 	token.Set(jwt.AudienceKey, "buildbuddy")
 	token.Set(jwt.ExpirationKey, time.Now().Add(time.Hour).Unix())

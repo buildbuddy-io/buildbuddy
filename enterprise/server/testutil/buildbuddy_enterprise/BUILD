@@ -12,6 +12,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/testutil/testredis",
+        "//proto:user_go_proto",
+        "//proto:user_id_go_proto",
         "//server/testutil/app",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )

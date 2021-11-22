@@ -107,15 +107,10 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 
 func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
-	// Run the app with an API key we control so that we can authorize using it.
-	app := buildbuddy_enterprise.Run(
-		t,
-		fmt.Sprintf("--app.no_default_user_group=false"),
-		fmt.Sprintf("--api.api_key=%s", configuredDefaultAPIKey),
-	)
+	app := buildbuddy_enterprise.Run(t)
 	bbService := app.BuildBuddyServiceClient(t)
-	// Create a new read-only key
-	ctx := metadata.AppendToOutgoingContext(context.Background(), auth.APIKeyHeader, configuredDefaultAPIKey)
+	// Create a new read-only key as the default self-auth user
+	ctx := buildbuddy_enterprise.WithDefaultSelfAuthUser(t, context.Background(), app)
 	rsp, err := bbService.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
 		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
 		GroupId:        testGroupID,

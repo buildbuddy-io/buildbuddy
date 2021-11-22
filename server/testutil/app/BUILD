@@ -10,6 +10,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/testutil/testfs",
+        "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
     ],
