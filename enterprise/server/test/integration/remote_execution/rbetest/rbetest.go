@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -82,6 +83,7 @@ type Env struct {
 	testEnv               *testenv.TestEnv
 	rbeClient             *rbeclient.Client
 	redisTarget           string
+	rootDataDir           string
 	buildBuddyServers     []*BuildBuddyServer
 	executors             map[string]*Executor
 	testCommandController *testCommandController
@@ -165,6 +167,10 @@ func NewRBETestEnv(t *testing.T) *Env {
 	err = testEnv.GetDBHandle().Exec(
 		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
 	require.NoError(t, err)
+	// Note: This root data dir (under which all executors' data is placed) does
+	// not get cleaned up until after all executors are shutdown (in the cleanup
+	// func below), since test cleanup funcs are run in LIFO order.
+	rootDataDir := testfs.MakeTempDir(t)
 	rbe := &Env{
 		testEnv:     testEnv,
 		t:           t,
@@ -173,6 +179,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 		envOpts:     envOpts,
 		GroupID1:    groupID,
 		UserID1:     userID,
+		rootDataDir: rootDataDir,
 	}
 	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
@@ -507,7 +514,7 @@ func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Execut
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddSingleTaskExecutor() *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d(single task)", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
 	return r.AddSingleTaskExecutorWithOptions(&ExecutorOptions{Name: name})
 }
 
@@ -562,6 +569,10 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	executorConfig.Pool = options.Pool
+	// Place executor data under the env root dir, since that dir gets removed
+	// only after all the executors have shutdown.
+	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
+	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
 
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
