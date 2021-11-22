@@ -2,6 +2,7 @@ package real_environment
 
 import (
 	"io/fs"
+	"net/url"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -77,6 +78,7 @@ type RealEnv struct {
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
+	mux                              interfaces.HttpServeMux
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -369,4 +371,23 @@ func (r *RealEnv) GetFileResolver() fs.FS {
 
 func (r *RealEnv) SetFileResolver(fr fs.FS) {
 	r.fileResolver = fr
+}
+
+func (r *RealEnv) GetSelfAuthURL() *url.URL {
+	u, err := url.Parse(r.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		u = &url.URL{
+			Scheme: "http",
+			Host:   "localhost",
+		}
+	}
+	return u
+}
+
+func (r *RealEnv) GetMux() interfaces.HttpServeMux {
+	return r.mux
+}
+
+func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
+	r.mux = mux
 }

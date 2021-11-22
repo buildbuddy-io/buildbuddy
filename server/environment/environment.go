@@ -2,6 +2,7 @@ package environment
 
 import (
 	"io/fs"
+	"net/url"
 
 	"github.com/go-redis/redis/v8"
 
@@ -86,4 +87,6 @@ type Env interface {
 	//
 	// See server/util/fileresolver/fileresolver.go
 	GetFileResolver() fs.FS
+	GetSelfAuthURL() *url.URL
+	GetMux() interfaces.HttpServeMux
 }

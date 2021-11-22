@@ -213,6 +213,7 @@ type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
+	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 }
 
 type OauthProvider struct {
@@ -733,6 +734,10 @@ func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
 
 func (c *Configurator) GetSAMLConfig() *SAMLConfig {
 	return &c.gc.Auth.SAMLConfig
+}
+
+func (c *Configurator) GetSelfAuthEnabled() bool {
+	return c.gc.Auth.EnableSelfAuth
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {
