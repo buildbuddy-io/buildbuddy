@@ -42,7 +42,7 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	db := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
 	err := db.Raw(
-		`SELECT invocation_webhook_url FROM Groups WHERE group_id = ?`,
+		"SELECT invocation_webhook_url FROM `Groups` WHERE group_id = ?",
 		groupID,
 	).Take(row).Error
 	if err != nil {

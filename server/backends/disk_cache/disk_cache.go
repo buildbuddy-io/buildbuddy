@@ -508,15 +508,16 @@ func (p *partition) initializeCache() error {
 			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
 		}
 
-		// Sort entries by ascending ATime.
-		sort.Slice(records, func(i, j int) bool { return records[i].lastUse < records[j].lastUse })
+		// Sort entries by descending ATime.
+		sort.Slice(records, func(i, j int) bool { return records[i].lastUse > records[j].lastUse })
 
 		p.mu.Lock()
-		// Populate our LRU with everything we scanned from disk.
+		// Populate our LRU with everything we scanned from disk, until the LRU reaches capacity.
 		for _, record := range records {
-			p.lru.Add(record.FullPath(), record)
+			if added := p.lru.PushBack(record.FullPath(), record); !added {
+				break
+			}
 		}
-		records = nil
 
 		// Add in-flight records to the LRU. These were new files
 		// touched during the loading phase, so we assume they are new

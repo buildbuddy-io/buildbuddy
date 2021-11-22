@@ -42,9 +42,7 @@ const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
 export default class CodeComponent extends React.Component<Props> {
   props: Props;
 
-  state: State = localStorage.getItem(LOCAL_STORAGE_STATE_KEY)
-    ? (JSON.parse(localStorage.getItem(LOCAL_STORAGE_STATE_KEY), stateReviver) as State)
-    : {
+  state: State = {
         owner: "",
         repo: "",
         repoResponse: undefined,
@@ -116,7 +114,12 @@ export default class CodeComponent extends React.Component<Props> {
     console.log(this.state.changes);
 
     // TODO(siggisim): store this in cache.
-    localStorage.setItem(LOCAL_STORAGE_STATE_KEY, JSON.stringify(this.state, stateReplacer));
+    localStorage.setItem(this.getStateCacheKey(), JSON.stringify(this.state, stateReplacer));
+  }
+
+  getStateCacheKey() {
+    let repo = this.currentRepo();
+    return `${LOCAL_STORAGE_STATE_KEY}/${repo.owner}/${repo.repo}`;
   }
 
   componentWillUnmount() {
@@ -135,13 +138,24 @@ export default class CodeComponent extends React.Component<Props> {
     }
   }
 
-  fetchCode() {
+  currentRepo() {
     let groups = this.props.path?.match(/\/code\/(?<owner>.*)\/(?<repo>.*)/)?.groups;
-    if (!groups?.owner || !groups.repo) {
+    return groups || {}; 
+  }
+
+  fetchCode() {
+    const storedState = localStorage.getItem(this.getStateCacheKey()) ? (JSON.parse(localStorage.getItem(this.getStateCacheKey()), stateReviver) as State) : undefined;
+    if (storedState) {
+      this.setState(storedState);
+      return;
+    }
+
+    let repo = this.currentRepo();
+    if (!repo.owner || !repo.repo) {
       this.handleRepoClicked();
       return;
     }
-    this.setState({ owner: groups?.owner || "buildbuddy-io", repo: groups?.repo || "buildbuddy" }, () => {
+    this.setState({ owner: repo.owner, repo: repo.repo }, () => {
       this.octokit.request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/master`).then((response: any) => {
         console.log(response);
         this.setState({ repoResponse: response });

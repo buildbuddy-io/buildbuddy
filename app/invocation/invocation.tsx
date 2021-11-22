@@ -12,6 +12,7 @@ import ArtifactsCardComponent from "./invocation_artifacts_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
 import QueryGraphCardComponent from "./invocation_query_graph_card";
 import CacheCardComponent from "./invocation_cache_card";
+import ScorecardCardComponent from "./scorecard_card";
 import FetchCardComponent from "./invocation_fetch_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
@@ -281,6 +282,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
             <CacheCardComponent model={this.state.model} />
+          )}
+          {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
+            <ScorecardCardComponent model={this.state.model} />
           )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (

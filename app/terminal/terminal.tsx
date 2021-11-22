@@ -25,13 +25,13 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   render() {
     return (
-      <>
+      <div className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""}`}>
         <div className="terminal-actions">
           <button
             title="Wrap"
             onClick={this.handleWrapClicked.bind(this)}
             className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
-            <img src="/image/wrap-white.svg" />
+            <img src="/image/wrap-text-white.svg" />
           </button>
           <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
             <img src="/image/download-white.svg" />
@@ -53,7 +53,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             {...{ lightTheme: this.props.lightTheme }}
           />
         </div>
-      </>
+      </div>
     );
   }
 

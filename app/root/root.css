@@ -920,11 +920,14 @@ code .comment {
 
 /** Misc **/
 
+.terminal-container {
+  position: relative;
+}
+
 .terminal {
   height: 300px;
   margin-top: -49px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
 }
 
 .terminal a {
@@ -938,10 +941,23 @@ code .comment {
 }
 
 .terminal-actions {
-  right: 32px;
-  top: 22px;
+  right: 0;
   position: absolute;
   z-index: 1;
+}
+
+.light-terminal .terminal-actions {
+  filter: invert();
+}
+
+.light-terminal .react-lazylog-searchbar-input {
+  background-color: white;
+  border: 1px solid #eee;
+  color: black;
+}
+
+.light-terminal .react-lazylog-searchbar-input::placeholder {
+  color: #aaa;
 }
 
 .terminal-actions img {
@@ -970,9 +986,16 @@ code .comment {
   pointer-events: none;
 }
 
-.react-lazylog-searchbar {
-  margin-bottom: 8px;
+/* Duplicate class selector here is used to increase specificity */
+.react-lazylog-searchbar.react-lazylog-searchbar {
   margin-right: 80px;
+  background-color: transparent;
+}
+
+.dense .react-lazylog-searchbar {
+  margin-bottom: 0;
+  margin-right: 96px;
+  margin-top: 14px;
 }
 
 .react-lazylog-searchbar-filter {
@@ -1164,6 +1187,30 @@ code .comment {
 
 .artifacts .artifact-hidden-count {
   color: #bdbdbd;
+  margin-bottom: 8px;
+}
+
+.scorecard-target-name {
+  margin-top: 8px;
+  color: #757575;
+  display: block;
+}
+
+.scorecard-action-id {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.scorecard-action-id-list {
+  padding-left: 32px;
+  margin-bottom: 8px;
+}
+
+.scorecard-hidden-count {
+  color: #bdbdbd;
+  margin-top: 4px;
   margin-bottom: 8px;
 }
 
