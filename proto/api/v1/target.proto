@@ -52,6 +52,9 @@ message Target {
 
   // Tags applied to this target (if any).
   repeated string tag = 6;
+
+  // The language of the target rule. Ex: java, go, sh
+  string language = 7;
 }
 
 // The selector used to specify which targets to return.
@@ -67,4 +70,8 @@ message TargetSelector {
   // Optional: Tag
   // If set, only targets with this tag will be returned.
   string tag = 3;
+
+  // Optional: The Target label.
+  // If set, only the target with this target label will be returned.
+  string label = 4;
 }

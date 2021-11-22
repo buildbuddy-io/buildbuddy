@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -270,6 +271,11 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 		switch p := event.BuildEvent.Payload.(type) {
 		case *build_event_stream.BuildEvent_Configured:
 			{
+				ruleType := strings.Replace(p.Configured.TargetKind, " rule", "", -1)
+				language := ""
+				if components := strings.Split(p.Configured.TargetKind, "_"); len(components) > 1 {
+					language = components[0]
+				}
 				label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
 				targetMap[label] = &apipb.Target{
 					Id: &apipb.Target_Id{
@@ -278,7 +284,8 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 					},
 					Label:    label,
 					Status:   cmnpb.Status_BUILDING,
-					RuleType: strings.Replace(p.Configured.TargetKind, " rule", "", -1),
+					RuleType: ruleType,
+					Language: language,
 					Tag:      p.Configured.Tag,
 				}
 			}
@@ -313,11 +320,17 @@ func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
 			uri = file.Uri
 			// Contents files are not currently supported - only the file name will be appended without a uri.
 		}
-
-		files = append(files, &apipb.File{
+		f := &apipb.File{
 			Name: output.Name,
 			Uri:  uri,
-		})
+		}
+		if u, err := url.Parse(uri); err == nil {
+			if _, d, err := digest.ExtractDigestFromDownloadResourceName(u.Path); err == nil {
+				f.Hash = d.GetHash()
+				f.SizeBytes = d.GetSizeBytes()
+			}
+		}
+		files = append(files, f)
 	}
 	return files
 }
@@ -347,6 +360,10 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
 func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSelector) bool {
+	if selector.Label != "" {
+		return selector.Label == target.Label
+	}
+
 	if selector.Tag != "" {
 		for _, tag := range target.GetTag() {
 			if tag == selector.Tag {
