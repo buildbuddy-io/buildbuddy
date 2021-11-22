@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 )
 
@@ -28,43 +29,9 @@ func randomDir(subDirs []string) string {
 	return filepath.Join(pathParts...)
 }
 
-func getTmpDir(t *testing.T) string {
-	dir, err := os.MkdirTemp("/tmp", "buildbuddy_ext4_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
-
-func getTmpFileName(t *testing.T) string {
-	f, err := os.CreateTemp("/tmp", "*.tmp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	name := f.Name()
-	f.Close()
-	disk.DeleteLocalFileIfExists(name)
-	t.Cleanup(func() {
-		err := os.RemoveAll(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return name
-}
-
 func TestE2E(t *testing.T) {
 	ctx := context.Background()
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	allowedPaths := []string{"a", "b", "c", "d", "e", "f"}
 
 	// Create a "random" looking directory full of random digests.
@@ -82,13 +49,13 @@ func TestE2E(t *testing.T) {
 	}
 
 	// Make the random directory into an ext4 image.
-	imageFile := getTmpFileName(t)
+	imageFile := testfs.MakeTempFile(t, "", "*.img")
 	if err := ext4.DirectoryToImageAutoSize(ctx, rootDir, imageFile); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a new (empty) directory and unpack the image file to the new directory.
-	newRoot := getTmpDir(t)
+	newRoot := testfs.MakeTempDir(t)
 	if err := ext4.ImageToDirectory(ctx, imageFile, newRoot); err != nil {
 		t.Fatal(err)
 	}

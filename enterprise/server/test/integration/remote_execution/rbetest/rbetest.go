@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -34,12 +35,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -51,6 +54,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -81,6 +85,7 @@ type Env struct {
 	testEnv               *testenv.TestEnv
 	rbeClient             *rbeclient.Client
 	redisTarget           string
+	rootDataDir           string
 	buildBuddyServers     []*BuildBuddyServer
 	executors             map[string]*Executor
 	testCommandController *testCommandController
@@ -140,15 +145,34 @@ func NewRBETestEnv(t *testing.T) *Env {
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
-	// Create a group for use in tests (this will also create an API key for the
-	// group).
+	// Create a user and group in the DB for use in tests (this will also create
+	// an API key for the group).
+	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real
+	// user log into the app to do all of this setup in a more sane way.
 	orgURLID := "test"
 	userID := "US1"
-	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(context.Background(), &tables.Group{
-		URLIdentifier: &orgURLID,
-		UserID:        "US1",
+	ctx := context.Background()
+	err := testEnv.GetUserDB().InsertUser(ctx, &tables.User{
+		UserID: userID,
+		Email:  "user@example.com",
 	})
 	require.NoError(t, err)
+	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(ctx, &tables.Group{
+		URLIdentifier: &orgURLID,
+		UserID:        userID,
+	})
+	require.NoError(t, err)
+	err = testEnv.GetUserDB().AddUserToGroup(ctx, userID, groupID)
+	require.NoError(t, err)
+	// Update the API key value to match the user ID, since the test authenticator
+	// treats user IDs and API keys the same.
+	err = testEnv.GetDBHandle().Exec(
+		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
+	require.NoError(t, err)
+	// Note: This root data dir (under which all executors' data is placed) does
+	// not get cleaned up until after all executors are shutdown (in the cleanup
+	// func below), since test cleanup funcs are run in LIFO order.
+	rootDataDir := testfs.MakeTempDir(t)
 	rbe := &Env{
 		testEnv:     testEnv,
 		t:           t,
@@ -157,6 +181,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 		envOpts:     envOpts,
 		GroupID1:    groupID,
 		UserID1:     userID,
+		rootDataDir: rootDataDir,
 	}
 	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
@@ -446,6 +471,8 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
+	env.SetUserDB(r.testEnv.GetUserDB())
+	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers = append(r.buildBuddyServers, server)
@@ -489,7 +516,7 @@ func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Execut
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddSingleTaskExecutor() *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d(single task)", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
 	return r.AddSingleTaskExecutorWithOptions(&ExecutorOptions{Name: name})
 }
 
@@ -536,8 +563,18 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetAuthenticator(r.newTestAuthenticator())
 
+	bundleFS, err := bundle.Get()
+	require.NoError(r.t, err)
+	env.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
+	err = resources.Configure(env)
+	require.NoError(r.t, err)
+
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	executorConfig.Pool = options.Pool
+	// Place executor data under the env root dir, since that dir gets removed
+	// only after all the executors have shutdown.
+	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
+	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
 
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {

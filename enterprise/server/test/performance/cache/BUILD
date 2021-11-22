@@ -6,7 +6,7 @@ go_test(
     args = [
         "-test.bench=.",
     ],
-    tags = ["manual"],
+    tags = ["performance"],
     deps = [
         "//enterprise/server/backends/distributed",
         "//proto:remote_execution_go_proto",
@@ -19,6 +19,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/testing/flags",

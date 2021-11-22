@@ -920,9 +920,14 @@ code .comment {
 
 /** Misc **/
 
+.terminal-container {
+  position: relative;
+}
+
 .terminal {
   height: 300px;
-  overflow-x: auto;
+  margin-top: -49px;
+  overflow: visible;
 }
 
 .terminal a {
@@ -933,6 +938,91 @@ code .comment {
   font-size: 14px;
   font-family: "Source Code Pro", monospace;
   color: #fff;
+}
+
+.terminal-actions {
+  right: 0;
+  position: absolute;
+  z-index: 1;
+}
+
+.light-terminal .terminal-actions {
+  filter: invert();
+}
+
+.light-terminal .react-lazylog-searchbar-input {
+  background-color: white;
+  border: 1px solid #eee;
+  color: black;
+}
+
+.light-terminal .react-lazylog-searchbar-input::placeholder {
+  color: #aaa;
+}
+
+.terminal-actions img {
+  width: 18px;
+}
+
+.terminal-action {
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+  padding: 12px;
+  opacity: 0.6;
+}
+
+.terminal-action.active {
+  opacity: 1;
+}
+
+.build-logs-card {
+  position: relative;
+}
+
+.build-logs-card .title {
+  z-index: 1;
+  position: relative;
+  pointer-events: none;
+}
+
+/* Duplicate class selector here is used to increase specificity */
+.react-lazylog-searchbar.react-lazylog-searchbar {
+  margin-right: 80px;
+  background-color: transparent;
+}
+
+.dense .react-lazylog-searchbar {
+  margin-bottom: 0;
+  margin-right: 96px;
+  margin-top: 14px;
+}
+
+.react-lazylog-searchbar-filter {
+  display: none;
+}
+
+@media (max-width: 940px) {
+  .terminal .react-lazylog-searchbar-input {
+    min-width: initial;
+    width: 140px;
+  }
+  .terminal .react-lazylog-searchbar-matches {
+    display: none;
+  }
+}
+
+@media (max-width: 525px) {
+  .terminal {
+    margin-top: 0;
+  }
+  .react-lazylog-searchbar {
+    display: none !important;
+  }
+}
+
+.react-lazylog-searchbar-input {
+  border-radius: 4px;
 }
 
 .light-terminal .terminal-line {
@@ -1097,6 +1187,30 @@ code .comment {
 
 .artifacts .artifact-hidden-count {
   color: #bdbdbd;
+  margin-bottom: 8px;
+}
+
+.scorecard-target-name {
+  margin-top: 8px;
+  color: #757575;
+  display: block;
+}
+
+.scorecard-action-id {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.scorecard-action-id-list {
+  padding-left: 32px;
+  margin-bottom: 8px;
+}
+
+.scorecard-hidden-count {
+  color: #bdbdbd;
+  margin-top: 4px;
   margin-bottom: 8px;
 }
 

@@ -72,7 +72,12 @@ http_archive(
     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/4.4.1/rules_nodejs-4.4.1.tar.gz"],
 )
 
-load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
+load("@build_bazel_rules_nodejs//:index.bzl", "node_repositories", "yarn_install")
+
+# M1 Macs require Node 16+
+node_repositories(
+    node_version = "16.6.2",
+)
 
 yarn_install(
     name = "npm",
@@ -149,9 +154,9 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    sha256 = "cc75cf0d86312e1327d226e980efd3599704e01099b58b3c2fc4efe5e321fcd9",
-    strip_prefix = "rules_k8s-0.3.1",
-    urls = ["https://github.com/bazelbuild/rules_k8s/releases/download/v0.3.1/rules_k8s-v0.3.1.tar.gz"],
+    sha256 = "51f0977294699cd547e139ceff2396c32588575588678d2054da167691a227ef",
+    strip_prefix = "rules_k8s-0.6",
+    urls = ["https://github.com/bazelbuild/rules_k8s/archive/v0.6.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
@@ -172,9 +177,9 @@ k8s_defaults(
 # NB: The name must be "com_google_protobuf".
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "97d6d9deac3fc12e53f52ca6e4d8b0e0792872bc466cd246793e0efec7b3951f",
-    strip_prefix = "protobuf-3.18.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v3.18.0/protobuf-all-3.18.0.zip"],
+    sha256 = "7c9731ff49ebe1cc4a0650a21d40acc099043f4d584b24632bafc0f5328bc3ff",
+    strip_prefix = "protobuf-3.19.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v3.19.0/protobuf-all-3.19.0.zip"],
 )
 
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
@@ -205,7 +210,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:75f63d4edd703030d4312dc7528a349ca34d48bec7bd754652b2d47e5a0b7873",
+    digest = "sha256:586e10ceb097684dcd3e455dbb6d4141f3dd28986719de487d76d4c7c9da1a35",
     registry = "gcr.io",
     repository = "distroless/base-debian10",
 )
@@ -213,7 +218,7 @@ container_pull(
 # Base image that can be used to build images that are capable of running the Bazel binary.
 container_pull(
     name = "bazel_image_base",
-    digest = "sha256:ae5d32ed4da6d2207fd34accde64f5b1264cbdd1340fa8c1cfa70cdf1841f9db",
+    digest = "sha256:0b46c354f4f092a54570ece9031f9b780ffb4855d6ba3faf61c05c4cebe8957f",
     registry = "gcr.io",
     repository = "distroless/java-debian10",
 )
@@ -260,3 +265,25 @@ http_archive(
 load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
 
 esbuild_repositories(npm_repository = "npm")
+
+# Web testing
+
+http_archive(
+    name = "io_bazel_rules_webtesting",
+    sha256 = "e9abb7658b6a129740c0b3ef6f5a2370864e102a5ba5ffca2cea565829ed825a",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/releases/download/0.3.5/rules_webtesting.tar.gz",
+    ],
+)
+
+load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
+
+web_test_repositories()
+
+load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
+
+browser_repositories(chromium = True)
+
+load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
+
+web_test_go_repositories()

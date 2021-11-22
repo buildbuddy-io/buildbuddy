@@ -22,7 +22,6 @@ go_library(
             "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise:bundle",
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/remote_execution/snaploader",
@@ -44,7 +43,6 @@ go_library(
             "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
             "@com_github_google_uuid//:uuid",
             "@com_github_sirupsen_logrus//:logrus",
-            "@io_bazel_rules_go//go/tools/bazel:go_default_library",
             "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
@@ -69,6 +67,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/disk",
         "@com_github_stretchr_testify//assert",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

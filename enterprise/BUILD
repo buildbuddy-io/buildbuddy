@@ -1,6 +1,6 @@
-package(default_visibility = [":__subpackages__"])
-
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = [":__subpackages__"])
 
 filegroup(
     name = "config_files",
@@ -50,11 +50,12 @@ go_library(
             "//enterprise/app:app_bundle",
             "//enterprise/app:style",
             "//enterprise/app:sha",
+            "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
         ],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
     visibility = ["//enterprise:__subpackages__"],
     deps = [
-        "//server/util/log",
+        "//server/util/fileresolver",
     ],
 )

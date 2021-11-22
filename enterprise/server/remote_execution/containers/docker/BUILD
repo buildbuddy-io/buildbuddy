@@ -36,6 +36,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "@com_github_docker_docker//client:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

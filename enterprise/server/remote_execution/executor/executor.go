@@ -104,7 +104,7 @@ func (s *Executor) Name() string {
 }
 
 func (s *Executor) Warmup() {
-	s.runnerPool.WarmupDefaultImage()
+	s.runnerPool.WarmupImages()
 }
 
 func diffTimestamps(startPb, endPb *tspb.Timestamp) time.Duration {
@@ -215,7 +215,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
 	}
-	if err := r.PrepareForTask(ctx, task); err != nil {
+	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
 	}
 
@@ -266,12 +266,18 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	rxInfo := &dirtools.TransferInfo{}
-	// Don't download inputs if the FUSE-based filesystem is enabled.
+	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
+	// enabled.
 	// TODO(vadim): integrate VFS stats
 	if r.VFS == nil {
 		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
 		if err != nil {
 			return finishWithErrFn(err)
+		}
+		if r.PlatformProperties.WorkflowID != "" {
+			if err := r.Workspace.AddCIRunner(); err != nil {
+				return finishWithErrFn(err)
+			}
 		}
 	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
@@ -294,7 +300,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
-		cmdResultChan <- r.Run(ctx, task.GetCommand())
+		cmdResultChan <- r.Run(ctx)
 	}()
 
 	// Run a timer that periodically sends update messages back

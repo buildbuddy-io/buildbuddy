@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -31,7 +32,7 @@ const (
 
 	containerImagePropertyName = "container-image"
 	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
-	dockerPrefix               = "docker://"
+	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
 	containerRegistryPasswordPropertyName = "container-registry-password"
@@ -50,7 +51,8 @@ const (
 	enableVFSPropertyName            = "enable-vfs"
 
 	operatingSystemPropertyName = "OSFamily"
-	defaultOperatingSystemName  = "linux"
+	LinuxOperatingSystemName    = "linux"
+	defaultOperatingSystemName  = LinuxOperatingSystemName
 	darwinOperatingSystemName   = "darwin"
 
 	cpuArchitecturePropertyName = "Arch"
@@ -58,6 +60,16 @@ const (
 
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
+
+	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
+	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
+
+	// EstimatedFreeDiskPropertyName specifies how much "scratch space" beyond the
+	// input files a task requires to be able to function. This is useful for
+	// managed Bazel + Firecracker because for Firecracker we need to decide ahead
+	// of time how big the workspace filesystem is going to be, and managed Bazel
+	// requires a relatively large amount of free space compared to typical actions.
+	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
 
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
@@ -70,6 +82,8 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
+	EstimatedComputeUnits     int64
+	EstimatedFreeDiskBytes    int64
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -119,6 +133,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
+		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedFreeDiskBytes:    int64Prop(m, EstimatedFreeDiskPropertyName, 0),
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
@@ -247,13 +263,13 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
 			platformProps.ContainerImage = defaultContainerImage
-		} else if !strings.HasPrefix(platformProps.ContainerImage, dockerPrefix) {
+		} else if !strings.HasPrefix(platformProps.ContainerImage, DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
 			return status.InvalidArgumentError("Malformed container image string.")
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
-		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, dockerPrefix)
+		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
 	}
 
 	if strings.EqualFold(platformProps.OS, darwinOperatingSystemName) {
@@ -306,6 +322,19 @@ func boolProp(props map[string]string, name string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return strings.EqualFold(val, "true")
+}
+
+func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	i, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as int64: %s", name, err)
+		return defaultValue
+	}
+	return i
 }
 
 func stringListProp(props map[string]string, name string) []string {

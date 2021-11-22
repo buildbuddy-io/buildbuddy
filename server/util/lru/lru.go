@@ -114,10 +114,32 @@ func (c *LRU) Add(key, value interface{}) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value)
+	c.addItem(pk, ck, value, true /*=front*/)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
+	}
+	return true
+}
+
+// PushBack adds a value to the back of the cache. Returns true if the key was added.
+func (c *LRU) PushBack(key, value interface{}) bool {
+	pk, ck, ok := c.keyHash(key)
+	if !ok {
+		return false
+	}
+	// Check for existing item
+	if ent, ok := c.lookupItem(pk, ck); ok {
+		ent.Value.(*Entry).value = value
+		return true
+	}
+
+	// Add new item
+	c.addItem(pk, ck, value, false /*=front*/)
+
+	for c.currentSize > c.maxSize {
+		c.removeOldest()
+		return false
 	}
 	return true
 }
@@ -229,11 +251,16 @@ func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
 
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addItem(key, conflictKey uint64, value interface{}) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
 	// Add new item
 	kv := &Entry{key, conflictKey, value}
-	Entry := c.evictList.PushFront(kv)
-	c.items[key] = append(c.items[key], Entry)
+	var element *list.Element
+	if front {
+		element = c.evictList.PushFront(kv)
+	} else {
+		element = c.evictList.PushBack(kv)
+	}
+	c.items[key] = append(c.items[key], element)
 	c.currentSize += c.sizeFn(value)
 }
 

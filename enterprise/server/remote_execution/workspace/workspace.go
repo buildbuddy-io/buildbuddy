@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -144,6 +146,34 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
+}
+
+// AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
+// already exist.
+func (ws *Workspace) AddCIRunner() error {
+	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
+	exists, err := disk.FileExists(destPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
+	// The CI runner binary may be on a different device than the runner workspace
+	// so we'd have to put it somewhere on the same device before fastcopying.
+	srcFile, err := ws.env.GetFileResolver().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0555)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+	_, err = io.Copy(destFile, srcFile)
+	return err
 }
 
 func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {

@@ -2,7 +2,6 @@ package vfs_server_test
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -61,8 +60,7 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 
 func newServer(t *testing.T) (*vfs_server.Server, string) {
 	env := testenv.GetTestEnv(t)
-	tmpDir, err := ioutil.TempDir("", "vfs_test")
-	require.NoError(t, err)
+	tmpDir := testfs.MakeTempDir(t)
 
 	server := vfs_server.New(env, tmpDir)
 	return server, tmpDir

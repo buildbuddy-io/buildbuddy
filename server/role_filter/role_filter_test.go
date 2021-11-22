@@ -7,14 +7,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/stretchr/testify/assert"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 )
 
 func TestAllRPCsHaveExplicitRolesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
-	serviceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
-	for i := 0; i < serviceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, serviceType.Method(i).Name)
+	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
+	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
+		serviceMethodNames = append(serviceMethodNames, buildbuddyServiceType.Method(i).Name)
+	}
+	apiServiceType := reflect.TypeOf((*apipb.ApiServiceServer)(nil)).Elem()
+	for i := 0; i < apiServiceType.NumMethod(); i++ {
+		serviceMethodNames = append(serviceMethodNames, apiServiceType.Method(i).Name)
 	}
 
 	allDefinedMethods := []string{}

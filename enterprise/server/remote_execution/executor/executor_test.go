@@ -4,12 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
@@ -34,10 +34,8 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 	if rootDirFlag == nil {
 		t.Fatal("Missing --executor.root_directory flag.")
 	}
-	dir, err := ioutil.TempDir(rootDirFlag.Value.String(), "test_*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := testfs.MakeTempDir(t)
+
 	f, err := os.Create(fmt.Sprintf("%s/world.txt", dir))
 	if err != nil {
 		t.Fatal(err)
@@ -47,11 +45,6 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Logf("WARNING: Failed to clean up temp dir: %s", dir)
-		}
-	})
 	return dir
 }
 

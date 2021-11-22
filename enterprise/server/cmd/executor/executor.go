@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -29,11 +30,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
@@ -42,6 +45,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/test/bufconn"
 
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -114,8 +118,24 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
+	if err := resources.Configure(realEnv); err != nil {
+		log.Fatal(status.Message(err))
+	}
 
-	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv)
+	bundleFS, err := bundle.Get()
+	if err != nil {
+		log.Fatalf("Failed to initialize bundle: %s", err)
+	}
+	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
+
+	authConfigs := realEnv.GetConfigurator().GetAuthOauthProviders()
+	if realEnv.GetConfigurator().GetSelfAuthEnabled() {
+		authConfigs = append(
+			authConfigs,
+			selfauth.Provider(realEnv),
+		)
+	}
+	authenticator, err := auth.NewOpenIDAuthenticator(context.Background(), realEnv, authConfigs)
 	if err == nil {
 		realEnv.SetAuthenticator(authenticator)
 	} else {

@@ -3,9 +3,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "service",
     srcs = ["service.go"],
-    data = [
-        "//enterprise/server/cmd/ci_runner",
-    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service",
     visibility = [
         "//enterprise:__subpackages__",
@@ -14,6 +11,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/workflow/config",
         "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
@@ -22,6 +20,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/db",
         "//server/util/git",

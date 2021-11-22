@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
@@ -41,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -53,6 +56,7 @@ import (
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
 var (
@@ -84,11 +88,12 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			realEnv.SetAppFilesystem(appFS)
 		}
 	}
+	bundleFS, err := bundle.Get()
+	if err != nil {
+		log.Fatalf("Error getting bundle FS: %s", err)
+	}
+	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 	if realEnv.GetAppFilesystem() == nil {
-		bundleFS, err := bundle.Get()
-		if err != nil {
-			log.Fatalf("Error getting bundle FS: %s", err)
-		}
 		if realEnv.GetAppFilesystem() == nil {
 			appFS, err := fs.Sub(bundleFS, "app")
 			if err != nil {
@@ -108,8 +113,15 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
 
+	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
+	if env.GetConfigurator().GetSelfAuthEnabled() {
+		authConfigs = append(
+			authConfigs,
+			selfauth.Provider(env),
+		)
+	}
 	var authenticator interfaces.Authenticator
-	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env)
+	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env, authConfigs)
 	if err == nil {
 		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
 			log.Info("SAML auth configured.")
@@ -334,5 +346,16 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
+	if realEnv.GetConfigurator().GetSelfAuthEnabled() {
+		oauth, err := selfauth.NewSelfAuth(realEnv)
+		if err != nil {
+			log.Fatalf("Error initializing self auth: %s", err)
+		}
+		mux := realEnv.GetMux()
+		mux.Handle(oauth.AuthorizationEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
+		mux.Handle(oauth.TokenEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
+		mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
+		mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
+	}
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }

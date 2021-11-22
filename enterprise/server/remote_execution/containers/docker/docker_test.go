@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,31 +12,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockerclient "github.com/docker/docker/client"
 )
-
-func makeRootDir(t *testing.T) string {
-	rootDir, err := ioutil.TempDir("/tmp", "buildbuddy_docker_test_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(rootDir)
-	})
-	return rootDir
-}
-
-func makeWorkDir(t *testing.T, rootDir string) string {
-	workDir, err := ioutil.TempDir(rootDir, "ws_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return workDir
-}
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
 	path := filepath.Join(parentDir, fileName)
@@ -55,8 +36,8 @@ func TestDockerRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket}
 	ctx := context.Background()
@@ -91,8 +72,8 @@ func TestDockerLifecycleControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootDir := makeRootDir(t)
-	workDir := makeWorkDir(t, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket}
 	ctx := context.Background()

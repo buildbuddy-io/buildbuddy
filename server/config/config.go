@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -212,6 +213,7 @@ type authConfig struct {
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
+	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 }
 
 type OauthProvider struct {
@@ -279,6 +281,8 @@ type ExecutorConfig struct {
 	WarmupTimeoutSecs         int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
 	StartupWarmupMaxWaitSecs  int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
 	ExclusiveTaskScheduling   bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
+	MemoryBytes               int64                     `yaml:"memory_bytes" usage:"Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var."`
+	MilliCPU                  int64                     `yaml:"millicpu" usage:"Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var."`
 }
 
 type ContainerRegistryConfig struct {
@@ -347,22 +351,6 @@ type OrgConfig struct {
 
 var sharedGeneralConfig generalConfig
 
-type stringSliceFlag []string
-
-func (i *stringSliceFlag) String() string {
-	return strings.Join(*i, ",")
-}
-
-// NOTE: string slice flags are *appended* to the values in the YAML,
-// instead of overriding them completely.
-
-func (i *stringSliceFlag) Set(values string) error {
-	for _, val := range strings.Split(values, ",") {
-		*i = append(*i, val)
-	}
-	return nil
-}
-
 type structSliceFlag struct {
 	dstSlice   reflect.Value
 	structType reflect.Type
@@ -420,8 +408,10 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
 			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 		case reflect.Slice:
 			if f.Type().Elem().Kind() == reflect.String {
+				// NOTE: string slice flags are *appended* to the values in the YAML,
+				// instead of overriding them completely.
 				if slice, ok := f.Interface().([]string); ok {
-					sf := stringSliceFlag(slice)
+					sf := flagutil.StringSliceFlag(slice)
 					flag.Var(&sf, fqFieldName, docString)
 				}
 				continue
@@ -485,8 +475,7 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 }
 
 type Configurator struct {
-	gc             *generalConfig
-	fullConfigPath string
+	gc *generalConfig
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
@@ -495,8 +484,7 @@ func NewConfigurator(configFilePath string) (*Configurator, error) {
 		return nil, err
 	}
 	return &Configurator{
-		fullConfigPath: configFilePath,
-		gc:             conf,
+		gc: conf,
 	}, nil
 }
 
@@ -746,6 +734,10 @@ func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
 
 func (c *Configurator) GetSAMLConfig() *SAMLConfig {
 	return &c.gc.Auth.SAMLConfig
+}
+
+func (c *Configurator) GetSelfAuthEnabled() bool {
+	return c.gc.Auth.EnableSelfAuth
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

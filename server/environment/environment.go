@@ -2,6 +2,7 @@ package environment
 
 import (
 	"io/fs"
+	"net/url"
 
 	"github.com/go-redis/redis/v8"
 
@@ -36,7 +37,11 @@ type Env interface {
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
 	GetDBHandle() *db.DBHandle
+	// GetStaticFilesystem returns the FS that is used to serve from the /static
+	// directory.
 	GetStaticFilesystem() fs.FS
+	// GetAppFilesystem returns the FS used to serve JS and CSS resources needed
+	// by the app, including the app bundle and any lazily loaded JS chunks.
 	GetAppFilesystem() fs.FS
 	GetBlobstore() interfaces.Blobstore
 	GetInvocationDB() interfaces.InvocationDB
@@ -76,4 +81,12 @@ type Env interface {
 	GetUsageService() interfaces.UsageService
 	GetUsageTracker() interfaces.UsageTracker
 	GetXCodeLocator() interfaces.XcodeLocator
+	// GetFileResolver returns an FS that can be used to read server-side
+	// resources that aren't intended to be directly served to end users. It first
+	// consults the bundle and falls back to runfiles.
+	//
+	// See server/util/fileresolver/fileresolver.go
+	GetFileResolver() fs.FS
+	GetSelfAuthURL() *url.URL
+	GetMux() interfaces.HttpServeMux
 }

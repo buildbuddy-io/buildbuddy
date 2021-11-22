@@ -27,6 +27,7 @@ proto_library(
         "action.proto",
         "file.proto",
         "invocation.proto",
+        "log.proto",
         "service.proto",
         "target.proto",
     ],

@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -110,11 +111,12 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 		}
 		realEnv.SetAppFilesystem(appFS)
 	}
+	bundleFS, err := bundle.Get()
+	if err != nil {
+		log.Fatalf("Error getting bundle FS: %s", err)
+	}
+	realEnv.SetFileResolver(fileresolver.New(bundleFS, ""))
 	if realEnv.GetStaticFilesystem() == nil || realEnv.GetAppFilesystem() == nil {
-		bundleFS, err := bundle.Get()
-		if err != nil {
-			log.Fatalf("Error getting bundle FS: %s", err)
-		}
 		if realEnv.GetStaticFilesystem() == nil {
 			staticFS, err := fs.Sub(bundleFS, "static")
 			if err != nil {
@@ -160,6 +162,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	configureFilesystemsOrDie(realEnv)
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetBlobstore(bs)
@@ -383,7 +386,7 @@ func StartAndRunServices(env environment.Env) {
 		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
 	}
 
-	mux := tracing.NewHttpServeMux(http.NewServeMux())
+	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
