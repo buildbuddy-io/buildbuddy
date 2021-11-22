@@ -3519,6 +3519,24 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-linux-x86_64"],
         executable = True,
     )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-darwin-amd64",
+        sha256 = "e485bbf84532d02a60b0eb23c702610b5408df3a199087a4f2b5e0995bbf2d5a",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-darwin-arm64",
+        sha256 = "c22d48601466d9d3b043ccd74051f2f4230f9b9f4509f097017c97303aa88d13",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-arm64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-linux-amd64",
+        sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
+        executable = True,
+    )
 
     go_repository(
         name = "io_etcd_go_bbolt",
