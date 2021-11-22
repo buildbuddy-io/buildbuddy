@@ -263,7 +263,7 @@ export default class SidebarComponent extends React.Component {
                   </div>
                 )}
               </div>
-              <div className="sidebar-item" onClick={() => authService.logout()}>
+              <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
                 <img src="/image/log-out-white.svg" /> Logout
               </div>
               <div className="sidebar-item" onClick={() => router.navigateToSettings()}>
