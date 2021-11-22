@@ -245,10 +245,31 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return r.Container.Exec(ctx, command, nil, nil)
 }
 
+// shutdown runs any manual cleanup required to clean up processes before
+// removing a runner from the pool. This has no effect for isolation types
+// that fully isolate all processes started by the runner and remove them
+// automatically via `Container.Remove`.
+func (r *CommandRunner) shutdown(ctx context.Context) error {
+	if r.PlatformProperties.WorkloadIsolationType != string(platform.BareContainerType) {
+		return nil
+	}
+
+	if r.isCIRunner() {
+		if err := r.cleanupCIRunner(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *CommandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
 	if s := r.state; s != initial && s != removed {
 		r.state = removed
+		if err := r.shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
 		}
@@ -283,6 +304,25 @@ func (r *CommandRunner) RemoveInBackground() {
 			log.Errorf("Failed to remove runner: %s", err)
 		}
 	}()
+}
+
+// isCIRunner returns whether the task assigned to this runner is a BuildBuddy
+// CI task.
+func (r *CommandRunner) isCIRunner() bool {
+	args := r.task.GetCommand().GetArguments()
+	return r.PlatformProperties.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+}
+
+func (r *CommandRunner) cleanupCIRunner(ctx context.Context) error {
+	// Run the currently assigned buildbuddy_ci_runner command, appending the
+	// --shutdown_and_exit argument. We use this approach because we want to
+	// preserve the configuration from the last run command, which may include the
+	// configured Bazel path.
+	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
+	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
+
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=stdin*/, nil /*=stdout*/)
+	return res.Error
 }
 
 // ACLForUser returns an ACL that grants anyone in the given user's group to

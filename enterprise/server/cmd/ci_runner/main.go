@@ -95,6 +95,8 @@ var (
 	patchDigests                flagutil.StringSliceFlag
 	reportLiveRepoSetupProgress = flag.Bool("report_live_repo_setup_progress", false, "If set, repo setup output will be streamed live to the invocation instead of being postponed until the action is run.")
 
+	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
+
 	bazelCommand      = flag.String("bazel_command", "", "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
 	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
@@ -357,6 +359,23 @@ func main() {
 			fatal(status.WrapError(err, "failed to extract bazelisk"))
 		}
 		*bazelCommand = bazeliskPath
+	}
+
+	if *shutdownAndExit {
+		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
+		if _, err := os.Stat(repoDirName); err != nil {
+			log.Info("Workspace does not exist; exiting.")
+			return
+		}
+		if err := os.Chdir(repoDirName); err != nil {
+			fatal(err)
+		}
+		printCommandLine(os.Stderr, *bazelCommand, "shutdown")
+		if err := runCommand(ctx, *bazelCommand, []string{"shutdown"}, nil, os.Stderr); err != nil {
+			fatal(err)
+		}
+		log.Info("Shutdown complete.")
+		return
 	}
 
 	var buildEventReporter *buildEventReporter
