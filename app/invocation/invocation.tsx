@@ -264,6 +264,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               value={this.getBuildLogs()}
               loading={this.areBuildLogsLoading()}
               expanded={activeTab == "log"}
+							invocationId={this.props.invocationId}
             />
           )}
 
