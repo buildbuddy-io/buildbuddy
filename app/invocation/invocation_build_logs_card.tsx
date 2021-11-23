@@ -7,7 +7,7 @@ interface Props {
   loading: boolean;
   expanded: boolean;
   dark: boolean;
-	invocationId: string;
+  invocationId: string;
 }
 
 export default class BuildLogsCardComponent extends React.Component<Props> {
@@ -28,7 +28,11 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
                 <div className={`loading ${this.props.dark ? "loading-dark" : ""}`} />
               </div>
             ) : (
-              <TerminalComponent value={this.props.value} lightTheme={!this.props.dark} invocationId={this.props.invocationId}/>
+              <TerminalComponent
+                value={this.props.value}
+                lightTheme={!this.props.dark}
+                invocationId={this.props.invocationId}
+              />
             )}
           </div>
         </div>

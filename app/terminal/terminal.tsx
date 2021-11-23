@@ -7,7 +7,7 @@ import rpcService from "../service/rpc_service";
 export interface TerminalProps {
   value?: string;
   lightTheme?: boolean;
-	invocationId?: string;
+  invocationId?: string;
 }
 
 interface TerminalState {
@@ -76,25 +76,27 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   }
 
   handleDownloadClicked() {
-		if (typeof this.props.invocationId === "string") {
-			rpcService.service.getEventLogChunk(
-				new eventlog.GetEventLogChunkRequest({
-					invocationId: this.props.invocationId,
-					minLines: 2147483647, // int32 max value; this is the maximum number of lines we can request.
-				})
-			).then((response: eventlog.GetEventLogChunkResponse) => {
-				var element = document.createElement("a");
-				let fullLog = new TextDecoder().decode(response.buffer || new Uint8Array());
-				const unstyledLogs = fullLog.replace(ANSI_STYLES_REGEX, "");
-				element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
-				element.setAttribute("download", "build_logs.txt");
-				element.style.display = "none";
-				document.body.appendChild(element);
-				element.click();
-				document.body.removeChild(element);
-			})
-			return
-		}
+    if (typeof this.props.invocationId === "string") {
+      rpcService.service
+        .getEventLogChunk(
+          new eventlog.GetEventLogChunkRequest({
+            invocationId: this.props.invocationId,
+            minLines: 2147483647, // int32 max value; this is the maximum number of lines we can request.
+          })
+        )
+        .then((response: eventlog.GetEventLogChunkResponse) => {
+          var element = document.createElement("a");
+          let fullLog = new TextDecoder().decode(response.buffer || new Uint8Array());
+          const unstyledLogs = fullLog.replace(ANSI_STYLES_REGEX, "");
+          element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
+          element.setAttribute("download", "build_logs.txt");
+          element.style.display = "none";
+          document.body.appendChild(element);
+          element.click();
+          document.body.removeChild(element);
+        });
+      return;
+    }
     var element = document.createElement("a");
     const unstyledLogs = this.props.value.replace(ANSI_STYLES_REGEX, "");
     element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
