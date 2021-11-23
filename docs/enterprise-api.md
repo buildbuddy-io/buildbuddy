@@ -307,7 +307,8 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
       },
       "label": "//tools/replay_action:replay_action_lib",
       "status": "BUILT",
-      "ruleType": "go_library"
+      "ruleType": "go_library",
+      "language": "go"
     },
     ...{
       "id": {
@@ -325,7 +326,8 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
       },
       "label": "//enterprise:buildbuddy",
       "status": "BUILT",
-      "ruleType": "go_binary"
+      "ruleType": "go_binary",
+      "language": "go"
     }
   ]
 }
@@ -375,6 +377,10 @@ message TargetSelector {
   // Optional: Tag
   // If set, only targets with this tag will be returned.
   string tag = 3;
+
+  // Optional: The Target label.
+  // If set, only the target with this target label will be returned.
+  string label = 4;
 }
 ```
 
@@ -409,6 +415,9 @@ message Target {
 
   // Tags applied to this target (if any).
   repeated string tag = 6;
+
+  // The language of the target rule. Ex: java, go, sh
+  string language = 7;
 }
 ```
 
@@ -465,7 +474,9 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"enterprise/app/style.css",
-               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa/68837"
+               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa/68837",
+               "hash":"e21b1e3411792e17e698be879a3548527d620c65953986c96d5a81f933e776aa",
+               "sizeBytes":68837
             }
          ]
       },
@@ -479,7 +490,9 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"vet_/vet",
-               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a/7029420"
+               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a/7029420",
+               "hash":"915edf6aca4bd4eac3e4602641b0633a7aaf038d62d5ae087884a2d8acf0926a",
+               "sizeBytes":7029420,
             }
          ]
       },
@@ -493,7 +506,9 @@ Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the invocation ID `c6b2b6de-c
          "file":[
             {
                "name":"test.log",
-               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"
+               "uri":"bytestream://cloud.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216",
+               "hash":"09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888",
+               "sizeBytes":216
             }
          ]
       }
@@ -648,5 +663,7 @@ message GetFileResponse {
 message File {
   string name = 1;
   string uri = 2;
+  string hash = 3;
+  int64 size_bytes = 4;
 }
 ```

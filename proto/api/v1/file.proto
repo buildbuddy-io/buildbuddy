@@ -18,4 +18,6 @@ message GetFileResponse {
 message File {
   string name = 1;
   string uri = 2;
+  string hash = 3;
+  int64 size_bytes = 4;
 }
