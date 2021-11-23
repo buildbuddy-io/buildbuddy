@@ -20,6 +20,7 @@ ts_library(
         "@npm//@types/react",
         "@npm//@types/react-date-range",
         "@npm//date-fns",
+        "@npm//lucide-react",
         "@npm//moment",
         "@npm//react",
         "@npm//react-date-range",

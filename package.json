@@ -70,5 +70,8 @@
     "typescript": "^3.4.5",
     "uglify-js": "^3.6.0",
     "uuid": "^8.3.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.16.19"
   }
 }

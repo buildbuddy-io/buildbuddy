@@ -1,3 +1,4 @@
+import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -136,8 +137,7 @@ export default class InvocationModel {
           model.buildToolLogs = buildEvent.buildToolLogs as build_event_stream.BuildToolLogs;
         }
         if (buildEvent.unstructuredCommandLine) {
-          model.unstructuredCommandLine =
-            buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
+          model.unstructuredCommandLine = buildEvent.unstructuredCommandLine as build_event_stream.UnstructuredCommandLine;
         }
       }
     }
@@ -456,19 +456,15 @@ export default class InvocationModel {
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return <img className="icon status" src="/image/help-circle.svg" />;
+      return <HelpCircle className="icon" />;
     }
     if (!this.started) {
-      return <img className="icon status" src="/image/help-circle.svg" />;
+      return <HelpCircle className="icon" />;
     }
     if (!this.finished) {
-      return <img className="icon status" src="/image/play-circle.svg" />;
+      return <PlayCircle className="icon blue" />;
     }
-    return this.finished.exitCode.code == 0 ? (
-      <img className="icon status" src="/image/check-circle.svg" />
-    ) : (
-      <img className="icon status" src="/image/x-circle.svg" />
-    );
+    return this.finished.exitCode.code == 0 ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
   }
 
   getCPU() {

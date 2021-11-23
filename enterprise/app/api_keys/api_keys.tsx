@@ -1,5 +1,7 @@
+import { Key } from "lucide-react";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Dialog, {
   DialogBody,
@@ -8,7 +10,6 @@ import Dialog, {
   DialogHeader,
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
-import capabilities from "../../../app/capabilities/capabilities";
 import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
@@ -381,7 +382,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <span>{describeCapabilities(key)}</span>
               </div>
               <div className="api-key-value">
-                <img src="/image/key.svg" />
+                <Key className="icon" />
                 <span>{key.value}</span>
               </div>
               {this.props.user.canCall("updateApiKey") && (

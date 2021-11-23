@@ -102,8 +102,8 @@
   overflow-x: hidden;
 }
 
-.api-keys .api-key-label img,
-.api-keys .api-key-value img {
+.api-keys .api-key-label svg,
+.api-keys .api-key-value svg {
   width: 16px;
   height: 16px;
   margin-right: 8px;

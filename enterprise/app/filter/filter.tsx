@@ -3,7 +3,7 @@ import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
-import Radio from "../../../app/components/radio/radio";
+import { Filter, X, Calendar } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
 import router, {
@@ -188,14 +188,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
         {isFiltering && (
           <FilledButton className="square" title="Clear filters" onClick={this.onClickClearFilters.bind(this)}>
-            <img src="/image/x-white.svg" alt="" />
+            <X className="icon white" />
           </FilledButton>
         )}
         <div className="popup-wrapper">
           <OutlinedButton
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
-            <img className="subtle-icon" src="/image/filter.svg" alt="" />
+            <Filter className="icon" />
             {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block success" />}
             {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block failure" />}
             {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
@@ -235,7 +235,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         </div>
         <div className="popup-wrapper">
           <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
-            <img className="subtle-icon" src="/image/calendar.svg" alt="" />
+            <Calendar className="icon" />
             <span>{formatDateRange(startDate, endDate)}</span>
           </OutlinedButton>
           <Popup

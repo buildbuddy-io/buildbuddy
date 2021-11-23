@@ -256,18 +256,38 @@ button {
   margin-top: 8px;
 }
 
-.shelf .details img {
-  opacity: 0.5;
+.shelf .details .icon {
   margin-right: 8px;
-}
-
-.shelf .details img.buildkite,
-.shelf .details img.status {
-  opacity: 1;
 }
 
 .shelf .details img:first-of-type {
   margin-left: 0;
+}
+
+/* Default icon color is gray */
+.icon {
+  stroke: #616161;
+}
+
+.icon.gray,
+.icon.grey {
+  stroke: #616161;
+}
+
+.icon.green {
+  stroke: #8bc34a;
+}
+
+.icon.red {
+  stroke: #f44336;
+}
+
+.icon.blue {
+  stroke: #03a9f4;
+}
+
+.icon.white {
+  color: #fff;
 }
 
 .org-button {
@@ -384,7 +404,7 @@ button {
   overflow: hidden;
 }
 
-.filter img {
+.filter svg {
   width: 16px;
   height: 16px;
   opacity: 0.3;
@@ -852,12 +872,11 @@ code .comment {
   margin-top: 8px;
 }
 
-.history .details img {
-  opacity: 0.5;
+.history .details .icon {
   margin-right: 8px;
 }
 
-.history .details img:first-of-type {
+.history .details .icon:first-of-type {
   margin-left: 0;
 }
 
