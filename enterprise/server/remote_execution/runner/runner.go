@@ -267,11 +267,9 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
 	if s := r.state; s != initial && s != removed {
 		r.state = removed
-		// TODO(bduffany): Figure out why this causes workflow_test to be flaky,
-		// and re-enable.
-		// if err := r.shutdown(ctx); err != nil {
-		// 	errs = append(errs, err)
-		// }
+		if err := r.shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
 		}
