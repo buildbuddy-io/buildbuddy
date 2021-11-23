@@ -46,6 +46,7 @@
     "jsdoc": "^3.6.2",
     "lint-staged": "^10.2.13",
     "long": "^4.0.0",
+    "lucide-react": "^0.16.19",
     "minimist": "^1.2.3",
     "moment": "^2.24.0",
     "monaco-editor": "^0.25.2",
@@ -70,8 +71,5 @@
     "typescript": "^3.4.5",
     "uglify-js": "^3.6.0",
     "uuid": "^8.3.0"
-  },
-  "dependencies": {
-    "lucide-react": "^0.16.19"
   }
 }
