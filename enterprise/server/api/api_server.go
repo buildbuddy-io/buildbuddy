@@ -340,7 +340,7 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	case *build_event_stream.BuildEvent_Completed:
 		{
 			action.Id.TargetId = encodeID(event.GetId().GetTargetCompleted().GetLabel())
-			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().Configuration.Id
+			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
 			action.Id.ActionId = encodeID("build")
 			action.File = filesFromOutput(p.Completed.ImportantOutput)
 			return action
@@ -349,7 +349,7 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 		{
 			testResultID := event.GetId().GetTestResult()
 			action.Id.TargetId = encodeID(event.GetId().GetTestResult().GetLabel())
-			action.Id.ConfigurationId = event.GetId().GetTestResult().Configuration.Id
+			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = encodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
 			action.File = filesFromOutput(p.TestResult.TestActionOutput)
 			return action
