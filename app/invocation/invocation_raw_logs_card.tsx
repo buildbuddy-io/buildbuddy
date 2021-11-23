@@ -1,6 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { Filter, PauseCircle } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -52,7 +53,7 @@ export default class RawLogsCardComponent extends React.Component {
     return (
       <>
         <div className="filter">
-          <img src="/image/filter.svg" />
+          <Filter className="icon" />
           <input
             value={this.state.filterString || ""}
             className="filter-input"
@@ -61,7 +62,7 @@ export default class RawLogsCardComponent extends React.Component {
           />
         </div>
         <div className="card">
-          <img className="icon" src="/image/log-circle.svg" />
+          <PauseCircle className="icon rotate-90" />
           <div className="content">
             <div className="title">Raw logs</div>
             <div className="details code">

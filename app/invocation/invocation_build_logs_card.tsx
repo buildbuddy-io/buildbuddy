@@ -1,3 +1,4 @@
+import { PauseCircle } from "lucide-react";
 import React from "react";
 import { TerminalComponent } from "../terminal/terminal";
 
@@ -15,7 +16,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
         className={`card build-logs-card ${this.props.dark ? "dark" : "light-terminal"} ${
           this.props.expanded ? "expanded" : ""
         }`}>
-        <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
+        <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
           <div className="title">Build logs </div>
           <div className="details">

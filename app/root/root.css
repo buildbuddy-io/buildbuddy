@@ -269,6 +269,10 @@ button {
   stroke: #616161;
 }
 
+.icon.white {
+  stroke: #fff;
+}
+
 .icon.gray,
 .icon.grey {
   stroke: #616161;
@@ -286,8 +290,20 @@ button {
   stroke: #03a9f4;
 }
 
-.icon.white {
-  color: #fff;
+.icon.brown {
+  stroke: #774a21;
+}
+
+.icon.purple {
+  stroke: #551474;
+}
+
+.icon.orange {
+  stroke: #ff6f00;
+}
+
+.rotate-90 {
+  transform: rotate(90deg);
 }
 
 .org-button {
@@ -407,7 +423,6 @@ button {
 .filter svg {
   width: 16px;
   height: 16px;
-  opacity: 0.3;
   padding-left: 20px;
 }
 

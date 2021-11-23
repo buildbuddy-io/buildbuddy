@@ -1,4 +1,5 @@
 import DiffMatchPatch from "diff-match-patch";
+import { ArrowLeft, Sliders, XCircle } from "lucide-react";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
@@ -169,7 +170,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
             <h2 className="heading">Comparing invocations</h2>
             <div className="invocation-tags">
               <InvocationIdTag prefix="base" id={this.props.invocationAId} />
-              <img className="compare-arrow" alt="comparing to" src="/image/arrow-left.svg" />
+              <ArrowLeft className="compare-arrow" />
               <InvocationIdTag prefix="compare" id={this.props.invocationBId} />
             </div>
             {diff && (
@@ -184,7 +185,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         </div>
         {diff && (
           <div className="container preprocessing-options">
-            <img alt="Comparison options" src="/image/sliders.svg" />
+            <Sliders />
             <div className="preprocessing-options-list">
               {this.renderPreProcessingOption("sortEvents", "Sort events")}
               {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
@@ -198,7 +199,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
         <div className="container">
           {error && (
             <div className="error-container">
-              <img src="/image/x-circle.svg" />
+              <XCircle className="icon red" />
               <div>{error}</div>
             </div>
           )}

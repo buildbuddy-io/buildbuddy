@@ -7,7 +7,7 @@ import ActionCardComponent from "./action_card";
 import router from "../router/router";
 import format from "../format/format";
 import { User } from "../auth/auth_service";
-
+import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
@@ -41,26 +41,28 @@ export default class TargetComponent extends React.Component {
     router.navigateToInvocation(this.props.invocationId);
   }
 
-  getStatusIcon(status: build_event_stream.TestStatus) {
+  renderStatusIcon(status: build_event_stream.TestStatus): JSX.Element {
     if (this.props?.skippedEvent) {
-      return "/image/skip-forward.svg";
+      return <SkipForward className="icon purple" />;
     }
 
     if (!this.props?.testSummaryEvent) {
-      return this.props?.completedEvent?.buildEvent?.completed?.success
-        ? "/image/check-circle.svg"
-        : "/image/x-circle.svg";
+      return this.props?.completedEvent?.buildEvent?.completed?.success ? (
+        <CheckCircle className="icon green" />
+      ) : (
+        <XCircle className="icon red" />
+      );
     }
 
     switch (status) {
       case build_event_stream.TestStatus.PASSED:
-        return "/image/check-circle.svg";
+        return <CheckCircle className="icon green" />;
       case build_event_stream.TestStatus.FLAKY:
-        return "/image/flaky.svg";
+        return <HelpCircle className="icon orange" />;
       case build_event_stream.TestStatus.TIMEOUT:
-        return "/image/clock.svg";
+        return <Clock className="icon" />;
       default:
-        return "/image/x-circle.svg";
+        return <XCircle className="icon red" />;
     }
   }
 
@@ -189,27 +191,24 @@ export default class TargetComponent extends React.Component {
             </div>
             <div className="details">
               <div className="detail">
-                <img
-                  className="icon status"
-                  src={this.getStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
-                />
+                {this.renderStatusIcon(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
                 {this.getStatusTitle(this.props?.testSummaryEvent?.buildEvent?.testSummary?.overallStatus)}
               </div>
 
               {this.props?.testSummaryEvent && (
                 <div className="detail">
-                  <img className="icon" src="/image/hash.svg" />
+                  <Hash className="icon" />
                   {this.props?.testSummaryEvent?.buildEvent?.testSummary?.totalRunCount} total runs
                 </div>
               )}
               <div className="detail">
-                <img className="icon" src="/image/target-regular.svg" />
+                <Target className="icon" />
                 {this.props?.configuredEvent?.buildEvent?.configured.targetKind ||
                   this.props.actionEvents?.map((action) => action?.buildEvent?.action?.type).join(",")}
               </div>
               {this.props?.configuredEvent?.buildEvent?.configured.testSize > 0 && (
                 <div className="detail">
-                  <img className="icon" src="/image/box-regular.svg" />
+                  <Box className="icon" />
                   {this.getTestSize(this.props?.configuredEvent?.buildEvent?.configured.testSize)}
                 </div>
               )}

@@ -1,5 +1,5 @@
 import React from "react";
-import format from "../format/format";
+import { DownloadCloud } from "lucide-react";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -21,7 +21,7 @@ export default class FetchCardComponent extends React.Component {
   render() {
     return (
       <div className="card">
-        <img className="icon" src="/image/link.svg" />
+        <DownloadCloud className="icon" />
         <div className="content">
           <div className="title">Fetches</div>
           {this.props.model.getFetchURLs().length > 0 && (
