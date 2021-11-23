@@ -76,6 +76,7 @@ func TestGetTargetByLabel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Target))
+	assert.Equal(t, resp.Target[0].Language, "java")
 }
 
 func TestGetTargetByTag(t *testing.T) {
@@ -97,6 +98,17 @@ func TestGetAction(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Action))
+	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
+	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
+}
+
+func TestGetActionAuth(t *testing.T) {
+	env, ctx := getEnvAndCtx(t, "")
+	streamBuild(t, env, "abc")
+	s := NewAPIServer(env)
+	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: "abc"}})
+	require.Error(t, err)
+	require.Nil(t, resp)
 }
 
 func TestLog(t *testing.T) {
@@ -107,6 +119,15 @@ func TestLog(t *testing.T) {
 	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: "abc"}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+}
+
+func TestGetLogAuth(t *testing.T) {
+	env, ctx := getEnvAndCtx(t, "")
+	streamBuild(t, env, "abc")
+	s := NewAPIServer(env)
+	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: "abc"}})
+	require.Error(t, err)
+	require.Nil(t, resp)
 }
 
 func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context) {
@@ -214,7 +235,7 @@ func targetCompletedEvent(label string) *anypb.Any {
 					&build_event_stream.File{
 						Name: "my-output.txt",
 						File: &build_event_stream.File_Uri{
-							Uri: "foo",
+							Uri: "bytestream://localhost:8080/buildbuddy-io/buildbuddy/ci/blobs/5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b/152092",
 						},
 					},
 				},
