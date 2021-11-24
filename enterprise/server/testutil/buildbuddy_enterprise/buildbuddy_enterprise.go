@@ -48,13 +48,13 @@ func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 	)
 }
 
-// WebClient is used for testing enterprise functionality that is only supported
-// via the Web UI.
+// WebClient is a lightweight client for testing enterprise functionality that
+// is only supported via the Web UI.
 //
-// In particular, it is needed for any RPCs that require admin rights, because
-// regular gRPCs currently only support API key authentication (or JWT auth
-// with JWTs are derived from API keys), and API keys are currently assigned
-// the default role (developer).
+// In particular, it is needed for BuildBuddyService RPCs that require admin
+// rights, because regular gRPCs currently only support API key authentication
+// (or JWT authentication where the JWTs are derived from API keys), but API
+// keys are currently assigned the default role (developer).
 type WebClient struct {
 	t *testing.T
 	a *app.App
@@ -108,9 +108,7 @@ func LoginAsDefaultSelfAuthUser(t *testing.T, a *app.App) *WebClient {
 		// Create user if one doesn't exist.
 		require.Contains(t, err.Error(), "not found")
 
-		cReq := &uspb.CreateUserRequest{}
-		cRes := &uspb.CreateUserResponse{}
-		err := rpcOverHTTP(t, a, client, "CreateUser", cReq, cRes)
+		err := rpcOverHTTP(t, a, client, "CreateUser", nil /*=req*/, nil /*=res*/)
 		require.NoError(t, err)
 
 		err = rpcOverHTTP(t, a, client, "GetUser", nil /*=req*/, uRes)

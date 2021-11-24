@@ -7,22 +7,14 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/stretchr/testify/assert"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
 
-const (
-	// configuredDefaultAPIKey is the API key value explicitly configured for the default group.
-	configuredDefaultAPIKey = "configuredDefaultAPIKey"
-)
-
 var (
-	testGroupID       = userdb.DefaultGroupID
 	workspaceContents = map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
 		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
@@ -62,17 +54,13 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T) {
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	// Run the app with an API key we control so that we can authorize using it.
-	app := buildbuddy_enterprise.Run(
-		t,
-		fmt.Sprintf("--app.no_default_user_group=false"),
-		fmt.Sprintf("--api.api_key=%s", configuredDefaultAPIKey),
-	)
+	app := buildbuddy_enterprise.Run(t)
 	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
 	// Create a new read-write key
 	rsp := &akpb.CreateApiKeyResponse{}
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
-		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
-		GroupId:        testGroupID,
+		RequestContext: webClient.RequestContext,
+		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 	}, rsp)
 	require.NoError(t, err)
