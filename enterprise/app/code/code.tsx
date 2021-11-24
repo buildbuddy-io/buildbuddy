@@ -8,6 +8,7 @@ import { Octokit } from "octokit";
 import * as diff from "diff";
 import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
+import CodeEmptyStateComponent from "./code_empty";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -84,6 +85,10 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   componentDidMount() {
+    if (!this.state.repo) {
+      return;
+    }
+    
     window.addEventListener("resize", () => this.handleWindowResize());
     // TODO(siggisim): select default file based on url
     this.editor = monaco.editor.create(this.codeViewer.current, {
@@ -152,7 +157,6 @@ export default class CodeComponent extends React.Component<Props> {
 
     let repo = this.currentRepo();
     if (!repo.owner || !repo.repo) {
-      this.handleRepoClicked();
       return;
     }
     this.setState({ owner: repo.owner, repo: repo.repo }, () => {
@@ -384,6 +388,10 @@ export default class CodeComponent extends React.Component<Props> {
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
+    if (!this.state.repo) {
+      return <CodeEmptyStateComponent />
+    }
+
     setTimeout(() => {
       this.editor?.layout();
     }, 0);

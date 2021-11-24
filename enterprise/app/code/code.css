@@ -142,3 +142,29 @@
 .minimap-decorations-layer {
   border-left: 1px solid #fafafa;
 }
+
+.repo-previews-title {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 16px 16px 0 16px;
+}
+
+.repo-previews-section {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.repo-preview {
+  width: calc(33% - 64px);
+  padding: 16px;
+  margin: 16px;
+  font-weight: bold;
+  border: 1px solid #eee;
+  border-radius: 16px;
+  flex-shrink: 0;
+}
+
+.repo-preview img {
+  width: 100%;
+}
