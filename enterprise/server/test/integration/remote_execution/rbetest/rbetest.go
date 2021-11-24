@@ -191,6 +191,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
+			id, e := id, e
 			e.env.GetHealthChecker().Shutdown()
 			wg.Add(1)
 			go func() {
