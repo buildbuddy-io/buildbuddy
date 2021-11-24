@@ -9,7 +9,6 @@ go_library(
         "//proto:raft_go_proto",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_lni_dragonboat_v3//statemachine",
         "@org_golang_google_grpc//status",
     ],
 )

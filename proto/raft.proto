@@ -11,6 +11,11 @@ package raft;
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+message NodeLivenessRecord {
+  int64 epoch = 1;
+  int64 expiration = 2;
+}
+
 // KV is a basic proto type that represents data written to pebble.
 message KV {
   bytes key = 1;
@@ -80,6 +85,21 @@ message ScanResponse {
   repeated KV kvs = 1;
 }
 
+// Compare And Set Request
+// not the other CAS...
+message CASRequest {
+  KV kv = 1;
+
+  // The expected value for the key. Before updating value to the data in KV,
+  // the existing value is matched against this field; if it matches, the update
+  // update proceeds normally, if not, an error is returned.
+  bytes expected_value = 2;
+}
+
+message CASResponse {
+  KV kv = 1;
+}
+
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
@@ -90,6 +110,7 @@ message RequestUnion {
     DirectReadRequest direct_read = 3;
     IncrementRequest increment = 4;
     ScanRequest scan = 5;
+    CASRequest cas = 6;
   }
 }
 
@@ -106,6 +127,7 @@ message ResponseUnion {
     DirectReadResponse direct_read = 4;
     IncrementResponse increment = 5;
     ScanResponse scan = 6;
+    CASResponse cas = 7;
   }
 }
 

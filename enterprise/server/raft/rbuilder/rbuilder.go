@@ -5,7 +5,6 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -55,6 +54,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Scan{
 			Scan: value,
 		}
+	case *rfpb.CASRequest:
+		req.Value = &rfpb.RequestUnion_Cas{
+			Cas: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -102,7 +105,6 @@ func NewBatchResponse(val interface{}) *BatchResponse {
 	if err := proto.Unmarshal(buf, br.cmd); err != nil {
 		br.setErr(err)
 	}
-
 	return br
 }
 
@@ -118,12 +120,18 @@ func (br *BatchResponse) checkIndex(n int) {
 	}
 }
 
+func (br *BatchResponse) unionError(u *rfpb.ResponseUnion) error {
+	s := gstatus.FromProto(u.GetStatus())
+	return s.Err()
+}
+
 func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {
 	br.checkIndex(n)
 	if br.err != nil {
 		return nil, br.err
 	}
-	return br.cmd.GetUnion()[n].GetDirectRead(), nil
+	u := br.cmd.GetUnion()[n]
+	return u.GetDirectRead(), br.unionError(u)
 }
 
 func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {
@@ -131,7 +139,8 @@ func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, erro
 	if br.err != nil {
 		return nil, br.err
 	}
-	return br.cmd.GetUnion()[n].GetIncrement(), nil
+	u := br.cmd.GetUnion()[n]
+	return u.GetIncrement(), br.unionError(u)
 }
 
 func (br *BatchResponse) ScanResponse(n int) (*rfpb.ScanResponse, error) {
@@ -139,20 +148,15 @@ func (br *BatchResponse) ScanResponse(n int) (*rfpb.ScanResponse, error) {
 	if br.err != nil {
 		return nil, br.err
 	}
-	return br.cmd.GetUnion()[n].GetScan(), nil
+	u := br.cmd.GetUnion()[n]
+	return u.GetScan(), br.unionError(u)
 }
 
-func ResponseUnion(result dbsm.Result, err error) (*rfpb.ResponseUnion, error) {
-	if err != nil {
-		return nil, err
+func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
 	}
-	rsp := &rfpb.ResponseUnion{}
-	if err := proto.Unmarshal(result.Data, rsp); err != nil {
-		return nil, err
-	}
-	s := gstatus.FromProto(rsp.GetStatus())
-	if s.Err() != nil {
-		return nil, s.Err()
-	}
-	return rsp, nil
+	u := br.cmd.GetUnion()[n]
+	return u.GetCas(), br.unionError(u)
 }

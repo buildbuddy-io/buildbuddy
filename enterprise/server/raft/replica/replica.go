@@ -28,6 +28,8 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+const CASErrorMessage = "CAS expected value did not match"
+
 // KVs are stored directly in Pebble by the raft state machine, so the key and
 // value types must match what Pebble expects. Rather than storing all blob
 // data directly in Pebble and replicating it via raft, we instead store
@@ -359,6 +361,33 @@ func (sm *Replica) increment(wb *pebble.Batch, req *rfpb.IncrementRequest) (*rfp
 	}, nil
 }
 
+func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse, error) {
+	kv := req.GetKv()
+	var buf []byte
+	var err error
+	buf, err = sm.lookup(kv.GetKey())
+	if err != nil && !status.IsNotFoundError(err) {
+		return nil, err
+	}
+
+	// Match: set value and return new value + no error.
+	if bytes.Compare(buf, req.GetExpectedValue()) == 0 {
+		err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
+		if err == nil {
+			return &rfpb.CASResponse{Kv: kv}, nil
+		}
+		return nil, err
+	}
+
+	// No match: return old value and error.
+	return &rfpb.CASResponse{
+		Kv: &rfpb.KV{
+			Key:   kv.GetKey(),
+			Value: buf,
+		},
+	}, status.FailedPreconditionError(CASErrorMessage)
+}
+
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
@@ -423,6 +452,13 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 			Increment: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_Cas:
+		r, err := sm.cas(wb, value.Cas)
+		rsp.Value = &rfpb.ResponseUnion_Cas{
+			Cas: r,
+		}
+		rsp.Status = statusProto(err)
+
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}

@@ -9,6 +9,7 @@ go_library(
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/nodelease",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",

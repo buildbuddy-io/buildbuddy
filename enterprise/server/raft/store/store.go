@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -22,6 +23,8 @@ import (
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
+const nodeLeaseDuration = 10 * time.Second
+
 type Store struct {
 	rootDir string
 	fileDir string
@@ -30,8 +33,9 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	apiClient     *client.APIClient
+	heartbeat     *nodelease.Heartbeat
 
-	mu           sync.RWMutex
+	rangeMu      sync.RWMutex
 	activeRanges map[uint64]*rfpb.RangeDescriptor
 }
 
@@ -43,43 +47,27 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		gossipManager: gossipManager,
 		sender:        sender,
 		apiClient:     apiClient,
-		mu:            sync.RWMutex{},
-		activeRanges:  make(map[uint64]*rfpb.RangeDescriptor),
-	}
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		for {
-			select {
-			case <-ticker.C:
-				store.printClusterMembership()
-			}
-		}
-	}()
-	return store
-}
 
-func (s *Store) printClusterMembership() {
-	nhInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{SkipLogInfo: true})
-	if nhInfo == nil {
-		log.Errorf("nodehost info was nil; skipping...")
-		return
+		rangeMu:      sync.RWMutex{},
+		activeRanges: make(map[uint64]*rfpb.RangeDescriptor),
+
+		heartbeat: nodelease.NewHeartbeat([]byte(nodeHost.ID()), sender),
 	}
-	for _, ci := range nhInfo.ClusterInfoList {
-		log.Printf("ClusterID: %d, NodeID: %d, Leader: %t", ci.ClusterID, ci.NodeID, ci.IsLeader)
-	}
+	store.heartbeat.Start()
+	return store
 }
 
 func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
 	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.MaxByte - 1})
+	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
 
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.rangeMu.Lock()
+	defer s.rangeMu.Unlock()
 	log.Printf("AddRange: %+v", rd)
 	s.activeRanges[rd.GetRangeId()] = rd
 	if containsMetaRange(rd) {
@@ -95,15 +83,15 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.rangeMu.Lock()
+	defer s.rangeMu.Unlock()
 	log.Printf("RemoveRange: %+v", rd)
 	delete(s.activeRanges, rd.GetRangeId())
 }
 
 func (s *Store) RangeIsActive(rangeID uint64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
 	_, ok := s.activeRanges[rangeID]
 	return ok
 }

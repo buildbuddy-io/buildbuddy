@@ -34,7 +34,10 @@ const (
 	metaPrefixByte = localMaxByte
 	metaMaxByte    = '\x03'
 
-	// Anything else (from \x03 onward)  will fall into normal,
+	systemPrefixByte = metaMaxByte
+	systemMaxByte    = '\x04'
+
+	// Anything else (from \x04 onward)  will fall into normal,
 	// splittable ranges.
 )
 
@@ -45,12 +48,15 @@ const (
 
 	MinByte = 0
 	MaxByte = math.MaxUint8
+
+	UnsplittableMaxByte = systemMaxByte
 )
 
 // Key constants (some of these have to be vars because of how they are made.
 var (
 	LocalPrefix     = keys.Key{localPrefixByte}
 	MetaRangePrefix = keys.Key{metaPrefixByte}
+	SystemPrefix    = keys.Key{systemPrefixByte}
 
 	// The last clusterID that was generated.
 	LastClusterIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_cluster_id"))
