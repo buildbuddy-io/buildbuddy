@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
@@ -68,21 +67,20 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 		fmt.Sprintf("--app.no_default_user_group=false"),
 		fmt.Sprintf("--api.api_key=%s", configuredDefaultAPIKey),
 	)
-	bbService := app.BuildBuddyServiceClient(t)
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
 	// Create a new read-write key
-	ctx := metadata.AppendToOutgoingContext(context.Background(), auth.APIKeyHeader, configuredDefaultAPIKey)
-	rsp, err := bbService.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
+	rsp := &akpb.CreateApiKeyResponse{}
+	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
 		GroupId:        testGroupID,
 		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}, rsp)
+	require.NoError(t, err)
 	readWriteKey := rsp.ApiKey.Value
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readWriteKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
+	ctx := context.Background()
 	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
@@ -108,21 +106,20 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	app := buildbuddy_enterprise.Run(t)
-	bbService := app.BuildBuddyServiceClient(t)
-	// Create a new read-only key as the default self-auth user
-	ctx := buildbuddy_enterprise.WithDefaultSelfAuthUser(t, context.Background(), app)
-	rsp, err := bbService.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
-		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
-		GroupId:        testGroupID,
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
+	rsp := &akpb.CreateApiKeyResponse{}
+	// Create a new read-only key
+	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
+		RequestContext: webClient.RequestContext,
+		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}, rsp)
+	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
+	ctx := context.Background()
 	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
