@@ -252,7 +252,7 @@ export default class CodeComponent extends React.Component<Props> {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
-    request.bazelCommand = `${this.getBazelFlags()} ${args}`;
+    request.bazelCommand = `${args} ${this.getBazelFlags()}`;
     request.repoState = this.getRepoState();
 
     this.setState({ isBuilding: true });
