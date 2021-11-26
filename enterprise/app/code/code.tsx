@@ -245,10 +245,6 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   handleBuildClicked(args: string) {
-    if (args === undefined) {
-      args = prompt("bazel")
-    }
-
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
@@ -386,7 +382,7 @@ export default class CodeComponent extends React.Component<Props> {
             </a>
           </div>
           <div className="code-menu-actions">
-            <CodeBuildButton handleButtonClicked={this.handleBuildClicked.bind(this)} isLoading={this.state.isBuilding} />
+            <CodeBuildButton onCommandClicked={this.handleBuildClicked.bind(this)} isLoading={this.state.isBuilding} project={`${this.state.repo}/${this.state.owner}`} />
           </div>
         </div>
         <div className="code-main">
