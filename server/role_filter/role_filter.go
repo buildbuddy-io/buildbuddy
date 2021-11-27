@@ -4,14 +4,10 @@ import (
 	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 const (
@@ -39,6 +35,14 @@ var (
 		// Anonymous users can see the Bazel config required to use BuildBuddy, so
 		// don't require a group role.
 		"GetBazelConfig",
+		// API calls are role independent
+		// TODO(bduffany): prefix all of these with the service name,
+		// since API methods and BuildBuddyService methods may be the same.
+		"GetInvocation",
+		"GetLog",
+		"GetTarget",
+		"GetAction",
+		"GetFile",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
@@ -81,25 +85,13 @@ var (
 	}
 )
 
-// GroupSelector returns the user's preferred group ID.
-type GroupSelector func(ctx context.Context, u interfaces.UserInfo) (string, error)
-
-var (
-	// RPCGroupSelector returns the preferred group ID for gRPC requests.
-	GRPCGroupSelector GroupSelector = groupIDFromUserInfo
-
-	// HTTPGroupSelector returns the preferred group ID for HTTP-based (protolet)
-	// gRPC requests.
-	HTTPGroupSelector GroupSelector = groupIDFromRequestContext
-)
-
 // AuthorizeBuildBuddyServiceRPC applies a coarse-grained authorization check on
 // a BuildBuddyService RPC to ensure that the user has the appropriate role
 // within their org to call the RPC.
 //
 // If the RPC accesses any specific resources within the org, further
 // authorization checks may be needed beyond this coarse-grained filter.
-func AuthorizeBuildBuddyServiceRPC(ctx context.Context, env environment.Env, rpcName string, groupSelector GroupSelector) error {
+func AuthorizeBuildBuddyServiceRPC(ctx context.Context, env environment.Env, rpcName string) error {
 	if stringSliceContains(RoleIndependentRPCs, rpcName) {
 		return nil
 	}
@@ -113,9 +105,9 @@ func AuthorizeBuildBuddyServiceRPC(ctx context.Context, env environment.Env, rpc
 		return nil
 	}
 
-	groupID, err := groupSelector(ctx, u)
-	if err != nil {
-		return err
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return status.UnauthenticatedError("Could not determine authenticated group ID from request")
 	}
 
 	allowedRoles := role.Admin | role.Developer
@@ -133,23 +125,4 @@ func stringSliceContains(slice []string, val string) bool {
 		}
 	}
 	return false
-}
-
-func groupIDFromUserInfo(ctx context.Context, u interfaces.UserInfo) (string, error) {
-	if u.GetGroupID() == "" {
-		alert.UnexpectedEvent(
-			"authenticated_user_missing_group_id",
-			"Could not determine group ID for authenticated user; user_id=%q",
-			u.GetUserID())
-		return "", status.InternalError("Preferred group ID could not be determined from the request.")
-	}
-	return u.GetGroupID(), nil
-}
-
-func groupIDFromRequestContext(ctx context.Context, u interfaces.UserInfo) (string, error) {
-	reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
-	if reqCtx == nil || reqCtx.GetGroupId() == "" {
-		return "", status.InvalidArgumentError(`Request is missing "request_context.group_id" field`)
-	}
-	return reqCtx.GetGroupId(), nil
 }

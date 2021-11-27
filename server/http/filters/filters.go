@@ -102,7 +102,7 @@ func Authenticate(env environment.Env, next http.Handler) http.Handler {
 func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		if err := role_filter.AuthorizeBuildBuddyServiceRPC(ctx, env, r.URL.Path, role_filter.HTTPGroupSelector); err != nil {
+		if err := role_filter.AuthorizeBuildBuddyServiceRPC(ctx, env, r.URL.Path); err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
