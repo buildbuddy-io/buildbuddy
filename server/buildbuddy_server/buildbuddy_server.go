@@ -26,17 +26,17 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	gcodes "google.golang.org/grpc/codes"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	gstatus "google.golang.org/grpc/status"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	gcodes "google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (

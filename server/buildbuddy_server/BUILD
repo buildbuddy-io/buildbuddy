@@ -26,7 +26,6 @@ go_library(
         "//server/ssl",
         "//server/tables",
         "//server/target",
-        "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/log",
         "//server/util/perms",
