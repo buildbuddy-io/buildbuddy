@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1638215490585,
+  "iteration": 1638219742682,
   "links": [],
   "panels": [
     {
@@ -3450,7 +3450,7 @@
         "x": 0,
         "y": 8
       },
-      "id": 579,
+      "id": 615,
       "panels": [
         {
           "aliasColors": {
@@ -3476,7 +3476,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 580,
+          "id": 616,
           "legend": {
             "avg": false,
             "current": false,
@@ -3497,7 +3497,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3592,7 +3592,7 @@
             "y": 8
           },
           "hiddenSeries": false,
-          "id": 581,
+          "id": 617,
           "legend": {
             "avg": false,
             "current": false,
@@ -3614,7 +3614,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3715,7 +3715,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 582,
+          "id": 618,
           "legend": {
             "avg": false,
             "current": false,
@@ -3736,7 +3736,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3847,7 +3847,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 583,
+          "id": 619,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -3869,7 +3869,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3960,7 +3960,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 584,
+          "id": 620,
           "legend": {
             "avg": false,
             "current": false,
@@ -3981,7 +3981,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4068,7 +4068,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 585,
+          "id": 621,
           "legend": {
             "avg": false,
             "current": false,
@@ -4089,7 +4089,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4175,7 +4175,7 @@
             "y": 33
           },
           "hiddenSeries": false,
-          "id": 586,
+          "id": 622,
           "legend": {
             "avg": false,
             "current": false,
@@ -4196,7 +4196,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4282,7 +4282,7 @@
             "y": 33
           },
           "hiddenSeries": false,
-          "id": 587,
+          "id": 623,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4304,7 +4304,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4390,7 +4390,7 @@
             "y": 41
           },
           "hiddenSeries": false,
-          "id": 588,
+          "id": 624,
           "legend": {
             "avg": false,
             "current": false,
@@ -4411,7 +4411,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4497,7 +4497,7 @@
             "y": 41
           },
           "hiddenSeries": false,
-          "id": 589,
+          "id": 625,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4521,7 +4521,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4586,7 +4586,7 @@
           }
         }
       ],
-      "repeatIteration": 1638215490585,
+      "repeatIteration": 1638219742682,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5275,7 +5275,7 @@
         "x": 0,
         "y": 10
       },
-      "id": 590,
+      "id": 626,
       "panels": [
         {
           "aliasColors": {
@@ -5301,7 +5301,7 @@
             "y": 9
           },
           "hiddenSeries": false,
-          "id": 591,
+          "id": 627,
           "legend": {
             "avg": false,
             "current": false,
@@ -5323,7 +5323,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5423,7 +5423,7 @@
             "y": 9
           },
           "hiddenSeries": false,
-          "id": 592,
+          "id": 628,
           "legend": {
             "avg": false,
             "current": false,
@@ -5444,7 +5444,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5531,7 +5531,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 593,
+          "id": 629,
           "legend": {
             "avg": false,
             "current": false,
@@ -5552,7 +5552,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5639,7 +5639,7 @@
             "y": 17
           },
           "hiddenSeries": false,
-          "id": 594,
+          "id": 630,
           "legend": {
             "avg": false,
             "current": false,
@@ -5660,7 +5660,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5747,7 +5747,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 595,
+          "id": 631,
           "legend": {
             "avg": false,
             "current": false,
@@ -5768,7 +5768,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5855,7 +5855,7 @@
             "y": 25
           },
           "hiddenSeries": false,
-          "id": 596,
+          "id": 632,
           "legend": {
             "avg": false,
             "current": false,
@@ -5876,7 +5876,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5941,7 +5941,7 @@
           }
         }
       ],
-      "repeatIteration": 1638215490585,
+      "repeatIteration": 1638219742682,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -8652,7 +8652,7 @@
         "x": 0,
         "y": 16
       },
-      "id": 597,
+      "id": 633,
       "panels": [
         {
           "aliasColors": {},
@@ -8676,7 +8676,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 598,
+          "id": 634,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8701,7 +8701,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8789,7 +8789,7 @@
             "y": 165
           },
           "hiddenSeries": false,
-          "id": 599,
+          "id": 635,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8813,7 +8813,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8899,7 +8899,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 600,
+          "id": 636,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -8923,7 +8923,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9009,7 +9009,7 @@
             "y": 174
           },
           "hiddenSeries": false,
-          "id": 601,
+          "id": 637,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9033,7 +9033,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9098,7 +9098,7 @@
           }
         }
       ],
-      "repeatIteration": 1638215490585,
+      "repeatIteration": 1638219742682,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9119,7 +9119,7 @@
         "x": 0,
         "y": 17
       },
-      "id": 602,
+      "id": 638,
       "panels": [
         {
           "aliasColors": {},
@@ -9140,10 +9140,10 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 165
           },
           "hiddenSeries": false,
-          "id": 603,
+          "id": 639,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9168,7 +9168,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9253,10 +9253,10 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 165
           },
           "hiddenSeries": false,
-          "id": 604,
+          "id": 640,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9280,7 +9280,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9363,10 +9363,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 174
           },
           "hiddenSeries": false,
-          "id": 605,
+          "id": 641,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9390,7 +9390,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9473,10 +9473,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 27
+            "y": 174
           },
           "hiddenSeries": false,
-          "id": 606,
+          "id": 642,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9500,7 +9500,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638219742682,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9565,7 +9565,7 @@
           }
         }
       ],
-      "repeatIteration": 1638215490585,
+      "repeatIteration": 1638219742682,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9651,20 +9651,13 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "scopedVars": {
-            "job": {
-              "selected": false,
-              "text": "buildbuddy-app",
-              "value": "buildbuddy-app"
-            }
-          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{grpc_code}}",
               "queryType": "randomWalk",
@@ -9758,20 +9751,13 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "scopedVars": {
-            "job": {
-              "selected": false,
-              "text": "buildbuddy-app",
-              "value": "buildbuddy-app"
-            }
-          },
           "seriesOverrides": [],
           "spaceLength": 10,
           "stack": false,
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{job=\"${job}\"}[${window}]))",
+              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "queryType": "randomWalk",
@@ -9820,15 +9806,8 @@
           }
         }
       ],
-      "repeat": "job",
-      "scopedVars": {
-        "job": {
-          "selected": false,
-          "text": "buildbuddy-app",
-          "value": "buildbuddy-app"
-        }
-      },
-      "title": "gRPC (${job})",
+      "repeat": null,
+      "title": "gRPC (buildbuddy-app)",
       "type": "row"
     },
     {
