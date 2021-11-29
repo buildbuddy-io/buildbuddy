@@ -201,6 +201,18 @@ export default class InvocationComponent extends React.Component<Props, State> {
       denseMode: this.props.preferences.denseModeEnabled,
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
+    const fetchBuildLogs = () => {
+      return rpcService.service
+        .getEventLogChunk(
+          new eventlog.GetEventLogChunkRequest({
+            invocationId: this.props.invocationId,
+            minLines: 2147483647, // int32 max value: max number of lines we can request.
+          })
+        )
+        .then((response: eventlog.GetEventLogChunkResponse) => {
+          return new TextDecoder().decode(response.buffer || new Uint8Array());
+        });
+    };
 
     return (
       <div className="invocation">
@@ -264,18 +276,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               value={this.getBuildLogs()}
               loading={this.areBuildLogsLoading()}
               expanded={activeTab == "log"}
-              fullLogsFetcher={() => {
-                return rpcService.service
-                  .getEventLogChunk(
-                    new eventlog.GetEventLogChunkRequest({
-                      invocationId: this.props.invocationId,
-                      minLines: 2147483647, // int32 max value: max number of lines we can request.
-                    })
-                  )
-                  .then((response: eventlog.GetEventLogChunkResponse) => {
-                    return new TextDecoder().decode(response.buffer || new Uint8Array());
-                  });
-              }}
+              fullLogsFetcher={fetchBuildLogs}
             />
           )}
 
