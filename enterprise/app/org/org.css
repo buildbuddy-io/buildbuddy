@@ -128,7 +128,7 @@
   margin-right: 8px;
 }
 
-.organization-invite-link-container img {
+.organization-invite-link-container svg {
   width: 16px;
   height: 16px;
   margin-right: 16px;
@@ -148,9 +148,9 @@
   border-radius: 8px;
 }
 
-.organization-form .warning img {
-  width: 16px;
-  height: 16px;
+.organization-form .warning svg {
+  width: 24px;
+  height: 24px;
   margin-right: 16px;
   padding-top: 2px;
 }

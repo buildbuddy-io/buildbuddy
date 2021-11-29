@@ -24,6 +24,7 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )

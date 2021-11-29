@@ -3,6 +3,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { AlertCircle } from "lucide-react";
 
 export type FormProps = {
   user: User;
@@ -125,7 +126,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
           </div>
           {initialRequest.urlIdentifier && initialRequest.urlIdentifier !== request.urlIdentifier && (
             <div className="warning">
-              <img src="/image/alert-circle.svg" />{" "}
+              <AlertCircle className="icon red" />
               <div>
                 This change will deactivate the old URL. <br />
                 Be sure to update any links in docs, bookmarks, etc.

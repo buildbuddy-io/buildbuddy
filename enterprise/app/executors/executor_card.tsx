@@ -1,6 +1,7 @@
 import React from "react";
 import { scheduler } from "../../../proto/scheduler_ts_proto";
 import format from "../../../app/format/format";
+import { Cloud } from "lucide-react";
 
 interface Props {
   node: scheduler.IExecutionNode;
@@ -10,7 +11,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className="card">
-        <img className="icon" src="/image/cloud-regular.svg" />
+        <Cloud className="icon" />
         <div className="details">
           <div className="executor-section">
             <div className="executor-section-title">Address:</div>

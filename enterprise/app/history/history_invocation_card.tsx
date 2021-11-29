@@ -2,6 +2,8 @@ import {
   CheckCircle,
   Clock,
   Github,
+  GitBranch,
+  GitCommit,
   HardDrive,
   HelpCircle,
   LayoutGrid,
@@ -259,7 +261,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleBranchClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/git-branch-regular.svg" />
+                  <GitBranch className="icon" />
                   {this.props.invocation.branchName}
                 </div>
               )}
@@ -269,7 +271,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleCommitClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/git-commit-regular.svg" />
+                  <GitCommit className="icon" />
                   {format.formatCommitHash(this.props.invocation.commitSha)}
                 </div>
               )}

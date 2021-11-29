@@ -998,8 +998,10 @@ code .comment {
   color: #aaa;
 }
 
-.terminal-actions img {
+.terminal-actions svg.icon {
   width: 18px;
+  height: 18px;
+  margin-right: 0;
 }
 
 .terminal-action {
@@ -1290,7 +1292,7 @@ code .comment {
 }
 
 .test-subtitle {
-  margin-top: 4px;
+  margin-bottom: 8px;
   color: #aaa;
 }
 

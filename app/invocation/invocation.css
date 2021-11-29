@@ -467,9 +467,13 @@
   margin-right: 8px;
 }
 
-.workflow-rerun-button img {
+.workflow-rerun-button svg {
   width: 16px;
   height: 16px;
+}
+
+.workflow-rerun-button .spinner {
+  --size: 16px;
 }
 
 .workflow-rerun-button .loading {

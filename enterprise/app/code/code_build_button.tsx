@@ -3,36 +3,40 @@ import { OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedButtonGroup } from "../../../app/components/button/button_group";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup, { PopupContainer } from "../../../app/components/popup/popup";
+import Spinner from "../../../app/components/spinner/spinner";
+import { Play, ChevronDown } from "lucide-react";
 
 const LOCAL_STORAGE_STATE_KEY = "code-button-commands";
 const MAX_COMMANDS = 10;
 
 export interface CodeBuildButtonProps {
-    onCommandClicked: (args: string) => void;
-    isLoading: boolean;
-    project: string;
+  onCommandClicked: (args: string) => void;
+  isLoading: boolean;
+  project: string;
 }
 
 type State = {
   isMenuOpen?: boolean;
-  commands: string[],
+  commands: string[];
 };
 
 export default class CodeBuildButton extends React.Component<CodeBuildButtonProps, State> {
-  state: State =  this.getSavedState() ? JSON.parse(this.getSavedState()) as State : {
-      commands: ["build //...", "test //..."],
-  };
+  state: State = this.getSavedState()
+    ? (JSON.parse(this.getSavedState()) as State)
+    : {
+        commands: ["build //...", "test //..."],
+      };
 
   private getSavedState() {
     return localStorage[this.localStorageKey()];
   }
 
   private saveState() {
-      localStorage[this.localStorageKey()] = JSON.stringify(this.state);
+    localStorage[this.localStorageKey()] = JSON.stringify(this.state);
   }
 
   private localStorageKey() {
-      return LOCAL_STORAGE_STATE_KEY + this.props.project
+    return LOCAL_STORAGE_STATE_KEY + this.props.project;
   }
 
   private onOpenMenu() {
@@ -43,12 +47,12 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
   }
 
   private handleCommandClicked(args: string) {
-    this.onCloseMenu()
+    this.onCloseMenu();
     let newCommands = this.state.commands;
     // Remove if it already exists.
     const index = newCommands.indexOf(args);
     if (index > -1) {
-        newCommands.splice(index, 1);
+      newCommands.splice(index, 1);
     }
     // Place it at the front.
     newCommands.unshift(args);
@@ -59,37 +63,37 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
   }
 
   private handleCustomClicked() {
-    this.onCloseMenu()
-    let customArgs = prompt("bazel")
+    this.onCloseMenu();
+    let customArgs = prompt("bazel");
     if (!customArgs) {
-        return;
+      return;
     }
     this.handleCommandClicked(customArgs);
   }
 
   render() {
     return (
-        <PopupContainer>
-          <OutlinedButtonGroup>
-            <OutlinedButton
-              className="workflow-rerun-button"
-              onClick={this.handleCommandClicked.bind(this, this.state.commands[0])}>
-              {this.props.isLoading ? <div className="loading"></div> : <img alt="" src="/image/play-circle.svg" />}
-              <span>{this.state.commands[0]}</span>
-            </OutlinedButton>
-            <OutlinedButton className="icon-button" onClick={this.onOpenMenu.bind(this)}>
-              <img alt="" src="/image/chevron-down.svg" />
-            </OutlinedButton>
-          </OutlinedButtonGroup>
-          <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
-            <Menu>
-            {this.state.commands.slice(1).map(command => 
-                <MenuItem onClick={this.handleCommandClicked.bind(this, command)}>{command}</MenuItem>)}
+      <PopupContainer>
+        <OutlinedButtonGroup>
+          <OutlinedButton
+            className="workflow-rerun-button"
+            onClick={this.handleCommandClicked.bind(this, this.state.commands[0])}>
+            {this.props.isLoading ? <Spinner /> : <Play className="icon green" />}
+            <span>{this.state.commands[0]}</span>
+          </OutlinedButton>
+          <OutlinedButton className="icon-button" onClick={this.onOpenMenu.bind(this)}>
+            <ChevronDown />
+          </OutlinedButton>
+        </OutlinedButtonGroup>
+        <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">
+          <Menu>
+            {this.state.commands.slice(1).map((command) => (
+              <MenuItem onClick={this.handleCommandClicked.bind(this, command)}>{command}</MenuItem>
+            ))}
             <MenuItem onClick={this.handleCustomClicked.bind(this, undefined)}>Custom...</MenuItem>
-            </Menu>
-          </Popup>
-        </PopupContainer>
-      
+          </Menu>
+        </Popup>
+      </PopupContainer>
     );
   }
 }

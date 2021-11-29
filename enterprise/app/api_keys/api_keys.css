@@ -33,6 +33,10 @@
   min-height: 40px;
 }
 
+.api-keys .api-key-list-item button {
+  flex-shrink: 0;
+}
+
 .api-keys .api-key-label,
 .api-keys .api-key-capabilities {
   display: flex;

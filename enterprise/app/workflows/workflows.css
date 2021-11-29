@@ -89,7 +89,7 @@
 
 .workflows-page .workflow-item-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
 }
 
 .workflows-page .workflow-item-row > :not(:last-child) {
@@ -114,14 +114,6 @@
 
 .workflows-page .copied-to-clipboard {
   color: #aaa;
-}
-
-.workflows-page .workflow-dropdown-button {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
 
 .workflows-page .workflow-item-row .git-merge-icon {
@@ -229,10 +221,6 @@
   margin-right: 8px;
 }
 
-.workflows-github-import .show-more-icon {
-  opacity: 0.7;
-}
-
 .workflows-github-import .create-other-container {
   display: flex;
   justify-content: flex-end;
@@ -248,7 +236,7 @@
   opacity: 0.7;
 }
 
-.workflows-github-import .create-other img {
+.workflows-github-import .create-other svg {
   width: 16px;
   height: 16px;
 }

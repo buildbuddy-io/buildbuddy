@@ -6,6 +6,7 @@ import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { workflow } from "../../../proto/workflow_ts_proto";
+import { ArrowRight, Check, ChevronsDown } from "lucide-react";
 
 type GitHubRepoPickerProps = {};
 
@@ -112,8 +113,8 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
                     <span className="repo-name">{repoName}</span>
                   </div>
                   {alreadyCreatedUrls.has(repo.url) ? (
-                    <div className="created-indicator">
-                      <img src="/image/check.svg" title="Already added" alt="" />
+                    <div className="created-indicator" title="Already added">
+                      <Check className="icon green" />
                     </div>
                   ) : isCreating && this.state.createRequest?.gitRepo?.repoUrl === repo.url ? (
                     <div className="loading create-loading" />
@@ -130,7 +131,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
             <div className="show-more-button-container">
               <OutlinedButton className="show-more-button" onClick={this.onClickShowMore.bind(this)}>
                 <span>Show more repos</span>
-                <img src="/image/chevrons-down.svg" alt="" className="show-more-icon" />
+                <ChevronsDown className="show-more-icon" />
               </OutlinedButton>
             </div>
           )}
@@ -139,7 +140,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
               className="create-other clickable"
               href="/workflows/new/custom"
               onClick={this.onClickAddOther.bind(this)}>
-              Add from another Git provider <img src="/image/arrow-right.svg" alt=""></img>
+              Add from another Git provider <ArrowRight className="icon" />
             </a>
           </div>
         </div>
