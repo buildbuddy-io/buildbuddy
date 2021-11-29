@@ -85,13 +85,12 @@ var (
 	}
 )
 
-// AuthorizeBuildBuddyServiceRPC applies a coarse-grained authorization check on
-// a BuildBuddyService RPC to ensure that the user has the appropriate role
-// within their org to call the RPC.
+// AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
+// that the user has the appropriate role within their org to call the RPC.
 //
 // If the RPC accesses any specific resources within the org, further
 // authorization checks may be needed beyond this coarse-grained filter.
-func AuthorizeBuildBuddyServiceRPC(ctx context.Context, env environment.Env, rpcName string) error {
+func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) error {
 	if stringSliceContains(RoleIndependentRPCs, rpcName) {
 		return nil
 	}

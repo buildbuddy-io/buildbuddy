@@ -127,7 +127,7 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
-			if err := role_filter.AuthorizeBuildBuddyServiceRPC(ctx, env, methodName); err != nil {
+			if err := role_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
 				return nil, err
 			}
 		}
