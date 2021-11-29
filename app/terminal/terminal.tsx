@@ -1,7 +1,7 @@
 import { WrapText, Download } from "lucide-react";
 import React from "react";
 import { LazyLog } from "react-lazylog";
-import error_service from "../errors/error_service";
+import errorService from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
 
 export interface TerminalProps {
@@ -83,8 +83,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   handleDownloadClicked() {
     if (this.props.fullLogsFetcher) {
       this.setState({ isLoadingFullLog: true });
-      var element = document.createElement("a");
-
+      const element = document.createElement("a");
       this.props
         .fullLogsFetcher()
         .then((fullLog: string) => {
@@ -95,20 +94,20 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
           document.body.appendChild(element);
           element.click();
         })
-        .catch((e) => error_service.handleError(e))
+        .catch((e) => errorService.handleError(e))
         .finally(() => {
           this.setState({ isLoadingFullLog: false });
           try {
             document.body.removeChild(element);
           } catch (e) {
             if (!(e instanceof DOMException) || e.name != "NotFoundError") {
-              error_service.handleError(e);
+              errorService.handleError(e);
             }
           }
         });
       return;
     }
-    var element = document.createElement("a");
+    const element = document.createElement("a");
     const unstyledLogs = this.props.value.replace(ANSI_STYLES_REGEX, "");
     element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
     element.setAttribute("download", "build_logs.txt");

@@ -981,7 +981,15 @@ code .comment {
 .terminal-actions {
   right: 0;
   position: absolute;
+  display: flex;
+  align-items: center;
   z-index: 1;
+}
+
+.terminal-actions .spinner {
+  --size: 18px;
+  padding: 12px;
+  opacity: 0.7;
 }
 
 .light-terminal .terminal-actions {

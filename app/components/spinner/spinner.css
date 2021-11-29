@@ -19,3 +19,7 @@
   background-image: url("/image/loader.svg");
   background-size: cover;
 }
+
+.spinner.white:before {
+  background-image: url("/image/loader-white.svg");
+}
