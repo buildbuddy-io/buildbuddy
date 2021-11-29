@@ -455,14 +455,14 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               onClick={this.onZoomOutClick.bind(this)}
               onMouseMove={stopPropagation}
               title="Zoom out (Ctrl + scroll up)">
-              <ZoomOut className="icon" />
+              <ZoomOut className="icon black" />
             </button>
             <button
               aria-label="Zoom in"
               onClick={this.onZoomInClick.bind(this)}
               onMouseMove={stopPropagation}
               title="Zoom in (Ctrl + scroll down)">
-              <ZoomIn className="icon" />
+              <ZoomIn className="icon black" />
             </button>
           </div>
         </div>

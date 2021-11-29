@@ -181,20 +181,15 @@ SKIPPED = 13;
   background-color: #b0bec5;
 }
 
-.tap input {
+.tap .filter-input {
   vertical-align: middle;
-  margin-left: 16px;
+  margin-left: 8px;
 }
 
 .tap label {
   padding-left: 8px;
   vertical-align: middle;
   user-select: none;
-}
-
-.tap input,
-.tap label {
-  cursor: pointer;
 }
 
 .tap .group {

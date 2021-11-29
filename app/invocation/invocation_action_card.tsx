@@ -268,7 +268,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   render() {
     return (
-      <div>
+      <div className="invocation-action-card">
         <div className="card">
           <Info className="icon purple" />
           <div className="content">

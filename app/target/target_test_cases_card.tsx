@@ -1,6 +1,6 @@
 import React from "react";
 import format from "../format/format";
-
+import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 
 interface Props {
@@ -25,16 +25,16 @@ export default class TargetTestCasesCardComponent extends React.Component {
     }
   }
 
-  getStatusIcon() {
+  renderStatusIcon() {
     switch (this.props.tagName) {
       case "failure":
-        return "/image/x-circle.svg";
+        return <XCircle className="icon red" />;
       case "error":
-        return "/image/alert-circle-regular.svg";
+        return <AlertCircle className="icon black" />;
       case "skipped":
-        return "/image/skipped-circle.svg";
+        return <PlayCircle className="icon" />;
       default:
-        return "/image/check-circle.svg";
+        return <CheckCircle className="icon green" />;
     }
   }
 
@@ -60,7 +60,7 @@ export default class TargetTestCasesCardComponent extends React.Component {
     return (
       testCases.length > 0 && (
         <div className={`card artifacts ${this.getCardClass()}`}>
-          <img className="icon" src={this.getStatusIcon()} />
+          {this.renderStatusIcon()}
           <div className="content">
             <div className="title">{this.props.testSuite.getAttribute("name")}</div>
             <div className="test-subtitle">

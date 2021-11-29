@@ -19,6 +19,7 @@ ts_library(
         "@npm//@types/long",
         "@npm//@types/react",
         "@npm//long",
+        "@npm//lucide-react",
         "@npm//moment",
         "@npm//react",
         "@npm//recharts",

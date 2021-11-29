@@ -265,40 +265,44 @@ button {
 }
 
 /* Default icon color is gray */
-.icon {
+svg.icon {
   stroke: #616161;
 }
 
-.icon.white {
+svg.icon.white {
   stroke: #fff;
 }
 
-.icon.gray,
-.icon.grey {
+svg.icon.gray,
+svg.icon.grey {
   stroke: #616161;
 }
 
-.icon.green {
+svg.icon.black {
+  stroke: #000;
+}
+
+svg.icon.green {
   stroke: #8bc34a;
 }
 
-.icon.red {
+svg.icon.red {
   stroke: #f44336;
 }
 
-.icon.blue {
+svg.icon.blue {
   stroke: #03a9f4;
 }
 
-.icon.brown {
+svg.icon.brown {
   stroke: #774a21;
 }
 
-.icon.purple {
-  stroke: #551474;
+svg.icon.purple {
+  stroke: #673ab7;
 }
 
-.icon.orange {
+svg.icon.orange {
   stroke: #ff6f00;
 }
 
@@ -1737,10 +1741,17 @@ code .comment {
   color: #888;
 }
 
-.dense .target-status-icon {
-  display: block;
-  width: 16px;
+.dense .card .target-status-icon.target-status-icon {
+  flex-grow: 0;
+  display: initial;
   margin-right: 4px;
+  width: 16px;
+}
+
+.dense .card .target-status-icon .icon {
+  display: initial;
+  width: 16px;
+  padding-top: 0;
 }
 
 .dense-invocation {
