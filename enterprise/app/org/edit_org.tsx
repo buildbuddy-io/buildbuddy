@@ -4,6 +4,7 @@ import FilledButton from "../../../app/components/button/button";
 import rpcService from "../../../app/service/rpc_service";
 import { grp } from "../../../proto/group_ts_proto";
 import OrgForm, { FormProps } from "./org_form";
+import { Link } from "lucide-react";
 
 /**
  * Page that allows editing an org specified in the URL.
@@ -57,7 +58,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
           <div className="organization-details-title settings-option-title">Organization details</div>
           {inviteLink && (
             <div className="organization-invite-link-container">
-              <img src="/image/link.svg" />
+              <Link />
               <div className="invite-link-label">Invite link: </div>
               <div className="invite-link">
                 <a href={`//${inviteLink}`} target="_blank">

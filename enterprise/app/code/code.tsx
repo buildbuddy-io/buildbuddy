@@ -10,6 +10,7 @@ import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
+import { Code } from "lucide-react";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -46,21 +47,21 @@ export default class CodeComponent extends React.Component<Props> {
   props: Props;
 
   state: State = {
-        owner: "",
-        repo: "",
-        repoResponse: undefined,
-        treeShaToExpanded: new Map<string, boolean>(),
-        treeShaToChildrenMap: new Map<string, any[]>(),
-        treeShaToPathMap: new Map<string, string>(),
-        fullPathToModelMap: new Map<string, any>(),
-        originalFileContents: new Map<string, any>(),
-        currentFilePath: "",
-        changes: new Map<string, string>(),
-        pathToIncludeChanges: new Map<string, boolean>(),
+    owner: "",
+    repo: "",
+    repoResponse: undefined,
+    treeShaToExpanded: new Map<string, boolean>(),
+    treeShaToChildrenMap: new Map<string, any[]>(),
+    treeShaToPathMap: new Map<string, string>(),
+    fullPathToModelMap: new Map<string, any>(),
+    originalFileContents: new Map<string, any>(),
+    currentFilePath: "",
+    changes: new Map<string, string>(),
+    pathToIncludeChanges: new Map<string, boolean>(),
 
-        requestingReview: false,
-        isBuilding: false,
-      };
+    requestingReview: false,
+    isBuilding: false,
+  };
 
   editor: any;
 
@@ -91,7 +92,7 @@ export default class CodeComponent extends React.Component<Props> {
     if (!this.state.repo) {
       return;
     }
-    
+
     window.addEventListener("resize", () => this.handleWindowResize());
     // TODO(siggisim): select default file based on url
     this.editor = monaco.editor.create(this.codeViewer.current, {
@@ -148,11 +149,13 @@ export default class CodeComponent extends React.Component<Props> {
 
   currentRepo() {
     let groups = this.props.path?.match(/\/code\/(?<owner>.*)\/(?<repo>.*)/)?.groups;
-    return groups || {}; 
+    return groups || {};
   }
 
   fetchCode() {
-    const storedState = localStorage.getItem(this.getStateCacheKey()) ? (JSON.parse(localStorage.getItem(this.getStateCacheKey()), stateReviver) as State) : undefined;
+    const storedState = localStorage.getItem(this.getStateCacheKey())
+      ? (JSON.parse(localStorage.getItem(this.getStateCacheKey()), stateReviver) as State)
+      : undefined;
     if (storedState) {
       this.setState(storedState);
       return;
@@ -259,8 +262,9 @@ export default class CodeComponent extends React.Component<Props> {
       })
       .catch((error: any) => {
         alert(error);
-      }).finally(() => {
-        this.setState({ isBuilding: false })
+      })
+      .finally(() => {
+        this.setState({ isBuilding: false });
       });
   }
 
@@ -325,7 +329,7 @@ export default class CodeComponent extends React.Component<Props> {
 
   // TODO(siggisim): Implement delete
   handleDeleteClicked(fullPath: string) {
-    alert("Delete not yet implemented!")
+    alert("Delete not yet implemented!");
   }
 
   handleNewFileClicked() {
@@ -365,7 +369,7 @@ export default class CodeComponent extends React.Component<Props> {
   // TODO(siggisim): Make the diff view look nicer
   render() {
     if (!this.state.repo) {
-      return <CodeEmptyStateComponent />
+      return <CodeEmptyStateComponent />;
     }
 
     setTimeout(() => {
@@ -378,34 +382,38 @@ export default class CodeComponent extends React.Component<Props> {
           <div className="code-menu-logo">
             <a href="/">
               <img alt="BuildBuddy Code" src="/image/logo_dark.svg" className="logo" /> Code{" "}
-              <img src="/image/code.svg" className="code-logo" />
+              <Code className="icon code-logo" />
             </a>
           </div>
           <div className="code-menu-actions">
-            <CodeBuildButton onCommandClicked={this.handleBuildClicked.bind(this)} isLoading={this.state.isBuilding} project={`${this.state.repo}/${this.state.owner}`} />
+            <CodeBuildButton
+              onCommandClicked={this.handleBuildClicked.bind(this)}
+              isLoading={this.state.isBuilding}
+              project={`${this.state.repo}/${this.state.owner}`}
+            />
           </div>
         </div>
         <div className="code-main">
           <div className="code-sidebar">
             <div className="code-sidebar-tree">
-            {this.state.repoResponse &&
-              this.state.repoResponse.data.tree.map((node: any) => (
-                <SidebarNodeComponent
-                  node={node}
-                  treeShaToExpanded={this.state.treeShaToExpanded}
-                  treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                  handleFileClicked={this.handleFileClicked.bind(this)}
-                  fullPath={node.path}
-                />
-              ))}
-              </div>
-              <div className="code-sidebar-actions">
-                {!this.props.user.selectedGroup.githubToken && (
-                  <button onClick={this.handleGitHubClicked.bind(this)}>🔗 &nbsp;Link GitHub</button>
-                )}
-                <button onClick={this.handleNewFileClicked.bind(this)}>🌱 &nbsp;New</button>
-                <button onClick={this.handleDeleteClicked.bind(this)}>❌ &nbsp;Delete</button>
-              </div>
+              {this.state.repoResponse &&
+                this.state.repoResponse.data.tree.map((node: any) => (
+                  <SidebarNodeComponent
+                    node={node}
+                    treeShaToExpanded={this.state.treeShaToExpanded}
+                    treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                    handleFileClicked={this.handleFileClicked.bind(this)}
+                    fullPath={node.path}
+                  />
+                ))}
+            </div>
+            <div className="code-sidebar-actions">
+              {!this.props.user.selectedGroup.githubToken && (
+                <button onClick={this.handleGitHubClicked.bind(this)}>🔗 &nbsp;Link GitHub</button>
+              )}
+              <button onClick={this.handleNewFileClicked.bind(this)}>🌱 &nbsp;New</button>
+              <button onClick={this.handleDeleteClicked.bind(this)}>❌ &nbsp;Delete</button>
+            </div>
           </div>
           <div className="code-container">
             <div className="code-viewer-container">

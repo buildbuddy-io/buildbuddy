@@ -1,3 +1,4 @@
+import { WrapText, Download } from "lucide-react";
 import React from "react";
 import { LazyLog } from "react-lazylog";
 
@@ -31,10 +32,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             title="Wrap"
             onClick={this.handleWrapClicked.bind(this)}
             className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
-            <img src="/image/wrap-text-white.svg" />
+            <WrapText className="icon white" />
           </button>
           <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
-            <img src="/image/download-white.svg" />
+            <Download className="icon white" />
           </button>
         </div>
         <div className="terminal" ref={this.terminalRef}>

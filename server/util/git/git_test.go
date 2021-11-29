@@ -8,7 +8,7 @@ import (
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
-func TestAuthRepoURL(t *testing.T) {
+func TestAu  thRepo  URL(t *testing.T) {
 	for _, test := range []struct {
 		url      string
 		user     string

@@ -35,7 +35,7 @@
 .code-menu-logo .code-logo {
   height: 18px;
   margin-left: 4px;
-  opacity: 0.5;
+  stroke: #888;
 }
 
 .code-menu-logo a {

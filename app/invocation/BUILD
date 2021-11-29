@@ -17,6 +17,7 @@ ts_library(
         "//app/components/modal",
         "//app/components/popup",
         "//app/components/select",
+        "//app/components/spinner",
         "//app/docs",
         "//app/errors",
         "//app/favicon",
