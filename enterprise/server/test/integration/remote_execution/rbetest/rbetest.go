@@ -666,8 +666,10 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
 	users := testauth.TestUsers(r.UserID1, r.GroupID1)
 	users[ExecutorAPIKey] = &testauth.TestUser{
-		GroupID:          ExecutorGroup,
-		AllowedGroups:    []string{ExecutorGroup},
+		GroupID:       ExecutorGroup,
+		AllowedGroups: []string{ExecutorGroup},
+		// TODO(bduffany): Don't give this API key admin rights, since API keys
+		// don't actually have admin rights in real apps.
 		GroupMemberships: []*interfaces.GroupMembership{{GroupID: ExecutorGroup, Role: role.Admin}},
 		Capabilities:     []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
 	}
