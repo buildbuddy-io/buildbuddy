@@ -1,17 +1,18 @@
 import { WrapText, Download } from "lucide-react";
 import React from "react";
 import { LazyLog } from "react-lazylog";
-import { eventlog } from "../../proto/eventlog_ts_proto";
-import rpcService from "../service/rpc_service";
+import error_service from "../errors/error_service";
+import Spinner from "../components/spinner/spinner";
 
 export interface TerminalProps {
   value?: string;
   lightTheme?: boolean;
-  invocationId?: string;
+  fullLogsFetcher?: () => Promise<string>;
 }
 
 interface TerminalState {
   wrap: boolean;
+  isLoadingFullLog: boolean;
 }
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
@@ -19,7 +20,7 @@ const WRAP_LOCAL_STORAGE_VALUE = "wrap";
 const ANSI_STYLES_REGEX = /\x1b\[[\d;]+?m/g;
 
 export default class TerminalComponent extends React.Component<TerminalProps, TerminalState> {
-  state = { wrap: false };
+  state = { wrap: false, isLoadingFullLog: false };
 
   terminalRef = React.createRef<HTMLDivElement>();
 
@@ -37,9 +38,13 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
             <WrapText className="icon white" />
           </button>
-          <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
-            <Download className="icon white" />
-          </button>
+          {this.state.isLoadingFullLog ? (
+            <Spinner />
+          ) : (
+            <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
+              <Download className="icon white" />
+            </button>
+          )}
         </div>
         <div className="terminal" ref={this.terminalRef}>
           <LazyLog
@@ -76,24 +81,30 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   }
 
   handleDownloadClicked() {
-    if (typeof this.props.invocationId === "string") {
-      rpcService.service
-        .getEventLogChunk(
-          new eventlog.GetEventLogChunkRequest({
-            invocationId: this.props.invocationId,
-            minLines: 2147483647, // int32 max value; this is the maximum number of lines we can request.
-          })
-        )
-        .then((response: eventlog.GetEventLogChunkResponse) => {
-          var element = document.createElement("a");
-          let fullLog = new TextDecoder().decode(response.buffer || new Uint8Array());
+    if (this.props.fullLogsFetcher) {
+      this.setState({ isLoadingFullLog: true });
+      var element = document.createElement("a");
+
+      this.props
+        .fullLogsFetcher()
+        .then((fullLog: string) => {
           const unstyledLogs = fullLog.replace(ANSI_STYLES_REGEX, "");
           element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
           element.setAttribute("download", "build_logs.txt");
           element.style.display = "none";
           document.body.appendChild(element);
           element.click();
-          document.body.removeChild(element);
+        })
+        .catch((e) => error_service.handleError(e))
+        .finally(() => {
+          this.setState({ isLoadingFullLog: false });
+          try {
+            document.body.removeChild(element);
+          } catch (e) {
+            if (!(e instanceof DOMException) || e.name != "NotFoundError") {
+              error_service.handleError(e);
+            }
+          }
         });
       return;
     }

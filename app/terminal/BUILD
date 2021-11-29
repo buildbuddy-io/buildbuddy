@@ -6,6 +6,8 @@ ts_library(
     name = "terminal",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/components/spinner",
+        "//app/errors",
         "//app/service",
         "//proto:eventlog_ts_proto",
         "@npm//@types/react",

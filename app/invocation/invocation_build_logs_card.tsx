@@ -7,7 +7,7 @@ interface Props {
   loading: boolean;
   expanded: boolean;
   dark: boolean;
-  invocationId: string;
+  fullLogsFetcher: () => Promise<string>;
 }
 
 export default class BuildLogsCardComponent extends React.Component<Props> {
@@ -31,7 +31,7 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
               <TerminalComponent
                 value={this.props.value}
                 lightTheme={!this.props.dark}
-                invocationId={this.props.invocationId}
+                fullLogsFetcher={this.props.fullLogsFetcher}
               />
             )}
           </div>

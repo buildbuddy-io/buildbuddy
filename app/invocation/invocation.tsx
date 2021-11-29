@@ -3,7 +3,6 @@ import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
-import capabilities from "../capabilities/capabilities";
 import faviconService from "../favicon/favicon";
 import rpcService from "../service/rpc_service";
 import TargetComponent from "../target/target";
@@ -32,6 +31,7 @@ import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
+import { eventlog } from "../../proto/eventlog_ts_proto";
 
 interface State {
   loading: boolean;
@@ -264,7 +264,18 @@ export default class InvocationComponent extends React.Component<Props, State> {
               value={this.getBuildLogs()}
               loading={this.areBuildLogsLoading()}
               expanded={activeTab == "log"}
-              invocationId={this.props.invocationId}
+              fullLogsFetcher={async () => {
+                return rpcService.service
+                  .getEventLogChunk(
+                    new eventlog.GetEventLogChunkRequest({
+                      invocationId: this.props.invocationId,
+                      minLines: 2147483647, // int32 max value: max number of lines we can request.
+                    })
+                  )
+                  .then((response: eventlog.GetEventLogChunkResponse) => {
+                    return new TextDecoder().decode(response.buffer || new Uint8Array());
+                  });
+              }}
             />
           )}
 
