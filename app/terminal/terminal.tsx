@@ -97,13 +97,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
         .catch((e) => errorService.handleError(e))
         .finally(() => {
           this.setState({ isLoadingFullLog: false });
-          try {
-            document.body.removeChild(element);
-          } catch (e) {
-            if (!(e instanceof DOMException) || e.name != "NotFoundError") {
-              errorService.handleError(e);
-            }
-          }
+          element.remove();
         });
       return;
     }
