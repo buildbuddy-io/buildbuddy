@@ -1,3 +1,4 @@
+import { ZoomIn, ZoomOut } from "lucide-react";
 import React from "react";
 import { fromEvent, Subscription } from "rxjs";
 import { HorizontalScrollbar } from "../components/scrollbar/scrollbar";
@@ -454,14 +455,14 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
               onClick={this.onZoomOutClick.bind(this)}
               onMouseMove={stopPropagation}
               title="Zoom out (Ctrl + scroll up)">
-              <img src="/image/zoom-out.svg" className="icon" />
+              <ZoomOut className="icon black" />
             </button>
             <button
               aria-label="Zoom in"
               onClick={this.onZoomInClick.bind(this)}
               onMouseMove={stopPropagation}
               title="Zoom in (Ctrl + scroll down)">
-              <img src="/image/zoom-in.svg" className="icon" />
+              <ZoomIn className="icon black" />
             </button>
           </div>
         </div>

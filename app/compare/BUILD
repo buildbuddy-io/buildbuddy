@@ -21,6 +21,7 @@ ts_library(
         "@npm//@types/diff-match-patch",
         "@npm//@types/react",
         "@npm//diff-match-patch",
+        "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
     ],

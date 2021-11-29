@@ -7,6 +7,7 @@ import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
+import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -27,15 +28,15 @@ const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
 type ExecutionStatus = {
   name: string;
-  image: string;
+  icon: JSX.Element;
   className?: string;
 };
 
 const STATUSES_BY_STAGE: Record<number, ExecutionStatus> = {
-  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", image: "/image/running.svg", className: "rotating" },
-  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", image: "/image/cache-check.svg" },
-  [ExecutionStage.Value.QUEUED]: { name: "Queued", image: "/image/queued.svg" },
-  [ExecutionStage.Value.EXECUTING]: { name: "Executing", image: "/image/running.svg", className: "rotating" },
+  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", icon: <RotateCw className="icon blue rotating" /> },
+  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", icon: <Package className="icon brown" /> },
+  [ExecutionStage.Value.QUEUED]: { name: "Queued", icon: <Clock className="icon" /> },
+  [ExecutionStage.Value.EXECUTING]: { name: "Executing", icon: <RotateCw className="icon blue rotating" /> },
   // COMPLETED is not included here because it depends on the gRPC status and exit code.
 };
 
@@ -48,16 +49,16 @@ function getExecutionStatus(execution: execution_stats.Execution): ExecutionStat
     if (execution.status.code !== 0) {
       return {
         name: `Error (${GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN"})`,
-        image: "/image/alert-circle.svg",
+        icon: <AlertCircle className="icon red" />,
       };
     }
     if (execution.exitCode !== 0) {
       return {
         name: `Failed (exit code ${execution.exitCode})`,
-        image: "/image/x-circle.svg",
+        icon: <XCircle className="icon red" />,
       };
     }
-    return { name: "Succeeded", image: "/image/complete.svg" };
+    return { name: "Succeeded", icon: <CheckCircle className="icon green" /> };
   }
 
   return STATUSES_BY_STAGE[execution.stage];
@@ -363,9 +364,7 @@ export default class ExecutionCardComponent extends React.Component {
                         key={index}
                         className="invocation-execution-row clickable"
                         onClick={this.handleActionDigestClick.bind(this, execution)}>
-                        <div className="invocation-execution-row-image">
-                          <img className={status.className} src={status.image} alt="" />
-                        </div>
+                        <div className="invocation-execution-row-image">{status.icon}</div>
                         <div>
                           <div className="invocation-execution-row-digest">
                             {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}

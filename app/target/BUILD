@@ -15,6 +15,7 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )

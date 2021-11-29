@@ -2,6 +2,7 @@ import React from "react";
 import InvocationModel from "./invocation_model";
 import rpcService from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { ArrowDownCircle } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -73,7 +74,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
     return (
       <div className="card artifacts">
-        <img className="icon" src="/image/arrow-down-circle.svg" />
+        <ArrowDownCircle className="icon brown" />
         <div className="content">
           <div className="title">Artifacts</div>
           <div className="details">

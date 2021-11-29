@@ -2,6 +2,7 @@ import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import InvocationModel from "./invocation_model";
 import WorkflowCommandsCard from "./workflow_commands_card";
+import { CheckCircle, PlayCircle, XCircle } from "lucide-react";
 
 export type WorkflowCommandsProps = {
   model: InvocationModel;
@@ -56,7 +57,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             status="failed"
             results={failed}
             className="card-failure"
-            iconPath="/image/x-circle.svg"
+            icon={<XCircle className="icon red" />}
           />
         )}
         {inProgress.length > 0 && (
@@ -64,7 +65,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             status="in progress"
             results={inProgress}
             className="card-in-progress"
-            iconPath="/image/play-circle.svg"
+            icon={<PlayCircle className="icon blue" />}
           />
         )}
         {queued.length > 0 && (
@@ -72,7 +73,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             status="queued"
             results={queued}
             className="card-neutral"
-            iconPath="/image/play-circle.svg"
+            icon={<PlayCircle className="icon blue" />}
             linksDisabled={true}
           />
         )}
@@ -81,7 +82,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             status="not run"
             results={notRun}
             className="card-neutral"
-            iconPath="/image/skipped-circle.svg"
+            icon={<XCircle className="icon" />}
             linksDisabled={true}
           />
         )}
@@ -90,7 +91,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
             status="succeeded"
             results={succeeded}
             className="card-success"
-            iconPath="/image/check-circle.svg"
+            icon={<CheckCircle className="icon green" />}
           />
         )}
       </>

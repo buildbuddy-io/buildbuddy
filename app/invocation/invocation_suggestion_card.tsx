@@ -1,5 +1,6 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
+import { Radio } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -86,7 +87,7 @@ export default class SuggestionCardComponent extends React.Component {
     }
     return (
       <div className="card card-suggestion">
-        <img className="icon" src="/image/radio-white.svg" />
+        <Radio className="icon white" />
         <div className="content">
           <div className="title">Suggestion from the BuildBuddy Team</div>
           <div className="details">

@@ -1,6 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import DagreGraph from "dagre-d3-react";
+import { AlertCircle, List } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -82,7 +83,7 @@ export default class QueryGraphCardComponent extends React.Component<Props, Stat
         )}
         {fullGraphHidden && (
           <div className="invocation-query-graph-hidden-card card">
-            <img className="icon" alt="" src="/image/alert-circle.svg" />
+            <AlertCircle className="icon red" />
             <div className="content">
               <div className="title">Graph</div>
               <div className="details">
@@ -95,7 +96,7 @@ export default class QueryGraphCardComponent extends React.Component<Props, Stat
           </div>
         )}
         <div className="card invocation-query-graph-summary-card">
-          <img className="icon" alt="" src="/image/list.svg" />
+          <List className="icon" />
           <div className="content">
             <div className="title">Graph summary</div>
             <div className="graph-summary">

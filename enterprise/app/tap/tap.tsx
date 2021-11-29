@@ -8,6 +8,7 @@ import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import Select, { Option } from "../../../app/components/select/select";
+import { Filter } from "lucide-react";
 
 interface Props {
   user: User;
@@ -288,7 +289,7 @@ export default class TapComponent extends React.Component<Props> {
           </div>
 
           <div className="filter">
-            <img src="/image/filter.svg" />
+            <Filter className="icon" />
             <input
               value={filter}
               className="filter-input"

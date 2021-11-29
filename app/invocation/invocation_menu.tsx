@@ -1,3 +1,4 @@
+import { MoreVertical } from "lucide-react";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
@@ -81,8 +82,11 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
     return (
       <>
         <div className="invocation-menu-container">
-          <OutlinedButton onClick={this.onClickMenuButton.bind(this)} className="invocation-menu-button">
-            <img src="/image/more-vertical.svg" alt="More invocation options" />
+          <OutlinedButton
+            onClick={this.onClickMenuButton.bind(this)}
+            className="invocation-menu-button"
+            title="More invocation options">
+            <MoreVertical />
           </OutlinedButton>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
             <Menu>

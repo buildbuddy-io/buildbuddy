@@ -1,11 +1,11 @@
 import React from "react";
 import format from "../format/format";
 import SetupCodeComponent from "../docs/setup_code";
-
 import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
+import { PauseCircle } from "lucide-react";
 
 interface Props {
   testResult: invocation.InvocationEvent;
@@ -108,7 +108,7 @@ export default class TargetTestLogCardComponent extends React.Component {
         className={`card ${
           this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
         } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
-        <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
+        <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
           <div className="title">Test log</div>
           <div className="test-subtitle">

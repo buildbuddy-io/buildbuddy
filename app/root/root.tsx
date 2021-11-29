@@ -41,6 +41,7 @@ export default class RootComponent extends React.Component {
       next: (user: User) => this.setState({ ...this.state, user }),
     });
     faviconService.setDefaultFavicon();
+    window._preferences = this.state.preferences;
   }
 
   componentDidMount() {

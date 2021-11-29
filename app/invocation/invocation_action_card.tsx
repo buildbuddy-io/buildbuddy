@@ -1,6 +1,7 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
+import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
@@ -267,9 +268,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   render() {
     return (
-      <div>
+      <div className="invocation-action-card">
         <div className="card">
-          <img className="icon" src="/image/info.svg" />
+          <Info className="icon purple" />
           <div className="content">
             <div className="title">Action details </div>
             <div className="details">
@@ -392,7 +393,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               className="file-name clickable"
                               onClick={this.handleOutputFileClicked.bind(this, file)}>
                               <span>
-                                <img className="file-icon" src="/image/download.svg" />
+                                <Download className="icon file-icon" />
                               </span>
                               <span className="prop-link">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
