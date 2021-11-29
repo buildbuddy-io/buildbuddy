@@ -51,6 +51,7 @@ interface Props {
 
 const largePageSize = 100;
 const smallPageSize = 10;
+const maxInt32 = 2147483647;
 
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
@@ -206,7 +207,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         .getEventLogChunk(
           new eventlog.GetEventLogChunkRequest({
             invocationId: this.props.invocationId,
-            minLines: 2147483647, // int32 max value: max number of lines we can request.
+            minLines: maxInt32, // int32 max value: max number of lines we can request.
           })
         )
         .then((response: eventlog.GetEventLogChunkResponse) => {
