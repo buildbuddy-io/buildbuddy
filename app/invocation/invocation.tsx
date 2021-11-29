@@ -264,7 +264,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
               value={this.getBuildLogs()}
               loading={this.areBuildLogsLoading()}
               expanded={activeTab == "log"}
-              fullLogsFetcher={async () => {
+              fullLogsFetcher={() => {
                 return rpcService.service
                   .getEventLogChunk(
                     new eventlog.GetEventLogChunkRequest({
