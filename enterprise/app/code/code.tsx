@@ -8,6 +8,8 @@ import { Octokit } from "octokit";
 import * as diff from "diff";
 import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
+import CodeBuildButton from "./code_build_button";
+import CodeEmptyStateComponent from "./code_empty";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -31,6 +33,7 @@ interface State {
   pathToIncludeChanges: Map<string, boolean>;
 
   requestingReview: boolean;
+  isBuilding: boolean;
 }
 
 const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
@@ -56,6 +59,7 @@ export default class CodeComponent extends React.Component<Props> {
         pathToIncludeChanges: new Map<string, boolean>(),
 
         requestingReview: false,
+        isBuilding: false,
       };
 
   editor: any;
@@ -84,6 +88,10 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   componentDidMount() {
+    if (!this.state.repo) {
+      return;
+    }
+    
     window.addEventListener("resize", () => this.handleWindowResize());
     // TODO(siggisim): select default file based on url
     this.editor = monaco.editor.create(this.codeViewer.current, {
@@ -152,7 +160,6 @@ export default class CodeComponent extends React.Component<Props> {
 
     let repo = this.currentRepo();
     if (!repo.owner || !repo.repo) {
-      this.handleRepoClicked();
       return;
     }
     this.setState({ owner: repo.owner, repo: repo.repo }, () => {
@@ -237,13 +244,14 @@ export default class CodeComponent extends React.Component<Props> {
     }/invocation/ --jobs=${this.getJobCount()} --remote_default_exec_properties=container-image=${this.getContainerImage()}`;
   }
 
-  handleBuildClicked() {
+  handleBuildClicked(args: string) {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
     request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
-    request.bazelCommand = `build //... ${this.getBazelFlags()}`;
+    request.bazelCommand = `${args} ${this.getBazelFlags()}`;
     request.repoState = this.getRepoState();
 
+    this.setState({ isBuilding: true });
     rpcService.service
       .run(request)
       .then((response: runner.RunResponse) => {
@@ -251,23 +259,8 @@ export default class CodeComponent extends React.Component<Props> {
       })
       .catch((error: any) => {
         alert(error);
-      });
-  }
-
-  handleTestClicked() {
-    let request = new runner.RunRequest();
-    request.gitRepo = new runner.RunRequest.GitRepo();
-    request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
-    request.bazelCommand = `test //... ${this.getBazelFlags()}`;
-    request.repoState = this.getRepoState();
-
-    rpcService.service
-      .run(request)
-      .then((response: runner.RunResponse) => {
-        window.open(`/invocation/${response.invocationId}`, "_blank");
-      })
-      .catch((error: any) => {
-        alert(error);
+      }).finally(() => {
+        this.setState({ isBuilding: false })
       });
   }
 
@@ -331,7 +324,9 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   // TODO(siggisim): Implement delete
-  handleDeleteClicked(fullPath: string) {}
+  handleDeleteClicked(fullPath: string) {
+    alert("Delete not yet implemented!")
+  }
 
   handleNewFileClicked() {
     let fileName = prompt("File name:");
@@ -357,21 +352,6 @@ export default class CodeComponent extends React.Component<Props> {
     }
   }
 
-  handleRepoClicked() {
-    let regex = /(?<owner>.*)\/(?<repo>.*)/;
-    const groups = prompt("Enter a github repo to edit (i.e. buildbuddy-io/buildbuddy):").match(regex)?.groups;
-    if (!groups?.owner || !groups?.repo) {
-      alert("Repo not found!");
-      this.handleRepoClicked();
-    }
-    let path = `/code/${groups?.owner}/${groups?.repo}`;
-    if (!this.state.owner || !this.state.repo) {
-      window.history.pushState({ path: path }, "", path);
-    } else {
-      window.location.href = path;
-    }
-  }
-
   handleGitHubClicked() {
     const params = new URLSearchParams({
       group_id: this.props.user?.selectedGroup?.id,
@@ -384,11 +364,14 @@ export default class CodeComponent extends React.Component<Props> {
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
+    if (!this.state.repo) {
+      return <CodeEmptyStateComponent />
+    }
+
     setTimeout(() => {
       this.editor?.layout();
     }, 0);
 
-    // TODO(siggisim): Make menu less cluttered
     return (
       <div className="code-editor">
         <div className="code-menu">
@@ -399,18 +382,12 @@ export default class CodeComponent extends React.Component<Props> {
             </a>
           </div>
           <div className="code-menu-actions">
-            {!this.props.user.selectedGroup.githubToken && (
-              <button onClick={this.handleGitHubClicked.bind(this)}>🔗 &nbsp;Link GitHub</button>
-            )}
-            <button onClick={this.handleRepoClicked.bind(this)}>👩‍💻 &nbsp;Repo</button>
-            <button onClick={this.handleNewFileClicked.bind(this)}>🌱 &nbsp;File</button>
-            {/* <button onClick={this.handleDeleteClicked.bind(this)}>❌ &nbsp;Delete</button> */}
-            <button onClick={this.handleBuildClicked.bind(this)}>🏗️ &nbsp;Build</button>
-            <button onClick={this.handleTestClicked.bind(this)}>🧪 &nbsp;Test</button>
+            <CodeBuildButton onCommandClicked={this.handleBuildClicked.bind(this)} isLoading={this.state.isBuilding} project={`${this.state.repo}/${this.state.owner}`} />
           </div>
         </div>
         <div className="code-main">
           <div className="code-sidebar">
+            <div className="code-sidebar-tree">
             {this.state.repoResponse &&
               this.state.repoResponse.data.tree.map((node: any) => (
                 <SidebarNodeComponent
@@ -421,6 +398,14 @@ export default class CodeComponent extends React.Component<Props> {
                   fullPath={node.path}
                 />
               ))}
+              </div>
+              <div className="code-sidebar-actions">
+                {!this.props.user.selectedGroup.githubToken && (
+                  <button onClick={this.handleGitHubClicked.bind(this)}>🔗 &nbsp;Link GitHub</button>
+                )}
+                <button onClick={this.handleNewFileClicked.bind(this)}>🌱 &nbsp;New</button>
+                <button onClick={this.handleDeleteClicked.bind(this)}>❌ &nbsp;Delete</button>
+              </div>
           </div>
           <div className="code-container">
             <div className="code-viewer-container">
