@@ -1,3 +1,22 @@
+import {
+  Activity,
+  Box,
+  Clock,
+  Cpu,
+  DownloadCloud,
+  Github,
+  GitBranch,
+  GitCommit,
+  Package,
+  Cloud,
+  HardDrive,
+  LayoutGrid,
+  Link,
+  Target,
+  User as UserIcon,
+  Wrench,
+  Zap,
+} from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
 import format from "../format/format";
@@ -104,24 +123,24 @@ export default class InvocationOverviewComponent extends React.Component {
             {this.props.model.getStatus()}
           </div>
           <div className="detail" title={this.props.model.getDurationSeconds()}>
-            <img className="icon" src="/image/clock-regular.svg" />
+            <Clock className="icon" />
             {this.props.model.getTiming()}
           </div>
           <div className="detail clickable" onClick={this.handleUserClicked.bind(this)}>
-            <img className="icon" src="/image/user-regular.svg" />
+            <UserIcon className="icon" />
             {this.props.model.getUser(false)}
           </div>
           <div className="detail clickable" onClick={this.handleHostClicked.bind(this)}>
-            <img className="icon" src="/image/hard-drive-regular.svg" />
+            <HardDrive className="icon" />
             {this.props.model.getHost()}
           </div>
           <div className="detail">
-            <img className="icon" src="/image/tool-regular.svg" />
+            <Wrench className="icon" />
             {this.props.model.getTool()}
           </div>
           {isBazelInvocation && (
             <div className="detail" title={this.props.model.getAllPatterns()}>
-              <img className="icon" src="/image/grid-regular.svg" />
+              <LayoutGrid className="icon" />
               {this.props.model.getPattern()}
             </div>
           )}
@@ -129,19 +148,19 @@ export default class InvocationOverviewComponent extends React.Component {
             <div
               className="detail"
               title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
-              <img className="icon" src="/image/target-regular.svg" />
+              <Target className="icon" />
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>
           )}
           {isBazelInvocation && (
             <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
-              <img className="icon" src="/image/activity-regular.svg" />
+              <Activity className="icon" />
               {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
-              <img className="icon" src="/image/box-regular.svg" />
+              <Box className="icon" />
               {this.props.model.buildMetrics?.packageMetrics.packagesLoaded} packages
             </div>
           )}
@@ -149,49 +168,49 @@ export default class InvocationOverviewComponent extends React.Component {
             <div
               className={this.props.model.getFetchURLs().length ? "detail clickable" : "detail"}
               onClick={this.handleFetchesClicked.bind(this)}>
-              <img className="icon" src="/image/link.svg" />
+              <DownloadCloud className="icon" />
               {this.props.model.getFetchURLs().length} fetches
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
-              <img className="icon" src="/image/cpu-regular.svg" />
+              <Cpu className="icon" />
               {this.props.model.getCPU()}
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail">
-              <img className="icon" src="/image/zap-regular.svg" />
+              <Zap className="icon" />
               {this.props.model.getMode()}
             </div>
           )}
           {this.props.model.getRepo() && (
             <div className="detail clickable" onClick={this.handleRepoClicked.bind(this)}>
-              <img className="icon" src="/image/github-regular.svg" />
+              <Github className="icon" />
               {format.formatGitUrl(this.props.model.getRepo())}
             </div>
           )}
           {this.props.model.getBranchName() && (
             <div className="detail clickable" onClick={this.handleBranchClicked.bind(this)}>
-              <img className="icon" src="/image/git-branch-regular.svg" />
+              <GitBranch className="icon" />
               {this.props.model.getBranchName()}
             </div>
           )}
           {this.props.model.getCommit() && (
             <div className="detail clickable" onClick={this.handleCommitClicked.bind(this)}>
-              <img className="icon" src="/image/git-commit-regular.svg" />
+              <GitCommit className="icon" />
               {format.formatCommitHash(this.props.model.getCommit())}
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail clickable" onClick={this.handleCacheClicked.bind(this)}>
-              <img className="icon" src="/image/package-regular.svg" />
+              <Package className="icon" />
               {this.props.model.getCache()}
             </div>
           )}
           {isBazelInvocation && (
             <div className="detail clickable" onClick={this.handleRBEClicked.bind(this)}>
-              <img className="icon" src="/image/cloud-regular.svg" />
+              <Cloud className="icon" />
               {this.props.model.getRBE()}
             </div>
           )}
@@ -203,7 +222,7 @@ export default class InvocationOverviewComponent extends React.Component {
           )}
           {this.props.model.getLinks().map((link) => (
             <a className="detail clickable" href={link.linkUrl} target="_blank">
-              <img className="icon" src="/image/link.svg" />
+              <Link className="icon" />
               {link.linkText}
             </a>
           ))}

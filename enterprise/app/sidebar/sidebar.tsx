@@ -1,3 +1,26 @@
+import {
+  BookOpen,
+  Gauge,
+  Settings,
+  Cloud,
+  PlayCircle,
+  Code,
+  HardDrive,
+  Users,
+  GitBranch,
+  Github,
+  BarChart2,
+  LayoutGrid,
+  CheckCircle,
+  Circle,
+  GitCommit,
+  ChevronUp,
+  ChevronDown,
+  List,
+  LogOut,
+  PlusCircle,
+  Sliders,
+} from "lucide-react";
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
@@ -155,80 +178,80 @@ export default class SidebarComponent extends React.Component {
           <div
             className={`sidebar-item ${this.isHomeSelected() ? "selected" : ""}`}
             onClick={this.navigateToAllBuilds.bind(this)}>
-            <img src="/image/list-white.svg" /> All builds
+            <List /> All builds
           </div>
           <div
             className={`sidebar-item ${this.isTrendsSelected() ? "selected" : ""}`}
             onClick={this.navigateToTrends.bind(this)}>
-            <img src="/image/bar-chart-white.svg" /> Trends
+            <BarChart2 /> Trends
           </div>
           {capabilities.test && (
             <div
               className={`sidebar-item ${this.isTapSelected() ? "selected" : ""}`}
               onClick={this.navigateToTap.bind(this)}>
-              <img src="/image/grid-white.svg" /> Tests
+              <LayoutGrid /> Tests
             </div>
           )}
           <div
             className={`sidebar-item ${this.isUsersSelected() ? "selected" : ""}`}
             onClick={this.navigateToUsers.bind(this)}>
-            <img src="/image/users-white.svg" /> Users
+            <Users /> Users
           </div>
           <div
             className={`sidebar-item ${this.isReposSelected() ? "selected" : ""}`}
             onClick={this.navigateToRepos.bind(this)}>
-            <img src="/image/github-white.svg" /> Repos
+            <Github /> Repos
           </div>
           <div
             className={`sidebar-item ${this.isBranchesSelected() ? "selected" : ""}`}
             onClick={this.navigateToBranches.bind(this)}>
-            <img src="/image/git-branch-white.svg" /> Branches
+            <GitBranch /> Branches
           </div>
           <div
             className={`sidebar-item ${this.isCommitsSelected() ? "selected" : ""}`}
             onClick={this.navigateToCommits.bind(this)}>
-            <img src="/image/git-commit-white.svg" /> Commits
+            <GitCommit /> Commits
           </div>
           <div
             className={`sidebar-item ${this.isHostsSelected() ? "selected" : ""}`}
             onClick={this.navigateToHosts.bind(this)}>
-            <img src="/image/hard-drive-white.svg" /> Hosts
+            <HardDrive /> Hosts
           </div>
           {router.canAccessExecutorsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isExecutorsSelected() ? "selected" : ""}`}
               onClick={this.navigateToExecutors.bind(this)}>
-              <img src="/image/cloud-white.svg" /> Executors
+              <Cloud /> Executors
             </div>
           )}
           {router.canAccessWorkflowsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isWorkflowsSelected() ? "selected" : ""}`}
               onClick={this.navigateToWorkflows.bind(this)}>
-              <img src="/image/play-circle-white.svg" /> Workflows
+              <PlayCircle /> Workflows
             </div>
           )}
           {capabilities.code && (
             <div
               className={`sidebar-item ${this.isCodeSelected() ? "selected" : ""}`}
               onClick={this.navigateToCode.bind(this)}>
-              <img src="/image/code-white.svg" /> Code
+              <Code /> Code
             </div>
           )}
           <div
             className={`sidebar-item ${this.isSettingsSelected() ? "selected" : ""}`}
             onClick={() => router.navigateToSetup()}>
-            <img src="/image/settings-white.svg" /> Setup
+            <Settings /> Setup
           </div>
           {router.canAccessUsagePage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
               onClick={this.navigateToUsage.bind(this)}>
-              <img src="/image/gauge-white.svg" /> Usage
+              <Gauge /> Usage
             </div>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank">
-            <img src="/image/book-open-white.svg" /> Docs
+            <BookOpen /> Docs
           </a>
         </div>
         <div className={`sidebar-footer ${this.state.profileExpanded ? "expanded" : ""}`}>
@@ -245,29 +268,23 @@ export default class SidebarComponent extends React.Component {
                         group.id === this.props.user.selectedGroup.id ? "selected" : ""
                       }`}
                       onClick={this.handleOrgClicked.bind(this, group.id)}>
-                      <img
-                        src={
-                          group.id === this.props.user.selectedGroup.id
-                            ? "/image/check-circle-white.svg"
-                            : "/image/circle-white.svg"
-                        }
-                      />{" "}
+                      {group.id === this.props.user.selectedGroup.id ? <CheckCircle /> : <Circle />}
                       <div className="org-picker-item-label">{group.name}</div>
                     </div>
                   ))}
                 </div>
                 {this.props.user && !this.props.user?.isInDefaultGroup() && (
                   <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
-                    <img src="/image/plus-circle-white.svg" />
+                    <PlusCircle />
                     Create org
                   </div>
                 )}
               </div>
               <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
-                <img src="/image/log-out-white.svg" /> Logout
+                <LogOut /> Logout
               </div>
               <div className="sidebar-item" onClick={() => router.navigateToSettings()}>
-                <img src="/image/sliders-white.svg" />
+                <Sliders />
                 Settings
               </div>
             </div>
@@ -286,10 +303,11 @@ export default class SidebarComponent extends React.Component {
                 </div>
                 <div className="sidebar-profile-org">{this.props.user?.selectedGroupName()}</div>
               </div>
-              <img
-                className="sidebar-profile-arrow"
-                src={this.state.profileExpanded ? "/image/chevron-down-white.svg" : "/image/chevron-up-white.svg"}
-              />
+              {this.state.profileExpanded ? (
+                <ChevronDown className="sidebar-profile-arrow" />
+              ) : (
+                <ChevronUp className="sidebar-profile-arrow" />
+              )}
             </div>
           )}
         </div>

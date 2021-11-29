@@ -46,6 +46,7 @@ ts_library(
         "@npm//@types/react",
         "@npm//dagre-d3-react",
         "@npm//long",
+        "@npm//lucide-react",
         "@npm//moment",
         "@npm//pako",
         "@npm//protobufjs",
