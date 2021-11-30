@@ -7,6 +7,7 @@ interface Props {
   loading: boolean;
   expanded: boolean;
   dark: boolean;
+  fullLogsFetcher: () => Promise<string>;
 }
 
 export default class BuildLogsCardComponent extends React.Component<Props> {
@@ -27,7 +28,11 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
                 <div className={`loading ${this.props.dark ? "loading-dark" : ""}`} />
               </div>
             ) : (
-              <TerminalComponent value={this.props.value} lightTheme={!this.props.dark} />
+              <TerminalComponent
+                value={this.props.value}
+                lightTheme={!this.props.dark}
+                fullLogsFetcher={this.props.fullLogsFetcher}
+              />
             )}
           </div>
         </div>
