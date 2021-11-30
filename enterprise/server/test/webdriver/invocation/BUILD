@@ -4,7 +4,6 @@ go_web_test_suite(
     name = "invocation_test",
     srcs = ["invocation_test.go"],
     shard_count = 1,
-    tags = ["manual"],
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bazelbuild/rules_webtesting/go/webtest"
 	"github.com/stretchr/testify/assert"
@@ -38,6 +39,16 @@ func New(t *testing.T) *WebTester {
 		},
 	})
 	require.NoError(t, err, "failed to create webdriver session")
+	// Allow webdriver to wait a short period before giving up on finding an
+	// element. In most cases, Selenium's default heuristics for marking a page
+	// "ready" should prevent the need for this, but this implicit wait timeout
+	// should give us enough wiggle room to avoid the need for any synchronization
+	// logic between the app and the test. We should keep this very short to
+	// avoid hiding real issues and to fail fast in the case where an element will
+	// never be located.
+	//
+	// See also https://stackoverflow.com/q/11001030
+	driver.SetImplicitWaitTimeout(1 * time.Second)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
 		err := wt.screenshot("END_OF_TEST")
