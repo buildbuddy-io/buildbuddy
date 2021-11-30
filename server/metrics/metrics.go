@@ -94,6 +94,9 @@ const (
 
 	/// EventName is the name used to identify the type of an unexpected event.
 	EventName = "name"
+
+	/// PartitionID is the ID of the disk cache partition this event applied to.
+	PartitionID = "partition_id"
 )
 
 const (
@@ -257,6 +260,15 @@ var (
 	///   sum(rate(buildbuddy_remote_cache_upload_duration_usec{cache_type="cas"}[5m])) by (le)
 	/// )
 	/// ```
+
+	DiskCacheLastEvictionAgeUsec = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_last_eviction_age_usec",
+		Help:      "The age (in usec) of the item most recently evicted from the cache",
+	}, []string{
+		PartitionID,
+	})
 
 	/// ## Remote execution metrics
 

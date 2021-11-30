@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -309,25 +311,25 @@ type partition struct {
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
-	if err != nil {
-		return nil, err
-	}
-	c := &partition{
+	p := &partition{
 		id:               id,
 		useV2Layout:      useV2Layout,
 		maxSizeBytes:     maxSizeBytes,
-		lru:              l,
 		rootDir:          rootDir,
 		fileChannel:      make(chan *fileRecord),
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
 	}
-	if err := c.initializeCache(); err != nil {
+	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: p.evictFn, SizeFn: sizeFn})
+	if err != nil {
 		return nil, err
 	}
-	c.startJanitor()
-	return c, nil
+	p.lru = l
+	if err := p.initializeCache(); err != nil {
+		return nil, err
+	}
+	p.startJanitor()
+	return p, nil
 }
 
 type fileRecord struct {
@@ -348,12 +350,6 @@ func sizeFn(value interface{}) int64 {
 	return size
 }
 
-func evictFn(value interface{}) {
-	if v, ok := value.(*fileRecord); ok {
-		disk.DeleteFile(context.TODO(), v.FullPath())
-	}
-}
-
 func getLastUse(info os.FileInfo) int64 {
 	stat := info.Sys().(*syscall.Stat_t)
 	// Super Gross! https://github.com/golang/go/issues/31735
@@ -367,6 +363,18 @@ func getLastUse(info os.FileInfo) int64 {
 		ts = syscall.Timespec{}
 	}
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
+}
+
+func (p *partition) evictFn(value interface{}) {
+	if v, ok := value.(*fileRecord); ok {
+		i, err := os.Stat(v.FullPath())
+		if err == nil {
+			lastUse := time.Unix(0, getLastUse(i))
+			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
+			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
+		}
+		disk.DeleteFile(context.TODO(), v.FullPath())
+	}
 }
 
 func (p *partition) internString(s string) string {
