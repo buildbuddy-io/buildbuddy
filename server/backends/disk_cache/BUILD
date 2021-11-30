@@ -10,6 +10,7 @@ go_library(
         "//server/config",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/disk",
@@ -18,6 +19,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
     ],
 )
