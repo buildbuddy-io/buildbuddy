@@ -122,6 +122,19 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 	return contextReplacingUnaryServerInterceptor(ctxFn)
 }
 
+func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
+		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
+			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
+			if err := role_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
+				return err
+			}
+		}
+		return handler(srv, stream)
+	}
+}
+
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
@@ -131,7 +144,6 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 				return nil, err
 			}
 		}
-
 		return handler(ctx, req)
 	}
 }
@@ -221,6 +233,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 		requestIDStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
+		roleAuthStreamServerInterceptor(env),
 		copyHeadersStreamServerInterceptor(),
 	)
 }

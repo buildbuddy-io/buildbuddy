@@ -668,10 +668,15 @@ func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
 	users[ExecutorAPIKey] = &testauth.TestUser{
 		GroupID:       ExecutorGroup,
 		AllowedGroups: []string{ExecutorGroup},
-		// TODO(bduffany): Don't give this API key admin rights, since API keys
-		// don't actually have admin rights in real apps.
-		GroupMemberships: []*interfaces.GroupMembership{{GroupID: ExecutorGroup, Role: role.Admin}},
-		Capabilities:     []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
+		// TODO(bduffany): Replace `role.Admin` below with `role.Default` since API
+		// keys cannot have admin rights in practice. This is needed because some
+		// tests perform some RPCs which require admin rights, and we'll need to
+		// either (a) refactor those tests to authenticate as an admin user, or (b)
+		// make it legitimately possible for an API key to have admin role.
+		GroupMemberships: []*interfaces.GroupMembership{
+			{GroupID: ExecutorGroup, Role: role.Admin},
+		},
+		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
 	}
 	return testauth.NewTestAuthenticator(users)
 }
