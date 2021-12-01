@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/http/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/stretchr/testify/assert"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"

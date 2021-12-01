@@ -1,15 +1,13 @@
 package role_filter
 
 import (
-	"net/http"
+	"context"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 const (
@@ -38,6 +36,8 @@ var (
 		// don't require a group role.
 		"GetBazelConfig",
 		// API calls are role independent
+		// TODO(bduffany): prefix all of these with the service name,
+		// since API methods and BuildBuddyService methods may be the same.
 		"GetInvocation",
 		"GetLog",
 		"GetTarget",
@@ -58,7 +58,7 @@ var (
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
-		// Runners,
+		// Remote Bazel
 		"Run",
 	}
 
@@ -85,44 +85,36 @@ var (
 	}
 )
 
-func AuthorizeSelectedGroupRole(env environment.Env, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		rpcName := r.URL.Path
-		if stringSliceContains(RoleIndependentRPCs, rpcName) {
-			next.ServeHTTP(w, r)
-			return
-		}
+// AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
+// that the user has the appropriate role within their org to call the RPC.
+//
+// If the RPC accesses any specific resources within the org, further
+// authorization checks may be needed beyond this coarse-grained filter.
+func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) error {
+	if stringSliceContains(RoleIndependentRPCs, rpcName) {
+		return nil
+	}
 
-		u, err := perms.AuthenticatedUser(ctx, env)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
+	u, err := perms.AuthenticatedUser(ctx, env)
+	if err != nil {
+		return err
+	}
 
-		if stringSliceContains(u.GetAllowedGroups(), globalAdminGroupID) {
-			next.ServeHTTP(w, r)
-			return
-		}
+	if stringSliceContains(u.GetAllowedGroups(), globalAdminGroupID) {
+		return nil
+	}
 
-		reqCtx := requestcontext.ProtoRequestContextFromContext(ctx)
-		if reqCtx == nil || reqCtx.GetGroupId() == "" {
-			http.Error(w, `Request is missing "request_context.group_id" field`, http.StatusBadRequest)
-			return
-		}
+	groupID := u.GetGroupID()
+	if groupID == "" {
+		return status.UnauthenticatedError("Could not determine authenticated group ID from request")
+	}
 
-		allowedRoles := role.Admin | role.Developer
-		if stringSliceContains(GroupAdminOnlyRPCs, rpcName) {
-			allowedRoles = role.Admin
-		}
+	allowedRoles := role.Admin | role.Developer
+	if stringSliceContains(GroupAdminOnlyRPCs, rpcName) {
+		allowedRoles = role.Admin
+	}
 
-		if err := authutil.AuthorizeGroupRole(u, reqCtx.GetGroupId(), allowedRoles); err != nil {
-			http.Error(w, status.Message(err), http.StatusForbidden)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
+	return authutil.AuthorizeGroupRole(u, groupID, allowedRoles)
 }
 
 func stringSliceContains(slice []string, val string) bool {
