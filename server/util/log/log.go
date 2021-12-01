@@ -64,7 +64,7 @@ func fmtErr(err error) string {
 }
 
 func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, err error) {
-	if log.Logger.GetLevel() > zerolog.InfoLevel {
+	if log.Logger.GetLevel() > zerolog.DebugLevel {
 		return
 	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
@@ -73,9 +73,9 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
 	shortPath := "/" + path.Base(fullMethod)
 	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		Infof("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
+		Debugf("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
 	} else {
-		Infof("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
+		Debugf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
 	if logErrorStackTraces {
 		code := gstatus.Code(err)
@@ -89,7 +89,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 			for _, f := range se.StackTrace() {
 				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
 			}
-			Info(stackBuf)
+			Debug(stackBuf)
 		}
 	}
 }
@@ -99,7 +99,7 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 		return
 	}
 	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	Infof("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+	Debugf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
 func init() {
