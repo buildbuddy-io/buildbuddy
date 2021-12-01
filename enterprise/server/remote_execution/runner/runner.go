@@ -1177,7 +1177,8 @@ func (r *CommandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 func (r *CommandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
-		return jsonpb.UnmarshalNext(r.jsonDecoder, responseProto)
+		unmarshaller := jsonpb.Unmarshaler{AllowUnknownFields: true}
+		return unmarshaller.UnmarshalNext(r.jsonDecoder, responseProto)
 	}
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
