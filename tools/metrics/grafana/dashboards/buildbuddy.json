@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1638219742682,
+  "iteration": 1638318921654,
   "links": [],
   "panels": [
     {
@@ -157,7 +157,7 @@
             "y": 1
           },
           "hiddenSeries": false,
-          "id": 613,
+          "id": 643,
           "legend": {
             "avg": false,
             "current": false,
@@ -179,7 +179,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 21,
           "scopedVars": {
             "job": {
@@ -264,7 +264,7 @@
             "y": 1
           },
           "hiddenSeries": false,
-          "id": 614,
+          "id": 644,
           "legend": {
             "avg": false,
             "current": false,
@@ -286,7 +286,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638215490585,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 21,
           "scopedVars": {
             "job": {
@@ -2103,6 +2103,106 @@
             "align": false,
             "alignLevel": null
           }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "description": "Avg age of last item evicted by the disk cache",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 23
+          },
+          "hiddenSeries": false,
+          "id": 646,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec/1e6) by (partition_id)",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Disk Cache Avg Last Evicted Age",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:108",
+              "format": "s",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:109",
+              "format": "m",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         }
       ],
       "title": "Remote cache",
@@ -2137,7 +2237,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 7
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 420,
@@ -2233,7 +2333,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 422,
@@ -3497,7 +3597,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3614,7 +3714,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3736,7 +3836,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3869,7 +3969,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3981,7 +4081,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4089,7 +4189,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4196,7 +4296,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4304,7 +4404,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4411,7 +4511,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4521,7 +4621,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4586,7 +4686,7 @@
           }
         }
       ],
-      "repeatIteration": 1638219742682,
+      "repeatIteration": 1638318921654,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5323,7 +5423,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5444,7 +5544,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5552,7 +5652,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5660,7 +5760,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5768,7 +5868,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5876,7 +5976,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5941,7 +6041,7 @@
           }
         }
       ],
-      "repeatIteration": 1638219742682,
+      "repeatIteration": 1638318921654,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -8701,7 +8801,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8813,7 +8913,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -8923,7 +9023,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9033,7 +9133,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9098,7 +9198,7 @@
           }
         }
       ],
-      "repeatIteration": 1638219742682,
+      "repeatIteration": 1638318921654,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9168,7 +9268,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9280,7 +9380,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9390,7 +9490,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9500,7 +9600,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638219742682,
+          "repeatIteration": 1638318921654,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9565,7 +9665,7 @@
           }
         }
       ],
-      "repeatIteration": 1638219742682,
+      "repeatIteration": 1638318921654,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
