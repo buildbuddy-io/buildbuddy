@@ -14,6 +14,7 @@ import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
+import { CheckCircle, Clock, Hash, Percent, XCircle } from "lucide-react";
 
 interface State {
   /**
@@ -455,19 +456,19 @@ export default class HistoryComponent extends React.Component<Props, State> {
             {this.state.summaryStat && !hideSummaryStats && (
               <div className="details">
                 <div className="detail">
-                  <img className="icon" src="/image/hash.svg" />
+                  <Hash className="icon gray" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} builds
                 </div>
                 <div className="detail">
-                  <img className="icon" src="/image/check-circle.svg" />
+                  <CheckCircle className="icon green" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumSucessfulBuilds)} passed
                 </div>
                 <div className="detail">
-                  <img className="icon" src="/image/x-circle.svg" />
+                  <XCircle className="icon red" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumFailingBuilds)} failed
                 </div>
                 <div className="detail">
-                  <img className="icon" src="/image/percent.svg" />
+                  <Percent className="icon grey" />
                   {format.percent(
                     Number(this.state.summaryStat.totalNumSucessfulBuilds) /
                       (Number(this.state.summaryStat.totalNumSucessfulBuilds) +
@@ -476,11 +477,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   passed
                 </div>
                 <div className="detail">
-                  <img className="icon" src="/image/clock-regular.svg" />
+                  <Clock className="icon" />
                   {format.durationUsec(this.state.summaryStat.totalBuildTimeUsec)} total
                 </div>
                 <div className="detail">
-                  <img className="icon" src="/image/clock-regular.svg" />
+                  <Clock className="icon" />
                   {format.durationUsec(
                     Number(this.state.summaryStat.totalBuildTimeUsec) / Number(this.state.summaryStat.totalNumBuilds)
                   )}{" "}

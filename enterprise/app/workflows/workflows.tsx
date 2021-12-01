@@ -21,6 +21,7 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 import CreateWorkflowComponent from "./create_workflow";
 import GitHubImport from "./github_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
+import { GitMerge, MoreVertical } from "lucide-react";
 
 type Workflow = workflow.GetWorkflowsResponse.IWorkflow;
 
@@ -267,7 +268,7 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
       <div className="workflow-item container">
         <div className="workflow-item-column">
           <div className="workflow-item-row">
-            <img className="git-merge-icon" src="/image/git-merge.svg" alt="" />
+            <GitMerge />
             <a
               href={router.getWorkflowHistoryUrl(repoUrl)}
               onClick={this.onClickRepoUrl.bind(this)}
@@ -281,9 +282,9 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
           <div>
             <OutlinedButton
               title="Workflow options"
-              className="workflow-dropdown-button"
+              className="icon-button"
               onClick={this.onClickMenuButton.bind(this)}>
-              <img src="/image/more-vertical.svg" alt="" />
+              <MoreVertical />
             </OutlinedButton>
             <Popup isOpen={isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
               <Menu className="workflow-dropdown-menu">

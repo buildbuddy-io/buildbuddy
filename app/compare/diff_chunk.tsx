@@ -1,4 +1,5 @@
 import DiffMatchPatch from "diff-match-patch";
+import { Maximize2 } from "lucide-react";
 import React from "react";
 import { OutlinedButton } from "../components/button/button";
 
@@ -79,7 +80,7 @@ export default class DiffChunk extends React.Component<DiffChunkProps, State> {
         {renderLines(lines.slice(0, NUM_LINES_OF_CONTEXT))}
         <OutlinedButton className={`diff-line collapsed ${expandButtonClass}`} onClick={this.onExpand.bind(this)}>
           <div className="maximize-icon-container">
-            <img className="maximize-icon" src="/image/maximize-2.svg" />
+            <Maximize2 className="maximize-icon" />
           </div>
           <pre>
             Show {lines.length - NUM_LINES_OF_CONTEXT * 2} {collapsedLabel} lines

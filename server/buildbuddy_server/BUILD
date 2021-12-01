@@ -22,7 +22,7 @@ go_library(
         "//server/bytestream",
         "//server/environment",
         "//server/eventlog",
-        "//server/http/role_filter",
+        "//server/role_filter",
         "//server/ssl",
         "//server/tables",
         "//server/target",

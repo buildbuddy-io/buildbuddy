@@ -34,10 +34,10 @@
   padding-top: 1px;
 }
 
-.file-icon {
-  margin-right: 8px;
-  margin-left: 0px;
-  padding-top: 1.5px;
+.invocation-action-card .icon.file-icon {
+  margin-right: 4px;
+  width: 18px;
+  height: 18px;
 }
 
 .file-name {
@@ -232,7 +232,7 @@
   flex-grow: 10;
 }
 
-.invocation-share-button img {
+.invocation-share-button svg {
   margin-right: 12px;
   margin-left: -4px;
   width: 16px;
@@ -467,9 +467,14 @@
   margin-right: 8px;
 }
 
-.workflow-rerun-button img {
+.workflow-rerun-button svg {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
+}
+
+.workflow-rerun-button .spinner {
+  --size: 16px;
 }
 
 .workflow-rerun-button .loading {

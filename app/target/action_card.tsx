@@ -1,11 +1,10 @@
 import React from "react";
 import format from "../format/format";
 import SetupCodeComponent from "../docs/setup_code";
-
 import { invocation } from "../../proto/invocation_ts_proto";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
+import { PauseCircle, PlayCircle } from "lucide-react";
 
 interface Props {
   action: invocation.InvocationEvent;
@@ -111,13 +110,13 @@ export default class ActionCardComponent extends React.Component {
 
   render() {
     return (
-      <div>
+      <div className="target-action-card">
         {this.props.action?.buildEvent?.action?.stderr?.uri && (
           <div
             className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
               this.props.action.buildEvent.action.success ? "card-success" : "card-failure"
             }`}>
-            <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
+            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
               <div className="title">Error Log</div>
               <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
@@ -154,7 +153,7 @@ export default class ActionCardComponent extends React.Component {
 
         {this.props.action?.buildEvent?.action?.stdout?.uri && (
           <div className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")}`}>
-            <img className="icon" src={this.props.dark ? "/image/log-circle-light.svg" : "/image/log-circle.svg"} />
+            <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
               <div className="title">Log</div>
               {!this.state.cacheEnabled && (
@@ -189,7 +188,7 @@ export default class ActionCardComponent extends React.Component {
         )}
 
         <div className={`card ${this.props.action.buildEvent.action.success ? "card-success" : "card-failure"}`}>
-          <img className="icon" src="/image/play-circle.svg" />
+          <PlayCircle className="icon" />
           <div className="content">
             <div className="title">{this.props.action?.buildEvent?.action?.label}</div>
             <div className="test-subtitle">

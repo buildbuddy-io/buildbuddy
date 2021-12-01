@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import React from "react";
 
 export type SelectProps = JSX.IntrinsicElements["select"];
@@ -7,6 +8,9 @@ export const Select = React.forwardRef((props: SelectProps, ref: React.Ref<HTMLS
   return (
     <div className="select-wrapper">
       <select ref={ref} className={`select ${className || ""}`} {...rest} />
+      <div className="dropdown-icon-wrapper">
+        <ChevronDown className="icon" />
+      </div>
     </div>
   );
 });

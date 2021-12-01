@@ -256,18 +256,58 @@ button {
   margin-top: 8px;
 }
 
-.shelf .details img {
-  opacity: 0.5;
+.shelf .details .icon {
   margin-right: 8px;
-}
-
-.shelf .details img.buildkite,
-.shelf .details img.status {
-  opacity: 1;
 }
 
 .shelf .details img:first-of-type {
   margin-left: 0;
+}
+
+/* Default icon color is gray */
+svg.icon {
+  stroke: #616161;
+}
+
+svg.icon.white {
+  stroke: #fff;
+}
+
+svg.icon.gray,
+svg.icon.grey {
+  stroke: #616161;
+}
+
+svg.icon.black {
+  stroke: #000;
+}
+
+svg.icon.green {
+  stroke: #8bc34a;
+}
+
+svg.icon.red {
+  stroke: #f44336;
+}
+
+svg.icon.blue {
+  stroke: #03a9f4;
+}
+
+svg.icon.brown {
+  stroke: #774a21;
+}
+
+svg.icon.purple {
+  stroke: #673ab7;
+}
+
+svg.icon.orange {
+  stroke: #ff6f00;
+}
+
+.rotate-90 {
+  transform: rotate(90deg);
 }
 
 .org-button {
@@ -384,10 +424,9 @@ button {
   overflow: hidden;
 }
 
-.filter img {
+.filter svg {
   width: 16px;
   height: 16px;
-  opacity: 0.3;
   padding-left: 20px;
 }
 
@@ -852,12 +891,11 @@ code .comment {
   margin-top: 8px;
 }
 
-.history .details img {
-  opacity: 0.5;
+.history .details .icon {
   margin-right: 8px;
 }
 
-.history .details img:first-of-type {
+.history .details .icon:first-of-type {
   margin-left: 0;
 }
 
@@ -920,11 +958,14 @@ code .comment {
 
 /** Misc **/
 
+.terminal-container {
+  position: relative;
+}
+
 .terminal {
   height: 300px;
   margin-top: -49px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
 }
 
 .terminal a {
@@ -938,18 +979,37 @@ code .comment {
 }
 
 .terminal-actions {
-  right: 32px;
-  top: 22px;
+  right: 0;
   position: absolute;
+  display: flex;
+  align-items: center;
   z-index: 1;
 }
 
-.dense .terminal-actions {
-  top: 4px;
+.terminal-actions .spinner {
+  --size: 18px;
+  padding: 12px;
+  opacity: 0.7;
 }
 
-.terminal-actions img {
+.light-terminal .terminal-actions {
+  filter: invert();
+}
+
+.light-terminal .react-lazylog-searchbar-input {
+  background-color: white;
+  border: 1px solid #eee;
+  color: black;
+}
+
+.light-terminal .react-lazylog-searchbar-input::placeholder {
+  color: #aaa;
+}
+
+.terminal-actions svg.icon {
   width: 18px;
+  height: 18px;
+  margin-right: 0;
 }
 
 .terminal-action {
@@ -974,9 +1034,10 @@ code .comment {
   pointer-events: none;
 }
 
-.react-lazylog-searchbar {
-  margin-bottom: 8px;
+/* Duplicate class selector here is used to increase specificity */
+.react-lazylog-searchbar.react-lazylog-searchbar {
   margin-right: 80px;
+  background-color: transparent;
 }
 
 .dense .react-lazylog-searchbar {
@@ -1239,7 +1300,7 @@ code .comment {
 }
 
 .test-subtitle {
-  margin-top: 4px;
+  margin-bottom: 8px;
   color: #aaa;
 }
 
@@ -1690,10 +1751,17 @@ code .comment {
   color: #888;
 }
 
-.dense .target-status-icon {
-  display: block;
-  width: 16px;
+.dense .card .target-status-icon.target-status-icon {
+  flex-grow: 0;
+  display: initial;
   margin-right: 4px;
+  width: 16px;
+}
+
+.dense .card .target-status-icon .icon {
+  display: initial;
+  width: 16px;
+  padding-top: 0;
 }
 
 .dense-invocation {

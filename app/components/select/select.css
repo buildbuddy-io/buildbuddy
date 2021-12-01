@@ -33,17 +33,17 @@
   border: 1px solid transparent;
 }
 
-.select-wrapper::after {
-  content: "";
+.select-wrapper .dropdown-icon-wrapper {
   display: block;
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 40px;
-  background-image: url("/image/chevron-down.svg");
-  background-position: center;
-  background-repeat: no-repeat;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 1;
   pointer-events: none;
 }

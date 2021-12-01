@@ -1,3 +1,4 @@
+import { ArrowDownCircle } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -26,7 +27,7 @@ export default class TargetArtifactsCardComponent extends React.Component {
   render() {
     return (
       <div className="card artifacts">
-        <img className="icon" src="/image/arrow-down-circle.svg" />
+        <ArrowDownCircle className="icon brown" />
         <div className="content">
           <div className="title">Artifacts</div>
           <div className="details">

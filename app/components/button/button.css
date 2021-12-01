@@ -55,6 +55,8 @@
   background: transparent;
   border: 1px solid rgba(20, 20, 20, 0.1);
   transition: 200ms ease;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
 .outlined-button:focus {
@@ -77,6 +79,11 @@
 .outlined-button[disabled] {
   background: #bbb;
   cursor: not-allowed;
+}
+
+.outlined-button span {
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .base-button.checkbox-button {
@@ -128,4 +135,5 @@
   padding: 0;
   width: 40px;
   justify-content: center;
+  flex-shrink: 0;
 }

@@ -1,3 +1,4 @@
+import { AlertCircle } from "lucide-react";
 import React from "react";
 import InvocationModel from "./invocation_model";
 
@@ -11,7 +12,7 @@ export default class ErrorCardComponent extends React.Component {
   render() {
     return (
       <div className="card card-failure">
-        <img className="icon" src="/image/alert-circle.svg" />
+        <AlertCircle className="icon" />
         <div className="content">
           <div className="title">Error</div>
           <div className="details">{this.props.model.aborted.aborted.description}</div>

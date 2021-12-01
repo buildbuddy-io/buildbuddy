@@ -13,6 +13,7 @@ ts_library(
         "//app/router",
         "//app/service",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )

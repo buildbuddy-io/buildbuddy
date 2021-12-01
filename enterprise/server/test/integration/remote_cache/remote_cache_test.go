@@ -7,23 +7,14 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
 
-const (
-	// configuredDefaultAPIKey is the API key value explicitly configured for the default group.
-	configuredDefaultAPIKey = "configuredDefaultAPIKey"
-)
-
 var (
-	testGroupID       = userdb.DefaultGroupID
 	workspaceContents = map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
 		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
@@ -63,26 +54,21 @@ func TestBuild_RemoteCacheFlags_Anonymous_SecondBuildIsCached(t *testing.T) {
 func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T) {
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	// Run the app with an API key we control so that we can authorize using it.
-	app := buildbuddy_enterprise.Run(
-		t,
-		fmt.Sprintf("--app.no_default_user_group=false"),
-		fmt.Sprintf("--api.api_key=%s", configuredDefaultAPIKey),
-	)
-	bbService := app.BuildBuddyServiceClient(t)
+	app := buildbuddy_enterprise.Run(t)
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
 	// Create a new read-write key
-	ctx := metadata.AppendToOutgoingContext(context.Background(), auth.APIKeyHeader, configuredDefaultAPIKey)
-	rsp, err := bbService.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
-		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
-		GroupId:        testGroupID,
+	rsp := &akpb.CreateApiKeyResponse{}
+	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
+		RequestContext: webClient.RequestContext,
+		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}, rsp)
+	require.NoError(t, err)
 	readWriteKey := rsp.ApiKey.Value
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readWriteKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
+	ctx := context.Background()
 	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)
@@ -107,27 +93,21 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 
 func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
-	// Run the app with an API key we control so that we can authorize using it.
-	app := buildbuddy_enterprise.Run(
-		t,
-		fmt.Sprintf("--app.no_default_user_group=false"),
-		fmt.Sprintf("--api.api_key=%s", configuredDefaultAPIKey),
-	)
-	bbService := app.BuildBuddyServiceClient(t)
+	app := buildbuddy_enterprise.Run(t)
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
+	rsp := &akpb.CreateApiKeyResponse{}
 	// Create a new read-only key
-	ctx := metadata.AppendToOutgoingContext(context.Background(), auth.APIKeyHeader, configuredDefaultAPIKey)
-	rsp, err := bbService.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
-		RequestContext: testauth.RequestContext(testGroupID, testGroupID),
-		GroupId:        testGroupID,
+	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
+		RequestContext: webClient.RequestContext,
+		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	}, rsp)
+	require.NoError(t, err)
 	readOnlyKey := rsp.ApiKey.Value
 	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 
+	ctx := context.Background()
 	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 
 	assert.NoError(t, result.Error)

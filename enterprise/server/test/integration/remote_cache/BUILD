@@ -6,13 +6,10 @@ go_test(
     shard_count = 4,
     deps = [
         "//enterprise/server/auth",
-        "//enterprise/server/backends/userdb",
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:api_key_go_proto",
-        "//server/testutil/testauth",
         "//server/testutil/testbazel",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//metadata",
     ],
 )

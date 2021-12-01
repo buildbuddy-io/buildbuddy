@@ -16,6 +16,8 @@ import errorService from "../errors/error_service";
 import router from "../router/router";
 import rpcService, { CancelablePromise } from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
+import Spinner from "../components/spinner/spinner";
+import { ChevronDown, RefreshCw } from "lucide-react";
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -86,11 +88,11 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
               disabled={!isEnabled}
               className="workflow-rerun-button"
               onClick={this.onClickRerun.bind(this, /*clean=*/ false)}>
-              {this.state.isLoading ? <div className="loading"></div> : <img alt="" src="/image/refresh-cw.svg" />}
+              {this.state.isLoading ? <Spinner /> : <RefreshCw />}
               <span>Re-run</span>
             </OutlinedButton>
             <OutlinedButton disabled={!isEnabled} className="icon-button" onClick={this.onOpenMenu.bind(this)}>
-              <img alt="" src="/image/chevron-down.svg" />
+              <ChevronDown />
             </OutlinedButton>
           </OutlinedButtonGroup>
           <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)} anchor="right">

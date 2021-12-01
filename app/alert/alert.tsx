@@ -1,6 +1,7 @@
 import React from "react";
 import { Subscription } from "rxjs";
 import alertService, { Alert, AlertType } from "./alert_service";
+import { XCircle, CheckCircle } from "lucide-react";
 
 interface State {
   alert?: Alert;
@@ -9,9 +10,9 @@ interface State {
 
 const DISPLAY_DURATION_MS = 4000;
 
-const ICON_URLS: Record<AlertType, string> = {
-  error: "/image/x-circle-regular.svg",
-  success: "/image/check-circle.svg",
+const ICONS: Record<AlertType, JSX.Element> = {
+  error: <XCircle className="red" />,
+  success: <CheckCircle className="green" />,
 };
 
 export default class AlertComponent extends React.Component<{}, State> {
@@ -48,7 +49,7 @@ export default class AlertComponent extends React.Component<{}, State> {
         className={`alert-banner alert-type-${this.state.alert?.type} ${this.state.isVisible ? "visible" : "hidden"}`}
         onMouseEnter={this.onMouseEnter.bind(this)}
         onMouseLeave={this.onMouseLeave.bind(this)}>
-        <img src={ICON_URLS[this.state.alert?.type]} />
+        {ICONS[this.state.alert?.type]}
         <span>{this.state.alert?.message}</span>
       </div>
     );

@@ -70,6 +70,7 @@ export default class EnterpriseRootComponent extends React.Component {
     authService.register();
     router.register(this.handlePathChange.bind(this));
     faviconService.setDefaultFavicon();
+    (window as any)._preferences = this.state.preferences;
   }
 
   componentDidMount() {

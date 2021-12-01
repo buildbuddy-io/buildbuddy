@@ -1,13 +1,18 @@
+import { WrapText, Download } from "lucide-react";
 import React from "react";
 import { LazyLog } from "react-lazylog";
+import errorService from "../errors/error_service";
+import Spinner from "../components/spinner/spinner";
 
 export interface TerminalProps {
   value?: string;
   lightTheme?: boolean;
+  fullLogsFetcher?: () => Promise<string>;
 }
 
 interface TerminalState {
   wrap: boolean;
+  isLoadingFullLog: boolean;
 }
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
@@ -15,7 +20,7 @@ const WRAP_LOCAL_STORAGE_VALUE = "wrap";
 const ANSI_STYLES_REGEX = /\x1b\[[\d;]+?m/g;
 
 export default class TerminalComponent extends React.Component<TerminalProps, TerminalState> {
-  state = { wrap: false };
+  state = { wrap: false, isLoadingFullLog: false };
 
   terminalRef = React.createRef<HTMLDivElement>();
 
@@ -25,17 +30,21 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   render() {
     return (
-      <>
+      <div className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""}`}>
         <div className="terminal-actions">
           <button
             title="Wrap"
             onClick={this.handleWrapClicked.bind(this)}
             className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
-            <img src="/image/wrap-text-white.svg" />
+            <WrapText className="icon white" />
           </button>
-          <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
-            <img src="/image/download-white.svg" />
-          </button>
+          {this.state.isLoadingFullLog ? (
+            <Spinner />
+          ) : (
+            <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
+              <Download className="icon white" />
+            </button>
+          )}
         </div>
         <div className="terminal" ref={this.terminalRef}>
           <LazyLog
@@ -53,7 +62,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
             {...{ lightTheme: this.props.lightTheme }}
           />
         </div>
-      </>
+      </div>
     );
   }
 
@@ -72,14 +81,28 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   }
 
   handleDownloadClicked() {
-    var element = document.createElement("a");
-    const unstyledLogs = this.props.value.replace(ANSI_STYLES_REGEX, "");
-    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
-    element.setAttribute("download", "build_logs.txt");
-    element.style.display = "none";
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    const serveLog = (log: string) => {
+      const element = document.createElement("a");
+      const unstyledLogs = log.replace(ANSI_STYLES_REGEX, "");
+      element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
+      element.setAttribute("download", "build_logs.txt");
+      element.style.display = "none";
+      document.body.appendChild(element);
+      element.click();
+      element.remove();
+    };
+    if (this.props.fullLogsFetcher) {
+      this.setState({ isLoadingFullLog: true });
+      this.props
+        .fullLogsFetcher()
+        .then(serveLog)
+        .catch((e) => errorService.handleError(e))
+        .finally(() => {
+          this.setState({ isLoadingFullLog: false });
+        });
+      return;
+    }
+    serveLog(this.props.value);
   }
 }
 

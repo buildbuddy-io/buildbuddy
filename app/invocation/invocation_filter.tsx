@@ -1,5 +1,5 @@
 import React from "react";
-
+import { Filter } from "lucide-react";
 import router from "../router/router";
 
 interface Props {
@@ -44,7 +44,7 @@ export default class InvocationFilterComponent extends React.Component {
   render() {
     return (
       <div className="filter">
-        <img src="/image/filter.svg" />
+        <Filter className="icon" />
         <input
           value={this.props.search.get(this.filterType())}
           className="filter-input"

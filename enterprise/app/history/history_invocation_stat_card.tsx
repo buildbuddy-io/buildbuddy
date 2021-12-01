@@ -3,6 +3,7 @@ import React from "react";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
+import { Clock, Hash, XCircle, PlayCircle, CheckCircle, Activity } from "lucide-react";
 
 interface Props {
   invocationStat: invocation.IInvocationStat;
@@ -51,12 +52,14 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
     return this.props.invocationStat.name || "Unknown";
   }
 
-  getIcon() {
-    if (this.props.invocationStat.lastGreenBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
-      return "/image/check-circle.svg";
-    if (this.props.invocationStat.lastRedBuildUsec == this.props.invocationStat.latestBuildTimeUsec)
-      return "/image/x-circle.svg";
-    return "/image/play-circle.svg";
+  renderStatusIcon() {
+    if (this.props.invocationStat.lastGreenBuildUsec == this.props.invocationStat.latestBuildTimeUsec) {
+      return <CheckCircle className="icon green" />;
+    }
+    if (this.props.invocationStat.lastRedBuildUsec == this.props.invocationStat.latestBuildTimeUsec) {
+      return <XCircle className="icon red" />;
+    }
+    return <PlayCircle className="icon blue" />;
   }
 
   getStatus() {
@@ -87,19 +90,19 @@ export default class HistoryInvocationStatCardComponent extends React.Component<
           </div>
           <div className="details">
             <div className="detail">
-              <img className="icon" src={this.getIcon()} />
+              {this.renderStatusIcon()}
               {this.getStatus()}
             </div>
             <div className="detail">
-              <img className="icon" src="/image/hash.svg" />
+              <Hash className="icon" />
               {this.props.invocationStat.totalNumBuilds} total builds
             </div>
             <div className="detail">
-              <img className="icon" src="/image/clock-regular.svg" />
+              <Clock className="icon" />
               {format.durationUsec(this.props.invocationStat.totalBuildTimeUsec)} total
             </div>
             <div className="detail">
-              <img className="icon" src="/image/activity-regular.svg" />
+              <Activity className="icon" />
               {this.props.invocationStat.totalActions} total actions
             </div>
           </div>

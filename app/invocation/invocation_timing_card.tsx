@@ -6,6 +6,7 @@ import { Profile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
+import { Clock } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -223,7 +224,7 @@ export default class InvocationTimingCardComponent extends React.Component {
       <>
         {this.state.profile && <FlameChart profile={this.state.profile} />}
         <div className="card timing">
-          <img className="icon" src="/image/clock-regular.svg" />
+          <Clock className="icon" />
           <div className="content">
             <div className="header">
               <div className="title">All events</div>

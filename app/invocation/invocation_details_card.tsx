@@ -1,5 +1,6 @@
 import React from "react";
-import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
+import InvocationModel from "./invocation_model";
+import { Info } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -31,7 +32,7 @@ export default class ArtifactsCardComponent extends React.Component {
 
     return (
       <div className="card">
-        <img className="icon" src="/image/info.svg" />
+        <Info className="icon purple" />
         <div className="content">
           <div className="title">Invocation details</div>
           <div className="details">

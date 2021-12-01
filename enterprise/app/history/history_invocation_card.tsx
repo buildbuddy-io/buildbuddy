@@ -1,3 +1,17 @@
+import {
+  CheckCircle,
+  Clock,
+  Github,
+  GitBranch,
+  GitCommit,
+  HardDrive,
+  HelpCircle,
+  LayoutGrid,
+  PlayCircle,
+  User,
+  Wrench,
+  XCircle,
+} from "lucide-react";
 import React from "react";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
@@ -102,16 +116,16 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
     return this.props.invocation.success ? "card-success" : "card-failure";
   }
 
-  getStatusIcon() {
+  renderStatusIcon() {
     if (this.isInProgress()) {
-      return "/image/play-circle.svg";
+      return <PlayCircle className="icon blue" />;
     }
 
     if (this.isDisconnected()) {
-      return "/image/help-circle.svg";
+      return <HelpCircle className="icon" />;
     }
 
-    return this.props.invocation.success ? "/image/check-circle.svg" : "/image/x-circle.svg";
+    return this.props.invocation.success ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />;
   }
 
   getStatusLabel() {
@@ -192,11 +206,11 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
           {!this.props.hover && (
             <div className="details">
               <div className="detail">
-                <img className="icon" src={this.getStatusIcon()} />
+                {this.renderStatusIcon()}
                 {this.getStatusLabel()}
               </div>
               <div className="detail">
-                <img className="icon" src="/image/clock-regular.svg" />
+                <Clock className="icon" />
                 {this.getDuration()}
               </div>
               {this.props.invocation.user && (
@@ -205,7 +219,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleUserClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/user-regular.svg" />
+                  <User className="icon" />
                   {this.props.invocation.user}
                 </div>
               )}
@@ -215,19 +229,19 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleHostClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/hard-drive-regular.svg" />
+                  <HardDrive className="icon" />
                   {this.props.invocation.host}
                 </div>
               )}
               {this.props.invocation.command && (
                 <div className="detail">
-                  <img className="icon" src="/image/tool-regular.svg" />
+                  <Wrench className="icon" />
                   {this.props.invocation.command}
                 </div>
               )}
               {this.props.invocation.pattern && (
                 <div className="detail">
-                  <img className="icon" src="/image/grid-regular.svg" />
+                  <LayoutGrid className="icon" />
                   {format.truncateList(this.props.invocation.pattern)}
                 </div>
               )}
@@ -237,7 +251,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleRepoClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/github-regular.svg" />
+                  <Github className="icon" />
                   {format.formatGitUrl(this.props.invocation.repoUrl)}
                 </div>
               )}
@@ -247,7 +261,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleBranchClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/git-branch-regular.svg" />
+                  <GitBranch className="icon" />
                   {this.props.invocation.branchName}
                 </div>
               )}
@@ -257,7 +271,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   onClick={(e) => {
                     this.handleCommitClicked(e, this.props.invocation);
                   }}>
-                  <img className="icon" src="/image/git-commit-regular.svg" />
+                  <GitCommit className="icon" />
                   {format.formatCommitHash(this.props.invocation.commitSha)}
                 </div>
               )}

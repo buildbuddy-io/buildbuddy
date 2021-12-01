@@ -15,6 +15,7 @@ ts_library(
         "//app/util:dom",
         "//app/util:math",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
         "@npm//rxjs",
         "@npm//tslib",

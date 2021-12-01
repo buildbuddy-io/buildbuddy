@@ -5,7 +5,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 interface Props {
   model: InvocationModel;
-  iconPath: string;
+  icon: JSX.Element;
   buildEvents: build_event_stream.BuildEvent[];
   pastVerb: string;
   presentVerb: string;
@@ -18,9 +18,7 @@ interface State {
   numPages: number;
 }
 
-export default class TargetsCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetsCardComponent extends React.Component<Props, State> {
   state: State = {
     numPages: 1,
   };
@@ -41,7 +39,7 @@ export default class TargetsCardComponent extends React.Component {
 
     return (
       <div className={`card ${this.props.className}`}>
-        <img className="icon" src={this.props.iconPath} />
+        <div className="icon">{this.props.icon}</div>
         <div className="content">
           <div className="title">
             {events.length}
@@ -63,7 +61,7 @@ export default class TargetsCardComponent extends React.Component {
                         .testSize
                     )}`}
                     className={"clickable target"}>
-                    <img className="target-status-icon" src={this.props.iconPath} /> {target.id.targetCompleted.label}
+                    <span className="target-status-icon">{this.props.icon}</span> {target.id.targetCompleted.label}
                   </div>
                   <div>{this.props.model.getRuntime(target.id.targetCompleted.label)}</div>
                 </div>

@@ -1,6 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import format from "../format/format";
+import { PieChart as PieChartIcon } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 interface Props {
@@ -15,7 +16,7 @@ export default class CacheCardComponent extends React.Component {
   render() {
     return (
       <div className="card">
-        <img className="icon" src="/image/cache.svg" />
+        <PieChartIcon className="icon" />
         <div className="content">
           <div className="title">Cache stats</div>
           {!this.props.model.cacheStats.length ||

@@ -21,6 +21,7 @@ ts_library(
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//moment",
         "@npm//protobufjs",
         "@npm//react",
