@@ -66,17 +66,24 @@ executors.
 
 1. Set up one or more Mac executors that will be dedicated to running
    workflows, following the steps in the [Enterprise
-   Mac RBE Setup](/docs/enterprise-mac-rbe) guide. Then, in your
-   `buildbuddy-executor.plist` file, find the `EnvironmentVariables`
-   section and set `MY_POOL` to `workflows`:
+   Mac RBE Setup](/docs/enterprise-mac-rbe) guide.
+
+   Then, in your `buildbuddy-executor.plist` file, find the
+   `EnvironmentVariables` section and set `MY_POOL` to `workflows`. You'll
+   also need to set `SYS_MEMORY_BYTES` to allow enough memory to be
+   used for workflows (a minimum of 8GB is required).
 
 ```xml
         ...
         <key>EnvironmentVariables</key>
         <dict>
             ...
+            <!-- Set the required executor pool name for workflows -->
             <key>MY_POOL</key>
             <string>workflows</string>
+            <!-- Allocate 16GB of memory to workflows (8GB minimum) -->
+            <key>SYS_MEMORY_BYTES</key>
+            <string>16000000000</string>
         </dict>
         ...
 ```
