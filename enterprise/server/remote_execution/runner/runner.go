@@ -1160,8 +1160,12 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 func (r *CommandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
-		marshaler := jsonpb.Marshaler{}
-		return marshaler.Marshal(writer, requestProto)
+		marshaler := jsonpb.Marshaler{EmitDefaults: true}
+		if err := marshaler.Marshal(writer, requestProto); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintf(writer, "\n")
+		return err
 	}
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
