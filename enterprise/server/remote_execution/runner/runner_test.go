@@ -401,7 +401,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 	encodedResponse := encodedResponse(t, protocol, resp, 2)
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
-			Arguments: append([]string{"sh", "-c", `echo ` + encodedResponse + ` | base64 --decode`}, arg),
+			Arguments: append([]string{"sh", "-c", `echo ` + encodedResponse + ` | base64 --decode && tee`}, arg),
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
