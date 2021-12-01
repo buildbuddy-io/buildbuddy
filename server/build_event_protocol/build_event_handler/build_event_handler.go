@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,6 +141,46 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
+	}
+}
+
+// ServeHTTP handles HTTP requests to read back the raw event streams written by
+// the build event handler. It streams responses using a simple binary encoding
+// which is a repeating sequence of:
+//
+//     [encodedLength..., marshaledInvocationEventBytes...], ...
+//
+// Where the encodedLength is written using binary.PutVarint. This format
+// enables clients to pipeline the response parsing, deserializing each event in
+// the stream as it is available, instead of buffering the entire blob in memory
+// and then doing a CPU-heavy parse all at once.
+func (b *BuildEventHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	iid := r.URL.Query().Get("invocation_id")
+	if iid == "" {
+		http.Error(w, "Request is missing invocation_id URL param", http.StatusBadRequest)
+		return
+	}
+	in, err := LookupInvocation(b.env, r.Context(), iid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lengthEncoding := make([]byte, binary.MaxVarintLen64)
+	for _, evt := range in.GetEvent() {
+		b, err := proto.Marshal(evt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		n := binary.PutVarint(lengthEncoding, int64(len(b)))
+		if _, err := w.Write(lengthEncoding[:n]); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := w.Write(b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 }
 

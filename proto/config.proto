@@ -65,4 +65,8 @@ message FrontendConfig {
 
   // Whether to enable quota management in the settings UI.
   bool quota_management_enabled = 21;
+
+  // Whether or not the UI should stream invocation events as a separate RPC,
+  // rather than loading them via GetInvocation.
+  bool invocation_event_streaming_enabled = 22;
 }

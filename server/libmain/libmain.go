@@ -333,6 +333,9 @@ func StartAndRunServices(env environment.Env) {
 	}
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
+	// TODO(bduffany): Make a real RPC service for this and expose it via a
+	// streaming version of protolet.
+	mux.Handle("/rpc/BuildBuddyStreamService/GetBuildEvents", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildEventHandler()))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())

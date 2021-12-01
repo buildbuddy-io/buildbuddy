@@ -162,6 +162,7 @@ type Authenticator interface {
 
 type BuildBuddyServer interface {
 	bbspb.BuildBuddyServiceServer
+	InvocationEventStreamingEnabled() bool
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
@@ -182,6 +183,7 @@ type BuildEventChannel interface {
 
 type BuildEventHandler interface {
 	OpenChannel(ctx context.Context, iid string) BuildEventChannel
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.

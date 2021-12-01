@@ -52,7 +52,8 @@ import (
 )
 
 var (
-	disableCertConfig = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	disableCertConfig               = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	invocationEventStreamingEnabled = flag.Bool("app.invocation_event_streaming_enabled", false, "If true, enable streaming invocation events for GetInvocation via a separate streaming HTTP endpoint.")
 )
 
 const (
@@ -89,6 +90,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
 	if err != nil {
 		return nil, err
+	}
+	if s.env.GetConfigurator().GetAppStreamInvocationEvents() {
+		inv.Event = nil
 	}
 
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
@@ -870,6 +874,10 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 		return nil, err
 	}
 	return res, nil
+}
+
+func (s *BuildBuddyServer) InvocationEventStreamingEnabled() bool {
+	return *invocationEventStreamingEnabled
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

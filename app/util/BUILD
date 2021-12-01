@@ -111,3 +111,12 @@ ts_library(
         "@npm//long",
     ],
 )
+
+ts_library(
+    name = "varint",
+    srcs = ["varint.ts"],
+    deps = [
+        "@npm//@types/long",
+        "@npm//long",
+    ],
+)

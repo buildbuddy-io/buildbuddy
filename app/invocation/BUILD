@@ -37,6 +37,7 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:errors",
         "//app/util:proto",
+        "//app/util:varint",
         "//proto:acl_ts_proto",
         "//proto:api_key_ts_proto",
         "//proto:build_event_stream_ts_proto",

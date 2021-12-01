@@ -34,6 +34,7 @@ import UserPreferences from "../preferences/preferences";
 import { eventlog } from "../../proto/eventlog_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
+import { fetchEvents } from "./invocation_events";
 
 interface State {
   loading: boolean;
@@ -89,14 +90,28 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsSubscription?.unsubscribe();
   }
 
-  fetchInvocation() {
+  async fetchInvocation() {
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
-    rpcService.service
+
+    // Load invocation events in parallel.
+    const eventsPromise = capabilities.config.invocationEventStreamingEnabled
+      ? fetchEvents(this.props.invocationId)
+      : null;
+
+    const startTimestampMs = window.performance.now();
+    await rpcService.service
       .getInvocation(request)
-      .then((response: invocation.GetInvocationResponse) => {
+      .then(async (response: invocation.GetInvocationResponse) => {
+        if (eventsPromise !== null) {
+          const events = await eventsPromise;
+          if (response.invocation[0]) {
+            response.invocation[0].event = events;
+          }
+        }
         console.log(response);
+        console.debug(`Fetched invocation in ${window.performance.now() - startTimestampMs}ms`);
         let showInProgressScreen = false;
         if (
           response.invocation.length &&
