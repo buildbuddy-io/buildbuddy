@@ -41,14 +41,15 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName        = "recycle-runner"
-	preserveWorkspacePropertyName    = "preserve-workspace"
-	cleanWorkspaceInputsPropertyName = "clean-workspace-inputs"
-	persistentWorkerPropertyName     = "persistent-workers"
-	persistentWorkerKeyPropertyName  = "persistentWorkerKey"
-	WorkflowIDPropertyName           = "workflow-id"
-	workloadIsolationPropertyName    = "workload-isolation-type"
-	enableVFSPropertyName            = "enable-vfs"
+	RecycleRunnerPropertyName            = "recycle-runner"
+	preserveWorkspacePropertyName        = "preserve-workspace"
+	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
+	persistentWorkerPropertyName         = "persistent-workers"
+	persistentWorkerKeyPropertyName      = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
+	WorkflowIDPropertyName               = "workflow-id"
+	workloadIsolationPropertyName        = "workload-isolation-type"
+	enableVFSPropertyName                = "enable-vfs"
 
 	operatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -94,11 +95,12 @@ type Properties struct {
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
-	PreserveWorkspace    bool
-	CleanWorkspaceInputs string
-	PersistentWorker     bool
-	PersistentWorkerKey  string
-	WorkflowID           string
+	PreserveWorkspace        bool
+	CleanWorkspaceInputs     string
+	PersistentWorker         bool
+	PersistentWorkerKey      string
+	PersistentWorkerProtocol string
+	WorkflowID               string
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -146,6 +148,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -83,6 +85,11 @@ const (
 	hitStatusLabel = "hit"
 	// Label assigned to runner pool request count metric for unfulfilled requests.
 	missStatusLabel = "miss"
+
+	// Value for persisent workers that support the JSON persistent worker protocol.
+	workerProtocolJSONValue = "json"
+	// Value for persisent workers that support the protobuf persistent worker protocol.
+	workerProtocolProtobufValue = "proto"
 )
 
 var (
@@ -162,6 +169,9 @@ type CommandRunner struct {
 	stdoutReader *bufio.Reader
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
+
+	// Decoder used when reading streamed JSON values from stdout.
+	jsonDecoder *json.Decoder
 
 	// Cached resource usage values from the last time the runner was added to
 	// the pool.
@@ -1080,6 +1090,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		stdoutReader, stdoutWriter := io.Pipe()
 		r.stdinWriter = stdinWriter
 		r.stdoutReader = bufio.NewReader(stdoutReader)
+		r.jsonDecoder = json.NewDecoder(r.stdoutReader)
 
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
@@ -1125,35 +1136,17 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	}
 
 	// Encode the work requests
-	buf := proto.NewBuffer( /* buf */ nil)
-	if err := buf.EncodeMessage(requestProto); err != nil {
-		result.Error = status.WrapError(err, "request marshalling failed")
+	err = r.marshalWorkRequest(requestProto, r.stdinWriter)
+	if err != nil {
+		result.Error = status.WrapError(err, "marshaling work request")
 		return result
 	}
-
-	// Send it to our worker over stdin.
-	r.stdinWriter.Write(buf.Bytes())
 
 	// Now we've sent a work request, let's collect our response.
 	responseProto := &wkpb.WorkResponse{}
-
-	// Read the response size from stdout as a unsigned varint.
-	size, err := binary.ReadUvarint(r.stdoutReader)
+	err = r.unmarshalWorkResponse(responseProto, r.stdoutReader)
 	if err != nil {
-		result.Error = status.WrapError(err, "reading response length")
-		return result
-	}
-	data := make([]byte, size)
-
-	// Read the response proto from stdout.
-	if _, err := io.ReadFull(r.stdoutReader, data); err != nil {
-		result.Error = status.WrapError(err, "reading response proto")
-		return result
-	}
-
-	// Unmarshal the response proto.
-	if err := proto.Unmarshal(data, responseProto); err != nil {
-		result.Error = status.WrapError(err, "unmarshaling response proto")
+		result.Error = status.WrapError(err, "unmarshaling work response")
 		return result
 	}
 
@@ -1162,6 +1155,52 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	result.ExitCode = int(responseProto.ExitCode)
 	r.doNotReuse = false
 	return result
+}
+
+func (r *CommandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
+	protocol := r.PlatformProperties.PersistentWorkerProtocol
+	if protocol == workerProtocolJSONValue {
+		marshaler := jsonpb.Marshaler{EmitDefaults: true}
+		if err := marshaler.Marshal(writer, requestProto); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintf(writer, "\n")
+		return err
+	}
+	if protocol != "" && protocol != workerProtocolProtobufValue {
+		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
+	}
+	buf := proto.NewBuffer( /* buf */ nil)
+	if err := buf.EncodeMessage(requestProto); err != nil {
+		return err
+	}
+	_, err := writer.Write(buf.Bytes())
+	return err
+}
+
+func (r *CommandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
+	protocol := r.PlatformProperties.PersistentWorkerProtocol
+	if protocol == workerProtocolJSONValue {
+		unmarshaller := jsonpb.Unmarshaler{AllowUnknownFields: true}
+		return unmarshaller.UnmarshalNext(r.jsonDecoder, responseProto)
+	}
+	if protocol != "" && protocol != workerProtocolProtobufValue {
+		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
+	}
+	// Read the response size from stdout as a unsigned varint.
+	size, err := binary.ReadUvarint(r.stdoutReader)
+	if err != nil {
+		return err
+	}
+	data := make([]byte, size)
+	// Read the response proto from stdout.
+	if _, err := io.ReadFull(r.stdoutReader, data); err != nil {
+		return err
+	}
+	if err := proto.Unmarshal(data, responseProto); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Recursively expands arguments by replacing @filename args with the contents of the referenced
