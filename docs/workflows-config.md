@@ -58,6 +58,66 @@ Other points to note:
   problems caused by using conflicting versions of Bazel in different
   build environments.
 
+## Mac configuration
+
+By default, workflows will execute on BuildBuddy's Linux executors,
+but it is also possible to run workflows on macOS by using self-hosted
+executors.
+
+1. Set up one or more Mac executors that will be dedicated to running
+   workflows, following the steps in the [Enterprise
+   Mac RBE Setup](/docs/enterprise-mac-rbe) guide.
+
+   Then, in your `buildbuddy-executor.plist` file, find the
+   `EnvironmentVariables` section and set `MY_POOL` to `workflows`. You'll
+   also need to set `SYS_MEMORY_BYTES` to allow enough memory to be
+   used for workflows (a minimum of 8GB is required).
+
+```xml
+        ...
+        <key>EnvironmentVariables</key>
+        <dict>
+            ...
+            <!-- Set the required executor pool name for workflows -->
+            <key>MY_POOL</key>
+            <string>workflows</string>
+            <!-- Allocate 16GB of memory to workflows (8GB minimum) -->
+            <key>SYS_MEMORY_BYTES</key>
+            <string>16000000000</string>
+        </dict>
+        ...
+```
+
+2. If you haven't already, [enable workflows for your
+   repo](/docs/workflows-setup#enable-workflows-for-a-repo), then create a
+   file called `buildbuddy.yaml` at the root of your repo. See the
+   [Example config](#example-config) for a starting point.
+
+3. Set `os: "darwin"` on the workflow action that you would like to build
+   on macOS. For M1 Macs, add `arch: "arm64"` as well. Note: if you
+   copy another action as a starting point, be sure to give the new action
+   a unique name:
+
+```yaml
+actions:
+  - name: "Test all targets (Mac)"
+    os: "darwin" # <-- add this line
+    arch: "arm64" # <-- add this line for M1 Macs only
+    triggers:
+      push:
+        branches:
+          - "main"
+      pull_request:
+        branches:
+          - "main"
+    bazel_commands:
+      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+```
+
+That's it! Whenever any of the configured triggers are matched, one of
+the Mac executors in the `workflows` pool should execute the
+workflow, and BuildBuddy will publish the results to your branch.
+
 ## buildbuddy.yaml schema
 
 ### `BuildBuddyConfig`
@@ -81,6 +141,14 @@ A named group of Bazel commands that run when triggered.
 - **`name`** (`string`): A name unique to this config, which shows up as the name of the check
   in GitHub.
 - **`triggers`** ([`Triggers`](#triggers)): The triggers that should cause this action to be run.
+- **`os`** (`string`): The operating system on which to run the workflow.
+  Defaults to `"linux"`. `"darwin"` (macOS) is also supported, but
+  requires using self-hosted Mac executors running on a dedicated
+  `workflows` pool.
+- **`arch`** (`string`): The CPU architecture of the workflow runner.
+  Defaults to `"amd64"`. `"arm64"` is also supported when running under
+  `os: "darwin"`, but requires using self-hosted M1 Mac executors running
+  on a dedicated `workflows` pool.
 - **`bazel_commands`** (`string` list): Bazel commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
