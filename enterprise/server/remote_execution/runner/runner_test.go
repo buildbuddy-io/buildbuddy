@@ -438,7 +438,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 	for _, testCase := range []struct {
 		protocol string
 	}{
-		{"protobuf"},
+		{"proto"},
 		{""},
 		{"json"},
 	} {

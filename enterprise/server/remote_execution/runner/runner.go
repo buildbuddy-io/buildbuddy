@@ -89,7 +89,7 @@ const (
 	// Value for persisent workers that support the JSON persistent worker protocol.
 	workerProtocolJSONValue = "json"
 	// Value for persisent workers that support the protobuf persistent worker protocol.
-	workerProtocolProtobufValue = "protobuf"
+	workerProtocolProtobufValue = "proto"
 )
 
 var (
