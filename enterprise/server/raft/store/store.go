@@ -3,11 +3,11 @@ package store
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -17,13 +17,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/raftio"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
-
-const nodeLeaseDuration = 10 * time.Second
 
 type Store struct {
 	rootDir string
@@ -35,26 +34,69 @@ type Store struct {
 	apiClient     *client.APIClient
 	heartbeat     *nodelease.Heartbeat
 
-	rangeMu      sync.RWMutex
-	activeRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMu       sync.RWMutex
+	activeRanges  map[uint64]struct{}
+	clusterRanges map[uint64]*rfpb.RangeDescriptor
+
+	leaseMu sync.RWMutex
+	leases  map[uint64]*rangelease.Lease
 }
 
-func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
-	store := &Store{
-		rootDir:       rootDir,
-		fileDir:       fileDir,
-		nodeHost:      nodeHost,
-		gossipManager: gossipManager,
-		sender:        sender,
-		apiClient:     apiClient,
+func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) {
+	s.rootDir = rootDir
+	s.fileDir = fileDir
+	s.nodeHost = nodeHost
+	s.gossipManager = gossipManager
+	s.sender = sender
+	s.apiClient = apiClient
+	s.heartbeat = nodelease.NewHeartbeat([]byte(nodeHost.ID()), sender)
+	s.rangeMu = sync.RWMutex{}
+	s.activeRanges = make(map[uint64]struct{})
+	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
 
-		rangeMu:      sync.RWMutex{},
-		activeRanges: make(map[uint64]*rfpb.RangeDescriptor),
+	s.leaseMu = sync.RWMutex{}
+	s.leases = make(map[uint64]*rangelease.Lease)
+	s.heartbeat.Start()
+}
 
-		heartbeat: nodelease.NewHeartbeat([]byte(nodeHost.ID()), sender),
+func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
+	if s.nodeHost == nil {
+		// not initialized yet
+		return
 	}
-	store.heartbeat.Start()
-	return store
+	leader := s.isLeader(info.ClusterID)
+	log.Printf("LeaderUpdated: %+v: am leader: %t", info, leader)
+	if leader {
+		go s.leaseRange(info.ClusterID)
+	} else {
+		go s.releaseRange(info.ClusterID)
+	}
+}
+
+func (s *Store) leaseRange(clusterID uint64) {
+	s.rangeMu.RLock()
+	rd, ok := s.clusterRanges[clusterID]
+	s.rangeMu.RUnlock()
+	if !ok {
+		return
+	}
+
+	rl := rangelease.New(s.nodeHost, s.heartbeat, rd)
+	if err := rl.Acquire(); err != nil {
+		log.Errorf("error acquiring rl: %s", err)
+		return
+	}
+	s.leaseMu.Lock()
+	s.leases[rd.GetRangeId()] = rl
+	s.leaseMu.Unlock()
+}
+
+func (s *Store) releaseRange(clusterID uint64) {
+	s.leaseMu.Lock()
+	if rl, ok := s.leases[clusterID]; ok {
+		rl.Release()
+	}
+	s.leaseMu.Unlock()
 }
 
 func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
@@ -66,10 +108,10 @@ func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
-	s.rangeMu.Lock()
-	defer s.rangeMu.Unlock()
 	log.Printf("AddRange: %+v", rd)
-	s.activeRanges[rd.GetRangeId()] = rd
+	if len(rd.GetReplicas()) == 0 {
+		return
+	}
 	if containsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -80,13 +122,29 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
 		}
 		s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
+	clusterID := rd.GetReplicas()[0].GetClusterId()
+
+	s.rangeMu.Lock()
+	s.activeRanges[rd.GetRangeId()] = struct{}{}
+	s.clusterRanges[clusterID] = rd
+	s.rangeMu.Unlock()
+
+	leader := s.isLeader(clusterID)
+	log.Printf("Node %s, leader for cluster %d: %t", s.nodeHost.ID(), clusterID, leader)
+	if leader {
+		log.Printf("I am the leader for cluster %d, attempting to get range lease!", clusterID)
+
+		log.Printf("Got range lease!")
+	}
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor) {
-	s.rangeMu.Lock()
-	defer s.rangeMu.Unlock()
 	log.Printf("RemoveRange: %+v", rd)
+	clusterID := rd.GetReplicas()[0].GetClusterId()
+	s.rangeMu.Lock()
 	delete(s.activeRanges, rd.GetRangeId())
+	delete(s.clusterRanges, clusterID)
+	s.rangeMu.Unlock()
 }
 
 func (s *Store) RangeIsActive(rangeID uint64) bool {
@@ -101,7 +159,6 @@ func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMach
 }
 
 // TODO(check cluster has been added / dont care if it's published)
-
 func (s *Store) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	sesh := s.nodeHost.GetNoOPSession(clusterID)
 	buf, err := proto.Marshal(batch)
@@ -113,11 +170,11 @@ func (s *Store) syncProposeLocal(ctx context.Context, clusterID uint64, batch *r
 	for retrier.Next() {
 		raftResponse, err = s.nodeHost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
-			log.Errorf("SyncPropose err: %s", err)
 			if err == dragonboat.ErrClusterNotReady {
 				log.Errorf("continuing, got cluster not ready err...")
 				continue
 			}
+			log.Errorf("Got unretriable SyncPropose err: %s", err)
 			return nil, err
 		}
 		break
@@ -127,6 +184,19 @@ func (s *Store) syncProposeLocal(ctx context.Context, clusterID uint64, batch *r
 		return nil, err
 	}
 	return batchResponse, err
+}
+
+func (s *Store) isLeader(clusterID uint64) bool {
+	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	if nodeHostInfo == nil {
+		return false
+	}
+	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		if clusterInfo.ClusterID == clusterID {
+			return clusterInfo.IsLeader
+		}
+	}
+	return false
 }
 
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
@@ -139,16 +209,8 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		}
 		return nil, err
 	}
-	amLeader := false
-	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
-		if clusterInfo.ClusterID == req.GetClusterId() && clusterInfo.IsLeader {
-			amLeader = true
-			break
-		}
-	}
 	rsp := &rfpb.StartClusterResponse{}
-	if amLeader {
+	if s.isLeader(req.GetClusterId()) {
 		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
 		if err != nil {
 			return nil, err
@@ -159,7 +221,6 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	log.Debugf("SyncPropose (server) got request: %+v", req)
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 	}
@@ -173,7 +234,6 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	log.Debugf("SyncRead (server) got request: %+v", req)
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		return nil, status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 	}

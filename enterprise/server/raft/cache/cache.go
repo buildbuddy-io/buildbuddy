@@ -159,6 +159,11 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// Register the range cache to get callbacks.
 	rc.gossipManager.AddListener(rc.rangeCache)
 
+	// Store will listen for raft events -- to configure this we need it to
+	// exist before the node host is created. So we make a new empty store
+	// here, and initialize it below once nodeHost exists.
+	rc.store = &store.Store{}
+
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
 	// NodeRegistryFactory that allows raft to resolve other nodehosts that
@@ -173,11 +178,12 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
-		RTTMillisecond: 1,
+		RTTMillisecond: 10,
 		RaftAddress:    rc.raftAddress,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: rc,
 		},
+		RaftEventListener: rc.store,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
@@ -198,7 +204,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
+	rc.store.Initialize(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
 
 	// smFunc is a function that creates a new statemachine for a given
 	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft

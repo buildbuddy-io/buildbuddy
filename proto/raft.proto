@@ -16,6 +16,20 @@ message NodeLivenessRecord {
   int64 expiration = 2;
 }
 
+message RangeLeaseRecord {
+  message NodeLiveness {
+    int64 epoch = 1;
+    bytes node_id = 2;
+  }
+
+  // A RangeLease can either be time based or based off of a node liveness
+  // record.
+  oneof value {
+    NodeLiveness node_liveness = 1;
+    int64 expiration = 2;
+  }
+}
+
 // KV is a basic proto type that represents data written to pebble.
 message KV {
   bytes key = 1;

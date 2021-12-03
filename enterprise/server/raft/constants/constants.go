@@ -52,6 +52,8 @@ const (
 	UnsplittableMaxByte = systemMaxByte
 )
 
+const CASErrorMessage = "CAS expected value did not match"
+
 // Key constants (some of these have to be vars because of how they are made.
 var (
 	LocalPrefix     = keys.Key{localPrefixByte}
@@ -71,7 +73,8 @@ var (
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))
 
 	// The range that this statemachine holds.
-	LocalRangeKey = keys.MakeKey(LocalPrefix, []byte("range"))
+	LocalRangeKey      = keys.MakeKey(LocalPrefix, []byte("range"))
+	LocalRangeLeaseKey = keys.MakeKey(LocalPrefix, []byte("rangelease"))
 
 	// When this local range was set up.
 	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))

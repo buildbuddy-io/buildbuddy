@@ -1,6 +1,7 @@
 package nodelease
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"sync"
@@ -9,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -53,7 +53,7 @@ func NewHeartbeat(nodeID []byte, sender *sender.Sender) *Heartbeat {
 func (h *Heartbeat) Start() {
 	h.quitLease = make(chan struct{})
 	go h.keepLeaseAlive()
-	go h.printLease()
+	//go h.printLease()
 }
 
 func (h *Heartbeat) Stop() {
@@ -66,7 +66,13 @@ func (h *Heartbeat) printLease() {
 		select {
 		case <-time.After(time.Second):
 			l, err := h.blockingGetValidLease()
-			log.Printf("valid lease: %+v, err: %s", l, err)
+			if err != nil {
+				log.Printf("no liveness yet: %s", err)
+				continue
+			}
+			now := time.Now()
+			expireTime := time.Unix(0, l.GetExpiration())
+			log.Printf("liveness record: [node: %s epoch: %d, expires in: %s]", string(h.nodeID), l.GetEpoch(), expireTime.Sub(now))
 		}
 	}
 }
@@ -85,6 +91,31 @@ func (h *Heartbeat) BlockingGetCurrentEpoch() (int64, error) {
 	} else {
 		return -1, err
 	}
+}
+
+func (h *Heartbeat) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
+	l, err := h.blockingGetValidLease()
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.RangeLeaseRecord_NodeLiveness{
+		NodeId: h.nodeID,
+		Epoch:  l.GetEpoch(),
+	}, nil
+}
+
+func (h *Heartbeat) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
+	if bytes.Compare(nl.GetNodeId(), h.nodeID) != 0 {
+		return status.FailedPreconditionErrorf("Invalid rangeLease: nodeID mismatch")
+	}
+	l, err := h.blockingGetValidLease()
+	if err != nil {
+		return err
+	}
+	if l.GetEpoch() != nl.GetEpoch() {
+		return status.FailedPreconditionErrorf("Invalid rangeLease: epoch %d is no longer valid (current epoch: %d)", nl.GetEpoch(), l.GetEpoch())
+	}
+	return nil
 }
 
 func (h *Heartbeat) verifyLease(l *rfpb.NodeLivenessRecord) error {
@@ -125,13 +156,19 @@ func (h *Heartbeat) ensureValidLease() (*rfpb.NodeLivenessRecord, error) {
 	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
 		return h.lastLivenessRecord, nil
 	}
-	if err := h.renewLease(); err != nil {
-		return nil, err
+	if err := h.renewLease(); err == nil {
+		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+			return h.lastLivenessRecord, nil
+		}
 	}
-	if err := h.verifyLease(h.lastLivenessRecord); err != nil {
-		return nil, err
+	err := h.renewLease()
+	if err == nil {
+		err = h.verifyLease(h.lastLivenessRecord)
+		if err == nil {
+			return h.lastLivenessRecord, nil
+		}
 	}
-	return h.lastLivenessRecord, nil
+	return nil, err
 }
 
 func (h *Heartbeat) renewLease() error {
@@ -181,7 +218,7 @@ func (h *Heartbeat) renewLease() error {
 		expiration := time.Unix(0, h.lastLivenessRecord.GetExpiration())
 		timeUntilExpiry := expiration.Sub(time.Now())
 		h.timeUntilLeaseRenewal = timeUntilExpiry - nodeLeaseRenewGracePeriod
-	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), replica.CASErrorMessage) {
+	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
 		// and witness its epoch so that our next set request has a higher one.

@@ -28,8 +28,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const CASErrorMessage = "CAS expected value did not match"
-
 // KVs are stored directly in Pebble by the raft state machine, so the key and
 // value types must match what Pebble expects. Rather than storing all blob
 // data directly in Pebble and replicating it via raft, we instead store
@@ -78,10 +76,11 @@ type Replica struct {
 	closedMu *sync.RWMutex // PROTECTS(closed)
 	closed   bool
 
-	rootDir          string
-	fileDir          string
-	clusterID        uint64
-	nodeID           uint64
+	rootDir   string
+	fileDir   string
+	clusterID uint64
+	nodeID    uint64
+
 	rangeTracker     interfaces.RangeTracker
 	sender           *sender.Sender
 	apiClient        *client.APIClient
@@ -385,7 +384,7 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 			Key:   kv.GetKey(),
 			Value: buf,
 		},
-	}, status.FailedPreconditionError(CASErrorMessage)
+	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
