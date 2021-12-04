@@ -677,12 +677,13 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:             user,
-			ContainerImage:   props.ContainerImage,
-			WorkflowID:       props.WorkflowID,
-			InstanceName:     instanceName,
-			WorkerKey:        workerKey,
-			WorkspaceOptions: wsOpts,
+			User:                   user,
+			ContainerImage:         props.ContainerImage,
+			WorkflowID:             props.WorkflowID,
+			HostedBazelAffinityKey: props.HostedBazelAffinityKey,
+			InstanceName:           instanceName,
+			WorkerKey:              workerKey,
+			WorkspaceOptions:       wsOpts,
 		})
 		if err != nil {
 			return nil, err
@@ -797,6 +798,9 @@ type query struct {
 	// WorkerKey is the key used to tell if a persistent worker can be reused.
 	// Required; the zero-value "" matches non-persistent-worker runners.
 	WorkerKey string
+	// HostedBazelAffinityKey is used to route hosted Bazel requests to different
+	// bazel instances.
+	HostedBazelAffinityKey string
 	// InstanceName is the remote instance name that must have been used when
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
@@ -817,6 +821,7 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
+			r.PlatformProperties.HostedBazelAffinityKey != q.HostedBazelAffinityKey ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
 			*r.Workspace.Opts != *q.WorkspaceOptions {
