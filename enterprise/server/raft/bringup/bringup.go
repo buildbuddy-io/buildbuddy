@@ -17,6 +17,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
+	"golang.org/x/sync/errgroup"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -131,7 +132,9 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		}
 		bootstrapInfo[br.GetNhid()] = br.GetGrpcAddress()
 		if len(bootstrapInfo) == len(cs.join) {
-			return cs.sendStartClusterRequests(bootstrapInfo)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return cs.sendStartClusterRequests(ctx, bootstrapInfo)
 		}
 	}
 	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)
@@ -200,204 +203,108 @@ func MakeBootstrapInfo(clusterID uint64, nodeGrpcAddrs map[string]string) *Clust
 	return bi
 }
 
-func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rfpb.BatchCmdRequest) error {
-	log.Warningf("Initializing cluster from bootstrapInfo: %+v", bootstrapInfo)
-	log.Debugf("Sending cluster bringup requests to %+v", bootstrapInfo.nodes)
-	for _, node := range bootstrapInfo.nodes {
-		conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
-		if err != nil {
-			return err
-		}
-		client := rfspb.NewApiClient(conn)
-		_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
-			ClusterId:     bootstrapInfo.clusterID,
-			NodeId:        node.index,
-			InitialMember: bootstrapInfo.initialMembers,
-			Batch:         batch,
-		})
-		if err != nil {
-			if !status.IsAlreadyExistsError(err) {
-				log.Errorf("Start cluster returned err: %s", err)
-				return err
-			}
-		}
-	}
-
-	// Now write the setup time.
-	rangeSetupTime, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+	log.Warningf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
+	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeSetupTimeKey,
 			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
 		},
-	}).ToProto()
+	})
+	batch = batch.Merge(rangeSetupTime)
+	batchProto, err := batch.ToProto()
 	if err != nil {
 		return err
 	}
 
-	node := bootstrapInfo.nodes[0]
-	header := &rfpb.Header{
-		Replica: &rfpb.ReplicaDescriptor{
-			ClusterId: bootstrapInfo.clusterID,
-			NodeId:    node.index,
-		},
-		RangeId: 0, // Can we set this? Does it exist yet?
-	}
-	writeReq := &rfpb.SyncProposeRequest{
-		Header: header,
-		Batch:  rangeSetupTime,
-	}
-
-	conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	client := rfspb.NewApiClient(conn)
-
-	proposedFirstVal := false
-	for !proposedFirstVal {
-		select {
-		case <-ctx.Done():
-			return err
-		case <-time.After(100 * time.Millisecond):
-			_, err := client.SyncPropose(ctx, writeReq)
-			if err == nil {
-				proposedFirstVal = true
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, node := range bootstrapInfo.nodes {
+		node := node
+		eg.Go(func() error {
+			conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
+			if err != nil {
+				return err
 			}
-			log.Infof("SyncPropose returned err: %s", err)
-		}
+			client := rfspb.NewApiClient(conn)
+			_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
+				ClusterId:     bootstrapInfo.clusterID,
+				NodeId:        node.index,
+				InitialMember: bootstrapInfo.initialMembers,
+				Batch:         batchProto,
+			})
+			if err != nil {
+				if !status.IsAlreadyExistsError(err) {
+					log.Errorf("Start cluster returned err: %s", err)
+					return err
+				}
+			}
+			return nil
+		})
 	}
-	return nil
+
+	return eg.Wait()
 }
 
 // This function is called to send RPCs to the other nodes listed in the Join
-// list requesting that they bringup an initial cluster.
-func (cs *ClusterStarter) sendStartClusterRequests(bootstrapInfo map[string]string) error {
-	cs.sendingStartRequestsMu.Lock()
-	defer cs.sendingStartRequestsMu.Unlock()
-
-	i := uint64(1)
-	initialMembers := make(map[uint64]string, 0)
-	nodes := make([]bootstrapNode, 0, len(bootstrapInfo))
-	for nhid, grpcAddress := range bootstrapInfo {
-		nodes = append(nodes, bootstrapNode{
-			grpcAddress: grpcAddress,
-			nodeHostID:  nhid,
-			index:       i,
-		})
-		initialMembers[i] = nhid
-		i += 1
+// list requesting that they bring up initial cluster(s).
+func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
+	startingRanges := []*rfpb.RangeDescriptor{
+		&rfpb.RangeDescriptor{
+			Left:  keys.Key{constants.MinByte},
+			Right: keys.Key{constants.MaxByte},
+		},
 	}
-
-	cs.log.Debugf("I am %q sending cluster bringup requests to %+v", cs.listenAddr, nodes)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	for _, node := range nodes {
-		conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
+	clusterID := uint64(constants.InitialClusterID)
+	for _, rangeDescriptor := range startingRanges {
+		bootstrapInfo := MakeBootstrapInfo(clusterID, nodeGrpcAddrs)
+		fillReplicas(bootstrapInfo, rangeDescriptor)
+		rdBuf, err := proto.Marshal(rangeDescriptor)
 		if err != nil {
 			return err
 		}
-		client := rfspb.NewApiClient(conn)
-		_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
-			ClusterId:     constants.InitialClusterID,
-			NodeId:        node.index,
-			InitialMember: initialMembers,
+
+		batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   constants.LocalRangeKey,
+				Value: rdBuf,
+			},
 		})
-		if err != nil {
-			if !status.IsAlreadyExistsError(err) {
-				cs.log.Errorf("Start cluster returned err: %s", err)
-				return err
-			}
+
+		// If this is the first range, we need to write some special
+		// information to the metarange on startup. Do that here.
+		if clusterID == uint64(constants.InitialClusterID) {
+			batch = batch.Add(&rfpb.IncrementRequest{
+				Key:   constants.LastClusterIDKey,
+				Delta: 1,
+			})
+			batch = batch.Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{
+					Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+					Value: rdBuf,
+				},
+			})
+			batch = batch.Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{
+					Key:   constants.InitClusterSetupTimeKey,
+					Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
+				},
+			})
 		}
-	}
-
-	setupTimeBuf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.InitClusterSetupTimeKey,
-			Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-		},
-	}).ToBuf()
-	if err != nil {
-		return err
-	}
-
-	proposedFirstVal := false
-	for !proposedFirstVal {
-		select {
-		case <-ctx.Done():
+		if err := StartCluster(ctx, bootstrapInfo, batch); err != nil {
 			return err
-		case <-time.After(100 * time.Millisecond):
-			sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
-			_, err = cs.nodeHost.SyncPropose(ctx, sesh, setupTimeBuf)
-			if err == nil {
-				proposedFirstVal = true
-			}
-			cs.log.Infof("cs.nodeHost.SyncPropose returned err: %s", err)
 		}
-	}
+		log.Printf("StartCluster started a new cluster successfully!")
 
-	return cs.setupInitialMetadata(ctx, constants.InitialClusterID)
-}
-
-func (cs *ClusterStarter) setupInitialMetadata(ctx context.Context, clusterID uint64) error {
-	// Set the last cluster ID to 1
-	sesh := cs.nodeHost.GetNoOPSession(constants.InitialClusterID)
-
-	reqBuf, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   constants.LastClusterIDKey,
-		Delta: 1,
-	}).ToBuf()
-
-	if err != nil {
-		return err
-	}
-
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, reqBuf); err != nil {
-		return err
-	}
-
-	// Set the range of this first cluster to [minbyte, maxbyte)
-	rangeDescriptor := &rfpb.RangeDescriptor{
-		Left:    keys.Key{constants.MinByte},
-		Right:   keys.Key{constants.MaxByte},
-		RangeId: constants.InitialRangeID,
-	}
-	membership, err := cs.nodeHost.GetClusterMembership(ctx, constants.InitialClusterID)
-	if err != nil {
-		return err
-	}
-	for nodeID, _ := range membership.Nodes {
-		rangeDescriptor.Replicas = append(rangeDescriptor.Replicas, &rfpb.ReplicaDescriptor{
-			ClusterId: constants.InitialClusterID,
-			NodeId:    nodeID,
-		})
-	}
-	rdBuf, err := proto.Marshal(rangeDescriptor)
-	if err != nil {
-		return err
-	}
-	// This entry goes to meta1.
-	batch := rbuilder.NewBatchBuilder()
-	batch = batch.Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
-			Value: rdBuf,
-		},
-	})
-	batch = batch.Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: rdBuf,
-		},
-	})
-	reqBuf, err = batch.ToBuf()
-	if err != nil {
-		return err
-	}
-
-	if _, err := cs.nodeHost.SyncPropose(ctx, sesh, reqBuf); err != nil {
-		return err
+		// TODO(increment cluster ID here)
 	}
 	return nil
+}
+
+func fillReplicas(bootstrapInfo *ClusterBootstrapInfo, rangeDescriptor *rfpb.RangeDescriptor) {
+	for _, node := range bootstrapInfo.nodes {
+		rangeDescriptor.Replicas = append(rangeDescriptor.Replicas, &rfpb.ReplicaDescriptor{
+			ClusterId: bootstrapInfo.clusterID,
+			NodeId:    node.index,
+		})
+	}
 }

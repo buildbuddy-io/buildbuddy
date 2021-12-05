@@ -1,6 +1,8 @@
 package rbuilder
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 
@@ -25,6 +27,11 @@ func (bb *BatchBuilder) setErr(err error) {
 		return
 	}
 	bb.err = err
+}
+
+func (bb *BatchBuilder) Merge(bb2 *BatchBuilder) *BatchBuilder {
+	proto.Merge(bb.cmd, bb2.cmd)
+	return bb
 }
 
 func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
@@ -79,6 +86,14 @@ func (bb *BatchBuilder) ToBuf() ([]byte, error) {
 		return nil, bb.err
 	}
 	return proto.Marshal(bb.cmd)
+}
+
+func (bb *BatchBuilder) String() string {
+	builder := fmt.Sprintf("Builder(err: %s)", bb.err)
+	for i, v := range bb.cmd.Union {
+		builder += fmt.Sprintf(" [%d]: %+v", i, proto.CompactTextString(v))
+	}
+	return builder
 }
 
 type BatchResponse struct {

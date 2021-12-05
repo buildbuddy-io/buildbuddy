@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -210,8 +211,17 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		return nil, err
 	}
 	rsp := &rfpb.StartClusterResponse{}
-	if s.isLeader(req.GetClusterId()) {
+
+	// If we are the first member in the cluster, we'll do the syncPropose.
+	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
+	for nodeID, _ := range req.GetInitialMember() {
+		nodeIDs = append(nodeIDs, nodeID)
+	}
+	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
+	if req.GetNodeId() == nodeIDs[0] {
+		log.Printf("I am the first node! running sync propose")
 		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
+		log.Printf("first node syncpropose response: %+v, err: %s", batchResponse, err)
 		if err != nil {
 			return nil, err
 		}
