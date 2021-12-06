@@ -10,6 +10,7 @@ import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { FilledButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
+import { AlertCircle } from "lucide-react";
 
 enum FetchType {
   Executors,
@@ -17,9 +18,11 @@ enum FetchType {
   BazelConfig,
 }
 
-function onClickLink(href: string, e: React.MouseEvent<HTMLAnchorElement>) {
-  e.preventDefault();
-  router.navigateTo(href);
+function linkHandler(href: string) {
+  return (e: React.MouseEvent) => {
+    e.preventDefault();
+    router.navigateTo(href);
+  };
 }
 
 interface ExecutorDeployProps {
@@ -80,8 +83,19 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
   state = { selectedExecutorKeyIdx: 0 };
 
   render() {
+    // If the user already has executors running, show the "short" version of the setup.
+    if (this.props.user.selectedGroup.useGroupOwnedExecutors && this.props.executors.length) {
+      return (
+        <>
+          <h2>Deploy additional executors</h2>
+          <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
+        </>
+      );
+    }
+
     return (
       <>
+        <h1>Set up self-hosted executors</h1>
         <hr />
         <h2>1. Create an API key for executor registration</h2>
         {this.props.executorKeys.length == 0 && (
@@ -90,7 +104,7 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             <p>API keys are used to authorize self-hosted executors.</p>
             {this.props.user.canCall("createApiKey") && (
               <FilledButton className="manage-keys-button">
-                <a href="/settings/org/api-keys" onClick={onClickLink.bind("/settings/org/api-keys")}>
+                <a href="/settings/org/api-keys" onClick={linkHandler("/settings/org/api-keys")}>
                   Manage keys
                 </a>
               </FilledButton>
@@ -108,14 +122,10 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             </div>
             <h2>2. Deploy executors</h2>
             <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
-            {this.props.executors.length == 1 && <p>You have 1 self-hosted executor connected.</p>}
-            {this.props.executors.length != 1 && (
-              <p>You have {this.props.executors.length} self-hosted executors connected.</p>
-            )}
             <h2>3. Switch to self-hosted executors in organization settings</h2>
             <p>Enable "Use self-hosted executors" on the Organization Settings page.</p>
             <FilledButton className="organization-settings-button">
-              <a href="/settings/" onClick={onClickLink.bind("/settings")}>
+              <a href="/settings/" onClick={linkHandler("/settings")}>
                 Open settings
               </a>
             </FilledButton>
@@ -127,6 +137,7 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 }
 
 interface ExecutorsListProps {
+  user: User;
   executors: scheduler.IExecutionNode[];
 }
 
@@ -169,10 +180,11 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
   }
 }
 
+type TabId = "status" | "setup";
+
 interface Props {
   user: User;
-  hash: string;
-  search: URLSearchParams;
+  path: string;
 }
 
 interface State {
@@ -209,12 +221,6 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     this.subscription?.unsubscribe();
-  }
-
-  componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash || this.props.search != prevProps.search) {
-      this.fetch();
-    }
   }
 
   async fetchApiKeys() {
@@ -288,47 +294,76 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     this.fetchExecutors();
   }
 
+  onClickTab(tabId: TabId) {
+    router.navigateTo(`/executors/${tabId}`);
+  }
+
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
-    if (this.props.user?.selectedGroup?.useGroupOwnedExecutors) {
-      if (this.state.nodes.length == 0) {
-        return (
-          <div className="empty-state">
-            <h1>No self-hosted executors connected.</h1>
-            <p>Self-hosted executors are enabled, but there are no executors connected.</p>
-            <p>Follow the instructions below to deploy your executors.</p>
-            <ExecutorSetup
-              user={this.props.user}
-              executorKeys={this.state.executorKeys}
-              executors={this.state.nodes}
-              schedulerUri={this.state.schedulerUri}
-            />
+    const linuxNodes = this.state.nodes.filter((node) => node.os.toLowerCase() === "linux");
+
+    const defaultTabId = this.state.nodes.length > 0 ? "status" : "setup";
+    const activeTab = (this.props.path.substring("/executors/".length) || defaultTabId) as TabId;
+
+    return (
+      <>
+        <div className="tabs">
+          <div
+            className={`tab ${activeTab === "status" ? "selected" : ""}`}
+            onClick={this.onClickTab.bind(this, "status")}>
+            Status
           </div>
-        );
-      }
-      return (
-        <>
-          <h1>Self-hosted executors</h1>
-          <ExecutorsList executors={this.state.nodes} />
-          <hr />
-          <h1>Deploying additional executors</h1>
-          <ExecutorDeploy executorKeys={this.state.executorKeys} schedulerUri={this.state.schedulerUri} />
-        </>
-      );
-    } else {
-      return (
-        <div className="empty-state">
-          <h1>You're currently using BuildBuddy Cloud executors.</h1>
-          <p>See the instructions below if you'd like to use self-hosted executors.</p>
+          <div
+            className={`tab ${activeTab === "setup" ? "selected" : ""}`}
+            onClick={this.onClickTab.bind(this, "setup")}>
+            Setup
+          </div>
+        </div>
+        {activeTab === "status" && (
+          <>
+            {linuxNodes.length > 0 && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
+              <div className="callout warning-callout">
+                <AlertCircle className="icon orange" />
+                <div className="callout-content">
+                  <div>
+                    Linux executors are connected, but will not be used to execute tasks since your organization is
+                    using BuildBuddy Cloud executors. To fix this, enable "use self-hosted Linux executors" in settings.
+                  </div>
+                  <div>
+                    <FilledButton className="organization-settings-button">
+                      <a href="/settings/" onClick={linkHandler("/settings")}>
+                        Open settings
+                      </a>
+                    </FilledButton>
+                  </div>
+                </div>
+              </div>
+            )}
+            <ExecutorsList user={this.props.user} executors={this.state.nodes} />
+            {!this.state.nodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
+              <div className="empty-state">
+                <h1>No self-hosted Linux executors are connected.</h1>
+                <p>Click the "setup" tab to deploy your executors.</p>
+              </div>
+            )}
+            {!this.state.nodes.length && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
+              <div className="empty-state">
+                <h1>You're currently using BuildBuddy cloud executors.</h1>
+                <p>Click the "setup" tab for instructions on self-hosting executors.</p>
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === "setup" && (
           <ExecutorSetup
             user={this.props.user}
             executorKeys={this.state.executorKeys}
             executors={this.state.nodes}
             schedulerUri={this.state.schedulerUri}
           />
-        </div>
-      );
-    }
+        )}
+      </>
+    );
   }
 
   // "bring your own runners" is not enabled for the installation (i.e. onprem deployment)
@@ -348,7 +383,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
       );
     } else {
-      return <ExecutorsList executors={this.state.nodes} />;
+      return <ExecutorsList user={this.props.user} executors={this.state.nodes} />;
     }
   }
 

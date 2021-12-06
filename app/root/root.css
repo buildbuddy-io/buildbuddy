@@ -342,6 +342,7 @@ svg.icon.orange {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+  user-select: none;
 }
 
 .tab.selected {
