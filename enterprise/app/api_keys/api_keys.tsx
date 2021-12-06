@@ -168,7 +168,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ updateForm: { ...this.state.updateForm, isSubmitting: true } });
-      return;
       await rpcService.service.updateApiKey(
         new api_key.CreateApiKeyRequest({
           ...this.state.updateForm.request,
