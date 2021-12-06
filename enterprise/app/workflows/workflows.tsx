@@ -105,6 +105,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   private async onClickUnlink() {
+    this.setState({ isDeleting: true });
     try {
       await rpcService.service.deleteWorkflow(
         new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete.id })

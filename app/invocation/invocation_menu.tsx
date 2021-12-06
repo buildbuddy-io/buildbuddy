@@ -4,6 +4,7 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../components/button/button";
+import Spinner from "../components/spinner/spinner";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -112,7 +113,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
-                {this.state.isDeleteModalLoading && <div className="loading" />}
+                {this.state.isDeleteModalLoading && <Spinner />}
                 <OutlinedButton disabled={this.state.isDeleteModalLoading} onClick={this.onCloseDeleteModal.bind(this)}>
                   Cancel
                 </OutlinedButton>

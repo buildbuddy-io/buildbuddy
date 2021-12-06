@@ -423,7 +423,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
-                {this.state.isDeleteModalSubmitting && <div className="loading" />}
+                {this.state.isDeleteModalSubmitting && <Spinner />}
                 <OutlinedButton
                   disabled={this.state.isDeleteModalSubmitting}
                   onClick={this.onCloseDeleteModal.bind(this)}>
