@@ -137,7 +137,6 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 }
 
 interface ExecutorsListProps {
-  user: User;
   executors: scheduler.IExecutionNode[];
 }
 
@@ -156,7 +155,6 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
     return (
       <>
         <div className="executor-cards">
-          {}
           {keys
             .map((key) => executorsByPool.get(key))
             .map((executors) => (
@@ -339,7 +337,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                 </div>
               </div>
             )}
-            <ExecutorsList user={this.props.user} executors={this.state.nodes} />
+            <ExecutorsList executors={this.state.nodes} />
             {!this.state.nodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>No self-hosted Linux executors are connected.</h1>
@@ -383,7 +381,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
       );
     } else {
-      return <ExecutorsList user={this.props.user} executors={this.state.nodes} />;
+      return <ExecutorsList executors={this.state.nodes} />;
     }
   }
 
