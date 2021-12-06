@@ -55,6 +55,7 @@
   background: transparent;
   border: 1px solid rgba(20, 20, 20, 0.1);
   transition: 200ms ease;
+  flex-shrink: 1;
   overflow: hidden;
 }
 

@@ -11,6 +11,7 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import TextInput from "../../../app/components/input/input";
+import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
 import rpcService from "../../../app/service/rpc_service";
@@ -167,6 +168,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ updateForm: { ...this.state.updateForm, isSubmitting: true } });
+      return;
       await rpcService.service.updateApiKey(
         new api_key.CreateApiKeyRequest({
           ...this.state.updateForm.request,
@@ -307,7 +309,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
-                {isSubmitting && <div className="loading"></div>}
+                {isSubmitting && <Spinner />}
                 <OutlinedButton type="button" onClick={onRequestClose}>
                   Cancel
                 </OutlinedButton>

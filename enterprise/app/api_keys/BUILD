@@ -14,6 +14,7 @@ ts_library(
         "//app/components/dialog",
         "//app/components/input",
         "//app/components/modal",
+        "//app/components/spinner",
         "//app/errors",
         "//app/service",
         "//app/util:errors",
