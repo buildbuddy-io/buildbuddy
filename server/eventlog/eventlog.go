@@ -324,16 +324,16 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		ChunkId: chunkId,
 		Buffer:  append(chunk, volatileTail...),
 	}
-
-	if !proto.Equal(w.lastChunk, curChunk) {
-		keyval.SetProto(
-			ctx,
-			w.keyValueStore,
-			w.eventLogPath,
-			curChunk,
-		)
-		w.lastChunk = curChunk
+	if proto.Equal(w.lastChunk, curChunk) {
+		return
 	}
+	keyval.SetProto(
+		ctx,
+		w.keyValueStore,
+		w.eventLogPath,
+		curChunk,
+	)
+	w.lastChunk = curChunk
 }
 
 func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {
