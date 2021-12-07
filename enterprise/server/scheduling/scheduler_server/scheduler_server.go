@@ -1528,6 +1528,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	if err != nil {
 		return nil, err
 	}
+	useGroupOwnedExecutors := g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors
 
 	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
 	for i, node := range executionNodes {
@@ -1536,7 +1537,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 			Node: node,
 			Enabled: !s.requireExecutorAuthorization ||
 				(s.enableUserOwnedExecutors &&
-					((g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors) || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
+					(useGroupOwnedExecutors || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
 		}
 	}
 
