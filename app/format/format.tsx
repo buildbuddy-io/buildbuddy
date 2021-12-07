@@ -190,6 +190,14 @@ function differenceInCalendarDays(start: Date, end: Date) {
   return moment(end).diff(start, "days");
 }
 
+export function colorHash(input: string) {
+  let num = 0;
+  for (var i = 0; i < input.length; i++) {
+    num = input.charCodeAt(i) + ((num << 5) - num);
+  }
+  return `hsl(${(num % 360000) / 1000}, 50%, 80%)`;
+}
+
 export default {
   compactDurationSec,
   durationSec,
@@ -207,4 +215,5 @@ export default {
   formatRole,
   formatWithCommas,
   formatDateRange,
+  colorHash,
 };

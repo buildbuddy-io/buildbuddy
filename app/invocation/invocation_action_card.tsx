@@ -5,6 +5,7 @@ import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
+import DigestComponent from "../components/digest/digest";
 
 interface Props {
   model: InvocationModel;
@@ -267,6 +268,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   render() {
+    let digest = this.props.search.get("actionDigest").split("/");
     return (
       <div className="invocation-action-card">
         <div className="card">
@@ -278,7 +280,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                 <div>
                   <div className="action-section">
                     <div className="action-property-title">Digest hash/size</div>
-                    <div>{this.props.search.get("actionDigest")} bytes</div>
+                    <DigestComponent digest={{ hash: digest[0], sizeBytes: parseInt(digest[1]) }} expanded={true} />
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Cacheable</div>
@@ -287,7 +289,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   <div className="action-section">
                     <div className="action-property-title">Input root digest hash/size</div>
                     <div>
-                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
+                      <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
                     </div>
                   </div>
                   <div className="action-section">
@@ -397,6 +399,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               </span>
                               <span className="prop-link">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
+                              <DigestComponent digest={file.digest} />
                             </div>
                           ))}
                         </div>
