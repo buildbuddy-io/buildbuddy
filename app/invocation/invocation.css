@@ -323,10 +323,12 @@
 }
 
 .invocation-execution-row-digest {
+  line-height: 1.2em;
   font-size: 0.8em;
   font-weight: 600;
   margin-bottom: 4px;
   cursor: pointer;
+  display: flex;
 }
 
 .invocation-execution-row-stats div {

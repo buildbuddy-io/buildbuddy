@@ -13,7 +13,9 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
         style={{ backgroundColor: format.colorHash(props.digest.hash) }}>
         {props.digest.hash}
       </span>
-      <span className="digest-component-size">{format.bytes(props.digest.sizeBytes)}</span>
+      <span title={`${props.digest.sizeBytes}`} className="digest-component-size">
+        {format.bytes(props.digest.sizeBytes)}
+      </span>
     </span>
   );
 });

@@ -42,3 +42,7 @@
   font-size: 0.6em;
   background-color: #eee;
 }
+
+.digest-component.expanded .digest-component-size {
+  font-size: 0.8em;
+}
