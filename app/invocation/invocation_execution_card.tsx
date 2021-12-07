@@ -8,6 +8,7 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
 import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
+import DigestComponent from "../components/digest/digest";
 
 interface Props {
   model: InvocationModel;
@@ -367,7 +368,8 @@ export default class ExecutionCardComponent extends React.Component {
                         <div className="invocation-execution-row-image">{status.icon}</div>
                         <div>
                           <div className="invocation-execution-row-digest">
-                            {status.name} {execution?.actionDigest?.hash}/{execution?.actionDigest?.sizeBytes}
+                            {status.name}&nbsp;&nbsp;
+                            <DigestComponent digest={execution?.actionDigest} expanded={true} />
                           </div>
                           <div>{execution.commandSnippet}</div>
                           <div className="invocation-execution-row-stats">
