@@ -338,7 +338,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
             <ExecutorsList executors={this.state.nodes} />
             {!this.state.nodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
-                <h1>No self-hosted Linux executors are connected.</h1>
+                <h1>No self-hosted executors are connected.</h1>
                 <p>Click the "setup" tab to deploy your executors.</p>
               </div>
             )}
