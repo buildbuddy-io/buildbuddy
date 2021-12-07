@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize",
         "//proto:api_key_go_proto",
         "//proto:remote_execution_go_proto",

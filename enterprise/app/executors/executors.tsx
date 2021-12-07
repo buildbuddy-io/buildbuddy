@@ -75,7 +75,7 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
 interface ExecutorSetupProps {
   user: User;
   executorKeys: api_key.IApiKey[];
-  executors: scheduler.IExecutionNode[];
+  executors: scheduler.GetExecutionNodesResponse.IExecutor[];
   schedulerUri: string;
 }
 
@@ -137,14 +137,14 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 }
 
 interface ExecutorsListProps {
-  executors: scheduler.IExecutionNode[];
+  executors: scheduler.GetExecutionNodesResponse.IExecutor[];
 }
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
   render() {
-    let executorsByPool = new Map<string, scheduler.IExecutionNode[]>();
+    let executorsByPool = new Map<string, scheduler.GetExecutionNodesResponse.IExecutor[]>();
     for (const e of this.props.executors) {
-      const key = e.os + "-" + e.arch + "-" + e.pool;
+      const key = e.node.os + "-" + e.node.arch + "-" + e.node.pool;
       if (!executorsByPool.has(key)) {
         executorsByPool.set(key, []);
       }
@@ -160,7 +160,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
             .map((executors) => (
               <>
                 <h2>
-                  {executors[0].os}/{executors[0].arch} {executors[0].pool || "Default Pool"}
+                  {executors[0].node.os}/{executors[0].node.arch} {executors[0].node.pool || "Default Pool"}
                 </h2>
                 {executors.length == 1 && <p>There is 1 self-hosted executor in this pool.</p>}
                 {executors.length > 1 && <p>There are {executors.length} self-hosted executors in this pool.</p>}
@@ -168,7 +168,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                   <p>For better performance and reliability, we suggest running a minimum of 3 executors per pool.</p>
                 )}
                 {executors.map((node) => (
-                  <ExecutorCardComponent node={node} />
+                  <ExecutorCardComponent executor={node} />
                 ))}
               </>
             ))}
@@ -187,7 +187,7 @@ interface Props {
 
 interface State {
   userOwnedExecutorsSupported: boolean;
-  nodes: scheduler.IExecutionNode[];
+  nodes: scheduler.GetExecutionNodesResponse.IExecutor[];
   executorKeys: api_key.IApiKey[];
   loading: FetchType[];
   schedulerUri: string;
@@ -251,7 +251,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     try {
       const response = await rpcService.service.getExecutionNodes({});
       this.setState({
-        nodes: response.executionNode,
+        nodes: response.executor,
         userOwnedExecutorsSupported: response.userOwnedExecutorsSupported,
       });
       if (response.userOwnedExecutorsSupported) {
@@ -298,8 +298,6 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
 
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
-    const linuxNodes = this.state.nodes.filter((node) => node.os.toLowerCase() === "linux");
-
     const defaultTabId = this.state.nodes.length > 0 ? "status" : "setup";
     const activeTab = (this.props.path.substring("/executors/".length) || defaultTabId) as TabId;
 
@@ -319,13 +317,13 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
         {activeTab === "status" && (
           <>
-            {linuxNodes.length > 0 && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
+            {this.state.nodes.some((node) => !node.enabled) && (
               <div className="callout warning-callout">
                 <AlertCircle className="icon orange" />
                 <div className="callout-content">
                   <div>
-                    Linux executors are connected, but will not be used to execute tasks since your organization is
-                    using BuildBuddy Cloud executors. To fix this, enable "use self-hosted Linux executors" in settings.
+                    Some executors are disabled since your organization is using BuildBuddy Cloud executors. To fix
+                    this, enable self-hosted executors in settings.
                   </div>
                   <div>
                     <FilledButton className="organization-settings-button">

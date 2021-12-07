@@ -139,21 +139,22 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 
 	config := cfgpb.FrontendConfig{
-		Version:                    version,
-		ConfiguredIssuers:          issuers,
-		DefaultToDenseMode:         env.GetConfigurator().GetDefaultToDenseMode(),
-		GithubEnabled:              env.GetConfigurator().GetGithubConfig() != nil,
-		AnonymousUsageEnabled:      env.GetConfigurator().GetAnonymousUsageEnabled(),
-		TestDashboardEnabled:       env.GetConfigurator().EnableTargetTracking(),
-		UserOwnedExecutorsEnabled:  userOwnedExecutorsEnabled,
-		ExecutorKeyCreationEnabled: executorKeyCreationEnabled,
-		WorkflowsEnabled:           workflowsEnabled,
-		CodeEditorEnabled:          env.GetConfigurator().GetCodeEditorEnabled(),
-		RemoteExecutionEnabled:     env.GetConfigurator().GetRemoteExecutionConfig() != nil,
-		SsoEnabled:                 ssoEnabled,
-		GlobalFilterEnabled:        env.GetConfigurator().GetAppGlobalFilterEnabled(),
-		UsageEnabled:               env.GetConfigurator().GetAppUsageEnabled(),
-		UserManagementEnabled:      env.GetConfigurator().GetAppUserManagementEnabled(),
+		Version:                       version,
+		ConfiguredIssuers:             issuers,
+		DefaultToDenseMode:            env.GetConfigurator().GetDefaultToDenseMode(),
+		GithubEnabled:                 env.GetConfigurator().GetGithubConfig() != nil,
+		AnonymousUsageEnabled:         env.GetConfigurator().GetAnonymousUsageEnabled(),
+		TestDashboardEnabled:          env.GetConfigurator().EnableTargetTracking(),
+		UserOwnedExecutorsEnabled:     userOwnedExecutorsEnabled,
+		ExecutorKeyCreationEnabled:    executorKeyCreationEnabled,
+		WorkflowsEnabled:              workflowsEnabled,
+		CodeEditorEnabled:             env.GetConfigurator().GetCodeEditorEnabled(),
+		RemoteExecutionEnabled:        env.GetConfigurator().GetRemoteExecutionConfig() != nil,
+		SsoEnabled:                    ssoEnabled,
+		GlobalFilterEnabled:           env.GetConfigurator().GetAppGlobalFilterEnabled(),
+		UsageEnabled:                  env.GetConfigurator().GetAppUsageEnabled(),
+		UserManagementEnabled:         env.GetConfigurator().GetAppUserManagementEnabled(),
+		ForceUserOwnedDarwinExecutors: env.GetConfigurator().GetRemoteExecutionConfig().ForceUserOwnedDarwinExecutors,
 	}
 
 	configJSON := &bytes.Buffer{}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -1519,8 +1520,28 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		userOwnedExecutorsEnabled = false
 	}
 
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+
+	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
+	for i, node := range executionNodes {
+		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
+		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
+			Node: node,
+			Enabled: !s.requireExecutorAuthorization ||
+				(s.enableUserOwnedExecutors &&
+					((g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors) || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
+		}
+	}
+
 	return &scpb.GetExecutionNodesResponse{
-		ExecutionNode:               executionNodes,
+		Executor:                    executors,
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 	}, nil
 }

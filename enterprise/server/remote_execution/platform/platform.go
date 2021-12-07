@@ -54,7 +54,7 @@ const (
 	operatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
 	defaultOperatingSystemName  = LinuxOperatingSystemName
-	darwinOperatingSystemName   = "darwin"
+	DarwinOperatingSystemName   = "darwin"
 
 	cpuArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
@@ -275,7 +275,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
 	}
 
-	if strings.EqualFold(platformProps.OS, darwinOperatingSystemName) {
+	if strings.EqualFold(platformProps.OS, DarwinOperatingSystemName) {
 		appleSDKVersion := ""
 		appleSDKPlatform := "MacOSX"
 		xcodeVersion := executorProps.DefaultXCodeVersion
