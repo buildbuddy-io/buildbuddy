@@ -322,17 +322,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
 	}
 
-	// Only upload action outputs if the error is something that the client can
-	// use the action outputs to debug.
-	isActionableClientErr := gstatus.Code(cmdResult.Error) == codes.DeadlineExceeded
-	if cmdResult.Error != nil && !isActionableClientErr {
-		// These errors are failure-specific. Pass through unchanged.
-		log.Warningf("Task %q command finished with error: %s", taskID, cmdResult.Error)
-		return finishWithErrFn(cmdResult.Error)
-	} else {
-		log.Infof("Task %q command finished with error: %v", taskID, cmdResult.Error)
-	}
-
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
 
