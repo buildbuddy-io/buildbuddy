@@ -132,10 +132,12 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	userOwnedExecutorsEnabled := false
 	executorKeyCreationEnabled := false
 	workflowsEnabled := false
+	forceUserOwnedDarwinExecutors := false
 	if reConf := env.GetConfigurator().GetRemoteExecutionConfig(); reConf != nil {
 		userOwnedExecutorsEnabled = reConf.EnableUserOwnedExecutors
 		executorKeyCreationEnabled = reConf.EnableExecutorKeyCreation
 		workflowsEnabled = reConf.EnableWorkflows
+		forceUserOwnedDarwinExecutors = reConf.ForceUserOwnedDarwinExecutors
 	}
 
 	config := cfgpb.FrontendConfig{
@@ -154,7 +156,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		GlobalFilterEnabled:           env.GetConfigurator().GetAppGlobalFilterEnabled(),
 		UsageEnabled:                  env.GetConfigurator().GetAppUsageEnabled(),
 		UserManagementEnabled:         env.GetConfigurator().GetAppUserManagementEnabled(),
-		ForceUserOwnedDarwinExecutors: env.GetConfigurator().GetRemoteExecutionConfig().ForceUserOwnedDarwinExecutors,
+		ForceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
 	}
 
 	configJSON := &bytes.Buffer{}
