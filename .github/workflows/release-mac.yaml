@@ -1,0 +1,36 @@
+name: "release-mac"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install bazelisk
+        run: |
+          curl -LO "https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"
+          mkdir -p "${GITHUB_WORKSPACE}/bin/"
+          mv bazelisk-darwin-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
+          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+
+      - name: Get Tag
+        id: tag
+        run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
+
+      - name: Upload Artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_12.4.app/Contents/Developer
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --define version=${{ steps.tag.outputs.TAG }} //server/cmd/buildbuddy:buildbuddy //enterprise/server/cmd/server:buildbuddy //enterprise/server/cmd/executor:executor
+          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-darwin-amd64
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-darwin-amd64
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-amd64
+          gh release upload ${{ steps.tag.outputs.TAG }} buildbuddy-darwin-amd64 buildbuddy-enterprise-darwin-amd64 executor-enterprise-darwin-amd64 --clobber
