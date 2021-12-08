@@ -50,4 +50,7 @@ message FrontendConfig {
 
   // Whether or not user management is enabled.
   bool user_management_enabled = 16;
+
+  // Whether Darwin (macOS) executors must be self-hosted.
+  bool force_user_owned_darwin_executors = 17;
 }

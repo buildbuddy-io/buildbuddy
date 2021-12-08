@@ -249,9 +249,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   </Suspense>
                 )}
                 {usage && <UsageComponent user={this.state.user} />}
-                {executors && (
-                  <ExecutorsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
-                )}
+                {executors && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                 {home && <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />}
                 {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                 {code && (
