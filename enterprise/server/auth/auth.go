@@ -387,7 +387,8 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 				if provider, err = authenticator.provider(); err == nil {
 					// "openid" is a required scope for OpenID Connect flows.
 					scopes := []string{oidc.ScopeOpenID, "profile", "email"}
-					// Google reject the offline_access scope in favor of access_type=offline url param.
+					// Google reject the offline_access scope in favor of access_type=offline url param which already gets 
+					// set in our auth flow thanks to the oauth2.AccessTypeOffline authCodeOption at the top of this file.
 					// https://github.com/coreos/go-oidc/blob/v2.2.1/oidc.go#L30
 					if authConfig.IssuerURL != "https://accounts.google.com" {
 						scopes = append(scopes, oidc.ScopeOfflineAccess)
