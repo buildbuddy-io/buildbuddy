@@ -385,14 +385,20 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			if authenticator.cachedOauth2Config == nil {
 				var provider *oidc.Provider
 				if provider, err = authenticator.provider(); err == nil {
+					// "openid" is a required scope for OpenID Connect flows.
+					scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+					// Google reject the offline_access scope in favor of access_type=offline url param.
+					// https://github.com/coreos/go-oidc/blob/v2.2.1/oidc.go#L30
+					if authConfig.IssuerURL != "https://accounts.google.com" {
+						scopes = append(scopes, oidc.ScopeOfflineAccess)
+					}
 					// Configure an OpenID Connect aware OAuth2 client.
 					authenticator.cachedOauth2Config = &oauth2.Config{
 						ClientID:     authConfig.ClientID,
 						ClientSecret: authConfig.ClientSecret,
 						RedirectURL:  authURL.String(),
 						Endpoint:     provider.Endpoint(),
-						// "openid" is a required scope for OpenID Connect flows.
-						Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
+						Scopes: 	  scopes,
 					}
 				}
 			}
