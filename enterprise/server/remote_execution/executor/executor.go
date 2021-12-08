@@ -33,7 +33,6 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -148,22 +147,6 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func isBazelRetryableError(taskError error) bool {
-	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
-		return true
-	}
-	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
-		if len(gstatus.Convert(taskError).Details()) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldRetry(taskError error) bool {
-	return !isBazelRetryableError(taskError)
-}
-
 func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
@@ -182,9 +165,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		if shouldRetry(finalErr) {
-			return true, finalErr
-		}
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
 			return true, err
 		}
@@ -320,17 +300,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	if cmdResult.ExitCode != 0 {
 		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
-	}
-
-	// Only upload action outputs if the error is something that the client can
-	// use the action outputs to debug.
-	isActionableClientErr := gstatus.Code(cmdResult.Error) == codes.DeadlineExceeded
-	if cmdResult.Error != nil && !isActionableClientErr {
-		// These errors are failure-specific. Pass through unchanged.
-		log.Warningf("Task %q command finished with error: %s", taskID, cmdResult.Error)
-		return finishWithErrFn(cmdResult.Error)
-	} else {
-		log.Infof("Task %q command finished with error: %v", taskID, cmdResult.Error)
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
