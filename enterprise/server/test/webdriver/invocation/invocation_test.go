@@ -13,7 +13,7 @@ import (
 
 func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
 	wt := webtester.New(t)
-	app := buildbuddy_enterprise.Run(t)
+	app := buildbuddy_enterprise.Run(t, "--auth.enable_self_auth=true")
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
