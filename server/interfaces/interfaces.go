@@ -194,7 +194,6 @@ type Cache interface {
 
 	// Normal cache-like operations.
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)
-	ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error)
 	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)

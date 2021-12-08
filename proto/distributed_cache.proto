@@ -44,20 +44,6 @@ message WriteResponse {
   int64 committed_size = 1;
 }
 
-message ContainsMultiRequest {
-  Isolation isolation = 3;
-  reserved 1;
-  repeated Key key = 2;
-}
-
-message ContainsMultiResponse {
-  message KeysFound {
-    Key key = 1;
-    bool exists = 2;
-  }
-  repeated KeysFound keys_found = 1;
-}
-
 message FindMissingRequest {
   Isolation isolation = 1;
   repeated Key key = 2;
@@ -91,7 +77,6 @@ message HeartbeatResponse {}
 service DistributedCache {
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
-  rpc ContainsMulti(ContainsMultiRequest) returns (ContainsMultiResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
