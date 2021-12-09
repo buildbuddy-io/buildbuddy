@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1638832749559,
+  "iteration": 1639076224402,
   "links": [],
   "panels": [
     {
@@ -87,7 +87,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(up{job=\"${job}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -114,6 +114,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:365",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -123,6 +124,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:366",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -157,7 +159,7 @@
             "y": 1
           },
           "hiddenSeries": false,
-          "id": 643,
+          "id": 710,
           "legend": {
             "avg": false,
             "current": false,
@@ -179,7 +181,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638318921654,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 21,
           "scopedVars": {
             "job": {
@@ -194,7 +196,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(up{job=\"${job}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -221,6 +223,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:365",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -230,6 +233,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:366",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -264,7 +268,7 @@
             "y": 1
           },
           "hiddenSeries": false,
-          "id": 644,
+          "id": 711,
           "legend": {
             "avg": false,
             "current": false,
@@ -286,7 +290,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638318921654,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 21,
           "scopedVars": {
             "job": {
@@ -301,7 +305,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(up{job=\"${job}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${job}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -328,6 +332,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:365",
               "decimals": 0,
               "format": "short",
               "label": null,
@@ -337,6 +342,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:366",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -414,7 +420,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(increase(cloudprober_success[10m])) by (probe) / sum(increase(cloudprober_total[10m])) by (probe)",
+              "expr": "sum(increase(cloudprober_success{region=\"${region}\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=\"${region}\"}[10m])) by (probe)",
               "interval": "",
               "legendFormat": "{{probe}}",
               "refId": "A"
@@ -440,6 +446,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:518",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -448,6 +455,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:519",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -529,7 +537,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (invocation_status) (rate(buildbuddy_invocation_count[${window}]))",
+              "expr": "sum by (invocation_status) (rate(buildbuddy_invocation_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{invocation_status}}",
               "queryType": "randomWalk",
@@ -556,6 +564,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:608",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -564,6 +573,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:609",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -625,7 +635,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_invocation_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_invocation_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -652,6 +662,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:763",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -660,6 +671,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:764",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -721,7 +733,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_invocation_build_event_count[${window}]))",
+              "expr": "sum(rate(buildbuddy_invocation_build_event_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -748,6 +760,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:841",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -756,6 +769,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:842",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -832,7 +846,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_webhook_handler_workflows_started[${window}]))",
+              "expr": "sum(rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -859,6 +873,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:931",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -867,6 +882,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:932",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -928,14 +944,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (event) (rate(buildbuddy_webhook_handler_workflows_started{event!=\"\"}[${window}]))",
+              "expr": "sum by (event) (rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\", event!=\"\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{event}}",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "sum (rate(buildbuddy_webhook_handler_workflows_started{event=\"\"}[${window}]))",
+              "expr": "sum (rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\", event=\"\"}[${window}]))",
               "interval": "",
               "legendFormat": "rerun_button",
               "refId": "B"
@@ -961,6 +977,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1009",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -969,6 +986,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1010",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1030,7 +1048,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{route=\"/webhooks/workflow/:id\"}[${window}]))",
+              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\",route=\"/webhooks/workflow/:id\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{code}}",
               "queryType": "randomWalk",
@@ -1057,6 +1075,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1163",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -1065,6 +1084,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1164",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1139,6 +1159,7 @@
           "renderer": "flot",
           "seriesOverrides": [
             {
+              "$$hashKey": "object:1261",
               "alias": "QPS",
               "yaxis": 2
             }
@@ -1148,7 +1169,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(grpc_server_started_total{grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
+              "expr": "sum(rate(grpc_server_started_total{region=\"${region}\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "queryType": "randomWalk",
@@ -1175,6 +1196,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1268",
               "format": "reqps",
               "label": null,
               "logBase": 1,
@@ -1183,6 +1205,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1269",
               "format": "reqps",
               "label": null,
               "logBase": 1,
@@ -1242,6 +1265,7 @@
           "renderer": "flot",
           "seriesOverrides": [
             {
+              "$$hashKey": "object:1348",
               "alias": "QPS",
               "yaxis": 2
             }
@@ -1251,26 +1275,26 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -1296,6 +1320,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1355",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -1304,6 +1329,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1356",
               "format": "reqps",
               "label": null,
               "logBase": 1,
@@ -1372,26 +1398,26 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -1486,6 +1512,7 @@
           "renderer": "flot",
           "seriesOverrides": [
             {
+              "$$hashKey": "object:1687",
               "alias": "QPS",
               "yaxis": 2
             }
@@ -1495,26 +1522,26 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -1540,6 +1567,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1694",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -1548,6 +1576,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1695",
               "format": "reqps",
               "label": null,
               "logBase": 1,
@@ -1607,6 +1636,7 @@
           "renderer": "flot",
           "seriesOverrides": [
             {
+              "$$hashKey": "object:1858",
               "alias": "QPS",
               "yaxis": 2
             }
@@ -1616,26 +1646,26 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
-              "expr": "sum(rate(grpc_server_handled_total{grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -1661,6 +1691,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:1865",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -1669,6 +1700,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:1866",
               "format": "reqps",
               "label": null,
               "logBase": 1,
@@ -1746,7 +1778,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1773,6 +1805,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2049",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -1781,6 +1814,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2050",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1843,7 +1877,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1870,6 +1904,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2127",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -1878,6 +1913,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2128",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -1940,12 +1976,16 @@
           "repeat": "cache_type",
           "repeatDirection": "h",
           "seriesOverrides": [
-            {},
             {
+              "$$hashKey": "object:2205"
+            },
+            {
+              "$$hashKey": "object:2206",
               "alias": "Misses",
               "yaxis": 2
             },
             {
+              "$$hashKey": "object:2207",
               "alias": "Hits",
               "yaxis": 1
             }
@@ -1955,7 +1995,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{cache_type=\"action_cache\"}[${window}]))",
+              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"action_cache\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
               "queryType": "randomWalk",
@@ -1982,6 +2022,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2224",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -1990,6 +2031,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2225",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2056,7 +2098,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{cache_type=\"cas\"}[${window}]))",
+              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"cas\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
               "queryType": "randomWalk",
@@ -2083,6 +2125,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2300",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -2091,6 +2134,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2301",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2153,7 +2197,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec/1e6) by (partition_id)",
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
               "legendFormat": "",
@@ -2267,7 +2311,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "max(sum(buildbuddy_remote_execution_waiting_execution_result) by (pod_name,group_id)) by (group_id)",
+              "expr": "max(sum(buildbuddy_remote_execution_waiting_execution_result{region=\"${region}\"}) by (pod_name,group_id)) by (group_id)",
               "interval": "",
               "legendFormat": "{{group_id}}",
               "queryType": "randomWalk",
@@ -2294,6 +2338,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2460",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2302,6 +2347,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2461",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2363,7 +2409,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_waiting_execution_result) by (group_id)",
+              "expr": "sum(buildbuddy_remote_execution_waiting_execution_result{region=\"${region}\"}) by (group_id)",
               "interval": "",
               "legendFormat": "{{group_id}}",
               "queryType": "randomWalk",
@@ -2390,6 +2436,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:2538",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2398,6 +2445,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:2539",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -2484,14 +2532,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}))",
+              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}))",
+              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Idle",
               "refId": "B"
@@ -2606,14 +2654,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"}))",
+              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Avg executor queue length",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "sum(up{job=\"${pool}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor instances",
               "refId": "B"
@@ -2722,7 +2770,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stage}}",
@@ -2730,7 +2778,7 @@
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
               "hide": true,
               "interval": "",
               "legendFormat": "p99/{{stage}}",
@@ -2854,14 +2902,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg CPU assigned",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg RAM assigned",
               "refId": "B"
@@ -2965,7 +3013,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_count{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3072,7 +3120,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3178,7 +3226,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3285,7 +3333,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"})",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
@@ -3391,7 +3439,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"}))",
+              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -3500,7 +3548,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
               "interval": "",
               "legendFormat": "{{pod}}",
               "queryType": "randomWalk",
@@ -3571,7 +3619,7 @@
           "gridPos": {
             "h": 9,
             "w": 12,
-            "x": 11,
+            "x": 12,
             "y": 49
           },
           "hiddenSeries": false,
@@ -3696,7 +3744,7 @@
         "x": 0,
         "y": 8
       },
-      "id": 650,
+      "id": 681,
       "panels": [
         {
           "aliasColors": {
@@ -3719,10 +3767,10 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 112
           },
           "hiddenSeries": false,
-          "id": 651,
+          "id": 682,
           "legend": {
             "avg": false,
             "current": false,
@@ -3743,7 +3791,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3759,14 +3807,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}))",
+              "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Working",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{job=\"${pool}\"}))",
+              "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Idle",
               "refId": "B"
@@ -3837,10 +3885,10 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 112
           },
           "hiddenSeries": false,
-          "id": 652,
+          "id": 683,
           "legend": {
             "avg": false,
             "current": false,
@@ -3862,7 +3910,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -3884,14 +3932,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"}))",
+              "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Avg executor queue length",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "sum(up{job=\"${pool}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor instances",
               "refId": "B"
@@ -3963,10 +4011,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 121
           },
           "hiddenSeries": false,
-          "id": 653,
+          "id": 684,
           "legend": {
             "avg": false,
             "current": false,
@@ -3987,7 +4035,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4003,7 +4051,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", stage!=\"worker\", job=\"${pool}\"}[${window}]))\n)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{stage}}",
@@ -4011,7 +4059,7 @@
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{job=\"${pool}\"}[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=\"${pool}\"}[${window}]))\n)",
               "hide": true,
               "interval": "",
               "legendFormat": "p99/{{stage}}",
@@ -4097,10 +4145,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 121
           },
           "hiddenSeries": false,
-          "id": 654,
+          "id": 685,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4122,7 +4170,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4138,14 +4186,14 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg CPU assigned",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg RAM assigned",
               "refId": "B"
@@ -4212,10 +4260,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 129
           },
           "hiddenSeries": false,
-          "id": 655,
+          "id": 686,
           "legend": {
             "avg": false,
             "current": false,
@@ -4236,7 +4284,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4252,7 +4300,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_count{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_count{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -4322,10 +4370,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 129
           },
           "hiddenSeries": false,
-          "id": 656,
+          "id": 687,
           "legend": {
             "avg": false,
             "current": false,
@@ -4346,7 +4394,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4362,7 +4410,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -4431,10 +4479,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 137
           },
           "hiddenSeries": false,
-          "id": 657,
+          "id": 688,
           "legend": {
             "avg": false,
             "current": false,
@@ -4455,7 +4503,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4471,7 +4519,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -4540,10 +4588,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 137
           },
           "hiddenSeries": false,
-          "id": 658,
+          "id": 689,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4565,7 +4613,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4581,7 +4629,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"})",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
@@ -4650,10 +4698,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 659,
+          "id": 690,
           "legend": {
             "avg": false,
             "current": false,
@@ -4674,7 +4722,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4690,7 +4738,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"${pool}\"}))",
+              "expr": "quantile(0.5, sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -4759,10 +4807,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 660,
+          "id": 691,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -4786,7 +4834,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4802,7 +4850,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
               "interval": "",
               "legendFormat": "{{pod}}",
               "queryType": "randomWalk",
@@ -4874,10 +4922,10 @@
             "h": 9,
             "w": 12,
             "x": 11,
-            "y": 49
+            "y": 153
           },
           "hiddenSeries": false,
-          "id": 661,
+          "id": 692,
           "legend": {
             "avg": false,
             "current": false,
@@ -4899,7 +4947,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 649,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4978,7 +5026,7 @@
           }
         }
       ],
-      "repeatIteration": 1638832749559,
+      "repeatIteration": 1639076224402,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5060,20 +5108,20 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Total",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{job=\"${pool}\"})",
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Average",
               "refId": "B"
             },
             {
-              "expr": "sum(up{job=\"${pool}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor count (for comparison)",
               "refId": "C"
@@ -5180,7 +5228,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -5287,7 +5335,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{job=\"${pool}\"}[${window}]))",
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{reason}}",
               "queryType": "randomWalk",
@@ -5394,7 +5442,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{job=\"${pool}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
@@ -5501,7 +5549,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -5608,7 +5656,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -5679,7 +5727,7 @@
         "x": 0,
         "y": 10
       },
-      "id": 662,
+      "id": 693,
       "panels": [
         {
           "aliasColors": {
@@ -5705,7 +5753,7 @@
             "y": 10
           },
           "hiddenSeries": false,
-          "id": 663,
+          "id": 694,
           "legend": {
             "avg": false,
             "current": false,
@@ -5727,7 +5775,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5743,20 +5791,20 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Total",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{job=\"${pool}\"})",
+              "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Average",
               "refId": "B"
             },
             {
-              "expr": "sum(up{job=\"${pool}\"})",
+              "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor count (for comparison)",
               "refId": "C"
@@ -5829,7 +5877,7 @@
             "y": 10
           },
           "hiddenSeries": false,
-          "id": 664,
+          "id": 695,
           "legend": {
             "avg": false,
             "current": false,
@@ -5850,7 +5898,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5866,7 +5914,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{job=\"${pool}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -5939,7 +5987,7 @@
             "y": 18
           },
           "hiddenSeries": false,
-          "id": 665,
+          "id": 696,
           "legend": {
             "avg": false,
             "current": false,
@@ -5960,7 +6008,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5976,7 +6024,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{job=\"${pool}\"}[${window}]))",
+              "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{reason}}",
               "queryType": "randomWalk",
@@ -6049,7 +6097,7 @@
             "y": 18
           },
           "hiddenSeries": false,
-          "id": 666,
+          "id": 697,
           "legend": {
             "avg": false,
             "current": false,
@@ -6070,7 +6118,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6086,7 +6134,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{job=\"${pool}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
               "queryType": "randomWalk",
@@ -6159,7 +6207,7 @@
             "y": 26
           },
           "hiddenSeries": false,
-          "id": 667,
+          "id": 698,
           "legend": {
             "avg": false,
             "current": false,
@@ -6180,7 +6228,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6196,7 +6244,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -6269,7 +6317,7 @@
             "y": 26
           },
           "hiddenSeries": false,
-          "id": 668,
+          "id": 699,
           "legend": {
             "avg": false,
             "current": false,
@@ -6290,7 +6338,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6306,7 +6354,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{job=\"${pool}\"})",
+              "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -6357,7 +6405,7 @@
           }
         }
       ],
-      "repeatIteration": 1638832749559,
+      "repeatIteration": 1639076224402,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -6415,7 +6463,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 85
+            "y": 12
           },
           "hiddenSeries": false,
           "id": 40,
@@ -6450,7 +6498,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (sql_query_template) (rate(buildbuddy_sql_query_count[${window}]))",
+              "expr": "sum by (sql_query_template) (rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{sql_query_template}}",
               "queryType": "randomWalk",
@@ -6486,6 +6534,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:3993",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -6494,6 +6543,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:3994",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6526,7 +6576,7 @@
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 98
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 76,
@@ -6561,7 +6611,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (sql_query_template, le) (rate(buildbuddy_sql_query_duration_usec_bucket[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (sql_query_template, le) (rate(buildbuddy_sql_query_duration_usec_bucket{region=\"${region}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "{{sql_query_template}}",
               "queryType": "randomWalk",
@@ -6588,6 +6638,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4070",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -6596,6 +6647,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4071",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6627,7 +6679,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 112
+            "y": 39
           },
           "hiddenSeries": false,
           "id": 42,
@@ -6657,7 +6709,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_sql_query_count[${window}]))",
+              "expr": "sum(rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -6684,6 +6736,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4152",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -6692,6 +6745,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4153",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6725,7 +6779,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 112
+            "y": 39
           },
           "hiddenSeries": false,
           "id": 46,
@@ -6755,7 +6809,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_sql_error_count[${window}]))\n/ (sum(rate(buildbuddy_sql_query_count[${window}])))",
+              "expr": "sum(rate(buildbuddy_sql_error_count{region=\"${region}\"}[${window}]))\n/ (sum(rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}])))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -6782,6 +6836,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4229",
               "format": "percent",
               "label": null,
               "logBase": 1,
@@ -6790,6 +6845,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4230",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6823,7 +6879,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 120
+            "y": 47
           },
           "hiddenSeries": false,
           "id": 44,
@@ -6853,7 +6909,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_sql_error_count[${window}]))",
+              "expr": "sum(rate(buildbuddy_sql_error_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -6880,6 +6936,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4307",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -6888,6 +6945,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4308",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -6940,7 +6998,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 13
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 498,
@@ -6974,7 +7032,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "redis_memory_used_bytes",
+              "expr": "redis_memory_used_bytes{region=\"${region}\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -6985,7 +7043,7 @@
               "target": ""
             },
             {
-              "expr": "redis_memory_max_bytes",
+              "expr": "redis_memory_max_bytes{region=\"${region}\"}",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -7016,6 +7074,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4408",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -7024,6 +7083,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4409",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -7055,7 +7115,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 13
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 542,
@@ -7085,7 +7145,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum (redis_db_keys) by (db)",
+              "expr": "sum (redis_db_keys{region=\"${region}\"}) by (db)",
               "interval": "",
               "legendFormat": "{{db}}",
               "queryType": "randomWalk",
@@ -7171,7 +7231,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 22
+            "y": 65
           },
           "hiddenSeries": false,
           "hideTimeOverride": true,
@@ -7204,7 +7264,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(redis_connected_clients)",
+              "expr": "sum(redis_connected_clients{region=\"${region}\"})",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7281,7 +7341,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 31
+            "y": 74
           },
           "hiddenSeries": false,
           "id": 496,
@@ -7315,7 +7375,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(redis_commands_total [${window}])) by (cmd)",
+              "expr": "sum(rate(redis_commands_total{region=\"${region}\"}[${window}])) by (cmd)",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7391,7 +7451,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 84
           },
           "hiddenSeries": false,
           "id": 500,
@@ -7425,7 +7485,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total[${window}])) by (cmd)\n  /\nsum(irate(redis_commands_total[${window}])) by (cmd)\n",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{region=\"${region}\"}[${window}])) by (cmd)\n  /\nsum(irate(redis_commands_total{region=\"${region}\"}[${window}])) by (cmd)\n",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7456,6 +7516,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4712",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -7464,6 +7525,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4713",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -7499,7 +7561,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 84
           },
           "hiddenSeries": false,
           "id": 504,
@@ -7533,7 +7595,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(irate(redis_commands_duration_seconds_total[${window}])) by (cmd) != 0",
+              "expr": "sum(irate(redis_commands_duration_seconds_total{region=\"${region}\"}[${window}])) by (cmd) != 0",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -7620,7 +7682,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 94
           },
           "hiddenSeries": false,
           "id": 50,
@@ -7650,7 +7712,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_blobstore_read_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_blobstore_read_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -7677,6 +7739,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4882",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -7685,6 +7748,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4883",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -7718,7 +7782,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 94
           },
           "hiddenSeries": false,
           "id": 53,
@@ -7748,7 +7812,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_read_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_read_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -7775,6 +7839,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:4959",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -7783,6 +7848,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:4960",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -7816,7 +7882,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 102
           },
           "hiddenSeries": false,
           "id": 51,
@@ -7846,7 +7912,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_blobstore_write_size_bytes_sum[${window}]))",
+              "expr": "sum(rate(buildbuddy_blobstore_write_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -7873,6 +7939,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5037",
               "format": "binBps",
               "label": null,
               "logBase": 1,
@@ -7881,6 +7948,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5038",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -7914,7 +7982,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 51
+            "y": 102
           },
           "hiddenSeries": false,
           "id": 55,
@@ -7944,7 +8012,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_write_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_write_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -7971,6 +8039,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5114",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -7979,6 +8048,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5115",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8027,7 +8097,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 140
+            "y": 111
           },
           "hiddenSeries": false,
           "id": 122,
@@ -8057,7 +8127,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_http_request_handler_duration_usec_count{code=~\"5..\"}[${window}]))\n  /\nsum(rate(buildbuddy_http_request_handler_duration_usec_count[${window}]))",
+              "expr": "sum(rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\", code=~\"5..\"}[${window}]))\n  /\nsum(rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "Error ratio",
               "queryType": "randomWalk",
@@ -8084,6 +8154,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5215",
               "format": "percentunit",
               "label": null,
               "logBase": 1,
@@ -8092,6 +8163,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5216",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8123,7 +8195,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 140
+            "y": 111
           },
           "hiddenSeries": false,
           "id": 116,
@@ -8157,7 +8229,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (route) (rate(buildbuddy_http_request_count[${window}]))",
+              "expr": "sum by (route) (rate(buildbuddy_http_request_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{route}}",
               "queryType": "randomWalk",
@@ -8184,6 +8256,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5293",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -8192,6 +8265,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5294",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8223,7 +8297,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 148
+            "y": 119
           },
           "hiddenSeries": false,
           "id": 112,
@@ -8257,7 +8331,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (method) (rate(buildbuddy_http_request_count[${window}]))",
+              "expr": "sum by (method) (rate(buildbuddy_http_request_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{method}}",
               "queryType": "randomWalk",
@@ -8284,6 +8358,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5373",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -8292,6 +8367,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5374",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8326,7 +8402,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 148
+            "y": 119
           },
           "hiddenSeries": false,
           "id": 120,
@@ -8360,7 +8436,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count[${window}]))",
+              "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{code}}",
               "queryType": "randomWalk",
@@ -8387,6 +8463,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5453",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -8395,6 +8472,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5454",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8427,7 +8505,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 156
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 118,
@@ -8457,7 +8535,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, code) (rate(buildbuddy_http_request_handler_duration_usec_bucket{code=~\"2..\"}[${window}])))",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le, code) (rate(buildbuddy_http_request_handler_duration_usec_bucket{region=\"${region}\", code=~\"2..\"}[${window}])))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -8484,6 +8562,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5532",
               "format": "µs",
               "label": null,
               "logBase": 1,
@@ -8492,6 +8571,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5533",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8523,7 +8603,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 156
+            "y": 127
           },
           "hiddenSeries": false,
           "id": 124,
@@ -8553,7 +8633,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_http_response_size_bytes_bucket[${window}]))\n)",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_http_response_size_bytes_bucket{region=\"${region}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -8580,6 +8660,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5609",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -8588,6 +8669,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5610",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8635,7 +8717,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 85,
@@ -8676,7 +8758,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_heap_alloc_bytes{job=\"${job}\"}",
+              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -8706,6 +8788,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5702",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -8714,6 +8797,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5703",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8745,7 +8829,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
           "id": 87,
@@ -8785,7 +8869,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_goroutines{job=\"${job}\"}",
+              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -8812,6 +8896,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5779",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8820,6 +8905,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5780",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8852,7 +8938,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 91,
@@ -8892,7 +8978,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_gc_cpu_fraction{job=\"${job}\"}",
+              "expr": "go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -8919,6 +9005,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5856",
               "decimals": null,
               "format": "percentunit",
               "label": null,
@@ -8928,6 +9015,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5857",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -8959,7 +9047,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
           "id": 93,
@@ -8999,7 +9087,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_gc_duration_seconds{quantile=\"0.5\",job=\"${job}\"}",
+              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9026,6 +9114,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5933",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -9034,6 +9123,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5934",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9068,7 +9158,7 @@
         "x": 0,
         "y": 16
       },
-      "id": 669,
+      "id": 700,
       "panels": [
         {
           "aliasColors": {},
@@ -9089,10 +9179,10 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
-          "id": 670,
+          "id": 701,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9117,7 +9207,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9133,7 +9223,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_heap_alloc_bytes{job=\"${job}\"}",
+              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9163,6 +9253,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5702",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -9171,6 +9262,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5703",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9202,10 +9294,10 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
-          "id": 671,
+          "id": 702,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9229,7 +9321,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9245,7 +9337,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_goroutines{job=\"${job}\"}",
+              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9272,6 +9364,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5779",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9280,6 +9373,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5780",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9312,10 +9406,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 672,
+          "id": 703,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9339,7 +9433,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9355,7 +9449,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_gc_cpu_fraction{job=\"${job}\"}",
+              "expr": "go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9382,6 +9476,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5856",
               "decimals": null,
               "format": "percentunit",
               "label": null,
@@ -9391,6 +9486,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5857",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9422,10 +9518,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 673,
+          "id": 704,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9449,7 +9545,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9465,7 +9561,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_gc_duration_seconds{quantile=\"0.5\",job=\"${job}\"}",
+              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9492,6 +9588,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5933",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -9500,6 +9597,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5934",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9514,7 +9612,7 @@
           }
         }
       ],
-      "repeatIteration": 1638832749559,
+      "repeatIteration": 1639076224402,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9535,7 +9633,7 @@
         "x": 0,
         "y": 17
       },
-      "id": 674,
+      "id": 705,
       "panels": [
         {
           "aliasColors": {},
@@ -9556,10 +9654,10 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
-          "id": 675,
+          "id": 706,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9584,7 +9682,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9600,7 +9698,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_heap_alloc_bytes{job=\"${job}\"}",
+              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9630,6 +9728,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5702",
               "format": "bytes",
               "label": null,
               "logBase": 1,
@@ -9638,6 +9737,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5703",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9669,10 +9769,10 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 165
+            "y": 136
           },
           "hiddenSeries": false,
-          "id": 676,
+          "id": 707,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9696,7 +9796,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9712,7 +9812,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_goroutines{job=\"${job}\"}",
+              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9739,6 +9839,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5779",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9747,6 +9848,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5780",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9779,10 +9881,10 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 677,
+          "id": 708,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9806,7 +9908,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9822,7 +9924,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_memstats_gc_cpu_fraction{job=\"${job}\"}",
+              "expr": "go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9849,6 +9951,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5856",
               "decimals": null,
               "format": "percentunit",
               "label": null,
@@ -9858,6 +9961,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5857",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9889,10 +9993,10 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 174
+            "y": 145
           },
           "hiddenSeries": false,
-          "id": 678,
+          "id": 709,
           "legend": {
             "alignAsTable": true,
             "avg": false,
@@ -9916,7 +10020,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1638832749559,
+          "repeatIteration": 1639076224402,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9932,7 +10036,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "go_gc_duration_seconds{quantile=\"0.5\",job=\"${job}\"}",
+              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{instance}}",
               "queryType": "randomWalk",
@@ -9959,6 +10063,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:5933",
               "format": "s",
               "label": null,
               "logBase": 1,
@@ -9967,6 +10072,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:5934",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -9981,7 +10087,7 @@
           }
         }
       ],
-      "repeatIteration": 1638832749559,
+      "repeatIteration": 1639076224402,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -10039,7 +10145,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 190
           },
           "hiddenSeries": false,
           "id": 73,
@@ -10073,7 +10179,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{job=\"buildbuddy-app\"}[${window}]))",
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{grpc_code}}",
               "queryType": "randomWalk",
@@ -10100,6 +10206,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:6051",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -10108,6 +10215,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:6052",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -10139,7 +10247,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 19
+            "y": 190
           },
           "hiddenSeries": false,
           "id": 79,
@@ -10173,7 +10281,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{job=\"buildbuddy-app\"}[${window}]))",
+              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "queryType": "randomWalk",
@@ -10200,6 +10308,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:6129",
               "format": "ops",
               "label": null,
               "logBase": 1,
@@ -10208,6 +10317,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:6130",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -10258,7 +10368,7 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 200
           },
           "hiddenSeries": false,
           "id": 2,
@@ -10290,20 +10400,20 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "Median",
               "queryType": "randomWalk",
               "refId": "A"
             },
             {
-              "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "90th %",
               "refId": "B"
             },
             {
-              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket[${window}])) by (le))",
+              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "instant": false,
               "interval": "",
               "legendFormat": "95th %",
@@ -10330,6 +10440,7 @@
           },
           "yaxes": [
             {
+              "$$hashKey": "object:6214",
               "format": "µs",
               "label": "",
               "logBase": 1,
@@ -10338,6 +10449,7 @@
               "show": true
             },
             {
+              "$$hashKey": "object:6215",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -10369,7 +10481,7 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 20
+            "y": 200
           },
           "hiddenSeries": false,
           "id": 578,
@@ -10399,7 +10511,7 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (name) (rate(buildbuddy_unexpected_event[${window}]))",
+              "expr": "sum by (name) (rate(buildbuddy_unexpected_event{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -10460,6 +10572,33 @@
   "tags": [],
   "templating": {
     "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": "us-west1",
+          "value": "us-west1"
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(up, region)",
+        "error": null,
+        "hide": 0,
+        "includeAll": false,
+        "label": null,
+        "multi": false,
+        "name": "region",
+        "options": [],
+        "query": "label_values(up, region)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tags": [],
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
       {
         "allValue": null,
         "current": {
