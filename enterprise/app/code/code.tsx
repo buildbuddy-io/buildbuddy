@@ -10,7 +10,7 @@ import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { Code } from "lucide-react";
+import { Code, Code2, Link, PlusCircle, XCircle } from "lucide-react";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -409,10 +409,16 @@ export default class CodeComponent extends React.Component<Props> {
             </div>
             <div className="code-sidebar-actions">
               {!this.props.user.selectedGroup.githubToken && (
-                <button onClick={this.handleGitHubClicked.bind(this)}>🔗 &nbsp;Link GitHub</button>
+                <button onClick={this.handleGitHubClicked.bind(this)}>
+                  <Link className="icon" /> Link GitHub
+                </button>
               )}
-              <button onClick={this.handleNewFileClicked.bind(this)}>🌱 &nbsp;New</button>
-              <button onClick={this.handleDeleteClicked.bind(this)}>❌ &nbsp;Delete</button>
+              <button onClick={this.handleNewFileClicked.bind(this)}>
+                <PlusCircle className="icon green" /> New
+              </button>
+              <button onClick={this.handleDeleteClicked.bind(this)}>
+                <XCircle className="icon red" /> Delete
+              </button>
             </div>
           </div>
           <div className="code-container">
