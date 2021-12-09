@@ -4,7 +4,7 @@ import { OutlinedButtonGroup } from "../../../app/components/button/button_group
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import Spinner from "../../../app/components/spinner/spinner";
-import { Play, ChevronDown } from "lucide-react";
+import { ChevronDown, PlayCircle } from "lucide-react";
 
 const LOCAL_STORAGE_STATE_KEY = "code-button-commands";
 const MAX_COMMANDS = 10;
@@ -78,7 +78,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
           <OutlinedButton
             className="workflow-rerun-button"
             onClick={this.handleCommandClicked.bind(this, this.state.commands[0])}>
-            {this.props.isLoading ? <Spinner /> : <Play className="icon green" />}
+            {this.props.isLoading ? <Spinner /> : <PlayCircle className="icon green" />}
             <span>{this.state.commands[0]}</span>
           </OutlinedButton>
           <OutlinedButton className="icon-button" onClick={this.onOpenMenu.bind(this)}>

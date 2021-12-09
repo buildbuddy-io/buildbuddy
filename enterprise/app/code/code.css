@@ -90,6 +90,14 @@
   width: 100%;
   text-align: left;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.code-sidebar-actions button svg {
+  width: 16px;
+  margin-right: 8px;
 }
 
 .code-container {
@@ -169,7 +177,7 @@
 .repo-previews-section {
   display: flex;
   width: 100%;
-  flex-wrap: wrap;
+  overflow-x: auto;
 }
 
 .repo-preview {
