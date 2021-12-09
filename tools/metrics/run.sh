@@ -17,7 +17,7 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 
 : ${KUBE_CONTEXT:=""}
 : ${KUBE_NAMESPACE:="monitor-dev"}
-: ${KUBE_PROM_SERVER_RESOURCE:="deployment/prometheus-server"}
+: ${KUBE_PROM_SERVER_RESOURCE:="deployment/prometheus-global-server"}
 : ${KUBE_PROM_SERVER_PORT:=9090}
 
 # Open Grafana dashboard when the server is up and running
