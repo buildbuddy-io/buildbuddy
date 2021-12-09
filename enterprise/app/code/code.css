@@ -169,7 +169,7 @@
 .repo-previews-section {
   display: flex;
   width: 100%;
-  flex-wrap: wrap;
+  overflow-x: auto;
 }
 
 .repo-preview {
