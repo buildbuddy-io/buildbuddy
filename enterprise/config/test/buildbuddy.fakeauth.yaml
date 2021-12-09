@@ -17,6 +17,7 @@ cache:
     root_directory: /tmp/buildbuddy-enterprise-cache
 auth:
   enable_anonymous_usage: true
+  enable_self_auth: true
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "123456789-abcdefg.apps.googleusercontent.com"
