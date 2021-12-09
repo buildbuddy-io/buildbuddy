@@ -61,6 +61,11 @@ type DirHelper struct {
 	dirsToCreate []string
 
 	outputDirs []string
+
+	// uid is the owner user ID for output directories created by this DirHelper.
+	uid int
+	// gid is the owner group ID for output directories created by this DirHelper.
+	gid int
 }
 
 func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirHelper {
@@ -70,6 +75,10 @@ func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirH
 		fullPaths:    make(map[string]struct{}, 0),
 		dirsToCreate: make([]string, 0),
 		outputDirs:   make([]string, 0),
+		// Inherit the user ID and group ID from the executor process unless
+		// otherwise specified.
+		uid: -1,
+		gid: -1,
 	}
 
 	for _, outputFile := range outputFiles {
@@ -101,14 +110,68 @@ func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirH
 	return c
 }
 
+// SetOwner sets the owner for all output directories, as well as parents of
+// those output directories, up to and including the workspace root. It
+// immediately changes the owner of the workspace root, but ownership of
+// output directories is only affected in subsequent calls to CreateOutputDirs.
+//
+// File ownership is not affected.
+//
+// TODO(bduffany): Figure out whether it makes sense to set ownership on all
+// directories created under the workspace root and not just output directories.
+// This would include ancestors of output directories up to the workspace root,
+// as well as ancestor directories of input files up to the workspace root.
+func (c *DirHelper) SetOwner(uid, gid int) error {
+	if c.uid != -1 && c.uid != uid {
+		return status.UnimplementedErrorf(
+			"Changing the owner user ID more than once on a workspace is not supported (tried to change from %d to %d)", c.uid, uid)
+	}
+	if c.gid != -1 && c.gid != gid {
+		return status.UnimplementedErrorf(
+			"Changing the owner group ID more than once on a workspace is not supported (tried to change from %d to %d)", c.gid, gid)
+	}
+
+	c.uid = uid
+	c.gid = gid
+	// Skip the syscall if the gid and uid will be inherited from the executor
+	// process, since that's the default behavior when creating directories.
+	if c.uid == -1 && c.gid == -1 {
+		return nil
+	}
+	return os.Chown(c.rootDir, c.uid, c.gid)
+}
+
 func (c *DirHelper) CreateOutputDirs() error {
 	for _, dir := range c.dirsToCreate {
 		if err := disk.EnsureDirectoryExists(dir); err != nil {
 			return err
 		}
+		// Need to chown output directories as well as their parent directories,
+		// since (unfortunately) certain actions will try to `unlinkat` their
+		// declared output directories, which requires permissions on the parent
+		// dir.
+		if err := c.chownUpToWorkspaceRoot(dir); err != nil {
+			return err
+		}
 	}
 	return nil
 }
+
+func (c *DirHelper) chownUpToWorkspaceRoot(path string) error {
+	// Skip syscalls if the gid and uid will be inherited from the executor
+	// process, since that's the default behavior when creating directories.
+	if c.uid == -1 && c.gid == -1 {
+		return nil
+	}
+	for path != c.rootDir {
+		if err := os.Chown(path, c.uid, c.gid); err != nil {
+			return err
+		}
+		path = filepath.Dir(path)
+	}
+	return nil
+}
+
 func (c *DirHelper) MatchesOutputDir(path string) (string, bool) {
 	for _, d := range c.outputDirs {
 		for p := path; p != filepath.Dir(p); p = filepath.Dir(p) {

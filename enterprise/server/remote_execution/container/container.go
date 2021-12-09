@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,6 +120,32 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *I
 	// expires.
 	cacheAuth.Refresh(cacheToken)
 	return nil
+}
+
+// ParseUser parses a user string, which may either be an empty string or a
+// string like `<uid>[:<gid>]` where uid and gid are numeric. If the user is
+// empty then (-1, -1) will be returned as the uid and gid, which correspond to
+// the current executor process owner.
+func ParseUser(user string) (int, int, error) {
+	parts := strings.Split(user, ":")
+	if len(parts) == 0 {
+		// empty string; inherit executor process owner.
+		return -1, -1, nil
+	}
+	uid, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil || uid < 0 {
+		return 0, 0, status.UnimplementedError(
+			"unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
+	}
+	gid := uid
+	if len(parts) > 1 {
+		gid, err = strconv.ParseInt(parts[1], 10, 32)
+		if err != nil || gid < 0 {
+			return 0, 0, status.UnimplementedError(
+				"unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
+		}
+	}
+	return int(uid), int(gid), nil
 }
 
 type PullCredentials struct {

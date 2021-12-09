@@ -186,6 +186,9 @@ func (r *CommandRunner) pullCredentials() container.PullCredentials {
 
 func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	r.Workspace.SetTask(r.task)
+	if err := r.SetWorkspaceOwner(ctx); err != nil {
+		return err
+	}
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
@@ -209,6 +212,31 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *CommandRunner) SetWorkspaceOwner(ctx context.Context) error {
+	// Workspace owner will always match the executor process owner for the
+	// non-docker case.
+	if r.PlatformProperties.WorkloadIsolationType != string(platform.DockerContainerType) {
+		return nil
+	}
+
+	uid, gid := -1, -1 // inherit
+	var err error
+	if r.PlatformProperties.DockerForceRoot {
+		// Do nothing for now; if the docker container will run as root, then it
+		// most likely does not need to care about file permissions, and the
+		// executor is most likely already running as root -- otherwise, it would
+		// not be able to clean up files written by the container to the workspace,
+		// since they are owned by root. So, we can avoid chown syscalls here by
+		// keeping the workspace owner the same as the executor process.
+	} else if r.PlatformProperties.DockerUser != "" {
+		uid, gid, err = container.ParseUser(r.PlatformProperties.DockerUser)
+		if err != nil {
+			return err
+		}
+	}
+	return r.Workspace.SetOwner(uid, gid)
 }
 
 // Run runs the task that is currently bound to the command runner.
@@ -690,6 +718,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			User:             user,
 			ContainerImage:   props.ContainerImage,
 			WorkflowID:       props.WorkflowID,
+			DockerForceRoot:  props.DockerForceRoot,
+			DockerUser:       props.DockerUser,
 			InstanceName:     instanceName,
 			WorkerKey:        workerKey,
 			WorkspaceOptions: wsOpts,
@@ -763,6 +793,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.User = props.DockerUser
 		ctr = docker.NewDockerContainer(
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,
@@ -806,6 +837,14 @@ type query struct {
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
+	// DockerForceRoot is the value of the DockerForceRoot platform prop. This
+	// overrides the container image user and therefore the file permissions
+	// of files created by the container, so runners with different values of
+	// this property are incompatible.
+	// Required.
+	DockerForceRoot bool
+	// DockerUser is the value of the DockerUser platform prop.
+	DockerUser string
 	// WorkerKey is the key used to tell if a persistent worker can be reused.
 	// Required; the zero-value "" matches non-persistent-worker runners.
 	WorkerKey string
@@ -829,6 +868,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
+			r.PlatformProperties.DockerForceRoot != q.DockerForceRoot ||
+			r.PlatformProperties.DockerUser != q.DockerUser ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
 			*r.Workspace.Opts != *q.WorkspaceOptions {
