@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -67,20 +66,6 @@ type CommandContainer interface {
 	// re-authenticates the request, but may serve the image from a local cache
 	// if needed.
 	PullImage(ctx context.Context, creds PullCredentials) error
-
-	// User returns a string representing the user that the container will run as,
-	// or an empty string if the container will run with the user ID of the
-	// executor process.
-	//
-	// The format of this string may be one of:
-	//
-	//    ""               Inherit the user/group of the executor process
-	//    "<UID>[:<GID>]"  User ID and group ID
-	//    "user[:group]"   User name and group name
-	//
-	// If the image has not yet been pulled, then the user may not yet be
-	// known. In that case, this may return an error.
-	User(ctx context.Context) (string, error)
 
 	// Create creates a new container and starts a top-level process inside it
 	// (`sleep infinity`) so that it stays alive and running until explicitly
@@ -137,31 +122,27 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *I
 	return nil
 }
 
-// ParseUser parses a user string returned by the Container#User API into a
-// numeric user ID and group ID, where -1 corresponds to the user ID or group ID
-// of the executor process.
-//
-// Non-numeric users are currently not implemented; these would require
-// executing a command inside the container in order to map the user name
-// to the user ID.
+// ParseUser parses a user string, which may either be an empty string or a
+// string like `<uid>[:<gid>]` where uid and gid are numeric. If the user is
+// empty then (-1, -1) will be returned as the uid and gid, which correspond to
+// the current executor process owner.
 func ParseUser(user string) (int, int, error) {
-	if user == "" {
-		return -1, -1, nil
-	}
 	parts := strings.Split(user, ":")
 	if len(parts) == 0 {
-		alert.UnexpectedEvent("failed_docker_user_id_parse")
-		return 0, 0, status.FailedPreconditionError("Failed to parse user ID")
+		// empty string; inherit executor process owner.
+		return -1, -1, nil
 	}
 	uid, err := strconv.ParseInt(parts[0], 10, 32)
 	if err != nil || uid < 0 {
-		return 0, 0, status.UnimplementedError("unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
+		return 0, 0, status.UnimplementedError(
+			"unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
 	}
 	gid := uid
 	if len(parts) > 1 {
 		gid, err = strconv.ParseInt(parts[1], 10, 32)
 		if err != nil || gid < 0 {
-			return 0, 0, status.UnimplementedError("unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
+			return 0, 0, status.UnimplementedError(
+				"unsupported container image user spec: currently only numeric <UID>[:<GID>] is supported")
 		}
 	}
 	return int(uid), int(gid), nil
@@ -320,12 +301,6 @@ func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCreden
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.Delegate.PullImage(ctx, creds)
-}
-
-func (t *TracedCommandContainer) User(ctx context.Context) (string, error) {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
-	return t.Delegate.User(ctx)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {

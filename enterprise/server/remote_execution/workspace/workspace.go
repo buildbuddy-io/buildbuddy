@@ -42,7 +42,6 @@ type Workspace struct {
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
 	vfs       *vfs.VFS
-
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
