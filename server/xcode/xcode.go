@@ -6,7 +6,7 @@ package xcode
 type xcodeLocator struct {
 }
 
-func NewXcodeLocator() *xcodeLocator {
+func NewXcodeLocator() (*xcodeLocator, error) {
 	return &xcodeLocator{}
 }
 
