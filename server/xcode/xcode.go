@@ -7,7 +7,7 @@ type xcodeLocator struct {
 }
 
 func NewXcodeLocator() (*xcodeLocator, error) {
-	return &xcodeLocator{}
+	return &xcodeLocator{}, nil
 }
 
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
