@@ -42,6 +42,7 @@ type Workspace struct {
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
 	vfs       *vfs.VFS
+
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
@@ -89,6 +90,15 @@ func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	ws.task = task
 	cmd := task.GetCommand()
 	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
+}
+
+func (ws *Workspace) SetOwner(uid, gid int) error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	if ws.removing {
+		return WorkspaceMarkedForRemovalError
+	}
+	return ws.dirHelper.SetOwner(uid, gid)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory

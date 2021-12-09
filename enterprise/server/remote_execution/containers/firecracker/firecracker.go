@@ -1049,6 +1049,11 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 	return nil
 }
 
+func (c *FirecrackerContainer) User(ctx context.Context) (string, error) {
+	// TODO(bduffany): Run `skopeo inspect` to get the container image user
+	return "", nil
+}
+
 // Remove kills any processes currently running inside the container and
 // removes any resources associated with the container itself.
 func (c *FirecrackerContainer) Remove(ctx context.Context) error {

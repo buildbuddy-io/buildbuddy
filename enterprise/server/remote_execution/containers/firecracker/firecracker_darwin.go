@@ -42,6 +42,10 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 	return status.UnimplementedError("Not yet implemented.")
 }
 
+func (c *FirecrackerContainer) User(ctx context.Context) (string, error) {
+	return "", status.UnimplementedError("Not yet implemented.")
+}
+
 func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }

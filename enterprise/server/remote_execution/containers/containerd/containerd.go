@@ -379,3 +379,6 @@ func (r *containerdCommandContainer) Pause(ctx context.Context) error {
 func (r *containerdCommandContainer) Unpause(ctx context.Context) error {
 	return status.UnimplementedError("not implemented")
 }
+func (r *containerdCommandContainer) User(ctx context.Context) (string, error) {
+	return "", status.UnimplementedError("not implemented")
+}

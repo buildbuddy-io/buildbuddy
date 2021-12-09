@@ -194,9 +194,6 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
-	}
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
@@ -208,7 +205,35 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 
+	// Since we've pulled the image, we can now retrieve the user from the image
+	// and update workspace ownership accordingly.
+	if err := r.SetWorkspaceOwner(ctx); err != nil {
+		// TODO(bduffany): Return this error to the user instead of logging. For
+		// errors that are because the user is non-numeric (username[:groupname]),
+		// we'll need to decide whether to support non-numeric user specs in images,
+		// and if not, decide whether to return an error for those. Other types of
+		// errors (parse errors, docker errors, etc.) can be returned to the user
+		// once this is battle tested.
+		log.Errorf("Failed to update workspace directory owner: %s", err)
+	}
+
+	if err := r.Workspace.CreateOutputDirs(); err != nil {
+		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+	}
+
 	return nil
+}
+
+func (r *CommandRunner) SetWorkspaceOwner(ctx context.Context) error {
+	user, err := r.Container.User(ctx)
+	if err != nil {
+		return err
+	}
+	uid, gid, err := container.ParseUser(user)
+	if err != nil {
+		return err
+	}
+	return r.Workspace.SetOwner(uid, gid)
 }
 
 // Run runs the task that is currently bound to the command runner.
@@ -690,6 +715,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			User:             user,
 			ContainerImage:   props.ContainerImage,
 			WorkflowID:       props.WorkflowID,
+			DockerForceRoot:  props.DockerForceRoot,
 			InstanceName:     instanceName,
 			WorkerKey:        workerKey,
 			WorkspaceOptions: wsOpts,
@@ -806,6 +832,12 @@ type query struct {
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
+	// DockerForceRoot is the value of the DockerForceRoot platform prop. This
+	// overrides the container image user and therefore the file permissions
+	// of files created by the container, so runners with different values of
+	// this property are incompatible.
+	// Required.
+	DockerForceRoot bool
 	// WorkerKey is the key used to tell if a persistent worker can be reused.
 	// Required; the zero-value "" matches non-persistent-worker runners.
 	WorkerKey string
@@ -829,6 +861,7 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
+			r.PlatformProperties.DockerForceRoot != q.DockerForceRoot ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
 			*r.Workspace.Opts != *q.WorkspaceOptions {

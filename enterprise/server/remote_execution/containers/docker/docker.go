@@ -53,6 +53,8 @@ type dockerCommandContainer struct {
 	imageCacheAuth *container.ImageCacheAuthenticator
 
 	image string
+	// imageInspect is the cached result of ImageInspectWithRaw.
+	imageInspect *dockertypes.ImageInspect
 	// hostRootDir is the path on the _host_ machine ("node", in k8s land) of the
 	// root data dir for builds. We need this information because we are interfacing
 	// with the docker daemon on the host machine, which doesn't know about the
@@ -279,7 +281,7 @@ func errMsg(err error) string {
 }
 
 func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	_, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
+	_, err := r.inspect(ctx)
 	if err == nil {
 		return true, nil
 	}
@@ -287,6 +289,36 @@ func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error
 		return false, err
 	}
 	return false, nil
+}
+
+func (r *dockerCommandContainer) inspect(ctx context.Context) (*dockertypes.ImageInspect, error) {
+	if r.imageInspect != nil {
+		return r.imageInspect, nil
+	}
+	imageInspect, _, err := r.client.ImageInspectWithRaw(ctx, r.image)
+	if err != nil {
+		// Cache the result since this is used by multiple different container
+		// API operations, and each inspect call takes around 30ms.
+		r.imageInspect = &imageInspect
+	}
+	return &imageInspect, err
+}
+
+func (r *dockerCommandContainer) User(ctx context.Context) (string, error) {
+	if r.options.ForceRoot {
+		return "0:0", nil
+	}
+	if r.options.InheritUserIDs {
+		return "", nil
+	}
+	img, err := r.inspect(ctx)
+	if err != nil {
+		return "", err
+	}
+	if img.Config == nil {
+		return "", status.FailedPreconditionError(`Failed to inspect image: docker inspect result is missing "Config" field`)
+	}
+	return img.Config.User, nil
 }
 
 func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {

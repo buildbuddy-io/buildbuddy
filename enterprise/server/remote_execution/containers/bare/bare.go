@@ -38,11 +38,11 @@ func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) 
 func (c *bareCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
 	return nil
 }
-func (c *bareCommandContainer) Start(ctx context.Context) error   { return nil }
-func (c *bareCommandContainer) Remove(ctx context.Context) error  { return nil }
-func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
-func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
-
+func (c *bareCommandContainer) User(ctx context.Context) (string, error) { return "", nil }
+func (c *bareCommandContainer) Start(ctx context.Context) error          { return nil }
+func (c *bareCommandContainer) Remove(ctx context.Context) error         { return nil }
+func (c *bareCommandContainer) Pause(ctx context.Context) error          { return nil }
+func (c *bareCommandContainer) Unpause(ctx context.Context) error        { return nil }
 func (c *bareCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil
 }
