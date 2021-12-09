@@ -10,7 +10,6 @@ package xcode
 import "C"
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -86,7 +85,7 @@ func (x *xcodeLocator) locate() error {
 	urlsPointer := C.LSCopyApplicationURLsForBundleIdentifier(bundleID, nil)
 
 	if urlsPointer == C.CFArrayRef(unsafe.Pointer(nil)) {
-		return fmt.Errorf("cannot find XCode bundle: %q", xcodeBundleID)
+		return status.FailedPreconditionErrorf("cannot find Xcode bundle: %q. Make sure Xcode is installed.", xcodeBundleID)
 	}
 	defer C.CFRelease(C.CFTypeRef(urlsPointer))
 
