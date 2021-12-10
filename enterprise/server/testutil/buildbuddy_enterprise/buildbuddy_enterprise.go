@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	DefaultConfig = "enterprise/config/test/buildbuddy.fakeauth.yaml"
+	DefaultConfig = "enterprise/config/test/buildbuddy.selfauth.yaml"
 	NoAuthConfig  = "enterprise/config/test/buildbuddy.noauth.yaml"
 )
 
