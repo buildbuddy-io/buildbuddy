@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	DefaultConfig = "enterprise/config/test/buildbuddy.fakeauth.yaml"
+	DefaultConfig = "enterprise/config/test/buildbuddy.selfauth.yaml"
 	NoAuthConfig  = "enterprise/config/test/buildbuddy.noauth.yaml"
 )
 
@@ -34,7 +34,6 @@ func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 		fmt.Sprintf("--telemetry_port=%d", app.FreePort(t)),
 		"--app_directory=/enterprise/app",
 		"--app.default_redis_target=" + redisTarget,
-		"--auth.enable_self_auth=true",
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.Run(
