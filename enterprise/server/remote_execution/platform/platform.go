@@ -59,17 +59,8 @@ const (
 	cpuArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
 
-	// Property name that if set to "true" will cause Docker containers to be
-	// run as root. This takes precedence over the "dockerUser" property.
-	//
-	// This matches the property name defined here:
-	// https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
+	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
-	// Property name specifying the numeric <uid>[:<gid>] that the Docker
-	// container will run as. It takes precedence over the USER setting in the
-	// Dockerfile, and is required to run containerized actions that need to write
-	// output files. It is ignored for non-Docker actions.
-	dockerUserPropertyName = "dockerUser"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -99,7 +90,6 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
-	DockerUser                string
 	RecycleRunner             bool
 	EnableVFS                 bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
@@ -152,7 +142,6 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerUser:                stringProp(m, dockerUserPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),

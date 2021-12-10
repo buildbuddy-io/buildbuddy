@@ -42,14 +42,9 @@ type DockerOptions struct {
 	Socket                  string
 	EnableSiblingContainers bool
 	UseHostNetwork          bool
+	ForceRoot               bool
 	DockerMountMode         string
-
-	// In order of precedence:
-	// ForceRoot, User, InheritUserIDs (from executor process)
-
-	ForceRoot      bool
-	User           string
-	InheritUserIDs bool
+	InheritUserIDs          bool
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -192,9 +187,6 @@ func wrapDockerErr(err error, contextMsg string) error {
 func (r *dockerCommandContainer) getUser() (string, error) {
 	if r.options.ForceRoot {
 		return "root", nil
-	}
-	if r.options.User != "" {
-		return r.options.User, nil
 	}
 	if r.options.InheritUserIDs {
 		user, err := user.Current()
