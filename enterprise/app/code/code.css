@@ -47,6 +47,8 @@
 .code-menu-actions {
   min-width: 1px;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 
 .code-main {
@@ -75,7 +77,6 @@
 }
 
 .code-sidebar-tree div {
-  margin-bottom: 4px;
   cursor: pointer;
 }
 
@@ -146,15 +147,12 @@
 .code-sidebar-node-name {
   display: flex;
   font-size: 13px;
+  align-items: center;
 }
 
-.code-sidebar-folder.code-sidebar-node-name:before {
-  content: "▸";
-  width: 12px;
-}
-
-.code-sidebar-folder.code-sidebar-node-expanded.code-sidebar-node-name:before {
-  content: "▾";
+.code-sidebar-node-name svg {
+  width: 14px;
+  margin-right: 4px;
 }
 
 /* Monaco overrides */
@@ -192,4 +190,37 @@
 
 .repo-preview img {
   width: 100%;
+}
+
+.request-review-button {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.request-review-button .icon {
+  margin-right: 8px;
+}
+
+.request-review-button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.request-review-button .spinner {
+  --size: 16px;
+}
+
+.request-review-button .loading {
+  --spinner-size: 18px;
+
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  margin-left: -2px;
+}
+
+.request-review-button .loading::before {
+  width: var(--spinner-size);
+  height: var(--spinner-size);
 }
