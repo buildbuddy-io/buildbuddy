@@ -26,7 +26,7 @@ except NameError:
     pass
 
 """
-release.py - A simple script to create a release.
+release.py - A simple script to create a release
 This script will do the following:
   1) Check that your working repository is clean. x
   2) Bump the version.
