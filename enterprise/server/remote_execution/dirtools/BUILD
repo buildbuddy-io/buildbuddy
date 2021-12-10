@@ -11,7 +11,6 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/util/disk",
         "//server/util/fastcopy",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -54,16 +55,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
-	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	guuid "github.com/google/uuid"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	guuid "github.com/google/uuid"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -77,6 +78,11 @@ const (
 
 	defaultWaitTimeout = 20 * time.Second
 )
+
+func init() {
+	// Set umask to match the executor process.
+	syscall.Umask(0)
+}
 
 // Env is an integration test environment for Remote Build Execution.
 type Env struct {

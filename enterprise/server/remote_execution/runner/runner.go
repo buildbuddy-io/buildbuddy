@@ -684,7 +684,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		workerKey = strings.Join(workerArgs, " ")
 	}
 
-	wsOpts := &workspace.Opts{Preserve: props.PreserveWorkspace, CleanInputs: props.CleanWorkspaceInputs}
+	wsOpts := &workspace.Opts{
+		Preserve:        props.PreserveWorkspace,
+		CleanInputs:     props.CleanWorkspaceInputs,
+		NonrootWritable: props.NonrootWorkspace,
+	}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
 			User:             user,
