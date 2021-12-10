@@ -407,7 +407,7 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		// %a %n prints perms in octal followed by the file name.
-		Arguments:         append([]string{"stat", "-c", "%a %n"}, dirs...),
+		Arguments:         append([]string{"stat", "--format", "%a %n"}, dirs...),
 		OutputDirectories: []string{"output_dir", "output_dir_parent/output_dir_child"},
 		OutputFiles:       []string{"output_file_parent/output.txt"},
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
@@ -448,7 +448,7 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		// %a %n prints perms in octal followed by the file name.
-		Arguments:         append([]string{"stat", "-c", "%a %n"}, dirs...),
+		Arguments:         append([]string{"stat", "--format", "%a %n"}, dirs...),
 		OutputDirectories: []string{"output_dir", "output_dir_parent/output_dir_child"},
 		OutputFiles:       []string{"output_file_parent/output.txt"},
 		Platform:          platform,
