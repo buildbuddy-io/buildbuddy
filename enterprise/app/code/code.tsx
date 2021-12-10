@@ -10,7 +10,9 @@ import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { Code, Code2, Link, PlusCircle, XCircle } from "lucide-react";
+import { Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import Spinner from "../../../app/components/spinner/spinner";
+import { OutlinedButton } from "../../../app/components/button/button";
 
 const MyOctokit = Octokit.plugin(createPullRequest);
 
@@ -386,6 +388,22 @@ export default class CodeComponent extends React.Component<Props> {
             </a>
           </div>
           <div className="code-menu-actions">
+            {this.state.changes.size > 0 && (
+              <OutlinedButton
+                disabled={this.state.requestingReview}
+                className="request-review-button"
+                onClick={this.handleReviewClicked.bind(this)}>
+                {this.state.requestingReview ? (
+                  <>
+                    <Spinner className="icon" /> Requesting...
+                  </>
+                ) : (
+                  <>
+                    <Send className="icon blue" /> Request Review
+                  </>
+                )}
+              </OutlinedButton>
+            )}
             <CodeBuildButton
               onCommandClicked={this.handleBuildClicked.bind(this)}
               isLoading={this.state.isBuilding}
@@ -427,15 +445,7 @@ export default class CodeComponent extends React.Component<Props> {
             </div>
             {this.state.changes.size > 0 && (
               <div className="code-diff-viewer">
-                <div className="code-diff-viewer-title">
-                  Changes{" "}
-                  <button
-                    disabled={this.state.requestingReview}
-                    className="request-review-button"
-                    onClick={this.handleReviewClicked.bind(this)}>
-                    {this.state.requestingReview ? "⌛  Requesting..." : "✋  Request Review"}
-                  </button>
-                </div>
+                <div className="code-diff-viewer-title">Changes</div>
                 {Array.from(this.state.changes.keys()).map((fullPath) => (
                   <div className="code-diff-viewer-item" onClick={() => this.handleChangeClicked(fullPath)}>
                     <input

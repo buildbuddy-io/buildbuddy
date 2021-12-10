@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight, File } from "lucide-react";
 import React from "react";
 
 class SidebarNodeProps {
@@ -13,13 +14,17 @@ export default class SidebarNodeComponent extends React.Component {
 
   render() {
     const expanded = this.props.treeShaToExpanded.get(this.props.node.sha);
+    let fileIcon = expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />;
+    if (this.props.node.type != "tree") {
+      fileIcon = <File className="icon" />;
+    }
+
     return (
       <div className={`code-sidebar-node`}>
         <div
-          className={`code-sidebar-node-name ${expanded ? "code-sidebar-node-expanded" : ""} ${
-            this.props.node.type == "tree" ? "code-sidebar-folder" : "code-sidebar-file"
-          }`}
+          className="code-sidebar-node-name"
           onClick={() => this.props.handleFileClicked(this.props.node, this.props.fullPath)}>
+          {fileIcon}
           {this.props.node.path}
         </div>
         {expanded && (
