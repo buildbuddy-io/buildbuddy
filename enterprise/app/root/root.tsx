@@ -162,7 +162,7 @@ export default class EnterpriseRootComponent extends React.Component {
               user={this.state.user}
               search={this.state.search}></SidebarComponent>
           )}
-          <div className="root-main">
+          <div className={`root-main ${code ? "root-code" : ""}`}>
             {!this.state.loading && (
               <div className={`content ${login ? "content-flex" : ""}`}>
                 {invocationId && (

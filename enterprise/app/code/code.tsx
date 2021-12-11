@@ -1,7 +1,7 @@
 import React from "react";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
-import SidebarNodeComponent from "./code_sidebar_node";
+import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
 import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
 import { Octokit } from "octokit";
@@ -415,15 +415,17 @@ export default class CodeComponent extends React.Component<Props> {
           <div className="code-sidebar">
             <div className="code-sidebar-tree">
               {this.state.repoResponse &&
-                this.state.repoResponse.data.tree.map((node: any) => (
-                  <SidebarNodeComponent
-                    node={node}
-                    treeShaToExpanded={this.state.treeShaToExpanded}
-                    treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                    handleFileClicked={this.handleFileClicked.bind(this)}
-                    fullPath={node.path}
-                  />
-                ))}
+                this.state.repoResponse.data.tree
+                  .sort(compareNodes)
+                  .map((node: any) => (
+                    <SidebarNodeComponent
+                      node={node}
+                      treeShaToExpanded={this.state.treeShaToExpanded}
+                      treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                      handleFileClicked={this.handleFileClicked.bind(this)}
+                      fullPath={node.path}
+                    />
+                  ))}
             </div>
             <div className="code-sidebar-actions">
               {!this.props.user.selectedGroup.githubToken && (
