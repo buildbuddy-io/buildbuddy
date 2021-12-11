@@ -16,7 +16,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1639092074803,
+  "iteration": 1639181080295,
   "links": [],
   "panels": [
     {
@@ -456,6 +456,104 @@
             },
             {
               "$$hashKey": "object:519",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": "Prometheus",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 2
+          },
+          "hiddenSeries": false,
+          "id": 804,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "7.3.5",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=\"executor\", stage!=\"worker\", group_id=~\"GR16310856858823099217|GR13567963851860390298|GR11301939955034629488\"}[1m]))\n)\n\n",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "RBE Prober Latency",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:62",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            },
+            {
+              "$$hashKey": "object:63",
               "format": "short",
               "label": null,
               "logBase": 1,
@@ -3889,7 +3987,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 190,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4008,7 +4106,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 159,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4133,7 +4231,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 210,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4268,7 +4366,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 178,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4382,7 +4480,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 31,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4492,7 +4590,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 35,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4601,7 +4699,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 33,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4711,7 +4809,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 102,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4820,7 +4918,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 129,
           "repeatedByRow": true,
           "scopedVars": {
@@ -4932,7 +5030,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 180,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5045,7 +5143,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 649,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5124,7 +5222,7 @@
           }
         }
       ],
-      "repeatIteration": 1639092074803,
+      "repeatIteration": 1639181080295,
       "repeatPanelId": 28,
       "scopedVars": {
         "pool": {
@@ -5873,7 +5971,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 274,
           "repeatedByRow": true,
           "scopedVars": {
@@ -5996,7 +6094,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 276,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6106,7 +6204,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 290,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6216,7 +6314,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 292,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6326,7 +6424,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 278,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6436,7 +6534,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 280,
           "repeatedByRow": true,
           "scopedVars": {
@@ -6503,7 +6601,7 @@
           }
         }
       ],
-      "repeatIteration": 1639092074803,
+      "repeatIteration": 1639181080295,
       "repeatPanelId": 264,
       "scopedVars": {
         "pool": {
@@ -9305,7 +9403,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9419,7 +9517,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9531,7 +9629,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9643,7 +9741,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9710,7 +9808,7 @@
           }
         }
       ],
-      "repeatIteration": 1639092074803,
+      "repeatIteration": 1639181080295,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
@@ -9780,7 +9878,7 @@
           "points": false,
           "renderer": "flot",
           "repeat": null,
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 85,
           "repeatedByRow": true,
           "scopedVars": {
@@ -9894,7 +9992,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 87,
           "repeatedByRow": true,
           "scopedVars": {
@@ -10006,7 +10104,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 91,
           "repeatedByRow": true,
           "scopedVars": {
@@ -10118,7 +10216,7 @@
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
-          "repeatIteration": 1639092074803,
+          "repeatIteration": 1639181080295,
           "repeatPanelId": 93,
           "repeatedByRow": true,
           "scopedVars": {
@@ -10185,7 +10283,7 @@
           }
         }
       ],
-      "repeatIteration": 1639092074803,
+      "repeatIteration": 1639181080295,
       "repeatPanelId": 83,
       "scopedVars": {
         "job": {
