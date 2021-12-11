@@ -89,7 +89,7 @@ const (
 
 var (
 	authCodeOption []oauth2.AuthCodeOption = []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.ApprovalForce}
-	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
+	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 	jwtKey                                 = []byte("set_the_jwt_in_config") // set via config.
 )
 
@@ -644,12 +644,16 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 	return ctx
 }
 
-func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
+func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) *string {
+	stringPtr := func(str string) *string { return &str }
 	matches := apiKeyRegex.FindStringSubmatch(input)
-	if matches != nil && len(matches) > 1 {
-		return matches[1]
+	if len(matches) == 0 {
+		return nil
 	}
-	return ""
+	if len(matches) == 1 {
+		return stringPtr("")
+	}
+	return stringPtr(matches[1])
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )
@@ -124,6 +125,46 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	require.NotNil(t, newJwtCookie, "JWT cookie should be updated")
 	require.Equal(t, refreshedJWT, newJwtCookie.Value, "JWT cookie should be updated")
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
+}
+
+func TestParseAPIKeyFromString(t *testing.T) {
+	stringPtr := func(v string) *string { return &v }
+	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
+	auth, err := newForTesting(context.Background(), env, &fakeOidcAuthenticator{})
+	require.NoError(t, err)
+	testCases := []struct {
+		name  string
+		input string
+		want  *string
+	}{
+		{
+			name:  "non-empty key",
+			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=abc123'",
+			want:  stringPtr("abc123"),
+		},
+		{
+			name:  "empty key",
+			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key='",
+			want:  stringPtr(""),
+		},
+		{
+			name:  "empty key in the middle",
+			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key= --bes_backend=grpc://localhost:1985'",
+			want:  stringPtr(""),
+		},
+		{
+			name:  "key not set",
+			input: "--bes_results_url=http://localhost:8080/invocation/",
+			want:  nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := auth.ParseAPIKeyFromString(tc.input)
+			assert.Equal(t, tc.want, output)
+		})
+	}
 }
 
 func getResponseCookie(response *http.Response, name string) *http.Cookie {
