@@ -39,7 +39,7 @@ body {
 
   .left .page {
     max-height: initial;
-  }  
+  }
 
   .dense .page,
   .page {
@@ -52,34 +52,30 @@ body {
     width: 100%;
   }
 
-  .dense .sidebar-body,
-  .sidebar-body {
-    display: flex;
+  .dense .sidebar .sidebar-body,
+  .sidebar .sidebar-body {
     flex-wrap: wrap;
-    margin-bottom: -16px;
+    flex-direction: row;
+    margin-bottom: var(--sidebar-padding);
   }
 
-  .dense .sidebar .sidebar-item,
-  .sidebar .sidebar-item {
-    margin-right: 32px;
+  .dense .sidebar .logo {
+    height: 36px;
   }
 
-  .sidebar .sidebar-footer.expanded {
-    margin: 32px -32px -32px -32px;
-    padding-bottom: 16px;
+  .sidebar .sidebar-footer:not(.expanded) {
+    background-color: transparent;
   }
 
-  .dense .sidebar .sidebar-footer.expanded {
-    margin: 12px -12px -12px -12px;
-    padding-bottom: 8px;
+  .sidebar .sidebar-expanded-profile {
+    margin-bottom: 0;
   }
 
-  .dense .sidebar .sidebar-footer .sidebar-profile,
   .sidebar .sidebar-footer .sidebar-profile {
     position: absolute;
     top: 0;
     right: 0;
-    background-color: transparent !important;
+    padding: 24px;
   }
 
   .dense .sidebar .sidebar-profile-photo {
