@@ -575,6 +575,9 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 }
 
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
+	if apiKey == "" {
+		return nil, status.UnauthenticatedError("missing API key")
+	}
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
