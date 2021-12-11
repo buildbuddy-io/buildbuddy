@@ -171,12 +171,16 @@ func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
-func (a *TestAuthenticator) ParseAPIKeyFromString(input string) string* {
+func (a *TestAuthenticator) ParseAPIKeyFromString(input string) *string {
+	stringPtr := func(str string) *string { return &str }
 	matches := testApiKeyRegex.FindStringSubmatch(input)
-	if matches != nil && len(matches) > 1 {
-		return matches[1]
+	if len(matches) == 0 {
+		return nil
 	}
-	return nil
+	if len(matches) == 1 {
+		return stringPtr("")
+	}
+	return stringPtr(matches[1])
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
