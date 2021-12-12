@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_paging"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -42,6 +43,8 @@ import (
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
+
+	invocationEventLimitPerType = 16
 )
 
 type BuildBuddyServer struct {
@@ -68,7 +71,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if !s.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 		inv.HasChunkedEventLogs = false
 	}
-
+	if !req.FetchAllEvents {
+		event_paging.Truncate(inv, invocationEventLimitPerType)
+	}
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 }
 

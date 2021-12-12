@@ -19,6 +19,7 @@ go_library(
         "//proto:user_go_proto",
         "//proto:workflow_go_proto",
         "//server/build_event_protocol/build_event_handler",
+        "//server/build_event_protocol/event_paging",
         "//server/bytestream",
         "//server/environment",
         "//server/eventlog",
