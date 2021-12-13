@@ -69,7 +69,6 @@
 }
 
 .code-sidebar-tree {
-  padding: 16px;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
@@ -140,19 +139,32 @@
   display: flex;
 }
 
-.code-sidebar-node-children {
-  padding-left: 16px;
+.code-sidebar-node-row {
+  padding-left: calc(12px + 8px * var(--depth));
 }
 
-.code-sidebar-node-name {
+.code-sidebar-node-row:hover {
+  background: #eceff1;
+}
+
+.code-sidebar-node-row {
   display: flex;
   font-size: 13px;
   align-items: center;
+  user-select: none;
+  height: 24px;
 }
 
-.code-sidebar-node-name svg {
+.code-sidebar-node-row svg {
   width: 14px;
   margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.code-sidebar-node-name {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: clip;
 }
 
 /* Monaco overrides */
@@ -175,7 +187,7 @@
 .repo-previews-section {
   display: flex;
   width: 100%;
-  overflow-x: auto;
+  flex-wrap: wrap;
 }
 
 .repo-preview {

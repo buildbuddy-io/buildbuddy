@@ -2090,6 +2090,10 @@ code .comment {
   background-color: #fff;
 }
 
+.root-code {
+  overflow-y: initial;
+}
+
 .content {
   flex-grow: 1;
 }
