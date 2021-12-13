@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -77,6 +78,11 @@ const (
 
 	defaultWaitTimeout = 20 * time.Second
 )
+
+func init() {
+	// Set umask to match the executor process.
+	syscall.Umask(0)
+}
 
 // Env is an integration test environment for Remote Build Execution.
 type Env struct {
