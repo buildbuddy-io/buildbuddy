@@ -9,7 +9,10 @@ exports_files([
 
 ts_library(
     name = "code",
-    srcs = glob(["*.ts", "*.tsx"]),
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
     deps = [
         "//app/auth",
         "//app/components/button",

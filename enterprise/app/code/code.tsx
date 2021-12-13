@@ -439,7 +439,6 @@ export default class CodeComponent extends React.Component<Props> {
       .then(() => {
         window.open(this.state.prLink, "_blank");
         this.handleClearPRClicked();
-        // Update repo state.
       });
   }
 

@@ -3,20 +3,17 @@ import { Octokit } from "octokit";
 // Based on https://github.com/gr2m/octokit-plugin-create-pull-request with added functionality of updating PRs.
 export async function createPullRequest(
   octokit: Octokit,
-  {
+  { owner, repo, title, body, base, head, createWhenEmpty, changes: changesOption, draft = false }: Options
+): Promise<any> {
+  let response = await updatePullRequest(octokit, {
     owner,
     repo,
-    title,
-    body,
     base,
     head,
     createWhenEmpty,
     changes: changesOption,
-    draft = false,
-  }: Options
-): Promise<any> {
-
-  let response = await updatePullRequest(octokit, {owner, repo, base, head, createWhenEmpty, changes: changesOption, createRef: true});
+    createRef: true,
+  });
 
   // https://developer.github.com/v3/pulls/#create-a-pull-request
   return await octokit.request("POST /repos/{owner}/{repo}/pulls", {
@@ -30,7 +27,8 @@ export async function createPullRequest(
   });
 }
 
-export async function updatePullRequest(octokit: Octokit,
+export async function updatePullRequest(
+  octokit: Octokit,
   {
     owner,
     repo,
@@ -39,36 +37,32 @@ export async function updatePullRequest(octokit: Octokit,
     createWhenEmpty,
     changes: changesOption,
     createRef,
-  }: {owner: string, repo: string, base?: string, head: string, createWhenEmpty?: boolean, createRef?: boolean, changes: Changes|Changes[]}
+  }: {
+    owner: string;
+    repo: string;
+    base?: string;
+    head: string;
+    createWhenEmpty?: boolean;
+    createRef?: boolean;
+    changes: Changes | Changes[];
+  }
 ): Promise<any> {
-
   const state: State = { octokit, owner, repo };
 
-  const changes = Array.isArray(changesOption)
-    ? changesOption
-    : [changesOption];
+  const changes = Array.isArray(changesOption) ? changesOption : [changesOption];
 
-  if (changes.length === 0)
-    throw new Error(
-      '[octokit-plugin-create-pull-request] "changes" cannot be an empty array'
-    );
-
+  if (changes.length === 0) throw new Error('[octokit-plugin-create-pull-request] "changes" cannot be an empty array');
 
   // https://developer.github.com/v3/repos/#get-a-repository
-  const { data: repository, headers } = await octokit.request(
-    "GET /repos/{owner}/{repo}",
-    {
-      owner,
-      repo,
-    }
-  );
+  const { data: repository, headers } = await octokit.request("GET /repos/{owner}/{repo}", {
+    owner,
+    repo,
+  });
 
   const isUser = !!headers["x-oauth-scopes"];
 
   if (!repository.permissions) {
-    throw new Error(
-      "[octokit-plugin-create-pull-request] Missing authentication"
-    );
+    throw new Error("[octokit-plugin-create-pull-request] Missing authentication");
   }
 
   if (!base) {
@@ -102,76 +96,65 @@ export async function updatePullRequest(octokit: Octokit,
     state.fork = user.data.login;
   }
 
-    // https://developer.github.com/v3/repos/commits/#list-commits-on-a-repository
-    const {
-      data: [latestCommit],
-    } = await octokit.request("GET /repos/{owner}/{repo}/commits", {
-      owner,
-      repo,
-      sha: base,
-      per_page: 1,
-    });
-    state.latestCommitSha = latestCommit.sha;
-    state.latestCommitTreeSha = latestCommit.commit.tree.sha;
-    const baseCommitTreeSha = latestCommit.commit.tree.sha;
-  
-    for (const change of changes) {
-      let treeCreated = false;
-      if (change.files && Object.keys(change.files).length) {
-        const latestCommitTreeSha = await createTree(
-          state as Required<State>,
-          change as Required<Changes>
-        );
-  
-        if (latestCommitTreeSha) {
-          state.latestCommitTreeSha = latestCommitTreeSha;
-          treeCreated = true;
-        }
-      }
-  
-      if (treeCreated || change.emptyCommit !== false) {
-        state.latestCommitSha = await createCommit(
-          state as Required<State>,
-          treeCreated,
-          change
-        );
+  // https://developer.github.com/v3/repos/commits/#list-commits-on-a-repository
+  const {
+    data: [latestCommit],
+  } = await octokit.request("GET /repos/{owner}/{repo}/commits", {
+    owner,
+    repo,
+    sha: base,
+    per_page: 1,
+  });
+  state.latestCommitSha = latestCommit.sha;
+  state.latestCommitTreeSha = latestCommit.commit.tree.sha;
+  const baseCommitTreeSha = latestCommit.commit.tree.sha;
+
+  for (const change of changes) {
+    let treeCreated = false;
+    if (change.files && Object.keys(change.files).length) {
+      const latestCommitTreeSha = await createTree(state as Required<State>, change as Required<Changes>);
+
+      if (latestCommitTreeSha) {
+        state.latestCommitTreeSha = latestCommitTreeSha;
+        treeCreated = true;
       }
     }
-  
-    const hasNoChanges = baseCommitTreeSha === state.latestCommitTreeSha;
-    if (hasNoChanges && createWhenEmpty === false) {
-      return null;
+
+    if (treeCreated || change.emptyCommit !== false) {
+      state.latestCommitSha = await createCommit(state as Required<State>, treeCreated, change);
     }
+  }
 
-    if (!createRef) {
-      // https://developer.github.com/v3/git/refs/#update-a-reference
-      await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/heads/{head}", {
-        owner: state.fork,
-        repo,
-        sha: state.latestCommitSha,
-        head: `${head}`,
-        force: true, 
-      });
+  const hasNoChanges = baseCommitTreeSha === state.latestCommitTreeSha;
+  if (hasNoChanges && createWhenEmpty === false) {
+    return null;
+  }
 
-      return {fork: state.fork, base }
-    }
-
-    // https://developer.github.com/v3/git/refs/#create-a-reference
-    await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
+  if (!createRef) {
+    // https://developer.github.com/v3/git/refs/#update-a-reference
+    await octokit.request("PATCH /repos/{owner}/{repo}/git/refs/heads/{head}", {
       owner: state.fork,
       repo,
       sha: state.latestCommitSha,
-      ref: `refs/heads/${head}`,
+      head: `${head}`,
+      force: true,
     });
 
-    return {fork: state.fork, base }
+    return { fork: state.fork, base };
+  }
+
+  // https://developer.github.com/v3/git/refs/#create-a-reference
+  await octokit.request("POST /repos/{owner}/{repo}/git/refs", {
+    owner: state.fork,
+    repo,
+    sha: state.latestCommitSha,
+    ref: `refs/heads/${head}`,
+  });
+
+  return { fork: state.fork, base };
 }
 
-export async function createCommit(
-  state: Required<State>,
-  treeCreated: boolean,
-  changes: Changes
-): Promise<string> {
+export async function createCommit(state: Required<State>, treeCreated: boolean, changes: Changes): Promise<string> {
   const { octokit, repo, fork, latestCommitSha } = state;
 
   const message = treeCreated
@@ -181,32 +164,19 @@ export async function createCommit(
     : changes.commit;
 
   // https://developer.github.com/v3/git/commits/#create-a-commit
-  const { data: latestCommit } = await octokit.request(
-    "POST /repos/{owner}/{repo}/git/commits",
-    {
-      owner: fork,
-      repo,
-      message,
-      tree: state.latestCommitTreeSha,
-      parents: [latestCommitSha],
-    }
-  );
+  const { data: latestCommit } = await octokit.request("POST /repos/{owner}/{repo}/git/commits", {
+    owner: fork,
+    repo,
+    message,
+    tree: state.latestCommitTreeSha,
+    parents: [latestCommitSha],
+  });
 
   return latestCommit.sha;
 }
 
-export async function createTree(
-  state: Required<State>,
-  changes: Required<Changes>
-): Promise<string | null> {
-  const {
-    octokit,
-    owner,
-    repo,
-    fork,
-    latestCommitSha,
-    latestCommitTreeSha,
-  } = state;
+export async function createTree(state: Required<State>, changes: Required<Changes>): Promise<string | null> {
+  const { octokit, owner, repo, fork, latestCommitSha, latestCommitTreeSha } = state;
 
   const tree = (
     await Promise.all(
@@ -241,19 +211,14 @@ export async function createTree(
           let result;
 
           try {
-            const { data: file } = await octokit.request(
-              "GET /repos/{owner}/{repo}/contents/:path",
-              {
-                owner: fork,
-                repo,
-                ref: latestCommitSha,
-                path,
-              }
-            );
+            const { data: file } = await octokit.request("GET /repos/{owner}/{repo}/contents/:path", {
+              owner: fork,
+              repo,
+              ref: latestCommitSha,
+              path,
+            });
 
-            result = await value(
-              Object.assign(file, { exists: true }) as UpdateFunctionFile
-            );
+            result = await value(Object.assign(file, { exists: true }) as UpdateFunctionFile);
           } catch (error) {
             // istanbul ignore if
             if (error.status !== 404) throw error;
@@ -288,13 +253,7 @@ export async function createTree(
   return newTreeSha;
 }
 
-async function valueToTreeObject(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  path: string,
-  value: string | File
-) {
+async function valueToTreeObject(octokit: Octokit, owner: string, repo: string, path: string, value: string | File) {
   let mode = "100644";
   if (value !== null && typeof value !== "string") {
     mode = value.mode || mode;
@@ -311,14 +270,11 @@ async function valueToTreeObject(
 
   // Binary files need to be created first using the git blob API,
   // then changed by referencing in the .sha key
-  const { data } = await octokit.request(
-    "POST /repos/{owner}/{repo}/git/blobs",
-    {
-      owner,
-      repo,
-      ...value,
-    }
-  );
+  const { data } = await octokit.request("POST /repos/{owner}/{repo}/git/blobs", {
+    owner,
+    repo,
+    ...value,
+  });
   const blobSha = data.sha;
 
   return {
