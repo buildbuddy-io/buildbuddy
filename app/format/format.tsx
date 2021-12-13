@@ -240,6 +240,7 @@ export default {
   sentenceCase,
   percent,
   bytes,
+  bitsPerSecond,
   count,
   truncateList,
   formatTimestampUsec,
