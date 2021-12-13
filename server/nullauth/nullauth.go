@@ -39,8 +39,8 @@ func (a *NullAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
-func (a *NullAuthenticator) ParseAPIKeyFromString(input string) *string {
-	return nil
+func (a *NullAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
+	return "", nil
 }
 
 func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

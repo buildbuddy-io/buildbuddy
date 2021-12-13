@@ -128,41 +128,50 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 }
 
 func TestParseAPIKeyFromString(t *testing.T) {
-	stringPtr := func(v string) *string { return &v }
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
 	auth, err := newForTesting(context.Background(), env, &fakeOidcAuthenticator{})
 	require.NoError(t, err)
 	testCases := []struct {
-		name  string
-		input string
-		want  *string
+		name    string
+		input   string
+		want    string
+		wantErr bool
 	}{
 		{
-			name:  "non-empty key",
-			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=abc123'",
-			want:  stringPtr("abc123"),
+			name:    "non-empty key",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=abc123'",
+			want:    "abc123",
+			wantErr: false,
 		},
 		{
-			name:  "empty key",
-			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key='",
-			want:  stringPtr(""),
+			name:    "empty key",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key='",
+			want:    "",
+			wantErr: true,
 		},
 		{
-			name:  "empty key in the middle",
-			input: "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key= --bes_backend=grpc://localhost:1985'",
-			want:  stringPtr(""),
+			name:    "empty key in the middle",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key= --bes_backend=grpc://localhost:1985'",
+			want:    "",
+			wantErr: true,
 		},
 		{
-			name:  "key not set",
-			input: "--bes_results_url=http://localhost:8080/invocation/",
-			want:  nil,
+			name:    "key not set",
+			input:   "--bes_results_url=http://localhost:8080/invocation/",
+			want:    "",
+			wantErr: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			output := auth.ParseAPIKeyFromString(tc.input)
+			output, err := auth.ParseAPIKeyFromString(tc.input)
 			assert.Equal(t, tc.want, output)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }

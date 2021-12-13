@@ -644,16 +644,19 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 	return ctx
 }
 
-func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) *string {
-	stringPtr := func(str string) *string { return &str }
+func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
 	matches := apiKeyRegex.FindStringSubmatch(input)
 	if len(matches) == 0 {
-		return nil
+		// The api key header is not present
+		return "", nil
 	}
-	if len(matches) == 1 {
-		return stringPtr("")
+	if len(matches) != 2 {
+		return "", status.FailedPreconditionError("invalid input")
 	}
-	return stringPtr(matches[1])
+	if apiKey := matches[1]; apiKey != "" {
+		return apiKey, nil
+	}
+	return "", status.FailedPreconditionError("missing API Key")
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

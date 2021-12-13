@@ -155,7 +155,7 @@ func (a *SAMLAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 	return a.fallback.AuthenticateGRPCRequest(ctx)
 }
 
-func (a *SAMLAuthenticator) ParseAPIKeyFromString(s string) *string {
+func (a *SAMLAuthenticator) ParseAPIKeyFromString(s string) (string, error) {
 	return a.fallback.ParseAPIKeyFromString(s)
 }
 

@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	testApiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
+	testApiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 	jwtTestKey      = []byte("testKey")
 )
 
@@ -171,16 +171,19 @@ func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
-func (a *TestAuthenticator) ParseAPIKeyFromString(input string) *string {
-	stringPtr := func(str string) *string { return &str }
+func (a *TestAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
 	matches := testApiKeyRegex.FindStringSubmatch(input)
 	if len(matches) == 0 {
-		return nil
+		// The api key header is not present
+		return "", nil
 	}
-	if len(matches) == 1 {
-		return stringPtr("")
+	if len(matches) != 2 {
+		return "", status.FailedPreconditionError("invalid input")
 	}
-	return stringPtr(matches[1])
+	if apiKey := matches[1]; apiKey != "" {
+		return apiKey, nil
+	}
+	return "", status.FailedPreconditionError("missing API Key")
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
