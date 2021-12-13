@@ -6,15 +6,13 @@ import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
 import { Octokit } from "octokit";
 import * as diff from "diff";
-import { createPullRequest } from "octokit-plugin-create-pull-request";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
 import { Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton } from "../../../app/components/button/button";
-
-const MyOctokit = Octokit.plugin(createPullRequest);
+import { createPullRequest, updatePullRequest } from "./code_pull_request";
 
 interface Props {
   user: User;
@@ -34,6 +32,9 @@ interface State {
   currentFilePath: string;
   changes: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
+  prLink: string;
+  prNumber: string;
+  prBranch: string;
 
   requestingReview: boolean;
   isBuilding: boolean;
@@ -60,6 +61,9 @@ export default class CodeComponent extends React.Component<Props> {
     currentFilePath: "",
     changes: new Map<string, string>(),
     pathToIncludeChanges: new Map<string, boolean>(),
+    prLink: "",
+    prBranch: "",
+    prNumber: "",
 
     requestingReview: false,
     isBuilding: false,
@@ -76,16 +80,20 @@ export default class CodeComponent extends React.Component<Props> {
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
 
-    this.octokit = new MyOctokit({
-      auth: this.props.user.selectedGroup.githubToken,
-    });
-
+    this.updateUser();
     this.fetchCode();
 
     this.subscription = rpcService.events.subscribe({
       next: (name) => name === "refresh" && this.fetchCode(),
     });
   }
+
+  updateUser() {
+    this.octokit = new Octokit({
+      auth: this.props.user.selectedGroup.githubToken,
+    });
+  }
+
   handleWindowResize() {
     this.editor?.layout();
   }
@@ -124,7 +132,12 @@ export default class CodeComponent extends React.Component<Props> {
     this.setState({ changes: this.state.changes });
     console.log(this.state.changes);
 
+    this.saveState();
+  }
+
+  saveState() {
     // TODO(siggisim): store this in cache.
+    // TODO(siggisim): audit all locations where state changes and save it.
     localStorage.setItem(this.getStateCacheKey(), JSON.stringify(this.state, stateReplacer));
   }
 
@@ -146,6 +159,10 @@ export default class CodeComponent extends React.Component<Props> {
       this.props.path != this.props.path
     ) {
       this.fetchCode();
+    }
+
+    if (this.props.user != prevProps.user) {
+      this.updateUser();
     }
   }
 
@@ -295,7 +312,7 @@ export default class CodeComponent extends React.Component<Props> {
 
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
 
-    let response = await this.octokit.createPullRequest({
+    let response = await createPullRequest(this.octokit, {
       owner: this.state.owner,
       repo: this.state.repo,
       title: `Quick fix of ${filenames}`,
@@ -306,12 +323,23 @@ export default class CodeComponent extends React.Component<Props> {
           files: Object.fromEntries(
             filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
           ),
-          commit: `Quick fix of ${this.state.currentFilePath} using BuildBuddy Code`,
+          commit: `Quick fix of ${filenames} using BuildBuddy Code`,
         },
       ],
     });
 
-    this.setState({ requestingReview: false });
+    this.setState(
+      {
+        requestingReview: false,
+        prLink: response.data.html_url,
+        prNumber: response.data.number,
+        prBranch: response.data.head.ref,
+      },
+      () => {
+        console.log(this.state);
+        this.saveState();
+      }
+    );
 
     window.open(response.data.html_url, "_blank");
 
@@ -366,6 +394,54 @@ export default class CodeComponent extends React.Component<Props> {
     window.location.href = `/auth/github/link/?${params}`;
   }
 
+  handleUpdatePR() {
+    let filteredEntries = Array.from(this.state.changes.entries()).filter(
+      ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
+    );
+
+    let filenames = filteredEntries.map(([key, value]) => key).join(", ");
+
+    updatePullRequest(this.octokit, {
+      owner: this.state.owner,
+      repo: this.state.repo,
+      head: this.state.prBranch,
+      changes: [
+        {
+          files: Object.fromEntries(
+            filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
+          ),
+          commit: `Update of ${filenames} using BuildBuddy Code`,
+        },
+      ],
+    }).then(() => {
+      window.open(this.state.prLink, "_blank");
+    });
+  }
+
+  handleClearPRClicked() {
+    this.setState(
+      {
+        prNumber: "",
+        prLink: "",
+        prBranch: "",
+      },
+      () => this.saveState()
+    );
+  }
+
+  handleMergePRClicked() {
+    this.octokit.rest.pulls
+      .merge({
+        owner: this.state.owner,
+        repo: this.state.repo,
+        pull_number: this.state.prNumber,
+      })
+      .then(() => {
+        window.open(this.state.prLink, "_blank");
+        this.handleClearPRClicked();
+      });
+  }
+
   // TODO(siggisim): Make the menu look nice
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
@@ -388,7 +464,7 @@ export default class CodeComponent extends React.Component<Props> {
             </a>
           </div>
           <div className="code-menu-actions">
-            {this.state.changes.size > 0 && (
+            {this.state.changes.size > 0 && !this.state.prBranch && (
               <OutlinedButton
                 disabled={this.state.requestingReview}
                 className="request-review-button"
@@ -400,6 +476,22 @@ export default class CodeComponent extends React.Component<Props> {
                 ) : (
                   <>
                     <Send className="icon blue" /> Request Review
+                  </>
+                )}
+              </OutlinedButton>
+            )}
+            {this.state.changes.size > 0 && this.state.prBranch && (
+              <OutlinedButton
+                disabled={this.state.requestingReview}
+                className="request-review-button"
+                onClick={this.handleUpdatePR.bind(this)}>
+                {this.state.requestingReview ? (
+                  <>
+                    <Spinner className="icon" /> Updating...
+                  </>
+                ) : (
+                  <>
+                    <Send className="icon blue" /> Update PR
                   </>
                 )}
               </OutlinedButton>
@@ -447,7 +539,26 @@ export default class CodeComponent extends React.Component<Props> {
             </div>
             {this.state.changes.size > 0 && (
               <div className="code-diff-viewer">
-                <div className="code-diff-viewer-title">Changes</div>
+                <div className="code-diff-viewer-title">
+                  Changes{" "}
+                  {this.state.prLink && (
+                    <span>
+                      (
+                      <a href={this.state.prLink} target="_blank">
+                        PR #{this.state.prNumber}
+                      </a>
+                      ,{" "}
+                      <span className="clickable" onClick={this.handleClearPRClicked.bind(this)}>
+                        Clear
+                      </span>
+                      ,{" "}
+                      <span className="clickable" onClick={this.handleMergePRClicked.bind(this)}>
+                        Merge
+                      </span>
+                      )
+                    </span>
+                  )}
+                </div>
                 {Array.from(this.state.changes.keys()).map((fullPath) => (
                   <div className="code-diff-viewer-item" onClick={() => this.handleChangeClicked(fullPath)}>
                     <input
