@@ -264,9 +264,11 @@ button {
   margin-left: 0;
 }
 
-/* Default icon color is gray */
 svg.icon {
+  /* Default icon color is gray */
   stroke: #616161;
+  /* By default, icons should not get squished */
+  flex-shrink: 0;
 }
 
 svg.icon.white {

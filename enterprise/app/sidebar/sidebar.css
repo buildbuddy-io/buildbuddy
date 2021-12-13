@@ -211,10 +211,6 @@
   opacity: 1;
 }
 
-.sidebar .org-picker-item svg {
-  flex-shrink: 0;
-}
-
 /** Dense **/
 
 .dense .sidebar {
