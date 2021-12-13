@@ -50,3 +50,8 @@
 .trends-clickable-bar-secondary:hover {
   fill: #5bc4f5;
 }
+
+.trends svg.recharts-surface {
+  /* Allow axis labels to extend slightly out of bounds */
+  overflow: visible;
+}

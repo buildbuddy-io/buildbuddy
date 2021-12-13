@@ -72,24 +72,58 @@ export function compactDurationSec(duration: number | Long) {
   return `${(seconds * 1000).toFixed(0)}ms`;
 }
 
-export function bytes(bytes: number | Long) {
+export function bytes(bytes: number | Long, fractionDigits = 2) {
   bytes = +bytes;
   if (bytes < 100) {
     return bytes + "B";
   }
   if (bytes < 1e6) {
-    return (bytes / 1e3).toFixed(2) + "KB";
+    return (bytes / 1e3).toFixed(fractionDigits) + "KB";
   }
   if (bytes < 1e9) {
-    return (bytes / 1e6).toFixed(2) + "MB";
+    return (bytes / 1e6).toFixed(fractionDigits) + "MB";
   }
   if (bytes < 1e12) {
-    return (bytes / 1e9).toFixed(2) + "GB";
+    return (bytes / 1e9).toFixed(fractionDigits) + "GB";
   }
   if (bytes < 1e15) {
-    return (bytes / 1e12).toFixed(2) + "TB";
+    return (bytes / 1e12).toFixed(fractionDigits) + "TB";
   }
-  return (bytes / 1e15).toFixed(2) + "PB";
+  return (bytes / 1e15).toFixed(fractionDigits) + "PB";
+}
+
+export function bitsPerSecond(bitsPerSecond: number | Long, fractionDigits = 2) {
+  bitsPerSecond = Number(bitsPerSecond);
+  if (bitsPerSecond < 1e3) {
+    return bitsPerSecond + "bps";
+  }
+  if (bitsPerSecond < 1e6) {
+    return (bitsPerSecond / 1e3).toFixed(fractionDigits) + "Kbps";
+  }
+  if (bitsPerSecond < 1e9) {
+    return (bitsPerSecond / 1e6).toFixed(fractionDigits) + "Mbps";
+  }
+  if (bitsPerSecond < 1e12) {
+    return (bitsPerSecond / 1e9).toFixed(fractionDigits) + "Gbps";
+  }
+  if (bitsPerSecond < 1e15) {
+    return (bitsPerSecond / 1e12).toFixed(fractionDigits) + "Tbps";
+  }
+  return (bitsPerSecond / 1e15).toFixed(fractionDigits) + "Pbps";
+}
+
+export function count(value: number | Long, fractionDigits = 2): string {
+  value = Number(value);
+  if (value < 1e3) {
+    return String(value);
+  }
+  if (value < 1e6) {
+    return (value / 1e3).toFixed(fractionDigits) + "K";
+  }
+  if (value < 1e9) {
+    return (value / 1e6).toFixed(fractionDigits) + "M";
+  }
+  return (value / 1e9).toFixed(fractionDigits) + "B";
 }
 
 export function sentenceCase(string: string) {
@@ -206,6 +240,8 @@ export default {
   sentenceCase,
   percent,
   bytes,
+  bitsPerSecond,
+  count,
   truncateList,
   formatTimestampUsec,
   formatTimestampMillis,

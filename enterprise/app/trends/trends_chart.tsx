@@ -20,11 +20,13 @@ interface Props {
   extractLabel: (datum: any) => string;
   formatHoverLabel: (datum: any) => string;
   formatHoverValue?: (datum: number) => string;
+  formatTickValue?: (datum: number, index: number) => string;
   extractValue: (datum: any) => number;
   name: string;
 
   extractSecondaryValue?: (datum: any) => number;
   formatSecondaryHoverValue?: (datum: number) => string;
+  formatSecondaryTickValue?: (datum: number, index: number) => string;
   secondaryName?: string;
   secondaryLine?: boolean;
   separateAxis?: boolean;
@@ -74,11 +76,16 @@ export default class TrendsChartComponent extends React.Component {
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="primary" />
+            <YAxis yAxisId="primary" tickFormatter={this.props.formatTickValue} />
             {/* If no secondary axis should be shown, render an invisible one
                 by setting height="0" so that right-padding is consistent across
                 all charts. */}
-            <YAxis yAxisId="secondary" orientation="right" height={hasSecondaryAxis ? undefined : 0} />
+            <YAxis
+              yAxisId="secondary"
+              orientation="right"
+              height={hasSecondaryAxis ? undefined : 0}
+              tickFormatter={this.props.formatSecondaryTickValue}
+            />
             <Tooltip
               content={
                 <TrendsChartTooltip
