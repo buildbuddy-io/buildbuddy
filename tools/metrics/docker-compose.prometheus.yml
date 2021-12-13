@@ -2,7 +2,6 @@ version: "3.3"
 services:
   prometheus:
     image: prom/prometheus:v2.22.2
-    network_mode: "host"
     volumes:
       - ${PWD}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     command:
@@ -13,3 +12,8 @@ services:
         "--web.console.templates=/usr/share/prometheus/consoles",
         "--web.listen-address=0.0.0.0:9100",
       ]
+    ports:
+      - "9100:9100"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
