@@ -46,17 +46,17 @@ body {
     flex-direction: column;
     max-height: initial;
   }
-  .dense .sidebar,
-  .sidebar {
+
+  /* Duplicate selector for increased specificity. */
+  .sidebar.sidebar {
     height: auto;
     width: 100%;
   }
 
-  .dense .sidebar .sidebar-body,
   .sidebar .sidebar-body {
     flex-wrap: wrap;
     flex-direction: row;
-    margin-bottom: var(--sidebar-padding);
+    padding-bottom: 16px;
   }
 
   .dense .sidebar .logo {
