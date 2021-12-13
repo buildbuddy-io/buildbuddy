@@ -13,6 +13,11 @@
   cursor: pointer;
   user-select: none;
 }
+
+.input-tree-node-name .digest-component {
+  margin-left: 8px;
+}
+
 .input-tree-node-name .icon {
   opacity: 0.7;
 }
@@ -52,6 +57,10 @@
 
 .file-name:hover {
   color: #888;
+}
+
+.file-name .digest-component {
+  margin-left: 8px;
 }
 
 .action-timeline {
