@@ -220,6 +220,8 @@ type User struct {
 	Email     string
 	ImageURL  string
 
+	GithubToken string
+
 	// Group roles are used to determine read/write permissions
 	// for everything.
 	Groups []*GroupRole `gorm:"-"`
