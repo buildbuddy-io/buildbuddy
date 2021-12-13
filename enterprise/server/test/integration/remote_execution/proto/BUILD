@@ -13,4 +13,5 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto",
     proto = ":remoteexecutiontest_proto",
+    tags = ["go_proto"],
 )

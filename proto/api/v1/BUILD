@@ -18,6 +18,7 @@ go_proto_library(
     name = "common_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common",
     proto = ":common_proto",
+    tags = ["go_proto_library"],
     visibility = ["//visibility:public"],
 )
 
@@ -44,6 +45,7 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1",
     proto = ":api_v1_proto",
+    tags = ["go_proto_library"],
     visibility = ["//visibility:public"],
     deps = [
         ":common_go_proto",
