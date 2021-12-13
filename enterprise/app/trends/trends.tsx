@@ -223,7 +223,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Builds"
                 data={this.state.dates}
-                extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalNumBuilds * 10000}
+                extractValue={(date) => +this.state.dateToStatMap.get(date)?.totalNumBuilds}
                 extractSecondaryValue={(date) => {
                   let stat = this.state.dateToStatMap.get(date);
                   return (+stat?.totalBuildTimeUsec * SECONDS_PER_MICROSECOND) / +stat?.completedInvocationCount;
