@@ -91,15 +91,6 @@ func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
 }
 
-func (ws *Workspace) SetOwner(uid, gid int) error {
-	ws.mu.Lock()
-	defer ws.mu.Unlock()
-	if ws.removing {
-		return WorkspaceMarkedForRemovalError
-	}
-	return ws.dirHelper.SetOwner(uid, gid)
-}
-
 // CommandWorkingDirectory returns the absolute path to the working directory
 // for the command to be executed. It assumes that any container executing the
 // task will have the workspace mounted at a path identical to its path on the
