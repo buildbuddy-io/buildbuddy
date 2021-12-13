@@ -151,7 +151,7 @@ func TestParseAPIKeyFromString(t *testing.T) {
 		},
 		{
 			name:    "empty key in the middle",
-			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key= --bes_backend=grpc://localhost:1985'",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=' --bes_backend=grpc://localhost:1985",
 			want:    "",
 			wantErr: true,
 		},

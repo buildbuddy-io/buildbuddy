@@ -651,12 +651,12 @@ func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error
 		return "", nil
 	}
 	if len(matches) != 2 {
-		return "", status.FailedPreconditionError("invalid input")
+		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
 	}
 	if apiKey := matches[1]; apiKey != "" {
 		return apiKey, nil
 	}
-	return "", status.FailedPreconditionError("missing API Key")
+	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

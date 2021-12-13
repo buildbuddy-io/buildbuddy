@@ -618,7 +618,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 			apiKey, err := auth.ParseAPIKeyFromString(options)
 			if err != nil {
-				return status.UnauthenticatedErrorf("failed to parse API key: %s", err)
+				return err
 			}
 			if apiKey != "" {
 				e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
