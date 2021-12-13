@@ -351,23 +351,6 @@ func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
 }
 
-type ExecutionTask struct {
-	TaskID         string `gorm:"primaryKey"`
-	Arch           string
-	Pool           string
-	OS             string
-	SerializedTask []byte `gorm:"size:max"`
-	Model
-	EstimatedMilliCPU    int64
-	ClaimedAtUsec        int64
-	AttemptCount         int64
-	EstimatedMemoryBytes int64
-}
-
-func (n *ExecutionTask) TableName() string {
-	return "ExecutionTasks"
-}
-
 type CacheLog struct {
 	InvocationID       string `gorm:"primaryKey"`
 	JoinKey            string `gorm:"primaryKey"`
@@ -634,7 +617,6 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("ET", &ExecutionTask{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
