@@ -302,6 +302,7 @@ var (
 		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
 		ExecutedActionStageLabel,
+		GroupID,
 	})
 
 	/// #### Examples

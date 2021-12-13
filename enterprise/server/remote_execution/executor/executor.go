@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
@@ -354,11 +355,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	metrics.FileUploadCount.Observe(float64(txInfo.FileCount))
 	metrics.FileUploadSizeBytes.Observe(float64(txInfo.BytesTransferred))
 	metrics.FileUploadDurationUsec.Observe(float64(txInfo.TransferDuration.Microseconds()))
-	observeStageDuration("queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
-	observeStageDuration("input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-	observeStageDuration("execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-	observeStageDuration("output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-	observeStageDuration("worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
+
+	groupID := interfaces.AuthAnonymousUser
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		groupID = u.GetGroupID()
+	}
+
+	observeStageDuration(groupID, "queued", md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
+	observeStageDuration(groupID, "input_fetch", md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
+	observeStageDuration(groupID, "execution", md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
+	observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
+	observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 
 	execSummary := &espb.ExecutionSummary{
 		IoStats: &espb.IOStats{
@@ -382,7 +389,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	return false, nil
 }
 
-func observeStageDuration(stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
+func observeStageDuration(groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {
 	startTime, err := ptypes.Timestamp(start)
 	if err != nil {
 		log.Warningf("Could not parse timestamp for '%s' stage: %s", stage, err)
@@ -401,6 +408,7 @@ func observeStageDuration(stage string, start *timestamppb.Timestamp, end *times
 	}
 	duration := endTime.Sub(startTime)
 	metrics.RemoteExecutionExecutedActionMetadataDurationsUsec.With(prometheus.Labels{
+		metrics.GroupID:                  groupID,
 		metrics.ExecutedActionStageLabel: stage,
 	}).Observe(float64(duration / time.Microsecond))
 }
