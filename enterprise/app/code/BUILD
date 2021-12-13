@@ -9,7 +9,7 @@ exports_files([
 
 ts_library(
     name = "code",
-    srcs = glob(["*.tsx"]),
+    srcs = glob(["*.ts", "*.tsx"]),
     deps = [
         "//app/auth",
         "//app/components/button",
@@ -26,7 +26,6 @@ ts_library(
         "@npm//lucide-react",
         "@npm//monaco-editor",
         "@npm//octokit",
-        "@npm//octokit-plugin-create-pull-request",
         "@npm//react",
         "@npm//rxjs",
     ],
