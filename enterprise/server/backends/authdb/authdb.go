@@ -71,7 +71,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %s", apiKey)
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", apiKey)
 		}
 		return nil, err
 	}

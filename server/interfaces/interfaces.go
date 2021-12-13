@@ -125,7 +125,7 @@ type Authenticator interface {
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
 	// Parses and returns a BuildBuddy API key from the given string.
-	ParseAPIKeyFromString(string) string
+	ParseAPIKeyFromString(string) (string, error)
 
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
