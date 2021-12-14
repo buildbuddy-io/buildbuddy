@@ -51,6 +51,7 @@ genrule(
         "//app/invocation:invocation.css",
         "//app/components/button:button.css",
         "//app/components/dialog:dialog.css",
+        "//app/components/digest:digest.css",
         "//app/components/input:input.css",
         "//app/components/menu:menu.css",
         "//app/components/modal:modal.css",

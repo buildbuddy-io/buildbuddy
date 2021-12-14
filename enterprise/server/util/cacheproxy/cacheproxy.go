@@ -165,33 +165,6 @@ func (c *CacheProxy) getCache(ctx context.Context, isolation *dcpb.Isolation) (i
 	return c.cache.WithIsolation(ctx, ct, isolation.GetRemoteInstanceName())
 }
 
-func (c *CacheProxy) ContainsMulti(ctx context.Context, req *dcpb.ContainsMultiRequest) (*dcpb.ContainsMultiResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
-	if err != nil {
-		return nil, err
-	}
-	digests := make([]*repb.Digest, 0)
-	for _, k := range req.GetKey() {
-		digests = append(digests, digestFromKey(k))
-	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
-	found, err := cache.ContainsMulti(ctx, digests)
-	if err != nil {
-		return nil, err
-	}
-	rsp := &dcpb.ContainsMultiResponse{}
-	for d, exists := range found {
-		rsp.KeysFound = append(rsp.KeysFound, &dcpb.ContainsMultiResponse_KeysFound{
-			Key:    digestToKey(d),
-			Exists: exists,
-		})
-	}
-	return rsp, nil
-}
-
 func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
 	if err != nil {
@@ -376,34 +349,6 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, isolation 
 		return false, err
 	}
 	return len(missing) == 0, nil
-}
-
-func (c *CacheProxy) RemoteContainsMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	req := &dcpb.ContainsMultiRequest{
-		Isolation: isolation,
-	}
-	hashDigests := make(map[string]*repb.Digest, len(digests))
-	for _, d := range digests {
-		key := digestToKey(d)
-		hashDigests[d.GetHash()] = d
-		req.Key = append(req.Key, key)
-	}
-	client, err := c.getClient(ctx, peer)
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := client.ContainsMulti(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	resultMap := make(map[*repb.Digest]bool, len(rsp.GetKeysFound()))
-	for _, keyFound := range rsp.GetKeysFound() {
-		d, ok := hashDigests[keyFound.GetKey().GetKey()]
-		if ok {
-			resultMap[d] = keyFound.GetExists()
-		}
-	}
-	return resultMap, nil
 }
 
 func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {

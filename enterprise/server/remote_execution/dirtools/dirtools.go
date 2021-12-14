@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"strings"
 	"time"
@@ -13,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
@@ -62,15 +62,19 @@ type DirHelper struct {
 	dirsToCreate []string
 
 	outputDirs []string
+
+	// dirPerms are the permissions used when creating output directories.
+	dirPerms fs.FileMode
 }
 
-func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirHelper {
+func NewDirHelper(rootDir string, outputFiles, outputDirectories []string, dirPerms fs.FileMode) *DirHelper {
 	c := &DirHelper{
 		rootDir:      rootDir,
 		prefixes:     make(map[string]struct{}, 0),
 		fullPaths:    make(map[string]struct{}, 0),
 		dirsToCreate: make([]string, 0),
 		outputDirs:   make([]string, 0),
+		dirPerms:     dirPerms,
 	}
 
 	for _, outputFile := range outputFiles {
@@ -104,7 +108,7 @@ func NewDirHelper(rootDir string, outputFiles, outputDirectories []string) *DirH
 
 func (c *DirHelper) CreateOutputDirs(ctx context.Context) error {
 	for _, dir := range c.dirsToCreate {
-		if err := disk.EnsureDirectoryExists(ctx, dir); err != nil {
+		if err := os.MkdirAll(ctx, dir, c.dirPerms); err != nil {
 			return err
 		}
 	}
@@ -713,6 +717,9 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 }
 
 type DownloadTreeOpts struct {
+	// NonrootWritable specifies whether directories should be made writable
+	// by users other than root. Does not affect file permissions.
+	NonrootWritable bool
 	// Skip specifies file paths to skip, along with their file nodes. If the digest
 	// and executable bit of a file to be downloaded doesn't match the digest
 	// and executable bit of the file in this map, then it is re-downloaded (not skipped).
@@ -748,6 +755,11 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 	}
 
+	dirPerms := fs.FileMode(0755)
+	if opts.NonrootWritable {
+		dirPerms = 0777
+	}
+
 	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
@@ -780,7 +792,7 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 		for _, child := range dir.GetDirectories() {
 			newRoot := filepath.Join(parentDir, child.GetName())
-			if err := disk.EnsureDirectoryExists(ctx, newRoot); err != nil {
+			if err := os.MkdirAll(ctx, newRoot, dirPerms); err != nil {
 				return err
 			}
 			if child.GetDigest().Hash == digest.EmptySha256 && child.GetDigest().SizeBytes == 0 {

@@ -60,6 +60,11 @@
   border-radius: 2px;
 }
 
+.organization-form .input-label-subtitle {
+  font-size: 14px;
+  color: #9e9e9e;
+}
+
 .organization-form .url-input-row {
   display: flex;
   flex-wrap: wrap;

@@ -7,8 +7,8 @@
 
 .executors-page .card {
   box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1), 0px 1px 6px rgba(0, 0, 0, 0.05);
-  margin-left: 32px;
-  margin-right: 32px;
+  margin-left: 0;
+  margin-right: 0;
   padding: 32px;
   border-radius: 8px;
   font-size: 14px;
@@ -77,4 +77,22 @@
 
 .executors-page .organization-settings-button {
   margin-top: 16px;
+}
+
+.executors-page .callout {
+  margin-top: 32px;
+  margin-bottom: 32px;
+  padding: 16px;
+  max-width: 600px;
+  border-radius: 8px;
+  display: flex;
+  gap: 16px;
+}
+
+.executors-page .callout .icon {
+  flex-shrink: 0;
+}
+
+.executors-page .warning-callout {
+  background: #ffecb3;
 }

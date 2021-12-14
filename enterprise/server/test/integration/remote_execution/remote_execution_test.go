@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -399,6 +400,85 @@ func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	require.Equal(t, 0, res.ExitCode)
 }
 
+func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("Test requires GNU stat")
+	}
+
+	ctx := context.Background()
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
+
+	inputRoot := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, inputRoot, map[string]string{
+		"input_dir/input.txt": "",
+	})
+
+	dirs := []string{
+		".", "output_dir", "output_dir_parent", "output_dir_parent/output_dir_child",
+		"output_file_parent", "input_dir",
+	}
+
+	cmd := rbe.Execute(&repb.Command{
+		// %a %n prints perms in octal followed by the file name.
+		Arguments:         append([]string{"stat", "--format", "%a %n"}, dirs...),
+		OutputDirectories: []string{"output_dir", "output_dir_parent/output_dir_child"},
+		OutputFiles:       []string{"output_file_parent/output.txt"},
+	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
+	res := cmd.Wait()
+
+	expectedOutput := ""
+	for _, dir := range dirs {
+		expectedOutput += "755 " + dir + "\n"
+	}
+
+	require.Equal(t, expectedOutput, res.Stdout)
+}
+
+func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("Test requires GNU stat")
+	}
+
+	ctx := context.Background()
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "nonroot-workspace", Value: "true"},
+		},
+	}
+
+	inputRoot := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, inputRoot, map[string]string{
+		"input_dir/input.txt": "",
+	})
+
+	dirs := []string{
+		".", "output_dir", "output_dir_parent", "output_dir_parent/output_dir_child",
+		"output_file_parent", "input_dir",
+	}
+
+	cmd := rbe.Execute(&repb.Command{
+		// %a %n prints perms in octal followed by the file name.
+		Arguments:         append([]string{"stat", "--format", "%a %n"}, dirs...),
+		OutputDirectories: []string{"output_dir", "output_dir_parent/output_dir_child"},
+		OutputFiles:       []string{"output_file_parent/output.txt"},
+		Platform:          platform,
+	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
+	res := cmd.Wait()
+
+	expectedOutput := ""
+	for _, dir := range dirs {
+		expectedOutput += "777 " + dir + "\n"
+	}
+
+	require.Equal(t, expectedOutput, res.Stdout)
+}
+
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -558,7 +638,7 @@ func TestComplexActionIO(t *testing.T) {
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
 		for dir, sizes := range dirLayout {
-			for i, _ := range sizes {
+			for i := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
 				if testfs.Exists(t, outDir, outputRelPath) {

@@ -1,5 +1,6 @@
 import React from "react";
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
+import * as format from "../../../app/format/format";
 import { invocation } from "../../../proto/invocation_ts_proto";
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   extractMisses?: (datum: any) => number;
   extractWrites?: (datum: any) => number;
 }
+
+const countTickFormatter = (value: number) => format.count(value, /*fractionDigits=*/ 0);
 
 const CacheChartTooltip = ({ active, payload, labelFormatter, extractHits, extractMisses, extractWrites }: any) => {
   if (active) {
@@ -49,8 +52,13 @@ export default class CacheChartComponent extends React.Component {
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="hits" />
-            <YAxis domain={[0, 100]} yAxisId="percent" orientation="right" />
+            <YAxis yAxisId="hits" tickFormatter={countTickFormatter} />
+            <YAxis
+              domain={[0, 100]}
+              yAxisId="percent"
+              orientation="right"
+              tickFormatter={(value: number) => `${value}%`}
+            />
             <Tooltip
               content={
                 <CacheChartTooltip

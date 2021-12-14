@@ -8,6 +8,8 @@ package grp;
 // Group represents a group that a user is a member of.
 // Next tag: 10
 message Group {
+  reserved 8;
+
   // The unique ID of this group.
   // Ex. "GR4576963743584254779"
   string id = 1;
@@ -22,9 +24,6 @@ message Group {
 
   // True if this group has linked a Github token.
   bool github_linked = 4;
-
-  // The organization's GitHub token, if linked.
-  string github_token = 8;
 
   // The unique URL segment for this group which is used
   // to construct nice-looking URLs for this group, such as

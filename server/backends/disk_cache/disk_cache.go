@@ -249,10 +249,6 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	return c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
-func (c *DiskCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	return c.partition.containsMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
-}
-
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
 }

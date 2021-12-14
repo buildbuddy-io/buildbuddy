@@ -6,6 +6,6 @@ datasources:
   - access: proxy
   - uid: prom
   - isDefault: true
-  - url: http://prometheus-server.monitor-%{ENV}
+  - url: http://prometheus-global-server.monitor-%{ENV}
   - version: 1
   - editable: false

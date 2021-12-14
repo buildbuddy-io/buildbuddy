@@ -18,6 +18,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing/ctxio",
         "//server/util/tracing/filepath",
+        "//server/util/tracing/fs",
         "//server/util/tracing/os",
         "//server/util/tracing/span",
         "@com_github_gobwas_glob//:glob",

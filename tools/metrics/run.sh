@@ -17,7 +17,7 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 
 : ${KUBE_CONTEXT:=""}
 : ${KUBE_NAMESPACE:="monitor-dev"}
-: ${KUBE_PROM_SERVER_RESOURCE:="deployment/prometheus-server"}
+: ${KUBE_PROM_SERVER_RESOURCE:="deployment/prometheus-global-server"}
 : ${KUBE_PROM_SERVER_PORT:=9090}
 
 # Open Grafana dashboard when the server is up and running
@@ -77,7 +77,7 @@ if [[ "$1" == "kube" ]]; then
   # Start a thread to forward port 9100 locally to the Prometheus server on Kube.
   (
     kubectl --context="$KUBE_CONTEXT" --namespace="$KUBE_NAMESPACE" \
-      port-forward "$KUBE_PROM_SERVER_RESOURCE" 9100:"$KUBE_PROM_SERVER_PORT"
+      port-forward "$KUBE_PROM_SERVER_RESOURCE" --address 0.0.0.0 9100:"$KUBE_PROM_SERVER_PORT"
   ) &
 else
   # Run the Prometheus server locally.

@@ -56,35 +56,6 @@ func (c *composableCache) Contains(ctx context.Context, d *repb.Digest) (bool, e
 	return c.inner.Contains(ctx, d)
 }
 
-func (c *composableCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	foundMap := make(map[*repb.Digest]bool, len(digests))
-	if outerFoundMap, err := c.outer.ContainsMulti(ctx, digests); err == nil {
-		for d, found := range outerFoundMap {
-			if found {
-				foundMap[d] = true
-			}
-		}
-	}
-	stillMissing := make([]*repb.Digest, 0)
-	for _, d := range digests {
-		if _, ok := foundMap[d]; !ok {
-			stillMissing = append(stillMissing, d)
-		}
-	}
-	if len(stillMissing) == 0 {
-		return foundMap, nil
-	}
-
-	innerFoundMap, err := c.inner.ContainsMulti(ctx, stillMissing)
-	if err != nil {
-		return nil, err
-	}
-	for d, found := range innerFoundMap {
-		foundMap[d] = found
-	}
-	return foundMap, nil
-}
-
 func (c *composableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	missing, err := c.outer.FindMissing(ctx, digests)
 	if err != nil {
@@ -268,19 +239,4 @@ func (c *composableCache) Writer(ctx context.Context, d *repb.Digest) (ctxio.Wri
 	}
 
 	return innerWriter, nil
-}
-
-// Wrap a cache so that it can be used for
-// getting files contained in a primary cache
-// but will not contaminate Contains calls.
-type NoContainsCache struct {
-	interfaces.Cache
-}
-
-func (n *NoContainsCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return false, nil
-}
-
-func (n *NoContainsCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	return nil, nil
 }

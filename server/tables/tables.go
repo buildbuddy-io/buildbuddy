@@ -220,6 +220,9 @@ type User struct {
 	Email     string
 	ImageURL  string
 
+	// User-specific Github token (if linked).
+	GithubToken string
+
 	// Group roles are used to determine read/write permissions
 	// for everything.
 	Groups []*GroupRole `gorm:"-"`
@@ -349,23 +352,6 @@ type TelemetryLog struct {
 
 func (t *TelemetryLog) TableName() string {
 	return "TelemetryLog"
-}
-
-type ExecutionTask struct {
-	TaskID         string `gorm:"primaryKey"`
-	Arch           string
-	Pool           string
-	OS             string
-	SerializedTask []byte `gorm:"size:max"`
-	Model
-	EstimatedMilliCPU    int64
-	ClaimedAtUsec        int64
-	AttemptCount         int64
-	EstimatedMemoryBytes int64
-}
-
-func (n *ExecutionTask) TableName() string {
-	return "ExecutionTasks"
 }
 
 type CacheLog struct {
@@ -634,7 +620,6 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("ET", &ExecutionTask{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})

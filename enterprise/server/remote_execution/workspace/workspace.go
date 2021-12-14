@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"github.com/gobwas/glob"
@@ -36,8 +37,12 @@ var (
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
 type Workspace struct {
-	env       environment.Env
-	rootDir   string
+	env     environment.Env
+	rootDir string
+	// dirPerms are the permissions set on the workspace root directory as well as
+	// any input or output directories created by the executor. It does not affect
+	// file permissions.
+	dirPerms  fs.FileMode
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
@@ -53,6 +58,9 @@ type Workspace struct {
 }
 
 type Opts struct {
+	// NonrootWritable specifies whether the workspace dir, as well as directories
+	// created under it, should be writable by nonroot users.
+	NonrootWritable bool
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output dirs.
 	Preserve    bool
@@ -66,15 +74,20 @@ func New(ctx context.Context, env environment.Env, parentDir string, opts *Opts)
 		return nil, status.UnavailableErrorf("failed to generate workspace ID")
 	}
 	rootDir := filepath.Join(parentDir, id.String())
-	if err := os.MkdirAll(ctx, rootDir, 0755); err != nil {
+	dirPerms := fs.FileMode(0755)
+	if opts.NonrootWritable {
+		dirPerms = 0777
+	}
+	if err := os.MkdirAll(ctx, rootDir, dirPerms); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
 	}
 
 	return &Workspace{
-		env:     env,
-		rootDir: rootDir,
-		Opts:    opts,
-		Inputs:  map[string]*repb.FileNode{},
+		env:      env,
+		rootDir:  rootDir,
+		dirPerms: dirPerms,
+		Opts:     opts,
+		Inputs:   map[string]*repb.FileNode{},
 	}, nil
 }
 
@@ -88,7 +101,7 @@ func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
 	log.Debugf("Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories())
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories(), ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -128,7 +141,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	ctx, spn := span.StartSpan(ctx)
 	defer spn.End()
 
-	opts := &dirtools.DownloadTreeOpts{}
+	opts := &dirtools.DownloadTreeOpts{
+		NonrootWritable: ws.Opts.NonrootWritable,
+	}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true

@@ -588,7 +588,7 @@ func TestOversizeBlobs(t *testing.T) {
 	}
 }
 
-func TestContainsMulti(t *testing.T) {
+func TestFindMissing(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, ctx, emptyUserMap)
@@ -650,23 +650,6 @@ func TestContainsMulti(t *testing.T) {
 			missingDigests = append(missingDigests, d)
 		}
 
-		// Check server properly reports present and missing digests.
-		foundMap, err := c.RemoteContainsMulti(ctx, peer, isolation, append(existingDigests, missingDigests...))
-		require.NoError(t, err)
-		for _, d := range existingDigests {
-			exists, ok := foundMap[d]
-			if !ok || !exists {
-				t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
-			}
-		}
-		for _, d := range missingDigests {
-			exists, ok := foundMap[d]
-			if !ok || exists {
-				t.Fatalf("Digest %q was not uploaded but is not reported as missing in cache", d.GetHash())
-			}
-		}
-
-		// Now repeat with RemoteFindMissing.
 		remoteMissing, err := c.RemoteFindMissing(ctx, peer, isolation, append(existingDigests, missingDigests...))
 		require.NoError(t, err)
 		require.ElementsMatch(t, remoteMissing, missingDigests)

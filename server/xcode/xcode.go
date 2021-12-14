@@ -8,8 +8,8 @@ import "context"
 type xcodeLocator struct {
 }
 
-func NewXcodeLocator(context.Context) *xcodeLocator {
-	return &xcodeLocator{}
+func NewXcodeLocator(ctx context.Context) (*xcodeLocator, error) {
+	return &xcodeLocator{}, nil
 }
 
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {

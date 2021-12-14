@@ -712,7 +712,12 @@ func (c *Configurator) GetCacheInMemory() bool {
 }
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {
-	return len(c.gc.Auth.OauthProviders) == 0 || c.gc.Auth.EnableAnonymousUsage
+	numOauthProviders := len(c.gc.Auth.OauthProviders)
+	if c.GetSelfAuthEnabled() {
+		// SelfAuth is considered an Oauth Provider
+		numOauthProviders++
+	}
+	return numOauthProviders == 0 || c.gc.Auth.EnableAnonymousUsage
 }
 
 func (c *Configurator) GetAuthJWTKey() string {

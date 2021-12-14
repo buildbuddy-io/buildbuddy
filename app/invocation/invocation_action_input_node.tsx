@@ -1,6 +1,7 @@
 import React from "react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { Download, FolderMinus, FolderPlus } from "lucide-react";
+import DigestComponent from "../components/digest/digest";
 
 interface Props {
   node: InputNode;
@@ -36,6 +37,7 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
+          <DigestComponent digest={this.props.node.obj.digest} />
         </div>
         {expanded && (
           <div className="input-tree-node-children">

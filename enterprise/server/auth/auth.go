@@ -89,7 +89,7 @@ const (
 
 var (
 	authCodeOption []oauth2.AuthCodeOption = []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.ApprovalForce}
-	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]+)")
+	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 	jwtKey                                 = []byte("set_the_jwt_in_config") // set via config.
 )
 
@@ -364,6 +364,8 @@ type OpenIDAuthenticator struct {
 func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
+		// declare local var that shadows loop var for closure capture
+		authConfig := authConfig
 		oidcConfig := &oidc.Config{
 			ClientID:        authConfig.ClientID,
 			SkipExpiryCheck: false,
@@ -383,14 +385,21 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 			if authenticator.cachedOauth2Config == nil {
 				var provider *oidc.Provider
 				if provider, err = authenticator.provider(); err == nil {
+					// "openid" is a required scope for OpenID Connect flows.
+					scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+					// Google reject the offline_access scope in favor of access_type=offline url param which already gets
+					// set in our auth flow thanks to the oauth2.AccessTypeOffline authCodeOption at the top of this file.
+					// https://github.com/coreos/go-oidc/blob/v2.2.1/oidc.go#L30
+					if authConfig.IssuerURL != "https://accounts.google.com" {
+						scopes = append(scopes, oidc.ScopeOfflineAccess)
+					}
 					// Configure an OpenID Connect aware OAuth2 client.
 					authenticator.cachedOauth2Config = &oauth2.Config{
 						ClientID:     authConfig.ClientID,
 						ClientSecret: authConfig.ClientSecret,
 						RedirectURL:  authURL.String(),
 						Endpoint:     provider.Endpoint(),
-						// "openid" is a required scope for OpenID Connect flows.
-						Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
+						Scopes:       scopes,
 					}
 				}
 			}
@@ -566,6 +575,9 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 }
 
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
+	if apiKey == "" {
+		return nil, status.UnauthenticatedError("missing API key")
+	}
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
 		if ok {
@@ -635,12 +647,19 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 	return ctx
 }
 
-func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) string {
+func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
 	matches := apiKeyRegex.FindStringSubmatch(input)
-	if matches != nil && len(matches) > 1 {
-		return matches[1]
+	if len(matches) == 0 {
+		// The api key header is not present
+		return "", nil
 	}
-	return ""
+	if len(matches) != 2 {
+		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
+	}
+	if apiKey := matches[1]; apiKey != "" {
+		return apiKey, nil
+	}
+	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

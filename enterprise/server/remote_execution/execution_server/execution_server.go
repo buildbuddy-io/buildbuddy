@@ -320,6 +320,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		taskGroupID = user.GetGroupID()
 	}
 
+	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
+
 	schedulingMetadata := &scpb.SchedulingMetadata{
 		Os:              props.OS,
 		Arch:            props.Arch,

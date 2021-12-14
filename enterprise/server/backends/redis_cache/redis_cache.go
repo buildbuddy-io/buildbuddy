@@ -138,36 +138,6 @@ func update(old, new map[string]bool) {
 	}
 }
 
-func (c *Cache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	if len(digests) == 0 {
-		return nil, nil
-	}
-	keys := make([]string, 0, len(digests))
-	digestsByKey := make(map[string]*repb.Digest, len(digests))
-	for _, d := range digests {
-		k, err := c.key(ctx, d)
-		if err != nil {
-			return nil, err
-		}
-		keys = append(keys, k)
-		digestsByKey[k] = d
-	}
-
-	mcMap, err := c.rdbMultiExists(ctx, keys...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Assemble results.
-	response := make(map[*repb.Digest]bool, len(keys))
-	for _, k := range keys {
-		d := digestsByKey[k]
-		found, ok := mcMap[k]
-		response[d] = ok && found
-	}
-	return response, nil
-}
-
 func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if len(digests) == 0 {
 		return nil, nil

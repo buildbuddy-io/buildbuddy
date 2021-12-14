@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	redisLinuxBinRunfilePath = "enterprise/server/test/bin/redis/redis-server-linux-x86_64"
+	redisLinuxBinRunfilePath  = "enterprise/server/test/bin/redis/redis-server-linux-x86_64"
+	redisDarwinBinRunfilePath = "enterprise/server/test/bin/redis/redis-server-darwin-arm64"
 
 	startupTimeout      = 10 * time.Second
 	startupPingInterval = 5 * time.Millisecond
@@ -33,12 +34,15 @@ func Start(t testing.TB) string {
 	switch osArchKey {
 	case "linux_amd64":
 		redisBinPath = redisLinuxBinRunfilePath
+	case "darwin_arm64":
+		redisBinPath = redisDarwinBinRunfilePath
 	default:
-		// Skip the test on unsupported platforms until we have mac binary in place.
+		// Skip the test on unsupported platforms until we have binaries in place.
+		log.Warningf("No redis binary found for platform %q. Tests are skipped.", osArchKey)
 		t.SkipNow()
 		return ""
 	}
-	redisBinPath, err := bazel.Runfile(redisLinuxBinRunfilePath)
+	redisBinPath, err := bazel.Runfile(redisBinPath)
 	if err != nil {
 		assert.FailNow(t, "redis binary not found in runfiles", err.Error())
 	}

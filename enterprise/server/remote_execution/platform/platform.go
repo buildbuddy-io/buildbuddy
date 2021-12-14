@@ -41,19 +41,21 @@ const (
 	// empty or unset.
 	unsetContainerImageVal = "none"
 
-	RecycleRunnerPropertyName        = "recycle-runner"
-	preserveWorkspacePropertyName    = "preserve-workspace"
-	cleanWorkspaceInputsPropertyName = "clean-workspace-inputs"
-	persistentWorkerPropertyName     = "persistent-workers"
-	persistentWorkerKeyPropertyName  = "persistentWorkerKey"
-	WorkflowIDPropertyName           = "workflow-id"
-	workloadIsolationPropertyName    = "workload-isolation-type"
-	enableVFSPropertyName            = "enable-vfs"
+	RecycleRunnerPropertyName            = "recycle-runner"
+	preserveWorkspacePropertyName        = "preserve-workspace"
+	nonrootWorkspacePropertyName         = "nonroot-workspace"
+	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
+	persistentWorkerPropertyName         = "persistent-workers"
+	persistentWorkerKeyPropertyName      = "persistentWorkerKey"
+	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
+	WorkflowIDPropertyName               = "workflow-id"
+	workloadIsolationPropertyName        = "workload-isolation-type"
+	enableVFSPropertyName                = "enable-vfs"
 
 	operatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
 	defaultOperatingSystemName  = LinuxOperatingSystemName
-	darwinOperatingSystemName   = "darwin"
+	DarwinOperatingSystemName   = "darwin"
 
 	cpuArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
@@ -94,11 +96,21 @@ type Properties struct {
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
-	PreserveWorkspace    bool
-	CleanWorkspaceInputs string
-	PersistentWorker     bool
-	PersistentWorkerKey  string
-	WorkflowID           string
+	PreserveWorkspace bool
+	// NonrootWorkspace specifies whether workspace directories should be made
+	// writable by users other than the executor user (which is the root user for
+	// production workloads). This is required to be set when running actions
+	// within a container image that has a USER other than root.
+	//
+	// TODO(bduffany): Consider making this the default behavior, or inferring it
+	// by inspecting the image and checking that the USER spec is anything other
+	// than "root" or "0".
+	NonrootWorkspace         bool
+	CleanWorkspaceInputs     string
+	PersistentWorker         bool
+	PersistentWorkerKey      string
+	PersistentWorkerProtocol string
+	WorkflowID               string
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -143,9 +155,11 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 	}
 }
@@ -272,7 +286,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
 	}
 
-	if strings.EqualFold(platformProps.OS, darwinOperatingSystemName) {
+	if strings.EqualFold(platformProps.OS, DarwinOperatingSystemName) {
 		appleSDKVersion := ""
 		appleSDKPlatform := "MacOSX"
 		xcodeVersion := executorProps.DefaultXCodeVersion

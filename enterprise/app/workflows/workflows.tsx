@@ -13,6 +13,7 @@ import Dialog, {
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
 import Modal from "../../../app/components/modal/modal";
 import Popup from "../../../app/components/popup/popup";
+import Spinner from "../../../app/components/spinner/spinner";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
@@ -105,6 +106,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   private async onClickUnlink() {
+    this.setState({ isDeleting: true });
     try {
       await rpcService.service.deleteWorkflow(
         new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete.id })
@@ -201,7 +203,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
                   </DialogBody>
                   <DialogFooter>
                     <DialogFooterButtons>
-                      {this.state.isDeleting && <div className="loading" />}
+                      {this.state.isDeleting && <Spinner />}
                       <Button className="destructive" onClick={this.onClickUnlink.bind(this)} disabled={isDeleting}>
                         Unlink
                       </Button>

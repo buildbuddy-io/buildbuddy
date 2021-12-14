@@ -35,10 +35,10 @@ type xcodeVersion struct {
 	sdks             []string
 }
 
-func NewXcodeLocator(ctx context.Context) *xcodeLocator {
+func NewXcodeLocator(ctx context.Context) (*xcodeLocator, error) {
 	xl := &xcodeLocator{}
-	xl.locate(ctx)
-	return xl
+	err := xl.locate(ctx)
+	return xl, err
 }
 
 // Finds the XCode developer directory that most closely matches the given XCode version.
@@ -78,11 +78,15 @@ func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersio
 
 // Locates all all XCode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
-func (x *xcodeLocator) locate(ctx context.Context) {
+func (x *xcodeLocator) locate(ctx context.Context) error {
 	bundleID := stringToCFString(xcodeBundleID)
 	defer C.CFRelease(C.CFTypeRef(bundleID))
 
 	urlsPointer := C.LSCopyApplicationURLsForBundleIdentifier(bundleID, nil)
+
+	if urlsPointer == C.CFArrayRef(unsafe.Pointer(nil)) {
+		return status.FailedPreconditionErrorf("cannot find Xcode bundle: %q. Make sure Xcode is installed.", xcodeBundleID)
+	}
 	defer C.CFRelease(C.CFTypeRef(urlsPointer))
 
 	urlsArrayRef := C.CFArrayRef(urlsPointer)
@@ -131,6 +135,7 @@ func (x *xcodeLocator) locate(ctx context.Context) {
 		}
 	}
 	x.versions = versionMap
+	return nil
 }
 
 // Expands a single XCode version into all component combinations in order of increasing precision.
