@@ -4,10 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
-	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -46,6 +44,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -96,7 +96,7 @@ func init() {
 	grpc.EnableTracing = false
 }
 
-func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+func configureFilesystemsOrDie(ctx context.Context, realEnv *real_environment.RealEnv) {
 	if *staticDirectory != "" {
 		staticFS, err := static.FSFromRelPath(*staticDirectory)
 		if err != nil {
@@ -111,14 +111,14 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 		}
 		realEnv.SetAppFilesystem(appFS)
 	}
-	bundleFS, err := bundle.Get()
+	bundleFS, err := bundle.Get(ctx)
 	if err != nil {
 		log.Fatalf("Error getting bundle FS: %s", err)
 	}
 	realEnv.SetFileResolver(fileresolver.New(bundleFS, ""))
 	if realEnv.GetStaticFilesystem() == nil || realEnv.GetAppFilesystem() == nil {
 		if realEnv.GetStaticFilesystem() == nil {
-			staticFS, err := fs.Sub(bundleFS, "static")
+			staticFS, err := fs.Sub(ctx, bundleFS, "static")
 			if err != nil {
 				log.Fatalf("Error getting static FS from bundle: %s", err)
 			}
@@ -126,7 +126,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			realEnv.SetStaticFilesystem(staticFS)
 		}
 		if realEnv.GetAppFilesystem() == nil {
-			appFS, err := fs.Sub(bundleFS, "app")
+			appFS, err := fs.Sub(ctx, bundleFS, "app")
 			if err != nil {
 				log.Fatalf("Error getting app FS from bundle: %s", err)
 			}
@@ -140,7 +140,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+func GetConfiguredEnvironmentOrDie(ctx context.Context, configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	opts := log.Opts{
 		Level:                  configurator.GetAppLogLevel(),
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
@@ -152,7 +152,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	bs, err := blobstore.GetConfiguredBlobstore(ctx, configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
@@ -163,7 +163,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
 	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	configureFilesystemsOrDie(realEnv)
+	configureFilesystemsOrDie(ctx, realEnv)
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
@@ -205,7 +205,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		cache = c
 	} else if configurator.GetCacheDiskConfig() != nil {
 		diskConfig := configurator.GetCacheDiskConfig()
-		c, err := disk_cache.NewDiskCache(realEnv, diskConfig, configurator.GetCacheMaxSizeBytes())
+		c, err := disk_cache.NewDiskCache(ctx, realEnv, diskConfig, configurator.GetCacheMaxSizeBytes())
 		if err != nil {
 			log.Fatalf("Error configuring cache: %s", err)
 		}
@@ -335,22 +335,22 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	return grpcServer
 }
 
-func StartAndRunServices(env environment.Env) {
+func StartAndRunServices(ctx context.Context, env environment.Env) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
 
-	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
+	appBundleHash, err := static.AppBundleHash(ctx, env.GetAppFilesystem())
 	if err != nil {
 		log.Fatalf("Error reading app bundle hash: %s", err)
 	}
 
-	staticFileServer, err := static.NewStaticFileServer(env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
+	staticFileServer, err := static.NewStaticFileServer(ctx, env, env.GetStaticFilesystem(), appRoutes, appBundleHash)
 	if err != nil {
 		log.Fatalf("Error initializing static file server: %s", err)
 	}
 
-	afs, err := static.NewStaticFileServer(env, env.GetAppFilesystem(), []string{}, "")
+	afs, err := static.NewStaticFileServer(ctx, env, env.GetAppFilesystem(), []string{}, "")
 	if err != nil {
 		log.Fatalf("Error initializing app server: %s", err)
 	}

@@ -18,4 +18,5 @@ go_library(
     embedsrcs = [":bazelisk-1.10.1"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazelisk",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/tracing/fs"],
 )

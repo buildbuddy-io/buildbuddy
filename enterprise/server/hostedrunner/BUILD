@@ -18,6 +18,8 @@ go_library(
         "//server/util/prefix",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/fs",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@org_golang_google_grpc//status",

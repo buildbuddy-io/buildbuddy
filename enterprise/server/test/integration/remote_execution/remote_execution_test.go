@@ -23,8 +23,9 @@ import (
 func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2 && exit 5")
 	res := cmd.Wait()
@@ -37,8 +38,9 @@ func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
 	res := cmd.Wait()
@@ -51,12 +53,13 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+	ctx := context.Background()
+	rbe.AddBuildBuddyServerWithOptions(ctx, &rbetest.BuildBuddyServerOptions{
 		SchedulerServerOptions: scheduler_server.Options{
 			RequireExecutorAuthorization: true,
 		},
 	})
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{
 		Name:   "executor",
 		APIKey: rbetest.ExecutorAPIKey,
 	})
@@ -68,8 +71,9 @@ func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -108,8 +112,9 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	tmpDir := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
@@ -156,8 +161,9 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	tmpDir := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
@@ -202,8 +208,9 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(3)
-	rbe.AddExecutors(10)
+	ctx := context.Background()
+	rbe.AddBuildBuddyServers(ctx, 3)
+	rbe.AddExecutors(ctx, 10)
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -233,9 +240,10 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(3)
+	ctx := context.Background()
+	rbe.AddBuildBuddyServers(ctx, 3)
 	for i := 0; i < 5; i++ {
-		rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+		rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Pool: "foo"})
 	}
 
 	platform := &repb.Platform{
@@ -271,8 +279,10 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutors(5)
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
+	rbe.AddExecutors(ctx, 5)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
 	res := cmd.Wait()
@@ -285,8 +295,9 @@ func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Pool: "foo"})
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -311,8 +322,9 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "bar"})
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Pool: "bar"})
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -337,8 +349,9 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Pool: "foo"})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
@@ -366,8 +379,9 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Pool: "foo"})
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "FoO"},
@@ -388,8 +402,9 @@ func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutors(5)
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutors(ctx, 5)
 
 	var cmds []*rbetest.Command
 	for i := 0; i < 5; i++ {
@@ -412,8 +427,9 @@ func TestBasicActionIO(t *testing.T) {
 	})
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
 	cmd := rbe.Execute(&repb.Command{
@@ -451,7 +467,7 @@ func TestBasicActionIO(t *testing.T) {
 
 	require.Equal(t, 0, res.ExitCode)
 
-	outDir := rbe.DownloadOutputsToNewTempDir(res)
+	outDir := rbe.DownloadOutputsToNewTempDir(ctx, res)
 
 	testfs.AssertExactFileContents(t, outDir, map[string]string{
 		"out_dir/hello_world.output":            "Hello world",
@@ -495,8 +511,9 @@ func TestComplexActionIO(t *testing.T) {
 	}
 
 	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
 	cmd := rbe.Execute(&repb.Command{
@@ -532,7 +549,7 @@ func TestComplexActionIO(t *testing.T) {
 	require.Equal(t, 0, res.ExitCode)
 	require.Empty(t, res.Stderr)
 
-	outDir := rbe.DownloadOutputsToNewTempDir(res)
+	outDir := rbe.DownloadOutputsToNewTempDir(ctx, res)
 
 	skippedBytes := map[string]int{
 		"out_files_dir": 1,
@@ -567,11 +584,12 @@ func TestComplexActionIO(t *testing.T) {
 func TestUnregisterExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
 
 	// Start with two executors.
 	// AddExecutors will block until both are registered.
-	executors := rbe.AddExecutors(2)
+	executors := rbe.AddExecutors(ctx, 2)
 
 	// Remove one of the executors.
 	// RemoveExecutor will block until the executor is unregistered.
@@ -582,9 +600,10 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	// Start with 2 BuildBuddy servers.
-	rbe.AddBuildBuddyServer()
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutors(5)
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutors(ctx, 5)
 
 	var cmds []*rbetest.Command
 	for i := 0; i < 10; i++ {
@@ -602,9 +621,10 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServers(5)
-	rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: "busyExecutor1"})
-	rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: "busyExecutor2"})
+	ctx := context.Background()
+	rbe.AddBuildBuddyServers(ctx, 5)
+	rbe.AddSingleTaskExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Name: "busyExecutor1"})
+	rbe.AddSingleTaskExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Name: "busyExecutor2"})
 
 	// Schedule 2 controlled commands to keep existing executors busy.
 	cmd1 := rbe.ExecuteControlledCommand("command1")
@@ -626,7 +646,7 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	}
 
 	// Add a new executor that should get assigned the additional tasks.
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Name: "newExecutor"})
+	rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Name: "newExecutor"})
 
 	for i, cmd := range cmds {
 		res := cmd.Wait()
@@ -648,11 +668,12 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 func TestWaitExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
+	ctx := context.Background()
 	// Start multiple servers so that executions are spread out across different servers.
 	for i := 0; i < 5; i++ {
-		rbe.AddBuildBuddyServer()
+		rbe.AddBuildBuddyServer(ctx)
 	}
-	rbe.AddExecutors(5)
+	rbe.AddExecutors(ctx, 5)
 
 	var cmds []*rbetest.ControlledCommand
 	for i := 0; i < 10; i++ {
@@ -726,21 +747,22 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 		busyExecutorIDs = append(busyExecutorIDs, fmt.Sprintf("busyExecutor%d", i))
 	}
 
+	ctx := context.Background()
 	// Set up the task router to send all reservations to "busy" executors. These executors will queue up tasks but not
 	// try to execute any of them.
 	taskRouter := newFixedNodeTaskRouter(busyExecutorIDs)
-	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+	rbe.AddBuildBuddyServerWithOptions(ctx, &rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
 		env.SetTaskRouter(taskRouter)
 	}})
 
 	var busyExecutors []*rbetest.Executor
 	for _, id := range busyExecutorIDs {
-		e := rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: id})
+		e := rbe.AddSingleTaskExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Name: id})
 		e.ShutdownTaskScheduler()
 		busyExecutors = append(busyExecutors, e)
 	}
 	// Add another executor that should execute all scheduled commands once the "busy" executors are shut down.
-	_ = rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Name: "newExecutor"})
+	_ = rbe.AddExecutorWithOptions(ctx, &rbetest.ExecutorOptions{Name: "newExecutor"})
 
 	// Now schedule some commands. The fake task router will ensure that the reservations only land on "busy"
 	// executors.
@@ -771,8 +793,9 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
+	ctx := context.Background()
+	rbe.AddBuildBuddyServer(ctx)
+	rbe.AddExecutor(ctx)
 
 	cmd := rbe.Execute(&repb.Command{Arguments: []string{"echo"}}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
 	err := cmd.MustFail()

@@ -35,10 +35,11 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}

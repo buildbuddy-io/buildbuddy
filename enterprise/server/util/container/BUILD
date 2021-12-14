@@ -11,5 +11,8 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
     ],
 )

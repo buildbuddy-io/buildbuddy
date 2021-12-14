@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -12,6 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -151,7 +152,7 @@ func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 		return err
 	}
 	m.lock.Lock()
-	m.l.Add(k, data)
+	m.l.Add(ctx, k, data)
 	m.lock.Unlock()
 	return nil
 }
@@ -171,13 +172,13 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	m.lock.Lock()
-	m.l.Remove(k)
+	m.l.Remove(ctx, k)
 	m.lock.Unlock()
 	return nil
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, d)
 	if err != nil {
@@ -187,26 +188,28 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) 
 	r.Seek(offset, 0)
 	length := int64(len(buf))
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return ctxio.NopCloser(ctxio.CtxReaderWrapper(io.LimitReader(r, length))), nil
 	}
-	return io.NopCloser(r), nil
+	return ctxio.NopCloser(ctxio.CtxReaderWrapper(r)), nil
 }
 
-type closeFn func(b *bytes.Buffer) error
+type closeFn func(ctx context.Context, b *bytes.Buffer) error
 type setOnClose struct {
-	*bytes.Buffer
-	c closeFn
+	ctxio.Writer
+	buffer *bytes.Buffer
+	c      closeFn
 }
 
-func (d *setOnClose) Close() error {
-	return d.c(d.Buffer)
+func (d *setOnClose) Close(ctx context.Context) error {
+	return d.c(ctx, d.buffer)
 }
 
-func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	var buffer bytes.Buffer
 	return &setOnClose{
-		Buffer: &buffer,
-		c: func(b *bytes.Buffer) error {
+		Writer: ctxio.CtxWriterWrapper(&buffer),
+		buffer: &buffer,
+		c: func(ctx context.Context, b *bytes.Buffer) error {
 			// Locking and key prefixing are handled in Set.
 			return m.Set(ctx, d, b.Bytes())
 		},

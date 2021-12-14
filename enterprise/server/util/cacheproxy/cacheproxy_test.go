@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"github.com/stretchr/testify/require"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
@@ -33,8 +34,8 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func getTestEnv(t *testing.T, ctx context.Context, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
@@ -69,17 +70,17 @@ func waitUntilServerIsAlive(addr string) {
 	}
 }
 
-func copyAndClose(wc io.WriteCloser, r io.Reader) error {
-	if _, err := io.Copy(wc, r); err != nil {
+func copyAndClose(ctx context.Context, wc ctxio.WriteCloser, r ctxio.Reader) error {
+	if _, err := ctxio.Copy(ctx, wc, r); err != nil {
 		return err
 	}
-	return wc.Close()
+	return wc.Close(ctx)
 }
 
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -98,14 +99,14 @@ func TestReaderMaxOffset(t *testing.T) {
 	// Read some random bytes.
 	buf := new(bytes.Buffer)
 	io.CopyN(buf, randomSrc, 100)
-	readSeeker := bytes.NewReader(buf.Bytes())
+	readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 	// Compute a digest for the random bytes.
-	d, err := digest.Compute(readSeeker)
+	d, err := digest.Compute(ctx, readSeeker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	readSeeker.Seek(0, 0)
+	readSeeker.Seek(ctx, 0, 0)
 
 	instanceName := "foo"
 	isolation := &dcpb.Isolation{
@@ -126,7 +127,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d2 := testdigest.ReadDigestAndClose(t, r)
+	d2 := testdigest.ReadDigestAndClose(t, ctx, r)
 	emptyHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	if emptyHash != d2.GetHash() {
 		t.Fatalf("Digest uploaded %q != %q downloaded", emptyHash, d2.GetHash())
@@ -149,7 +150,7 @@ func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 		s.writeCount,
 	}, nil
 }
-func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	wc, err := s.Cache.Writer(ctx, d)
 	if err != nil {
 		return nil, err
@@ -161,7 +162,7 @@ func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 func TestWriteAlreadyExistsCAS(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -180,7 +181,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, ctx, testSize)
 	isolation := &dcpb.Isolation{
 		CacheType: dcpb.Isolation_CAS_CACHE,
 	}
@@ -190,7 +191,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -199,12 +200,12 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	}
 
 	// Reset readSeeker.
-	readSeeker.Seek(0, 0)
+	readSeeker.Seek(ctx, 0, 0)
 	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,7 +217,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -235,7 +236,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, ctx, testSize)
 
 	isolation := &dcpb.Isolation{
 		CacheType: dcpb.Isolation_ACTION_CACHE,
@@ -246,7 +247,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -255,12 +256,12 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	}
 
 	// Reset readSeeker.
-	readSeeker.Seek(0, 0)
+	readSeeker.Seek(ctx, 0, 0)
 	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,7 +273,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 func TestReader(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -298,14 +299,14 @@ func TestReader(t *testing.T) {
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
 		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
+		readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(ctx, readSeeker)
 		if err != nil {
 			t.Fatal(err)
 		}
-		readSeeker.Seek(0, 0)
+		readSeeker.Seek(ctx, 0, 0)
 
 		// Set the random bytes in the cache (with a prefix)
 		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
@@ -320,7 +321,7 @@ func TestReader(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
+		d2 := testdigest.ReadDigestAndClose(t, ctx, r)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -330,7 +331,7 @@ func TestReader(t *testing.T) {
 func TestWriter(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -357,21 +358,21 @@ func TestWriter(t *testing.T) {
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
 		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
+		readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(ctx, readSeeker)
 		if err != nil {
 			t.Fatal(err)
 		}
-		readSeeker.Seek(0, 0)
+		readSeeker.Seek(ctx, 0, 0)
 
 		// Remote-write the random bytes to the cache (with a prefix).
 		wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := copyAndClose(wc, readSeeker); err != nil {
+		if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
@@ -383,7 +384,7 @@ func TestWriter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
+		d2 := testdigest.ReadDigestAndClose(t, ctx, r)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest uploaded %q != %q downloaded", d.GetHash(), d2.GetHash())
 		}
@@ -393,7 +394,7 @@ func TestWriter(t *testing.T) {
 func TestWriteAlreadyExists(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -412,7 +413,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	testSize := int64(10000000)
-	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, ctx, testSize)
 	remoteInstanceName := ""
 	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
 
@@ -421,7 +422,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -430,12 +431,12 @@ func TestWriteAlreadyExists(t *testing.T) {
 	}
 
 	// Reset readSeeker.
-	readSeeker.Seek(0, 0)
+	readSeeker.Seek(ctx, 0, 0)
 	wc, err = c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := copyAndClose(wc, readSeeker); err != nil {
+	if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -447,7 +448,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 func TestContains(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -473,10 +474,10 @@ func TestContains(t *testing.T) {
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
 		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
+		readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(ctx, readSeeker)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -518,7 +519,7 @@ func TestContains(t *testing.T) {
 func TestOversizeBlobs(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -545,32 +546,32 @@ func TestOversizeBlobs(t *testing.T) {
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
 		io.CopyN(buf, randomSrc, testSize)
-		readSeeker := bytes.NewReader(buf.Bytes())
+		readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(ctx, readSeeker)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		// Now tack on a little bit of "extra" data.
 		buf.Write([]byte("overload"))
-		readSeeker = bytes.NewReader(buf.Bytes())
+		readSeeker = ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 		// Remote-write the random bytes to the cache (with a prefix).
 		wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := copyAndClose(wc, readSeeker); err != nil {
+		if err := copyAndClose(ctx, wc, readSeeker); err != nil {
 			t.Fatal(err)
 		}
 
 		// Ensure that the bytes remotely read back match the
 		// bytes that were uploaded, even though they are keyed
 		// under a different digest.
-		readSeeker.Seek(0, 0)
-		d1, err := digest.Compute(readSeeker)
+		readSeeker.Seek(ctx, 0, 0)
+		d1, err := digest.Compute(ctx, readSeeker)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -580,7 +581,7 @@ func TestOversizeBlobs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d2 := testdigest.ReadDigestAndClose(t, r)
+		d2 := testdigest.ReadDigestAndClose(t, ctx, r)
 		if d1.GetHash() != d2.GetHash() {
 			t.Fatalf("Digest of uploaded contents %q != %q downloaded contents", d.GetHash(), d2.GetHash())
 		}
@@ -590,7 +591,7 @@ func TestOversizeBlobs(t *testing.T) {
 func TestContainsMulti(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -626,10 +627,10 @@ func TestContainsMulti(t *testing.T) {
 			// Read some random bytes.
 			buf := new(bytes.Buffer)
 			io.CopyN(buf, randomSrc, 100)
-			readSeeker := bytes.NewReader(buf.Bytes())
+			readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
+			d, err := digest.Compute(ctx, readSeeker)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -645,7 +646,7 @@ func TestContainsMulti(t *testing.T) {
 
 		var missingDigests []*repb.Digest
 		for i := 0; i < tc.numMissingDigests; i++ {
-			d, _ := testdigest.NewRandomDigestBuf(t, 1000)
+			d, _ := testdigest.NewRandomDigestBuf(t, ctx, 1000)
 			missingDigests = append(missingDigests, d)
 		}
 
@@ -675,7 +676,7 @@ func TestContainsMulti(t *testing.T) {
 func TestGetMulti(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -703,10 +704,10 @@ func TestGetMulti(t *testing.T) {
 			// Read some random bytes.
 			buf := new(bytes.Buffer)
 			io.CopyN(buf, randomSrc, 100)
-			readSeeker := bytes.NewReader(buf.Bytes())
+			readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
+			d, err := digest.Compute(ctx, readSeeker)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -737,7 +738,7 @@ func TestGetMulti(t *testing.T) {
 func TestEmptyRead(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
+	te := getTestEnv(t, ctx, emptyUserMap)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -769,7 +770,7 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = r.Read(nil)
+	_, err = r.Read(ctx, nil)
 	if err != io.EOF {
 		t.Fatal(err)
 	}

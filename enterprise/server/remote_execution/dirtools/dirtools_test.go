@@ -28,14 +28,14 @@ func TestDownloadTree(t *testing.T) {
 
 	childDir := &repb.Directory{
 		Files: []*repb.FileNode{
-			&repb.FileNode{
+			{
 				Name:   "fileA.txt",
 				Digest: fileADigest,
 			},
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(ctx, childDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,13 +43,13 @@ func TestDownloadTree(t *testing.T) {
 	directory := &repb.Tree{
 		Root: &repb.Directory{
 			Files: []*repb.FileNode{
-				&repb.FileNode{
+				{
 					Name:   "fileB.txt",
 					Digest: fileBDigest,
 				},
 			},
 			Directories: []*repb.DirectoryNode{
-				&repb.DirectoryNode{
+				{
 					Name:   "my-directory",
 					Digest: childDigest,
 				},
@@ -83,14 +83,14 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 
 	childDir := &repb.Directory{
 		Files: []*repb.FileNode{
-			&repb.FileNode{
+			{
 				Name:   "fileA.txt",
 				Digest: fileDigest,
 			},
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(ctx, childDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,21 +98,21 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 	directory := &repb.Tree{
 		Root: &repb.Directory{
 			Files: []*repb.FileNode{
-				&repb.FileNode{
+				{
 					Name:   "file_empty.txt",
 					Digest: emptyDigest,
 				},
-				&repb.FileNode{
+				{
 					Name:   "file_notempty.txt",
 					Digest: fileDigest,
 				},
 			},
 			Directories: []*repb.DirectoryNode{
-				&repb.DirectoryNode{
+				{
 					Name:   "my-empty-directory",
 					Digest: emptyDigest,
 				},
-				&repb.DirectoryNode{
+				{
 					Name:   "my-notempty-directory",
 					Digest: childDigest,
 				},
@@ -136,8 +136,8 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 }
 
 func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
-	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
+	env := testenv.GetTestEnv(t, ctx)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)

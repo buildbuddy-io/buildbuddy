@@ -2,8 +2,6 @@ package vfs
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +10,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/docker/go-units"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"

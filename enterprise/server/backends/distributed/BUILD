@@ -20,6 +20,8 @@ go_library(
         "//server/util/log",
         "//server/util/peerset",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
         "@org_golang_x_sync//errgroup",
     ],
 )

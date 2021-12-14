@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",
+        "//server/util/tracing/fs",
+        "//server/util/tracing/os",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
@@ -17,6 +19,7 @@ go_test(
     deps = [
         ":fileresolver",
         "//server/util/fileresolver/test_data:bundle",
+        "//server/util/tracing/fs",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -1,6 +1,7 @@
 package enterprise_testenv
 
 import (
+	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
@@ -17,8 +18,8 @@ type Options struct {
 	RedisTarget string
 }
 
-func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
-	env := testenv.GetTestEnv(t)
+func GetCustomTestEnv(t *testing.T, ctx context.Context, opts *Options) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t, ctx)
 	if opts.RedisTarget != "" {
 		healthChecker := healthcheck.NewTestingHealthChecker()
 		redisClient := redisutil.NewClient(opts.RedisTarget, healthChecker, "cache_redis")

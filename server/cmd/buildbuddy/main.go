@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -24,13 +25,14 @@ var (
 
 func main() {
 	flag.Parse()
-	version.Print()
-	configurator, err := config.NewConfigurator(*configFile)
+	ctx := context.Background()
+	version.Print(ctx)
+	configurator, err := config.NewConfigurator(ctx, *configFile)
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := libmain.GetConfiguredEnvironmentOrDie(ctx, configurator, healthChecker)
 
 	telemetryClient := telemetry.NewTelemetryClient(env)
 	telemetryClient.Start()
@@ -40,5 +42,5 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	libmain.StartAndRunServices(env) // Does not return
+	libmain.StartAndRunServices(ctx, env) // Does not return
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -15,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/golang/protobuf/ptypes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -278,7 +279,7 @@ func (c *Client) GetStdoutAndStderr(ctx context.Context, res *CommandResult) (st
 	if res.ActionResult.GetStdoutDigest() != nil {
 		d := digest.NewInstanceNameDigest(res.ActionResult.GetStdoutDigest(), res.InstanceName)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, buf)
+		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, ctxio.NoTraceCtxWriterWrapper(buf))
 		if err != nil {
 			return "", "", status.UnavailableErrorf("error retrieving stdout from CAS: %v", err)
 		}
@@ -289,7 +290,7 @@ func (c *Client) GetStdoutAndStderr(ctx context.Context, res *CommandResult) (st
 	if res.ActionResult.GetStderrDigest() != nil {
 		d := digest.NewInstanceNameDigest(res.ActionResult.GetStderrDigest(), res.InstanceName)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, buf)
+		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, ctxio.NoTraceCtxWriterWrapper(buf))
 		if err != nil {
 			return "", "", status.InternalErrorf("error retrieving stderr from CAS: %v", err)
 		}
@@ -302,15 +303,15 @@ func (c *Client) GetStdoutAndStderr(ctx context.Context, res *CommandResult) (st
 func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env, res *CommandResult, rootDir string) error {
 	for _, out := range res.ActionResult.OutputFiles {
 		path := filepath.Join(rootDir, out.GetPath())
-		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
+		if err := os.MkdirAll(ctx, filepath.Dir(path), 0777); err != nil {
 			return err
 		}
 		d := digest.NewInstanceNameDigest(out.GetDigest(), res.InstanceName)
-		f, err := os.Create(path)
+		f, err := os.Create(ctx, path)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer f.Close(ctx)
 		if err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, f); err != nil {
 			return err
 		}
@@ -318,7 +319,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 
 	for _, dir := range res.ActionResult.OutputDirectories {
 		path := filepath.Join(rootDir, dir.GetPath())
-		if err := os.MkdirAll(path, 0777); err != nil {
+		if err := os.MkdirAll(ctx, path, 0777); err != nil {
 			return err
 		}
 		treeDigest := digest.NewInstanceNameDigest(dir.GetTreeDigest(), res.InstanceName)

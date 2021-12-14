@@ -18,6 +18,7 @@ go_library(
         "//server/util/devnull",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )
@@ -36,6 +37,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",

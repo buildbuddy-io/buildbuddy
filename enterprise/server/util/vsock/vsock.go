@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -41,11 +41,11 @@ const (
 // GetContextID returns ths next available vsock context ID.
 // Inspired by https://github.com/firecracker-microvm/firecracker-containerd/
 func GetContextID(ctx context.Context) (uint32, error) {
-	file, err := os.OpenFile("/dev/vhost-vsock", syscall.O_RDWR, 0600)
+	file, err := os.OpenFile(ctx, "/dev/vhost-vsock", syscall.O_RDWR, 0600)
 	if err != nil {
 		return 0, status.FailedPreconditionErrorf("failed to open vsock device: %s", err)
 	}
-	defer file.Close()
+	defer file.Close(ctx)
 
 	for contextID := minCID; contextID < maxCID; contextID++ {
 		select {

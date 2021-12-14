@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,6 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/golang/protobuf/proto"
 	"github.com/jhump/protoreflect/desc"
 	"google.golang.org/grpc/metadata"
@@ -121,8 +122,8 @@ func writeBlobsForReading() []*repb.Digest {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	digests := make([]*repb.Digest, 0)
 	for i := 0; uint(i) < *concurrency; i++ {
-		d, buf := newRandomDigestBuf(randomBlobSize())
-		_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, bytes.NewReader(buf))
+		d, buf := newRandomDigestBuf(ctx, randomBlobSize())
+		_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, ctxio.NoTraceCtxReadSeekerWrapper(bytes.NewReader(buf)))
 		if err != nil {
 			log.Fatalf("Error pre-writing blob %q: %s", d.GetHash(), err)
 		}
@@ -131,23 +132,23 @@ func writeBlobsForReading() []*repb.Digest {
 	return digests
 }
 
-func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
+func newRandomDigestBuf(ctx context.Context, sizeBytes int64) (*repb.Digest, []byte) {
 	buf := new(bytes.Buffer)
 	mu.Lock()
 	io.CopyN(buf, randomSrc, sizeBytes)
 	mu.Unlock()
-	readSeeker := bytes.NewReader(buf.Bytes())
+	readSeeker := ctxio.NoTraceCtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 	// Compute a digest for the random bytes.
-	d, err := digest.Compute(readSeeker)
+	d, err := digest.Compute(ctx, readSeeker)
 	if err != nil {
 		log.Fatalf("Error computing digest: %s", err)
 	}
 	return d, buf.Bytes()
 }
 
-func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
-	d, buf := newRandomDigestBuf(randomBlobSize())
+func writeDataFunc(ctx context.Context, mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+	d, buf := newRandomDigestBuf(ctx, randomBlobSize())
 	resourceName, err := digest.UploadResourceName(d, *instanceName)
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
@@ -181,12 +182,12 @@ func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	return binData
 }
 
-func dataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+func dataFunc(ctx context.Context, mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	switch *method {
 	case "google.bytestream.ByteStream/Read":
 		return readDataFunc(mtd, cd)
 	case "google.bytestream.ByteStream/Write":
-		return writeDataFunc(mtd, cd)
+		return writeDataFunc(ctx, mtd, cd)
 	default:
 		log.Fatalf("Unknown bytestream method: %q", *method)
 	}
@@ -222,6 +223,7 @@ func main() {
 	if *apiKey != "" {
 		md["x-buildbuddy-api-key"] = *apiKey
 	}
+	ctx := context.Background()
 	log.Printf("Running a %s test @ %d r/sec, concurrency: %d, %s", *testDuration, *rps, *concurrency, blobSizeDesc)
 	report, err := runner.Run(
 		*method,
@@ -231,7 +233,11 @@ func main() {
 		runner.WithRunDuration(*testDuration),
 		runner.WithProtoset(protosetFile),
 		runner.WithInsecure(!*ssl),
-		runner.WithBinaryDataFunc(dataFunc),
+		runner.WithBinaryDataFunc(
+			func(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+				return dataFunc(ctx, mtd, cd)
+			},
+		),
 		runner.WithMetadata(md),
 	)
 
@@ -246,12 +252,12 @@ func main() {
 	printer.Print("summary")
 
 	if *htmlOutputFile != "" {
-		f, err := os.Create(*htmlOutputFile)
+		f, err := os.Create(ctx, *htmlOutputFile)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		defer f.Close()
-		printer.Out = f
+		defer f.Close(ctx)
+		printer.Out = ctxio.WriterWrapper(ctx, f)
 		if err := printer.Print("html"); err != nil {
 			log.Fatal(err.Error())
 		}

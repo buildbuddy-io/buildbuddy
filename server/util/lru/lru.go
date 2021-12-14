@@ -2,6 +2,7 @@ package lru
 
 import (
 	"container/list"
+	"context"
 	"errors"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -13,7 +14,7 @@ import (
 )
 
 // EvictedCallback is used to get a callback when a cache Entry is evicted
-type EvictedCallback func(value interface{})
+type EvictedCallback func(ctx context.Context, value interface{})
 type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
@@ -88,11 +89,11 @@ func (c *LRU) Metrics() string {
 }
 
 // Purge is used to completely clear the cache.
-func (c *LRU) Purge() {
+func (c *LRU) Purge(ctx context.Context) {
 	for k, vals := range c.items {
 		for _, v := range vals {
 			if c.onEvict != nil {
-				c.onEvict(v.Value.(*Entry).value)
+				c.onEvict(ctx, v.Value.(*Entry).value)
 			}
 		}
 		delete(c.items, k)
@@ -101,7 +102,7 @@ func (c *LRU) Purge() {
 }
 
 // Add adds a value to the cache. Returns true if the key was added.
-func (c *LRU) Add(key, value interface{}) bool {
+func (c *LRU) Add(ctx context.Context, key, value interface{}) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
@@ -117,13 +118,13 @@ func (c *LRU) Add(key, value interface{}) bool {
 	c.addItem(pk, ck, value, true /*=front*/)
 
 	for c.currentSize > c.maxSize {
-		c.removeOldest()
+		c.removeOldest(ctx)
 	}
 	return true
 }
 
 // PushBack adds a value to the back of the cache. Returns true if the key was added.
-func (c *LRU) PushBack(key, value interface{}) bool {
+func (c *LRU) PushBack(ctx context.Context, key, value interface{}) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
@@ -138,7 +139,7 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	c.addItem(pk, ck, value, false /*=front*/)
 
 	for c.currentSize > c.maxSize {
-		c.removeOldest()
+		c.removeOldest(ctx)
 		return false
 	}
 	return true
@@ -192,23 +193,23 @@ func (c *LRU) Peek(key interface{}) (interface{}, bool) {
 
 // Remove removes the provided key from the cache, returning if the
 // key was contained.
-func (c *LRU) Remove(key interface{}) (present bool) {
+func (c *LRU) Remove(ctx context.Context, key interface{}) (present bool) {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.removeElement(ent)
+		c.removeElement(ctx, ent)
 		return true
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *LRU) RemoveOldest() (interface{}, bool) {
+func (c *LRU) RemoveOldest(ctx context.Context) (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ctx, ent)
 		kv := ent.Value.(*Entry)
 		return kv.value, true
 	}
@@ -229,10 +230,10 @@ func (c *LRU) MaxSize() int64 {
 }
 
 // removeOldest removes the oldest item from the cache.
-func (c *LRU) removeOldest() {
+func (c *LRU) removeOldest(ctx context.Context) {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ctx, ent)
 	}
 }
 
@@ -288,12 +289,12 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 }
 
 // removeElement is used to remove a given list element from the cache
-func (c *LRU) removeElement(e *list.Element) {
+func (c *LRU) removeElement(ctx context.Context, e *list.Element) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
 	c.removeItem(kv.key, kv.conflictKey)
 	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.value)
+		c.onEvict(ctx, kv.value)
 	}
 }

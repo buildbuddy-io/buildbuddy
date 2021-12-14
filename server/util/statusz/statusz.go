@@ -4,13 +4,13 @@ import (
 	"context"
 	"html/template"
 	"net/http"
-	"os"
 	"os/user"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 )
 
@@ -77,8 +77,9 @@ var (
 )
 
 func init() {
+	ctx := context.Background()
 	startTime = time.Now()
-	if h, err := os.Hostname(); err == nil {
+	if h, err := os.Hostname(ctx); err == nil {
 		hostname = h
 	}
 	if u, err := user.Current(); err == nil {
@@ -166,7 +167,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Hostname:    hostname,
 		StartTime:   startTime,
 		CurrentTime: time.Now(),
-		AppVersion:  version.AppVersion(),
+		AppVersion:  version.AppVersion(ctx),
 		GoVersion:   version.GoVersion(),
 		Sections:    orderedSections,
 	}

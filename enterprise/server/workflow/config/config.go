@@ -1,11 +1,11 @@
 package config
 
 import (
+	"context"
 	"fmt"
-	"io"
-	"io/ioutil"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"gopkg.in/yaml.v2"
 )
 
@@ -44,8 +44,8 @@ type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
 }
 
-func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
-	byt, err := ioutil.ReadAll(r)
+func NewConfig(ctx context.Context, r ctxio.Reader) (*BuildBuddyConfig, error) {
+	byt, err := ctxio.ReadAll(ctx, r)
 	if err != nil {
 		return nil, err
 	}

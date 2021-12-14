@@ -1,6 +1,7 @@
 package filecache_test
 
 import (
+	"context"
 	"io/fs"
 	"io/ioutil"
 	"log"
@@ -35,8 +36,9 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 
 func Test_Filecache(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
+	ctx := context.Background()
 	// Create filecache
-	fc, err := filecache.NewFileCache(fcDir, 100000)
+	fc, err := filecache.NewFileCache(ctx, fcDir, 100000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,37 +49,37 @@ func Test_Filecache(t *testing.T) {
 
 	// Add a file and make sure we can hardlink it
 	node := nodeFromString("my/fun/file", false)
-	fc.AddFile(node, filepath.Join(baseDir, "my/fun/file"))
-	linked := fc.FastLinkFile(node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
+	fc.AddFile(ctx, node, filepath.Join(baseDir, "my/fun/file"))
+	linked := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assert.True(t, linked, "existing file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-file"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-file"), "my/fun/file")
 
 	// Make sure that when we try to hardlink a non-existent file, it doesn't link
 	nonexistentNode := nodeFromString("my/fun/nonexistentfile", false)
-	notLinked := fc.FastLinkFile(nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
+	notLinked := fc.FastLinkFile(ctx, nonexistentNode, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
 	assert.False(t, notLinked, "nonexistet file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-nonexistentfile"))
 
 	// Make sure that when we try to link the existing file as an executable file, it doesn't link
 	executableNode := nodeFromString("my/fun/file", true)
-	notLinkedExecutable := fc.FastLinkFile(executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	notLinkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assert.False(t, notLinkedExecutable, "executable file should not link")
 	assert.NoFileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 
 	// Replace the original file with an executable one
 	os.Remove(filepath.Join(baseDir, "my/fun/file"))
 	writeFile(t, baseDir, "my/fun/file", true)
-	fc.AddFile(executableNode, filepath.Join(baseDir, "my/fun/file"))
+	fc.AddFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/file"))
 
 	// Make sure the link now works
-	linkedExecutable := fc.FastLinkFile(executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
+	linkedExecutable := fc.FastLinkFile(ctx, executableNode, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assert.True(t, linkedExecutable, "executable file should link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/fastlinked-executablefile"), "my/fun/file-executable")
 
 	// Make sure the original link still works
-	secondLink := fc.FastLinkFile(node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
+	secondLink := fc.FastLinkFile(ctx, node, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")

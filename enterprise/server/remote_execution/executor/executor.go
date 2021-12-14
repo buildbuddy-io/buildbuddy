@@ -22,7 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -69,19 +69,19 @@ type Options struct {
 	NameOverride string
 }
 
-func NewExecutor(env environment.Env, id string, options *Options) (*Executor, error) {
+func NewExecutor(ctx context.Context, env environment.Env, id string, options *Options) (*Executor, error) {
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
 	}
-	if err := disk.EnsureDirectoryExists(executorConfig.GetRootDirectory()); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, executorConfig.GetRootDirectory()); err != nil {
 		return nil, err
 	}
 	name := options.NameOverride
 	if name == "" {
 		name = base64.StdEncoding.EncodeToString(uuid.NodeID())
 	}
-	runnerPool, err := runner.NewPool(env)
+	runnerPool, err := runner.NewPool(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +171,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		return false, status.FailedPreconditionError("No connection to cache backend.")
 	}
 
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx)
+	defer spn.End()
 
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
@@ -255,7 +255,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		if err != nil {
 			return finishWithErrFn(err)
 		}
-		if err := r.VFSServer.Prepare(p); err != nil {
+		if err := r.VFSServer.Prepare(ctx, p); err != nil {
 			return finishWithErrFn(err)
 		}
 	}
@@ -275,7 +275,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			return finishWithErrFn(err)
 		}
 		if r.PlatformProperties.WorkflowID != "" {
-			if err := r.Workspace.AddCIRunner(); err != nil {
+			if err := r.Workspace.AddCIRunner(ctx); err != nil {
 				return finishWithErrFn(err)
 			}
 		}

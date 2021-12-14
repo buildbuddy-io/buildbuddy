@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -57,23 +57,6 @@ func (o *LoadSnapshotOptions) Digest() *repb.Digest {
 	}
 }
 
-func hardlinkFilesIntoDirectory(targetDir string, files ...string) error {
-	for _, f := range files {
-		fileName := filepath.Base(f)
-		stat, err := os.Stat(f)
-		if err != nil {
-			return err
-		}
-		if stat.IsDir() {
-			return status.FailedPreconditionErrorf("%q was dir, not file", f)
-		}
-		if err := os.Link(f, filepath.Join(targetDir, fileName)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	files := []string{
 		snapOpts.MemSnapshotPath,
@@ -110,7 +93,7 @@ func New(ctx context.Context, env environment.Env, workingDirectory, instanceNam
 	return l, nil
 }
 
-func (l *Loader) unpackManifest() error {
+func (l *Loader) unpackManifest(ctx context.Context) error {
 	if l.env.GetFileCache() == nil {
 		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
 	}
@@ -118,17 +101,17 @@ func (l *Loader) unpackManifest() error {
 		Hash:      hash.String(l.snapshotDigest.GetHash() + ManifestFileName),
 		SizeBytes: int64(101),
 	}
-	tmpDir, err := os.MkdirTemp(l.workingDirectory, "manifest-dir-*")
+	tmpDir, err := os.MkdirTemp(ctx, l.workingDirectory, "manifest-dir-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(ctx, tmpDir)
 
 	manifestPath := filepath.Join(tmpDir, ManifestFileName)
-	if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(manifestDigest), manifestPath) {
+	if !l.env.GetFileCache().FastLinkFile(ctx, fileNodeFromDigest(manifestDigest), manifestPath) {
 		return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 	}
-	buf, err := os.ReadFile(manifestPath)
+	buf, err := os.ReadFile(ctx, manifestPath)
 	if err != nil {
 		return err
 	}
@@ -138,8 +121,8 @@ func (l *Loader) unpackManifest() error {
 
 // GetConfigurationData returns the configuration data associated with a
 // snapshot.
-func (l *Loader) GetConfigurationData() ([]byte, error) {
-	if err := l.unpackManifest(); err != nil {
+func (l *Loader) GetConfigurationData(ctx context.Context) ([]byte, error) {
+	if err := l.unpackManifest(ctx); err != nil {
 		return nil, err
 	}
 	return l.manifest.ConfigurationData, nil
@@ -147,14 +130,14 @@ func (l *Loader) GetConfigurationData() ([]byte, error) {
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
-func (l *Loader) UnpackSnapshot(outputDirectory string) error {
+func (l *Loader) UnpackSnapshot(ctx context.Context, outputDirectory string) error {
 	if l.manifest == nil {
-		if err := l.unpackManifest(); err != nil {
+		if err := l.unpackManifest(ctx); err != nil {
 			return err
 		}
 	}
 	for filename, dk := range l.manifest.CachedFiles {
-		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
+		if !l.env.GetFileCache().FastLinkFile(ctx, fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
 			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
 		}
 	}
@@ -186,7 +169,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 	// Put the files from the snapshot into the filecache and record their
 	// names and digests in the manifest so they can be unpacked later.
 	for _, f := range extractFiles(snapOpts) {
-		info, err := os.Stat(f)
+		info, err := os.Stat(ctx, f)
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +178,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 			Hash:      hash.String(ad.GetHash() + filename),
 			SizeBytes: int64(info.Size()),
 		}
-		env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
+		env.GetFileCache().AddFile(ctx, fileNodeFromDigest(fileNameDigest), f)
 		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
 	}
 
@@ -205,14 +188,14 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
+	if err := os.WriteFile(ctx, manifestPath, b, 0644); err != nil {
 		return nil, err
 	}
 	manifestDigest := &repb.Digest{
 		Hash:      hash.String(ad.GetHash() + ManifestFileName),
 		SizeBytes: int64(101),
 	}
-	env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
+	env.GetFileCache().AddFile(ctx, fileNodeFromDigest(manifestDigest), manifestPath)
 	return ad, nil
 }
 

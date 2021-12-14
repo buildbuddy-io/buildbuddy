@@ -4,10 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,6 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -60,7 +60,7 @@ type CASLazyFileProvider struct {
 }
 
 func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
-	_, dirMap, err := dirtools.DirMapFromTree(inputTree)
+	_, dirMap, err := dirtools.DirMapFromTree(ctx, inputTree)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func New(env environment.Env, workspacePath string) *Server {
 // computeLayout computes the tree representation of the workspace by iterating over existing files in the workspace
 // and combining them with the lazy files in the `lazyFiles` map. The function returns a new lazy files map that does
 // not include files that already present in the workspace.
-func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb.DirectoryEntry, map[string]*LazyFile, error) {
+func computeLayout(ctx context.Context, workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb.DirectoryEntry, map[string]*LazyFile, error) {
 	lazyFilesByDir := make(map[string]map[string]*LazyFile)
 	for path, lazyFile := range lazyFiles {
 		dir := filepath.Dir(path)
@@ -172,16 +172,16 @@ func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb
 		lazyFilesByDir[dir][filepath.Base(path)] = lazyFile
 	}
 
-	var walkDir func(path string, parent *vfspb.DirectoryEntry) error
-	walkDir = func(relPath string, parent *vfspb.DirectoryEntry) error {
+	var walkDir func(ctx context.Context, path string, parent *vfspb.DirectoryEntry) error
+	walkDir = func(ctx context.Context, relPath string, parent *vfspb.DirectoryEntry) error {
 		path := filepath.Join(workspacePath, relPath)
-		children, err := os.ReadDir(path)
+		children, err := os.ReadDir(ctx, path)
 		if err != nil {
 			return err
 		}
 		lazyFilesInDir := lazyFilesByDir[relPath]
 		for _, child := range children {
-			childInfo, err := child.Info()
+			childInfo, err := child.Info(ctx)
 
 			if child.Type()&os.ModeSocket != 0 {
 				continue
@@ -213,7 +213,7 @@ func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb
 			}
 
 			if child.Type()&os.ModeSymlink != 0 {
-				target, err := os.Readlink(filepath.Join(path, child.Name()))
+				target, err := os.Readlink(ctx, filepath.Join(path, child.Name()))
 				if err != nil {
 					return err
 				}
@@ -249,7 +249,7 @@ func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb
 				},
 			}
 			parent.Directories = append(parent.Directories, de)
-			if err := walkDir(filepath.Join(relPath, child.Name()), de); err != nil {
+			if err := walkDir(ctx, filepath.Join(relPath, child.Name()), de); err != nil {
 				return err
 			}
 		}
@@ -270,7 +270,7 @@ func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb
 	}
 
 	root := &vfspb.DirectoryEntry{}
-	err := walkDir("", root)
+	err := walkDir(ctx, "", root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -294,7 +294,7 @@ func (p *Server) GetLayout(ctx context.Context, request *vfspb.GetLayoutRequest)
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
 // The list of lazy files is retrieved from the provider during preparation.
-func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
+func (p *Server) Prepare(ctx context.Context, lazyFileProvider LazyFileProvider) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lazyFileProvider = lazyFileProvider
@@ -309,12 +309,12 @@ func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
 
 	for dir := range dirsToMake {
 		dir := filepath.Join(p.workspacePath, dir)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(ctx, dir, 0755); err != nil {
 			return err
 		}
 	}
 
-	layoutRoot, updatedLazyFiles, err := computeLayout(p.workspacePath, lazyFiles)
+	layoutRoot, updatedLazyFiles, err := computeLayout(ctx, p.workspacePath, lazyFiles)
 	if err != nil {
 		return err
 	}
@@ -349,9 +349,9 @@ func syscallErrStatus(sysErr error) error {
 	return s.Err()
 }
 
-func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
+func (h *fileHandle) open(ctx context.Context, fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
 	flags := int(req.GetFlags())
-	f, err := os.OpenFile(fullPath, flags, os.FileMode(req.GetMode()))
+	f, err := os.OpenFile(ctx, fullPath, flags, os.FileMode(req.GetMode()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -363,10 +363,10 @@ func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenR
 	rsp := &vfspb.OpenResponse{}
 
 	if flags&(os.O_WRONLY|os.O_RDWR) == 0 {
-		s, err := f.Stat()
+		s, err := f.Stat(ctx)
 		if err == nil && s.Size() <= smallFileThresholdBytes {
 			buf := make([]byte, s.Size())
-			n, err := f.Read(buf)
+			n, err := f.Read(ctx, buf)
 			if err == nil && int64(n) == s.Size() {
 				rsp.Data = buf
 			}
@@ -376,29 +376,29 @@ func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenR
 	return rsp, nil
 }
 
-func (h *fileHandle) read(req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
+func (h *fileHandle) read(ctx context.Context, req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
 	h.mu.Lock()
 	f := h.f
 	h.mu.Unlock()
 
 	buf := make([]byte, req.GetNumBytes())
-	n, err := f.ReadAt(buf, req.GetOffset())
+	n, err := f.ReadAt(ctx, buf, req.GetOffset())
 	if err != nil && err != io.EOF {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.ReadResponse{Data: buf[:n]}, nil
 }
 
-func (h *fileHandle) write(req *vfspb.WriteRequest) (*vfspb.WriteResponse, error) {
+func (h *fileHandle) write(ctx context.Context, req *vfspb.WriteRequest) (*vfspb.WriteResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	var n int
 	var err error
 	if int(h.openFlags)&os.O_APPEND != 0 {
-		n, err = h.f.Write(req.GetData())
+		n, err = h.f.Write(ctx, req.GetData())
 	} else {
-		n, err = h.f.WriteAt(req.GetData(), req.GetOffset())
+		n, err = h.f.WriteAt(ctx, req.GetData(), req.GetOffset())
 	}
 
 	if err != nil {
@@ -407,11 +407,11 @@ func (h *fileHandle) write(req *vfspb.WriteRequest) (*vfspb.WriteResponse, error
 	return &vfspb.WriteResponse{NumBytes: uint32(n)}, nil
 }
 
-func (h *fileHandle) fsync(req *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
+func (h *fileHandle) fsync(ctx context.Context, req *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if err := h.f.Sync(); err != nil {
+	if err := h.f.Sync(ctx); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.FsyncResponse{}, nil
@@ -434,11 +434,11 @@ func (h *fileHandle) flush(req *vfspb.FlushRequest) (*vfspb.FlushResponse, error
 	return &vfspb.FlushResponse{}, nil
 }
 
-func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse, error) {
+func (h *fileHandle) release(ctx context.Context, req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if err := h.f.Close(); err != nil {
+	if err := h.f.Close(ctx); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	h.f = nil
@@ -465,7 +465,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	}
 
 	fh := &fileHandle{}
-	rsp, err := fh.open(fullPath, request)
+	rsp, err := fh.open(ctx, fullPath, request)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +502,7 @@ func (p *Server) Read(ctx context.Context, request *vfspb.ReadRequest) (*vfspb.R
 	if err != nil {
 		return nil, err
 	}
-	return fh.read(request)
+	return fh.read(ctx, request)
 }
 
 func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb.WriteResponse, error) {
@@ -510,7 +510,7 @@ func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb
 	if err != nil {
 		return nil, err
 	}
-	return fh.write(request)
+	return fh.write(ctx, request)
 }
 
 func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
@@ -518,7 +518,7 @@ func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb
 	if err != nil {
 		return nil, err
 	}
-	return fh.fsync(request)
+	return fh.fsync(ctx, request)
 }
 
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
@@ -534,15 +534,15 @@ func (p *Server) Release(ctx context.Context, request *vfspb.ReleaseRequest) (*v
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := fh.release(request)
+	rsp, err := fh.release(ctx, request)
 	p.mu.Lock()
 	delete(p.fileHandles, request.GetHandleId())
 	p.mu.Unlock()
 	return rsp, err
 }
 
-func (p *Server) getAttr(fullPath string) (*vfspb.Attrs, error) {
-	fi, err := os.Stat(fullPath)
+func (p *Server) getAttr(ctx context.Context, fullPath string) (*vfspb.Attrs, error) {
+	fi, err := os.Stat(ctx, fullPath)
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -558,7 +558,7 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 		return nil, err
 	}
 
-	attrs, err := p.getAttr(fullPath)
+	attrs, err := p.getAttr(ctx, fullPath)
 	if err != nil {
 		return nil, err
 	}
@@ -572,18 +572,18 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 	}
 
 	if request.SetPerms != nil {
-		if err := os.Chmod(fullPath, os.FileMode(request.SetPerms.Perms)); err != nil {
+		if err := os.Chmod(ctx, fullPath, os.FileMode(request.SetPerms.Perms)); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
 
 	if request.SetSize != nil {
-		if err := os.Truncate(fullPath, request.SetSize.GetSize()); err != nil {
+		if err := os.Truncate(ctx, fullPath, request.SetSize.GetSize()); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
 
-	attrs, err := p.getAttr(fullPath)
+	attrs, err := p.getAttr(ctx, fullPath)
 	if err != nil {
 		return nil, err
 	}
@@ -600,13 +600,13 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 		return nil, err
 	}
 
-	st, err := os.Lstat(oldFullPath)
+	st, err := os.Lstat(ctx, oldFullPath)
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	// If this is a symlink, make sure that moving it does not make it point outside the workspace.
 	if st.Mode()&os.ModeSymlink != 0 {
-		symlinkTarget, err := os.Readlink(oldFullPath)
+		symlinkTarget, err := os.Readlink(ctx, oldFullPath)
 		if err != nil {
 			return nil, syscallErrStatus(err)
 		}
@@ -618,7 +618,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 		}
 	}
 
-	if err := os.Rename(oldFullPath, newFullPath); err != nil {
+	if err := os.Rename(ctx, oldFullPath, newFullPath); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 
@@ -630,7 +630,7 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(fullPath, os.FileMode(request.GetPerms())); err != nil {
+	if err := os.Mkdir(ctx, fullPath, os.FileMode(request.GetPerms())); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.MkdirResponse{}, nil
@@ -641,7 +641,7 @@ func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Remove(fullPath); err != nil {
+	if err := os.Remove(ctx, fullPath); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.RmdirResponse{}, nil
@@ -669,7 +669,7 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 		return nil, status.PermissionDeniedError("symlink target outside of workspace")
 	}
 
-	if err := os.Symlink(target, fullPath); err != nil {
+	if err := os.Symlink(ctx, target, fullPath); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.SymlinkResponse{}, nil
@@ -680,7 +680,7 @@ func (p *Server) Unlink(ctx context.Context, request *vfspb.UnlinkRequest) (*vfs
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Remove(fullPath); err != nil {
+	if err := os.Remove(ctx, fullPath); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.UnlinkResponse{}, nil
@@ -695,10 +695,10 @@ func (p *Server) Start(lis net.Listener) error {
 	return nil
 }
 
-func (p *Server) Stop() {
+func (p *Server) Stop(ctx context.Context) {
 	p.mu.Lock()
 	for _, fh := range p.fileHandles {
-		_, _ = fh.release(&vfspb.ReleaseRequest{})
+		_, _ = fh.release(ctx, &vfspb.ReleaseRequest{})
 	}
 	p.mu.Unlock()
 	p.server.Stop()

@@ -12,6 +12,7 @@ go_library(
         "//proto:vmvfs_go_proto",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/os",
         "@com_github_mdlayher_vsock//:vsock",
         "@org_golang_google_grpc//:go_default_library",
     ],

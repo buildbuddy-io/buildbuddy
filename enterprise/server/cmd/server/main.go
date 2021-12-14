@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"time"
 
@@ -49,6 +48,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/api/option"
 
@@ -64,7 +64,7 @@ var (
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
-func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+func configureFilesystemsOrDie(ctx context.Context, realEnv *real_environment.RealEnv) {
 	// Ensure we always override the app filesystem because the enterprise
 	// binary bundles a different app than the OS one does.
 	// The static filesystem is the same, however, so we set it if the flag
@@ -88,14 +88,14 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 			realEnv.SetAppFilesystem(appFS)
 		}
 	}
-	bundleFS, err := bundle.Get()
+	bundleFS, err := bundle.Get(ctx)
 	if err != nil {
 		log.Fatalf("Error getting bundle FS: %s", err)
 	}
 	realEnv.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 	if realEnv.GetAppFilesystem() == nil {
 		if realEnv.GetAppFilesystem() == nil {
-			appFS, err := fs.Sub(bundleFS, "app")
+			appFS, err := fs.Sub(ctx, bundleFS, "app")
 			if err != nil {
 				log.Fatalf("Error getting app FS from bundle: %s", err)
 			}
@@ -111,7 +111,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // which import from libmain.go.
 func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
-	configureFilesystemsOrDie(env)
+	configureFilesystemsOrDie(ctx, env)
 
 	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
 	if env.GetConfigurator().GetSelfAuthEnabled() {
@@ -158,7 +158,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		bitbucket.NewProvider(),
 	})
 
-	runnerService, err := hostedrunner.New(env)
+	runnerService, err := hostedrunner.New(ctx, env)
 	if err != nil {
 		log.Fatalf("Error setting up runner: %s", err)
 	}
@@ -170,14 +170,14 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 func main() {
 	flag.Parse()
 	rootContext := context.Background()
-	version.Print()
+	version.Print(rootContext)
 
-	configurator, err := config.NewConfigurator(*configFile)
+	configurator, err := config.NewConfigurator(rootContext, *configFile)
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	realEnv := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	realEnv := libmain.GetConfiguredEnvironmentOrDie(rootContext, configurator, healthChecker)
 	if err := tracing.Configure(configurator, healthChecker); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
@@ -318,7 +318,7 @@ func main() {
 		}
 		realEnv.SetRemoteExecutionService(executionServer)
 
-		schedulerServer, err := scheduler_server.NewSchedulerServer(realEnv)
+		schedulerServer, err := scheduler_server.NewSchedulerServer(rootContext, realEnv)
 		if err != nil {
 			log.Fatalf("Error configuring scheduler server: %v", err)
 		}
@@ -357,5 +357,5 @@ func main() {
 		mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
 		mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
 	}
-	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
+	libmain.StartAndRunServices(rootContext, realEnv) // Returns after graceful shutdown
 }

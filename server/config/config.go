@@ -1,15 +1,16 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -437,20 +438,20 @@ func init() {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(&sharedGeneralConfig).Elem())
 }
 
-func readConfig(fullConfigPath string) (*generalConfig, error) {
+func readConfig(ctx context.Context, fullConfigPath string) (*generalConfig, error) {
 	if fullConfigPath == "" {
 		return &sharedGeneralConfig, nil
 	}
 	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
 
-	_, err := os.Stat(fullConfigPath)
+	_, err := os.Stat(ctx, fullConfigPath)
 
 	// If the file does not exist then we are SOL.
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
 	}
 
-	fileBytes, err := os.ReadFile(fullConfigPath)
+	fileBytes, err := os.ReadFile(ctx, fullConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
@@ -478,8 +479,8 @@ type Configurator struct {
 	gc *generalConfig
 }
 
-func NewConfigurator(configFilePath string) (*Configurator, error) {
-	conf, err := readConfig(configFilePath)
+func NewConfigurator(ctx context.Context, configFilePath string) (*Configurator, error) {
+	conf, err := readConfig(ctx, configFilePath)
 	if err != nil {
 		return nil, err
 	}

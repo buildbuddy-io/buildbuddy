@@ -1,6 +1,7 @@
 package platform_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		}}
 
 		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
-		env := testenv.GetTestEnv(t)
+		env := testenv.GetTestEnv(t, context.Background())
 		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
@@ -69,7 +70,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		}}
 
 		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
-		env := testenv.GetTestEnv(t)
+		env := testenv.GetTestEnv(t, context.Background())
 		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
@@ -329,7 +330,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		execProps := bare
 		execProps.DefaultXCodeVersion = testCase.defaultXCodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
-		env := testenv.GetTestEnv(t)
+		env := testenv.GetTestEnv(t, context.Background())
 		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, execProps, platformProps, command)
 		require.NoError(t, err)

@@ -13,6 +13,9 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/fs",
+        "//server/util/tracing/os",
         "@com_github_google_uuid//:uuid",
     ],
 )

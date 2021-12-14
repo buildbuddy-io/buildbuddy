@@ -131,16 +131,19 @@ func TestGetLogAuth(t *testing.T) {
 }
 
 func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context) {
-	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(userMap)
-	te.SetAuthenticator(ta)
 	if user == "" {
-		return te, context.Background()
+		ctx := context.Background()
+		te := testenv.GetTestEnv(t, ctx)
+		te.SetAuthenticator(ta)
+		return te, ctx
 	}
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), user)
 	if err != nil {
 		t.Fatal(err)
 	}
+	te := testenv.GetTestEnv(t, ctx)
+	te.SetAuthenticator(ta)
 	return te, ctx
 }
 

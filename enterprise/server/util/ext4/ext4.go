@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 )
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
@@ -69,13 +69,13 @@ func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile string) 
 
 // isDirEmpty returns a bool indicating if a directory contains no files, or
 // an error.
-func isDirEmpty(dir string) (bool, error) {
-	f, err := os.Open(dir)
+func isDirEmpty(ctx context.Context, dir string) (bool, error) {
+	f, err := os.Open(ctx, dir)
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
-	_, err = f.Readdir(1)
+	defer f.Close(ctx)
+	_, err = f.Readdir(ctx, 1)
 	if err == io.EOF {
 		return true, nil
 	}
@@ -84,7 +84,7 @@ func isDirEmpty(dir string) (bool, error) {
 
 // ImageToDirectory unpacks an ext4 image into outputDir, which must be empty.
 func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
-	empty, err := isDirEmpty(outputDir)
+	empty, err := isDirEmpty(ctx, outputDir)
 	if err != nil {
 		return err
 	}

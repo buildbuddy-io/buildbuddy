@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/util/status",
+        "//server/util/tracing/filepath",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

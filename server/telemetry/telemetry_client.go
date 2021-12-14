@@ -4,8 +4,6 @@ import (
 	"context"
 	"flag"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/google/uuid"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -102,7 +102,7 @@ func (t *TelemetryClient) logTelemetryData() {
 		RecordedAtUsec:   time.Now().UnixMicro(),
 		AppVersion:       t.version,
 		AppUrl:           t.env.GetConfigurator().GetAppBuildBuddyURL(),
-		Hostname:         getHostname(),
+		Hostname:         getHostname(ctx),
 		TelemetryStat:    &telpb.TelemetryStat{},
 		TelemetryFeature: getFeatures(t.env),
 	}
@@ -156,7 +156,7 @@ func getAppVersion() string {
 
 func getInstallationUUID(env environment.Env) string {
 	ctx := context.Background()
-	store, err := blobstore.GetConfiguredBlobstore(env.GetConfigurator())
+	store, err := blobstore.GetConfiguredBlobstore(ctx, env.GetConfigurator())
 	if err != nil {
 		log.Debugf("Error getting blobstore: %s", err)
 		return unknownFieldValue
@@ -210,8 +210,8 @@ func getLogUUID() string {
 	return logUUID.String()
 }
 
-func getHostname() string {
-	hostname, err := os.Hostname()
+func getHostname(ctx context.Context) string {
+	hostname, err := os.Hostname(ctx)
 	if err != nil {
 		log.Debugf("Error retrieving hostname: %s", err)
 		return unknownFieldValue

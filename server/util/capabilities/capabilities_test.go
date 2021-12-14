@@ -19,8 +19,8 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func getTestEnv(t *testing.T, ctx context.Context, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
@@ -60,9 +60,9 @@ func TestFromInt_MultipleCapabilities(t *testing.T) {
 }
 
 func TestIsGranted_AnonymousUsageDisabled_AnonymousUser_False(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	flags.Set(t, "auth.enable_anonymous_usage", "false")
 	anonCtx := context.Background()
+	te := getTestEnv(t, anonCtx, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", "false")
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -71,9 +71,9 @@ func TestIsGranted_AnonymousUsageDisabled_AnonymousUser_False(t *testing.T) {
 }
 
 func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	anonCtx := context.Background()
+	te := getTestEnv(t, anonCtx, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", "true")
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -82,9 +82,9 @@ func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 }
 
 func TestIsGranted_NullAuthenticator(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	anonCtx := context.Background()
+	te := getTestEnv(t, anonCtx, emptyUserMap)
+	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -93,9 +93,9 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 }
 
 func TestIsGranted_NilAuthenticator(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(nil)
 	anonCtx := context.Background()
+	te := getTestEnv(t, anonCtx, emptyUserMap)
+	te.SetAuthenticator(nil)
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -109,9 +109,9 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 	}
-	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	flags.Set(t, "auth.enable_anonymous_usage", "false")
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+	te := getTestEnv(t, authCtx, map[string]interfaces.UserInfo{user.UserID: user})
+	flags.Set(t, "auth.enable_anonymous_usage", "false")
 
 	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -125,9 +125,9 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 		GroupID:      "GR1",
 		Capabilities: []akpb.ApiKey_Capability{},
 	}
-	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	flags.Set(t, "auth.enable_anonymous_usage", "false")
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+	te := getTestEnv(t, authCtx, map[string]interfaces.UserInfo{user.UserID: user})
+	flags.Set(t, "auth.enable_anonymous_usage", "false")
 
 	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 

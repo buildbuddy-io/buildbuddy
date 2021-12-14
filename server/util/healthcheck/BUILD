@@ -10,6 +10,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
+        "//server/util/tracing/os",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -47,11 +47,11 @@ actions:
 	}
 )
 
-func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
+func setup(t *testing.T, ctx context.Context, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
 	env := rbetest.NewRBETestEnv(t)
 	var workflowService interfaces.WorkflowService
 
-	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
+	bbServer := env.AddBuildBuddyServerWithOptions(ctx, &rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(env *testenv.TestEnv) {
 			env.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 			env.SetGitProviders([]interfaces.GitProvider{gp})
@@ -76,7 +76,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// propagated to the CI runner so it knows where to publish build events).
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
 
-	env.AddExecutors(10)
+	env.AddExecutors(ctx, 10)
 	return env, workflowService
 }
 
@@ -161,13 +161,14 @@ func (w *testResponseWriter) Write(p []byte) (int, error) {
 
 func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
-	env, workflowService := setup(t, fakeGitProvider)
+	ctx := context.Background()
+	env, workflowService := setup(t, ctx, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
-	ctx := env.WithUserID(context.Background(), env.UserID1)
+	ctx = env.WithUserID(ctx, env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
 		GroupId: env.GroupID1,
@@ -209,11 +210,12 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 func TestCreateAndExecute(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
 	fakeGitProvider.FileContents = simpleRepoContents
-	env, _ := setup(t, fakeGitProvider)
+	ctx := context.Background()
+	env, _ := setup(t, ctx, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
 	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
-	ctx := env.WithUserID(context.Background(), env.UserID1)
+	ctx = env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
 		GroupId: env.GroupID1,

@@ -3,8 +3,6 @@ package memcache
 import (
 	"bytes"
 	"context"
-	"io"
-	"path/filepath"
 	"sync"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -12,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"golang.org/x/sync/errgroup"
@@ -248,7 +248,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
 	}
@@ -261,13 +261,13 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 		return nil, err
 	}
 
-	r := bytes.NewReader(buf)
-	r.Seek(offset, 0)
+	r := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf))
+	r.Seek(ctx, offset, 0)
 	length := d.GetSizeBytes()
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return ctxio.NopCloser(ctxio.LimitReader(r, length)), nil
 	}
-	return io.NopCloser(r), nil
+	return ctxio.NopCloser(r), nil
 }
 
 type closeFn func(b *bytes.Buffer) error
@@ -280,7 +280,7 @@ func (d *setOnClose) Close() error {
 	return d.c(d.Buffer)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", d)
 	}
@@ -289,13 +289,15 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	return &setOnClose{
-		Buffer: &buffer,
-		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Set.
-			return c.mcSet(k, b.Bytes())
+	return ctxio.CtxWriteCloserWrapper(
+		&setOnClose{
+			Buffer: &buffer,
+			c: func(b *bytes.Buffer) error {
+				// Locking and key prefixing are handled in Set.
+				return c.mcSet(k, b.Bytes())
+			},
 		},
-	}, nil
+	), nil
 }
 
 func (c *Cache) Start() error {

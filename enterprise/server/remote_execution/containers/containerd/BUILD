@@ -14,6 +14,8 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
         "@com_github_containerd_containerd//:containerd",
         "@com_github_containerd_containerd//cio",
         "@com_github_containerd_containerd//errdefs",

@@ -1,11 +1,9 @@
 package filecache
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,6 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/google/uuid"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -66,7 +67,7 @@ func sizeFn(value interface{}) int64 {
 	return 0
 }
 
-func evictFn(value interface{}) {
+func evictFn(ctx context.Context, value interface{}) {
 	if v, ok := value.(*entry); ok {
 		syscall.Unlink(v.value)
 	}
@@ -74,12 +75,12 @@ func evictFn(value interface{}) {
 
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
-func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
+func NewFileCache(ctx context.Context, rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
 	rootDir = filepath.Join(rootDir, base64.StdEncoding.EncodeToString(uuid.NodeID()))
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, rootDir); err != nil {
 		return nil, err
 	}
 	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
@@ -91,7 +92,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 		l:           l,
 		dirScanDone: make(chan struct{}),
 	}
-	go c.scanDir()
+	go c.scanDir(ctx)
 	return c, nil
 }
 
@@ -114,10 +115,10 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (*repb
 		}}, nil
 }
 
-func (c *fileCache) scanDir() {
+func (c *fileCache) scanDir(ctx context.Context) {
 	scanCount := 0
 	scanStart := time.Now()
-	walkFn := func(path string, d fs.DirEntry, err error) error {
+	walkFn := func(ctx context.Context, path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -125,7 +126,7 @@ func (c *fileCache) scanDir() {
 		if d.IsDir() {
 			return nil
 		}
-		info, err := d.Info()
+		info, err := d.Info(ctx)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
@@ -136,10 +137,10 @@ func (c *fileCache) scanDir() {
 		if err != nil {
 			return err
 		}
-		c.AddFile(node, path)
+		c.AddFile(ctx, node, path)
 		return nil
 	}
-	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
+	if err := filepath.WalkDir(ctx, c.rootDir, walkFn); err != nil {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
 	}
 	log.Infof("filecache(%q) scanned %d files in %s. Total tracked bytes: %d", c.rootDir, scanCount, time.Since(scanStart), c.l.Size())
@@ -154,7 +155,7 @@ func key(node *repb.FileNode) string {
 	return node.GetDigest().GetHash() + suffix
 }
 
-func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) bool {
+func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outputPath string) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	e, ok := c.l.Get(key(node))
@@ -165,22 +166,22 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) bool {
 	if !ok {
 		return false
 	}
-	if err := fastcopy.FastCopy(v.value, outputPath); err != nil {
+	if err := fastcopy.FastCopy(ctx, v.value, outputPath); err != nil {
 		log.Warningf("Error fast linking file: %s", err.Error())
 		return false
 	}
 	return true
 }
 
-func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
+func (c *fileCache) AddFile(ctx context.Context, node *repb.FileNode, existingFilePath string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	fp := c.filecachePath(node)
-	if err := fastcopy.FastCopy(existingFilePath, fp); err != nil {
+	if err := fastcopy.FastCopy(ctx, existingFilePath, fp); err != nil {
 		log.Warningf("Error adding file to filecache: %s", err.Error())
 		return
 	}
-	c.l.Add(key(node), &entry{sizeBytes: node.GetDigest().GetSizeBytes(), value: fp})
+	c.l.Add(ctx, key(node), &entry{sizeBytes: node.GetDigest().GetSizeBytes(), value: fp})
 }
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {

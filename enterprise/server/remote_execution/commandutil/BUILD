@@ -9,5 +9,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/status",
+        "//server/util/tracing/os",
     ],
 )

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"time"
 	"unsafe"
 
@@ -15,6 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -299,7 +300,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for redis", d)
 	}
@@ -316,10 +317,10 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	r.Seek(offset, 0)
 	length := d.GetSizeBytes()
 	if length > 0 {
-		return io.NopCloser(io.LimitReader(r, length)), nil
+		return ctxio.NopCloser(ctxio.CtxReaderWrapper(io.LimitReader(r, length))), nil
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return io.NopCloser(timer.NewInstrumentedReader(r, length)), nil
+	return ctxio.NopCloser(ctxio.CtxReaderWrapper(timer.NewInstrumentedReader(r, length))), nil
 }
 
 type closeFn func(b *bytes.Buffer) error
@@ -335,7 +336,7 @@ func (d *setOnClose) Close() error {
 	return err
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", d)
 	}
@@ -344,14 +345,16 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	return &setOnClose{
-		Buffer: &buffer,
-		timer:  cache_metrics.NewCacheTimer(cacheLabels),
-		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Set.
-			return c.rdbSet(ctx, k, b.Bytes())
+	return ctxio.CtxWriteCloserWrapper(
+		&setOnClose{
+			Buffer: &buffer,
+			timer:  cache_metrics.NewCacheTimer(cacheLabels),
+			c: func(b *bytes.Buffer) error {
+				// Locking and key prefixing are handled in Set.
+				return c.rdbSet(ctx, k, b.Bytes())
+			},
 		},
-	}, nil
+	), nil
 }
 
 func (c *Cache) Start() error {

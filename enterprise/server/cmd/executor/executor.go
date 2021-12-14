@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -38,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
@@ -107,7 +107,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
 }
 
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
+func GetConfiguredEnvironmentOrDie(ctx context.Context, configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
 
 	executorConfig := configurator.GetExecutorConfig()
@@ -122,7 +122,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Fatal(status.Message(err))
 	}
 
-	bundleFS, err := bundle.Get()
+	bundleFS, err := bundle.Get(ctx)
 	if err != nil {
 		log.Fatalf("Failed to initialize bundle: %s", err)
 	}
@@ -142,7 +142,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Infof("No authentication will be configured: %s", err)
 	}
 
-	realEnv.SetXCodeLocator(xcode.NewXcodeLocator())
+	realEnv.SetXCodeLocator(xcode.NewXcodeLocator(ctx))
 
 	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
 		opts := make([]option.ClientOption, 0)
@@ -188,7 +188,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	if executorConfig.GetLocalCacheDirectory() != "" && executorConfig.GetLocalCacheSizeBytes() != 0 {
 		log.Infof("Enabling filecache in %q (size %d bytes)", executorConfig.GetLocalCacheDirectory(), executorConfig.GetLocalCacheSizeBytes())
-		if fc, err := filecache.NewFileCache(executorConfig.GetLocalCacheDirectory(), executorConfig.GetLocalCacheSizeBytes()); err == nil {
+		if fc, err := filecache.NewFileCache(ctx, executorConfig.GetLocalCacheDirectory(), executorConfig.GetLocalCacheSizeBytes()); err == nil {
 			realEnv.SetFileCache(fc)
 		}
 	}
@@ -231,7 +231,7 @@ func main() {
 
 	configFilePath := *configFile
 	if configFilePath == "" {
-		_, err := os.Stat("/config.yaml")
+		_, err := os.Stat(rootContext, "/config.yaml")
 		if err == nil {
 			configFilePath = "/config.yaml"
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -239,7 +239,7 @@ func main() {
 		}
 	}
 
-	configurator, err := config.NewConfigurator(configFilePath)
+	configurator, err := config.NewConfigurator(rootContext, configFilePath)
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
@@ -262,7 +262,7 @@ func main() {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 
-	env := GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := GetConfiguredEnvironmentOrDie(rootContext, configurator, healthChecker)
 
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	localServer := grpc.NewServer(grpcOptions...)
@@ -277,7 +277,7 @@ func main() {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
 	}
 	executorID := executorUUID.String()
-	executionServer, err := executor.NewExecutor(env, executorID, &executor.Options{})
+	executionServer, err := executor.NewExecutor(rootContext, env, executorID, &executor.Options{})
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
@@ -318,7 +318,7 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{}
-	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, schedulerOpts)
+	reg, err := scheduler_client.NewRegistration(rootContext, env, taskScheduler, executorID, schedulerOpts)
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)
 	}

@@ -4,10 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -15,6 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 )
 
 const (
@@ -25,14 +25,14 @@ func hashString(input string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
 }
 
-func hashFile(filename string) (string, error) {
-	f, err := os.Open(filename)
+func hashFile(ctx context.Context, filename string) (string, error) {
+	f, err := os.Open(ctx, filename)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close(ctx)
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := ctxio.Copy(ctx, ctxio.NoTraceCtxWriterWrapper(h), f); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -41,10 +41,10 @@ func hashFile(filename string) (string, error) {
 // CachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
+func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
 	hashedContainerName := hashString(containerImage)
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-	files, err := os.ReadDir(containerImagesPath)
+	files, err := os.ReadDir(ctx, containerImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
 	}
@@ -56,17 +56,17 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 	}
 	sort.Slice(files, func(i, j int) bool {
 		var iUnix int64
-		if fi, err := files[i].Info(); err == nil {
+		if fi, err := files[i].Info(ctx); err == nil {
 			iUnix = fi.ModTime().Unix()
 		}
 		var jUnix int64
-		if fi, err := files[j].Info(); err == nil {
+		if fi, err := files[j].Info(ctx); err == nil {
 			jUnix = fi.ModTime().Unix()
 		}
 		return iUnix < jUnix
 	})
 	diskImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), diskImageFileName)
-	exists, err := disk.FileExists(diskImagePath)
+	exists, err := disk.FileExists(ctx, diskImagePath)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 // remote registry to ensure that the image can be accessed. The path to the
 // disk image is returned.
 func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
-	existingPath, err := CachedDiskImagePath(workspaceDir, containerImage)
+	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
 	if err != nil {
 		return "", err
 	}
@@ -119,16 +119,16 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 	if err != nil {
 		return "", err
 	}
-	imageHash, err := hashFile(tmpImagePath)
+	imageHash, err := hashFile(ctx, tmpImagePath)
 	if err != nil {
 		return "", err
 	}
 	containerImageHome := filepath.Join(containerImagesPath, imageHash)
-	if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, containerImageHome); err != nil {
 		return "", err
 	}
 	containerImagePath := filepath.Join(containerImageHome, diskImageFileName)
-	if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
+	if err := os.Rename(ctx, tmpImagePath, containerImagePath); err != nil {
 		return "", err
 	}
 	log.Debugf("generated rootfs at %q", containerImagePath)
@@ -141,15 +141,15 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 // allows this binary to convert images even when not running as root.
 func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
-	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
+	rootUnpackDir, err := os.MkdirTemp(ctx, workspaceDir, "container-unpack-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(rootUnpackDir)
+	defer os.RemoveAll(ctx, rootUnpackDir)
 
 	// Make a directory to download the OCI image to.
 	ociImageDir := filepath.Join(rootUnpackDir, "image")
-	if err := disk.EnsureDirectoryExists(ociImageDir); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, ociImageDir); err != nil {
 		return "", err
 	}
 
@@ -169,7 +169,7 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 
 	// Make a directory to unpack the bundle to.
 	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
-	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, rootFSDir); err != nil {
 		return "", err
 	}
 	if out, err := exec.CommandContext(ctx, "umoci", "raw", "unpack", "--rootless", "--image", ociImageDir, rootFSDir).CombinedOutput(); err != nil {
@@ -177,11 +177,11 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	}
 
 	// Take the rootfs and write it into an ext4 image.
-	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
+	f, err := os.CreateTemp(ctx, workspaceDir, "containerfs-*.ext4")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close(ctx)
 	imageFile := f.Name()
 	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
 		return "", err

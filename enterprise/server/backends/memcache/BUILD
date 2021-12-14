@@ -14,6 +14,8 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
         "@com_github_bradfitz_gomemcache//memcache",
         "@org_golang_x_sync//errgroup",
     ],

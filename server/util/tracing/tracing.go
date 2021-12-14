@@ -6,17 +6,15 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
-
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -28,9 +26,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
-
-	octrace "go.opencensus.io/trace"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	octrace "go.opencensus.io/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
@@ -39,7 +36,7 @@ const (
 	resourceDetectionTimeout      = 5 * time.Second
 	traceHeader                   = "x-buildbuddy-trace"
 	forceTraceHeaderValue         = "force"
-	buildBuddyInstrumentationName = "buildbuddy.io"
+	buildBuddyInstrumentationName = span.BuildBuddyInstrumentationName
 )
 
 // fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
@@ -170,6 +167,7 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	tracer := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
+	// bridge opencensus traces for dependencies that use opencensus (e. g. GCS)
 	octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
@@ -250,26 +248,9 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.tracingHandler.ServeHTTP(w, r)
 }
 
-// StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
-	if !span.IsRecording() {
-		return ctx, span
-	}
-
-	rpc := make([]uintptr, 1)
-	n := runtime.Callers(2, rpc[:])
-	if n > 0 {
-		frame, _ := runtime.CallersFrames(rpc).Next()
-		span.SetName(filepath.Base(frame.Function))
-	}
-	return ctx, span
+	return span.StartSpan(ctx, opts...)
 }
-
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
-	span := trace.SpanFromContext(ctx)
-	if !span.IsRecording() {
-		return
-	}
-	span.SetAttributes(attribute.String(key, value))
+	span.AddStringAttributeToCurrentSpan(ctx, key, value)
 }

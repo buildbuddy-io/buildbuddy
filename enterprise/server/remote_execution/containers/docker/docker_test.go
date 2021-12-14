@@ -53,7 +53,7 @@ func TestDockerRun(t *testing.T) {
 		Stderr:             []byte("foo"),
 		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
-	env := testenv.GetTestEnv(t)
+	env := testenv.GetTestEnv(t, ctx)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
@@ -89,7 +89,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 		Stderr:             []byte("foo"),
 		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
-	env := testenv.GetTestEnv(t)
+	env := testenv.GetTestEnv(t, ctx)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)

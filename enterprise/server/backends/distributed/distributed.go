@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 	"golang.org/x/sync/errgroup"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
@@ -323,14 +323,14 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
-func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Reader(ctx, d, offset)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
 }
-func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (ctxio.WriteCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
@@ -355,15 +355,15 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer r.Close(ctx)
 	rwc, err := c.cacheProxy.RemoteWriter(ctx, dest, "", isolation, d)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(rwc, r); err != nil {
+	if _, err := ctxio.Copy(ctx, rwc, r); err != nil {
 		return err
 	}
-	return rwc.Close()
+	return rwc.Close(ctx)
 }
 
 func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, isolation *dcpb.Isolation, dest string) error {
@@ -374,15 +374,15 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer r.Close(ctx)
 	rwc, err := c.remoteWriter(ctx, dest, "", isolation, d)
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(rwc, r); err != nil {
+	if _, err := ctxio.Copy(ctx, rwc, r); err != nil {
 		return err
 	}
-	return rwc.Close()
+	return rwc.Close(ctx)
 }
 
 type backfillOrder struct {
@@ -682,7 +682,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
@@ -714,8 +714,8 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
-	return ioutil.ReadAll(r)
+	defer r.Close(ctx)
+	return ctxio.ReadAll(ctx, r)
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
@@ -819,22 +819,21 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 }
 
 type multiWriteCloser struct {
-	ctx           context.Context
 	log           log.Logger
 	isolation     *dcpb.Isolation
-	peerClosers   map[string]io.WriteCloser
+	peerClosers   map[string]ctxio.WriteCloser
 	mu            *sync.Mutex
 	d             *repb.Digest
 	listenAddr    string
 	totalNumPeers int
 }
 
-func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	eg, _ := errgroup.WithContext(mc.ctx)
+func (mc *multiWriteCloser) Write(ctx context.Context, data []byte) (int, error) {
+	eg, _ := errgroup.WithContext(ctx)
 	for _, wc := range mc.peerClosers {
 		wc := wc
 		eg.Go(func() error {
-			n, err := wc.Write(data)
+			n, err := wc.Write(ctx, data)
 			if err != nil {
 				return err
 			}
@@ -848,13 +847,13 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	return len(data), eg.Wait()
 }
 
-func (mc *multiWriteCloser) Close() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
+func (mc *multiWriteCloser) Close(ctx context.Context) error {
+	eg, _ := errgroup.WithContext(ctx)
 	for peer, wc := range mc.peerClosers {
 		wc := wc
 		peer := peer
 		eg.Go(func() error {
-			if err := wc.Close(); err != nil {
+			if err := wc.Close(ctx); err != nil {
 				return err
 			}
 			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peer)
@@ -877,13 +876,12 @@ func (mc *multiWriteCloser) Close() error {
 // written to.
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
-func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	ps := c.peers(d)
 	mwc := &multiWriteCloser{
-		ctx:         ctx,
 		log:         c.log,
 		d:           d,
-		peerClosers: make(map[string]io.WriteCloser, 0),
+		peerClosers: make(map[string]ctxio.WriteCloser, 0),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
 		isolation:   c.isolation,
@@ -914,10 +912,10 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if _, err := wc.Write(data); err != nil {
+	if _, err := wc.Write(ctx, data); err != nil {
 		return err
 	}
-	return wc.Close()
+	return wc.Close(ctx)
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -943,10 +941,10 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	return c.distributedReader(ctx, d, offset)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	return c.multiWriter(ctx, d)
 }

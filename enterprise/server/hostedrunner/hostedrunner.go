@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
-	"path/filepath"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -17,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
 
@@ -35,12 +35,12 @@ type runnerService struct {
 	runnerBinaryPath string
 }
 
-func New(env environment.Env) (*runnerService, error) {
-	f, err := env.GetFileResolver().Open(runnerPath)
+func New(ctx context.Context, env environment.Env) (*runnerService, error) {
+	f, err := env.GetFileResolver().Open(ctx, runnerPath)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not open runner binary runfile: %s", err)
 	}
-	defer f.Close()
+	defer f.Close(ctx)
 	return &runnerService{
 		env: env,
 	}, nil
@@ -88,7 +88,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
-	binaryBlob, err := fs.ReadFile(r.env.GetFileResolver(), runnerPath)
+	binaryBlob, err := fs.ReadFile(ctx, r.env.GetFileResolver(), runnerPath)
 	if err != nil {
 		return nil, err
 	}

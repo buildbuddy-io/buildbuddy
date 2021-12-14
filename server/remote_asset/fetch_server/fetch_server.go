@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"github.com/golang/protobuf/ptypes"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -137,8 +138,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			log.Warningf("Error reading object bytes: %s", err.Error())
 			continue
 		}
-		reader := bytes.NewReader(data)
-		blobDigest, err := digest.Compute(reader)
+		reader := ctxio.CtxReaderWrapper(bytes.NewReader(data))
+		blobDigest, err := digest.Compute(ctx, reader)
 		if err != nil {
 			log.Warningf("Error computing object digest: %s", err.Error())
 			continue

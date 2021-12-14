@@ -32,8 +32,8 @@ var (
 	usage1Collection3Start = usage1Start.Add(2 * collectionPeriodDuration)
 )
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func setupEnv(t *testing.T, ctx context.Context) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 
 	redisTarget := testredis.Start(t)
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
@@ -98,7 +98,7 @@ func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
 
 func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
+	te := setupEnv(t, context.Background())
 	ctx := authContext(te, "US1")
 	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
 	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
@@ -180,7 +180,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 
 func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
+	te := setupEnv(t, context.Background())
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
 	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
@@ -252,7 +252,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
+	te := setupEnv(t, context.Background())
 	ctx := authContext(te, "US1")
 	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
 	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
@@ -293,7 +293,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
+	te := setupEnv(t, context.Background())
 	ctx := authContext(te, "US1")
 	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
 	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
@@ -320,7 +320,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
-	te := setupEnv(t)
+	te := setupEnv(t, context.Background())
 	ctx := authContext(te, "US1")
 
 	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
@@ -371,8 +371,9 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Set up 2 envs, one for each region. DB should be the same for each, but
 	// Redis instances should be different.
-	te1 := setupEnv(t)
-	te2 := setupEnv(t)
+	ctx := context.Background()
+	te1 := setupEnv(t, ctx)
+	te2 := setupEnv(t, ctx)
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")

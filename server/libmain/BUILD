@@ -51,6 +51,8 @@ go_library(
         "//server/util/monitoring",
         "//server/util/rlimit",
         "//server/util/tracing",
+        "//server/util/tracing/fs",
+        "//server/util/tracing/os",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",

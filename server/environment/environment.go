@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"io/fs"
 	"net/url"
 
 	"github.com/go-redis/redis/v8"
@@ -9,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"

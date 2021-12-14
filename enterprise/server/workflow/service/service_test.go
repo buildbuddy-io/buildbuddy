@@ -25,8 +25,8 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
-func newTestEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func newTestEnv(t *testing.T, ctx context.Context) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	te.SetWorkflowService(workflow.NewWorkflowService(te))
 	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(
@@ -69,7 +69,7 @@ func makeTempRepo(t *testing.T) string {
 
 func TestCreate(t *testing.T) {
 	ctx := context.Background()
-	te := newTestEnv(t)
+	te := newTestEnv(t, ctx)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
 	clientConn := runBBServer(ctx, te, t)
@@ -104,7 +104,7 @@ func TestCreate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	ctx := context.Background()
-	te := newTestEnv(t)
+	te := newTestEnv(t, ctx)
 	provider := setupFakeGitProvider(t, te)
 
 	clientConn := runBBServer(ctx, te, t)
@@ -135,7 +135,7 @@ func TestDelete(t *testing.T) {
 
 func TestList(t *testing.T) {
 	ctx := context.Background()
-	te := newTestEnv(t)
+	te := newTestEnv(t, ctx)
 
 	clientConn := runBBServer(ctx, te, t)
 	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)

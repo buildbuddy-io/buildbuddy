@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/os",
         "@com_github_mdlayher_vsock//:vsock",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//backoff",

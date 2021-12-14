@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//server/util/bazel_request",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
         "//server/util/uuid",
         "@com_github_rs_zerolog//:zerolog",
         "@com_github_rs_zerolog//log",

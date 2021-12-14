@@ -8,6 +8,8 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/rpc:errdetails_go_proto",

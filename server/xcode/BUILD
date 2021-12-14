@@ -19,6 +19,8 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/util/log",
             "//server/util/status",
+            "//server/util/tracing/fs",
+            "//server/util/tracing/os",
             "@com_github_groob_plist//:plist",
         ],
         "//conditions:default": [],

@@ -30,6 +30,8 @@ go_library(
         "//server/util/query_builder",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/os",
         "@com_github_google_go_github//github",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",

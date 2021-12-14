@@ -5,15 +5,15 @@ import (
 	"context"
 	"flag"
 	"html/template"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/golang/protobuf/jsonpb"
 
@@ -47,11 +47,12 @@ type StaticFileServer struct {
 
 // NewStaticFileServer returns a new static file server that will serve the
 // content in relpath, optionally stripping the prefix.
-func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appBundleHash string) (*StaticFileServer, error) {
+func NewStaticFileServer(ctx context.Context, env environment.Env, fsys fs.FS, rootPaths []string, appBundleHash string) (*StaticFileServer, error) {
 	// Handle "/static/*" requests by serving those static files out of the bundled runfiles.
-	handler := http.FileServer(http.FS(fs))
+	wrapped := fs.FSWrapper(ctx, fsys)
+	handler := http.FileServer(http.FS(wrapped))
 	if len(rootPaths) > 0 {
-		template, err := template.ParseFS(fs, indexTemplateFilename)
+		template, err := template.ParseFS(wrapped, indexTemplateFilename)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +66,7 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 			env.GetHealthChecker().AddHealthCheck("app_static_file_server", &healthChecker{jsPath: jsPath})
 		}
 
-		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
+		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(ctx), jsPath, handler)
 	}
 	return &StaticFileServer{
 		handler: setCacheHeaders(handler),
@@ -171,8 +172,8 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	}
 }
 
-func AppBundleHash(bundleFS fs.FS) (string, error) {
-	hashBytes, err := fs.ReadFile(bundleFS, "sha.sum")
+func AppBundleHash(ctx context.Context, bundleFS fs.FS) (string, error) {
+	hashBytes, err := fs.ReadFile(ctx, bundleFS, "sha.sum")
 	if err != nil {
 		return "", err
 	}

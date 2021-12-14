@@ -11,6 +11,8 @@ go_library(
         "//server/environment",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
         "@com_github_google_uuid//:uuid",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],

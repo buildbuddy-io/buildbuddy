@@ -57,5 +57,6 @@ go_library(
     visibility = ["//enterprise:__subpackages__"],
     deps = [
         "//server/util/fileresolver",
+        "//server/util/tracing/fs",
     ],
 )

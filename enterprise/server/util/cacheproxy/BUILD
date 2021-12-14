@@ -21,6 +21,8 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
         "@org_golang_google_grpc//reflection",
@@ -42,6 +44,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/prefix",
         "//server/util/testing/flags",
+        "//server/util/tracing/ctxio",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -3,7 +3,6 @@ package memory_cache_test
 import (
 	"bytes"
 	"context"
-	"io"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -22,16 +22,18 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
-func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func getTestEnv(t *testing.T, ctx context.Context, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
 
 func getAnonContext(t *testing.T) context.Context {
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	ctx := context.Background()
+	te := getTestEnv(t, ctx, emptyUserMap)
+	var err error
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -88,7 +90,7 @@ func TestIsolation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 		// Set() the bytes in cache1.
 		err := test.cache1.Set(ctx, d, buf)
 		if err != nil {
@@ -104,7 +106,7 @@ func TestIsolation(t *testing.T) {
 			}
 
 			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			d2, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(bytes.NewReader(rbuf)))
 			if err != nil {
 				t.Fatalf("Error computing digest: %s", err.Error())
 			}
@@ -133,7 +135,7 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, testSize)
 		// Set() the bytes in the cache.
 		err := mc.Set(ctx, d, buf)
 		if err != nil {
@@ -146,17 +148,17 @@ func TestGetSet(t *testing.T) {
 		}
 
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(bytes.NewReader(rbuf)))
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
+func randomDigests(t *testing.T, ctx context.Context, sizes ...int64) map[*repb.Digest][]byte {
 	m := make(map[*repb.Digest][]byte)
 	for _, size := range sizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, size)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, size)
 		m[d] = buf
 	}
 	return m
@@ -169,7 +171,7 @@ func TestMultiGetSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digests := randomDigests(t, 10, 20, 11, 30, 40)
+	digests := randomDigests(t, ctx, 10, 20, 11, 30, 40)
 	if err := mc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
@@ -186,7 +188,7 @@ func TestMultiGetSet(t *testing.T) {
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
 		}
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(bytes.NewReader(rbuf)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -207,16 +209,16 @@ func TestReadWrite(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
-		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		d, r := testdigest.NewRandomDigestReader(t, ctx, testSize)
 		// Use Writer() to set the bytes in the cache.
 		wc, err := mc.Writer(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}
-		if _, err := io.Copy(wc, r); err != nil {
+		if _, err := ctxio.Copy(ctx, wc, r); err != nil {
 			t.Fatalf("Error copying bytes to cache: %s", err.Error())
 		}
-		if err := wc.Close(); err != nil {
+		if err := wc.Close(ctx); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
@@ -224,7 +226,7 @@ func TestReadWrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
-		d2 := testdigest.ReadDigestAndClose(t, reader)
+		d2 := testdigest.ReadDigestAndClose(t, ctx, reader)
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -238,7 +240,7 @@ func TestSizeLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digestBufs := randomDigests(t, 400, 400, 400)
+	digestBufs := randomDigests(t, ctx, 400, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
 		if err := mc.Set(ctx, d, buf); err != nil {
@@ -260,7 +262,7 @@ func TestSizeLimit(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(bytes.NewReader(rbuf)))
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
@@ -274,7 +276,7 @@ func TestLRU(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := getAnonContext(t)
-	digestBufs := randomDigests(t, 400, 400)
+	digestBufs := randomDigests(t, ctx, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
 		if err := mc.Set(ctx, d, buf); err != nil {
@@ -292,7 +294,7 @@ func TestLRU(t *testing.T) {
 	}
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
-	d, buf := testdigest.NewRandomDigestBuf(t, 400)
+	d, buf := testdigest.NewRandomDigestBuf(t, ctx, 400)
 	if err := mc.Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +314,7 @@ func TestLRU(t *testing.T) {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(bytes.NewReader(rbuf)))
 		if d.GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}

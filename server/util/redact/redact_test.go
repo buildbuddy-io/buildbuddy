@@ -1,6 +1,7 @@
 package redact_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -57,7 +58,7 @@ func getCommandLineOptions(event *bespb.BuildEvent) []*clpb.Option {
 }
 
 func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: `--some_flag --another_flag`,
 	}
@@ -70,7 +71,7 @@ func TestRedactMetadata_BuildStarted_RedactsOptionsDescription(t *testing.T) {
 }
 
 func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	unstructuredCommandLine := &bespb.UnstructuredCommandLine{
 		Args: []string{"foo"},
 	}
@@ -85,7 +86,7 @@ func TestRedactMetadata_UnstructuredCommandLine_RemovesArgs(t *testing.T) {
 }
 
 func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	// Started event specified which env vars shouldn't be redacted.
 	buildStarted := &bespb.BuildStarted{
 		OptionsDescription: "--build_metadata='ALLOW_ENV=FOO_ALLOWED,BAR_ALLOWED_PATTERN_*'",
@@ -138,7 +139,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 }
 
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine:         []string{"213wZJyTUyhXkj381312@foo"},
 		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit"},
@@ -153,7 +154,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	actionExecuted := &bespb.ActionExecuted{
 		Stdout:             fileWithURI("213wZJyTUyhXkj381312@uri"),
 		Stderr:             fileWithURI("213wZJyTUyhXkj381312@uri"),
@@ -172,7 +173,7 @@ func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	namedSetOfFiles := &bespb.NamedSetOfFiles{
 		Files: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
@@ -185,7 +186,7 @@ func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	targetComplete := &bespb.TargetComplete{
 		Success:         true,
 		ImportantOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
@@ -199,7 +200,7 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	testResult := &bespb.TestResult{
 		Status:           bespb.TestStatus_PASSED,
 		TestActionOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
@@ -213,7 +214,7 @@ func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	testSummary := &bespb.TestSummary{
 		Passed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 		Failed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
@@ -228,7 +229,7 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	buildMetadata := &bespb.BuildMetadata{
 		Metadata: map[string]string{
 			"ALLOW_ENV": "SHELL",
@@ -245,7 +246,7 @@ func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
 }
 
 func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
-	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t, context.Background()))
 	workspaceStatus := &bespb.WorkspaceStatus{
 		Item: []*bespb.WorkspaceStatus_Item{
 			{Key: "REPO_URL", Value: "https://USERNAME:PASSWORD@github.com/buildbuddy-io/metadata_repo_url"},

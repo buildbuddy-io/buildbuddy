@@ -5,10 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
-	"io/fs"
 	"net"
-	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
@@ -20,6 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/jsimonetti/rtnetlink/rtnl"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -48,10 +48,10 @@ func die(err error) {
 	}
 }
 
-func mkdirp(path string, mode fs.FileMode) error {
+func mkdirp(ctx context.Context, path string, mode fs.FileMode) error {
 	log.Debugf("mkdir %q (mode: %d)", path, mode)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.MkdirAll(path, mode)
+	if _, err := os.Stat(ctx, path); os.IsNotExist(err) {
+		return os.MkdirAll(ctx, path, mode)
 	}
 	return nil
 }
@@ -109,24 +109,24 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 	return nlConn.Close()
 }
 
-func copyFile(src, dest string, mode os.FileMode) error {
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+func copyFile(ctx context.Context, src, dest string, mode os.FileMode) error {
+	out, err := os.OpenFile(ctx, dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
-	in, err := os.Open(src)
+	in, err := os.Open(ctx, src)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, in)
+	_, err = ctxio.Copy(ctx, out, in)
 	if err != nil {
 		return err
 	}
 
-	if err := in.Close(); err != nil {
+	if err := in.Close(ctx); err != nil {
 		return err
 	}
-	if err := out.Close(); err != nil {
+	if err := out.Close(ctx); err != nil {
 		return err
 	}
 
@@ -158,25 +158,25 @@ func main() {
 	// with the containerfs using overlayfs. That way all writes done inside
 	// the container are written to the workspacefs and the containerfs is
 	// untouched (and safe for re-use across multiple VMs).
-	die(mkdirp("/dev", 0755))
+	die(mkdirp(rootContext, "/dev", 0755))
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
 
-	die(mkdirp("/container", 0755))
+	die(mkdirp(rootContext, "/container", 0755))
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
-	die(mkdirp("/overlay", 0755))
+	die(mkdirp(rootContext, "/overlay", 0755))
 	die(mount("/dev/vdb", "/overlay", "ext4", syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/overlay/bbvmroot", 0755))
-	die(mkdirp("/overlay/bbvmwork", 0755))
+	die(mkdirp(rootContext, "/overlay/bbvmroot", 0755))
+	die(mkdirp(rootContext, "/overlay/bbvmwork", 0755))
 
-	die(mkdirp("/mnt", 0755))
+	die(mkdirp(rootContext, "/mnt", 0755))
 	die(mount("overlayfs:/overlay/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/bbvmroot,workdir=/overlay/bbvmwork"))
 
-	die(mkdirp("/mnt/dev", 0755))
+	die(mkdirp(rootContext, "/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
-	die(copyFile("/vmvfs", "/mnt/vmvfs", 0555))
+	die(copyFile(rootContext, "/vmvfs", "/mnt/vmvfs", 0555))
 
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
@@ -184,84 +184,84 @@ func main() {
 	die(chroot("."))
 	die(chdir("/"))
 
-	die(mkdirp("/workspace", 0755))
+	die(mkdirp(rootContext, "/workspace", 0755))
 	die(mount("/dev/vdb", "/workspace", "ext4", syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/dev/pts", 0755))
+	die(mkdirp(rootContext, "/dev/pts", 0755))
 	die(mount("devpts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NOATIME, "mode=0620,gid=5,ptmxmode=666"))
 
-	die(mkdirp("/dev/mqueue", 0755))
+	die(mkdirp(rootContext, "/dev/mqueue", 0755))
 	die(mount("mqueue", "/dev/mqueue", "mqueue", commonMountFlags, ""))
 
-	die(mkdirp("/dev/shm", 1777))
+	die(mkdirp(rootContext, "/dev/shm", 1777))
 	die(mount("shm", "/dev/shm", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
 
-	die(mkdirp("/dev/hugepages", 0755))
+	die(mkdirp(rootContext, "/dev/hugepages", 0755))
 	die(mount("hugetlbfs", "/dev/hugepages", "hugetlbfs", syscall.MS_RELATIME, "pagesize=2M"))
 
-	die(mkdirp("/proc", 0555))
+	die(mkdirp(rootContext, "/proc", 0555))
 	die(mount("proc", "/proc", "proc", commonMountFlags, ""))
 	die(mount("binfmt_misc", "/proc/sys/fs/binfmt_misc", "binfmt_misc", commonMountFlags|syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/sys", 0555))
+	die(mkdirp(rootContext, "/sys", 0555))
 	die(mount("sys", "/sys", "sysfs", commonMountFlags, ""))
 
-	die(mkdirp("/run", 0755))
+	die(mkdirp(rootContext, "/run", 0755))
 	die(mount("run", "/run", "tmpfs", syscall.MS_NOSUID|syscall.MS_NODEV, ""))
-	die(mkdirp("/run/lock", 1777))
+	die(mkdirp(rootContext, "/run/lock", 1777))
 
 	die(syscall.Symlink("/proc/self/fd", "/dev/fd"))
 	die(syscall.Symlink("/proc/self/fd/0", "/dev/stdin"))
 	die(syscall.Symlink("/proc/self/fd/1", "/dev/stdout"))
 	die(syscall.Symlink("/proc/self/fd/2", "/dev/stderr"))
 
-	die(mkdirp("/root", syscall.S_IRWXU))
+	die(mkdirp(rootContext, "/root", syscall.S_IRWXU))
 
 	die(mount("tmpfs", "/sys/fs/cgroup", "tmpfs", syscall.MS_NOSUID|syscall.MS_NOEXEC|syscall.MS_NODEV, "mode=755"))
-	die(mkdirp("/sys/fs/cgroup/unified", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/unified", 0555))
 	die(mount("cgroup2", "/sys/fs/cgroup/unified", "cgroup2", cgroupMountFlags, "nsdelegate"))
 
-	die(mkdirp("/sys/fs/cgroup/net_cls,net_prio", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/net_cls,net_prio", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/net_cls,net_prio", "cgroup", cgroupMountFlags, "net_cls,net_prio"))
 
-	die(mkdirp("/sys/fs/cgroup/hugetlb", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/hugetlb", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/hugetlb", "cgroup", cgroupMountFlags, "hugetlb"))
 
-	die(mkdirp("/sys/fs/cgroup/pids", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/pids", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/pids", "cgroup", cgroupMountFlags, "pids"))
 
-	die(mkdirp("/sys/fs/cgroup/freezer", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/freezer", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/freezer", "cgroup", cgroupMountFlags, "freezer"))
 
-	die(mkdirp("/sys/fs/cgroup/devices", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/devices", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/devices", "cgroup", cgroupMountFlags, "devices"))
 
-	die(mkdirp("/sys/fs/cgroup/blkio", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/blkio", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/blkio", "cgroup", cgroupMountFlags, "blkio"))
 
-	die(mkdirp("/sys/fs/cgroup/memory", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/memory", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/memory", "cgroup", cgroupMountFlags, "memory"))
 
-	die(mkdirp("/sys/fs/cgroup/perf_event", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/perf_event", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/perf_event", "cgroup", cgroupMountFlags, "perf_event"))
 
-	die(mkdirp("/sys/fs/cgroup/cpuset", 0555))
+	die(mkdirp(rootContext, "/sys/fs/cgroup/cpuset", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/cpuset", "cgroup", cgroupMountFlags, "cpuset"))
 
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Errorf("Unable to increase rlimit: %s", err)
 	}
 
-	die(mkdirp("/etc", 0755))
-	die(os.WriteFile("/etc/hostname", []byte("localhost\n"), 0755))
+	die(mkdirp(rootContext, "/etc", 0755))
+	die(os.WriteFile(rootContext, "/etc/hostname", []byte("localhost\n"), 0755))
 	hosts := []string{
 		"127.0.0.1	        localhost",
 		"::1		        localhost ip6-localhost ip6-loopback",
 		"ff02::1		ip6-allnodes",
 		"ff02::2		ip6-allrouters",
 	}
-	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
-	die(os.WriteFile("/etc/resolv.conf", []byte("nameserver 8.8.8.8"), 0755))
+	die(os.WriteFile(rootContext, "/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
+	die(os.WriteFile(rootContext, "/etc/resolv.conf", []byte("nameserver 8.8.8.8"), 0755))
 
 	if *setDefaultRoute {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))

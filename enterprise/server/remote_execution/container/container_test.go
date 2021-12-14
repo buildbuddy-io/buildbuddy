@@ -55,12 +55,12 @@ func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) contex
 }
 
 func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
-	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ctx := userCtx(t, ta, "US1")
+	env := testenv.GetTestEnv(t, ctx)
 	env.SetAuthenticator(ta)
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
-	ctx := userCtx(t, ta, "US1")
 	goodCreds1 := container.PullCredentials{
 		Username: "user",
 		Password: "short-lived-token-1",
@@ -92,12 +92,12 @@ func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 }
 
 func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) {
-	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	ctx := userCtx(t, ta, "US1")
+	env := testenv.GetTestEnv(t, ctx)
 	env.SetAuthenticator(ta)
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	imageRef := "docker.io/some-org/some-image:v1.0.0"
-	ctx := userCtx(t, ta, "US1")
 	goodCreds := container.PullCredentials{
 		Username: "user",
 		Password: "secret",
@@ -122,8 +122,8 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 }
 
 func TestImageCacheAuthenticator(t *testing.T) {
-	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env := testenv.GetTestEnv(t, context.Background())
 	env.SetAuthenticator(ta)
 
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -237,7 +237,7 @@ func TestImageCacheAuthenticator(t *testing.T) {
 }
 
 func TestGetPullCredentials(t *testing.T) {
-	env := testenv.GetTestEnv(t)
+	env := testenv.GetTestEnv(t, context.Background())
 
 	env.GetConfigurator().GetExecutorConfig().ContainerRegistries = []config.ContainerRegistryConfig{
 		{

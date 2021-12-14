@@ -50,7 +50,7 @@ func (e *evilCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 
 func TestBatchUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
@@ -61,7 +61,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 	req := &repb.BatchUpdateBlobsRequest{}
 	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 			Digest: d,
 			Data:   buf,
@@ -79,7 +79,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
@@ -89,21 +89,21 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	req := &repb.BatchUpdateBlobsRequest{}
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 	buf[0] = ^buf[0] // corrupt the data in buf
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest: d,
 		Data:   buf,
 	})
 
-	d2, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 	d2.SizeBytes += 1 // corrupt the payload size of d2
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest: d2,
 		Data:   buf,
 	})
 
-	d3, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d3, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 	req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest: d3,
 		Data:   buf,
@@ -121,7 +121,7 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 
 func TestMalevolentCache(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
@@ -135,7 +135,7 @@ func TestMalevolentCache(t *testing.T) {
 	clientConn := runCASServer(ctx, te, t)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
-	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 	set, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
 			{

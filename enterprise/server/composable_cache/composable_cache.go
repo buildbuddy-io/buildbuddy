@@ -2,10 +2,10 @@ package composable_cache
 
 import (
 	"context"
-	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -181,17 +181,17 @@ func (c *composableCache) Delete(ctx context.Context, d *repb.Digest) error {
 // Any error encountered while writing is *ignored*.
 // Once the reader encounters an EOF, the writer is closed.
 type ReadCloser struct {
-	io.Reader
-	io.Closer
+	ctxio.Reader
+	ctxio.Closer
 }
 
 type MultiCloser struct {
-	closers []io.Closer
+	closers []ctxio.Closer
 }
 
-func (m *MultiCloser) Close() error {
+func (m *MultiCloser) Close(ctx context.Context) error {
 	for _, c := range m.closers {
-		err := c.Close()
+		err := c.Close(ctx)
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *composableCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *composableCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	if outerReader, err := c.outer.Reader(ctx, d, offset); err == nil {
 		return outerReader, nil
 	}
@@ -212,8 +212,8 @@ func (c *composableCache) Reader(ctx context.Context, d *repb.Digest, offset int
 	if c.mode&ModeReadThrough != 0 && offset == 0 {
 		if outerWriter, err := c.outer.Writer(ctx, d); err == nil {
 			tr := &ReadCloser{
-				io.TeeReader(innerReader, outerWriter),
-				&MultiCloser{[]io.Closer{innerReader, outerWriter}},
+				ctxio.TeeReader(innerReader, outerWriter),
+				&MultiCloser{[]ctxio.Closer{innerReader, outerWriter}},
 			}
 			return tr, nil
 		}
@@ -223,30 +223,30 @@ func (c *composableCache) Reader(ctx context.Context, d *repb.Digest, offset int
 }
 
 type doubleWriter struct {
-	inner   io.WriteCloser
-	outer   io.WriteCloser
-	closeFn func(err error)
+	inner   ctxio.WriteCloser
+	outer   ctxio.WriteCloser
+	closeFn func(ctx context.Context, err error)
 }
 
-func (d *doubleWriter) Write(p []byte) (int, error) {
-	n, err := d.inner.Write(p)
+func (d *doubleWriter) Write(ctx context.Context, p []byte) (int, error) {
+	n, err := d.inner.Write(ctx, p)
 	if err != nil {
-		d.closeFn(err)
+		d.closeFn(ctx, err)
 		return n, err
 	}
 	if n > 0 {
-		d.outer.Write(p)
+		d.outer.Write(ctx, p)
 	}
 	return n, err
 }
 
-func (d *doubleWriter) Close() error {
-	err := d.inner.Close()
-	d.closeFn(err)
+func (d *doubleWriter) Close(ctx context.Context) error {
+	err := d.inner.Close(ctx)
+	d.closeFn(ctx, err)
 	return err
 }
 
-func (c *composableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *composableCache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	innerWriter, err := c.inner.Writer(ctx, d)
 	if err != nil {
 		return nil, err
@@ -257,9 +257,9 @@ func (c *composableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 			dw := &doubleWriter{
 				inner: innerWriter,
 				outer: outerWriter,
-				closeFn: func(err error) {
+				closeFn: func(ctx context.Context, err error) {
 					if err == nil {
-						outerWriter.Close()
+						outerWriter.Close(ctx)
 					}
 				},
 			}

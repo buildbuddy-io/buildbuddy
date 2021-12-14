@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"github.com/stretchr/testify/require"
 
 	"google.golang.org/grpc"
@@ -69,7 +70,7 @@ func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Ins
 
 func TestRPCRead(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
@@ -134,9 +135,7 @@ func TestRPCRead(t *testing.T) {
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
+	require.NoError(t, err)
 
 	for _, tc := range cases {
 		// Set the value in the cache.
@@ -160,12 +159,12 @@ func TestRPCRead(t *testing.T) {
 
 func TestRPCWrite(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a regular bytestream upload works.
-	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
+	d, readSeeker := testdigest.NewRandomDigestReader(t, ctx, 1000)
 	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
@@ -175,16 +174,16 @@ func TestRPCWrite(t *testing.T) {
 
 func TestRPCMalformedWrite(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (incorrect digest) is rejected.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	d, buf := testdigest.NewRandomDigestBuf(t, ctx, 1000)
 	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
-	readSeeker := bytes.NewReader(buf)
+	readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf))
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
@@ -193,16 +192,16 @@ func TestRPCMalformedWrite(t *testing.T) {
 
 func TestRPCTooLongWrite(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a malformed upload (wrong bytesize) is rejected.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	d, buf := testdigest.NewRandomDigestBuf(t, ctx, 1000)
 	d.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
 	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
 
-	readSeeker := bytes.NewReader(buf)
+	readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf))
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
@@ -212,18 +211,18 @@ func TestRPCTooLongWrite(t *testing.T) {
 // Tests Read/Write of a blob that exceeds the default gRPC message size.
 func TestRPCReadWriteLargeBlob(t *testing.T) {
 	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
+	te := testenv.GetTestEnv(t, ctx)
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	blob, err := random.RandomString(10_000_000)
 	require.NoError(t, err)
-	d, err := digest.Compute(strings.NewReader(blob))
+	d, err := digest.Compute(ctx, ctxio.CtxReadSeekerWrapper(strings.NewReader(blob)))
 	require.NoError(t, err)
 	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
 
 	// Write
-	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))
+	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, ctxio.CtxReadSeekerWrapper(strings.NewReader(blob)))
 	require.NoError(t, err)
 
 	// Read

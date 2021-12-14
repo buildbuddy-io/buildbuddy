@@ -58,8 +58,8 @@ func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
 	assert.FailNow(t, "RPC status error did not contain a syscall error number", "RPC error: %s", err)
 }
 
-func newServer(t *testing.T) (*vfs_server.Server, string) {
-	env := testenv.GetTestEnv(t)
+func newServer(t *testing.T, ctx context.Context) (*vfs_server.Server, string) {
+	env := testenv.GetTestEnv(t, ctx)
 	tmpDir := testfs.MakeTempDir(t)
 
 	server := vfs_server.New(env, tmpDir)
@@ -67,7 +67,7 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 }
 
 func TestGetLayout(t *testing.T) {
-	server, tmpDir := newServer(t)
+	server, tmpDir := newServer(t, context.Background())
 
 	dir1File1Contents := "file one"
 	dir1File2Contents := "file two"
@@ -93,10 +93,11 @@ func TestGetLayout(t *testing.T) {
 		"dir1/file2": "file two but lazy",
 		"dir1/file4": dir1File4Contents,
 	}}
-	err = server.Prepare(p)
+	ctx := context.Background()
+	err = server.Prepare(ctx, p)
 	require.NoError(t, err)
 
-	rsp, err := server.GetLayout(context.Background(), &vfspb.GetLayoutRequest{})
+	rsp, err := server.GetLayout(ctx, &vfspb.GetLayoutRequest{})
 	require.NoError(t, err)
 
 	assert.Empty(t, cmp.Diff(&vfspb.DirectoryEntry{
@@ -150,25 +151,25 @@ func TestGetLayout(t *testing.T) {
 }
 
 func TestOpenNonExistentFile(t *testing.T) {
-	server, _ := newServer(t)
-
 	ctx := context.Background()
+	server, _ := newServer(t, ctx)
+
 	_, err := server.Open(ctx, &vfspb.OpenRequest{Path: "some/file"})
 	requireSyscallError(t, err, syscall.ENOENT)
 }
 
 func TestLazyLoadFile(t *testing.T) {
-	server, _ := newServer(t)
+	ctx := context.Background()
+	server, _ := newServer(t, ctx)
 
 	lazyFilePath := "some/file/path"
 	lazyFileContents := "this is a file, or is it...?"
 	p := &FakeLazyFileProvider{contents: map[string]string{
 		lazyFilePath: lazyFileContents,
 	}}
-	err := server.Prepare(p)
+	err := server.Prepare(ctx, p)
 	require.NoError(t, err)
 
-	ctx := context.Background()
 	rsp, err := server.Open(ctx, &vfspb.OpenRequest{Path: lazyFilePath})
 	require.NoError(t, err)
 
@@ -178,8 +179,8 @@ func TestLazyLoadFile(t *testing.T) {
 }
 
 func TestFileHandles(t *testing.T) {
-	server, _ := newServer(t)
 	ctx := context.Background()
+	server, _ := newServer(t, ctx)
 
 	testFile := "test.file"
 	openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
@@ -248,8 +249,8 @@ func TestFileHandles(t *testing.T) {
 }
 
 func TestDirOps(t *testing.T) {
-	server, _ := newServer(t)
 	ctx := context.Background()
+	server, _ := newServer(t, ctx)
 
 	// Creation should fail when parent dir doesn't exist.
 	_, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Path: "dir/subdir", Perms: 0777})
@@ -275,8 +276,8 @@ func TestDirOps(t *testing.T) {
 }
 
 func TestFilenameOps(t *testing.T) {
-	server, tmpDir := newServer(t)
 	ctx := context.Background()
+	server, tmpDir := newServer(t, ctx)
 
 	testFile := "a.file"
 	err := os.WriteFile(filepath.Join(tmpDir, testFile), []byte("some data"), 0600)
@@ -303,8 +304,8 @@ func TestFilenameOps(t *testing.T) {
 }
 
 func TestSymlinkOps(t *testing.T) {
-	server, tmpDir := newServer(t)
 	ctx := context.Background()
+	server, tmpDir := newServer(t, ctx)
 
 	// Basic link with an absolute target path.
 	{

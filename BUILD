@@ -128,6 +128,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy",
     deps = [
         "//server/util/fileresolver",
+        "//server/util/tracing/fs",
     ],
 )
 

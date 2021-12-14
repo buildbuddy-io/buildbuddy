@@ -13,6 +13,8 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/os",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//status",

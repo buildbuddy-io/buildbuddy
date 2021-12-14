@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/webhooks/webhook_data",
+        "//server/util/tracing/ctxio",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
@@ -20,6 +21,7 @@ go_test(
     deps = [
         ":config",
         "//enterprise/server/workflow/config/test_data",
+        "//server/util/tracing/ctxio",
         "@com_github_stretchr_testify//assert",
     ],
 )

@@ -18,6 +18,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",

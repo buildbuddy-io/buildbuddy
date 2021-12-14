@@ -1,6 +1,7 @@
 package approximatelru_test
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestContains(t *testing.T) {
 	}
 	randomSampleFn := func() (interface{}, interface{}) {
 		keys := make([]digest.Key, 0, len(digests))
-		for k, _ := range digests {
+		for k := range digests {
 			keys = append(keys, k)
 		}
 		k := keys[rand.Intn(len(keys))]
@@ -47,8 +48,9 @@ func TestContains(t *testing.T) {
 	})
 	require.Nil(t, err)
 
+	ctx := context.Background()
 	for i := 0; i < 15; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, 100)
 		dk := digest.NewKey(d)
 		digests[dk] = buf
 		l.Add(d.GetHash(), buf)
@@ -86,7 +88,7 @@ func TestEviction(t *testing.T) {
 	}
 	randomSampleFn := func() (interface{}, interface{}) {
 		keys := make([]digest.Key, 0, len(digests))
-		for k, _ := range digests {
+		for k := range digests {
 			keys = append(keys, k)
 		}
 		k := keys[rand.Intn(len(keys))]
@@ -103,9 +105,10 @@ func TestEviction(t *testing.T) {
 	})
 	require.Nil(t, err)
 
+	ctx := context.Background()
 	// Fill the cache 100% full.
 	for i := 0; i < totalNumKeys; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, keySize)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, keySize)
 		dk := digest.NewKey(d)
 		digests[dk] = buf
 		digestKeys = append(digestKeys, dk)
@@ -118,7 +121,7 @@ func TestEviction(t *testing.T) {
 	// Now add 50% more stuff, ideally evicting half of
 	// the keys that were previously added above.
 	for i := 0; i < totalNumKeys/2; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, keySize)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, keySize)
 		dk := digest.NewKey(d)
 		digests[dk] = buf
 		digestKeys = append(digestKeys, dk)
@@ -180,7 +183,7 @@ func TestEvictionOutOfOrder(t *testing.T) {
 	}
 	randomSampleFn := func() (interface{}, interface{}) {
 		keys := make([]digest.Key, 0, len(digests))
-		for k, _ := range digests {
+		for k := range digests {
 			keys = append(keys, k)
 		}
 		k := keys[rand.Intn(len(keys))]
@@ -197,9 +200,10 @@ func TestEvictionOutOfOrder(t *testing.T) {
 	})
 	require.Nil(t, err)
 
+	ctx := context.Background()
 	// Fill the cache 100% full.
 	for i := 0; i < totalNumKeys; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, keySize)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, keySize)
 		dk := digest.NewKey(d)
 		digests[dk] = buf
 		digestKeys = append(digestKeys, dk)
@@ -219,7 +223,7 @@ func TestEvictionOutOfOrder(t *testing.T) {
 	// Now add 50% more stuff, ideally evicting half of
 	// the keys that were previously added above.
 	for i := 0; i < totalNumKeys/2; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, keySize)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, keySize)
 		dk := digest.NewKey(d)
 		digests[dk] = buf
 		digestKeys = append(digestKeys, dk)

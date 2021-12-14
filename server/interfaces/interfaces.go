@@ -2,7 +2,6 @@ package interfaces
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -203,8 +203,8 @@ type Cache interface {
 	Delete(ctx context.Context, d *repb.Digest) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
+	Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error)
+	Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error)
 }
 
 type InvocationDB interface {
@@ -396,8 +396,8 @@ type RemoteExecutionService interface {
 }
 
 type FileCache interface {
-	FastLinkFile(f *repb.FileNode, outputPath string) bool
-	AddFile(f *repb.FileNode, existingFilePath string)
+	FastLinkFile(ctx context.Context, f *repb.FileNode, outputPath string) bool
+	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string)
 	WaitForDirectoryScanToComplete()
 }
 
@@ -573,11 +573,11 @@ type XcodeLocator interface {
 type LRU interface {
 	// Inserts a value into the LRU. A boolean is returned that indicates
 	// if the value was successfully added.
-	Add(key, value interface{}) bool
+	Add(ctx context.Context, key, value interface{}) bool
 
 	// Inserts a value into the back of the LRU. A boolean is returned that
 	// indicates if the value was successfully added.
-	PushBack(key, value interface{}) bool
+	PushBack(ctx context.Context, key, value interface{}) bool
 
 	// Gets a value from the LRU, returns a boolean indicating if the value
 	// was present.
@@ -589,16 +589,16 @@ type LRU interface {
 	// Removes a value from the LRU, releasing resources associated with
 	// that value. Returns a boolean indicating if the value was sucessfully
 	// removed.
-	Remove(key interface{}) bool
+	Remove(ctx context.Context, key interface{}) bool
 
 	// Purge Remove()s all items in the LRU.
-	Purge()
+	Purge(ctx context.Context)
 
 	// Returns the total "size" of the LRU.
 	Size() int64
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (interface{}, bool)
+	RemoveOldest(ctx context.Context) (interface{}, bool)
 
 	// Returns metrics about the status of the LRU.
 	Metrics() string

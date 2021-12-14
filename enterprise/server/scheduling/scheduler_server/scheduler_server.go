@@ -672,11 +672,11 @@ type SchedulerServer struct {
 	pools map[nodePoolKey]*nodePool
 }
 
-func NewSchedulerServer(env environment.Env) (*SchedulerServer, error) {
-	return NewSchedulerServerWithOptions(env, &Options{})
+func NewSchedulerServer(ctx context.Context, env environment.Env) (*SchedulerServer, error) {
+	return NewSchedulerServerWithOptions(ctx, env, &Options{})
 }
 
-func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*SchedulerServer, error) {
+func NewSchedulerServerWithOptions(ctx context.Context, env environment.Env, options *Options) (*SchedulerServer, error) {
 	if env.GetRemoteExecutionRedisClient() == nil {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
@@ -705,7 +705,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil, status.FailedPreconditionError("Missing task router in env")
 	}
 
-	ownHostname, err := resources.GetMyHostname()
+	ownHostname, err := resources.GetMyHostname(ctx)
 	if err != nil {
 		return nil, status.UnknownErrorf("Could not determine own hostname: %s", err)
 	}

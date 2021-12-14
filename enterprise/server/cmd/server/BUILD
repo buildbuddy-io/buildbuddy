@@ -54,6 +54,7 @@ go_library(
         "//server/util/log",
         "//server/util/timeutil",
         "//server/util/tracing",
+        "//server/util/tracing/fs",
         "//server/version",
         "@org_golang_google_api//option:go_default_library",
     ],

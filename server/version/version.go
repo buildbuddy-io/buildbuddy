@@ -1,14 +1,15 @@
 package version
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 )
 
 const (
@@ -24,22 +25,22 @@ const (
 var commitSha string
 var version string
 
-func Print() {
-	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion())
+func Print(ctx context.Context) {
+	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion(ctx))
 	if commitHash := Commit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)
 	}
 	log.Infof("%s compiled with %s", appVersion, GoVersion())
 }
 
-func AppVersion() string {
+func AppVersion(ctx context.Context) string {
 	if version != "" && version != "{VERSION}" {
 		return version
 	}
 	var versionBytes []byte
 	if rfp, err := bazel.RunfilesPath(); err == nil {
 		versionFile := filepath.Join(rfp, versionFilename)
-		if b, err := os.ReadFile(versionFile); err == nil {
+		if b, err := os.ReadFile(ctx, versionFile); err == nil {
 			versionBytes = b
 		}
 	}

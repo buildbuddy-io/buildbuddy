@@ -15,6 +15,8 @@ go_library(
         "//server/util/cache_metrics",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )

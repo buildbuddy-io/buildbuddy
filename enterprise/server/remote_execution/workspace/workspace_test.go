@@ -1,6 +1,7 @@
 package workspace_test
 
 import (
+	"context"
 	"io/fs"
 	"io/ioutil"
 	"os"
@@ -17,10 +18,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func newWorkspace(t *testing.T, opts *workspace.Opts) *workspace.Workspace {
-	te := testenv.GetTestEnv(t)
+func newWorkspace(t *testing.T, ctx context.Context, opts *workspace.Opts) *workspace.Workspace {
+	te := testenv.GetTestEnv(t, ctx)
 	root := testfs.MakeTempDir(t)
-	ws, err := workspace.New(te, root, opts)
+	ws, err := workspace.New(ctx, te, root, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +79,7 @@ func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 		"foo/bar/DELETEME",
 	}
 
-	ws := newWorkspace(t, &workspace.Opts{Preserve: false})
+	ws := newWorkspace(t, context.Background(), &workspace.Opts{Preserve: false})
 	ws.SetTask(&repb.ExecutionTask{
 		Command: &repb.Command{
 			OutputDirectories: []string{
@@ -93,7 +94,7 @@ func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 	})
 	writeEmptyFiles(t, ws, filePaths)
 
-	err := ws.Clean()
+	err := ws.Clean(context.Background())
 
 	require.NoError(t, err)
 	assert.Empty(t, actualFilePaths(t, ws))
@@ -109,7 +110,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *te
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ws := newWorkspace(t, context.Background(), &workspace.Opts{Preserve: true})
 	ws.SetTask(&repb.ExecutionTask{
 		Command: &repb.Command{
 			OutputDirectories: []string{
@@ -124,7 +125,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *te
 	})
 	writeEmptyFiles(t, ws, filePaths)
 
-	err := ws.Clean()
+	err := ws.Clean(context.Background())
 
 	require.NoError(t, err)
 	assert.Equal(
@@ -143,7 +144,8 @@ func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
+	ctx := context.Background()
+	ws := newWorkspace(t, ctx, &workspace.Opts{Preserve: true})
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
@@ -151,11 +153,11 @@ func TestCleanInputsIfNecessary_CleanNone(t *testing.T) {
 	}
 
 	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+		"KEEPME":         {},
+		"foo/KEEPME":     {},
+		"foo/bar/KEEPME": {}}
 
-	err := ws.CleanInputsIfNecessary(keep)
+	err := ws.CleanInputsIfNecessary(ctx, keep)
 	require.NoError(t, err)
 
 	assert.Equal(
@@ -174,7 +176,8 @@ func TestCleanInputsIfNecessary_CleanAll(t *testing.T) {
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: "*"})
+	ctx := context.Background()
+	ws := newWorkspace(t, ctx, &workspace.Opts{Preserve: true, CleanInputs: "*"})
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
@@ -182,11 +185,11 @@ func TestCleanInputsIfNecessary_CleanAll(t *testing.T) {
 	}
 
 	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+		"KEEPME":         {},
+		"foo/KEEPME":     {},
+		"foo/bar/KEEPME": {}}
 
-	ws.CleanInputsIfNecessary(keep)
+	ws.CleanInputsIfNecessary(ctx, keep)
 
 	assert.Equal(
 		t, keepmePaths(filePaths), actualFilePaths(t, ws),
@@ -204,7 +207,8 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 		"foo/KEEPME",
 		"foo/bar/KEEPME",
 	}
-	ws := newWorkspace(t, &workspace.Opts{Preserve: true, CleanInputs: "**.h,**.framework/**"})
+	ctx := context.Background()
+	ws := newWorkspace(t, ctx, &workspace.Opts{Preserve: true, CleanInputs: "**.h,**.framework/**"})
 	writeEmptyFiles(t, ws, filePaths)
 
 	for _, file := range filePaths {
@@ -212,11 +216,11 @@ func TestCleanInputsIfNecessary_CleanMatching(t *testing.T) {
 	}
 
 	keep := map[string]*repb.FileNode{
-		"KEEPME":         &repb.FileNode{},
-		"foo/KEEPME":     &repb.FileNode{},
-		"foo/bar/KEEPME": &repb.FileNode{}}
+		"KEEPME":         {},
+		"foo/KEEPME":     {},
+		"foo/bar/KEEPME": {}}
 
-	err := ws.CleanInputsIfNecessary(keep)
+	err := ws.CleanInputsIfNecessary(ctx, keep)
 	require.NoError(t, err)
 
 	assert.Equal(

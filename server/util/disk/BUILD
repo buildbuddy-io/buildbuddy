@@ -9,5 +9,9 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/fs",
+        "//server/util/tracing/os",
     ],
 )

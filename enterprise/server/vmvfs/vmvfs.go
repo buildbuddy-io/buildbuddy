@@ -4,13 +4,13 @@ import (
 	"context"
 	"flag"
 	"net"
-	"os"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"google.golang.org/grpc"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -33,8 +33,8 @@ type vfsServer struct {
 	cancelRemoteFunc context.CancelFunc
 }
 
-func NewServer() (*vfsServer, error) {
-	if err := os.Mkdir(mountDir, 0755); err != nil {
+func NewServer(ctx context.Context) (*vfsServer, error) {
+	if err := os.Mkdir(ctx, mountDir, 0755); err != nil {
 		return nil, err
 	}
 
@@ -101,7 +101,7 @@ func main() {
 	}
 	log.Infof("Starting VM VFS listener on vsock port: %d", vsock.VMVFSPort)
 	server := grpc.NewServer()
-	vmService, err := NewServer()
+	vmService, err := NewServer(ctx)
 	if err != nil {
 		log.Fatalf("Error starting server: %s", err)
 	}

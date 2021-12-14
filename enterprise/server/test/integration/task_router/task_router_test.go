@@ -27,9 +27,10 @@ const (
 func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkflow(t *testing.T) {
 	// Mark a routable workflow task complete by executor 1.
 
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
+	ctx = withAuthUser(t, ctx, env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -69,9 +70,10 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsMultipleRunnersThatExecutedWorkfl
 func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComplete(t *testing.T) {
 	// Mark a routable workflow task complete by executor 1.
 
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
+	ctx = withAuthUser(t, ctx, env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -109,10 +111,11 @@ func TestTaskRouter_RankNodes_DefaultNodeLimit_ReturnsOnlyLatestNodeMarkedComple
 }
 
 func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) {
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
 	nodes := sequentiallyNumberedNodes(100)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
+	ctx = withAuthUser(t, ctx, env, "US1")
 	instanceName := ""
 
 	ranked := router.RankNodes(ctx, nil /*=cmd*/, instanceName, nodes)
@@ -121,9 +124,10 @@ func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) 
 }
 
 func TestTaskRouter_MarkComplete_DoesNotAffectNonRecyclableTasks(t *testing.T) {
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
+	ctx = withAuthUser(t, ctx, env, "US1")
 	cmd := &repb.Command{}
 	instanceName := "test-instance"
 
@@ -133,9 +137,10 @@ func TestTaskRouter_MarkComplete_DoesNotAffectNonRecyclableTasks(t *testing.T) {
 }
 
 func TestTaskRouter_MarkComplete_DoesNotAffectOtherGroups(t *testing.T) {
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
-	ctx1 := withAuthUser(t, context.Background(), env, "US1")
+	ctx1 := withAuthUser(t, ctx, env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -153,9 +158,10 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherGroups(t *testing.T) {
 }
 
 func TestTaskRouter_MarkComplete_DoesNotAffectOtherRemoteInstances(t *testing.T) {
-	env := newTestEnv(t)
+	ctx := context.Background()
+	env := newTestEnv(t, ctx)
 	router := newTaskRouter(t, env)
-	ctx := withAuthUser(t, context.Background(), env, "US1")
+	ctx = withAuthUser(t, ctx, env, "US1")
 	cmd := &repb.Command{
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -211,11 +217,11 @@ func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {
 	return router
 }
 
-func newTestEnv(t *testing.T) environment.Env {
+func newTestEnv(t *testing.T, ctx context.Context) environment.Env {
 	rand.Seed(time.Now().UnixNano())
 
 	redisTarget := testredis.Start(t)
-	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
+	env := enterprise_testenv.GetCustomTestEnv(t, ctx, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
 	userMap := testauth.TestUsers("US1", "GR1", "US2", "GR2")

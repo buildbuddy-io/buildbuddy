@@ -8,8 +8,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -36,6 +34,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -101,14 +102,14 @@ var (
 	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
 )
 
-func k8sPodID() (string, error) {
-	if _, err := os.Stat("/proc/1/cpuset"); err != nil {
+func k8sPodID(ctx context.Context) (string, error) {
+	if _, err := os.Stat(ctx, "/proc/1/cpuset"); err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
 		return "", err
 	}
-	buf, err := os.ReadFile("/proc/1/cpuset")
+	buf, err := os.ReadFile(ctx, "/proc/1/cpuset")
 	if err != nil {
 		return "", err
 	}
@@ -179,12 +180,12 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
-		if err := r.Workspace.Clean(); err != nil {
+		if err := r.Workspace.Clean(ctx); err != nil {
 			log.Errorf("Failed to clean workspace: %s", err)
 			return err
 		}
 	}
-	if err := r.Workspace.CreateOutputDirs(); err != nil {
+	if err := r.Workspace.CreateOutputDirs(ctx); err != nil {
 		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
 	}
 
@@ -280,9 +281,9 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 		}
 	}
 	if r.VFSServer != nil {
-		r.VFSServer.Stop()
+		r.VFSServer.Stop(ctx)
 	}
-	if err := r.Workspace.Remove(); err != nil {
+	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
@@ -360,13 +361,13 @@ type Pool struct {
 	runners []*CommandRunner
 }
 
-func NewPool(env environment.Env) (*Pool, error) {
+func NewPool(ctx context.Context, env environment.Env) (*Pool, error) {
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
 	}
 
-	podID, err := k8sPodID()
+	podID, err := k8sPodID(ctx)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
@@ -374,7 +375,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 	var dockerClient *dockerclient.Client
 	containerdSocket := ""
 	if executorConfig.ContainerdSocket != "" {
-		_, err := os.Stat(executorConfig.ContainerdSocket)
+		_, err := os.Stat(ctx, executorConfig.ContainerdSocket)
 		if os.IsNotExist(err) {
 			return nil, status.FailedPreconditionErrorf("Containerd socket %q not found", executorConfig.ContainerdSocket)
 		}
@@ -384,7 +385,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 			log.Warning("containerd_socket and docker_socket both specified. Ignoring docker_socket in favor of containerd.")
 		}
 	} else if executorConfig.DockerSocket != "" {
-		_, err := os.Stat(executorConfig.DockerSocket)
+		_, err := os.Stat(ctx, executorConfig.DockerSocket)
 		if os.IsNotExist(err) {
 			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", executorConfig.DockerSocket)
 		}
@@ -472,7 +473,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 			"max_memory_exceeded",
 		}
 	}
-	du, err := r.Workspace.DiskUsageBytes()
+	du, err := r.Workspace.DiskUsageBytes(ctx)
 	if err != nil {
 		return &labeledError{
 			status.WrapError(err, "failed to compute runner disk usage"),
@@ -694,7 +695,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return r, nil
 		}
 	}
-	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	ws, err := workspace.New(ctx, p.env, p.buildRoot, wsOpts)
 	ctr, err := p.newContainer(ctx, props, task)
 	if err != nil {
 		return nil, err
@@ -705,7 +706,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
 	if enableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
 		vfsDir := ws.Path() + "_vfs"
-		if err := os.Mkdir(vfsDir, 0755); err != nil {
+		if err := os.Mkdir(ctx, vfsDir, 0755); err != nil {
 			return nil, status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
 		}
 
@@ -771,7 +772,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
-		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
+		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -959,7 +960,7 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 	}
 	// Clean the workspace once before adding it to the pool (to save on disk
 	// space).
-	if err := r.Workspace.Clean(); err != nil {
+	if err := r.Workspace.Clean(ctx); err != nil {
 		log.Errorf("Failed to clean workspace: %s", err)
 		return
 	}
@@ -1103,7 +1104,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		Inputs: make([]*wkpb.Input, 0, len(r.Workspace.Inputs)),
 	}
 
-	expandedArguments, err := r.expandArguments(flagFiles)
+	expandedArguments, err := r.expandArguments(ctx, flagFiles)
 	if err != nil {
 		result.Error = status.WrapError(err, "expanding arguments")
 		return result
@@ -1168,18 +1169,18 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 // files. The @ itself can be escaped with @@. This deliberately does not expand --flagfile= style
 // arguments, because we want to get rid of the expansion entirely at some point in time.
 // Based on: https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
-func (r *CommandRunner) expandArguments(args []string) ([]string, error) {
+func (r *CommandRunner) expandArguments(ctx context.Context, args []string) ([]string, error) {
 	expandedArgs := make([]string, 0)
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {
-			file, err := os.Open(filepath.Join(r.Workspace.Path(), arg[1:]))
+			file, err := os.Open(ctx, filepath.Join(r.Workspace.Path(), arg[1:]))
 			if err != nil {
 				return nil, err
 			}
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
+			defer file.Close(ctx)
+			scanner := bufio.NewScanner(ctxio.ReaderWrapper(ctx, file))
 			for scanner.Scan() {
-				args, err := r.expandArguments([]string{scanner.Text()})
+				args, err := r.expandArguments(ctx, []string{scanner.Text()})
 				if err != nil {
 					return nil, err
 				}

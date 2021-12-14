@@ -3,36 +3,36 @@ package disk
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/fs"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 )
 
-func EnsureDirectoryExists(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
+func EnsureDirectoryExists(ctx context.Context, dir string) error {
+	if _, err := os.Stat(ctx, dir); os.IsNotExist(err) {
+		return os.MkdirAll(ctx, dir, 0755)
 	}
 	return nil
 }
 
-func DeleteLocalFileIfExists(filename string) {
-	_, err := os.Stat(filename)
+func DeleteLocalFileIfExists(ctx context.Context, filename string) {
+	_, err := os.Stat(ctx, filename)
 	if err == nil {
-		if err := os.Remove(filename); err != nil {
+		if err := os.Remove(ctx, filename); err != nil {
 			log.Warningf("Error deleting file %q: %s", filename, err)
 		}
 	}
 }
 
 func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
-	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+	if err := EnsureDirectoryExists(ctx, filepath.Dir(fullPath)); err != nil {
 		return 0, err
 	}
 
@@ -45,12 +45,12 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 	// We defer a cleanup function that would delete our tempfile here --
 	// that way if the write is truncated (say, because it's too big) we
 	// still remove the tmp file.
-	defer DeleteLocalFileIfExists(tmpFileName)
+	defer DeleteLocalFileIfExists(ctx, tmpFileName)
 
 	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
 		return 0, err
 	}
-	return len(data), os.Rename(tmpFileName, fullPath)
+	return len(data), os.Rename(ctx, tmpFileName, fullPath)
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
@@ -62,11 +62,11 @@ func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
 }
 
 func DeleteFile(ctx context.Context, fullPath string) error {
-	return os.Remove(fullPath)
+	return os.Remove(ctx, fullPath)
 }
 
-func FileExists(fullPath string) (bool, error) {
-	_, err := os.Stat(fullPath)
+func FileExists(ctx context.Context, fullPath string) (bool, error) {
+	_, err := os.Stat(ctx, fullPath)
 	if err == nil {
 		return true, nil
 	} else if os.IsNotExist(err) {
@@ -77,23 +77,23 @@ func FileExists(fullPath string) (bool, error) {
 }
 
 type SectionReaderCloser struct {
-	*io.SectionReader
-	io.Closer
+	*ctxio.SectionReader
+	ctxio.Closer
 }
 
 func FileReader(ctx context.Context, fullPath string, offset, length int64) (*SectionReaderCloser, error) {
-	f, err := os.Open(fullPath)
+	f, err := os.Open(ctx, fullPath)
 	if err != nil {
 		return nil, err
 	}
-	info, err := f.Stat()
+	info, err := f.Stat(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if length > 0 {
-		return &SectionReaderCloser{io.NewSectionReader(f, offset, length), f}, nil
+		return &SectionReaderCloser{ctxio.NewSectionReader(f, offset, length), f}, nil
 	}
-	return &SectionReaderCloser{io.NewSectionReader(f, offset, info.Size()-offset), f}, nil
+	return &SectionReaderCloser{ctxio.NewSectionReader(f, offset, info.Size()-offset), f}, nil
 }
 
 type writeMover struct {
@@ -101,16 +101,16 @@ type writeMover struct {
 	finalPath string
 }
 
-func (w *writeMover) Close() error {
+func (w *writeMover) Close(ctx context.Context) error {
 	tmpName := w.File.Name()
-	if err := w.File.Close(); err != nil {
+	if err := w.File.Close(ctx); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, w.finalPath)
+	return os.Rename(ctx, tmpName, w.finalPath)
 }
 
-func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
-	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
+func FileWriter(ctx context.Context, fullPath string) (ctxio.WriteCloser, error) {
+	if err := EnsureDirectoryExists(ctx, filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
 	randStr, err := random.RandomString(10)
@@ -119,7 +119,7 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	}
 
 	tmpFileName := fullPath + fmt.Sprintf(".%s.tmp", randStr)
-	f, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(ctx, tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -129,19 +129,19 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	}
 	// Ensure that the temp file is cleaned up here too!
 	runtime.SetFinalizer(wm, func(m *writeMover) {
-		DeleteLocalFileIfExists(tmpFileName)
+		DeleteLocalFileIfExists(ctx, tmpFileName)
 	})
 	return wm, nil
 }
 
 // DirSize returns the size of a directory specified by path, in bytes.
-func DirSize(path string) (int64, error) {
+func DirSize(ctx context.Context, path string) (int64, error) {
 	var size int64
-	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(ctx, path, func(ctx context.Context, _ string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		info, err := entry.Info()
+		info, err := entry.Info(ctx)
 		if err != nil {
 			return err
 		}

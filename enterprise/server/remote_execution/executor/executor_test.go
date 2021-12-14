@@ -19,8 +19,8 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func getTestExecutor(t *testing.T) *Executor {
-	env := testenv.GetTestEnv(t)
+func getTestExecutor(t *testing.T, ctx context.Context) *Executor {
+	env := testenv.GetTestEnv(t, ctx)
 	id := "test-executor-id"
 	ex, err := NewExecutor(env, id, &Options{})
 	if err != nil {
@@ -49,8 +49,8 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 }
 
 func TestHelloWorldOnBareMetal(t *testing.T) {
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -86,8 +86,8 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 func TestHelloWorldOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
 	flags.Set(t, "executor.containerd_socket", "")
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -125,8 +125,8 @@ func TestTimeoutOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
 	flags.Set(t, "executor.containerd_socket", "")
 
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	// Execute a no-op command once to allow time for the image to be
 	// pulled if it's not cached already.
@@ -150,8 +150,8 @@ func TestTimeoutOnDocker(t *testing.T) {
 func TestHelloWorldOnContainerd(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "")
 	flags.Set(t, "executor.containerd_socket", "/run/containerd/containerd.sock")
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -202,8 +202,8 @@ func containerizedShCommand(cmd string) *repb.Command {
 func TestTimeoutOnContainerd(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "")
 	flags.Set(t, "executor.containerd_socket", "/run/containerd/containerd.sock")
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	// Execute a no-op command once to allow time for the image to be
 	// pulled if it's not cached already.
@@ -227,8 +227,8 @@ func TestTimeoutOnContainerd(t *testing.T) {
 func TestNoRunAsRootOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
 	flags.Set(t, "executor.containerd_socket", "")
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		Arguments: []string{"id", "-u"},
@@ -259,8 +259,8 @@ func TestNoRunAsRootOnDocker(t *testing.T) {
 func TestRunAsRootOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
 	flags.Set(t, "executor.containerd_socket", "")
-	ex := getTestExecutor(t)
 	ctx := context.Background()
+	ex := getTestExecutor(t, ctx)
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		Arguments: []string{"id", "-u"},

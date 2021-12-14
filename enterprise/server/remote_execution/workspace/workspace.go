@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -19,7 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"github.com/gobwas/glob"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -60,13 +60,13 @@ type Opts struct {
 }
 
 // New creates a new workspace directly under the given parent directory.
-func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
+func New(ctx context.Context, env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to generate workspace ID")
 	}
 	rootDir := filepath.Join(parentDir, id.String())
-	if err := os.MkdirAll(rootDir, 0755); err != nil {
+	if err := os.MkdirAll(ctx, rootDir, 0755); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
 	}
 
@@ -107,14 +107,14 @@ func (ws *Workspace) CommandWorkingDirectory() string {
 
 // CreateOutputDirs creates the required output directories for the current
 // action.
-func (ws *Workspace) CreateOutputDirs() error {
+func (ws *Workspace) CreateOutputDirs(ctx context.Context) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
 		return WorkspaceMarkedForRemovalError
 	}
 
-	return ws.dirHelper.CreateOutputDirs()
+	return ws.dirHelper.CreateOutputDirs(ctx)
 }
 
 // DownloadInputs downloads any missing inputs for the current action.
@@ -125,8 +125,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		return nil, WorkspaceMarkedForRemovalError
 	}
 
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx)
+	defer spn.End()
 
 	opts := &dirtools.DownloadTreeOpts{}
 	if ws.Opts.Preserve {
@@ -135,7 +135,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	}
 	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
-		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
+		if err := ws.CleanInputsIfNecessary(ctx, txInfo.Exists); err != nil {
 			return txInfo, err
 		}
 
@@ -150,9 +150,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
-func (ws *Workspace) AddCIRunner() error {
+func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	destPath := path.Join(ws.Path(), "buildbuddy_ci_runner")
-	exists, err := disk.FileExists(destPath)
+	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err
 	}
@@ -162,21 +162,21 @@ func (ws *Workspace) AddCIRunner() error {
 	// TODO(bduffany): Consider doing a fastcopy here instead of a normal copy.
 	// The CI runner binary may be on a different device than the runner workspace
 	// so we'd have to put it somewhere on the same device before fastcopying.
-	srcFile, err := ws.env.GetFileResolver().Open("enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
+	srcFile, err := ws.env.GetFileResolver().Open(ctx, "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner")
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
-	destFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0555)
+	defer srcFile.Close(ctx)
+	destFile, err := os.OpenFile(ctx, destPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0555)
 	if err != nil {
 		return err
 	}
-	defer destFile.Close()
-	_, err = io.Copy(destFile, srcFile)
+	defer destFile.Close(ctx)
+	_, err = ctxio.Copy(ctx, destFile, srcFile)
 	return err
 }
 
-func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {
+func (ws *Workspace) CleanInputsIfNecessary(ctx context.Context, keep map[string]*repb.FileNode) error {
 	if ws.Opts.CleanInputs == "" {
 		return nil
 	}
@@ -191,12 +191,12 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 			inputFilesToCleanUp[path] = node
 		}
 	}
-	for path, _ := range keep {
+	for path := range keep {
 		delete(inputFilesToCleanUp, path)
 	}
 	if len(inputFilesToCleanUp) > 0 {
-		for path, _ := range inputFilesToCleanUp {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+		for path := range inputFilesToCleanUp {
+			if err := os.RemoveAll(ctx, filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean inputs: %s", err)
 			}
 			delete(ws.Inputs, path)
@@ -214,8 +214,8 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 		return nil, WorkspaceMarkedForRemovalError
 	}
 
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx)
+	defer spn.End()
 
 	bsClient := ws.env.GetByteStreamClient()
 	instanceName := ws.task.GetExecuteRequest().GetInstanceName()
@@ -227,7 +227,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stdout))
+		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, ctxio.NoTraceCtxReadSeekerWrapper(bytes.NewReader(cmdResult.Stdout)))
 		if err != nil {
 			log.Warningf("Failed to upload stdout: %s", err)
 		}
@@ -236,7 +236,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	eg.Go(func() error {
 		// Errors uploading stderr/stdout are swallowed.
 		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stderr))
+		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, ctxio.NoTraceCtxReadSeekerWrapper(bytes.NewReader(cmdResult.Stderr)))
 		if err != nil {
 			log.Warningf("Failed to upload stderr: %s", err)
 		}
@@ -255,30 +255,30 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	return txInfo, nil
 }
 
-func (ws *Workspace) Remove() error {
+func (ws *Workspace) Remove(ctx context.Context) error {
 	ws.mu.Lock()
 	ws.removing = true
 	// No need to keep the lock held while removing; other operations will
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
 
-	return os.RemoveAll(ws.rootDir)
+	return os.RemoveAll(ctx, ws.rootDir)
 }
 
 // Size computes the current workspace size in bytes.
-func (ws *Workspace) DiskUsageBytes() (int64, error) {
+func (ws *Workspace) DiskUsageBytes(ctx context.Context) (int64, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
 		return 0, WorkspaceMarkedForRemovalError
 	}
 
-	return disk.DirSize(ws.Path())
+	return disk.DirSize(ctx, ws.Path())
 }
 
 // Clean removes files and directories in the workspace which are not preserved
 // according to the workspace options.
-func (ws *Workspace) Clean() error {
+func (ws *Workspace) Clean(ctx context.Context) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -295,7 +295,7 @@ func (ws *Workspace) Clean() error {
 	if ws.Opts.Preserve {
 		cmd := ws.task.GetCommand()
 		for _, path := range cmd.GetOutputFiles() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(ctx, filepath.Join(ws.Path(), path)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
 			// In case this output path was specified as an input path previously,
@@ -305,7 +305,7 @@ func (ws *Workspace) Clean() error {
 			// a directory, then we need to remove all `inputs` under that directory.
 		}
 		for _, outputDirPath := range cmd.GetOutputDirectories() {
-			if err := os.RemoveAll(filepath.Join(ws.Path(), outputDirPath)); err != nil && !os.IsNotExist(err) {
+			if err := os.RemoveAll(ctx, filepath.Join(ws.Path(), outputDirPath)); err != nil && !os.IsNotExist(err) {
 				return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 			}
 			// Need to delete any known input files which lived under that
@@ -313,7 +313,7 @@ func (ws *Workspace) Clean() error {
 			// TODO: This nested loop impl may slow down the action if there are a lot
 			// of output directories. If this turns out to be an issue, might need to
 			// optimize this further.
-			for inputPath, _ := range ws.Inputs {
+			for inputPath := range ws.Inputs {
 				if isParent(outputDirPath, inputPath) {
 					delete(ws.Inputs, inputPath)
 				}
@@ -325,19 +325,19 @@ func (ws *Workspace) Clean() error {
 		return nil
 	}
 
-	if err := removeChildren(ws.Path()); err != nil {
+	if err := removeChildren(ctx, ws.Path()); err != nil {
 		return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 	}
 	return nil
 }
 
-func removeChildren(dirPath string) error {
-	entries, err := os.ReadDir(dirPath)
+func removeChildren(ctx context.Context, dirPath string) error {
+	entries, err := os.ReadDir(ctx, dirPath)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(dirPath, entry.Name())); err != nil {
+		if err := os.RemoveAll(ctx, filepath.Join(dirPath, entry.Name())); err != nil {
 			return err
 		}
 	}

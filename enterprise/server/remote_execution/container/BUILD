@@ -13,7 +13,7 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
-        "//server/util/tracing",
+        "//server/util/tracing/span",
         "@com_github_docker_distribution//reference",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",

@@ -41,8 +41,8 @@ func init() {
 	}
 }
 
-func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func getTestEnv(t testing.TB, ctx context.Context, users map[string]interfaces.UserInfo) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }
@@ -61,10 +61,10 @@ type digestBuf struct {
 	buf []byte
 }
 
-func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestBuf {
+func makeDigests(t testing.TB, ctx context.Context, numDigests int, digestSizeBytes int64) []*digestBuf {
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, digestSizeBytes)
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   d,
 			buf: buf,
@@ -89,17 +89,17 @@ func getMemoryCache(t testing.TB) interfaces.Cache {
 	return mc
 }
 
-func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
+func getDiskCache(t testing.TB, ctx context.Context, env environment.Env) interfaces.Cache {
 	testRootDir := testfs.MakeTempDir(t)
-	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(ctx, env, &config.DiskConfig{RootDirectory: testRootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return dc
 }
 
-func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
-	dc := getDiskCache(t, te)
+func getDistributedDiskCache(t testing.TB, ctx context.Context, te *testenv.TestEnv) interfaces.Cache {
+	dc := getDiskCache(t, ctx, te)
 	listenAddr := fmt.Sprintf("localhost:%d", app.FreePort(t))
 	conf := distributed.CacheConfig{
 		ListenAddr:         listenAddr,
@@ -117,7 +117,7 @@ func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache
 }
 
 func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, ctx, numDigests, digestSizeBytes)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -132,7 +132,7 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 }
 
 func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, ctx, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -148,7 +148,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 }
 
 func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, ctx, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*repb.Digest, 0, len(digestBufs))
 	var sumBytes int64
@@ -169,7 +169,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 }
 
 func benchmarkContainsMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
+	digestBufs := makeDigests(b, ctx, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*repb.Digest, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
@@ -192,12 +192,12 @@ type namedCache struct {
 	Name string
 }
 
-func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
-	dc := getDistributedDiskCache(b, te)
+func getAllCaches(b *testing.B, ctx context.Context, te *testenv.TestEnv) []*namedCache {
+	dc := getDistributedDiskCache(b, ctx, te)
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
 		{getMemoryCache(b), "Memory"},
-		{getDiskCache(b, te), "Disk"},
+		{getDiskCache(b, ctx, te), "Disk"},
 		{dc, "DDisk"},
 	}
 	for _, c := range caches {
@@ -210,10 +210,10 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 
 func BenchmarkSet(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
+	te := testenv.GetTestEnv(b, context.Background())
 	ctx := getAnonContext(b, te)
 
-	for _, cache := range getAllCaches(b, te) {
+	for _, cache := range getAllCaches(b, ctx, te) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%s%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
@@ -225,10 +225,10 @@ func BenchmarkSet(b *testing.B) {
 
 func BenchmarkGet(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
+	te := testenv.GetTestEnv(b, context.Background())
 	ctx := getAnonContext(b, te)
 
-	for _, cache := range getAllCaches(b, te) {
+	for _, cache := range getAllCaches(b, ctx, te) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%s%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
@@ -240,10 +240,10 @@ func BenchmarkGet(b *testing.B) {
 
 func BenchmarkGetMulti(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
+	te := testenv.GetTestEnv(b, context.Background())
 	ctx := getAnonContext(b, te)
 
-	for _, cache := range getAllCaches(b, te) {
+	for _, cache := range getAllCaches(b, ctx, te) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%s%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {
@@ -255,10 +255,10 @@ func BenchmarkGetMulti(b *testing.B) {
 
 func BenchmarkContainsMulti(b *testing.B) {
 	sizes := []int64{10, 100, 1000, 10000}
-	te := testenv.GetTestEnv(b)
+	te := testenv.GetTestEnv(b, context.Background())
 	ctx := getAnonContext(b, te)
 
-	for _, cache := range getAllCaches(b, te) {
+	for _, cache := range getAllCaches(b, ctx, te) {
 		for _, size := range sizes {
 			name := fmt.Sprintf("%s%d", cache.Name, size)
 			b.Run(name, func(b *testing.B) {

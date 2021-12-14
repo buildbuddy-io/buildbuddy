@@ -126,14 +126,14 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 // We instantiate a single configurator per test to avoid triggering the race detector.
 var currentConfigurator *config.Configurator
 
-func GetTestEnv(t testing.TB) *TestEnv {
+func GetTestEnv(t testing.TB, ctx context.Context) *TestEnv {
 	testRootDir := testfs.MakeTempDir(t)
 	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if currentConfigurator == nil {
-		configurator, err := config.NewConfigurator(tmpConfigFile)
+		configurator, err := config.NewConfigurator(ctx, tmpConfigFile)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,7 +157,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	}
 	te.SetDBHandle(dbHandle)
 	te.RealEnv.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
-	bs, err := blobstore.GetConfiguredBlobstore(currentConfigurator)
+	bs, err := blobstore.GetConfiguredBlobstore(ctx, currentConfigurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}

@@ -11,5 +11,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/hash",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
     ],
 )

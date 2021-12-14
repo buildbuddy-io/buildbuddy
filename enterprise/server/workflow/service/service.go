@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -29,6 +28,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -573,7 +574,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{})
+	inputRootDigest, err := digest.ComputeForMessage(ctx, &repb.Directory{})
 	if err != nil {
 		return nil, err
 	}
@@ -674,12 +675,12 @@ func (ws *workflowService) ciRunnerBazelCommand() string {
 	return cfg.WorkflowsCIRunnerBazelCommand
 }
 
-func runnerBinaryFile() (*os.File, error) {
+func runnerBinaryFile(ctx context.Context) (*os.File, error) {
 	path, err := bazelgo.Runfile("enterprise/server/cmd/ci_runner/ci_runner_/ci_runner")
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not find runner binary runfile: %s", err)
 	}
-	return os.Open(path)
+	return os.Open(ctx, path)
 }
 
 func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Workflow) (*tables.APIKey, error) {
@@ -729,7 +730,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, key *tables.
 		}
 		return nil, err
 	}
-	return config.NewConfig(bytes.NewReader(b))
+	return config.NewConfig(ctx, ctxio.NoTraceCtxReaderWrapper(bytes.NewReader(b)))
 }
 
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {

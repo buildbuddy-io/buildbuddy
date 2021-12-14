@@ -348,9 +348,9 @@ func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bo
 	return entry.data, true
 }
 
-func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
+func (c *apiKeyGroupCache) Add(ctx context.Context, apiKey string, apiKeyGroup interfaces.APIKeyGroup) {
 	c.mu.Lock()
-	c.lru.Add(apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
+	c.lru.Add(ctx, apiKey, &apiKeyGroupCacheEntry{data: apiKeyGroup, expiresAfter: time.Now().Add(c.ttl)})
 	c.mu.Unlock()
 }
 
@@ -578,7 +578,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	}
 	apkg, err := authDB.GetAPIKeyGroupFromAPIKey(ctx, apiKey)
 	if err == nil && a.apiKeyGroupCache != nil {
-		a.apiKeyGroupCache.Add(apiKey, apkg)
+		a.apiKeyGroupCache.Add(ctx, apiKey, apkg)
 	}
 	return apkg, err
 }

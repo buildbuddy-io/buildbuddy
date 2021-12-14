@@ -9,6 +9,8 @@ go_library(
         "//proto:vfs_go_proto",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
         "@com_github_docker_go_units//:go-units",
         "@com_github_hanwen_go_fuse_v2//fs",
         "@com_github_hanwen_go_fuse_v2//fuse",

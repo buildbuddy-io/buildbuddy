@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
@@ -218,7 +219,7 @@ func addFileWithRandomContent(ctx context.Context, byteStreamClient bspb.ByteStr
 	var err error
 	for {
 		reader := bytes.NewReader(data)
-		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, reader)
+		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, ctxio.NoTraceCtxReadSeekerWrapper(reader))
 		if err == nil {
 			break
 		}

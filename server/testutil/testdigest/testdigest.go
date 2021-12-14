@@ -2,8 +2,8 @@ package testdigest
 
 import (
 	"bytes"
+	"context"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"sync"
 	"testing"
@@ -11,6 +11,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	realdigest "github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 )
 
 var (
@@ -39,7 +40,7 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	}
 }
 
-func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
+func NewRandomDigestReader(t testing.TB, ctx context.Context, sizeBytes int64) (*repb.Digest, ctxio.ReadSeeker) {
 	randomSeedOnce.Do(func() {
 		randomSrc = &randomDataMaker{rand.NewSource(time.Now().Unix())}
 	})
@@ -47,30 +48,30 @@ func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.Read
 	// Read some random bytes.
 	buf := new(bytes.Buffer)
 	io.CopyN(buf, randomSrc, sizeBytes)
-	readSeeker := bytes.NewReader(buf.Bytes())
+	readSeeker := ctxio.CtxReadSeekerWrapper(bytes.NewReader(buf.Bytes()))
 
 	// Compute a digest for the random bytes.
-	d, err := realdigest.Compute(readSeeker)
+	d, err := realdigest.Compute(ctx, readSeeker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	readSeeker.Seek(0, 0)
+	readSeeker.Seek(ctx, 0, 0)
 	return d, readSeeker
 }
 
-func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
-	d, rs := NewRandomDigestReader(t, sizeBytes)
-	buf, err := ioutil.ReadAll(rs)
+func NewRandomDigestBuf(t testing.TB, ctx context.Context, sizeBytes int64) (*repb.Digest, []byte) {
+	d, rs := NewRandomDigestReader(t, ctx, sizeBytes)
+	buf, err := ctxio.ReadAll(ctx, rs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return d, buf
 }
 
-func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
-	defer r.Close()
+func ReadDigestAndClose(t *testing.T, ctx context.Context, r ctxio.ReadCloser) *repb.Digest {
+	defer r.Close(ctx)
 
-	d, err := realdigest.Compute(r)
+	d, err := realdigest.Compute(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}

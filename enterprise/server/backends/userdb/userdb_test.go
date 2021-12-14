@@ -16,8 +16,8 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
-func newTestEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
+func newTestEnv(t *testing.T, ctx context.Context) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t, ctx)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
@@ -48,9 +48,9 @@ func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsers
 func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "true")
 	flags.Set(t, "app.no_default_user_group", "true")
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
 	ctx := context.Background()
+	env := newTestEnv(t, ctx)
+	udb := env.GetUserDB()
 
 	err := udb.InsertUser(ctx, &tables.User{
 		UserID:    "US1",
@@ -83,9 +83,9 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "false")
 	flags.Set(t, "app.no_default_user_group", "false")
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
 	ctx := context.Background()
+	env := newTestEnv(t, ctx)
+	udb := env.GetUserDB()
 
 	err := udb.InsertUser(ctx, &tables.User{
 		UserID:    "US1",
@@ -124,9 +124,9 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "true")
 	flags.Set(t, "app.no_default_user_group", "true")
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
 	ctx := context.Background()
+	env := newTestEnv(t, ctx)
+	udb := env.GetUserDB()
 
 	// Create some users
 	err := udb.InsertUser(ctx, &tables.User{
@@ -168,9 +168,9 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "true")
 	flags.Set(t, "app.no_default_user_group", "true")
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
 	ctx := context.Background()
+	env := newTestEnv(t, ctx)
+	udb := env.GetUserDB()
 
 	// Create a user
 	err := udb.InsertUser(ctx, &tables.User{
@@ -203,9 +203,9 @@ func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
 func TestUpdateGroupUsers_Role(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", "true")
 	flags.Set(t, "app.no_default_user_group", "true")
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
 	ctx := context.Background()
+	env := newTestEnv(t, ctx)
+	udb := env.GetUserDB()
 
 	// Create a user
 	err := udb.InsertUser(ctx, &tables.User{

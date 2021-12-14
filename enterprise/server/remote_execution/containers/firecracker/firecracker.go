@@ -9,11 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +28,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -117,15 +118,15 @@ var (
 	vmIdxMu sync.Mutex
 )
 
-func openFile(ctx context.Context, env environment.Env, fileName string) (io.ReadCloser, error) {
+func openFile(ctx context.Context, env environment.Env, fileName string) (fs.File, error) {
 	// If the file exists on the filesystem, use that.
 	if path, err := exec.LookPath(fileName); err == nil {
 		log.Debugf("Located %q at %s", fileName, path)
-		return os.Open(path)
+		return os.Open(ctx, path)
 	}
 
 	// Otherwise try to find it in the bundle or runfiles.
-	return env.GetFileResolver().Open(fileName)
+	return env.GetFileResolver().Open(ctx, fileName)
 }
 
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
@@ -142,20 +143,20 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	if f == nil {
 		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
 	}
-	defer f.Close()
+	defer f.Close(ctx)
 
 	// Compute the file hash to determine the new location where it should be written.
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := ctxio.Copy(ctx, ctxio.NoTraceCtxWriterWrapper(h), f); err != nil {
 		return "", err
 	}
 	fileHash := fmt.Sprintf("%x", h.Sum(nil))
 	fileHome := filepath.Join(destDir, "executor", fileHash)
-	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, fileHome); err != nil {
 		return "", err
 	}
 	casPath := filepath.Join(fileHome, filepath.Base(fileName))
-	if exists, err := disk.FileExists(casPath); err == nil && exists {
+	if exists, err := disk.FileExists(ctx, casPath); err == nil && exists {
 		log.Debugf("Found existing %q in path: %q", fileName, casPath)
 		return casPath, nil
 	}
@@ -164,15 +165,15 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer f.Close(ctx)
 	writer, err := disk.FileWriter(ctx, casPath)
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(writer, f); err != nil {
+	if _, err := ctxio.Copy(ctx, writer, f); err != nil {
 		return "", err
 	}
-	if err := writer.Close(); err != nil {
+	if err := writer.Close(ctx); err != nil {
 		return "", err
 	}
 	log.Debugf("Put %q into new path: %q", fileName, casPath)
@@ -200,7 +201,7 @@ func waitUntilExists(ctx context.Context, maxWait time.Duration, localPath strin
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := os.Stat(localPath); err != nil {
+			if _, err := os.Stat(ctx, localPath); err != nil {
 				continue
 			}
 			return
@@ -217,11 +218,11 @@ func getLogrusLogger(debugMode bool) *logrus.Entry {
 	return logrus.NewEntry(logrusLogger)
 }
 
-func checkIfFilesExist(targetDir string, files ...string) bool {
+func checkIfFilesExist(ctx context.Context, targetDir string, files ...string) bool {
 	for _, f := range files {
 		fileName := filepath.Base(f)
 		newPath := filepath.Join(targetDir, fileName)
-		if _, err := os.Stat(newPath); err != nil {
+		if _, err := os.Stat(ctx, newPath); err != nil {
 			return false
 		}
 	}
@@ -288,7 +289,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	}
 }
 
-func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -301,7 +302,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 	if len(opts.JailerRoot) > 38 {
 		return nil, status.InvalidArgumentErrorf("JailerRoot must be < 38 characters. Was %q (%d).", opts.JailerRoot, len(opts.JailerRoot))
 	}
-	if err := disk.EnsureDirectoryExists(opts.JailerRoot); err != nil {
+	if err := disk.EnsureDirectoryExists(ctx, opts.JailerRoot); err != nil {
 		return nil, err
 	}
 
@@ -351,8 +352,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	diskSnapshotPath := filepath.Join(c.getChroot(), fullDiskSnapshotName)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
-	disk.DeleteLocalFileIfExists(memSnapshotPath)
-	disk.DeleteLocalFileIfExists(diskSnapshotPath)
+	disk.DeleteLocalFileIfExists(ctx, memSnapshotPath)
+	disk.DeleteLocalFileIfExists(ctx, diskSnapshotPath)
 
 	machineStart := time.Now()
 	if err := c.machine.CreateSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
@@ -425,7 +426,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	configurationData, err := loader.GetConfigurationData()
+	configurationData, err := loader.GetConfigurationData(ctx)
 	if err != nil {
 		return err
 	}
@@ -458,18 +459,18 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
 	// Wait until jailer directory exists because the host vsock socket is created in that directory.
-	if err := c.setupVFSServer(); err != nil {
+	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
-	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
+	if err := loader.UnpackSnapshot(ctx, c.getChroot()); err != nil {
 		return err
 	}
 
 	workspaceFileInChroot := filepath.Join(c.getChroot(), workspaceFSName)
 	if workspaceDirOverride != "" {
 		// Put the filesystem in place
-		workspaceSizeBytes, err := disk.DirSize(workspaceDirOverride)
+		workspaceSizeBytes, err := disk.DirSize(ctx, workspaceDirOverride)
 		if err != nil {
 			return err
 		}
@@ -608,13 +609,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
 		Drives: []fcmodels.Drive{
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
 			},
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(workspaceDriveID),
 				PathOnHost:   &workspaceFS,
 				IsRootDevice: fcclient.Bool(false),
@@ -622,7 +623,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 			},
 		},
 		VsockDevices: []fcclient.VsockDevice{
-			fcclient.VsockDevice{
+			{
 				Path: firecrackerVSockPath,
 			},
 		},
@@ -690,37 +691,37 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer func() {
 		log.Debugf("copyOutputsToWorkspace took %s", time.Since(start))
 	}()
-	if exists, err := disk.FileExists(c.workspaceFSPath); err != nil || !exists {
+	if exists, err := disk.FileExists(ctx, c.workspaceFSPath); err != nil || !exists {
 		return status.FailedPreconditionErrorf("workspacefs path %q not found", c.workspaceFSPath)
 	}
-	if exists, err := disk.FileExists(c.actionWorkingDir); err != nil || !exists {
+	if exists, err := disk.FileExists(ctx, c.actionWorkingDir); err != nil || !exists {
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
 	}
 
-	unpackDir, err := os.MkdirTemp(c.jailerRoot, "unpacked-workspacefs-*")
+	unpackDir, err := os.MkdirTemp(ctx, c.jailerRoot, "unpacked-workspacefs-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(unpackDir) // clean up
+	defer os.RemoveAll(ctx, unpackDir) // clean up
 
 	if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath, unpackDir); err != nil {
 		return err
 	}
-	walkErr := fs.WalkDir(os.DirFS(unpackDir), ".", func(path string, d fs.DirEntry, err error) error {
+	walkErr := fs.WalkDir(ctx, os.DirFS(unpackDir), ".", func(ctx context.Context, path string, d fs.DirEntry, err error) error {
 		// Skip filesystem layerfs write-layer files.
 		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
 			return nil
 		}
 		targetLocation := filepath.Join(c.actionWorkingDir, path)
-		alreadyExists, err := disk.FileExists(targetLocation)
+		alreadyExists, err := disk.FileExists(ctx, targetLocation)
 		if err != nil {
 			return err
 		}
 		if !alreadyExists {
 			if d.IsDir() {
-				return disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, path))
+				return disk.EnsureDirectoryExists(ctx, filepath.Join(c.actionWorkingDir, path))
 			}
-			return os.Rename(filepath.Join(unpackDir, path), targetLocation)
+			return os.Rename(ctx, filepath.Join(unpackDir, path), targetLocation)
 		}
 		return nil
 	})
@@ -759,13 +760,13 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupVFSServer() error {
+func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if c.vfsServer != nil {
 		return nil
 	}
 
 	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)
-	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
+	if err := os.MkdirAll(ctx, filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
 	c.vfsServer = vfs_server.New(c.env, c.actionWorkingDir)
@@ -852,12 +853,12 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		log.Debugf("Create took %s", time.Since(start))
 	}()
 	c.actionWorkingDir = actionWorkingDir
-	workspaceSizeBytes, err := disk.DirSize(c.actionWorkingDir)
+	workspaceSizeBytes, err := disk.DirSize(ctx, c.actionWorkingDir)
 	if err != nil {
 		return err
 	}
 
-	containerHome, err := os.MkdirTemp(c.jailerRoot, "fc-container-*")
+	containerHome, err := os.MkdirTemp(ctx, c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
 	}
@@ -879,7 +880,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	if err := c.setupVFSServer(); err != nil {
+	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
@@ -925,7 +926,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	if err != nil {
 		return nil, err
 	}
-	if err := c.vfsServer.Prepare(p); err != nil {
+	if err := c.vfsServer.Prepare(ctx, p); err != nil {
 		return nil, err
 	}
 
@@ -1018,7 +1019,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 }
 
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
-	diskImagePath, err := containerutil.CachedDiskImagePath(c.jailerRoot, c.containerImage)
+	diskImagePath, err := containerutil.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return false, err
 	}
@@ -1066,14 +1067,14 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.Errorf("Error cleaning up networking: %s", err)
 	}
-	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
+	if err := os.RemoveAll(ctx, filepath.Dir(c.workspaceFSPath)); err != nil {
 		log.Errorf("Error removing workspace fs: %s", err)
 	}
-	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+	if err := os.RemoveAll(ctx, filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
 	}
 	if c.vfsServer != nil {
-		c.vfsServer.Stop()
+		c.vfsServer.Stop(ctx)
 		c.vfsServer = nil
 	}
 	return nil

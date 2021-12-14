@@ -9,6 +9,7 @@ go_library(
         "//server/util/alert",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/tracing/os",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )

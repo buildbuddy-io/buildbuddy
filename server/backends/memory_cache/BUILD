@@ -12,6 +12,8 @@ go_library(
         "//server/util/lru",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
+        "//server/util/tracing/filepath",
     ],
 )
 
@@ -28,5 +30,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/prefix",
         "//server/util/testing/flags",
+        "//server/util/tracing/ctxio",
     ],
 )

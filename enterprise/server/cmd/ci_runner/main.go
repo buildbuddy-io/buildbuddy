@@ -6,11 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"os/user"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -27,6 +25,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -333,15 +334,15 @@ func main() {
 	// Write setup logs to the current task's stderr (to make debugging easier),
 	// and also to a buffer to be flushed to the first workflow action's logs.
 	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
-	ws.hostname, ws.username = getHostAndUserName()
-
 	ctx := context.Background()
+	ws.hostname, ws.username = getHostAndUserName(ctx)
+
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
 
 	// Bazel needs a HOME dir; ensure that one is set.
-	if err := ensureHomeDir(); err != nil {
+	if err := ensureHomeDir(ctx); err != nil {
 		fatal(status.WrapError(err, "ensure HOME"))
 	}
 	// Make sure PATH is set.
@@ -350,12 +351,12 @@ func main() {
 	}
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		wd, err := os.Getwd()
+		wd, err := os.Getwd(ctx)
 		if err != nil {
 			fatal(err)
 		}
 		bazeliskPath := filepath.Join(wd, bazeliskBinaryName)
-		if err := extractBazelisk(bazeliskPath); err != nil {
+		if err := extractBazelisk(ctx, bazeliskPath); err != nil {
 			fatal(status.WrapError(err, "failed to extract bazelisk"))
 		}
 		*bazelCommand = bazeliskPath
@@ -363,11 +364,11 @@ func main() {
 
 	if *shutdownAndExit {
 		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
-		if _, err := os.Stat(repoDirName); err != nil {
+		if _, err := os.Stat(ctx, repoDirName); err != nil {
 			log.Info("Workspace does not exist; exiting.")
 			return
 		}
-		if err := os.Chdir(repoDirName); err != nil {
+		if err := os.Chdir(ctx, repoDirName); err != nil {
 			fatal(err)
 		}
 		printCommandLine(os.Stderr, *bazelCommand, "shutdown")
@@ -395,7 +396,7 @@ func main() {
 		}
 		fatal(status.WrapError(err, "failed to set up git repo"))
 	}
-	cfg, err := readConfig()
+	cfg, err := readConfig(ctx)
 	if err != nil {
 		if buildEventReporter != nil {
 			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
@@ -706,12 +707,12 @@ func bazelArgs(cmd string) ([]string, error) {
 	return append(startupFlags, tokens...), nil
 }
 
-func ensureHomeDir() error {
+func ensureHomeDir(ctx context.Context) error {
 	if os.Getenv("HOME") != "" {
 		return nil
 	}
-	os.MkdirAll(".home", 0777)
-	wd, err := os.Getwd()
+	os.MkdirAll(ctx, ".home", 0777)
+	wd, err := os.Getwd(ctx)
 	if err != nil {
 		return err
 	}
@@ -728,28 +729,28 @@ func ensurePath() error {
 
 // extractBazelisk copies the embedded bazelisk to the given path if it does
 // not already exist.
-func extractBazelisk(path string) error {
-	if _, err := os.Stat(path); err == nil {
+func extractBazelisk(ctx context.Context, path string) error {
+	if _, err := os.Stat(ctx, path); err == nil {
 		return nil
 	}
-	f, err := bazelisk.Open()
+	f, err := bazelisk.Open(ctx)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	dst, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	defer f.Close(ctx)
+	dst, err := os.OpenFile(ctx, path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
-	if _, err := io.Copy(dst, f); err != nil {
+	defer dst.Close(ctx)
+	if _, err := ctxio.Copy(ctx, dst, f); err != nil {
 		return err
 	}
 	return nil
 }
 
-func getHostAndUserName() (string, string) {
-	hostname, err := os.Hostname()
+func getHostAndUserName(ctx context.Context) (string, string) {
+	hostname, err := os.Hostname(ctx)
 	if err != nil {
 		log.Errorf("failed to get hostname: %s", err)
 		hostname = ""
@@ -779,13 +780,13 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 		// If we have a reporter, stream the logs through it instead of buffering them until later.
 		ws.log = reporter
 	}
-	repoDirInfo, err := os.Stat(repoDirName)
+	repoDirInfo, err := os.Stat(ctx, repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
 	}
 	if repoDirInfo != nil {
 		writeCommandSummary(ws.log, "Syncing existing repo...")
-		if err := os.Chdir(repoDirName); err != nil {
+		if err := os.Chdir(ctx, repoDirName); err != nil {
 			return status.WrapError(err, "cd")
 		}
 		err := ws.sync(ctx)
@@ -801,18 +802,18 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 			err,
 		)
 		writeCommandSummary(ws.log, "Failed to sync existing git repo. Deleting repo and trying again.")
-		if err := os.Chdir(".."); err != nil {
+		if err := os.Chdir(ctx, ".."); err != nil {
 			return status.WrapError(err, "cd")
 		}
-		if err := os.RemoveAll(repoDirName); err != nil {
+		if err := os.RemoveAll(ctx, repoDirName); err != nil {
 			return status.WrapErrorf(err, "rm -r %q", repoDirName)
 		}
 	}
 
-	if err := os.Mkdir(repoDirName, 0777); err != nil {
+	if err := os.Mkdir(ctx, repoDirName, 0777); err != nil {
 		return status.WrapErrorf(err, "mkdir %q", repoDirName)
 	}
-	if err := os.Chdir(repoDirName); err != nil {
+	if err := os.Chdir(ctx, repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
 	if err := git(ctx, ws.log, "init"); err != nil {
@@ -831,15 +832,15 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 		return err
 	}
 	patchFile := d.GetHash()
-	f, err := os.OpenFile(patchFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(ctx, patchFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	if err := cachetools.GetBlob(ctx, bsClient, digest.NewInstanceNameDigest(d, *remoteInstanceName), f); err != nil {
-		_ = f.Close()
+		_ = f.Close(ctx)
 		return err
 	}
-	_ = f.Close()
+	_ = f.Close(ctx)
 	if err := git(ctx, ws.log, "apply", patchFile); err != nil {
 		return err
 	}
@@ -1003,8 +1004,8 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func readConfig() (*config.BuildBuddyConfig, error) {
-	f, err := os.Open(config.FilePath)
+func readConfig(ctx context.Context) (*config.BuildBuddyConfig, error) {
+	f, err := os.Open(ctx, config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return config.GetDefault(
@@ -1014,7 +1015,7 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}
-	c, err := config.NewConfig(f)
+	c, err := config.NewConfig(ctx, f)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("read %q: %s", config.FilePath, err)
 	}

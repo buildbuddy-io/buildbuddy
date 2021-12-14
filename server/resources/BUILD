@@ -12,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing/os",
         "@com_github_elastic_gosigar//:gosigar",
     ],
 )

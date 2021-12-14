@@ -5,14 +5,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -28,7 +29,7 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out ctxio.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -56,29 +57,29 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Inst
 		if err != nil {
 			return err
 		}
-		out.Write(rsp.Data)
+		out.Write(ctx, rsp.Data)
 	}
 	return nil
 }
 
-func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.InstanceNameDigest, error) {
-	d, err := digest.Compute(in)
+func ComputeDigest(ctx context.Context, in ctxio.ReadSeeker, instanceName string) (*digest.InstanceNameDigest, error) {
+	d, err := digest.Compute(ctx, in)
 	if err != nil {
 		return nil, err
 	}
 	return digest.NewInstanceNameDigest(d, instanceName), nil
 }
 
-func ComputeFileDigest(fullFilePath, instanceName string) (*digest.InstanceNameDigest, error) {
-	f, err := os.Open(fullFilePath)
+func ComputeFileDigest(ctx context.Context, fullFilePath, instanceName string) (*digest.InstanceNameDigest, error) {
+	f, err := os.Open(ctx, fullFilePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return ComputeDigest(f, instanceName)
+	defer f.Close(ctx)
+	return ComputeDigest(ctx, f, instanceName)
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *digest.InstanceNameDigest, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *digest.InstanceNameDigest, in ctxio.ReadSeeker) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -97,7 +98,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
 	for {
-		n, err := in.Read(buf)
+		n, err := in.Read(ctx, buf)
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -158,7 +159,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	ad, err := ComputeDigest(reader, instanceName)
+	ad, err := ComputeDigest(ctx, ctxio.NoTraceCtxReadSeekerWrapper(reader), instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -166,33 +167,33 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, reader)
+	return UploadFromReader(ctx, bsClient, ad, ctxio.NoTraceCtxReadSeekerWrapper(reader))
 }
 
-func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	ad, err := ComputeDigest(in, instanceName)
+func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in ctxio.ReadSeeker) (*repb.Digest, error) {
+	ad, err := ComputeDigest(ctx, in, instanceName)
 	if err != nil {
 		return nil, err
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := in.Seek(0, io.SeekStart); err != nil {
+	if _, err := in.Seek(ctx, 0, io.SeekStart); err != nil {
 		return nil, err
 	}
 	return UploadFromReader(ctx, bsClient, ad, in)
 }
 
 func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
-	f, err := os.Open(fullFilePath)
+	f, err := os.Open(ctx, fullFilePath)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	ad, err := ComputeDigest(f, instanceName)
+	defer f.Close(ctx)
+	ad, err := ComputeDigest(ctx, f, instanceName)
 	if err != nil {
 		return nil, err
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
+	if _, err := f.Seek(ctx, 0, io.SeekStart); err != nil {
 		return nil, err
 	}
 	return UploadFromReader(ctx, bsClient, ad, f)
@@ -200,7 +201,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out proto.Message) error {
 	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-	if err := GetBlob(ctx, bsClient, d, buf); err != nil {
+	if err := GetBlob(ctx, bsClient, d, ctxio.NoTraceCtxWriterWrapper(buf)); err != nil {
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
@@ -245,27 +246,27 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Inst
 	return readProtoFromCache(ctx, ac, d, out)
 }
 
-func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in)
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in ctxio.ReadSeeker) (*repb.Digest, error) {
+	d, err := digest.Compute(ctx, in)
 	if err != nil {
 		return nil, err
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
-	if _, err := in.Seek(0, io.SeekStart); err != nil {
+	if _, err := in.Seek(ctx, 0, io.SeekStart); err != nil {
 		return nil, err
 	}
 	wc, err := cache.Writer(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	_, err = io.Copy(wc, in)
+	_, err = ctxio.Copy(ctx, wc, in)
 	if err != nil {
 		return nil, err
 	}
-	return d, wc.Close()
+	return d, wc.Close(ctx)
 }
 
-func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in ctxio.ReadSeeker) (*repb.Digest, error) {
 	cas, err := namespace.CASCache(ctx, cache, instanceName)
 	if err != nil {
 		return nil, err
@@ -279,7 +280,7 @@ func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceNam
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return UploadBytesToCache(ctx, cache, reader)
+	return UploadBytesToCache(ctx, cache, ctxio.NoTraceCtxReadSeekerWrapper(reader))
 }
 
 func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
@@ -288,7 +289,7 @@ func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName s
 	if err != nil {
 		return nil, err
 	}
-	return UploadBytesToCache(ctx, cas, reader)
+	return UploadBytesToCache(ctx, cas, ctxio.NoTraceCtxReadSeekerWrapper(reader))
 }
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
@@ -347,19 +348,19 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 // Upload adds the given content to the current batch or begins a streaming
 // upload if it exceeds the maximum batch size. It closes r when it is no
 // longer needed.
-func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
+func (ul *BatchCASUploader) Upload(d *repb.Digest, r ctxio.ReadSeekCloser) error {
 	// De-dupe uploads by digest.
 	dk := digest.NewKey(d)
 	if _, ok := ul.uploads[dk]; ok {
-		return r.Close()
+		return r.Close(ul.ctx)
 	}
 	ul.uploads[dk] = struct{}{}
 
-	r.Seek(0, 0)
+	r.Seek(ul.ctx, 0, 0)
 
 	if d.GetSizeBytes() > gRPCMaxSize {
 		ul.eg.Go(func() error {
-			defer r.Close()
+			defer r.Close(ul.ctx)
 			_, err := UploadFromReader(ul.ctx, ul.byteStreamClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
 			return err
 		})
@@ -369,11 +370,11 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 	if ul.unsentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
 		ul.flushCurrentBatch()
 	}
-	b, err := io.ReadAll(r)
+	b, err := ctxio.ReadAll(ul.ctx, r)
 	if err != nil {
 		return err
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(ul.ctx); err != nil {
 		return err
 	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
@@ -384,12 +385,12 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 	return nil
 }
 
-func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) {
+func (ul *BatchCASUploader) UploadProto(ctx context.Context, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data))
+	d, err := digest.Compute(ctx, ctxio.NoTraceCtxReaderWrapper(bytes.NewReader(data)))
 	if err != nil {
 		return nil, err
 	}
@@ -399,23 +400,23 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	return d, nil
 }
 
-func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
-	f, err := os.Open(path)
+func (ul *BatchCASUploader) UploadFile(ctx context.Context, path string) (*repb.Digest, error) {
+	f, err := os.Open(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f)
+	d, err := digest.Compute(ctx, f)
 	if err != nil {
 		return nil, err
 	}
-	info, err := os.Stat(path)
+	info, err := os.Stat(ctx, path)
 	if err != nil {
 		return nil, err
 	}
 
 	// Add output files to the filecache.
 	if ul.fileCache != nil {
-		ul.fileCache.AddFile(&repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path)
+		ul.fileCache.AddFile(ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path)
 	}
 
 	// Note: uploader.Upload will close the file.
@@ -451,13 +452,13 @@ func (ul *BatchCASUploader) Wait() error {
 }
 
 type bytesReadSeekCloser struct {
-	io.ReadSeeker
+	ctxio.ReadSeeker
 }
 
-func NewBytesReadSeekCloser(b []byte) io.ReadSeekCloser {
-	return &bytesReadSeekCloser{bytes.NewReader(b)}
+func NewBytesReadSeekCloser(b []byte) ctxio.ReadSeekCloser {
+	return &bytesReadSeekCloser{ctxio.CtxReadSeekerWrapper(bytes.NewReader(b))}
 }
-func (*bytesReadSeekCloser) Close() error { return nil }
+func (*bytesReadSeekCloser) Close(ctx context.Context) error { return nil }
 
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
@@ -469,7 +470,7 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 	}
 
 	// Recursively find and upload all descendant dirs.
-	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
+	visited, rootDirectoryDigest, err := uploadDir(ctx, ul, rootDirPath, nil /*=visited*/)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -479,7 +480,7 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 	// Upload the tree, which consists of the root dir as well as all descendant
 	// dirs.
 	rootTree := &repb.Tree{Root: visited[0], Children: visited[1:]}
-	treeDigest, err := ul.UploadProto(rootTree)
+	treeDigest, err := ul.UploadProto(ctx, rootTree)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -489,12 +490,12 @@ func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName
 	return rootDirectoryDigest, treeDigest, nil
 }
 
-func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) ([]*repb.Directory, *repb.Digest, error) {
+func uploadDir(ctx context.Context, ul *BatchCASUploader, dirPath string, visited []*repb.Directory) ([]*repb.Directory, *repb.Digest, error) {
 	dir := &repb.Directory{}
 	// Append the directory before doing any other work, so that the root
 	// directory is located at visited[0] at the end of recursion.
 	visited = append(visited, dir)
-	entries, err := os.ReadDir(dirPath)
+	entries, err := os.ReadDir(ctx, dirPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -504,7 +505,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 
 		if entry.IsDir() {
 			var d *repb.Digest
-			visited, d, err = uploadDir(ul, path, visited)
+			visited, d, err = uploadDir(ctx, ul, path, visited)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -513,11 +514,11 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				Digest: d,
 			})
 		} else if entry.Type().IsRegular() {
-			info, err := entry.Info()
+			info, err := entry.Info(ctx)
 			if err != nil {
 				return nil, nil, err
 			}
-			d, err := ul.UploadFile(path)
+			d, err := ul.UploadFile(ctx, path)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -527,7 +528,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 				IsExecutable: isExecutable(info),
 			})
 		} else if entry.Type()&os.ModeSymlink == os.ModeSymlink {
-			target, err := os.Readlink(path)
+			target, err := os.Readlink(ctx, path)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -537,7 +538,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 			})
 		}
 	}
-	digest, err := ul.UploadProto(dir)
+	digest, err := ul.UploadProto(ctx, dir)
 	if err != nil {
 		return nil, nil, err
 	}

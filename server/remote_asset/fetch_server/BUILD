@@ -15,6 +15,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing/ctxio",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@go_googleapis//google/rpc:status_go_proto",
         "@io_bazel_rules_go//proto/wkt:duration_go_proto",

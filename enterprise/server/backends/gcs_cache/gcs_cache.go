@@ -2,11 +2,9 @@ package gcs_cache
 
 import (
 	"context"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,6 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -60,10 +61,18 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 	return g, nil
 }
 
+func (g *GCSCache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
+	_, spn := span.StartSpan(ctx)
+	defer spn.End()
+	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	return err == nil, err
+}
 func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName string) error {
-	if _, err := g.gcsClient.Bucket(bucketName).Attrs(ctx); err != nil {
+	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
 		log.Printf("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
+		_, spn := span.StartSpan(ctx)
+		defer spn.End()
 		return g.bucketHandle.Create(ctx, g.projectID, nil)
 	}
 	g.bucketHandle = g.gcsClient.Bucket(bucketName)
@@ -71,7 +80,9 @@ func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName strin
 }
 
 func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
+	_, spn := span.StartSpan(ctx)
 	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	spn.End()
 	if err != nil {
 		return err
 	}
@@ -93,6 +104,8 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 			},
 		},
 	}
+	_, spn = span.StartSpan(ctx)
+	defer spn.End()
 	// Update the bucket TTL, regardless of whatever value is set.
 	_, err = g.gcsClient.Bucket(bucketName).Update(ctx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
 	return err
@@ -139,7 +152,9 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	_, spn := span.StartSpan(ctx)
 	b, err := ioutil.ReadAll(reader)
+	spn.End()
 	timer.ObserveGet(len(b), err)
 	// Note, if we decide to retry reads in the future, be sure to
 	// add a new metric for retry count.
@@ -207,7 +222,10 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 		setChunkSize(d, writer)
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
-		if _, err = writer.Write(data); err == nil {
+		_, spn := span.StartSpan(ctx)
+		_, err = writer.Write(data)
+		spn.End()
+		if err == nil {
 			err = swallowGCSAlreadyExistsError(writer.Close())
 		}
 		timer.ObserveSet(len(data), err)
@@ -245,7 +263,9 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	_, spn := span.StartSpan(ctx)
 	err = g.bucketHandle.Object(k).Delete(ctx)
+	spn.End()
 	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
@@ -257,7 +277,9 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 		return true
 	}
 	obj := g.bucketHandle.Object(key)
+	_, spn := span.StartSpan(ctx)
 	_, err := obj.CopierFrom(obj).Run(ctx)
+	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false
 	}
@@ -276,7 +298,9 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	numAttempts := 0
 	for {
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
+		_, spn := span.StartSpan(ctx)
 		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
+		spn.End()
 		timer.ObserveContains(err)
 		numAttempts++
 		finalErr = err
@@ -352,7 +376,7 @@ func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*
 	return missing, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -365,7 +389,7 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return io.NopCloser(timer.NewInstrumentedReader(reader, d.GetSizeBytes())), nil
+	return ctxio.NopCloser(ctxio.CtxReaderWrapper(timer.NewInstrumentedReader(reader, d.GetSizeBytes()))), nil
 }
 
 func isRetryableGCSError(err error) bool {
@@ -385,27 +409,27 @@ func isRetryableGCSError(err error) bool {
 }
 
 type gcsDedupingWriteCloser struct {
-	io.WriteCloser
+	ctxio.WriteCloser
 	timer *cache_metrics.CacheTimer
 	size  int64
 }
 
-func (wc *gcsDedupingWriteCloser) Write(in []byte) (int, error) {
-	n, err := wc.WriteCloser.Write(in)
+func (wc *gcsDedupingWriteCloser) Write(ctx context.Context, in []byte) (int, error) {
+	n, err := wc.WriteCloser.Write(ctx, in)
 
 	numRetries := 0
 	for isRetryableGCSError(err) && numRetries < maxNumRetries {
 		log.Printf("Retrying GCS write after error: %s", err.Error())
 		numRetries++
-		n, err = wc.WriteCloser.Write(in)
+		n, err = wc.WriteCloser.Write(ctx, in)
 	}
 	cache_metrics.RecordWriteRetries(cacheLabels, numRetries)
 
 	return n, err
 }
 
-func (wc *gcsDedupingWriteCloser) Close() error {
-	return swallowGCSAlreadyExistsError(wc.WriteCloser.Close())
+func (wc *gcsDedupingWriteCloser) Close(ctx context.Context) error {
+	return swallowGCSAlreadyExistsError(wc.WriteCloser.Close(ctx))
 }
 
 func setChunkSize(d *repb.Digest, w *storage.Writer) {
@@ -419,7 +443,7 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 	}
 }
 
-func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (ctxio.WriteCloser, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -429,7 +453,7 @@ func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, 
 	setChunkSize(d, writer)
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	return &gcsDedupingWriteCloser{
-		WriteCloser: writer,
+		WriteCloser: ctxio.CtxWriteCloserWrapper(writer),
 		timer:       timer,
 		size:        d.GetSizeBytes(),
 	}, nil

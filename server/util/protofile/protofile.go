@@ -6,12 +6,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 	"github.com/golang/protobuf/proto"
 
 	gcodes "google.golang.org/grpc/codes"

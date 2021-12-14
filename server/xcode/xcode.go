@@ -3,10 +3,12 @@
 
 package xcode
 
+import "context"
+
 type xcodeLocator struct {
 }
 
-func NewXcodeLocator() *xcodeLocator {
+func NewXcodeLocator(context.Context) *xcodeLocator {
 	return &xcodeLocator{}
 }
 

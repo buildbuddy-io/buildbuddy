@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -111,7 +112,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackMiss(d)
 		return err
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	downloadTracker := ht.TrackDownload(d)
 
@@ -120,7 +121,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bufSize = d.GetSizeBytes()
 	}
 	copyBuf := s.bufferPool.Get(bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	_, err = ctxio.CopyBuffer(ctx, ctxio.CtxWriterWrapper(&streamWriter{stream}), reader, copyBuf[:bufSize])
 	s.bufferPool.Put(copyBuf)
 	if err == nil {
 		downloadTracker.Close()
@@ -152,7 +153,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // `complete` or not.
 
 type writeState struct {
-	writer             io.WriteCloser
+	writer             ctxio.WriteCloser
 	checksum           hash.Hash
 	d                  *repb.Digest
 	activeResourceName string
@@ -213,14 +214,14 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	var wc io.WriteCloser
+	var wc ctxio.WriteCloser
 	if d.GetHash() != digest.EmptySha256 && !exists {
 		wc, err = cache.Writer(ctx, d)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		wc = devnull.NewWriteCloser()
+		wc = ctxio.NoTraceCtxWriteCloserWrapper(devnull.NewWriteCloser())
 	}
 	ws.checksum = sha256.New()
 	ws.writer = wc
@@ -233,8 +234,8 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	return ws, nil
 }
 
-func (w *writeState) Write(buf []byte) error {
-	n, err := w.writer.Write(buf)
+func (w *writeState) Write(ctx context.Context, buf []byte) error {
+	n, err := w.writer.Write(ctx, buf)
 	if err != nil {
 		return err
 	}
@@ -243,7 +244,7 @@ func (w *writeState) Write(buf []byte) error {
 	return nil
 }
 
-func (w *writeState) Close() error {
+func (w *writeState) Close(ctx context.Context) error {
 	// Verify that digest length and hash match.
 	computedDigest := fmt.Sprintf("%x", w.checksum.Sum(nil))
 	if computedDigest != w.d.GetHash() {
@@ -252,11 +253,13 @@ func (w *writeState) Close() error {
 	if w.bytesWritten != w.d.GetSizeBytes() {
 		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", w.bytesWritten, w.d.GetSizeBytes())
 	}
-	return w.writer.Close()
+	prefix.UserPrefixFromContext(ctx)
+	return w.writer.Close(ctx)
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 	if err != nil {
@@ -304,12 +307,12 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 		}
-		if err := streamState.Write(req.Data); err != nil {
+		if err := streamState.Write(ctx, req.Data); err != nil {
 			return err
 		}
 
 		if req.FinishWrite {
-			if err := streamState.Close(); err != nil {
+			if err := streamState.Close(ctx); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{

@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
@@ -94,18 +94,18 @@ func Validate(d *repb.Digest) (string, error) {
 	return d.Hash, nil
 }
 
-func ComputeForMessage(in proto.Message) (*repb.Digest, error) {
+func ComputeForMessage(ctx context.Context, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
-	return Compute(bytes.NewReader(data))
+	return Compute(ctx, ctxio.NoTraceCtxReaderWrapper(bytes.NewReader(data)))
 }
 
-func Compute(in io.Reader) (*repb.Digest, error) {
+func Compute(ctx context.Context, in ctxio.Reader) (*repb.Digest, error) {
 	h := sha256.New()
 	// Read file in 32KB chunks (default)
-	n, err := io.Copy(h, in)
+	n, err := ctxio.Copy(ctx, ctxio.NoTraceCtxWriterWrapper(h), in)
 	if err != nil {
 		return nil, err
 	}

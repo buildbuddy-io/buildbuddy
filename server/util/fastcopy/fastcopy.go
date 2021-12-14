@@ -4,11 +4,13 @@
 package fastcopy
 
 import (
-	"os"
+	"context"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 )
 
-func FastCopy(source, destination string) error {
-	err := os.Link(source, destination)
+func FastCopy(ctx context.Context, source, destination string) error {
+	err := os.Link(ctx, source, destination)
 	if !os.IsExist(err) {
 		return err
 	}

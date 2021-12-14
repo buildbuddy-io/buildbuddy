@@ -144,14 +144,14 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 	redisTarget := testredis.Start(t)
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
-	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
+	ctx := context.Background()
+	testEnv := enterprise_testenv.GetCustomTestEnv(t, ctx, envOpts)
 	// Create a user and group in the DB for use in tests (this will also create
 	// an API key for the group).
 	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real
 	// user log into the app to do all of this setup in a more sane way.
 	orgURLID := "test"
 	userID := "US1"
-	ctx := context.Background()
 	err := testEnv.GetUserDB().InsertUser(ctx, &tables.User{
 		UserID: userID,
 		Email:  "user@example.com",
@@ -244,7 +244,7 @@ type BuildBuddyServer struct {
 	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
 }
 
-func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
+func newBuildBuddyServer(t *testing.T, ctx context.Context, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
 	port := app.FreePort(t)
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
@@ -261,7 +261,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		opts.EnvModifier(env.TestEnv)
 	}
 
-	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &opts.SchedulerServerOptions)
+	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(ctx, env, &opts.SchedulerServerOptions)
 	require.NoError(t, err, "could not set up SchedulerServer")
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
@@ -457,33 +457,33 @@ func (e *Executor) ShutdownTaskScheduler() {
 	e.taskScheduler.Shutdown(ctx)
 }
 
-func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
-	return r.AddBuildBuddyServerWithOptions(&BuildBuddyServerOptions{})
+func (r *Env) AddBuildBuddyServer(ctx context.Context) *BuildBuddyServer {
+	return r.AddBuildBuddyServerWithOptions(ctx, &BuildBuddyServerOptions{})
 }
 
-func (r *Env) AddBuildBuddyServers(n int) {
+func (r *Env) AddBuildBuddyServers(ctx context.Context, n int) {
 	for i := 0; i < n; i++ {
-		r.AddBuildBuddyServer()
+		r.AddBuildBuddyServer(ctx)
 	}
 }
 
-func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *BuildBuddyServer {
+func (r *Env) AddBuildBuddyServerWithOptions(ctx context.Context, opts *BuildBuddyServerOptions) *BuildBuddyServer {
 	envOpts := &enterprise_testenv.Options{RedisTarget: r.redisTarget}
-	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, envOpts), rbeEnv: r}
+	env := &buildBuddyServerEnv{TestEnv: enterprise_testenv.GetCustomTestEnv(r.t, ctx, envOpts), rbeEnv: r}
 	// We're using an in-memory SQLite database so we need to make sure all servers share the same handle.
 	env.SetDBHandle(r.testEnv.GetDBHandle())
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 
-	server := newBuildBuddyServer(r.t, env, opts)
+	server := newBuildBuddyServer(r.t, ctx, env, opts)
 	r.buildBuddyServers = append(r.buildBuddyServers, server)
 	return server
 }
 
 // AddExecutorWithOptions brings up an executor with custom options.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutorWithOptions(opts *ExecutorOptions) *Executor {
-	executor := r.addExecutor(opts)
+func (r *Env) AddExecutorWithOptions(ctx context.Context, opts *ExecutorOptions) *Executor {
+	executor := r.addExecutor(ctx, opts)
 	r.waitForExecutorRegistration()
 	return executor
 }
@@ -492,21 +492,21 @@ func (r *Env) AddExecutorWithOptions(opts *ExecutorOptions) *Executor {
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutor() *Executor {
+func (r *Env) AddExecutor(ctx context.Context) *Executor {
 	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddExecutorWithOptions(&ExecutorOptions{Name: name})
+	return r.AddExecutorWithOptions(ctx, &ExecutorOptions{Name: name})
 }
 
 // AddSingleTaskExecutorWithOptions brings up an executor with custom options that is configured with capacity to
 // accept only a single "default" sized task.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Executor {
+func (r *Env) AddSingleTaskExecutorWithOptions(ctx context.Context, options *ExecutorOptions) *Executor {
 	optionsCopy := *options
 	optionsCopy.priorityTaskSchedulerOptions = priority_task_scheduler.Options{
 		RAMBytesCapacityOverride:  tasksize.DefaultMemEstimate,
 		CPUMillisCapacityOverride: tasksize.DefaultCPUEstimate,
 	}
-	executor := r.addExecutor(&optionsCopy)
+	executor := r.addExecutor(ctx, &optionsCopy)
 	r.waitForExecutorRegistration()
 	return executor
 }
@@ -516,19 +516,19 @@ func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Execut
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutor() *Executor {
+func (r *Env) AddSingleTaskExecutor(ctx context.Context) *Executor {
 	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddSingleTaskExecutorWithOptions(&ExecutorOptions{Name: name})
+	return r.AddSingleTaskExecutorWithOptions(ctx, &ExecutorOptions{Name: name})
 }
 
 // AddNamedExecutors brings up N named executors with default settings.
 // Use this function if it matters for the test on which executor tasks are executed, otherwise
 // use AddExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddNamedExecutors(names []string) []*Executor {
+func (r *Env) AddNamedExecutors(ctx context.Context, names []string) []*Executor {
 	var executors []*Executor
 	for _, name := range names {
-		executors = append(executors, r.addExecutor(&ExecutorOptions{Name: name}))
+		executors = append(executors, r.addExecutor(ctx, &ExecutorOptions{Name: name}))
 	}
 	r.waitForExecutorRegistration()
 	return executors
@@ -538,16 +538,16 @@ func (r *Env) AddNamedExecutors(names []string) []*Executor {
 // Use this function in tests where it's not important on which executor tasks are exected,
 // otherwise use AddNamedExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddExecutors(n int) []*Executor {
+func (r *Env) AddExecutors(ctx context.Context, n int) []*Executor {
 	var names []string
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
 		names = append(names, name)
 	}
-	return r.AddNamedExecutors(names)
+	return r.AddNamedExecutors(ctx, names)
 }
 
-func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
+func (r *Env) addExecutor(ctx context.Context, options *ExecutorOptions) *Executor {
 	buildBuddyServer := options.Server
 	if buildBuddyServer == nil {
 		buildBuddyServer = r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
@@ -558,13 +558,13 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		assert.FailNowf(r.t, "could not create client to BuildBuddy server", err.Error())
 	}
 
-	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+	env := enterprise_testenv.GetCustomTestEnv(r.t, ctx, r.envOpts)
 
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetAuthenticator(r.newTestAuthenticator())
 
-	bundleFS, err := bundle.Get()
+	bundleFS, err := bundle.Get(ctx)
 	require.NoError(r.t, err)
 	env.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
 	err = resources.Configure(env)
@@ -577,7 +577,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
 	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
 
-	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
+	fc, err := filecache.NewFileCache(ctx, executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}
@@ -619,7 +619,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		executorID = options.Name
 	}
 
-	exec, err := executor.NewExecutor(env, executorID, &executor.Options{NameOverride: options.Name})
+	exec, err := executor.NewExecutor(ctx, env, executorID, &executor.Options{NameOverride: options.Name})
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
@@ -646,7 +646,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		NodeNameOverride: options.Name,
 		APIKeyOverride:   options.APIKey,
 	}
-	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, opts)
+	registration, err := scheduler_client.NewRegistration(ctx, env, taskScheduler, executorID, opts)
 	if err != nil {
 		assert.FailNowf(r.t, "could not create executor registration", err.Error())
 	}
@@ -727,10 +727,10 @@ func (r *Env) waitForExecutorRegistration() {
 	require.Equal(r.t, expectedNodesByHostIp, nodesByHostIp, "set of registered executors should converge")
 }
 
-func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
+func (r *Env) DownloadOutputsToNewTempDir(ctx context.Context, res *CommandResult) string {
 	tmpDir := testfs.MakeTempDir(r.t)
 
-	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+	env := enterprise_testenv.GetCustomTestEnv(r.t, ctx, r.envOpts)
 	env.SetByteStreamClient(r.GetByteStreamClient())
 	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
 	// TODO: Does the context need the user ID if the CommandResult was produced
@@ -923,7 +923,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	var inputRootDigest *repb.Digest
 	if opts.SimulateMissingDigest {
 		// Generate a digest, but don't upload it.
-		inputRootDigest, _ = testdigest.NewRandomDigestBuf(r.t, 1234)
+		inputRootDigest, _ = testdigest.NewRandomDigestBuf(r.t, ctx, 1234)
 	} else {
 		if opts.InputRootDir != "" {
 			inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)

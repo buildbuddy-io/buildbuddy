@@ -159,10 +159,10 @@ func (t *FakeUsageTracker) Increment(ctx context.Context, usage *tables.UsageCou
 }
 
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -179,10 +179,10 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 }
 
 func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -211,10 +211,10 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 }
 
 func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -252,10 +252,10 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 }
 
 func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -281,10 +281,10 @@ func TestUnAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 }
 
 func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -312,10 +312,10 @@ func TestHandleEventOver100ProgressEventsBeforeStarted(t *testing.T) {
 }
 
 func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -363,10 +363,10 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 }
 
 func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -418,13 +418,13 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 }
 
 func TestHandleEventWithUsageTracking(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	ut := &FakeUsageTracker{}
 	te.SetUsageTracker(ut)
 	flags.Set(t, "app.usage_tracking_enabled", "true")
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -446,10 +446,10 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 }
 
 func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -491,10 +491,10 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 }
 
 func TestFinishedFinalize(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -534,10 +534,10 @@ func TestFinishedFinalize(t *testing.T) {
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -574,10 +574,10 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 }
 
 func TestUnfinishedFinalize(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -612,10 +612,10 @@ func TestUnfinishedFinalize(t *testing.T) {
 }
 
 func TestRetryOnComplete(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -681,10 +681,10 @@ func TestRetryOnComplete(t *testing.T) {
 }
 
 func TestRetryOnDisconnect(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")
@@ -773,10 +773,10 @@ func TestRetryOnDisconnect(t *testing.T) {
 }
 
 func TestRetryOnOldDisconnect(t *testing.T) {
-	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t, ctx)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
-	ctx := context.Background()
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, "test-invocation-id")

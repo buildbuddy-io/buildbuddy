@@ -2,16 +2,18 @@ package config_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
-	conf, err := config.NewConfig(bytes.NewReader(test_data.BasicYaml))
+	conf, err := config.NewConfig(context.Background(), ctxio.NoTraceCtxReaderWrapper(bytes.NewReader(test_data.BasicYaml)))
 
 	assert.NoError(t, err)
 	assert.Equal(t, &config.BuildBuddyConfig{

@@ -1,10 +1,11 @@
 package enterprise
 
 import (
+	"context"
 	"embed"
-	"io/fs"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 )
 
 // NB: We cannot embed "static", "bazel-out", etc here, because when this
@@ -15,6 +16,6 @@ import (
 //go:embed *
 var all embed.FS
 
-func Get() (fs.FS, error) {
-	return fileresolver.GetBundleFS(all)
+func Get(ctx context.Context) (fs.FS, error) {
+	return fileresolver.GetBundleFS(ctx, all)
 }

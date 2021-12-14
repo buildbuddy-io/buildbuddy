@@ -22,5 +22,6 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/role",
+        "//server/util/tracing/ctxio",
     ],
 )

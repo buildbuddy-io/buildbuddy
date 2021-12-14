@@ -1,7 +1,6 @@
 package real_environment
 
 import (
-	"io/fs"
 	"net/url"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 

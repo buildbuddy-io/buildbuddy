@@ -10,13 +10,13 @@ package xcode
 import "C"
 
 import (
-	"io/fs"
-	"os"
 	"strings"
 	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/groob/plist"
 )
 
@@ -35,9 +35,9 @@ type xcodeVersion struct {
 	sdks             []string
 }
 
-func NewXcodeLocator() *xcodeLocator {
+func NewXcodeLocator(ctx context.Context) *xcodeLocator {
 	xl := &xcodeLocator{}
-	xl.locate()
+	xl.locate(ctx)
 	return xl
 }
 
@@ -78,7 +78,7 @@ func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersio
 
 // Locates all all XCode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
-func (x *xcodeLocator) locate() {
+func (x *xcodeLocator) locate(ctx context.Context) {
 	bundleID := stringToCFString(xcodeBundleID)
 	defer C.CFRelease(C.CFTypeRef(bundleID))
 
@@ -94,7 +94,7 @@ func (x *xcodeLocator) locate() {
 	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
-		versionFileReader, err := os.Open(path + versionPlistPath)
+		versionFileReader, err := os.Open(ctx, path+versionPlistPath)
 		if err != nil {
 			log.Warningf("Error reading version file for XCode located at %s: %s", path, err.Error())
 			continue
@@ -109,7 +109,7 @@ func (x *xcodeLocator) locate() {
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
-		sdks, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
+		sdks, err := fs.Glob(ctx, os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
 		if err != nil {
 			log.Warningf("Error reading XCode SDKs from %s: %s", path, err.Error())
 			continue

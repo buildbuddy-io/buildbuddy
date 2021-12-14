@@ -11,6 +11,8 @@ go_library(
     },
     deps = [
         "//server/util/log",
+        "//server/util/tracing/filepath",
+        "//server/util/tracing/os",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

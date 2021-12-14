@@ -1,8 +1,8 @@
 package resources
 
 import (
+	"context"
 	"flag"
-	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 	"github.com/elastic/gosigar"
 )
 
@@ -114,11 +115,11 @@ func GetOS() string {
 	return runtime.GOOS
 }
 
-func GetMyHostname() (string, error) {
+func GetMyHostname(ctx context.Context) (string, error) {
 	if v := os.Getenv(hostnameEnvVarName); v != "" {
 		return v, nil
 	}
-	return os.Hostname()
+	return os.Hostname(ctx)
 }
 
 func GetMyPort() (int32, error) {

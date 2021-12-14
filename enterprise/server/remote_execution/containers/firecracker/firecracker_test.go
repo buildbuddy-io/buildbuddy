@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/ioutil"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -30,10 +29,10 @@ import (
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
-	env := testenv.GetTestEnv(t)
+	env := testenv.GetTestEnv(t, ctx)
 	diskCacheSize := 10_000_000_000 // 10GB
 	testRootDir := testfs.MakeTempDir(t)
-	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
+	dc, err := disk_cache.NewDiskCache(ctx, env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
 	if err != nil {
 		t.Error(err)
 	}
@@ -65,7 +64,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
+	fc, err := filecache.NewFileCache(ctx, testRootDir, int64(diskCacheSize))
 	if err != nil {
 		t.Error(err)
 	}
@@ -104,7 +103,7 @@ func TestFirecrackerRun(t *testing.T) {
 		EnableNetworking:       false,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +147,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		EnableNetworking:       false,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +195,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		MemSizeMB:              200, // small to make snapshotting faster.
 		EnableNetworking:       false,
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, cacheAuth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,10 +255,10 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		})
 		pathDirs := append([]string{rootDir}, subDirs[:rand.Intn(len(subDirs)-1)+1]...)
 		parentDir := filepath.Join(pathDirs...)
-		if err := disk.EnsureDirectoryExists(parentDir); err != nil {
+		if err := disk.EnsureDirectoryExists(ctx, parentDir); err != nil {
 			t.Fatal(err)
 		}
-		d, buf := testdigest.NewRandomDigestBuf(t, fileSizeBytes)
+		d, buf := testdigest.NewRandomDigestBuf(t, ctx, fileSizeBytes)
 		fullPath := filepath.Join(parentDir, d.GetHash()+".txt")
 		if err := ioutil.WriteFile(fullPath, buf, 0660); err != nil {
 			t.Fatal(err)
@@ -283,7 +282,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		EnableNetworking:       false,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,10 +294,10 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	assert.Equal(t, expectedResult, res)
 
 	for _, fullPath := range files {
-		if exists, err := disk.FileExists(fullPath); err != nil || !exists {
+		if exists, err := disk.FileExists(ctx, fullPath); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
-		if exists, err := disk.FileExists(fullPath + ".out"); err != nil || !exists {
+		if exists, err := disk.FileExists(ctx, fullPath+".out"); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
@@ -336,7 +335,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		AllowSnapshotStart:     true,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +351,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	// Now do the same thing again, but with a twist. The attached
 	// files and command run will be different. This command would
 	// fail if the new workspace were not properly attached.
-	workDir = makeDir(t, rootDir)
+	workDir = testfs.MakeDirAll(t, rootDir, "work")
 	opts.ActionWorkingDirectory = workDir
 
 	path = filepath.Join(workDir, "mars.txt")
@@ -373,7 +372,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	// This should resume the previous snapshot.
-	c, err = firecracker.NewContainer(env, auth, opts)
+	c, err = firecracker.NewContainer(ctx, env, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

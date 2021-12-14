@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -19,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/ctxio"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/filepath"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/reflection"
@@ -286,14 +287,14 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	bufSize := int64(readBufSizeBytes)
 	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
 		bufSize = d.GetSizeBytes()
 	}
 	copyBuf := c.bufferPool.Get(bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	_, err = ctxio.CopyBuffer(ctx, ctxio.CtxWriterWrapper(&streamWriter{stream}), reader, copyBuf[:bufSize])
 	c.bufferPool.Put(copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", IsolationToString(req.GetIsolation())+d.GetHash(), up)
 	return err
@@ -313,7 +314,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	up, _ := prefix.UserPrefixFromContext(ctx)
 
 	var bytesWritten int64
-	var writeCloser io.WriteCloser
+	var writeCloser ctxio.WriteCloser
 	handoffPeer := ""
 	for {
 		req, err := stream.Recv()
@@ -337,13 +338,13 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			writeCloser = wc
 			handoffPeer = req.GetHandoffPeer()
 		}
-		n, err := writeCloser.Write(req.Data)
+		n, err := writeCloser.Write(ctx, req.Data)
 		if err != nil {
 			return err
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Close(); err != nil {
+			if err := writeCloser.Close(ctx); err != nil {
 				return err
 			}
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
@@ -461,7 +462,7 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (ctxio.ReadCloser, error) {
 	req := &dcpb.ReadRequest{
 		Isolation: isolation,
 		Key:       digestToKey(d),
@@ -475,7 +476,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *d
 	if err != nil {
 		return nil, err
 	}
-	reader, writer := io.Pipe()
+	reader, writer := ctxio.Pipe()
 
 	// Bit annoying here -- the gRPC stream won't give us an error until
 	// we've called Recv on it. But we don't want to return a reader that
@@ -492,14 +493,14 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *d
 				readOnce = true
 			}
 			if err == io.EOF {
-				writer.Close()
+				writer.Close(ctx)
 				break
 			}
 			if err != nil {
-				writer.CloseWithError(err)
+				writer.CloseWithError(ctx, err)
 				break
 			}
-			writer.Write(rsp.Data)
+			writer.Write(ctx, rsp.Data)
 		}
 	}()
 	err = <-firstError
@@ -545,7 +546,7 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (ctxio.WriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
 	// not necessarily save the client any work. So, to attempt to reduce
@@ -555,7 +556,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, isolation, d); err == nil && alreadyExists {
 			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
-			return devnull.NewWriteCloser(), nil
+			return ctxio.NoTraceCtxWriteCloserWrapper(devnull.NewWriteCloser()), nil
 		}
 	}
 	client, err := c.getClient(ctx, peer)
@@ -573,7 +574,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		bytesUploaded: 0,
 		stream:        stream,
 	}
-	return wc, nil
+	return ctxio.CtxWriteCloserWrapper(wc), nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {

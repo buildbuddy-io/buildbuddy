@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/span"
 	"github.com/docker/distribution/reference"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -250,56 +250,56 @@ type TracedCommandContainer struct {
 }
 
 func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds PullCredentials) *interfaces.CommandResult {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Run(ctx, command, workingDir, creds)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.IsImageCached(ctx)
 }
 
 func (t *TracedCommandContainer) PullImage(ctx context.Context, creds PullCredentials) error {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.PullImage(ctx, creds)
 }
 
 func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) error {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Create(ctx, workingDir)
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Exec(ctx, command, stdin, stdout)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Unpause(ctx)
 }
 
 func (t *TracedCommandContainer) Pause(ctx context.Context) error {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Pause(ctx)
 }
 
 func (t *TracedCommandContainer) Remove(ctx context.Context) error {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Remove(ctx)
 }
 
 func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
-	defer span.End()
+	ctx, spn := span.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer spn.End()
 	return t.Delegate.Stats(ctx)
 }
 

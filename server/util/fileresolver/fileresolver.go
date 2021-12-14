@@ -1,27 +1,29 @@
 package fileresolver
 
 import (
+	"context"
 	"embed"
-	"io/fs"
-	"os"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/fs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing/os"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 )
 
 type aliasFS struct {
-	FS            embed.FS
+	FS            fs.FS
 	remappedPaths map[string]string
 }
 
 // GetBundleFS returns an FS that reads files directly from the given embed.FS,
 // aliasing any paths like "bazel-out/$arch/bin/$path" to "bin/$path" to provide
 // a simpler interface for dealing with architecture-specific paths.
-func GetBundleFS(bundle embed.FS) (fs.FS, error) {
+func GetBundleFS(ctx context.Context, bundle embed.FS) (fs.FS, error) {
+	wrappedBundle := fs.CtxFSWrapper(bundle)
 	afs := &aliasFS{
-		FS:            bundle,
+		FS:            wrappedBundle,
 		remappedPaths: make(map[string]string, 0),
 	}
 	// This is annoying but necessary -- we bundle some binary files that
@@ -34,12 +36,12 @@ func GetBundleFS(bundle embed.FS) (fs.FS, error) {
 		"bazel-out/*/bin",
 	}
 	for _, p := range pathsToAlias {
-		matches, err := fs.Glob(bundle, p)
+		matches, err := fs.Glob(ctx, wrappedBundle, p)
 		if err != nil {
 			return nil, err
 		}
 		for _, match := range matches {
-			fs.WalkDir(bundle, match, func(path string, d fs.DirEntry, err error) error {
+			fs.WalkDir(ctx, wrappedBundle, match, func(ctx context.Context, path string, d fs.DirEntry, err error) error {
 				if path == match {
 					return nil
 				}
@@ -61,12 +63,12 @@ func GetBundleFS(bundle embed.FS) (fs.FS, error) {
 	return afs, nil
 }
 
-func (a *aliasFS) Open(name string) (fs.File, error) {
+func (a *aliasFS) Open(ctx context.Context, name string) (fs.File, error) {
 	fileAlias, ok := a.remappedPaths[name]
 	if ok {
-		return a.FS.Open(fileAlias)
+		return a.FS.Open(ctx, fileAlias)
 	}
-	return a.FS.Open(name)
+	return a.FS.Open(ctx, name)
 }
 
 type fileResolver struct {
@@ -79,9 +81,9 @@ type fileResolver struct {
 //
 // `os.NotExists` can be used to check whether the file does not exist, if an
 // error is returned. The caller is responsible for closing the returned file.
-func (r *fileResolver) Open(name string) (fs.File, error) {
+func (r *fileResolver) Open(ctx context.Context, name string) (fs.File, error) {
 	if strings.HasPrefix(name, r.bundlePrefix) {
-		f, err := r.bundleFS.Open(strings.TrimPrefix(name, r.bundlePrefix))
+		f, err := r.bundleFS.Open(ctx, strings.TrimPrefix(name, r.bundlePrefix))
 		if err == nil {
 			return f, nil
 		}
@@ -94,7 +96,7 @@ func (r *fileResolver) Open(name string) (fs.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.Open(runfilePath)
+	return os.Open(ctx, runfilePath)
 }
 
 // New returns an FS that looks up files first from the bundle, then from

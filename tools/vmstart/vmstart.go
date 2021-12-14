@@ -44,15 +44,15 @@ var (
 	actionDigest        = flag.String("action_digest", "", "The optional digest of the action you want to mount.")
 )
 
-func getToolEnv() *real_environment.RealEnv {
-	configurator, err := config.NewConfigurator("")
+func getToolEnv(ctx context.Context) *real_environment.RealEnv {
+	configurator, err := config.NewConfigurator(ctx, "")
 	if err != nil {
 		log.Fatalf("This should never happen.")
 	}
 	healthChecker := healthcheck.NewHealthChecker("tool")
 	re := real_environment.NewRealEnv(configurator, healthChecker)
 
-	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes)
+	fc, err := filecache.NewFileCache(ctx, *snapshotDir, *snapshotDirMaxBytes)
 	if err != nil {
 		log.Fatalf("Unable to setup filecache %s", err)
 	}
@@ -89,9 +89,9 @@ func main() {
 
 	rand.Seed(time.Now().Unix())
 
-	env := getToolEnv()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	env := getToolEnv(ctx)
 
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
@@ -122,7 +122,7 @@ func main() {
 	var c *firecracker.FirecrackerContainer
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	if *snapshotID != "" {
-		c, err = firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(ctx, env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
@@ -130,7 +130,7 @@ func main() {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
-		c, err = firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(ctx, env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
