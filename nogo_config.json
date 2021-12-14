@@ -55,6 +55,9 @@
     "only_files": {
       "/server/": "Server code",
       "/enterprise/server/": "Enterprise server code"
+    },
+    "exclude_files": {
+      "ctxio": "Intentionally adds context to standard method signatures"
     }
   },
   "stringintconv": {
