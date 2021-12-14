@@ -1536,6 +1536,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
 			Enabled: !s.requireExecutorAuthorization ||
+				groupID == s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID ||
 				(s.enableUserOwnedExecutors &&
 					(useGroupOwnedExecutors || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
 		}
