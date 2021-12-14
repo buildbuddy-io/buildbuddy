@@ -32,7 +32,7 @@ const (
 	stateCookieName    = "Github-State-Token"
 	redirectCookieName = "Github-Redirect-Url"
 	groupIDCookieName  = "Github-Linked-Group-ID"
-	userIDCookieName  = "Github-Linked-User-ID"
+	userIDCookieName   = "Github-Linked-User-ID"
 )
 
 // State represents a status value that GitHub's statuses API understands.
@@ -165,7 +165,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			redirectWithError(w, r, status.PermissionDeniedErrorf("Error linking github account to group: %v", err))
 			return
-		}	
+		}
 	}
 
 	// Restore user ID from cookie.
@@ -180,7 +180,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			redirectWithError(w, r, status.PermissionDeniedErrorf("Error linking github account to user: %v", err))
 			return
-		}	
+		}
 	}
 
 	redirectUrl := getCookie(r, redirectCookieName)
