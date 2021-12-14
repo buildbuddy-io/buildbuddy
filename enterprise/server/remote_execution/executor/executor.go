@@ -340,7 +340,14 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md
 
-	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
+	if !task.GetAction().GetDoNotCache() {
+		if cmdResult.Error != nil || cmdResult.ExitCode != 0 {
+			resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), task.GetInvocationId())
+			if err != nil {
+				return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
+			}
+			adInstanceDigest = digest.NewInstanceNameDigest(resultDigest, req.GetInstanceName())
+		}
 		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}

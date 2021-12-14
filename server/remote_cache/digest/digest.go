@@ -115,6 +115,19 @@ func Compute(in io.Reader) (*repb.Digest, error) {
 	}, nil
 }
 
+func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Digest, error) {
+	if digest == nil {
+		return nil, status.FailedPreconditionError("nil digest")
+	}
+	h := sha256.New()
+	h.Write([]byte(digest.Hash))
+	h.Write([]byte(invocationID))
+	return &repb.Digest{
+		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
+		SizeBytes: digest.SizeBytes,
+	}, nil
+}
+
 func DownloadResourceName(d *repb.Digest, instanceName string) string {
 	// Haven't found docs on what a valid instance name looks like. But generally
 	// seems like a string, possibly separated by "/".
