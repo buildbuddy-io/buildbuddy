@@ -12,7 +12,7 @@ START_BRANCH=$(git branch --show-current)
 : ${GRAFANA_ADMIN_PASSWORD:="admin"}
 : ${GRAFANA_DASHBOARD_ID:=1rsE5yoGz}
 GRAFANA_STARTUP_URL="http://localhost:$GRAFANA_PORT/d/$GRAFANA_DASHBOARD_ID?orgId=1&refresh=5s"
-GRAFANA_DASHBOARD_URL="http://admin:$GRAFANA_ADMIN_PASSWORD@localhost:$GRAFANA_PORT/api/dashboards/db/buildbuddy-metrics"
+GRAFANA_DASHBOARD_URL="http://admin:$GRAFANA_ADMIN_PASSWORD@localhost:$GRAFANA_PORT/api/dashboards/uid/$GRAFANA_DASHBOARD_ID"
 GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 
 : ${KUBE_CONTEXT:=""}
