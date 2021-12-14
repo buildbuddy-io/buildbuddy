@@ -61,7 +61,7 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -80,7 +80,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak

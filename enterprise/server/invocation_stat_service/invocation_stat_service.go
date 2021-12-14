@@ -142,7 +142,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.Raw(qStr, qArgs...).Rows()
+	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.Raw(qStr, qArgs...).Rows()
+	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
