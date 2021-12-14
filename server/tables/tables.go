@@ -220,6 +220,7 @@ type User struct {
 	Email     string
 	ImageURL  string
 
+	// User-specific Github token (if linked).
 	GithubToken string
 
 	// Group roles are used to determine read/write permissions
