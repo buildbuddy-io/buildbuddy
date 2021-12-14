@@ -80,10 +80,18 @@ message ExecutionSummary {
       executed_action_metadata = 8;
 }
 
+// Next Tag: 10
 message Execution {
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
   // execute.
   build.bazel.remote.execution.v2.Digest action_digest = 1;
+  
+  // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
+  // execute. 
+  // When an action succeeds, this field is the same as the action_digest; when
+  // an action fails, this field contains the result details and action_digest
+  // doesn't.
+  build.bazel.remote.execution.v2.Digest action_result_digest = 9;
 
   // The stage this execution is currently in.
   build.bazel.remote.execution.v2.ExecutionStage.Value stage = 2;
