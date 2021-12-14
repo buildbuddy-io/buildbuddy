@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -28,9 +27,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
-
-	octrace "go.opencensus.io/trace"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	octrace "go.opencensus.io/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
