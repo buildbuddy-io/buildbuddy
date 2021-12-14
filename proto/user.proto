@@ -30,6 +30,9 @@ message GetUserResponse {
   // List of BuildBuddyService RPC names that the user is allowed to perform
   // for their currently selected group.
   repeated string allowed_rpc = 4;
+
+  // User-specific Github token (if linked).
+  string github_token = 5;
 }
 
 message CreateUserRequest {

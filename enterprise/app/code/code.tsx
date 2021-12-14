@@ -90,7 +90,7 @@ export default class CodeComponent extends React.Component<Props> {
 
   updateUser() {
     this.octokit = new Octokit({
-      auth: this.props.user.selectedGroup.githubToken,
+      auth: this.props.user.githubToken,
     });
   }
 
@@ -304,6 +304,11 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   async handleReviewClicked() {
+    if (!this.props.user.githubToken) {
+      this.handleGitHubClicked();
+      return;
+    }
+
     this.setState({ requestingReview: true });
 
     let filteredEntries = Array.from(this.state.changes.entries()).filter(
@@ -388,13 +393,18 @@ export default class CodeComponent extends React.Component<Props> {
 
   handleGitHubClicked() {
     const params = new URLSearchParams({
-      group_id: this.props.user?.selectedGroup?.id,
+      user_id: this.props.user?.displayUser?.userId.id,
       redirect_url: window.location.href,
     });
     window.location.href = `/auth/github/link/?${params}`;
   }
 
   handleUpdatePR() {
+    if (!this.props.user.githubToken) {
+      this.handleGitHubClicked();
+      return;
+    }
+
     let filteredEntries = Array.from(this.state.changes.entries()).filter(
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
@@ -520,7 +530,7 @@ export default class CodeComponent extends React.Component<Props> {
                   ))}
             </div>
             <div className="code-sidebar-actions">
-              {!this.props.user.selectedGroup.githubToken && (
+              {!this.props.user.githubToken && (
                 <button onClick={this.handleGitHubClicked.bind(this)}>
                   <Link className="icon" /> Link GitHub
                 </button>
