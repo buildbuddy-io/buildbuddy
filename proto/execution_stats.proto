@@ -85,9 +85,9 @@ message Execution {
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
   // execute.
   build.bazel.remote.execution.v2.Digest action_digest = 1;
-  
+
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
-  // execute. 
+  // execute.
   // When an action succeeds, this field is the same as the action_digest; when
   // an action fails, this field contains the result details and action_digest
   // doesn't.
