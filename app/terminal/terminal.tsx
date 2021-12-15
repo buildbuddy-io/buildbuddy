@@ -67,7 +67,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
   }
 
   wrapText(text: string): string {
-    if (!this.state.wrap || !this.terminalRef.current) {
+    if (!this.state.wrap || !this.terminalRef.current || !text) {
       return text;
     }
     let width = Math.floor(this.terminalRef.current?.getBoundingClientRect().width / 8.5);
