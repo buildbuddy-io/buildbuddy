@@ -145,9 +145,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	xl, err := xcode.NewXcodeLocator()
 	if err != nil {
-		log.Fatalf("Failed to set XCodeLocator: %s", err)
+		log.Fatalf("Failed to set XcodeLocator: %s", err)
 	}
-	realEnv.SetXCodeLocator(xl)
+	realEnv.SetXcodeLocator(xl)
 
 	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
 		opts := make([]option.ClientOption, 0)

@@ -559,12 +559,12 @@ type HealthChecker interface {
 	Shutdown()
 }
 
-// Locates all XCode versions installed on the host system.
+// Locates all Xcode versions installed on the host system.
 type XcodeLocator interface {
-	// Returns the developer directory and SDKs for the given XCode version.
+	// Returns the developer directory and SDKs for the given Xcode version.
 	DeveloperDirForVersion(version string) (string, error)
 
-	// Returns true if the given SDK path is present in the given XCode version.
+	// Returns true if the given SDK path is present in the given Xcode version.
 	IsSDKPathPresentForVersion(sdkPath, version string) bool
 }
 
