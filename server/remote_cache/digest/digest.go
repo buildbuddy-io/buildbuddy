@@ -115,6 +115,8 @@ func Compute(in io.Reader) (*repb.Digest, error) {
 	}, nil
 }
 
+// AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.
+// This is only to be used for failed action results.
 func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Digest, error) {
 	if digest == nil {
 		return nil, status.FailedPreconditionError("nil digest")
