@@ -326,10 +326,10 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
 }
-func (r *RealEnv) GetXCodeLocator() interfaces.XcodeLocator {
+func (r *RealEnv) GetXcodeLocator() interfaces.XcodeLocator {
 	return r.xcodeLocator
 }
-func (r *RealEnv) SetXCodeLocator(xl interfaces.XcodeLocator) {
+func (r *RealEnv) SetXcodeLocator(xl interfaces.XcodeLocator) {
 	r.xcodeLocator = xl
 }
 

@@ -41,16 +41,16 @@ func NewXcodeLocator() (*xcodeLocator, error) {
 	return xl, err
 }
 
-// Finds the XCode developer directory that most closely matches the given XCode version.
+// Finds the Xcode developer directory that most closely matches the given Xcode version.
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
 	xv := x.xcodeVersionForVersionString(version)
 	if xv == nil {
-		return "", status.FailedPreconditionErrorf("XCode version %s not installed on remote executor. Available Xcode versions are %+v", version, x.versions)
+		return "", status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %+v", version, x.versions)
 	}
 	return xv.developerDirPath, nil
 }
 
-// Return true if the given SDK path is present in the given XCode version.
+// Return true if the given SDK path is present in the given Xcode version.
 func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool {
 	xv := x.xcodeVersionForVersionString(version)
 	if xv == nil {
@@ -76,7 +76,7 @@ func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersio
 	return nil
 }
 
-// Locates all all XCode versions installed on the host machine.
+// Locates all all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
 func (x *xcodeLocator) locate() error {
 	bundleID := stringToCFString(xcodeBundleID)
@@ -100,33 +100,33 @@ func (x *xcodeLocator) locate() error {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
 		versionFileReader, err := os.Open(path + versionPlistPath)
 		if err != nil {
-			log.Warningf("Error reading version file for XCode located at %s: %s", path, err.Error())
+			log.Warningf("Error reading version file for Xcode located at %s: %s", path, err.Error())
 			continue
 		}
-		// The interesting bits to pull from XCode's version plist.
+		// The interesting bits to pull from Xcode's version plist.
 		var xcodePlist struct {
 			CFBundleShortVersionString string `plist:"CFBundleShortVersionString"`
 			ProductBuildVersion        string `plist:"ProductBuildVersion"`
 		}
 		if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
-			log.Warningf("Error decoding plist for XCode located at %s: %s", path, err.Error())
+			log.Warningf("Error decoding plist for Xcode located at %s: %s", path, err.Error())
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
 		sdks, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
 		if err != nil {
-			log.Warningf("Error reading XCode SDKs from %s: %s", path, err.Error())
+			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-		log.Infof("Found XCode version %s.%s at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
-		versions := expandXCodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
+		log.Infof("Found Xcode version %s.%s at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
+		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
 		for _, version := range versions {
 			existingXcode, ok := versionMap[version]
 			if ok && mostPreciseVersion < existingXcode.version {
 				continue
 			}
-			log.Debugf("Mapped XCode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
+			log.Debugf("Mapped Xcode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
 			versionMap[version] = &xcodeVersion{
 				version:          mostPreciseVersion,
 				developerDirPath: developerDirPath,
@@ -138,9 +138,9 @@ func (x *xcodeLocator) locate() error {
 	return nil
 }
 
-// Expands a single XCode version into all component combinations in order of increasing precision.
+// Expands a single Xcode version into all component combinations in order of increasing precision.
 // i.e. 12.5 => 12, 12.5, 12.5.0, 12.5.0.abc123
-func expandXCodeVersions(xcodeVersion string, productVersion string) []string {
+func expandXcodeVersions(xcodeVersion string, productVersion string) []string {
 	versions := make([]string, 0)
 
 	components := strings.Split(xcodeVersion, ".")
