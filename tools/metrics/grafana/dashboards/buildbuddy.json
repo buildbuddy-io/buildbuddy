@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1639595467347,
+  "iteration": 1639608915545,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -142,10 +142,6 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -182,7 +178,12 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(kube_pod_container_status_restarts_total{region=\"$region\"}) by (pod, container, exported_namespace) > 0",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\"}[1m])) by (pod, container, exported_namespace) > 0",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
