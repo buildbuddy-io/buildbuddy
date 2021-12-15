@@ -239,15 +239,23 @@ export default class ExecutionCardComponent extends React.Component {
   }
 
   handleActionDigestClick(execution: execution_stats.Execution) {
-    router.navigateTo(
+	let path = 
       "/invocation/" +
         this.props.model.getId() +
         "?actionDigest=" +
         execution.actionDigest.hash +
         "/" +
-        execution.actionDigest.sizeBytes +
-        "#action"
-    );
+        execution.actionDigest.sizeBytes;
+
+	if (execution.actionResultDigest != null) {
+		path += "&actionResultDigest=" +
+		execution.actionResultDigest.hash +
+		"/" +
+		execution.actionResultDigest.sizeBytes
+	} 
+
+
+    router.navigateTo(path + "#action");
   }
 
   render() {
