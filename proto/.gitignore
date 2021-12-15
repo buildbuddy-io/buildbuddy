@@ -1,2 +1,4 @@
+# Proto symlinks
 *_ts_proto.js
+*.d.ts
 *.pb.go
