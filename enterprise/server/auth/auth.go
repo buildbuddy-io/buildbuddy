@@ -99,8 +99,9 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 
 type Claims struct {
 	jwt.StandardClaims
-	UserID  string `json:"user_id"`
-	GroupID string `json:"group_id"`
+	UserID        string `json:"user_id"`
+	GroupID       string `json:"group_id"`
+	Impersonating bool   `json:"impersonating"`
 	// TODO(bduffany): remove this field
 	AllowedGroups          []string                      `json:"allowed_groups"`
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
@@ -114,6 +115,10 @@ func (c *Claims) GetUserID() string {
 
 func (c *Claims) GetGroupID() string {
 	return c.GroupID
+}
+
+func (c *Claims) IsImpersonating() bool {
+	return c.Impersonating
 }
 
 func (c *Claims) GetAllowedGroups() []string {
@@ -716,7 +721,30 @@ func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*C
 			}
 		}
 	}
-	return userClaims(u, eg), nil
+
+	claims := userClaims(u, eg)
+
+	// If the user is trying to impersonate a member of another org and has Admin
+	// role within the configured admin group, set their authenticated user to
+	// *only* have access to the org being impersonated.
+	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetImpersonatingGroupId() != "" {
+		adminGroupID := env.GetConfigurator().GetAuthAdminGroupID()
+		for _, membership := range claims.GetGroupMemberships() {
+			if membership.GroupID != adminGroupID || membership.Role != role.Admin {
+				continue
+			}
+			u.Groups = []*tables.GroupRole{{
+				Group: tables.Group{GroupID: c.GetImpersonatingGroupId()},
+				Role:  uint32(role.Admin),
+			}}
+			claims := userClaims(u, c.GetImpersonatingGroupId())
+			claims.Impersonating = true
+			return claims, nil
+		}
+		return nil, status.PermissionDeniedError("You do not have permissions to impersonate group members.")
+	}
+
+	return claims, nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, authority string) (*Claims, error) {

@@ -173,6 +173,14 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
 		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs...)
 	}
+	if serverAdminGID := s.env.GetConfigurator().GetAuthAdminGroupID(); serverAdminGID != "" {
+		for _, gr := range tu.Groups {
+			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
+				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs...)
+				break
+			}
+		}
+	}
 	return &uspb.GetUserResponse{
 		DisplayUser:     tu.ToProto(),
 		UserGroup:       makeGroups(tu.Groups),
@@ -677,6 +685,14 @@ func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *inpb.GetTrendReque
 		return iss.GetTrend(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetInvocationOwner(ctx context.Context, req *inpb.GetInvocationOwnerRequest) (*inpb.GetInvocationOwnerResponse, error) {
+	gid, err := s.env.GetInvocationDB().LookupGroupIDFromInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+	return &inpb.GetInvocationOwnerResponse{GroupId: gid}, nil
 }
 
 func (s *BuildBuddyServer) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {

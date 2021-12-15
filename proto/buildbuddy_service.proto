@@ -31,6 +31,8 @@ service BuildBuddyService {
       returns (invocation.DeleteInvocationResponse);
   rpc GetTrend(invocation.GetTrendRequest)
       returns (invocation.GetTrendResponse);
+  rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
+      returns (invocation.GetInvocationOwnerResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)

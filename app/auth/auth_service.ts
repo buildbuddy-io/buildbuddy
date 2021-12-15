@@ -12,6 +12,7 @@ import { User } from "./user";
 export { User };
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
+const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
 
 export class AuthService {
   user: User = null;
@@ -23,6 +24,11 @@ export class AuthService {
     if (!capabilities.auth) return;
     // Set initially preferred group ID from local storage.
     rpcService.requestContext.groupId = window.localStorage.getItem(SELECTED_GROUP_ID_LOCAL_STORAGE_KEY);
+    // Set impersonating group ID from session storage, so impersonation doesn't
+    // persist across different sessions.
+    rpcService.requestContext.impersonatingGroupId = window.sessionStorage.getItem(
+      IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY
+    );
 
     let request = new user.GetUserRequest();
     rpcService.service
@@ -86,6 +92,7 @@ export class AuthService {
         (name) => (name[0].toLowerCase() + name.substring(1)) as BuildBuddyServiceRpcName
       )
     );
+    user.isImpersonating = Boolean(rpcService.requestContext.impersonatingGroupId);
     return user;
   }
 
@@ -121,6 +128,16 @@ export class AuthService {
     } else {
       this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));
     }
+  }
+
+  async enterImpersonationMode(groupId: string) {
+    window.sessionStorage.setItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY, groupId);
+    window.location.reload();
+  }
+
+  async exitImpersonationMode() {
+    window.sessionStorage.removeItem(IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY);
+    window.location.reload();
   }
 
   login(slug?: string) {

@@ -83,6 +83,11 @@ var (
 		// BuildBuddy usage data
 		"GetUsage",
 	}
+
+	// ServerAdminOnlyRPCs can only be called by server admins.
+	ServerAdminOnlyRPCs = []string{
+		"GetInvocationOwner",
+	}
 )
 
 // AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
@@ -102,6 +107,16 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 
 	if stringSliceContains(u.GetAllowedGroups(), globalAdminGroupID) {
 		return nil
+	}
+
+	serverAdminGID := env.GetConfigurator().GetAuthAdminGroupID()
+	if serverAdminGID != "" && stringSliceContains(ServerAdminOnlyRPCs, rpcName) {
+		for _, m := range u.GetGroupMemberships() {
+			if m.GroupID == serverAdminGID && m.Role == role.Admin {
+				return nil
+			}
+		}
+		return status.PermissionDeniedError("Permission denied.")
 	}
 
 	groupID := u.GetGroupID()
