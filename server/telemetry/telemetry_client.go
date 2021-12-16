@@ -156,7 +156,7 @@ func getAppVersion() string {
 
 func getInstallationUUID(env environment.Env) string {
 	ctx := context.Background()
-	store, err := blobstore.GetConfiguredBlobstore(env.GetConfigurator())
+	store, err := blobstore.GetConfiguredBlobstore(ctx, env.GetConfigurator())
 	if err != nil {
 		log.Debugf("Error getting blobstore: %s", err)
 		return unknownFieldValue

@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/api/option"
 
@@ -44,11 +45,11 @@ const (
 )
 
 // Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
+func GetConfiguredBlobstore(ctx context.Context, c *config.Configurator) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
 	if c.GetStorageDiskRootDir() != "" {
 		log.Debug("Disk blobstore configured")
-		return NewDiskBlobStore(c.GetStorageDiskRootDir())
+		return NewDiskBlobStore(ctx, c.GetStorageDiskRootDir())
 	}
 	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
 		log.Debug("Configuring GCS blobstore")
@@ -132,7 +133,7 @@ type DiskBlobStore struct {
 	rootDir string
 }
 
-func NewDiskBlobStore(rootDir string) (*DiskBlobStore, error) {
+func NewDiskBlobStore(ctx context.Context, rootDir string) (*DiskBlobStore, error) {
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
@@ -205,7 +206,9 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 		return 0, err
 	}
 	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	n, err := disk.WriteFile(ctx, fullPath, compressedData)
+	spn.End()
 	recordWriteMetrics(diskLabel, start, n, err)
 	return n, err
 }
@@ -216,7 +219,9 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 		return nil, err
 	}
 	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	b, err := disk.ReadFile(ctx, fullPath)
+	spn.End()
 	recordReadMetrics(diskLabel, start, b, err)
 	return decompress(b, err)
 }
@@ -227,7 +232,9 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 		return err
 	}
 	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	err = disk.DeleteFile(ctx, fullPath)
+	spn.End()
 	recordDeleteMetrics(diskLabel, start, err)
 	if os.IsNotExist(err) {
 		return nil
@@ -240,6 +247,8 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 	if err != nil {
 		return false, err
 	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	return disk.FileExists(fullPath)
 }
 
@@ -268,10 +277,19 @@ func NewGCSBlobStore(bucketName, projectID string, opts ...option.ClientOption) 
 	return g, nil
 }
 
+func (g *GCSBlobStore) bucketExists(ctx context.Context, bucketName string) (bool, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	spn.End()
+	return err == nil, err
+}
+
 func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
-	if _, err := g.gcsClient.Bucket(bucketName).Attrs(ctx); err != nil {
+	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
 		log.Infof("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
 		return g.bucketHandle.Create(ctx, g.projectID, nil)
 	}
 	g.bucketHandle = g.gcsClient.Bucket(bucketName)
@@ -287,7 +305,9 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return nil, err
 	}
 	start := time.Now()
+	_, spn := tracing.StartSpan(ctx)
 	b, err := ioutil.ReadAll(reader)
+	spn.End()
 	recordReadMetrics(gcsLabel, start, b, err)
 	return decompress(b, err)
 }
@@ -300,14 +320,18 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		return 0, err
 	}
 	start := time.Now()
+	_, spn := tracing.StartSpan(ctx)
 	n, err := writer.Write(compressedData)
+	spn.End()
 	recordWriteMetrics(gcsLabel, start, n, err)
 	return n, err
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
 	err := g.bucketHandle.Object(blobName).Delete(ctx)
+	spn.End()
 	recordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
 		return nil
@@ -316,7 +340,9 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 }
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
+	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false, nil
 	} else if err == nil {
@@ -397,19 +423,33 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 	return awsBlobStore, nil
 }
 
+func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (bool, error) {
+	_, spn := tracing.StartSpan(ctx)
+	_, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	spn.End()
+	if err == nil {
+		return true, nil
+	}
+	aerr := err.(awserr.Error)
+	// AWS returns codes as strings
+	// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
+	if aerr.Code() != "NotFound" {
+		return false, err
+	}
+	return false, nil
+}
+
 func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	// HeadBucket call will return 404 or 403
 	log.Debugf("Checking if AWS blobstore bucket %q exists", bucketName)
-	if _, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
-		aerr := err.(awserr.Error)
-		// AWS returns codes as strings
-		// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-		if aerr.Code() != "NotFound" {
-			return err
-		}
+	if exists, err := a.bucketExists(ctx, bucketName); err != nil {
+		return err
+	} else if !exists {
 		log.Debugf("AWS blobstore bucket %q does not exists", bucketName)
 
 		log.Infof("Creating storage bucket: %s", bucketName)
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
 		if _, err := a.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}
@@ -434,10 +474,12 @@ func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
 		Key:    aws.String(blobName),
 	})
+	spn.End()
 
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -467,6 +509,8 @@ func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressed
 		Key:    aws.String(blobName),
 		Body:   bytes.NewReader(compressedData),
 	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if _, err := a.uploader.UploadWithContext(ctx, uploadParams); err != nil {
 		return -1, err
 	}
@@ -486,6 +530,8 @@ func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 		Key:    aws.String(blobName),
 	}
 
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if _, err := a.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
 		return err
 	}
@@ -503,6 +549,8 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 		Key:    aws.String(blobName),
 	}
 
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if _, err := a.s3.HeadObjectWithContext(ctx, params); err != nil {
 		return false, err
 	}
@@ -555,12 +603,26 @@ func (z *AzureBlobStore) isAzureError(err error, code azblob.ServiceCodeType) bo
 	return false
 }
 
+func (z *AzureBlobStore) containerExists(ctx context.Context) (bool, error) {
+	_, spn := tracing.StartSpan(ctx)
+	_, err := z.containerURL.GetProperties(ctx, azblob.LeaseAccessConditions{})
+	spn.End()
+	if err == nil {
+		return true, nil
+	}
+	if !z.isAzureError(err, azblob.ServiceCodeContainerNotFound) {
+		return false, err
+	}
+	return false, nil
+}
+
 func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
-	if _, err := z.containerURL.GetProperties(ctx, azblob.LeaseAccessConditions{}); err != nil {
-		if z.isAzureError(err, azblob.ServiceCodeContainerNotFound) {
-			_, err = z.containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
-			return err
-		}
+	if exists, err := z.containerExists(ctx); err != nil {
+		return err
+	} else if !exists {
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
+		_, err = z.containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 		return err
 	}
 	return nil
@@ -579,7 +641,9 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
+	_, spn := tracing.StartSpan(ctx)
 	b, err := ioutil.ReadAll(readCloser)
+	spn.End()
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +659,9 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	n := len(compressedData)
 	start := time.Now()
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err = azblob.UploadBufferToBlockBlob(ctx, compressedData, blobURL, azblob.UploadToBlockBlobOptions{})
+	spn.End()
 	recordWriteMetrics(azureLabel, start, n, err)
 	return n, err
 }
@@ -603,13 +669,17 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
+	spn.End()
 	recordDeleteMetrics(azureLabel, start, err)
 	return err
 }
 
 func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if _, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
 			return false, nil

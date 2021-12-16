@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -30,7 +31,7 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := libmain.GetConfiguredEnvironmentOrDie(context.Background(), configurator, healthChecker)
 
 	telemetryClient := telemetry.NewTelemetryClient(env)
 	telemetryClient.Start()

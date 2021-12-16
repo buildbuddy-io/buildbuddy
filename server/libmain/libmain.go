@@ -140,7 +140,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+func GetConfiguredEnvironmentOrDie(ctx context.Context, configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	opts := log.Opts{
 		Level:                  configurator.GetAppLogLevel(),
 		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
@@ -152,7 +152,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	bs, err := blobstore.GetConfiguredBlobstore(ctx, configurator)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
