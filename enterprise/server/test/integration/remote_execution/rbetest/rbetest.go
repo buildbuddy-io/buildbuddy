@@ -581,7 +581,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetAuthenticator(r.newTestAuthenticator())
 	xl, err := xcode.NewXcodeLocator()
 	if err != nil {
-		assert.FailNowf(r.t, "Failed to set XCodeLocator: %s", err.Error())
+		assert.FailNowf(r.t, "Failed to set XcodeLocator: %s", err.Error())
 	}
 	env.SetXcodeLocator(xl)
 
