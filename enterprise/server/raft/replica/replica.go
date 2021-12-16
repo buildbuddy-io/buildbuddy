@@ -155,7 +155,7 @@ func (sm *Replica) maybeSetRange(key, val []byte) error {
 func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
 	rangeIsSet := sm.mappedRange != nil
-	if rangeIsSet && !sm.mappedRange.Contains(key) {
+	if rangeIsSet && !keys.IsLocalKey(key) && !sm.mappedRange.Contains(key) {
 		sm.rangeMu.RUnlock()
 		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
 	}
@@ -841,8 +841,10 @@ func (sm *Replica) Close() error {
 	if sm.rangeTracker != nil && rangeDescriptor != nil {
 		sm.rangeTracker.RemoveRange(rangeDescriptor)
 	}
-
-	return sm.db.Close()
+	if sm.db != nil {
+		return sm.db.Close()
+	}
+	return nil
 }
 
 // CreateReplica creates an ondisk statemachine.
