@@ -73,7 +73,7 @@ func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
 	n, err := writeCloser.Write(buf)
-	require.Nil(t, err)
+	require.Nil(t, err, err)
 	require.Equal(t, n, len(buf))
 	err = writeCloser.Close()
 	require.Nil(t, err, err)
@@ -262,7 +262,8 @@ func TestCacheShutdown(t *testing.T) {
 		rc3, err = raft_cache.NewRaftCache(env, rc3Config)
 		return err
 	})
-	require.Nil(t, eg.Wait())
+	err := eg.Wait()
+	require.Nil(t, err, err)
 
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
@@ -270,9 +271,10 @@ func TestCacheShutdown(t *testing.T) {
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
 	require.Nil(t, err)
 
+	cacheRPCTimeout := 5 * time.Second
 	digestsWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		writeDigest(t, ctx, cache, d, buf)
@@ -283,7 +285,7 @@ func TestCacheShutdown(t *testing.T) {
 	waitForShutdown(t, rc3)
 
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		writeDigest(t, ctx, cache, d, buf)
@@ -298,7 +300,7 @@ func TestCacheShutdown(t *testing.T) {
 	require.Nil(t, err)
 
 	for _, d := range digestsWritten {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		readAndCompareDigest(t, ctx, cache, d)
 	}

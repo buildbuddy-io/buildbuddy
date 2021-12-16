@@ -71,6 +71,7 @@ type RaftCache struct {
 	sender     *sender.Sender
 
 	isolation    *rfpb.Isolation
+	shutdown     chan struct{}
 	shutdownOnce *sync.Once
 }
 
@@ -83,9 +84,6 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	if err != nil {
 		return nil, err
 	}
-	// Register the node registry with the gossip manager so it gets updates
-	// on node membership.
-	rc.gossipManager.AddListener(r)
 	rc.registry = r
 	return r, nil
 }
@@ -129,6 +127,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		env:          env,
 		conf:         conf,
 		rangeCache:   rangecache.New(),
+		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
 	}
 
@@ -218,14 +217,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
-	rc.gossipManager.SetTag(constants.NodeHostIDTag, nodeHost.ID())
-	rc.gossipManager.SetTag(constants.RaftAddressTag, rc.raftAddress)
-	rc.gossipManager.SetTag(constants.GRPCAddressTag, rc.grpcAddress)
-
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
-	rc.gossipManager.AddListener(clusterStarter)
 
 	clusterStarter.InitializeClusters()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -240,6 +234,13 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	// initial cluster setup time key/val which is stored in the Meta Range.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	select {
+	case <-rc.shutdown:
+		return status.FailedPreconditionError("node is shutdown")
+	default:
+		break
+	}
 
 	key := constants.InitClusterSetupTimeKey
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
@@ -367,21 +368,26 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		if err != nil {
 			return err
 		}
-		return rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			log.Errorf("Bout to run SyncPropose")
-			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+		err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+			log.Errorf("rc.sender.Run (SyncPropose) about to run. Header: %+v", h)
+			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  writeReq,
 			})
-			log.Errorf("SyncPropose returned err: %s", err)
+			log.Errorf("rc.sender.Run (SyncPropose) ran and got: rsp: %+v, err: %s", rsp, err)
 			return err
 		})
+		if err != nil {
+			log.Errorf("rc.sender.Run (SyncPropose) returned err: %s", err)
+		}
+		return err
 	}}
 	return rwc, nil
 }
 
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
+		close(rc.shutdown)
 		rc.nodeHost.Stop()
 		// rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
