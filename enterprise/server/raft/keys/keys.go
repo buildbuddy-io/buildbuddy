@@ -20,3 +20,10 @@ func (k Key) Next() Key {
 func RangeMetaKey(key Key) Key {
 	return MakeKey([]byte{'\x02'}, key)
 }
+
+func IsLocalKey(key Key) bool {
+	if len(key) == 0 {
+		return false
+	}
+	return key[0] == '\x01'
+}
