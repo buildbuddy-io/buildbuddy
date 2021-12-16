@@ -3,6 +3,7 @@
 package rbetest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -37,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
@@ -50,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
@@ -119,6 +123,10 @@ func (r *Env) GetByteStreamClient() bspb.ByteStreamClient {
 
 func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].casClient
+}
+
+func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
+	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
@@ -258,6 +266,7 @@ type BuildBuddyServer struct {
 	byteStreamClient        bspb.ByteStreamClient
 	schedulerClient         scpb.SchedulerClient
 	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
+	acClient                repb.ActionCacheClient
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -305,6 +314,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	server.byteStreamClient = bspb.NewByteStreamClient(clientConn)
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
 	server.buildBuddyServiceClient = bbspb.NewBuildBuddyServiceClient(clientConn)
+	server.acClient = repb.NewActionCacheClient(clientConn)
 
 	return server
 }
@@ -762,6 +772,46 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	return tmpDir
 }
 
+func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, invocationID string) (*repb.ActionResult, error) {
+	d := cmd.GetActionDigest().Digest
+	actionResultDigest, err := digest.AddInvocationIDToDigest(d, invocationID)
+	if err != nil {
+		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
+	}
+	req := &repb.GetActionResultRequest{
+		InstanceName: cmd.GetActionDigest().GetInstanceName(),
+		ActionDigest: actionResultDigest,
+	}
+	acClient := r.GetActionResultStorageClient()
+	return acClient.GetActionResult(context.Background(), req)
+}
+
+func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
+	stdout := ""
+	if actionResult.GetStdoutDigest() != nil {
+		d := digest.NewInstanceNameDigest(actionResult.GetStdoutDigest(), instanceName)
+		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
+		if err != nil {
+			return "", "", status.UnavailableErrorf("error retrieving stdout from CAS: %v", err)
+		}
+		stdout = buf.String()
+	}
+
+	stderr := ""
+	if actionResult.GetStderrDigest() != nil {
+		d := digest.NewInstanceNameDigest(actionResult.GetStderrDigest(), instanceName)
+		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
+		if err != nil {
+			return "", "", status.InternalErrorf("error retrieving stderr from CAS: %v", err)
+		}
+		stderr = buf.String()
+	}
+
+	return stdout, stderr, nil
+}
+
 type Command struct {
 	env *Env
 	*rbeclient.Command
@@ -795,7 +845,7 @@ func (c *Command) getResult() (*CommandResult, error) {
 			}
 			ctx := context.Background()
 			ctx = c.env.WithUserID(ctx, c.userID)
-			stdout, stderr, err := c.rbeClient.GetStdoutAndStderr(ctx, result)
+			stdout, stderr, err := c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
 			if err != nil {
 				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
 			}
@@ -926,6 +976,8 @@ type ExecuteOpts struct {
 	RemoteHeaders map[string]string
 	// If true, the command will reference a missing input root digest.
 	SimulateMissingDigest bool
+	// The invocation ID in the incoming gRPC context.
+	InvocationID string
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -936,6 +988,10 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
 	if err != nil {
 		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
+	}
+
+	if opts.InvocationID != "" {
+		ctx = testcontext.AttachInvocationIDToContext(ctx, opts.InvocationID)
 	}
 	for header, value := range opts.RemoteHeaders {
 		ctx = metadata.AppendToOutgoingContext(ctx, header, value)

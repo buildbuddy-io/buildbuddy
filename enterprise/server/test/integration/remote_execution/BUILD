@@ -15,6 +15,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

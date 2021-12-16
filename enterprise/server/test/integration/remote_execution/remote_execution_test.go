@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -33,6 +34,68 @@ func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 	assert.Equal(t, 5, res.ExitCode, "exit code should be propagated")
 	assert.Equal(t, "hello\n", res.Stdout, "stdout should be propagated")
 	assert.Equal(t, "bye\n", res.Stderr, "stderr should be propagated")
+}
+
+func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	invocationID := "testabc123"
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"echo"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{
+		InvocationID: invocationID,
+	})
+
+	res := cmd.Wait()
+	assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
+
+	_, err := rbe.GetActionResultForFailedAction(context.Background(), cmd, invocationID)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
+func TestActionResultCacheWithFailedAction(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	invocationID := "testabc123"
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"sh", "-c", "echo hello && echo bye >&2 && exit 5"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{
+		InvocationID: invocationID,
+	})
+
+	res := cmd.Wait()
+	assert.Equal(t, 5, res.ExitCode, "exit code should be propagated")
+
+	ctx := context.Background()
+	failedActionResult, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(5), failedActionResult.GetExitCode(), "exit code should be set in action result")
+
+	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, failedActionResult, res.InstanceName)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "hello\n", stdout, "stdout should be propagated")
+	assert.Equal(t, "bye\n", stderr, "stderr should be propagated")
 }
 
 func TestSimpleCommandWithZeroExitCode(t *testing.T) {
