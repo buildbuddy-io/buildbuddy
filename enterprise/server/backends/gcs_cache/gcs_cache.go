@@ -81,6 +81,7 @@ func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName strin
 
 func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
 	traceCtx, spn := tracing.StartSpan(ctx)
+	spn.SetName("Attrs for GCSCache SetBucketTTL")
 	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(traceCtx)
 	spn.End()
 	if err != nil {
@@ -105,6 +106,7 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 		},
 	}
 	traceCtx, spn = tracing.StartSpan(ctx)
+	spn.SetName("Update for GCSCache SetBucketTTL")
 	defer spn.End()
 	// Update the bucket TTL, regardless of whatever value is set.
 	_, err = g.gcsClient.Bucket(bucketName).Update(traceCtx, storage.BucketAttrsToUpdate{Lifecycle: &lc})

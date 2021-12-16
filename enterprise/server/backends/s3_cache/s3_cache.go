@@ -146,6 +146,7 @@ func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName stri
 
 func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
 	traceCtx, spn := tracing.StartSpan(ctx)
+	spn.SetName("GetBucketLifecycleConfigurationWithContext for S3Cache SetBucketTTL")
 	attrs, err := s3c.s3.GetBucketLifecycleConfigurationWithContext(traceCtx, &s3.GetBucketLifecycleConfigurationInput{
 		Bucket: aws.String(bucketName),
 	})
@@ -170,6 +171,7 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 		}
 	}
 	traceCtx, spn = tracing.StartSpan(ctx)
+	spn.SetName("PutBucketLifecycleConfigurationWithContext for S3Cache SetBucketTTL")
 	defer spn.End()
 	_, err = s3c.s3.PutBucketLifecycleConfigurationWithContext(traceCtx, &s3.PutBucketLifecycleConfigurationInput{
 		Bucket: aws.String(bucketName),
