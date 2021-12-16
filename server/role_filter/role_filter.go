@@ -85,6 +85,7 @@ var (
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins.
+	// TODO: ADD COMMENT
 	ServerAdminOnlyRPCs = []string{
 		"GetInvocationOwner",
 	}
