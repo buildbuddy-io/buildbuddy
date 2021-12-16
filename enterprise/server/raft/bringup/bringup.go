@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -59,6 +60,16 @@ func NewClusterStarter(nodeHost *dragonboat.NodeHost, grpcAddr string, createSta
 		log:                  log.NamedSubLogger(nodeHost.ID()),
 	}
 	sort.Strings(cs.join)
+
+	// Only nodes in the "join" list should register as gossip listeners to
+	// be eligible for auto bringup.
+	for _, joinAddr := range cs.join {
+		if cs.listenAddr == joinAddr {
+			gossipMan.AddListener(cs)
+			break
+		}
+	}
+
 	return cs
 }
 
@@ -95,10 +106,14 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	cs.bootstrapped = clustersAlreadyConfigured > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
 
+	// Exit early if we are not the first node in the join list.
 	if cs.listenAddr != cs.join[0] {
 		return nil
 	}
 
+	// Start a goroutine that will query the gossip network until
+	// all nodes in the join list are online, then will initiate new cluster
+	// bringup.
 	go func() {
 		for !cs.bootstrapped {
 			if err := cs.attemptQueryAndBringupOnce(); err != nil {
@@ -245,19 +260,33 @@ func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batc
 	return eg.Wait()
 }
 
+func (cs *ClusterStarter) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+	batchProto, err := batch.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := client.SyncProposeLocal(ctx, cs.nodeHost, clusterID, batchProto)
+	return rbuilder.NewBatchResponseFromProto(rsp), nil
+}
+
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
 func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Left:  keys.Key{constants.MinByte},
+			Right: keys.MakeKey([]byte("l")),
+		},
+		&rfpb.RangeDescriptor{
+			Left:  keys.MakeKey([]byte("l")),
 			Right: keys.Key{constants.MaxByte},
 		},
 	}
 	clusterID := uint64(constants.InitialClusterID)
+	rangeID := uint64(constants.InitialRangeID)
 	for _, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(clusterID, nodeGrpcAddrs)
-		fillReplicas(bootstrapInfo, rangeDescriptor)
+		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rdBuf, err := proto.Marshal(rangeDescriptor)
 		if err != nil {
 			return err
@@ -275,6 +304,10 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 		if clusterID == uint64(constants.InitialClusterID) {
 			batch = batch.Add(&rfpb.IncrementRequest{
 				Key:   constants.LastClusterIDKey,
+				Delta: 1,
+			})
+			batch = batch.Add(&rfpb.IncrementRequest{
+				Key:   constants.LastRangeIDKey,
 				Delta: 1,
 			})
 			batch = batch.Add(&rfpb.DirectWriteRequest{
@@ -295,7 +328,43 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 		}
 		log.Printf("StartCluster started a new cluster successfully!")
 
-		// TODO(increment cluster ID here)
+		// Increment clusterID and rangeID before creating the next cluster.
+		batch = rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+			Key:   constants.LastClusterIDKey,
+			Delta: 1,
+		})
+		batch = batch.Add(&rfpb.IncrementRequest{
+			Key:   constants.LastRangeIDKey,
+			Delta: 1,
+		})
+		if clusterID != uint64(constants.InitialClusterID) {
+			// if this was not the first cluster, aka the metarange cluster,
+			// then insert the range descriptor of the just created cluster
+			// into the metarange.
+			batch = batch.Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{
+					Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+					Value: rdBuf,
+				},
+			})
+		}
+		rsp, err := cs.syncProposeLocal(ctx, constants.InitialClusterID, batch)
+		if err != nil {
+			return err
+		}
+		clusterIncrResponse, err := rsp.IncrementResponse(0)
+		if err != nil {
+			return err
+		}
+		clusterID = clusterIncrResponse.GetValue()
+		log.Printf("Cluster ID is now: %d", clusterID)
+
+		rangeIncrResponse, err := rsp.IncrementResponse(1)
+		if err != nil {
+			return err
+		}
+		rangeID = rangeIncrResponse.GetValue()
+		log.Printf("Range ID is now: %d", rangeID)
 	}
 	return nil
 }
