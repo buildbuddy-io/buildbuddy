@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
@@ -43,6 +44,34 @@ func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsers
 	}
 	require.FailNowf(t, "could not find group user", "user ID: %s", userID)
 	return nil
+}
+
+func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {
+	flags.Set(t, "app.create_group_per_user", "true")
+	flags.Set(t, "app.no_default_user_group", "true")
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user and an authenticated context for that user
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID:    "US1",
+		SubID:     "SubID1",
+		FirstName: "FirstName1",
+		LastName:  "LastName1",
+		Email:     "user1@org1.io",
+	})
+	require.NoError(t, err)
+
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	// Now try to impersonate as that user; should fail since test users cannot
+	// impersonate.
+	u, err := udb.GetImpersonatedUser(ctx1)
+
+	require.Nil(t, u)
+	require.Error(t, err)
+	require.Equal(t, status.Message(err), "Authenticated user does not have permissions to impersonate a user.")
 }
 
 func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
