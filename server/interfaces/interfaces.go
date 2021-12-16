@@ -246,6 +246,11 @@ type UserDB interface {
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
+	// GetImpersonatedUser will return the authenticated user's information
+	// with a single group membership corresponding to the group they are trying
+	// to impersonate. It requires that the authenticated user has impersonation
+	// permissions and is requesting to impersonate a group.
+	GetImpersonatedUser(ctx context.Context) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
 	FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error
 

@@ -84,8 +84,10 @@ var (
 		"GetUsage",
 	}
 
-	// ServerAdminOnlyRPCs can only be called by server admins.
-	// TODO: ADD COMMENT
+	// ServerAdminOnlyRPCs can only be called by server admins. It is different
+	// from AdminOnlyRPCs in that it requires the authenticated user to be an
+	// admin of the configured server-admin group, and not just an admin of
+	// their authenticated group.
 	ServerAdminOnlyRPCs = []string{
 		"GetInvocationOwner",
 	}

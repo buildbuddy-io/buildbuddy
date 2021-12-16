@@ -31,8 +31,7 @@ export class AuthService {
     );
 
     let request = new user.GetUserRequest();
-    rpcService.service
-      .getUser(request)
+    this.getUser(request)
       .then((response: user.GetUserResponse) => {
         this.emitUser(this.userFromResponse(response));
       })
@@ -46,14 +45,20 @@ export class AuthService {
   }
 
   refreshUser() {
-    return rpcService.service
-      .getUser(new user.GetUserRequest())
+    return this.getUser(new user.GetUserRequest())
       .then((response: user.GetUserResponse) => {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
         this.onUserRpcError(error);
       });
+  }
+
+  private getUser(request: user.IGetUserRequest) {
+    if (rpcService.requestContext.impersonatingGroupId) {
+      return rpcService.service.getImpersonatedUser(request);
+    }
+    return rpcService.service.getUser(request);
   }
 
   createUser() {

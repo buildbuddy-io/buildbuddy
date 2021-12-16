@@ -151,7 +151,21 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tu, err := userDB.GetUser(ctx)
+	return s.getUser(ctx, req, userDB.GetUser)
+}
+
+func (s *BuildBuddyServer) GetImpersonatedUser(ctx context.Context, req *uspb.GetUserRequest) (*uspb.GetUserResponse, error) {
+	userDB := s.env.GetUserDB()
+	if userDB == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+	return s.getUser(ctx, req, userDB.GetImpersonatedUser)
+}
+
+type userLookup func(ctx context.Context) (*tables.User, error)
+
+func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest, dbLookup userLookup) (*uspb.GetUserResponse, error) {
+	tu, err := dbLookup(ctx)
 	if err != nil {
 		return nil, err
 	}

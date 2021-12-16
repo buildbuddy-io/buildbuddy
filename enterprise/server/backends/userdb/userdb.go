@@ -2,8 +2,6 @@ package userdb
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -678,47 +676,85 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
-		var groupRows *sql.Rows
-		var err error
-
-		if u.IsImpersonating() {
-			// When impersonating, there will be no UserGroup entry in the DB for the
-			// impersonated group, but we want to return the impersonated group here.
-			// So we lookup the impersonated group directly, and attach a synthetic
-			// UserGroup row representing a group membership with Admin role.
-			groupRows, err = tx.Raw(`
-				SELECT
-					g.user_id,
-					g.group_id,
-					g.url_identifier,
-					g.name,
-					g.owned_domain,
-					g.github_token,
-					g.sharing_enabled,
-					g.use_group_owned_executors,
-					g.saml_idp_metadata_url,
-					`+fmt.Sprintf("%d", role.Admin)+` AS role
-				FROM `+"`Groups`"+` AS g WHERE group_id = ?
-			`, u.GetGroupID()).Rows()
-		} else {
-			groupRows, err = tx.Raw(`
-				SELECT
-					g.user_id,
-					g.group_id,
-					g.url_identifier,
-					g.name,
-					g.owned_domain,
-					g.github_token,
-					g.sharing_enabled,
-					g.use_group_owned_executors,
-					g.saml_idp_metadata_url,
-					ug.role
-				FROM `+"`Groups`"+` as g
-				JOIN UserGroups as ug
-				ON g.group_id = ug.group_group_id
-				WHERE ug.user_user_id = ? AND ug.membership_status = ?
+		groupRows, err := tx.Raw(`
+			SELECT
+				g.user_id,
+				g.group_id,
+				g.url_identifier,
+				g.name,
+				g.owned_domain,
+				g.github_token,
+				g.sharing_enabled,
+				g.use_group_owned_executors,
+				g.saml_idp_metadata_url,
+				ug.role
+			FROM `+"`Groups`"+` as g
+			JOIN UserGroups as ug
+			ON g.group_id = ug.group_group_id
+			WHERE ug.user_user_id = ? AND ug.membership_status = ?
 		`, u.GetUserID(), int32(grpb.GroupMembershipStatus_MEMBER)).Rows()
+		if err != nil {
+			return err
 		}
+		defer groupRows.Close()
+		for groupRows.Next() {
+			gr := &tables.GroupRole{}
+			err := groupRows.Scan(
+				// NOTE: When updating the group fields here, update GetImpersonatedUser
+				// as well.
+				&gr.Group.UserID,
+				&gr.Group.GroupID,
+				&gr.Group.URLIdentifier,
+				&gr.Group.Name,
+				&gr.Group.OwnedDomain,
+				&gr.Group.GithubToken,
+				&gr.Group.SharingEnabled,
+				&gr.Group.UseGroupOwnedExecutors,
+				&gr.Group.SamlIdpMetadataUrl,
+				&gr.Role,
+			)
+			if err != nil {
+				return err
+			}
+			user.Groups = append(user.Groups, gr)
+		}
+		return nil
+	})
+	return user, err
+}
+
+func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
+	auth := d.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
+	}
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsImpersonating() {
+		return nil, status.PermissionDeniedError("Authenticated user does not have permissions to impersonate a user.")
+	}
+	user := &tables.User{}
+	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+		userRow := tx.Raw(`SELECT * FROM Users WHERE user_id = ?`, u.GetUserID())
+		if err := userRow.Take(user).Error; err != nil {
+			return err
+		}
+		groupRows, err := tx.Raw(`
+			SELECT
+				user_id,
+				group_id,
+				url_identifier,
+				name,
+				owned_domain,
+				github_token,
+				sharing_enabled,
+				use_group_owned_executors,
+				saml_idp_metadata_url
+			FROM `+"`Groups`"+`
+			WHERE group_id = ?
+		`, u.GetGroupID()).Rows()
 		if err != nil {
 			return err
 		}
@@ -735,11 +771,12 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 				&gr.Group.SharingEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
 			)
 			if err != nil {
 				return err
 			}
+			// Grant admin role within the impersonated group.
+			gr.Role = uint32(role.Admin)
 			user.Groups = append(user.Groups, gr)
 		}
 		return nil

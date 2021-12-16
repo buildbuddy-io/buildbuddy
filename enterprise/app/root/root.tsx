@@ -151,9 +151,9 @@ export default class EnterpriseRootComponent extends React.Component {
       <>
         {this.state.user?.isImpersonating && (
           <div className="impersonation-toolbar">
-            <AlertCircle className="icon black" width={16} />
+            <AlertCircle className="icon black" />
             <span>
-              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b>
+              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b>. Proceed with caution.
             </span>
             <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)}>
               <span>Exit</span>
