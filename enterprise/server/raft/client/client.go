@@ -10,12 +10,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/proto"
+	"github.com/lni/dragonboat/v3"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 type apiClientAndConn struct {
@@ -232,4 +236,31 @@ func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord 
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available.", len(mwc.closers))
 	}
 	return mwc, nil
+}
+
+func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	sesh := nodehost.GetNoOPSession(clusterID)
+	buf, err := proto.Marshal(batch)
+	if err != nil {
+		return nil, err
+	}
+	var raftResponse dbsm.Result
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
+		if err != nil {
+			if err == dragonboat.ErrClusterNotReady {
+				log.Errorf("continuing, got cluster not ready err...")
+				continue
+			}
+			log.Errorf("Got unretriable SyncPropose err: %s", err)
+			return nil, err
+		}
+		break
+	}
+	batchResponse := &rfpb.BatchCmdResponse{}
+	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
+		return nil, err
+	}
+	return batchResponse, err
 }
