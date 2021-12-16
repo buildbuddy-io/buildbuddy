@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "registry",
@@ -15,5 +15,17 @@ go_library(
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
+    ],
+)
+
+go_test(
+    name = "registry_test",
+    srcs = ["registry_test.go"],
+    deps = [
+        ":registry",
+        "//server/gossip",
+        "//server/testutil/app",
+        "//server/util/log",
+        "@com_github_stretchr_testify//require",
     ],
 )
