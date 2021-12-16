@@ -583,7 +583,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, "Failed to set XCodeLocator: %s", err.Error())
 	}
-	env.SetXCodeLocator(xl)
+	env.SetXcodeLocator(xl)
 
 	bundleFS, err := bundle.Get()
 	require.NoError(r.t, err)
