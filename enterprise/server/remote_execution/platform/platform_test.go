@@ -46,7 +46,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 
 		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
@@ -70,7 +70,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 
 		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
@@ -189,7 +189,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		platformProps       []*repb.Platform_Property
 		startingEnvVars     []*repb.Command_EnvironmentVariable
 		expectedEnvVars     []*repb.Command_EnvironmentVariable
-		defaultXCodeVersion string
+		defaultXcodeVersion string
 	}{
 		// Default darwin platform
 		{[]*repb.Platform_Property{
@@ -327,10 +327,10 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		plat := &repb.Platform{Properties: testCase.platformProps}
 		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		execProps := bare
-		execProps.DefaultXCodeVersion = testCase.defaultXCodeVersion
+		execProps.DefaultXcodeVersion = testCase.defaultXcodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
 		env := testenv.GetTestEnv(t)
-		env.RealEnv.SetXCodeLocator(&xcodeLocator{})
+		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
 		err := platform.ApplyOverrides(env, execProps, platformProps, command)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))

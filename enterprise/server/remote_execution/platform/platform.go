@@ -120,7 +120,7 @@ type ContainerType string
 // needed to properly interpret the platform properties.
 type ExecutorProperties struct {
 	SupportedIsolationTypes []ContainerType
-	DefaultXCodeVersion     string
+	DefaultXcodeVersion     string
 }
 
 // ParseProperties parses the client provided properties into a struct.
@@ -195,7 +195,7 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorProperties {
 	p := &ExecutorProperties{
 		SupportedIsolationTypes: make([]ContainerType, 0),
-		DefaultXCodeVersion:     executorConfig.DefaultXCodeVersion,
+		DefaultXcodeVersion:     executorConfig.DefaultXcodeVersion,
 	}
 
 	// NB: order matters! this list will be used in order to determine the which
@@ -289,7 +289,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	if strings.EqualFold(platformProps.OS, DarwinOperatingSystemName) {
 		appleSDKVersion := ""
 		appleSDKPlatform := "MacOSX"
-		xcodeVersion := executorProps.DefaultXCodeVersion
+		xcodeVersion := executorProps.DefaultXcodeVersion
 
 		for _, v := range command.EnvironmentVariables {
 			// Environment variables from: https://github.com/bazelbuild/bazel/blob/4ed65b05637cd37f0a6c5e79fdc4dfe0ece3fa68/src/main/java/com/google/devtools/build/lib/rules/apple/AppleConfiguration.java#L43
@@ -303,13 +303,13 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			}
 		}
 
-		developerDir, err := env.GetXCodeLocator().DeveloperDirForVersion(xcodeVersion)
+		developerDir, err := env.GetXcodeLocator().DeveloperDirForVersion(xcodeVersion)
 		if err != nil {
 			return err
 		}
 
 		sdkPath := fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s%s.sdk", appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
-		if !env.GetXCodeLocator().IsSDKPathPresentForVersion(sdkPath, xcodeVersion) {
+		if !env.GetXcodeLocator().IsSDKPathPresentForVersion(sdkPath, xcodeVersion) {
 			sdkPath = fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s.sdk", appleSDKPlatform, appleSDKPlatform)
 		}
 
