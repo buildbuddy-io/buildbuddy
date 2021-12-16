@@ -15,6 +15,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
     ],
