@@ -62,26 +62,26 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 }
 
 func (g *GCSCache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
-	_, spn := tracing.StartSpan(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	_, err := g.gcsClient.Bucket(bucketName).Attrs(traceCtx)
 	return err == nil, err
 }
 func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
 		log.Printf("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
-		_, spn := tracing.StartSpan(ctx)
+		traceCtx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		return g.bucketHandle.Create(ctx, g.projectID, nil)
+		return g.bucketHandle.Create(traceCtx, g.projectID, nil)
 	}
 	g.bucketHandle = g.gcsClient.Bucket(bucketName)
 	return nil
 }
 
 func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
-	_, spn := tracing.StartSpan(ctx)
-	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
+	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(traceCtx)
 	spn.End()
 	if err != nil {
 		return err
@@ -104,10 +104,10 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 			},
 		},
 	}
-	_, spn = tracing.StartSpan(ctx)
+	traceCtx, spn = tracing.StartSpan(ctx)
 	defer spn.End()
 	// Update the bucket TTL, regardless of whatever value is set.
-	_, err = g.gcsClient.Bucket(bucketName).Update(ctx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
+	_, err = g.gcsClient.Bucket(bucketName).Update(traceCtx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
 	return err
 }
 
@@ -263,8 +263,8 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	_, spn := tracing.StartSpan(ctx)
-	err = g.bucketHandle.Object(k).Delete(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
+	err = g.bucketHandle.Object(k).Delete(traceCtx)
 	spn.End()
 	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
@@ -277,8 +277,8 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 		return true
 	}
 	obj := g.bucketHandle.Object(key)
-	_, spn := tracing.StartSpan(ctx)
-	_, err := obj.CopierFrom(obj).Run(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
+	_, err := obj.CopierFrom(obj).Run(traceCtx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false
@@ -298,8 +298,8 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	numAttempts := 0
 	for {
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
-		_, spn := tracing.StartSpan(ctx)
-		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
+		traceCtx, spn := tracing.StartSpan(ctx)
+		attrs, err := g.bucketHandle.Object(k).Attrs(traceCtx)
 		spn.End()
 		timer.ObserveContains(err)
 		numAttempts++
@@ -353,8 +353,8 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 	if err != nil {
 		return nil, err
 	}
-	_, spn := tracing.StartSpan(ctx)
-	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
+	reader, err := g.bucketHandle.Object(k).NewReader(traceCtx)
 	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
