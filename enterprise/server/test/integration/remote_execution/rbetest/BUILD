@@ -47,6 +47,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/role",
+        "//server/xcode",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",

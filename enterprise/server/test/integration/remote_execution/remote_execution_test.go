@@ -77,6 +77,8 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 			{Name: "container-image", Value: "none"},
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "preserve-workspace", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 
@@ -122,6 +124,8 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 			{Name: "container-image", Value: "none"},
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "preserve-workspace", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
@@ -170,6 +174,8 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 			{Name: "container-image", Value: "none"},
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "preserve-workspace", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
@@ -210,6 +216,8 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 		Properties: []*repb.Platform_Property{
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "preserve-workspace", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
@@ -244,6 +252,8 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			{Name: "recycle-runner", Value: "true"},
 			{Name: "preserve-workspace", Value: "true"},
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
@@ -292,6 +302,8 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "foo"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{}
@@ -318,6 +330,8 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "foo"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{}
@@ -343,6 +357,8 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: "THIS_VALUE_SHOULD_BE_OVERRIDDEN"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
@@ -365,6 +381,9 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 }
 
 func TestSimpleCommandWithOSArchPool_CaseInsensitive(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("Test assumed running on linux")
+	}
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
@@ -433,6 +452,8 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "nonroot-workspace", Value: "true"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
 
@@ -493,6 +514,13 @@ func TestBasicActionIO(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -519,6 +547,7 @@ func TestBasicActionIO(t *testing.T) {
 				`printf 'BB' >> out_files_dir/child/goodbye_bb.output`,
 			}, "\n"),
 		},
+		Platform:          platform,
 		OutputDirectories: []string{"out_dir"},
 		OutputFiles: []string{
 			"out_files_dir/hello_bb.output",
@@ -577,6 +606,13 @@ func TestComplexActionIO(t *testing.T) {
 	rbe.AddExecutor()
 
 	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"sh", "-c", strings.Join([]string{
 			`set -e`,
@@ -602,6 +638,7 @@ func TestComplexActionIO(t *testing.T) {
 			done
 			`,
 		}, "\n")},
+		Platform:          platform,
 		OutputDirectories: []string{"out_dir"},
 		OutputFiles:       outputFiles,
 	}, opts)
@@ -852,7 +889,16 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
-	cmd := rbe.Execute(&repb.Command{Arguments: []string{"echo"}}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"echo"},
+		Platform:  platform,
+	}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
 	err := cmd.MustFail()
 	require.Contains(t, err.Error(), "already attempted")
 	require.Contains(t, err.Error(), "not found in cache")
