@@ -126,7 +126,7 @@ type Authenticator interface {
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
 	// Parses and returns a BuildBuddy API key from the given string.
-	ParseAPIKeyFromString(string) string
+	ParseAPIKeyFromString(string) (string, error)
 
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
@@ -195,7 +195,6 @@ type Cache interface {
 
 	// Normal cache-like operations.
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)
-	ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error)
 	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
@@ -561,12 +560,12 @@ type HealthChecker interface {
 	Shutdown()
 }
 
-// Locates all XCode versions installed on the host system.
+// Locates all Xcode versions installed on the host system.
 type XcodeLocator interface {
-	// Returns the developer directory and SDKs for the given XCode version.
+	// Returns the developer directory and SDKs for the given Xcode version.
 	DeveloperDirForVersion(version string) (string, error)
 
-	// Returns true if the given SDK path is present in the given XCode version.
+	// Returns true if the given SDK path is present in the given Xcode version.
 	IsSDKPathPresentForVersion(sdkPath, version string) bool
 }
 

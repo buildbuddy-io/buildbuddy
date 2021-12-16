@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -68,7 +69,6 @@ import (
 
 const (
 	ExecutorAPIKey = "EXECUTOR_API_KEY"
-	ExecutorGroup  = "GR123"
 
 	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
 	testCommandBinaryName        = "testcommand"
@@ -78,6 +78,11 @@ const (
 
 	defaultWaitTimeout = 20 * time.Second
 )
+
+func init() {
+	// Set umask to match the executor process.
+	syscall.Umask(0)
+}
 
 // Env is an integration test environment for Remote Build Execution.
 type Env struct {
@@ -93,8 +98,9 @@ type Env struct {
 	executorNameCounter uint64
 	envOpts             *enterprise_testenv.Options
 
-	UserID1  string
-	GroupID1 string
+	UserID1         string
+	GroupID1        string
+	ExecutorGroupID string
 }
 
 func (r *Env) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
@@ -169,19 +175,27 @@ func NewRBETestEnv(t *testing.T) *Env {
 	err = testEnv.GetDBHandle().Exec(
 		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
 	require.NoError(t, err)
+	// Create executor group
+	execGroupSlug := "executor-group"
+	executorGroupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(ctx, &tables.Group{
+		URLIdentifier: &execGroupSlug,
+		UserID:        userID,
+	})
+	require.NoError(t, err)
 	// Note: This root data dir (under which all executors' data is placed) does
 	// not get cleaned up until after all executors are shutdown (in the cleanup
 	// func below), since test cleanup funcs are run in LIFO order.
 	rootDataDir := testfs.MakeTempDir(t)
 	rbe := &Env{
-		testEnv:     testEnv,
-		t:           t,
-		redisTarget: redisTarget,
-		executors:   make(map[string]*Executor),
-		envOpts:     envOpts,
-		GroupID1:    groupID,
-		UserID1:     userID,
-		rootDataDir: rootDataDir,
+		testEnv:         testEnv,
+		t:               t,
+		redisTarget:     redisTarget,
+		executors:       make(map[string]*Executor),
+		envOpts:         envOpts,
+		GroupID1:        groupID,
+		UserID1:         userID,
+		ExecutorGroupID: executorGroupID,
+		rootDataDir:     rootDataDir,
 	}
 	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
@@ -666,15 +680,15 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
 	users := testauth.TestUsers(r.UserID1, r.GroupID1)
 	users[ExecutorAPIKey] = &testauth.TestUser{
-		GroupID:       ExecutorGroup,
-		AllowedGroups: []string{ExecutorGroup},
+		GroupID:       r.ExecutorGroupID,
+		AllowedGroups: []string{r.ExecutorGroupID},
 		// TODO(bduffany): Replace `role.Admin` below with `role.Default` since API
 		// keys cannot have admin rights in practice. This is needed because some
 		// tests perform some RPCs which require admin rights, and we'll need to
 		// either (a) refactor those tests to authenticate as an admin user, or (b)
 		// make it legitimately possible for an API key to have admin role.
 		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: ExecutorGroup, Role: role.Admin},
+			{GroupID: r.ExecutorGroupID, Role: role.Admin},
 		},
 		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
 	}
@@ -710,13 +724,13 @@ func (r *Env) waitForExecutorRegistration() {
 		client := r.GetBuildBuddyServiceClient()
 		req := &scpb.GetExecutionNodesRequest{
 			RequestContext: &ctxpb.RequestContext{
-				GroupId: ExecutorGroup,
+				GroupId: r.ExecutorGroupID,
 			},
 		}
-		nodes, err := client.GetExecutionNodes(ctx, req)
+		rsp, err := client.GetExecutionNodes(ctx, req)
 		require.NoError(r.t, err)
-		for _, node := range nodes.GetExecutionNode() {
-			nodesByHostIp[fmt.Sprintf("%s:%d", node.Host, node.Port)] = true
+		for _, e := range rsp.GetExecutor() {
+			nodesByHostIp[fmt.Sprintf("%s:%d", e.Node.Host, e.Node.Port)] = true
 		}
 		if reflect.DeepEqual(expectedNodesByHostIp, nodesByHostIp) {
 			return

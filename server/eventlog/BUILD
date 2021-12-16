@@ -14,5 +14,6 @@ go_library(
         "//server/terminal",
         "//server/util/keyval",
         "//server/util/status",
+        "@org_golang_google_protobuf//proto",
     ],
 )

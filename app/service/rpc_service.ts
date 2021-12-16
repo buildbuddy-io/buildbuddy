@@ -70,11 +70,17 @@ class RpcService {
         if (this.status >= 200 && this.status < 400) {
           resolve(this.response);
         } else {
-          reject("Error loading file");
+          let message: String;
+          if (this.response instanceof ArrayBuffer) {
+            message = new TextDecoder().decode(this.response);
+          } else {
+            message = String(this.response);
+          }
+          reject("Error loading file: " + message);
         }
       };
       request.onerror = function () {
-        reject("Error loading file");
+        reject("Error loading file (unknown error)");
       };
       request.send();
     });

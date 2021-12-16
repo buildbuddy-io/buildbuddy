@@ -280,6 +280,7 @@ export default class SidebarComponent extends React.Component {
                   </div>
                 )}
               </div>
+              <hr />
               <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
                 <LogOut /> Logout
               </div>

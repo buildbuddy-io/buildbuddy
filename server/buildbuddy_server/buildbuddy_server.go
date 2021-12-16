@@ -138,7 +138,6 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			Name:                   g.Name,
 			OwnedDomain:            g.OwnedDomain,
 			GithubLinked:           githubToken != "",
-			GithubToken:            githubToken,
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
@@ -179,6 +178,7 @@ func (s *BuildBuddyServer) GetUser(ctx context.Context, req *uspb.GetUserRequest
 		UserGroup:       makeGroups(tu.Groups),
 		SelectedGroupId: selectedGroupID,
 		AllowedRpc:      allowedRPCs,
+		GithubToken:     tu.GithubToken,
 	}, nil
 }
 

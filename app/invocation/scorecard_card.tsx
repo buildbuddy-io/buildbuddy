@@ -21,9 +21,7 @@ export default class ScorecardCardComponent extends React.Component<Props, State
   };
 
   getActionUrl(digestHash: string) {
-    // TODO(bduffany): Pass the correct digest size here, or update the action page to make the size optional.
-    const digestSizeBytes = 141;
-    return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}/${digestSizeBytes}#action`;
+    return `/invocation/${this.props.model.getId()}?actionDigest=${digestHash}#action`;
   }
 
   onClickShowAll() {

@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"sync"
@@ -25,6 +26,10 @@ const (
 	// Default TTL for tokens granting access to locally cached images, before
 	// re-authentication with the remote registry is required.
 	defaultImageCacheTokenTTL = 15 * time.Minute
+)
+
+var (
+	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
 
 // Stats holds represents a container's held resources.
@@ -89,6 +94,9 @@ type CommandContainer interface {
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, cacheAuth *ImageCacheAuthenticator, ctr CommandContainer, creds PullCredentials, imageRef string) error {
+	if *debugUseLocalImagesOnly {
+		return nil
+	}
 	isCached, err := ctr.IsImageCached(ctx)
 	if err != nil {
 		return err

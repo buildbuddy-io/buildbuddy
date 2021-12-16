@@ -1,0 +1,44 @@
+.digest-component {
+  display: flex;
+  align-items: center;
+  color: #000;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.digest-component-hash {
+  padding: 0 8px;
+  max-width: 64px;
+  min-width: 24px;
+  overflow: hidden;
+  display: inline-block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.6em;
+  transition: all 0.5s ease;
+}
+
+.digest-component-hash:hover {
+  max-width: 500px;
+}
+
+.digest-component.expanded .digest-component-hash {
+  max-width: initial;
+  font-size: 0.8em;
+}
+
+.digest-component.expanded .digest-component-hash:hover {
+  max-width: initial;
+}
+
+.digest-component-size {
+  padding: 0 8px;
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.6em;
+  background-color: #eee;
+}
+
+.digest-component.expanded .digest-component-size {
+  font-size: 0.8em;
+}

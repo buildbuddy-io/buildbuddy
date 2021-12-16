@@ -4,7 +4,10 @@ go_library(
     name = "testredis",
     testonly = 1,
     srcs = ["testredis.go"],
-    data = ["//enterprise/server/test/bin/redis:redis-server-linux-x86_64"],
+    data = [
+        "//enterprise/server/test/bin/redis:redis-server-darwin-arm64",
+        "//enterprise/server/test/bin/redis:redis-server-linux-x86_64",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis",
     visibility = ["//visibility:public"],
     deps = [

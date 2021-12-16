@@ -12,6 +12,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
+        "//app/components/digest",
         "//app/components/input",
         "//app/components/menu",
         "//app/components/modal",

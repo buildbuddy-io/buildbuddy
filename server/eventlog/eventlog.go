@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -273,29 +274,13 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
+	eventLogWriter := &EventLogWriter{
+		keyValueStore: c,
+		eventLogPath:  eventLogPath,
+	}
 	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
 	if c != nil {
-		writeHook = func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
-			if writeResult.Close {
-				keyval.SetProto(ctx, c, eventLogPath, nil)
-				return
-			}
-			chunkId := chunkstore.ChunkIndexAsStringId(writeResult.LastChunkIndex + 1)
-			if chunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
-				keyval.SetProto(ctx, c, eventLogPath, nil)
-				return
-			}
-			keyval.SetProto(
-				ctx,
-				c,
-				eventLogPath,
-				&elpb.LiveEventLogChunk{
-					ChunkId: chunkId,
-					Buffer:  append(chunk, volatileTail...),
-				},
-			)
-			return
-		}
+		writeHook = eventLogWriter.writeChunkToKeyValStore
 	}
 	chunkstoreWriterOptions := &chunkstore.ChunkstoreWriterOptions{
 		WriteTimeoutDuration: defaultChunkTimeout,
@@ -303,13 +288,13 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteHook:            writeHook,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
-	return &EventLogWriter{
-		WriteCloserWithContext: &ANSICursorBufferWriter{
-			WriteWithTailCloser: cw,
-			screenWriter:        terminal.NewScreenWriter(),
-		},
-		chunkstoreWriter: cw,
+	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
+		WriteWithTailCloser: cw,
+		screenWriter:        terminal.NewScreenWriter(),
 	}
+	eventLogWriter.chunkstoreWriter = cw
+
+	return eventLogWriter
 }
 
 type WriteCloserWithContext interface {
@@ -320,6 +305,35 @@ type WriteCloserWithContext interface {
 type EventLogWriter struct {
 	WriteCloserWithContext
 	chunkstoreWriter *chunkstore.ChunkstoreWriter
+	lastChunk        *elpb.LiveEventLogChunk
+	keyValueStore    interfaces.KeyValStore
+	eventLogPath     string
+}
+
+func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
+	if writeResult.Close {
+		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
+		return
+	}
+	chunkId := chunkstore.ChunkIndexAsStringId(writeResult.LastChunkIndex + 1)
+	if chunkId == chunkstore.ChunkIndexAsStringId(math.MaxUint16) {
+		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
+		return
+	}
+	curChunk := &elpb.LiveEventLogChunk{
+		ChunkId: chunkId,
+		Buffer:  append(chunk, volatileTail...),
+	}
+	if proto.Equal(w.lastChunk, curChunk) {
+		return
+	}
+	keyval.SetProto(
+		ctx,
+		w.keyValueStore,
+		w.eventLogPath,
+		curChunk,
+	)
+	w.lastChunk = curChunk
 }
 
 func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {

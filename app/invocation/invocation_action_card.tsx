@@ -5,6 +5,7 @@ import { Download, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
+import DigestComponent, { parseDigest } from "../components/digest/digest";
 
 interface Props {
   model: InvocationModel;
@@ -28,15 +29,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToChildrenMap: new Map<string, InputNode[]>(),
     inputDirs: [],
   };
+
   componentDidMount() {
     this.fetchAction();
     this.fetchActionResult();
   }
 
   fetchAction() {
-    let actionFile = "bytestream://" + this.getCacheAddress() + "/blobs/" + this.props.search.get("actionDigest");
+    const digest = parseDigest(this.props.search.get("actionDigest"));
+    const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionFile, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(actionUrl, this.props.model.getId(), "arraybuffer")
       .then((buffer: any) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
         this.setState({
@@ -45,7 +48,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest);
       })
-      .catch((e) => console.log(e));
+      .catch((e) => console.error("Failed to fetch action:", e));
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
@@ -67,20 +70,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
           inputDirs: inputDirs,
         });
       })
-      .catch((e) => console.log(e));
+      .catch((e) => console.error("Failed to fetch input root:", e));
   }
 
   fetchActionResult() {
-    let actionResultFile =
-      "actioncache://" + this.getCacheAddress() + "/blobs/ac/" + this.props.search.get("actionDigest");
+    const digest = parseDigest(this.props.search.get("actionDigest"));
+    const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
-      .fetchBytestreamFile(actionResultFile, this.props.model.getId(), "arraybuffer")
+      .fetchBytestreamFile(actionResultUrl, this.props.model.getId(), "arraybuffer")
       .then((buffer: any) => {
         this.setState({
           actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
       })
-      .catch((e) => console.log(e));
+      .catch((e) => console.error("Failed to fetch action result:", e));
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -98,7 +101,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
         });
       })
-      .catch((e) => console.log(e));
+      .catch((e) => console.error("Failed to fetch command:", e));
   }
 
   displayList(list: string[]) {
@@ -267,6 +270,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   render() {
+    const digest = parseDigest(this.props.search.get("actionDigest"));
     return (
       <div className="invocation-action-card">
         <div className="card">
@@ -277,17 +281,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
               {this.state.action ? (
                 <div>
                   <div className="action-section">
-                    <div className="action-property-title">Digest hash/size</div>
-                    <div>{this.props.search.get("actionDigest")} bytes</div>
+                    <div className="action-property-title">Digest</div>
+                    <DigestComponent digest={digest} expanded={true} />
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Cacheable</div>
                     <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
                   </div>
                   <div className="action-section">
-                    <div className="action-property-title">Input root digest hash/size</div>
+                    <div className="action-property-title">Input root digest</div>
                     <div>
-                      {this.state.action.inputRootDigest.hash}/{this.state.action.inputRootDigest.sizeBytes} bytes
+                      <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
                     </div>
                   </div>
                   <div className="action-section">
@@ -308,7 +312,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                   </div>
                   <div className="action-section">
                     <div className="action-property-title">Input files</div>
-                    {this.state.inputDirs.length && (
+                    {this.state.inputDirs.length ? (
                       <div className="input-tree">
                         {this.state.inputDirs.map((node) => (
                           <InputNodeComponent
@@ -319,6 +323,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           />
                         ))}
                       </div>
+                    ) : (
+                      <div>None found</div>
                     )}
                   </div>
                 </div>
@@ -397,6 +403,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               </span>
                               <span className="prop-link">{file.path}</span>
                               {file.isExecutable && <span className="detail"> (executable)</span>}
+                              <DigestComponent digest={file.digest} />
                             </div>
                           ))}
                         </div>

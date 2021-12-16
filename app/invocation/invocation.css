@@ -10,13 +10,20 @@
 }
 
 .input-tree-node {
-  margin-bottom: 2px;
   cursor: pointer;
   user-select: none;
 }
 
-.input-tree-node-name:hover {
-  opacity: 0.5;
+.input-tree-node-name .digest-component {
+  margin-left: 8px;
+}
+
+.input-tree-node-name .icon {
+  opacity: 0.7;
+}
+
+.input-tree-node-name:hover .icon {
+  opacity: 1;
 }
 
 .input-tree-node-children {
@@ -28,10 +35,13 @@
 .input-tree-node-name {
   display: flex;
   font-size: 12px;
+  margin-bottom: 2px;
+  align-items: flex-start;
 }
 
 .input-tree-node-label {
   padding-top: 1px;
+  flex-shrink: 0;
 }
 
 .invocation-action-card .icon.file-icon {
@@ -42,10 +52,15 @@
 
 .file-name {
   display: flex;
+  align-items: flex-start;
 }
 
 .file-name:hover {
-  opacity: 0.5;
+  color: #888;
+}
+
+.file-name .digest-component {
+  margin-left: 8px;
 }
 
 .action-timeline {
@@ -317,10 +332,12 @@
 }
 
 .invocation-execution-row-digest {
+  line-height: 1.2em;
   font-size: 0.8em;
   font-weight: 600;
   margin-bottom: 4px;
   cursor: pointer;
+  display: flex;
 }
 
 .invocation-execution-row-stats div {
@@ -453,10 +470,6 @@
 
 .prop-value {
   color: #444;
-}
-
-.prop-link:hover {
-  opacity: 0.7;
 }
 
 .prop-value .detail {

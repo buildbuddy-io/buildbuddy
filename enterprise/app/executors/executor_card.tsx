@@ -4,36 +4,43 @@ import format from "../../../app/format/format";
 import { Cloud } from "lucide-react";
 
 interface Props {
-  node: scheduler.IExecutionNode;
+  executor: scheduler.GetExecutionNodesResponse.IExecutor;
 }
 
 export default class ExecutorCardComponent extends React.Component<Props> {
   render() {
+    const node = this.props.executor.node;
+    const enabled = this.props.executor.enabled;
+
     return (
-      <div className="card">
+      <div className={`card ${enabled ? "card-success" : "card-failure"}`}>
         <Cloud className="icon" />
         <div className="details">
           <div className="executor-section">
             <div className="executor-section-title">Address:</div>
             <div>
-              {this.props.node.host}:{this.props.node.port}
+              {node.host}:{node.port}
             </div>
           </div>
           <div className="executor-section">
             <div className="executor-section-title">ID:</div>
-            <div>{this.props.node.executorId}</div>
+            <div>{node.executorId}</div>
           </div>
           <div className="executor-section">
             <div className="executor-section-title">Assignable Memory:</div>
-            <div>{format.bytes(+this.props.node.assignableMemoryBytes)}</div>
+            <div>{format.bytes(+node.assignableMemoryBytes)}</div>
           </div>
           <div className="executor-section">
             <div className="executor-section-title">Assignable Milli CPU:</div>
-            <div>{this.props.node.assignableMilliCpu}</div>
+            <div>{node.assignableMilliCpu}</div>
           </div>
           <div className="executor-section">
             <div className="executor-section-title">Version:</div>
-            <div>{this.props.node.version}</div>
+            <div>{node.version}</div>
+          </div>
+          <div className="executor-section">
+            <div className="executor-section-title">Status:</div>
+            <div>{enabled ? "Enabled" : "Disabled"}</div>
           </div>
         </div>
       </div>

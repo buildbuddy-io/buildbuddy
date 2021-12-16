@@ -1,8 +1,7 @@
 version: "3.3"
 services:
   grafana:
-    image: grafana/grafana:7.3.5
-    network_mode: "host"
+    image: grafana/grafana:8.3.2
     environment:
       - GF_SERVER_HTTP_PORT=4500
       - GF_AUTH_ANONYMOUS_ENABLED=true
@@ -11,3 +10,7 @@ services:
     volumes:
       - ./grafana/provisioning/local:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "4500:4500"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

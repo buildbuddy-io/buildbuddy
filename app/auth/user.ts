@@ -7,6 +7,7 @@ export class User {
   groups: grp.Group[];
   selectedGroup: grp.Group;
   allowedRpcs: Set<BuildBuddyServiceRpcName>;
+  githubToken: string;
 
   selectedGroupName() {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
