@@ -178,80 +178,80 @@ export default class SidebarComponent extends React.Component {
           <div
             className={`sidebar-item ${this.isHomeSelected() ? "selected" : ""}`}
             onClick={this.navigateToAllBuilds.bind(this)}>
-            <List /> All builds
+            <List className="icon" /> All builds
           </div>
           <div
             className={`sidebar-item ${this.isTrendsSelected() ? "selected" : ""}`}
             onClick={this.navigateToTrends.bind(this)}>
-            <BarChart2 /> Trends
+            <BarChart2 className="icon" /> Trends
           </div>
           {capabilities.test && (
             <div
               className={`sidebar-item ${this.isTapSelected() ? "selected" : ""}`}
               onClick={this.navigateToTap.bind(this)}>
-              <LayoutGrid /> Tests
+              <LayoutGrid className="icon" /> Tests
             </div>
           )}
           <div
             className={`sidebar-item ${this.isUsersSelected() ? "selected" : ""}`}
             onClick={this.navigateToUsers.bind(this)}>
-            <Users /> Users
+            <Users className="icon" /> Users
           </div>
           <div
             className={`sidebar-item ${this.isReposSelected() ? "selected" : ""}`}
             onClick={this.navigateToRepos.bind(this)}>
-            <Github /> Repos
+            <Github className="icon" /> Repos
           </div>
           <div
             className={`sidebar-item ${this.isBranchesSelected() ? "selected" : ""}`}
             onClick={this.navigateToBranches.bind(this)}>
-            <GitBranch /> Branches
+            <GitBranch className="icon" /> Branches
           </div>
           <div
             className={`sidebar-item ${this.isCommitsSelected() ? "selected" : ""}`}
             onClick={this.navigateToCommits.bind(this)}>
-            <GitCommit /> Commits
+            <GitCommit className="icon" /> Commits
           </div>
           <div
             className={`sidebar-item ${this.isHostsSelected() ? "selected" : ""}`}
             onClick={this.navigateToHosts.bind(this)}>
-            <HardDrive /> Hosts
+            <HardDrive className="icon" /> Hosts
           </div>
           {router.canAccessExecutorsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isExecutorsSelected() ? "selected" : ""}`}
               onClick={this.navigateToExecutors.bind(this)}>
-              <Cloud /> Executors
+              <Cloud className="icon" /> Executors
             </div>
           )}
           {router.canAccessWorkflowsPage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isWorkflowsSelected() ? "selected" : ""}`}
               onClick={this.navigateToWorkflows.bind(this)}>
-              <PlayCircle /> Workflows
+              <PlayCircle className="icon" /> Workflows
             </div>
           )}
           {capabilities.code && (
             <div
               className={`sidebar-item ${this.isCodeSelected() ? "selected" : ""}`}
               onClick={this.navigateToCode.bind(this)}>
-              <Code /> Code
+              <Code className="icon" /> Code
             </div>
           )}
           <div
             className={`sidebar-item ${this.isSettingsSelected() ? "selected" : ""}`}
             onClick={() => router.navigateToSetup()}>
-            <Settings /> Setup
+            <Settings className="icon" /> Setup
           </div>
           {router.canAccessUsagePage(this.props.user) && (
             <div
               className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
               onClick={this.navigateToUsage.bind(this)}>
-              <Gauge /> Usage
+              <Gauge className="icon" /> Usage
             </div>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank">
-            <BookOpen /> Docs
+            <BookOpen className="icon" /> Docs
           </a>
         </div>
         <div className={`sidebar-footer ${this.state.profileExpanded ? "expanded" : ""}`}>
@@ -268,24 +268,28 @@ export default class SidebarComponent extends React.Component {
                         group.id === this.props.user.selectedGroup.id ? "selected" : ""
                       }`}
                       onClick={this.handleOrgClicked.bind(this, group.id)}>
-                      {group.id === this.props.user.selectedGroup.id ? <CheckCircle /> : <Circle />}
+                      {group.id === this.props.user.selectedGroup.id ? (
+                        <CheckCircle className="icon" />
+                      ) : (
+                        <Circle className="icon" />
+                      )}
                       <div className="org-picker-item-label">{group.name}</div>
                     </div>
                   ))}
                 </div>
                 {this.props.user && !this.props.user?.isInDefaultGroup() && (
                   <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
-                    <PlusCircle />
+                    <PlusCircle className="icon" />
                     Create org
                   </div>
                 )}
               </div>
               <hr />
               <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
-                <LogOut /> Logout
+                <LogOut className="icon" /> Logout
               </div>
               <div className="sidebar-item" onClick={() => router.navigateToSettings()}>
-                <Sliders />
+                <Sliders className="icon" />
                 Settings
               </div>
             </div>
@@ -305,9 +309,9 @@ export default class SidebarComponent extends React.Component {
                 <div className="sidebar-profile-org">{this.props.user?.selectedGroupName()}</div>
               </div>
               {this.state.profileExpanded ? (
-                <ChevronDown className="sidebar-profile-arrow" />
+                <ChevronDown className="icon sidebar-profile-arrow" />
               ) : (
-                <ChevronUp className="sidebar-profile-arrow" />
+                <ChevronUp className="icon sidebar-profile-arrow" />
               )}
             </div>
           )}
