@@ -4,6 +4,7 @@ import "proto/user_id.proto";
 
 package context;
 
+// Next ID: 5
 message RequestContext {
   user_id.UserId user_id = 1;
 
@@ -18,6 +19,10 @@ message RequestContext {
   // 3. The user's self-owned group, if it exists.
   // 4. Any group with a write token.
   string group_id = 2;
+
+  // Group ID to act as. This requires special permissions that are configured
+  // at the installation level.
+  string impersonating_group_id = 4;
 
   // The difference, in minutes, between the current date as evaluated in the
   // UTC time zone, and the same date as evaluated in the local time zone.

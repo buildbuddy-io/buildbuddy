@@ -2,6 +2,10 @@ import React from "react";
 import authService, { User } from "../auth/auth_service";
 import { BuildBuddyError } from "../util/errors";
 import capabilities from "../capabilities/capabilities";
+import rpcService from "../service/rpc_service";
+import FilledButton from "../components/button/button";
+import { invocation } from "../../proto/invocation_ts_proto";
+import errorService from "../errors/error_service";
 
 interface Props {
   invocationId: string;
@@ -16,12 +20,23 @@ export default class InvocationNotFoundComponent extends React.Component {
     authService.login();
   }
 
+  handleImpersonateClicked() {
+    rpcService.service
+      .getInvocationOwner(
+        new invocation.GetInvocationOwnerRequest({
+          invocationId: this.props.invocationId,
+        })
+      )
+      .then((response) => authService.enterImpersonationMode(response.groupId))
+      .catch((e) => errorService.handleError(BuildBuddyError.parse(e)));
+  }
+
   render() {
     const invocationExists = this.props.error?.code !== "NotFound";
     const canLogin = capabilities.auth && !this.props.user;
 
     if (invocationExists && canLogin) {
-      window.location.href = "/?" + new URLSearchParams({redirect_url: window.location.href});
+      window.location.href = "/?" + new URLSearchParams({ redirect_url: window.location.href });
     }
 
     return (
@@ -43,6 +58,13 @@ export default class InvocationNotFoundComponent extends React.Component {
                   <div className="title">Permission denied</div>
                 </div>
                 <div className="details">You are not authorized to access this invocation.</div>
+                {this.props.user.canCall("getInvocationOwner") && (
+                  <div>
+                    <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
+                      Impersonate owner
+                    </FilledButton>
+                  </div>
+                )}
               </>
             )}
           </div>

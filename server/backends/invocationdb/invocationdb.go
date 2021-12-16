@@ -139,6 +139,17 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 	return ti, nil
 }
 
+func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
+	in := &tables.Invocation{}
+	err := d.h.Raw(
+		`SELECT group_id FROM Invocations WHERE invocation_id = ?`, invocationID,
+	).Take(in).Error
+	if err != nil {
+		return "", err
+	}
+	return in.GroupID, nil
+}
+
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
 	rows, err := d.h.Raw(`SELECT * FROM Invocations as i

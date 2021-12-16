@@ -20,6 +20,8 @@ import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
+import { AlertCircle, LogOut } from "lucide-react";
+import { OutlinedButton } from "../../../app/components/button/button";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
@@ -97,6 +99,10 @@ export default class EnterpriseRootComponent extends React.Component {
     router.navigateHome();
   }
 
+  handleExitImpersonationModeClicked() {
+    authService.exitImpersonationMode();
+  }
+
   render() {
     let invocationId = router.getInvocationId(this.state.path);
     let compareInvocationIds = router.getInvocationIdsForCompare(this.state.path);
@@ -142,150 +148,166 @@ export default class EnterpriseRootComponent extends React.Component {
     let menu = !sidebar && !code && !this.state.loading;
 
     return (
-      <div
-        className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
-          login ? "dark" : ""
-        }`}>
-        {menu && (
-          <MenuComponent
-            user={this.state.user}
-            showHamburger={!this.state.user && !!invocationId}
-            preferences={this.state.preferences}>
-            <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
-          </MenuComponent>
-        )}
-        <div className="page">
-          {sidebar && (
-            <SidebarComponent
-              path={this.state.path}
-              hash={this.state.hash}
-              user={this.state.user}
-              search={this.state.search}></SidebarComponent>
-          )}
-          <div className={`root-main ${code ? "root-code" : ""}`}>
-            {!this.state.loading && (
-              <div className={`content ${login ? "content-flex" : ""}`}>
-                {invocationId && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <InvocationComponent
-                      user={this.state.user}
-                      invocationId={invocationId}
-                      key={invocationId}
-                      hash={this.state.hash}
-                      search={this.state.search}
-                      preferences={this.state.preferences}
-                    />
-                  </Suspense>
-                )}
-                {compareInvocationIds && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <CompareInvocationsComponent
-                      invocationAId={compareInvocationIds.a}
-                      invocationBId={compareInvocationIds.b}
-                      search={this.state.search}
-                      user={this.state.user}
-                    />
-                  </Suspense>
-                )}
-                {historyUser && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    username={historyUser}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
-                {historyHost && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    hostname={historyHost}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
-                {historyRepo && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    repo={historyRepo}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
-                {historyBranch && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    branch={historyBranch}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
-                {historyCommit && (
-                  <HistoryComponent
-                    user={this.state.user}
-                    commit={historyCommit}
-                    hash={this.state.hash}
-                    search={this.state.search}
-                  />
-                )}
-                {settings && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <SettingsComponent
-                      user={this.state.user}
-                      preferences={this.state.preferences}
-                      path={this.state.path}
-                    />
-                  </Suspense>
-                )}
-                {orgCreate && <CreateOrgComponent user={this.state.user} />}
-                {orgJoinAuthenticated && <JoinOrgComponent user={this.state.user} />}
-                {tests && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
-                  </Suspense>
-                )}
-                {trends && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
-                  </Suspense>
-                )}
-                {usage && <UsageComponent user={this.state.user} />}
-                {executors && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
-                {home && <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />}
-                {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
-                {code && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <CodeComponent
-                      path={this.state.path}
-                      user={this.state.user}
-                      search={this.state.search}
-                      hash={this.state.hash}
-                    />
-                  </Suspense>
-                )}
-                {setup && (
-                  <Suspense fallback={<div className="loading" />}>
-                    <SetupComponent>
-                      {!capabilities.auth && (
-                        <p className="callout">
-                          <b>Note:</b> To enable enterprise features, configure an auth provider using the{" "}
-                          <a target="_blank" href="https://www.buildbuddy.io/docs/config">
-                            config.yaml file
-                          </a>
-                          .
-                        </p>
-                      )}
-                    </SetupComponent>
-                  </Suspense>
-                )}
-                {login && <LoginComponent search={this.state.search} />}
-              </div>
-            )}
-            {!this.state.loading && !code && <FooterComponent />}
-            {this.state.loading && <div className="loading loading-dark"></div>}
+      <>
+        {this.state.user?.isImpersonating && (
+          <div className="impersonation-toolbar">
+            <AlertCircle className="icon black" />
+            <span>
+              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b>. Proceed with caution.
+            </span>
+            <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)}>
+              <span>Exit</span>
+              <LogOut className="icon black" width={16} />
+            </OutlinedButton>
           </div>
+        )}
+        <div
+          className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
+            login ? "dark" : ""
+          }`}>
+          {menu && (
+            <MenuComponent
+              user={this.state.user}
+              showHamburger={!this.state.user && !!invocationId}
+              preferences={this.state.preferences}>
+              <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
+            </MenuComponent>
+          )}
+          <div className="page">
+            {sidebar && (
+              <SidebarComponent
+                path={this.state.path}
+                hash={this.state.hash}
+                user={this.state.user}
+                search={this.state.search}></SidebarComponent>
+            )}
+            <div className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""}`}>
+              {!this.state.loading && (
+                <div className={`content ${login ? "content-flex" : ""}`}>
+                  {invocationId && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <InvocationComponent
+                        user={this.state.user}
+                        invocationId={invocationId}
+                        key={invocationId}
+                        hash={this.state.hash}
+                        search={this.state.search}
+                        preferences={this.state.preferences}
+                      />
+                    </Suspense>
+                  )}
+                  {compareInvocationIds && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CompareInvocationsComponent
+                        invocationAId={compareInvocationIds.a}
+                        invocationBId={compareInvocationIds.b}
+                        search={this.state.search}
+                        user={this.state.user}
+                      />
+                    </Suspense>
+                  )}
+                  {historyUser && (
+                    <HistoryComponent
+                      user={this.state.user}
+                      username={historyUser}
+                      hash={this.state.hash}
+                      search={this.state.search}
+                    />
+                  )}
+                  {historyHost && (
+                    <HistoryComponent
+                      user={this.state.user}
+                      hostname={historyHost}
+                      hash={this.state.hash}
+                      search={this.state.search}
+                    />
+                  )}
+                  {historyRepo && (
+                    <HistoryComponent
+                      user={this.state.user}
+                      repo={historyRepo}
+                      hash={this.state.hash}
+                      search={this.state.search}
+                    />
+                  )}
+                  {historyBranch && (
+                    <HistoryComponent
+                      user={this.state.user}
+                      branch={historyBranch}
+                      hash={this.state.hash}
+                      search={this.state.search}
+                    />
+                  )}
+                  {historyCommit && (
+                    <HistoryComponent
+                      user={this.state.user}
+                      commit={historyCommit}
+                      hash={this.state.hash}
+                      search={this.state.search}
+                    />
+                  )}
+                  {settings && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <SettingsComponent
+                        user={this.state.user}
+                        preferences={this.state.preferences}
+                        path={this.state.path}
+                      />
+                    </Suspense>
+                  )}
+                  {orgCreate && <CreateOrgComponent user={this.state.user} />}
+                  {orgJoinAuthenticated && <JoinOrgComponent user={this.state.user} />}
+                  {tests && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
+                    </Suspense>
+                  )}
+                  {trends && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
+                    </Suspense>
+                  )}
+                  {usage && <UsageComponent user={this.state.user} />}
+                  {executors && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
+                  {home && (
+                    <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />
+                  )}
+                  {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {code && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CodeComponent
+                        path={this.state.path}
+                        user={this.state.user}
+                        search={this.state.search}
+                        hash={this.state.hash}
+                      />
+                    </Suspense>
+                  )}
+                  {setup && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <SetupComponent>
+                        {!capabilities.auth && (
+                          <p className="callout">
+                            <b>Note:</b> To enable enterprise features, configure an auth provider using the{" "}
+                            <a target="_blank" href="https://www.buildbuddy.io/docs/config">
+                              config.yaml file
+                            </a>
+                            .
+                          </p>
+                        )}
+                      </SetupComponent>
+                    </Suspense>
+                  )}
+                  {login && <LoginComponent search={this.state.search} />}
+                </div>
+              )}
+              {!this.state.loading && !code && <FooterComponent />}
+              {this.state.loading && <div className="loading loading-dark"></div>}
+            </div>
+          </div>
+          <AlertComponent />
         </div>
-        <AlertComponent />
-      </div>
+      </>
     );
   }
 }
