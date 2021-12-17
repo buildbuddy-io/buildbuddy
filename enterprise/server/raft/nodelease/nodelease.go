@@ -7,30 +7,31 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
+	"github.com/lni/dragonboat/v3"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 const (
 	// Acquire the lease for this long.
-	nodeLeaseDuration = 10 * time.Second
+	nodeLeaseDuration = 9 * time.Second
 
-	// Renew the lease this many seconds before expiry.
-	nodeLeaseRenewGracePeriod = 2 * time.Second
+	// Renew the lease this many seconds *before* expiry.
+	nodeLeaseRenewGracePeriod = 4 * time.Second
 )
 
 type Heartbeat struct {
-	nodeID []byte
-	clock  *serf.LamportClock
-	sender *sender.Sender
+	nodeHost *dragonboat.NodeHost
+	nodeID   []byte
+	clock    *serf.LamportClock
 
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
@@ -38,11 +39,11 @@ type Heartbeat struct {
 	timeUntilLeaseRenewal time.Duration
 }
 
-func NewHeartbeat(nodeID []byte, sender *sender.Sender) *Heartbeat {
+func NewHeartbeat(nodeHost *dragonboat.NodeHost) *Heartbeat {
 	return &Heartbeat{
-		nodeID:                nodeID,
+		nodeID:                []byte(nodeHost.ID()),
+		nodeHost:              nodeHost,
 		clock:                 &serf.LamportClock{},
-		sender:                sender,
 		mu:                    sync.RWMutex{},
 		lastLivenessRecord:    &rfpb.NodeLivenessRecord{},
 		quitLease:             make(chan struct{}),
@@ -143,19 +144,22 @@ func (h *Heartbeat) blockingGetValidLease() (*rfpb.NodeLivenessRecord, error) {
 		return l, nil
 	}
 
-	l, err := h.ensureValidLease()
+	l, err := h.ensureValidLease(false /*=forceRenewal*/)
 	if err != nil {
 		return nil, err
 	}
 	return l, nil
 }
 
-func (h *Heartbeat) ensureValidLease() (*rfpb.NodeLivenessRecord, error) {
+func (h *Heartbeat) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
-		return h.lastLivenessRecord, nil
+	if !forceRenewal {
+		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+			return h.lastLivenessRecord, nil
+		}
 	}
+
 	if err := h.renewLease(); err == nil {
 		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
 			return h.lastLivenessRecord, nil
@@ -172,7 +176,7 @@ func (h *Heartbeat) ensureValidLease() (*rfpb.NodeLivenessRecord, error) {
 }
 
 func (h *Heartbeat) renewLease() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	var expectedValue []byte
@@ -205,7 +209,8 @@ func (h *Heartbeat) renewLease() error {
 		return err
 	}
 
-	rsp, err := h.sender.SyncPropose(ctx, leaseKey, casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, h.nodeHost, 1, casRequest)
+
 	if err != nil {
 		// This indicates a communication error proposing the message.
 		return err
@@ -240,7 +245,7 @@ func (h *Heartbeat) keepLeaseAlive() {
 			// TODO(tylerw): attempt to drop lease gracefully.
 			return
 		case <-time.After(h.timeUntilLeaseRenewal):
-			h.ensureValidLease()
+			h.ensureValidLease(true /*=forceRenewal*/)
 		}
 	}
 }

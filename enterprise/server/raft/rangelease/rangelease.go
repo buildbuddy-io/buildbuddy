@@ -7,18 +7,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
 const (
@@ -88,37 +87,6 @@ func (l *Lease) getClusterID() (uint64, error) {
 	return 0, status.FailedPreconditionError("No replicas in range")
 }
 
-func (l *Lease) syncProposeLocal(ctx context.Context, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	clusterID, err := l.getClusterID()
-	if err != nil {
-		return nil, err
-	}
-	sesh := l.nodeHost.GetNoOPSession(clusterID)
-	buf, err := proto.Marshal(batch)
-	if err != nil {
-		return nil, err
-	}
-	var raftResponse dbsm.Result
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		raftResponse, err = l.nodeHost.SyncPropose(ctx, sesh, buf)
-		if err != nil {
-			if err == dragonboat.ErrClusterNotReady {
-				log.Errorf("continuing, got cluster not ready err...")
-				continue
-			}
-			log.Errorf("Got unretriable SyncPropose err: %s", err)
-			return nil, err
-		}
-		break
-	}
-	batchResponse := &rfpb.BatchCmdResponse{}
-	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
-		return nil, err
-	}
-	return batchResponse, err
-}
-
 func (l *Lease) renew() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -153,8 +121,12 @@ func (l *Lease) renew() error {
 		return err
 	}
 
+	clusterID, err := l.getClusterID()
+	if err != nil {
+		return err
+	}
 	log.Printf("Sending range lease request: %+v", leaseRequest)
-	rsp, err := l.syncProposeLocal(ctx, casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, clusterID, casRequest)
 	log.Printf("range lease response: %+v, err: %s", rsp, err)
 	// TODO(tylerw): for the morning: why is this syncpropose never really working?
 
@@ -165,7 +137,6 @@ func (l *Lease) renew() error {
 
 	l.activeLease = nil
 	casResponse, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
-	log.Printf("casResponse: %+v, err: %s", casResponse, err)
 	if err == nil {
 		// This means we set the lease succesfully.
 		l.lastRecord = leaseRequest
@@ -226,7 +197,7 @@ func (l *Lease) verify(rl *rfpb.RangeLeaseRecord) error {
 		return l.nodeLiveness.BlockingValidateNodeLiveness(nl)
 	}
 
-	// This is a time  based lease, so check expiration time.
+	// This is a time based lease, so check expiration time.
 	expireAt := time.Unix(0, rl.GetExpiration())
 	if time.Now().After(expireAt) {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: expired at %s", expireAt)
@@ -261,7 +232,7 @@ func (l *Lease) printLease() {
 		select {
 		case <-time.After(time.Second):
 			if l.activeLease != nil {
-				log.Printf("Active range lease: %+v", l.activeLease)
+				log.Printf("Active range lease: %+v for range: %+v", l.activeLease, l.rangeDescriptor)
 			} else {
 				log.Printf("No active range lease.")
 			}
@@ -296,4 +267,15 @@ func (l *Lease) Acquire() error {
 
 func (l *Lease) Release() {
 	close(l.quitLease)
+}
+
+func (l *Lease) Valid() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if err := l.verify(l.activeLease); err == nil {
+		return true
+	} else {
+		log.Printf("Range %s is invalid, err: %s", l.activeLease, err)
+	}
+	return false
 }
