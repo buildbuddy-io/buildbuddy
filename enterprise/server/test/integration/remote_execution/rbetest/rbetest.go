@@ -9,6 +9,7 @@ import (
 	"net"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -577,6 +579,11 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetAuthenticator(r.newTestAuthenticator())
+	xl, err := xcode.NewXcodeLocator()
+	if err != nil {
+		assert.FailNowf(r.t, "Failed to set XcodeLocator: %s", err.Error())
+	}
+	env.SetXcodeLocator(xl)
 
 	bundleFS, err := bundle.Get()
 	require.NoError(r.t, err)
@@ -965,6 +972,8 @@ func minimalCommand(args ...string) *repb.Command {
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "container-image", Value: "none"},
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
 			},
 		},
 	}

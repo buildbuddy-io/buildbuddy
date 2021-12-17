@@ -700,6 +700,8 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		for groupRows.Next() {
 			gr := &tables.GroupRole{}
 			err := groupRows.Scan(
+				// NOTE: When updating the group fields here, update GetImpersonatedUser
+				// as well.
 				&gr.Group.UserID,
 				&gr.Group.GroupID,
 				&gr.Group.URLIdentifier,
@@ -714,6 +716,67 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 			if err != nil {
 				return err
 			}
+			user.Groups = append(user.Groups, gr)
+		}
+		return nil
+	})
+	return user, err
+}
+
+func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) {
+	auth := d.env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.InternalError("No auth configured on this BuildBuddy instance")
+	}
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsImpersonating() {
+		return nil, status.PermissionDeniedError("Authenticated user does not have permissions to impersonate a user.")
+	}
+	user := &tables.User{}
+	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+		userRow := tx.Raw(`SELECT * FROM Users WHERE user_id = ?`, u.GetUserID())
+		if err := userRow.Take(user).Error; err != nil {
+			return err
+		}
+		groupRows, err := tx.Raw(`
+			SELECT
+				user_id,
+				group_id,
+				url_identifier,
+				name,
+				owned_domain,
+				github_token,
+				sharing_enabled,
+				use_group_owned_executors,
+				saml_idp_metadata_url
+			FROM `+"`Groups`"+`
+			WHERE group_id = ?
+		`, u.GetGroupID()).Rows()
+		if err != nil {
+			return err
+		}
+		defer groupRows.Close()
+		for groupRows.Next() {
+			gr := &tables.GroupRole{}
+			err := groupRows.Scan(
+				&gr.Group.UserID,
+				&gr.Group.GroupID,
+				&gr.Group.URLIdentifier,
+				&gr.Group.Name,
+				&gr.Group.OwnedDomain,
+				&gr.Group.GithubToken,
+				&gr.Group.SharingEnabled,
+				&gr.Group.UseGroupOwnedExecutors,
+				&gr.Group.SamlIdpMetadataUrl,
+			)
+			if err != nil {
+				return err
+			}
+			// Grant admin role within the impersonated group.
+			gr.Role = uint32(role.Admin)
 			user.Groups = append(user.Groups, gr)
 		}
 		return nil

@@ -68,6 +68,9 @@ func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 func (c *TestUser) GetUseGroupOwnedExecutors() bool {
 	return c.UseGroupOwnedExecutors
 }
+func (c *TestUser) IsImpersonating() bool {
+	return false
+}
 
 // TestUsers creates a map of test users from arguments of the form:
 // user_id1, group_id1, user_id2, group_id2, ..., user_idN, group_idN

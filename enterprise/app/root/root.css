@@ -6,11 +6,35 @@ body {
 .page {
   display: flex;
   flex-grow: 1;
-  max-height: calc(100vh - 90px);
 }
 
-.left .page {
-  max-height: 100vh;
+.impersonation-toolbar {
+  background-color: #ffc107;
+  padding: 4px 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 -1px 1px rgba(0, 0, 0, 0.12) inset;
+}
+
+.impersonation-toolbar button {
+  margin-left: auto;
+  min-height: 32px;
+  padding: 2px 16px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.root {
+  position: relative;
+}
+
+.page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .container.left,
@@ -33,8 +57,12 @@ body {
 /** Mobile support **/
 
 @media (max-width: 800px) {
-  body {
+  .page {
     overflow: auto;
+  }
+
+  .root-main.root-main {
+    overflow: visible;
   }
 
   .left .page {
@@ -90,10 +118,5 @@ body {
   .dense .sidebar .sidebar-profile-arrow,
   .sidebar .sidebar-profile-arrow {
     display: none;
-  }
-
-  .dense .root-main,
-  .root-main {
-    overflow: visible;
   }
 }

@@ -20,6 +20,7 @@ var (
 	RoleIndependentRPCs = []string{
 		// RPCs that happen pre-login and don't require group membership.
 		"GetUser",
+		"GetImpersonatedUser",
 		"CreateUser",
 		"GetGroup",
 		// Invocations can be shared publicly, so authorization for these RPCs is
@@ -83,6 +84,14 @@ var (
 		// BuildBuddy usage data
 		"GetUsage",
 	}
+
+	// ServerAdminOnlyRPCs can only be called by server admins. It is different
+	// from AdminOnlyRPCs in that it requires the authenticated user to be an
+	// admin of the configured server-admin group, and not just an admin of
+	// their authenticated group.
+	ServerAdminOnlyRPCs = []string{
+		"GetInvocationOwner",
+	}
 )
 
 // AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
@@ -102,6 +111,16 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 
 	if stringSliceContains(u.GetAllowedGroups(), globalAdminGroupID) {
 		return nil
+	}
+
+	serverAdminGID := env.GetConfigurator().GetAuthAdminGroupID()
+	if serverAdminGID != "" && stringSliceContains(ServerAdminOnlyRPCs, rpcName) {
+		for _, m := range u.GetGroupMemberships() {
+			if m.GroupID == serverAdminGID && m.Role == role.Admin {
+				return nil
+			}
+		}
+		return status.PermissionDeniedError("Permission denied.")
 	}
 
 	groupID := u.GetGroupID()

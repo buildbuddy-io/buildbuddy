@@ -17,5 +17,7 @@ go_library(
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@go_googleapis//google/rpc:status_go_proto",
         "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//proto",
     ],
 )

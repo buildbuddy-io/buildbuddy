@@ -476,6 +476,13 @@
   color: #aaa;
 }
 
+.state-page button.impersonate-button,
+.stage-page button.impersonate-button:hover {
+  margin-top: 8px;
+  background-color: #ffc107;
+  color: black;
+}
+
 .workflow-rerun-button > :not(:last-child) {
   margin-right: 8px;
 }

@@ -56,6 +56,7 @@ executor:
   app_target: "grpc://localhost:1985"
   local_cache_directory: "{{.TestRootDir}}/remote_execution/cache"
   local_cache_size_bytes: 1000000000  # 1GB
+  default_xcode_version: "13.1"
 auth:
   oauth_providers:
     - issuer_url: 'https://auth.test.buildbuddy.io'

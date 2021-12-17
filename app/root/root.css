@@ -34,7 +34,7 @@ select {
 }
 
 .root {
-  min-height: 100vh;
+  flex-grow: 1;
   display: flex;
   flex-direction: column;
 }
@@ -2090,7 +2090,8 @@ code .comment {
   background-color: #fff;
 }
 
-.root-code {
+.root-code,
+.root-login {
   overflow-y: initial;
 }
 

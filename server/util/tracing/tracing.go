@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/bridge/opencensus"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	octrace "go.opencensus.io/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
@@ -165,6 +167,8 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
+	tracer := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
+	octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
 	log.Infof("Tracing enabled with sampler: %s", sampler.Description())

@@ -340,7 +340,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md
 
-	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
+	if !task.GetAction().GetDoNotCache() {
+		// If the action failed, upload information about the error via a failed ActionResult under
+		// an invocation-specific digest, which will not ever be seen by bazel but may be viewed
+		// via the Buildbuddy UI.
+		if cmdResult.Error != nil || cmdResult.ExitCode != 0 {
+			resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), task.GetInvocationId())
+			if err != nil {
+				return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
+			}
+			adInstanceDigest = digest.NewInstanceNameDigest(resultDigest, req.GetInstanceName())
+		}
 		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
