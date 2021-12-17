@@ -22,14 +22,14 @@ module.exports = {
     ],
     Monitoring: ["prometheus-metrics"],
     Architecture: [
-      "architecture-overview", 
-      "architecture-data-storage", 
-      "architecture-build-event-write", 
+      "architecture-overview",
+      "architecture-data-storage",
+      "architecture-build-event-write",
       "architecture-build-event-read",
-      "architecture-cache-write", 
+      "architecture-cache-write",
       "architecture-cache-read",
-      "architecture-remote-execution", 
-      "architecture-self-hosted-executor"
+      "architecture-remote-execution",
+      "architecture-self-hosted-executor",
     ],
     Configuration: [
       "config",

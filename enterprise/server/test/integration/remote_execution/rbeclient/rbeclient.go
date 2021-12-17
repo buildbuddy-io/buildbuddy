@@ -1,7 +1,6 @@
 package rbeclient
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -100,6 +99,10 @@ func (c *Command) StatusChannel() <-chan *CommandResult {
 
 func (c *Command) AcceptedChannel() <-chan string {
 	return c.accepted
+}
+
+func (c *Command) GetActionDigest() *digest.InstanceNameDigest {
+	return c.actionDigest
 }
 
 func (c *Command) Start(ctx context.Context) error {
@@ -271,32 +274,6 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	}
 
 	return command, nil
-}
-
-func (c *Client) GetStdoutAndStderr(ctx context.Context, res *CommandResult) (string, string, error) {
-	stdout := ""
-	if res.ActionResult.GetStdoutDigest() != nil {
-		d := digest.NewInstanceNameDigest(res.ActionResult.GetStdoutDigest(), res.InstanceName)
-		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, buf)
-		if err != nil {
-			return "", "", status.UnavailableErrorf("error retrieving stdout from CAS: %v", err)
-		}
-		stdout = buf.String()
-	}
-
-	stderr := ""
-	if res.ActionResult.GetStderrDigest() != nil {
-		d := digest.NewInstanceNameDigest(res.ActionResult.GetStderrDigest(), res.InstanceName)
-		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-		err := cachetools.GetBlob(ctx, c.gRPClientSource.GetByteStreamClient(), d, buf)
-		if err != nil {
-			return "", "", status.InternalErrorf("error retrieving stderr from CAS: %v", err)
-		}
-		stderr = buf.String()
-	}
-
-	return stdout, stderr, nil
 }
 
 func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env, res *CommandResult, rootDir string) error {

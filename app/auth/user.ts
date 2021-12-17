@@ -8,6 +8,8 @@ export class User {
   selectedGroup: grp.Group;
   allowedRpcs: Set<BuildBuddyServiceRpcName>;
   githubToken: string;
+  /** Whether the user is temporarily acting as a member of the selected group. */
+  isImpersonating: boolean;
 
   selectedGroupName() {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";

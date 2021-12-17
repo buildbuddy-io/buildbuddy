@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -73,8 +75,19 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 		return nil, err
 	}
 
+	var actionResultDigest *repb.Digest
+	if in.StatusCode == int32(codes.OK) {
+		actionResultDigest = proto.Clone(d).(*repb.Digest)
+	} else {
+		actionResultDigest, err = digest.AddInvocationIDToDigest(d, in.InvocationID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	out := &espb.Execution{
-		ActionDigest: d,
+		ActionDigest:       d,
+		ActionResultDigest: actionResultDigest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,
 			Message: in.StatusMessage,

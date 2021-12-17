@@ -59,6 +59,11 @@ type GroupMembership struct {
 type UserInfo interface {
 	GetUserID() string
 	GetGroupID() string
+	// IsImpersonating returns whether the group ID is being impersonated by the
+	// user. This means that the user is not actually a member of the group, but
+	// is temporarily acting as a group member. Only server admins have this
+	// capability.
+	IsImpersonating() bool
 	// GetAllowedGroups returns the IDs of the groups of which the user is a
 	// member.
 	// DEPRECATED: Use GetGroupMemberships instead.
@@ -213,6 +218,7 @@ type InvocationDB interface {
 	UpdateInvocationACL(ctx context.Context, authenticatedUser *UserInfo, invocationID string, acl *aclpb.ACL) error
 	LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error)
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
+	LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
@@ -241,6 +247,11 @@ type UserDB interface {
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
 	GetUser(ctx context.Context) (*tables.User, error)
+	// GetImpersonatedUser will return the authenticated user's information
+	// with a single group membership corresponding to the group they are trying
+	// to impersonate. It requires that the authenticated user has impersonation
+	// permissions and is requesting to impersonate a group.
+	GetImpersonatedUser(ctx context.Context) (*tables.User, error)
 	DeleteUser(ctx context.Context, userID string) error
 	FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error
 

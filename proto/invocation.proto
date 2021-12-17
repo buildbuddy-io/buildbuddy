@@ -130,6 +130,20 @@ message GetInvocationResponse {
   repeated Invocation invocation = 2;
 }
 
+message GetInvocationOwnerRequest {
+  context.RequestContext request_context = 1;
+
+  // The invocation ID to get the owner of.
+  string invocation_id = 2;
+}
+
+message GetInvocationOwnerResponse {
+  context.ResponseContext response_context = 1;
+
+  // Group ID that owns the invocation.
+  string group_id = 2;
+}
+
 message UpdateInvocationRequest {
   context.RequestContext request_context = 1;
 

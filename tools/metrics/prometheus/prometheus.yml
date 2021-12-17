@@ -11,4 +11,4 @@ scrape_configs:
       - targets: ["host.docker.internal:9091"]
   - job_name: redis
     static_configs:
-    - targets: ["host.docker.internal:9121"]
+      - targets: ["host.docker.internal:9121"]
