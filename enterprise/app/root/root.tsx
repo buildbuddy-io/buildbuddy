@@ -27,6 +27,7 @@ const CodeComponent = React.lazy(() => import("../code/code"));
 
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
+import * as cache from "../../../app/util/cache";
 
 interface State {
   user: User;
@@ -51,6 +52,8 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.tapPath,
   Path.codePath,
 ]);
+
+cache.registerConsoleUtils();
 
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {

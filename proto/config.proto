@@ -53,4 +53,7 @@ message FrontendConfig {
 
   // Whether Darwin (macOS) executors must be self-hosted.
   bool force_user_owned_darwin_executors = 17;
+
+  // The configured gRPC endpoint for the remote cache.
+  string cache_api_url = 18;
 }

@@ -46,6 +46,17 @@ jasmine_node_test(
 )
 
 ts_library(
+    name = "cache",
+    srcs = ["cache.ts"],
+    deps = [
+        ":download",
+        "//app/capabilities",
+        "//app/service",
+        "//proto:remote_execution_ts_proto",
+    ],
+)
+
+ts_library(
     name = "clipboard",
     srcs = ["clipboard.ts"],
 )
@@ -53,6 +64,14 @@ ts_library(
 ts_library(
     name = "dom",
     srcs = ["dom.ts"],
+    deps = [
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "download",
+    srcs = ["download.ts"],
     deps = [
         "@npm//tslib",
     ],

@@ -17,10 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 )
 
 var (
@@ -211,6 +214,19 @@ func recordResponseMetrics(route, method string, statusCode, responseSizeBytes i
 	metrics.HTTPResponseSizeBytes.With(labels).Observe(float64(responseSizeBytes))
 }
 
+func RequestContextFromURLParams(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		reqCtx := &ctxpb.RequestContext{
+			GroupId:              q.Get("group_id"),
+			ImpersonatingGroupId: q.Get("impersonating_group_id"),
+		}
+		ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
+		r = r.WithContext(ctx)
+		next.ServeHTTP(w, r)
+	})
+}
+
 type wrapFn func(http.Handler) http.Handler
 
 func wrapHandler(env environment.Env, next http.Handler, wrapFns *[]wrapFn) http.Handler {
@@ -254,6 +270,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		RequestContextFromURLParams,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,

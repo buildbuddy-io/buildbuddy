@@ -40,6 +40,8 @@ class RpcService {
       filename,
       bytestream_url: bytestreamURL,
       invocation_id: invocationId,
+      group_id: this.requestContext.groupId || "",
+      impersonating_group_id: this.requestContext.impersonatingGroupId || "",
     })}`;
   }
 
@@ -52,13 +54,8 @@ class RpcService {
     invocationId: string,
     responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
-    return this.fetchFile(
-      `/file/download?${new URLSearchParams({
-        bytestream_url: bytestreamURL,
-        invocation_id: invocationId,
-      })}`,
-      responseType || ""
-    );
+    const url = this.getBytestreamFileUrl(/*filename=*/ "", bytestreamURL, invocationId);
+    return this.fetchFile(url, responseType || "");
   }
 
   fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {

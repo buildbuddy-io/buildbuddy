@@ -9,6 +9,7 @@ ts_library(
         "//app/components/spinner",
         "//app/errors",
         "//app/service",
+        "//app/util:download",
         "//proto:eventlog_ts_proto",
         "@npm//@types/react",
         "@npm//@types/react-lazylog",

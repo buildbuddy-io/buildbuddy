@@ -3,6 +3,7 @@ import React from "react";
 import { LazyLog } from "react-lazylog";
 import errorService from "../errors/error_service";
 import Spinner from "../components/spinner/spinner";
+import { downloadString } from "../util/download";
 
 export interface TerminalProps {
   value?: string;
@@ -82,14 +83,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   handleDownloadClicked() {
     const serveLog = (log: string) => {
-      const element = document.createElement("a");
       const unstyledLogs = log.replace(ANSI_STYLES_REGEX, "");
-      element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(unstyledLogs));
-      element.setAttribute("download", "build_logs.txt");
-      element.style.display = "none";
-      document.body.appendChild(element);
-      element.click();
-      element.remove();
+      downloadString(unstyledLogs, "build_logs.txt");
     };
     if (this.props.fullLogsFetcher) {
       this.setState({ isLoadingFullLog: true });

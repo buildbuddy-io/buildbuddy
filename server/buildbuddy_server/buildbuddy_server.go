@@ -841,7 +841,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if lookup.URL.User == nil {
+	if lookup.URL.User == nil && params.Get("invocation_id") != "" {
 		apiKey, _ := s.getAnyAPIKeyForInvocation(r.Context(), params.Get("invocation_id"))
 		if apiKey != nil {
 			lookup.URL.User = url.User(apiKey.Value)
@@ -852,8 +852,11 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+	ctx := r.Context()
+	if lookup.URL.User != nil {
+		// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
+		ctx = context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+	}
 
 	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, func(data []byte) {
 		w.Write(data)
