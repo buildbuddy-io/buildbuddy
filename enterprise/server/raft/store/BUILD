@@ -9,7 +9,7 @@ go_library(
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/nodelease",
+        "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rangelease",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",

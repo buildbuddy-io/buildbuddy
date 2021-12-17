@@ -1,4 +1,4 @@
-package nodelease
+package nodeliveness
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ const (
 	nodeLeaseRenewGracePeriod = 4 * time.Second
 )
 
-type Heartbeat struct {
+type Liveness struct {
 	nodeHost *dragonboat.NodeHost
 	nodeID   []byte
 	clock    *serf.LamportClock
@@ -39,8 +39,8 @@ type Heartbeat struct {
 	timeUntilLeaseRenewal time.Duration
 }
 
-func NewHeartbeat(nodeHost *dragonboat.NodeHost) *Heartbeat {
-	return &Heartbeat{
+func NewLiveness(nodeHost *dragonboat.NodeHost) *Liveness {
+	return &Liveness{
 		nodeID:                []byte(nodeHost.ID()),
 		nodeHost:              nodeHost,
 		clock:                 &serf.LamportClock{},
@@ -51,18 +51,18 @@ func NewHeartbeat(nodeHost *dragonboat.NodeHost) *Heartbeat {
 	}
 }
 
-func (h *Heartbeat) Start() {
+func (h *Liveness) Start() {
 	h.quitLease = make(chan struct{})
 	go h.keepLeaseAlive()
 	//go h.printLease()
 }
 
-func (h *Heartbeat) Stop() {
+func (h *Liveness) Stop() {
 	close(h.quitLease)
 }
 
 // TODO(tylerw): remove this later; it's just for debugging.
-func (h *Heartbeat) printLease() {
+func (h *Liveness) printLease() {
 	for {
 		select {
 		case <-time.After(time.Second):
@@ -78,7 +78,7 @@ func (h *Heartbeat) printLease() {
 	}
 }
 
-func (h *Heartbeat) BlockingValidateEpoch(epoch int64) (bool, error) {
+func (h *Liveness) BlockingValidateEpoch(epoch int64) (bool, error) {
 	if l, err := h.blockingGetValidLease(); err == nil {
 		return l.GetEpoch() == epoch, nil
 	} else {
@@ -86,7 +86,7 @@ func (h *Heartbeat) BlockingValidateEpoch(epoch int64) (bool, error) {
 	}
 }
 
-func (h *Heartbeat) BlockingGetCurrentEpoch() (int64, error) {
+func (h *Liveness) BlockingGetCurrentEpoch() (int64, error) {
 	if l, err := h.blockingGetValidLease(); err == nil {
 		return l.GetEpoch(), nil
 	} else {
@@ -94,7 +94,7 @@ func (h *Heartbeat) BlockingGetCurrentEpoch() (int64, error) {
 	}
 }
 
-func (h *Heartbeat) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
+func (h *Liveness) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_NodeLiveness, error) {
 	l, err := h.blockingGetValidLease()
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (h *Heartbeat) BlockingGetCurrentNodeLiveness() (*rfpb.RangeLeaseRecord_Nod
 	}, nil
 }
 
-func (h *Heartbeat) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
+func (h *Liveness) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
 	if bytes.Compare(nl.GetNodeId(), h.nodeID) != 0 {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nodeID mismatch")
 	}
@@ -119,7 +119,7 @@ func (h *Heartbeat) BlockingValidateNodeLiveness(nl *rfpb.RangeLeaseRecord_NodeL
 	return nil
 }
 
-func (h *Heartbeat) verifyLease(l *rfpb.NodeLivenessRecord) error {
+func (h *Liveness) verifyLease(l *rfpb.NodeLivenessRecord) error {
 	if serf.LamportTime(l.GetEpoch()) != h.clock.Time() {
 		return status.FailedPreconditionErrorf("LeaseInvalid: lease epoch %d != current epoch: %d", l.GetEpoch(), h.clock.Time())
 	}
@@ -133,7 +133,7 @@ func (h *Heartbeat) verifyLease(l *rfpb.NodeLivenessRecord) error {
 	return nil
 }
 
-func (h *Heartbeat) blockingGetValidLease() (*rfpb.NodeLivenessRecord, error) {
+func (h *Liveness) blockingGetValidLease() (*rfpb.NodeLivenessRecord, error) {
 	h.mu.RLock()
 	var l *rfpb.NodeLivenessRecord
 	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
@@ -151,7 +151,7 @@ func (h *Heartbeat) blockingGetValidLease() (*rfpb.NodeLivenessRecord, error) {
 	return l, nil
 }
 
-func (h *Heartbeat) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
+func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if !forceRenewal {
@@ -175,7 +175,7 @@ func (h *Heartbeat) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecor
 	return nil, err
 }
 
-func (h *Heartbeat) renewLease() error {
+func (h *Liveness) renewLease() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -238,7 +238,7 @@ func (h *Heartbeat) renewLease() error {
 	return nil
 }
 
-func (h *Heartbeat) keepLeaseAlive() {
+func (h *Liveness) keepLeaseAlive() {
 	for {
 		select {
 		case <-h.quitLease:

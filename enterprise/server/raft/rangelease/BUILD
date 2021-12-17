@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/nodelease",
+        "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
         "//server/util/log",

@@ -7,7 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -32,7 +32,7 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	apiClient     *client.APIClient
-	heartbeat     *nodelease.Heartbeat
+	liveness      *nodeliveness.Liveness
 
 	rangeMu       sync.RWMutex
 	activeRanges  map[uint64]struct{}
@@ -49,14 +49,14 @@ func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHos
 	s.gossipManager = gossipManager
 	s.sender = sender
 	s.apiClient = apiClient
-	s.heartbeat = nodelease.NewHeartbeat(nodeHost)
+	s.liveness = nodeliveness.NewLiveness(nodeHost)
 	s.rangeMu = sync.RWMutex{}
 	s.activeRanges = make(map[uint64]struct{})
 	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
 
 	s.leaseMu = sync.RWMutex{}
 	s.leases = make(map[uint64]*rangelease.Lease)
-	s.heartbeat.Start()
+	s.liveness.Start()
 }
 
 func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
@@ -97,7 +97,7 @@ func (s *Store) leaseRange(clusterID uint64) {
 		log.Warningf("No range descriptor found for cluster: %d", clusterID)
 		return
 	}
-	rl := rangelease.New(s.nodeHost, s.heartbeat, rd)
+	rl := rangelease.New(s.nodeHost, s.liveness, rd)
 	s.leaseMu.Lock()
 	s.leases[rd.GetRangeId()] = rl
 	s.leaseMu.Unlock()

@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -29,8 +29,8 @@ const (
 )
 
 type Lease struct {
-	nodeHost     *dragonboat.NodeHost
-	nodeLiveness *nodelease.Heartbeat
+	nodeHost *dragonboat.NodeHost
+	liveness *nodeliveness.Liveness
 
 	rangeDescriptor *rfpb.RangeDescriptor
 	mu              sync.RWMutex
@@ -41,10 +41,10 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost *dragonboat.NodeHost, nodeLiveness *nodelease.Heartbeat, rd *rfpb.RangeDescriptor) *Lease {
+func New(nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	return &Lease{
 		nodeHost:              nodeHost,
-		nodeLiveness:          nodeLiveness,
+		liveness:              liveness,
 		rangeDescriptor:       rd,
 		mu:                    sync.RWMutex{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
@@ -68,7 +68,7 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 			Expiration: time.Now().Add(rangeLeaseDuration).UnixNano(),
 		}
 	} else {
-		nl, err := l.nodeLiveness.BlockingGetCurrentNodeLiveness()
+		nl, err := l.liveness.BlockingGetCurrentNodeLiveness()
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +194,7 @@ func (l *Lease) verify(rl *rfpb.RangeLeaseRecord) error {
 	}
 	if nl := rl.GetNodeLiveness(); nl != nil {
 		// This is a node epoch based lease, so check node and epoch.
-		return l.nodeLiveness.BlockingValidateNodeLiveness(nl)
+		return l.liveness.BlockingValidateNodeLiveness(nl)
 	}
 
 	// This is a time based lease, so check expiration time.

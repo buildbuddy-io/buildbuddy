@@ -19,3 +19,22 @@ go_library(
         "@com_github_lni_dragonboat_v3//:dragonboat",
     ],
 )
+
+go_library(
+    name = "nodeliveness",
+    srcs = ["nodeliveness.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
+        "//enterprise/server/raft/rbuilder",
+        "//proto:raft_go_proto",
+        "//server/util/log",
+        "//server/util/status",
+        "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_hashicorp_serf//serf",
+        "@com_github_lni_dragonboat_v3//:dragonboat",
+    ],
+)
