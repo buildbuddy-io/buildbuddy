@@ -62,18 +62,18 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 }
 
 func (g *GCSCache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
-	traceCtx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	_, err := g.gcsClient.Bucket(bucketName).Attrs(traceCtx)
+	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
 	return err == nil, err
 }
 func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName string) error {
 	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
 		log.Printf("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
-		traceCtx, spn := tracing.StartSpan(ctx)
+		ctx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		return g.bucketHandle.Create(traceCtx, g.projectID, nil)
+		return g.bucketHandle.Create(ctx, g.projectID, nil)
 	}
 	g.bucketHandle = g.gcsClient.Bucket(bucketName)
 	return nil
@@ -265,8 +265,8 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	traceCtx, spn := tracing.StartSpan(ctx)
-	err = g.bucketHandle.Object(k).Delete(traceCtx)
+	ctx, spn := tracing.StartSpan(ctx)
+	err = g.bucketHandle.Object(k).Delete(ctx)
 	spn.End()
 	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
@@ -279,8 +279,8 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 		return true
 	}
 	obj := g.bucketHandle.Object(key)
-	traceCtx, spn := tracing.StartSpan(ctx)
-	_, err := obj.CopierFrom(obj).Run(traceCtx)
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := obj.CopierFrom(obj).Run(ctx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false
@@ -300,8 +300,8 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	numAttempts := 0
 	for {
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
-		traceCtx, spn := tracing.StartSpan(ctx)
-		attrs, err := g.bucketHandle.Object(k).Attrs(traceCtx)
+		ctx, spn := tracing.StartSpan(ctx)
+		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
 		spn.End()
 		timer.ObserveContains(err)
 		numAttempts++
@@ -355,8 +355,8 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 	if err != nil {
 		return nil, err
 	}
-	traceCtx, spn := tracing.StartSpan(ctx)
-	reader, err := g.bucketHandle.Object(k).NewReader(traceCtx)
+	ctx, spn := tracing.StartSpan(ctx)
+	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
 	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {

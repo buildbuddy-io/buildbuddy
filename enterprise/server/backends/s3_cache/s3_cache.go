@@ -109,8 +109,8 @@ func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 }
 
 func (s3c *S3Cache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
-	traceCtx, spn := tracing.StartSpan(ctx)
-	_, err := s3c.s3.HeadBucketWithContext(traceCtx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := s3c.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
 	spn.End()
 	if err == nil {
 		return true, nil
@@ -130,12 +130,12 @@ func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName stri
 		return err
 	} else if !exists {
 		log.Printf("Creating storage bucket: %s", bucketName)
-		traceCtx, spn := tracing.StartSpan(ctx)
+		ctx, spn := tracing.StartSpan(ctx)
 		defer spn.End()
-		if _, err := s3c.s3.CreateBucketWithContext(traceCtx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+		if _, err := s3c.s3.CreateBucketWithContext(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucketName)}); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(traceCtx, bucketWaitTimeout)
+		ctx, cancel := context.WithTimeout(ctx, bucketWaitTimeout)
 		defer cancel()
 		return s3c.s3.WaitUntilBucketExistsWithContext(ctx, &s3.HeadBucketInput{
 			Bucket: aws.String(bucketName),
@@ -246,8 +246,8 @@ func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
-	traceCtx, spn := tracing.StartSpan(ctx)
-	_, err := s3c.downloader.DownloadWithContext(traceCtx, buff, &s3.GetObjectInput{
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := s3c.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(key),
 	})
@@ -296,8 +296,8 @@ func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error 
 		Body:   bytes.NewReader(data),
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	traceCtx, spn := tracing.StartSpan(ctx)
-	_, err = s3c.uploader.UploadWithContext(traceCtx, uploadParams)
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err = s3c.uploader.UploadWithContext(ctx, uploadParams)
 	spn.End()
 	timer.ObserveSet(len(data), err)
 	return err
@@ -339,13 +339,13 @@ func (s3c *S3Cache) delete(ctx context.Context, key string) error {
 		Key:    aws.String(key),
 	}
 
-	traceCtx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	if _, err := s3c.s3.DeleteObjectWithContext(traceCtx, deleteParams); err != nil {
+	if _, err := s3c.s3.DeleteObjectWithContext(ctx, deleteParams); err != nil {
 		return err
 	}
 
-	return s3c.s3.WaitUntilObjectNotExistsWithContext(traceCtx, &s3.HeadObjectInput{
+	return s3c.s3.WaitUntilObjectNotExistsWithContext(ctx, &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(key),
 	})
@@ -390,16 +390,16 @@ func (s3c *S3Cache) contains(ctx context.Context, key string) (bool, error) {
 		Key:    aws.String(key),
 	}
 
-	traceCtx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	head, err := s3c.s3.HeadObjectWithContext(traceCtx, params)
+	head, err := s3c.s3.HeadObjectWithContext(ctx, params)
 	if err != nil {
 		if isNotFoundErr(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return s3c.bumpTTLIfStale(traceCtx, key, *head.LastModified), nil
+	return s3c.bumpTTLIfStale(ctx, key, *head.LastModified), nil
 }
 
 func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -437,10 +437,10 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	if err != nil {
 		return nil, err
 	}
-	traceCtx, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	// TODO(bduffany): track this as a contains() request, or find a way to
 	// track it as part of the read
-	result, err := s3c.s3.GetObjectWithContext(traceCtx, &s3.GetObjectInput{
+	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(k),
 		Range:  aws.String(fmt.Sprintf("%d-", offset)),
