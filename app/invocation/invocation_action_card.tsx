@@ -74,10 +74,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchActionResult() {
-	let digestParam = this.props.search.get("actionResultDigest");
-	if (digestParam == null) {
-	    digestParam = this.props.search.get("actionDigest");
-	}
+    let digestParam = this.props.search.get("actionResultDigest");
+    if (digestParam == null) {
+      digestParam = this.props.search.get("actionDigest");
+    }
     const digest = parseDigest(digestParam);
     const actionResultUrl = `actioncache://${this.getCacheAddress()}/blobs/ac/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
