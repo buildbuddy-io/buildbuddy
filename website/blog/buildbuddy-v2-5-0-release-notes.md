@@ -28,12 +28,11 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 ![](images/trends.png)
 
-
 - **Branch information** - BuildBuddy now collects information about a build's git branch in addition to the repo and commit info already collected. This makes it even easier to navigate your builds.
 
 ![](images/branch.png)
 
-- **Light terminal theme** - For those of you who suffer from eye strain when reading light text on dark backgrounds: we've heard your feedback. We've added a new light terminal theme that can be enabled in your personal settings. 
+- **Light terminal theme** - For those of you who suffer from eye strain when reading light text on dark backgrounds: we've heard your feedback. We've added a new light terminal theme that can be enabled in your personal settings.
 
 ![](images/light_terminal.png)
 
@@ -53,7 +52,7 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 ![](images/action_timeline.png)
 
-- **Revamped settings page** - We've revamped the settings page to make it easier to manage your BuildBuddy account. 
+- **Revamped settings page** - We've revamped the settings page to make it easier to manage your BuildBuddy account.
 
 ![](images/settings.png)
 

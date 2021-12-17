@@ -16,4 +16,3 @@ services:
       - "9100:9100"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
