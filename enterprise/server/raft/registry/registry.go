@@ -143,7 +143,6 @@ func (dnr *DynamicNodeRegistry) assembleRegistryUpdate(clusterID, nodeID uint64)
 		rsp.GrpcAddress = dnr.grpcAddrs[target]
 		rsp.RaftAddress = dnr.raftAddrs[target]
 	}
-	log.Printf("Returning registry update: %+v", rsp)
 	return rsp
 }
 
@@ -160,7 +159,6 @@ func (dnr *DynamicNodeRegistry) handleGossipQuery(query *serf.Query) {
 	}
 	rsp := dnr.assembleRegistryUpdate(rq.GetClusterId(), rq.GetNodeId())
 	if len(rsp.GetAdds()) == 0 {
-		dnr.log.Debugf("Ignoring registry query for %d %d, don't know about that target.", rq.GetClusterId(), rq.GetNodeId())
 		return
 	}
 	buf, err := proto.Marshal(rsp)
@@ -492,7 +490,7 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
-		dnr.log.Errorf("Error resolving %d %d: %s", clusterID, nodeID, err)
+		dnr.log.Debugf("Error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 	return raftAddr, key, nil
@@ -507,7 +505,7 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
-		dnr.log.Errorf("Error resolving %d %d: %s", clusterID, nodeID, err)
+		dnr.log.Debugf("Error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 	return grpcAddr, key, nil
