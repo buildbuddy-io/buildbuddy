@@ -13,6 +13,7 @@ go_test(
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/remote_cache/cachetools",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/status",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -90,12 +91,15 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 	failedActionResult, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, int32(5), failedActionResult.GetExitCode(), "exit code should be set in action result")
-
 	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, failedActionResult, res.InstanceName)
 	assert.NoError(t, err)
-
 	assert.Equal(t, "hello\n", stdout, "stdout should be propagated")
 	assert.Equal(t, "bye\n", stderr, "stderr should be propagated")
+
+	// Verify that it returns NotFound error when looking up action result with unmodified
+	// action digest when the action failed.
+	_, err = cachetools.GetActionResult(ctx, rbe.GetActionResultStorageClient(), cmd.GetActionDigest())
+	assert.True(t, status.IsNotFoundError(err))
 }
 
 func TestSimpleCommandWithZeroExitCode(t *testing.T) {

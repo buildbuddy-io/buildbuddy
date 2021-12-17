@@ -991,7 +991,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	}
 
 	if opts.InvocationID != "" {
-		ctx = testcontext.AttachInvocationIDToContext(ctx, opts.InvocationID)
+		ctx = testcontext.AttachInvocationIDToContext(r.t, ctx, opts.InvocationID)
 	}
 	for header, value := range opts.RemoteHeaders {
 		ctx = metadata.AppendToOutgoingContext(ctx, header, value)
