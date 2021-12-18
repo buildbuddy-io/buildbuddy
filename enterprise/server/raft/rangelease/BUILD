@@ -15,6 +15,5 @@ go_library(
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_lni_dragonboat_v3//:dragonboat",
     ],
 )

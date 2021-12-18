@@ -264,3 +264,15 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	return batchResponse, err
 }
+
+type LocalSender interface {
+	SyncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
+}
+
+type NodeHostSender struct {
+	*dragonboat.NodeHost
+}
+
+func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	return SyncProposeLocal(ctx, nhs.NodeHost, clusterID, batch)
+}

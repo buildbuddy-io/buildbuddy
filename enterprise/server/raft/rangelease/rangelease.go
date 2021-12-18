@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
-	"github.com/lni/dragonboat/v3"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -29,8 +28,8 @@ const (
 )
 
 type Lease struct {
-	nodeHost *dragonboat.NodeHost
-	liveness *nodeliveness.Liveness
+	localSender client.LocalSender
+	liveness    *nodeliveness.Liveness
 
 	rangeDescriptor *rfpb.RangeDescriptor
 	mu              sync.RWMutex
@@ -41,9 +40,9 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(nodeHost *dragonboat.NodeHost, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(localSender client.LocalSender, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	return &Lease{
-		nodeHost:              nodeHost,
+		localSender:           localSender,
 		liveness:              liveness,
 		rangeDescriptor:       rd,
 		mu:                    sync.RWMutex{},
@@ -126,7 +125,7 @@ func (l *Lease) renew() error {
 		return err
 	}
 	log.Printf("Sending range lease request: %+v", leaseRequest)
-	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, clusterID, casRequest)
+	rsp, err := l.localSender.SyncProposeLocal(ctx, clusterID, casRequest)
 	log.Printf("range lease response: %+v, err: %s", rsp, err)
 	// TODO(tylerw): for the morning: why is this syncpropose never really working?
 

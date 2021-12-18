@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v3"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -29,9 +28,9 @@ const (
 )
 
 type Liveness struct {
-	nodeHost *dragonboat.NodeHost
-	nodeID   []byte
-	clock    *serf.LamportClock
+	localSender client.LocalSender
+	nodeID      []byte
+	clock       *serf.LamportClock
 
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
@@ -39,10 +38,10 @@ type Liveness struct {
 	timeUntilLeaseRenewal time.Duration
 }
 
-func NewLiveness(nodeHost *dragonboat.NodeHost) *Liveness {
+func NewLiveness(nodeID string, localSender client.LocalSender) *Liveness {
 	return &Liveness{
-		nodeID:                []byte(nodeHost.ID()),
-		nodeHost:              nodeHost,
+		nodeID:                []byte(nodeID),
+		localSender:           localSender,
 		clock:                 &serf.LamportClock{},
 		mu:                    sync.RWMutex{},
 		lastLivenessRecord:    &rfpb.NodeLivenessRecord{},
@@ -209,7 +208,7 @@ func (h *Liveness) renewLease() error {
 		return err
 	}
 
-	rsp, err := client.SyncProposeLocal(ctx, h.nodeHost, 1, casRequest)
+	rsp, err := h.localSender.SyncProposeLocal(ctx, 1, casRequest)
 
 	if err != nil {
 		// This indicates a communication error proposing the message.

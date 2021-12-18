@@ -49,7 +49,7 @@ func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHos
 	s.gossipManager = gossipManager
 	s.sender = sender
 	s.apiClient = apiClient
-	s.liveness = nodeliveness.NewLiveness(nodeHost)
+	s.liveness = nodeliveness.NewLiveness(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost})
 	s.rangeMu = sync.RWMutex{}
 	s.activeRanges = make(map[uint64]struct{})
 	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
@@ -71,7 +71,6 @@ func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
 	} else {
 		s.releaseRange(clusterID)
 	}
-
 }
 
 func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
@@ -97,10 +96,11 @@ func (s *Store) leaseRange(clusterID uint64) {
 		log.Warningf("No range descriptor found for cluster: %d", clusterID)
 		return
 	}
-	rl := rangelease.New(s.nodeHost, s.liveness, rd)
+	rl := rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd)
 	s.leaseMu.Lock()
 	s.leases[rd.GetRangeId()] = rl
 	s.leaseMu.Unlock()
+
 	go func() {
 		for {
 			err := rl.Acquire()
