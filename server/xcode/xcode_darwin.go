@@ -118,7 +118,7 @@ func (x *xcodeLocator) locate() error {
 			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-		log.Infof("Found Xcode version %s.%s at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
+		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
 		for _, version := range versions {
