@@ -303,20 +303,15 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			}
 		}
 
-		developerDir, err := env.GetXcodeLocator().DeveloperDirForVersion(xcodeVersion)
+		sdk := fmt.Sprintf("%s%s", appleSDKPlatform, appleSDKVersion)
+		developerDir, sdkRoot, err := env.GetXcodeLocator().PathsForVersionAndSDK(xcodeVersion, sdk)
 		if err != nil {
 			return err
 		}
 
-		sdkPath := fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s%s.sdk", appleSDKPlatform, appleSDKPlatform, appleSDKVersion)
-		if !env.GetXcodeLocator().IsSDKPathPresentForVersion(sdkPath, xcodeVersion) {
-			sdkPath = fmt.Sprintf("Platforms/%s.platform/Developer/SDKs/%s.sdk", appleSDKPlatform, appleSDKPlatform)
-		}
-
-		sdkRoot := fmt.Sprintf("%s/%s", developerDir, sdkPath)
 		command.EnvironmentVariables = append(command.EnvironmentVariables, []*repb.Command_EnvironmentVariable{
-			{Name: "SDKROOT", Value: sdkRoot},
 			{Name: "DEVELOPER_DIR", Value: developerDir},
+			{Name: "SDKROOT", Value: sdkRoot},
 		}...)
 	}
 	return nil
