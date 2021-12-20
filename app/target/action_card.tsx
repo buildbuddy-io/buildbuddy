@@ -109,6 +109,10 @@ export default class ActionCardComponent extends React.Component {
   }
 
   render() {
+    const title = <div className="title">Error Log</div>;
+    const subtitle = (
+      <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
+    );
     return (
       <div className="target-action-card">
         {this.props.action?.buildEvent?.action?.stderr?.uri && (
@@ -118,34 +122,29 @@ export default class ActionCardComponent extends React.Component {
             }`}>
             <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
-              <div className="title">Error Log</div>
-              <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
               {!this.state.cacheEnabled && (
-                <div className="empty-state">
-                  Log uploading isn't enabled for this invocation.
-                  <br />
-                  <br />
-                  To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
-                  <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-                  <SetupCodeComponent />
-                </div>
+                <>
+                  {title}
+                  {subtitle}
+                  <div className="empty-state">
+                    Log uploading isn't enabled for this invocation.
+                    <br />
+                    <br />
+                    To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
+                    <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your
+                    invocation:
+                    <SetupCodeComponent />
+                  </div>
+                </>
               )}
-              {this.state.cacheEnabled && this.state.stdErr && (
-                <div className="error-log">
-                  <TerminalComponent value={this.state.stdErr} lightTheme={!this.props.dark} />
-                </div>
-              )}
-              {this.state.cacheEnabled && this.state.loadingStderr && (
-                <span>
-                  <br />
-                  Loading...
-                </span>
-              )}
-              {this.state.cacheEnabled && !this.state.loadingStderr && !this.state.stdErr && (
-                <span>
-                  <br />
-                  Empty log
-                </span>
+              {this.state.cacheEnabled && (
+                <TerminalComponent
+                  title={title}
+                  subtitle={subtitle}
+                  loading={this.state.loadingStderr}
+                  value={this.state.stdErr || "Empty log"}
+                  lightTheme={!this.props.dark}
+                />
               )}
             </div>
           </div>
@@ -153,35 +152,29 @@ export default class ActionCardComponent extends React.Component {
 
         {this.props.action?.buildEvent?.action?.stdout?.uri && (
           <div className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")}`}>
-            <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
-              <div className="title">Log</div>
               {!this.state.cacheEnabled && (
-                <div className="empty-state">
-                  Log uploading isn't enabled for this invocation.
-                  <br />
-                  <br />
-                  To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
-                  <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-                  <SetupCodeComponent />
-                </div>
+                <>
+                  <div className="title">Log</div>
+                  <div className="empty-state">
+                    Log uploading isn't enabled for this invocation.
+                    <br />
+                    <br />
+                    To enable action log uploading you must add GRPC remote caching. You can do so by checking{" "}
+                    <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your
+                    invocation:
+                    <SetupCodeComponent />
+                  </div>
+                </>
               )}
-              {this.state.cacheEnabled && this.state.stdOut && (
-                <div className="error-log">
-                  <TerminalComponent value={this.state.stdOut} lightTheme={!this.props.dark} />
-                </div>
-              )}
-              {this.state.cacheEnabled && this.state.loadingStdout && (
-                <span>
-                  <br />
-                  Loading...
-                </span>
-              )}
-              {this.state.cacheEnabled && !this.state.loadingStdout && !this.state.stdOut && (
-                <span>
-                  <br />
-                  Empty log
-                </span>
+              {this.state.cacheEnabled && (
+                <TerminalComponent
+                  title={<div className="title">Log</div>}
+                  loading={this.state.loadingStdout}
+                  value={this.state.stdOut || "Empty log"}
+                  lightTheme={!this.props.dark}
+                />
               )}
             </div>
           </div>

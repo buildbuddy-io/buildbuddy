@@ -585,9 +585,12 @@ svg.icon.orange {
 
 .card .details {
   line-height: 1.6em;
-  margin-top: 16px;
   word-break: break-all;
   white-space: pre-wrap;
+}
+
+.card .details:not(:first-child) {
+  margin-top: 16px;
 }
 
 .card .more {
@@ -975,8 +978,11 @@ code .comment {
 
 .terminal {
   height: 300px;
-  margin-top: -49px;
   overflow: visible;
+}
+
+.terminal-search-placholder {
+  min-width: 278px;
 }
 
 .terminal .ReactVirtualized__Grid {
@@ -994,18 +1000,49 @@ code .comment {
   color: #fff;
 }
 
-.terminal-actions {
-  right: 0;
+.terminal-top-bar {
   position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  display: flex;
+  align-items: start;
+}
+
+.terminal-search-placeholder {
+  margin-left: auto;
+  width: 290px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.terminal-actions {
   display: flex;
   align-items: center;
+}
+
+.terminal-actions,
+.terminal-titles {
   z-index: 1;
+}
+
+.dense .terminal-actions .icon.icon {
+  display: initial;
 }
 
 .terminal-actions .spinner {
   --size: 18px;
   padding: 12px;
   opacity: 0.7;
+}
+
+.terminal {
+  background: #222;
+}
+
+.light-terminal .terminal {
+  background: #fafafa;
 }
 
 .light-terminal .terminal-actions {
@@ -1056,10 +1093,9 @@ code .comment {
   background-color: transparent;
 }
 
-.dense .react-lazylog-searchbar {
-  margin-bottom: 0;
-  margin-right: 96px;
-  margin-top: 14px;
+.terminal-container.has-subtitle .react-lazylog-searchbar {
+  /* Add some extra margin so the subtitle isn't so close to the terminal contents. */
+  margin-bottom: 8px;
 }
 
 .react-lazylog-searchbar-filter {
@@ -1073,6 +1109,9 @@ code .comment {
   }
   .terminal .react-lazylog-searchbar-matches {
     display: none;
+  }
+  .terminal-search-placeholder {
+    width: 150px;
   }
 }
 
@@ -1302,11 +1341,6 @@ code .comment {
 /** Tests **/
 
 .test-log {
-  white-space: pre-wrap;
-  font-family: "Source Code Pro", monospace;
-  line-height: 1.4em;
-  margin-top: 16px;
-  word-break: break-word;
   height: calc(100vh - 160px);
   box-sizing: border-box;
 }
