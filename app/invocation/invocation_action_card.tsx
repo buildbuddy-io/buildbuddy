@@ -6,10 +6,13 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent, { parseDigest } from "../components/digest/digest";
+import TerminalComponent from "../terminal/terminal";
+import UserPreferences from "../preferences/preferences";
 
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
+  preferences: UserPreferences;
 }
 
 interface State {
@@ -470,11 +473,29 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Stderr</div>
-                      <div>{this.state.stderr ? <pre>{this.state.stderr}</pre> : <div>None</div>}</div>
+                      <div>
+                        {this.state.stderr ? (
+                          <TerminalComponent
+                            value={this.state.stderr}
+                            lightTheme={this.props.preferences.lightTerminalEnabled}
+                          />
+                        ) : (
+                          <div>None</div>
+                        )}
+                      </div>
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Stdout</div>
-                      <div>{this.state.stdout ? <pre>{this.state.stdout}</pre> : <div>None</div>}</div>
+                      <div>
+                        {this.state.stdout ? (
+                          <TerminalComponent
+                            value={this.state.stdout}
+                            lightTheme={this.props.preferences.lightTerminalEnabled}
+                          />
+                        ) : (
+                          <div>None</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (
