@@ -68,13 +68,13 @@ func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
 }
 
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
-	_, d, err := digest.ExtractDigestFromDownloadResourceName(in.ExecutionID)
+	resource, err := digest.ParseDownloadResourceName(in.ExecutionID)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &espb.Execution{
-		ActionDigest: d,
+		ActionDigest: resource.Digest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,
 			Message: in.StatusMessage,

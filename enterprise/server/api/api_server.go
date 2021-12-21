@@ -325,9 +325,9 @@ func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
 			Uri:  uri,
 		}
 		if u, err := url.Parse(uri); err == nil {
-			if _, d, err := digest.ExtractDigestFromDownloadResourceName(u.Path); err == nil {
-				f.Hash = d.GetHash()
-				f.SizeBytes = d.GetSizeBytes()
+			if resource, err := digest.ParseDownloadResourceName(u.Path); err == nil {
+				f.Hash = resource.GetHash()
+				f.SizeBytes = resource.GetSizeBytes()
 			}
 		}
 		files = append(files, f)

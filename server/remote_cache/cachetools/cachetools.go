@@ -36,9 +36,12 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Inst
 		return nil
 	}
 	req := &bspb.ReadRequest{
-		ResourceName: digest.DownloadResourceName(d.Digest, d.GetInstanceName()),
-		ReadOffset:   0,
-		ReadLimit:    d.GetSizeBytes(),
+		ResourceName: digest.DownloadResourceName(&digest.ResourceName{
+			InstanceNameDigest: d,
+			Compression:        repb.Compressor_ZSTD,
+		}),
+		ReadOffset: 0,
+		ReadLimit:  d.GetSizeBytes(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
@@ -79,13 +82,28 @@ func ComputeFileDigest(fullFilePath, instanceName string) (*digest.InstanceNameD
 }
 
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *digest.InstanceNameDigest, in io.ReadSeeker) (*repb.Digest, error) {
+	resource := &digest.ResourceName{
+		InstanceNameDigest: ad,
+		Compression:        repb.Compressor_IDENTITY,
+	}
+	return UploadPreCompressedFromReader(ctx, bsClient, resource, in)
+}
+
+// UploadPreCompressedFromReader uploads a stream described by the given
+// resource name, which notably specifies the type of compression that has
+// already been applied to the bytes read from the given reader.
+//
+// To be extra clear, this function does not do any compression itself. The
+// caller must ensure that the reader reads from a compressed byte stream, and
+// that the compression type correctly describes the stream.
+func UploadPreCompressedFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, resource *digest.ResourceName, in io.ReadSeeker) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if ad.Digest.GetHash() == digest.EmptySha256 {
-		return ad.Digest, nil
+	if resource.GetHash() == digest.EmptySha256 {
+		return resource.Digest, nil
 	}
-	resourceName, err := digest.UploadResourceName(ad.Digest, ad.GetInstanceName())
+	uploadName, err := digest.UploadResourceName(resource)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +122,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 		readDone := err == io.EOF
 
 		req := &bspb.WriteRequest{
-			ResourceName: resourceName,
+			ResourceName: uploadName,
 			WriteOffset:  bytesUploaded,
 			Data:         buf[:n],
 			FinishWrite:  readDone,
@@ -125,7 +143,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 	if err != nil {
 		return nil, err
 	}
-	return ad.Digest, nil
+	return resource.Digest, nil
 }
 
 func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ad *digest.InstanceNameDigest) (*repb.ActionResult, error) {

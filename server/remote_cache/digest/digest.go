@@ -39,9 +39,9 @@ var (
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex      = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	downloadRegex    = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	actionCacheRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	uploadRegex      = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	downloadRegex    = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	actionCacheRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
 )
 
 type InstanceNameDigest struct {
@@ -115,30 +115,46 @@ func Compute(in io.Reader) (*repb.Digest, error) {
 	}, nil
 }
 
-func DownloadResourceName(d *repb.Digest, instanceName string) string {
+func DownloadResourceName(resource *ResourceName) string {
 	// Haven't found docs on what a valid instance name looks like. But generally
 	// seems like a string, possibly separated by "/".
 
 	// Ensure there is no trailing slash and path has components.
-	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
-	return fmt.Sprintf("%s/blobs/%s/%d", instanceName, d.GetHash(), d.GetSizeBytes())
+	instanceName := filepath.Join(filepath.SplitList(resource.GetInstanceName())...)
+	return fmt.Sprintf(
+		"%s/%s/%s/%d",
+		instanceName, blobTypeSegment(resource.Compression),
+		resource.GetHash(), resource.GetSizeBytes())
 }
 
-func UploadResourceName(d *repb.Digest, instanceName string) (string, error) {
+func UploadResourceName(resource *ResourceName) (string, error) {
 	// Haven't found docs on what a valid instance name looks like. But generally
 	// seems like a string, possibly separated by "/".
 
 	// Ensure there is no trailing slash and path has components.
-	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
+	instanceName := filepath.Join(filepath.SplitList(resource.GetInstanceName())...)
 
 	u, err := guuid.NewRandom()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/uploads/%s/blobs/%s/%d", instanceName, u.String(), d.GetHash(), d.GetSizeBytes()), nil
+	return fmt.Sprintf(
+		"%s/uploads/%s/%s/%s/%d",
+		instanceName, u.String(), blobTypeSegment(resource.Compression),
+		resource.GetHash(), resource.GetSizeBytes(),
+	), nil
 }
 
-func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.Digest, error) {
+// ResourceName represents a valid bytestream resource name parsed into its
+// component parts.
+type ResourceName struct {
+	// TODO(DO NOT MERGE): Don't embed InstanceNameDigest; it is not very
+	// ergonomic. Include instance name and digest as separate fields.
+	*InstanceNameDigest
+	Compression repb.Compressor_Value
+}
+
+func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
 	for i, name := range matcher.SubexpNames() {
@@ -149,14 +165,14 @@ func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.D
 	hash, hashOK := result["hash"]
 	sizeStr, sizeOK := result["size"]
 	if !hashOK || !sizeOK {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
+		return nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
 	}
 	if hash == "" {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
+		return nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
 	}
 	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// Set the instance name, if one was present.
@@ -165,22 +181,41 @@ func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.D
 		instanceName = in
 	}
 
-	return instanceName, &repb.Digest{
-		Hash:      hash,
-		SizeBytes: sizeBytes,
+	// Determine compression level from blob type segment
+	blobTypeStr, sizeOK := result["blob_type"]
+	if !sizeOK {
+		// Should never happen since the regex would not match otherwise.
+		return nil, status.InvalidArgumentError(`Unparsable resource name: "/blobs" or "/compressed-blobs/zstd" missing or out of place`)
+	}
+	compressor := repb.Compressor_IDENTITY
+	if blobTypeStr == "compressed-blobs/zstd" {
+		compressor = repb.Compressor_ZSTD
+	}
+
+	ind := NewInstanceNameDigest(&repb.Digest{Hash: hash, SizeBytes: sizeBytes}, instanceName)
+	return &ResourceName{
+		InstanceNameDigest: ind,
+		Compression:        compressor,
 	}, nil
 }
 
-func ExtractDigestFromUploadResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, uploadRegex)
+func ParseUploadResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, uploadRegex)
 }
 
-func ExtractDigestFromDownloadResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, downloadRegex)
+func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, downloadRegex)
 }
 
-func ExtractDigestFromActionCacheResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, actionCacheRegex)
+func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, actionCacheRegex)
+}
+
+func blobTypeSegment(compressor repb.Compressor_Value) string {
+	if compressor == repb.Compressor_ZSTD {
+		return "compressed-blobs/zstd"
+	}
+	return "blobs"
 }
 
 func IsCacheDebuggingEnabled(ctx context.Context) bool {

@@ -274,10 +274,12 @@ func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+	//fmt.Println("█ DiskCache: Reader:", d.Hash)
 	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	//fmt.Println("█ DiskCache: Writer:", d.Hash)
 	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 

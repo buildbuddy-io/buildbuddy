@@ -18,6 +18,8 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -44,6 +46,9 @@ type App struct {
 	gRPCPort       int
 	mu             sync.Mutex
 	exited         bool
+
+	connectOnce sync.Once
+	conn        *grpc.ClientConn
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -119,26 +124,38 @@ func (a *App) RemoteCacheBazelFlags() []string {
 	}
 }
 
-func (a *App) PublishBuildEventClient(t *testing.T) pepb.PublishBuildEventClient {
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		conn.Close()
+func (a *App) connect(t *testing.T) *grpc.ClientConn {
+	a.connectOnce.Do(func() {
+		conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			conn.Close()
+		})
+		a.conn = conn
 	})
-	return pepb.NewPublishBuildEventClient(conn)
+	return a.conn
+}
+
+func (a *App) PublishBuildEventClient(t *testing.T) pepb.PublishBuildEventClient {
+	return pepb.NewPublishBuildEventClient(a.connect(t))
 }
 
 func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClient {
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		conn.Close()
-	})
-	return bbspb.NewBuildBuddyServiceClient(conn)
+	return bbspb.NewBuildBuddyServiceClient(a.connect(t))
+}
+
+func (a *App) CapabilitiesClient(t *testing.T) repb.CapabilitiesClient {
+	return repb.NewCapabilitiesClient(a.connect(t))
+}
+
+func (a *App) ContentAddressableStorageClient(t *testing.T) repb.ContentAddressableStorageClient {
+	return repb.NewContentAddressableStorageClient(a.connect(t))
+}
+
+func (a *App) ByteStreamClient(t *testing.T) bspb.ByteStreamClient {
+	return bspb.NewByteStreamClient(a.connect(t))
 }
 
 func runfile(t *testing.T, path string) string {

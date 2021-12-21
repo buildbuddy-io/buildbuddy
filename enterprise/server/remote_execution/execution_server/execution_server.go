@@ -265,7 +265,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", err
 	}
 
-	executionID, err := digest.UploadResourceName(req.GetActionDigest(), req.GetInstanceName())
+	executionResourceName := &digest.ResourceName{
+		InstanceNameDigest: digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName()),
+	}
+	executionID, err := digest.UploadResourceName(executionResourceName)
 	if err != nil {
 		return "", err
 	}
@@ -350,7 +353,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			executionID, err := digest.UploadResourceName(req.GetActionDigest(), req.GetInstanceName())
+			executionResourceName := &digest.ResourceName{
+				InstanceNameDigest: digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName()),
+			}
+			executionID, err := digest.UploadResourceName(executionResourceName)
 			if err != nil {
 				return err
 			}
@@ -472,12 +478,12 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		// Send a best-effort initial "in progress" update to client.
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
-		instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.GetName())
+		resource, err := digest.ParseUploadResourceName(req.GetName())
 		if err != nil {
 			log.Errorf("Could not extract digest from %q: %s", req.GetName(), err)
 			return err
 		}
-		id := digest.NewInstanceNameDigest(d, instanceName)
+		id := resource.InstanceNameDigest
 		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), id)
 		err = stateChangeFn(repb.ExecutionStage_UNKNOWN, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
@@ -520,12 +526,12 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 }
 
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
-	remoteInstanceName, d, err := digest.ExtractDigestFromDownloadResourceName(taskID)
+	resource, err := digest.ParseDownloadResourceName(taskID)
 	if err != nil {
 		log.Warningf("Could not parse taskID: %s", err)
 		return err
 	}
-	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, digest.NewInstanceNameDigest(d, remoteInstanceName), reason)
+	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, resource.InstanceNameDigest, reason)
 	if err != nil {
 		return err
 	}
@@ -642,22 +648,22 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	if executeResponse.GetCachedResult() {
 		return nil
 	}
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
+	resource, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		return err
 	}
-	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
+	actionInstanceNameDigest := resource.InstanceNameDigest
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
 		return err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
+	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, resource.GetInstanceName())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return err
 	}
 	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, instanceName, nodeID)
+	router.MarkComplete(ctx, cmd, resource.GetInstanceName(), nodeID)
 	return nil
 }

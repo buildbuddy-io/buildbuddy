@@ -9,11 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cachelog"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -161,7 +163,15 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		checksum := sha256.New()
-		checksum.Write(uploadRequest.GetData())
+		data, err := decompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes(), uploadRequest.GetCompressor())
+		if err != nil {
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadDigest,
+				Status: gstatus.Convert(err).Proto(),
+			})
+			continue
+		}
+		checksum.Write(data)
 		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
 		if computedDigest != uploadDigest.GetHash() {
 			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, uploadDigest.GetHash())
@@ -170,9 +180,8 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 				Status: gstatus.Convert(err).Proto(),
 			})
 			continue
-
 		}
-		if int64(len(uploadRequest.GetData())) != uploadDigest.GetSizeBytes() {
+		if int64(len(data)) != uploadDigest.GetSizeBytes() {
 			err := status.DataLossErrorf("%d bytes were uploaded but %d were expected.", len(uploadRequest.GetData()), uploadDigest.GetSizeBytes())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadDigest,
@@ -180,6 +189,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
+		cachelog.Log(ctx, cachelog.ByteStreamWrite, uploadDigest.Hash, uploadDigest.SizeBytes)
+		// TODO(DO NOT MERGE): compress data before storing if server only supports
+		// compression and client hasn't compressed
 		kvs[uploadDigest] = uploadRequest.GetData()
 	}
 
@@ -252,16 +264,36 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 
 		data, ok := cacheRsp[d]
+
+		if ok {
+			// Check length
+			lengthEq, err := s.decompressedLengthEqual(data, d.GetSizeBytes())
+			if err != nil {
+				blobRsp := &repb.BatchReadBlobsResponse_Response{
+					Digest: d,
+					Status: gstatus.Convert(err).Proto(),
+				}
+				rsp.Responses = append(rsp.Responses, blobRsp)
+				continue
+			}
+			if !lengthEq {
+				blobRsp := &repb.BatchReadBlobsResponse_Response{
+					Digest: d,
+					Status: &statuspb.Status{Code: int32(codes.NotFound)},
+				}
+				rsp.Responses = append(rsp.Responses, blobRsp)
+				continue
+			}
+		}
+
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
 			Digest: d,
 			Data:   data,
 		}
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else if d.GetSizeBytes() != int64(len(data)) {
-			log.Debugf("Digest %s, but data len: %d", d, len(data))
-			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if err != nil {
+			log.Debugf("GetMulti error: %s", err.Error())
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
@@ -269,6 +301,43 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}
 	return rsp, nil
+}
+
+func (s *ContentAddressableStorageServer) decompressedLengthEqual(data []byte, expectedDecompressedLength int64) (bool, error) {
+	if s.env.GetConfigurator().GetCacheZstdEnabled() {
+		decompressed, err := decompress(data, expectedDecompressedLength, repb.Compressor_ZSTD)
+		if err != nil {
+			return false, err
+		}
+		return len(decompressed) == int(expectedDecompressedLength), nil
+	}
+
+	return len(data) == int(expectedDecompressedLength), nil
+}
+
+func decompress(data []byte, decompressedLength int64, compression repb.Compressor_Value) ([]byte, error) {
+	if compression == repb.Compressor_IDENTITY {
+		return data, nil
+	}
+	if compression == repb.Compressor_ZSTD {
+		buf := make([]byte, decompressedLength)
+		out, err := zstd.Decompress(buf, data)
+		if err != nil {
+			return nil, status.InternalErrorf("Failed to decompress zstd-compressed blob: %s", err)
+		}
+		if !byteSlicesIdentical(buf, out) {
+			return nil, status.DataLossError("Unexpected buffer re-allocation while decompressing blob; this likely indicates data corruption")
+		}
+		return buf, nil
+	}
+	return nil, status.UnimplementedError("Unsupported compression type")
+}
+
+func byteSlicesIdentical(s1, s2 []byte) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+	return len(s1) != 0 || &s1[0] == &s2[0]
 }
 
 type dirStack struct {

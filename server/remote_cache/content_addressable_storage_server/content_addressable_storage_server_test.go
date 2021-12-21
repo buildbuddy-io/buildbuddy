@@ -1,17 +1,24 @@
 package content_addressable_storage_server_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/DataDog/zstd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gcodes "google.golang.org/grpc/codes"
@@ -150,4 +157,98 @@ func TestMalevolentCache(t *testing.T) {
 	assert.Equal(t, 1, len(set.GetResponses()))
 	assert.Equal(t, d.GetHash(), set.GetResponses()[0].GetDigest().GetHash())
 	assert.Equal(t, int32(gcodes.OK), set.GetResponses()[0].GetStatus().GetCode())
+}
+
+func TestReadCompressedBlobFromClientAcceptingIdentityOnly(t *testing.T) {
+	t.Skip()
+
+	// TODO(bduffany): Client that does not support compression should be able to
+	// read compressed blobs back from the cache.
+}
+
+func TestReadAndWriteCompressed(t *testing.T) {
+	app := buildbuddy_enterprise.Run(t, "--cache.zstd_enabled=true")
+	ctx := context.Background()
+
+	capsClient := app.CapabilitiesClient(t)
+	casClient := app.ContentAddressableStorageClient(t)
+
+	caps, err := capsClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{})
+	require.NoError(t, err)
+
+	require.Contains(
+		t, caps.GetCacheCapabilities().GetSupportedBatchUpdateCompressors(), repb.Compressor_ZSTD,
+		"cache should advertise that it supports zstd compression for CAS API")
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := zstdCompress(t, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// FindMissingBlobs should report that the blob is missing, initially.
+	missingResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{d},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, digestStrings(d), digestStrings(missingResp.MissingBlobDigests...))
+
+	// Upload compressed blob via BatchUpdate.
+	batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{
+			{Digest: d, Data: compressedBlob, Compressor: repb.Compressor_ZSTD},
+		},
+	})
+	require.NoError(t, err)
+	for i, resp := range batchUpdateResp.Responses {
+		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
+	}
+
+	// FindMissingBlobs should not report the blob missing after uploading.
+	missingResp, err = casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{d},
+	})
+
+	require.NoError(t, err)
+	require.Equal(
+		t, []string{}, digestStrings(missingResp.MissingBlobDigests...),
+		"uncompressed digest should not be missing after uploading compressed blob")
+
+	// Read back the compressed blob we just uploaded. After decompressing, should
+	// get back the original blob contents.
+	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests:               []*repb.Digest{d},
+		AcceptableCompressors: []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD},
+	})
+
+	require.NoError(t, err)
+	decompressedBlobs := make([][]byte, len(readResp.Responses))
+	for i, resp := range readResp.Responses {
+		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
+		decompressedBlobs[i] = zstdDecompress(t, resp.Data)
+	}
+	require.Equal(t, [][]byte{blob}, decompressedBlobs)
+}
+
+func digestStrings(digests ...*repb.Digest) []string {
+	out := make([]string, len(digests))
+	for i, d := range digests {
+		out[i] = fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
+	}
+	return out
+}
+
+func zstdCompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Compress(nil, b)
+	require.NoError(t, err)
+	return out
+}
+
+func zstdDecompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Decompress(nil, b)
+	require.NoError(t, err, "failed to decompress blob")
+	return out
 }

@@ -11,6 +11,7 @@ go_library(
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/rpc:errdetails_go_proto",
+        "@io_opentelemetry_go_otel_sdk//resource",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
@@ -24,6 +25,7 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/status",
+        "@com_github_stretchr_testify//assert",
         "@org_golang_google_grpc//status",
     ],
 )

@@ -3,10 +3,13 @@ package byte_stream_server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/DataDog/zstd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -15,10 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
-
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -45,7 +48,7 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 
 func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer, offset int64) error {
 	req := &bspb.ReadRequest{
-		ResourceName: digest.DownloadResourceName(d.Digest, d.GetInstanceName()),
+		ResourceName: digest.DownloadResourceName(&digest.ResourceName{InstanceNameDigest: d}),
 		ReadOffset:   offset,
 		ReadLimit:    d.GetSizeBytes(),
 	}
@@ -231,4 +234,104 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	err = readBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
 	require.NoError(t, err)
 	require.Equal(t, blob, string(buf.Bytes()))
+}
+
+func TestRPCReadAndWriteCompressed(t *testing.T) {
+	app := buildbuddy_enterprise.Run(t, "--cache.zstd_enabled=true")
+	ctx := context.Background()
+
+	capsClient := app.CapabilitiesClient(t)
+	bsClient := app.ByteStreamClient(t)
+	// casClient := app.ContentAddressableStorageClient(t)
+
+	caps, err := capsClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{})
+	require.NoError(t, err)
+
+	require.Contains(
+		t, caps.GetCacheCapabilities().GetSupportedCompressors(), repb.Compressor_ZSTD,
+		"cache should advertise that it supports zstd compression for ByteStream API")
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := zstdCompress(t, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	//fmt.Println("█ Test: Original digest:", d.Hash)
+
+	// ByteStream.Read should return NOT_FOUND initially.
+	resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: resourceName})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "error code should be NOT_FOUND")
+
+	// Compress the blob and upload via bytestream. Chunk over 2 requests to
+	// ensure we handle compressed chunking properly.
+	uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
+	uploadStream, err := bsClient.Write(ctx)
+	require.NoError(t, err)
+	compressedBlobChunk1 := compressedBlob[:len(compressedBlob)/2]
+	err = uploadStream.Send(&bspb.WriteRequest{
+		ResourceName: uploadResourceName,
+		Data:         compressedBlobChunk1,
+	})
+	require.NoError(t, err)
+	compressedBlobChunk2 := compressedBlob[len(compressedBlobChunk1):]
+	err = uploadStream.Send(&bspb.WriteRequest{
+		ResourceName: uploadResourceName,
+		// Per protocol, write offset refers to the *compressed* stream.
+		WriteOffset: int64(len(compressedBlobChunk1)),
+		Data:        compressedBlobChunk2,
+		FinishWrite: true,
+	})
+	require.NoError(t, err)
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Read back the compressed blob we just uploaded. After decompressing, should
+	// get back the original blob contents.
+	downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	decompressedBlob := zstdDecompress(t, downloadBuf)
+	require.Equal(t, blob, decompressedBlob)
+}
+
+func TestWriteCompressedReadUncompressed(t *testing.T) {
+	t.Skip()
+	// TODO(bduffany): Test writing compressed then reading uncompressed
+}
+
+func zstdCompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Compress(nil, b)
+	require.NoError(t, err)
+	return out
+}
+
+func zstdDecompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Decompress(nil, b)
+	require.NoError(t, err, "failed to decompress blob")
+	return out
+}
+
+func newUUID(t *testing.T) string {
+	uuid, err := guuid.NewRandom()
+	require.NoError(t, err)
+	return uuid.String()
 }

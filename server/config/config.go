@@ -205,6 +205,7 @@ type cacheConfig struct {
 	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
 	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
+	ZstdEnabled      bool                   `yaml:"zstd_enabled" usage:"Whether to enable zstd-compression support."`
 }
 
 type authConfig struct {
@@ -709,6 +710,10 @@ func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
 
 func (c *Configurator) GetCacheInMemory() bool {
 	return c.gc.Cache.InMemory
+}
+
+func (c *Configurator) GetCacheZstdEnabled() bool {
+	return c.gc.Cache.ZstdEnabled
 }
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {

@@ -9,14 +9,16 @@ import (
 )
 
 type CapabilitiesServer struct {
-	supportCAS        bool
-	supportRemoteExec bool
+	supportCAS             bool
+	supportRemoteExec      bool
+	supportZstdCompression bool
 }
 
-func NewCapabilitiesServer(supportCAS, supportRemoteExec bool) *CapabilitiesServer {
+func NewCapabilitiesServer(supportCAS, supportRemoteExec, supportZstdCompression bool) *CapabilitiesServer {
 	return &CapabilitiesServer{
-		supportCAS:        supportCAS,
-		supportRemoteExec: supportRemoteExec,
+		supportCAS:             supportCAS,
+		supportRemoteExec:      supportRemoteExec,
+		supportZstdCompression: supportZstdCompression,
 	}
 }
 
@@ -27,6 +29,10 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		HighApiVersion: &smpb.SemVer{Major: int32(99), Minor: int32(9)},
 	}
 	if s.supportCAS {
+		compressors := []repb.Compressor_Value{repb.Compressor_IDENTITY}
+		if s.supportZstdCompression {
+			compressors = append(compressors, repb.Compressor_ZSTD)
+		}
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunction: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
@@ -40,8 +46,10 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 					},
 				},
 			},
-			MaxBatchTotalSizeBytes:      0, // Default to protocol limit.
-			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_ALLOWED,
+			MaxBatchTotalSizeBytes:          0, // Default to protocol limit.
+			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
+			SupportedCompressors:            compressors,
+			SupportedBatchUpdateCompressors: compressors,
 		}
 	}
 	if s.supportRemoteExec {

@@ -88,6 +88,8 @@ require (
 	gorm.io/gorm v1.20.12
 )
 
+require github.com/DataDog/zstd v1.5.0
+
 require (
 	cloud.google.com/go v0.97.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect

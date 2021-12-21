@@ -7,14 +7,17 @@ import (
 	"hash"
 	"io"
 
+	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cachelog"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -88,9 +91,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(req.GetResourceName())
+	resource, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
+	}
+	if !s.supportsCompression(resource.Compression) {
+		return status.InvalidArgumentError("Unsupported compression type")
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
@@ -98,31 +104,32 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache, err := s.getCache(ctx, instanceName)
+	cache, err := s.getCache(ctx, resource.GetInstanceName())
 	if err != nil {
 		return err
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	if resource.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, d, req.ReadOffset)
+	reader, err := cache.Reader(ctx, resource.Digest, req.ReadOffset)
 	if err != nil {
-		ht.TrackMiss(d)
+		ht.TrackMiss(resource.Digest)
 		return err
 	}
 	defer reader.Close()
 
-	downloadTracker := ht.TrackDownload(d)
+	downloadTracker := ht.TrackDownload(resource.Digest)
 
 	bufSize := int64(readBufSizeBytes)
-	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
-		bufSize = d.GetSizeBytes()
+	if resource.GetSizeBytes() > 0 && resource.GetSizeBytes() < bufSize {
+		bufSize = resource.GetSizeBytes()
 	}
 	copyBuf := s.bufferPool.Get(bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
 	s.bufferPool.Put(copyBuf)
 	if err == nil {
+		cachelog.Log(ctx, cachelog.ByteStreamRead, resource.Digest.Hash, resource.Digest.SizeBytes)
 		downloadTracker.Close()
 	}
 	return err
@@ -152,12 +159,14 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // `complete` or not.
 
 type writeState struct {
-	writer             io.WriteCloser
-	checksum           hash.Hash
-	d                  *repb.Digest
-	activeResourceName string
-	bytesWritten       int64
-	alreadyExists      bool
+	writer                   io.WriteCloser
+	checksum                 hash.Hash
+	checksumWriteCloser      io.WriteCloser
+	uncompressedBytesWritten int64
+	nextExpectedWriteOffset  int64
+	d                        *repb.Digest
+	activeResourceName       string
+	alreadyExists            bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -176,29 +185,32 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName)
 		}
 	}
-	if req.WriteOffset != ws.bytesWritten {
-		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.bytesWritten, req.WriteOffset)
+	if req.WriteOffset != ws.nextExpectedWriteOffset {
+		return status.InvalidArgumentErrorf("Incorrect WriteOffset. Expected %d, got %d", ws.nextExpectedWriteOffset, req.WriteOffset)
 	}
 	return nil
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+	resource, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
+	}
+	if !s.supportsCompression(resource.Compression) {
+		return nil, status.InvalidArgumentError("Unsupported compression type")
 	}
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.getCache(ctx, instanceName)
+	cache, err := s.getCache(ctx, resource.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	ws := &writeState{
 		activeResourceName: req.ResourceName,
-		d:                  d,
+		d:                  resource.Digest,
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -209,13 +221,13 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.Contains(ctx, d)
+	exists, err := cache.Contains(ctx, resource.Digest)
 	if err != nil {
 		return nil, err
 	}
 	var wc io.WriteCloser
-	if d.GetHash() != digest.EmptySha256 && !exists {
-		wc, err = cache.Writer(ctx, d)
+	if resource.GetHash() != digest.EmptySha256 && !exists {
+		wc, err = cache.Writer(ctx, resource.Digest)
 		if err != nil {
 			return nil, err
 		}
@@ -223,34 +235,90 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		wc = devnull.NewWriteCloser()
 	}
 	ws.checksum = sha256.New()
+	if resource.Compression == repb.Compressor_ZSTD {
+		// Pipeline:
+		//     compressed chunks >> pipe: pw,pr >> decompressor >> checksum goroutine
+		pr, pw := io.Pipe()
+		decompressor := zstd.NewReader(pr)
+		done := make(chan struct{})
+		// TODO(bduffany): This goroutine is blocking, because reads are not placed
+		// on a queue. Test to see how this affects performance.
+		go func() {
+			defer close(done)
+			buf := make([]byte, 512)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default: // fallthrough
+				}
+				n, err := decompressor.Read(buf)
+				if n > 0 {
+					if _, err := ws.checksum.Write(buf[:n]); err != nil {
+						log.Errorf("Failed to update checksum: %s", err)
+						return
+					}
+					// Update with the number of *uncompressed* bytes written.
+					ws.uncompressedBytesWritten += int64(n)
+				}
+				if err == io.EOF {
+					return
+				}
+				if err != nil {
+					log.Errorf("Failed to decompress bytes for checksum: %s", err)
+					return
+				}
+			}
+		}()
+		close := func() error {
+			pw.Close()
+			<-done
+			return decompressor.Close()
+		}
+		ws.checksumWriteCloser = &writeCloser{pw.Write, close}
+	} else {
+		write := func(p []byte) (int, error) {
+			n, err := ws.checksum.Write(p)
+			ws.uncompressedBytesWritten += int64(n)
+			return n, err
+		}
+		ws.checksumWriteCloser = &writeCloser{write, nopCloseFn}
+	}
 	ws.writer = wc
 	ws.alreadyExists = exists
 	if exists {
-		ws.bytesWritten = d.GetSizeBytes()
+		ws.uncompressedBytesWritten = resource.GetSizeBytes()
 	} else {
-		ws.bytesWritten = 0
+		ws.uncompressedBytesWritten = 0
 	}
 	return ws, nil
 }
 
 func (w *writeState) Write(buf []byte) error {
-	n, err := w.writer.Write(buf)
+	_, err := w.writer.Write(buf)
 	if err != nil {
 		return err
 	}
-	w.bytesWritten += int64(n)
-	w.checksum.Write(buf)
-	return nil
+	n, err := w.checksumWriteCloser.Write(buf)
+	// Note: Protocol says the next expected write offset refers to the
+	// *compressed* byte stream. buf here is compressed, so we update the next
+	// expected write offset by the number of bytes written from buf.
+	w.nextExpectedWriteOffset += int64(n)
+	return err
 }
 
 func (w *writeState) Close() error {
 	// Verify that digest length and hash match.
+	if err := w.checksumWriteCloser.Close(); err != nil {
+		log.Errorf("Failed to close checksum writer: %s", err)
+	}
 	computedDigest := fmt.Sprintf("%x", w.checksum.Sum(nil))
+	//fmt.Println("█ ByteStreamServer: Checksum=", computedDigest)
 	if computedDigest != w.d.GetHash() {
 		return status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, w.d.GetHash())
 	}
-	if w.bytesWritten != w.d.GetSizeBytes() {
-		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", w.bytesWritten, w.d.GetSizeBytes())
+	if w.uncompressedBytesWritten != w.d.GetSizeBytes() {
+		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", w.uncompressedBytesWritten, w.d.GetSizeBytes())
 	}
 	return w.writer.Close()
 }
@@ -266,6 +334,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	var streamState *writeState
 	for {
 		req, err := stream.Recv()
+		//fmt.Println("█ ByteStreamServer: Write:", req, err)
 		if err == io.EOF {
 			break
 		}
@@ -280,11 +349,14 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				_, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+				resource, err := digest.ParseUploadResourceName(req.ResourceName)
 				if err != nil {
 					return err
 				}
-				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: d.GetSizeBytes()})
+				if !s.supportsCompression(resource.Compression) {
+					return status.InvalidArgumentError("Unsupported compression type")
+				}
+				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: resource.GetSizeBytes()})
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
@@ -293,12 +365,13 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 			if streamState.alreadyExists {
 				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.bytesWritten,
+					CommittedSize: streamState.uncompressedBytesWritten,
 				})
 			}
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
+			cachelog.Log(ctx, cachelog.ByteStreamWrite, streamState.d.Hash, streamState.d.SizeBytes)
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
 				return err
@@ -313,11 +386,23 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: streamState.bytesWritten,
+				CommittedSize: streamState.uncompressedBytesWritten,
 			})
 		}
 	}
 	return nil
+}
+
+func (s *ByteStreamServer) supportsCompression(compression repb.Compressor_Value) bool {
+	// DO NOT MERGE: This impl is for local benchmarking only to ensure we are
+	// only testing one type of compression at a time.
+	if s.env.GetConfigurator().GetCacheZstdEnabled() {
+		return compression == repb.Compressor_ZSTD
+	}
+	return compression == repb.Compressor_IDENTITY
+
+	// CORRECT IMPL:
+	// return compression == repb.Compressor_IDENTITY || compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdEnabled()
 }
 
 // `QueryWriteStatus()` is used to find the `committed_size` for a resource
@@ -342,3 +427,13 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 		Complete:      false,
 	}, nil
 }
+
+var nopCloseFn = func() error { return nil }
+
+type writeCloser struct {
+	WriteFn func(p []byte) (int, error)
+	CloseFn func() error
+}
+
+func (wc *writeCloser) Write(p []byte) (int, error) { return wc.WriteFn(p) }
+func (wc *writeCloser) Close() error                { return wc.CloseFn() }

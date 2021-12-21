@@ -59,15 +59,15 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 
 	if url.Scheme == "actioncache" {
 		acClient := repb.NewActionCacheClient(conn)
-		instanceName, d, err := digest.ExtractDigestFromActionCacheResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
+		resource, err := digest.ParseActionCacheResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 		if err != nil {
 			return err
 		}
 
 		// Request the ActionResult
 		req := &repb.GetActionResultRequest{
-			InstanceName: instanceName,
-			ActionDigest: d,
+			InstanceName: resource.GetInstanceName(),
+			ActionDigest: resource.Digest,
 		}
 		actionResult, err := acClient.GetActionResult(ctx, req)
 		if err != nil {
