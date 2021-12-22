@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -21,6 +22,10 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
+
+// If a request is received that will result in a nodehost.Sync{Propose/Read},
+// but not deadline is set, defaultContextTimeout will be applied.
+const defaultContextTimeout = 60 * time.Second
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
@@ -239,6 +244,12 @@ func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord 
 }
 
 func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
+
 	sesh := nodehost.GetNoOPSession(clusterID)
 	buf, err := proto.Marshal(batch)
 	if err != nil {

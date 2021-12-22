@@ -89,7 +89,7 @@ func TestAcquireAndRelease(t *testing.T) {
 	require.True(t, valid)
 
 	log.Printf("NodeLiveness: %s", liveness)
-	
+
 	// Should be able to release a liveness record.
 	err = liveness.Release()
 	require.Nil(t, err)
@@ -136,7 +136,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 	require.True(t, valid)
 
 	log.Printf("NodeLiveness: %s", liveness)
-	
+
 	// Get the epoch of the liveness record.
 	nl, err := liveness.BlockingGetCurrentNodeLiveness()
 	require.Nil(t, err)
@@ -157,7 +157,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 	require.True(t, valid)
 
 	log.Printf("NodeLiveness: %s", liveness2)
-	
+
 	// Ensure that epoch has been incremented.
 	nl, err = liveness2.BlockingGetCurrentNodeLiveness()
 	require.Nil(t, err)

@@ -1,8 +1,8 @@
 package rangelease
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -36,14 +36,14 @@ func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
 }
 
 type Lease struct {
-	localSender client.LocalSender
-	liveness    *nodeliveness.Liveness
+	localSender   client.LocalSender
+	liveness      *nodeliveness.Liveness
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
 
 	rangeDescriptor *rfpb.RangeDescriptor
 	mu              sync.RWMutex
-	leaseRecord      *rfpb.RangeLeaseRecord
+	leaseRecord     *rfpb.RangeLeaseRecord
 
 	timeUntilLeaseRenewal time.Duration
 	quitLease             chan struct{}
@@ -103,7 +103,7 @@ func (l *Lease) String() string {
 		return fmt.Sprintf("RangeLease(%d) invalid (%s)", l.rangeDescriptor.GetRangeId(), err)
 	}
 	lr := l.leaseRecord
-	if nl := lr.GetNodeLiveness(); nl != nil {		
+	if nl := lr.GetNodeLiveness(); nl != nil {
 		return fmt.Sprintf("RangeLease(%d) [node epoch: %d]", l.rangeDescriptor.GetRangeId(), nl.GetEpoch())
 	}
 	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
@@ -230,12 +230,12 @@ func (l *Lease) renewLease() error {
 
 	if bytes.Compare(newVal, expectedValue) == 0 {
 		// For node-epoch based leases, forcing renewal is kind of non-
-		// sensical. Rather than prevent this at a higher level, we 
+		// sensical. Rather than prevent this at a higher level, we
 		// detect the case where we are trying to set the lease to the
 		// already set value, and short-circuit renewal.
 		return nil
 	}
-	
+
 	kv, err := l.sendCasRequest(ctx, expectedValue, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
@@ -275,7 +275,7 @@ func (l *Lease) blockingGetValidLease() (*rfpb.RangeLeaseRecord, error) {
 		return rl, nil
 	}
 
-	rl, err := l.ensureValidLease(false/*=forceRenewal*/)
+	rl, err := l.ensureValidLease(false /*=forceRenewal*/)
 	if err != nil {
 		return nil, err
 	}

@@ -33,7 +33,7 @@ type Store struct {
 	sender        *sender.Sender
 	apiClient     *client.APIClient
 
-	liveness     *nodeliveness.Liveness
+	liveness *nodeliveness.Liveness
 
 	rangeMu       sync.RWMutex
 	activeRanges  map[uint64]struct{}

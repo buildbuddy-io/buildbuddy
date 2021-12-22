@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 	"time"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -81,8 +81,8 @@ func TestAcquireAndRelease(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-1", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left: []byte("a"),
-		Right: []byte("z"),
+		Left:    []byte("a"),
+		Right:   []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -99,7 +99,7 @@ func TestAcquireAndRelease(t *testing.T) {
 	// Rangelease should be valid.
 	valid := l.Valid()
 	require.True(t, valid)
-	
+
 	log.Printf("RangeLease: %s", l)
 
 	// Should be able to release a rangelease.
@@ -116,8 +116,8 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-2", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:  []byte{constants.MinByte},
-		Right: []byte("z"),
+		Left:    []byte{constants.MinByte},
+		Right:   []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -134,7 +134,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	// Rangelease should be valid.
 	valid := l.Valid()
 	require.True(t, valid)
-	
+
 	log.Printf("RangeLease: %s", l)
 
 	// Should be able to release a rangelease.
@@ -151,8 +151,8 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-3", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:  []byte{constants.MinByte},
-		Right: []byte("z"),
+		Left:    []byte{constants.MinByte},
+		Right:   []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -167,7 +167,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	// Should be able to get a rangelease.
 	err := l.Lease()
 	require.Nil(t, err)
-	
+
 	// Rangelease should be valid.
 	valid := l.Valid()
 	require.True(t, valid)
@@ -194,8 +194,8 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-4", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left: []byte("a"),
-		Right: []byte("z"),
+		Left:    []byte("a"),
+		Right:   []byte("z"),
 		RangeId: 4,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -212,7 +212,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	// Rangelease should be valid.
 	valid := l.Valid()
 	require.True(t, valid)
-	
+
 	log.Printf("RangeLease: %s", l)
 
 	err = liveness.Release()
