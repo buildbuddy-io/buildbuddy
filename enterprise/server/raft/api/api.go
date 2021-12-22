@@ -125,7 +125,7 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
-			log.Debugf("Write(%q) succeeded.", file)
+			//log.Debugf("Write(%q) succeeded.", file)
 			return stream.SendAndClose(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})

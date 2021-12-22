@@ -249,11 +249,10 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	for retrier.Next() {
 		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
-			if err == dragonboat.ErrClusterNotReady {
-				log.Errorf("continuing, got cluster not ready err...")
+			if dragonboat.IsTempError(err) {
+				log.Errorf("temporary err: %s, retrying...", err)
 				continue
 			}
-			log.Errorf("Got unretriable SyncPropose err: %s", err)
 			return nil, err
 		}
 		break

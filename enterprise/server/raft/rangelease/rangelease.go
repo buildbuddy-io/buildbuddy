@@ -2,6 +2,8 @@ package rangelease
 
 import (
 	"context"
+	"bytes"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -21,20 +23,27 @@ import (
 
 const (
 	// Acquire the lease for this long.
-	rangeLeaseDuration = 10 * time.Second
+	defaultLeaseDuration = 9 * time.Second
 
-	// Renew the lease this many seconds before expiry.
-	rangeLeaseRenewGracePeriod = 2 * time.Second
+	// Renew the lease this many seconds *before* expiry.
+	defaultGracePeriod = 4 * time.Second
 )
+
+// TODO(tylerw): Maybe this belongs in keys?
+func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
+	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
+	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
+}
 
 type Lease struct {
 	localSender client.LocalSender
 	liveness    *nodeliveness.Liveness
+	leaseDuration time.Duration
+	gracePeriod   time.Duration
 
 	rangeDescriptor *rfpb.RangeDescriptor
 	mu              sync.RWMutex
-	activeLease     *rfpb.RangeLeaseRecord
-	lastRecord      *rfpb.RangeLeaseRecord
+	leaseRecord      *rfpb.RangeLeaseRecord
 
 	timeUntilLeaseRenewal time.Duration
 	quitLease             chan struct{}
@@ -44,16 +53,127 @@ func New(localSender client.LocalSender, liveness *nodeliveness.Liveness, rd *rf
 	return &Lease{
 		localSender:           localSender,
 		liveness:              liveness,
+		leaseDuration:         defaultLeaseDuration,
+		gracePeriod:           defaultGracePeriod,
 		rangeDescriptor:       rd,
 		mu:                    sync.RWMutex{},
+		leaseRecord:           &rfpb.RangeLeaseRecord{},
 		timeUntilLeaseRenewal: time.Duration(math.MaxInt64),
 		quitLease:             make(chan struct{}),
 	}
 }
 
-func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
-	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
+func (l *Lease) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Lease {
+	l.leaseDuration = leaseDuration
+	l.gracePeriod = gracePeriod
+	return l
+}
+
+func (l *Lease) Lease() error {
+	l.quitLease = make(chan struct{})
+	_, err := l.ensureValidLease(false)
+	if err == nil {
+		go l.keepLeaseAlive()
+	}
+	return err
+}
+
+func (l *Lease) Release() error {
+	close(l.quitLease)
+	// clear existing lease if it's valid.
+	l.mu.RLock()
+	valid := l.verifyLease(l.leaseRecord) == nil
+	l.mu.RUnlock()
+
+	if valid {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		if err := l.clearLease(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *Lease) String() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	err := l.verifyLease(l.leaseRecord)
+	if err != nil {
+		return fmt.Sprintf("RangeLease(%d) invalid (%s)", l.rangeDescriptor.GetRangeId(), err)
+	}
+	lr := l.leaseRecord
+	if nl := lr.GetNodeLiveness(); nl != nil {		
+		return fmt.Sprintf("RangeLease(%d) [node epoch: %d]", l.rangeDescriptor.GetRangeId(), nl.GetEpoch())
+	}
+	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
+	return fmt.Sprintf("RangeLease(%d) [expires in: %s]", l.rangeDescriptor.GetRangeId(), lifetime)
+}
+
+func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
+	if rl == nil {
+		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
+	}
+	if nl := rl.GetNodeLiveness(); nl != nil {
+		// This is a node epoch based lease, so check node and epoch.
+		return l.liveness.BlockingValidateNodeLiveness(nl)
+	}
+
+	// This is a time based lease, so check expiration time.
+	expireAt := time.Unix(0, rl.GetExpiration())
+	if time.Now().After(expireAt) {
+		return status.FailedPreconditionErrorf("Invalid rangeLease: expired at %s", expireAt)
+	}
+	return nil
+}
+
+func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
+	clusterID, err := l.getClusterID()
+	if err != nil {
+		return nil, err
+	}
+
+	leaseKey := constants.LocalRangeLeaseKey
+	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   leaseKey,
+			Value: newVal,
+		},
+		ExpectedValue: expectedValue,
+	}).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := l.localSender.SyncProposeLocal(ctx, clusterID, casRequest)
+	if err != nil {
+		// This indicates a communication error proposing the message.
+		return nil, err
+	}
+	casResponse, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
+	if casResponse != nil {
+		return casResponse.GetKv(), err
+	}
+	return nil, err
+}
+
+func (l *Lease) clearLease() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	var expectedValue []byte
+	if l.leaseRecord != nil {
+		buf, err := proto.Marshal(l.leaseRecord)
+		if err != nil {
+			return err
+		}
+		expectedValue = buf
+	}
+
+	_, err := l.sendCasRequest(ctx, expectedValue, nil)
+	if err == nil {
+		l.leaseRecord = nil
+	}
+	return err
 }
 
 func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
@@ -64,7 +184,7 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 	leaseRecord := &rfpb.RangeLeaseRecord{}
 	if containsMetaRange(l.rangeDescriptor) {
 		leaseRecord.Value = &rfpb.RangeLeaseRecord_Expiration{
-			Expiration: time.Now().Add(rangeLeaseDuration).UnixNano(),
+			Expiration: time.Now().Add(l.leaseDuration).UnixNano(),
 		}
 	} else {
 		nl, err := l.liveness.BlockingGetCurrentNodeLiveness()
@@ -86,13 +206,13 @@ func (l *Lease) getClusterID() (uint64, error) {
 	return 0, status.FailedPreconditionError("No replicas in range")
 }
 
-func (l *Lease) renew() error {
+func (l *Lease) renewLease() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var expectedValue []byte
-	if l.lastRecord != nil {
-		buf, err := proto.Marshal(l.lastRecord)
+	if l.leaseRecord != nil {
+		buf, err := proto.Marshal(l.leaseRecord)
 		if err != nil {
 			return err
 		}
@@ -103,140 +223,84 @@ func (l *Lease) renew() error {
 	if err != nil {
 		return err
 	}
-	buf, err := proto.Marshal(leaseRequest)
+	newVal, err := proto.Marshal(leaseRequest)
 	if err != nil {
 		return err
 	}
 
-	leaseKey := constants.LocalRangeLeaseKey
-	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   leaseKey,
-			Value: buf,
-		},
-		ExpectedValue: expectedValue,
-	}).ToProto()
-	if err != nil {
-		return err
+	if bytes.Compare(newVal, expectedValue) == 0 {
+		// For node-epoch based leases, forcing renewal is kind of non-
+		// sensical. Rather than prevent this at a higher level, we 
+		// detect the case where we are trying to set the lease to the
+		// already set value, and short-circuit renewal.
+		return nil
 	}
-
-	clusterID, err := l.getClusterID()
-	if err != nil {
-		return err
-	}
-	log.Printf("Sending range lease request: %+v", leaseRequest)
-	rsp, err := l.localSender.SyncProposeLocal(ctx, clusterID, casRequest)
-	log.Printf("range lease response: %+v, err: %s", rsp, err)
-	// TODO(tylerw): for the morning: why is this syncpropose never really working?
-
-	if err != nil {
-		log.Errorf("range lease request returned error: %s", err)
-		return err
-	}
-
-	l.activeLease = nil
-	casResponse, err := rbuilder.NewBatchResponseFromProto(rsp).CASResponse(0)
+	
+	kv, err := l.sendCasRequest(ctx, expectedValue, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
-		l.lastRecord = leaseRequest
-		l.activeLease = leaseRequest
+		l.leaseRecord = leaseRequest
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		log.Errorf("another lease was active, saving it.")
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
 		// and witness its epoch so that our next set request has a higher one.
-		l.lastRecord = &rfpb.RangeLeaseRecord{}
-		err := proto.Unmarshal(casResponse.GetKv().GetValue(), l.lastRecord)
+		err := proto.Unmarshal(kv.GetValue(), l.leaseRecord)
 		if err != nil {
-			log.Errorf("error unmarshaling proto??? %s", err)
 			return err
 		}
-		log.Printf("anoother lease was active, now lastRecord is %+v", l.lastRecord)
 	} else {
 		return err
 	}
 
-	if l.activeLease != nil && l.activeLease.GetExpiration() != 0 {
-		expiration := time.Unix(0, l.activeLease.GetExpiration())
+	// If the lease is now set and has an expiration date in the future,
+	// set time until lease renewal. This will not happen for node liveness
+	// epoch based range leases.
+	if l.leaseRecord != nil && l.leaseRecord.GetExpiration() != 0 {
+		expiration := time.Unix(0, l.leaseRecord.GetExpiration())
 		timeUntilExpiry := expiration.Sub(time.Now())
-		l.timeUntilLeaseRenewal = timeUntilExpiry - rangeLeaseRenewGracePeriod
+		l.timeUntilLeaseRenewal = timeUntilExpiry - l.gracePeriod
 	}
 	return nil
 }
 
 func (l *Lease) blockingGetValidLease() (*rfpb.RangeLeaseRecord, error) {
-	log.Printf("blockingGetValidLease called")
 	l.mu.RLock()
-	log.Printf("blockingGetValidLease got lock")
 	var rl *rfpb.RangeLeaseRecord
-	if err := l.verify(l.activeLease); err == nil {
-		rl = l.activeLease
+	if err := l.verifyLease(l.leaseRecord); err == nil {
+		rl = l.leaseRecord
 	}
 	l.mu.RUnlock()
-	log.Printf("blockingGetValidLease unlocked")
 	if rl != nil {
-		log.Printf("blockingGetValidLease returning rl")
 		return rl, nil
 	}
 
-	rl, err := l.ensureValidLease()
+	rl, err := l.ensureValidLease(false/*=forceRenewal*/)
 	if err != nil {
-		log.Printf("ensureValidLease err: %s", err)
 		return nil, err
 	}
 	return rl, nil
 }
 
-func (l *Lease) verify(rl *rfpb.RangeLeaseRecord) error {
-	if rl == nil {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
-	}
-	if nl := rl.GetNodeLiveness(); nl != nil {
-		// This is a node epoch based lease, so check node and epoch.
-		return l.liveness.BlockingValidateNodeLiveness(nl)
-	}
-
-	// This is a time based lease, so check expiration time.
-	expireAt := time.Unix(0, rl.GetExpiration())
-	if time.Now().After(expireAt) {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: expired at %s", expireAt)
-	}
-	return nil
-}
-
-func (l *Lease) ensureValidLease() (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if err := l.verify(l.activeLease); err == nil {
-		log.Printf("returning active lease: %+v", l.activeLease)
-		return l.activeLease, nil
-	}
-	if err := l.renew(); err == nil {
-		if err := l.verify(l.activeLease); err == nil {
-			return l.activeLease, nil
+	if !forceRenewal {
+		if err := l.verifyLease(l.leaseRecord); err == nil {
+			return l.leaseRecord, nil
 		}
 	}
-	err := l.renew()
-	if err == nil {
-		err = l.verify(l.activeLease)
-		if err == nil {
-			return l.activeLease, nil
-		}
-	}
-	return nil, err
-}
 
-func (l *Lease) printLease() {
-	for {
-		select {
-		case <-time.After(time.Second):
-			if l.activeLease != nil {
-				log.Printf("Active range lease: %+v for range: %+v", l.activeLease, l.rangeDescriptor)
-			} else {
-				log.Printf("No active range lease.")
-			}
+	renewed := false
+	for !renewed {
+		if err := l.renewLease(); err != nil {
+			return nil, err
+		}
+		if err := l.verifyLease(l.leaseRecord); err == nil {
+			renewed = true
 		}
 	}
+	return l.leaseRecord, nil
 }
 
 func (l *Lease) keepLeaseAlive() {
@@ -246,35 +310,16 @@ func (l *Lease) keepLeaseAlive() {
 			// TODO(tylerw): attempt to drop lease gracefully.
 			return
 		case <-time.After(l.timeUntilLeaseRenewal):
-			l.ensureValidLease()
+			l.ensureValidLease(true /*forceRenewal*/)
 		}
 	}
-}
-
-func (l *Lease) Acquire() error {
-	log.Printf("rangelease.Acquire() called")
-	l.quitLease = make(chan struct{})
-	_, err := l.blockingGetValidLease()
-	if err != nil {
-		log.Printf("blockingGetValidLease returned err: %s", err)
-		return err
-	}
-	go l.keepLeaseAlive()
-	go l.printLease()
-	return nil
-}
-
-func (l *Lease) Release() {
-	close(l.quitLease)
 }
 
 func (l *Lease) Valid() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	if err := l.verify(l.activeLease); err == nil {
+	if err := l.verifyLease(l.leaseRecord); err == nil {
 		return true
-	} else {
-		log.Printf("Range %s is invalid, err: %s", l.activeLease, err)
 	}
 	return false
 }

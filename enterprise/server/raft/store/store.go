@@ -32,7 +32,8 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	apiClient     *client.APIClient
-	liveness      *nodeliveness.Liveness
+
+	liveness     *nodeliveness.Liveness
 
 	rangeMu       sync.RWMutex
 	activeRanges  map[uint64]struct{}
@@ -49,14 +50,13 @@ func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHos
 	s.gossipManager = gossipManager
 	s.sender = sender
 	s.apiClient = apiClient
-	s.liveness = nodeliveness.NewLiveness(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost})
+	s.liveness = nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost})
 	s.rangeMu = sync.RWMutex{}
 	s.activeRanges = make(map[uint64]struct{})
 	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
 
 	s.leaseMu = sync.RWMutex{}
 	s.leases = make(map[uint64]*rangelease.Lease)
-	s.liveness.Start()
 }
 
 func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
@@ -103,7 +103,7 @@ func (s *Store) leaseRange(clusterID uint64) {
 
 	go func() {
 		for {
-			err := rl.Acquire()
+			err := rl.Lease()
 			if err == nil {
 				break
 			}

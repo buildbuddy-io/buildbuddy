@@ -369,12 +369,10 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 			return err
 		}
 		err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			log.Errorf("rc.sender.Run (SyncPropose) about to run. Header: %+v", h)
-			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  writeReq,
 			})
-			log.Errorf("rc.sender.Run (SyncPropose) ran and got: rsp: %+v, err: %s", rsp, err)
 			return err
 		})
 		if err != nil {
