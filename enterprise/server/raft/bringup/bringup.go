@@ -368,12 +368,3 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 	}
 	return nil
 }
-
-func fillReplicas(bootstrapInfo *ClusterBootstrapInfo, rangeDescriptor *rfpb.RangeDescriptor) {
-	for _, node := range bootstrapInfo.nodes {
-		rangeDescriptor.Replicas = append(rangeDescriptor.Replicas, &rfpb.ReplicaDescriptor{
-			ClusterId: bootstrapInfo.clusterID,
-			NodeId:    node.index,
-		})
-	}
-}
