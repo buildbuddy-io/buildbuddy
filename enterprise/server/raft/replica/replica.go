@@ -23,6 +23,7 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
@@ -254,38 +255,28 @@ func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRe
 	if err != nil {
 		return err
 	}
-	peers, err := sm.sender.GetAllNodes(ctx, fileKey)
-	if err != nil {
-		return err
-	}
-	var lastErr error
-	for _, peer := range peers {
-		r, err := sm.apiClient.RemoteReader(ctx, peer, fileRecord, 0 /*=offset*/)
+	err = sm.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		r, err := sm.apiClient.RemoteReader(ctx, c, fileRecord, 0 /*=offset*/)
 		if err != nil {
-			lastErr = err
-			continue
+			return err
 		}
 		file, err := constants.FilePath(sm.fileDir, fileRecord)
 		if err != nil {
-			lastErr = err
-			continue
+			return err
 		}
 		wc, err := disk.FileWriter(ctx, file)
 		if err != nil {
-			lastErr = err
-			continue
+			return err
 		}
 		if _, err := io.Copy(wc, r); err != nil {
-			lastErr = err
-			continue
+			return err
 		}
 		if err := wc.Close(); err != nil {
-			lastErr = err
-			continue
+			return err
 		}
 		return nil
-	}
-	return lastErr
+	})
+	return err
 }
 
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {

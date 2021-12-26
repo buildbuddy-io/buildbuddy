@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//proto:raft_service_go_proto",
         "//server/interfaces",
         "//server/util/disk",
         "//server/util/log",

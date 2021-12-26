@@ -258,18 +258,6 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
-func (rc *RaftCache) GetSender() *sender.Sender {
-	return rc.sender
-}
-
-func (rc *RaftCache) GetNHID() string {
-	return rc.nodeHost.ID()
-}
-
-func (rc *RaftCache) GetGrpcAddress() string {
-	return rc.grpcAddress
-}
-
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
@@ -314,20 +302,16 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	if err != nil {
 		return nil, err
 	}
-	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
-	if err != nil {
-		return nil, err
-	}
-	var lastErr error
-	for _, peer := range peers {
-		r, err := rc.apiClient.RemoteReader(ctx, peer, fileRecord, offset)
+	var readCloser io.ReadCloser
+	err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		r, err := rc.apiClient.RemoteReader(ctx, c, fileRecord, offset)
 		if err != nil {
-			lastErr = err
-			continue
+			return err
 		}
-		return r, nil
-	}
-	return nil, lastErr
+		readCloser = r
+		return nil
+	})
+	return readCloser, err
 }
 
 type raftWriteCloser struct {
