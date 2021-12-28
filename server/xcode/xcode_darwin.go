@@ -38,6 +38,12 @@ type xcodeVersion struct {
 	sdks             map[string]string
 }
 
+// The interesting bits to pull from Xcode's version plist.
+type xcodePlist struct {
+	CFBundleShortVersionString string `plist:"CFBundleShortVersionString"`
+	ProductBuildVersion        string `plist:"ProductBuildVersion"`
+}
+
 func NewXcodeLocator() (*xcodeLocator, error) {
 	xl := &xcodeLocator{}
 	err := xl.locate()
@@ -91,21 +97,16 @@ func (x *xcodeLocator) locate() error {
 	urlRefs := make([]C.CFURLRef, n)
 	C.CFArrayGetValues(urlsArrayRef, C.CFRange{0, n}, (*unsafe.Pointer)(unsafe.Pointer(&urlRefs[0])))
 
+	x.versions = versionMap(urlRefs)
+	return nil
+}
+
+func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
-		versionFileReader, err := os.Open(path + versionPlistPath)
-		if err != nil {
-			log.Warningf("Error reading version file for Xcode located at %s: %s", path, err.Error())
-			continue
-		}
-		// The interesting bits to pull from Xcode's version plist.
-		var xcodePlist struct {
-			CFBundleShortVersionString string `plist:"CFBundleShortVersionString"`
-			ProductBuildVersion        string `plist:"ProductBuildVersion"`
-		}
-		if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
-			log.Warningf("Error decoding plist for Xcode located at %s: %s", path, err.Error())
+		xcodePlist := xcodePlistForPath(path + versionPlistPath)
+		if xcodePlist == nil {
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
@@ -134,8 +135,21 @@ func (x *xcodeLocator) locate() error {
 			}
 		}
 	}
-	x.versions = versionMap
-	return nil
+	return versionMap
+}
+
+func xcodePlistForPath(path string) *xcodePlist {
+	var xcodePlist xcodePlist
+	versionFileReader, err := os.Open(path)
+	if err != nil {
+		log.Warningf("Error reading plist for Xcode located at %s: %s", path, err.Error())
+		return nil
+	}
+	if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
+		log.Warningf("Error decoding plist for Xcode located at %s: %s", path, err.Error())
+		return nil
+	}
+	return &xcodePlist
 }
 
 // Expands a single Xcode version into all component combinations in order of increasing precision.
