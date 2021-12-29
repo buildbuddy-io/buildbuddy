@@ -23,6 +23,7 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	raftio "github.com/lni/dragonboat/v3/raftio"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
@@ -41,6 +42,8 @@ type ClusterStarter struct {
 
 	bootstrapped bool
 
+	doneOnce  sync.Once
+	doneSetup chan struct{}
 	// a mutex that protects the function sending bringup
 	// requests so we only attempt one auto bringup at a time.
 	sendingStartRequestsMu sync.Mutex
@@ -49,16 +52,23 @@ type ClusterStarter struct {
 }
 
 func NewClusterStarter(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) *ClusterStarter {
-	cs := &ClusterStarter{
-		nodeHost:             nodeHost,
-		createStateMachineFn: createStateMachineFn,
-		grpcAddr:             grpcAddr,
-		listenAddr:           gossipMan.ListenAddr,
-		join:                 gossipMan.Join,
-		gossipManager:        gossipMan,
-		bootstrapped:         false,
-		log:                  log.NamedSubLogger(nodeHost.ID()),
-	}
+	cs := &ClusterStarter{}
+	cs.Initialize(nodeHost, grpcAddr, createStateMachineFn, gossipMan)
+	return cs
+}
+
+func (cs *ClusterStarter) Initialize(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) {
+	cs.nodeHost = nodeHost
+	cs.createStateMachineFn = createStateMachineFn
+	cs.grpcAddr = grpcAddr
+	cs.listenAddr = gossipMan.ListenAddr
+	cs.join = gossipMan.Join
+	cs.gossipManager = gossipMan
+	cs.bootstrapped = false
+	cs.doneOnce = sync.Once{}
+	cs.doneSetup = make(chan struct{})
+	cs.log = log.NamedSubLogger(nodeHost.ID())
+
 	sort.Strings(cs.join)
 
 	// Only nodes in the "join" list should register as gossip listeners to
@@ -69,8 +79,28 @@ func NewClusterStarter(nodeHost *dragonboat.NodeHost, grpcAddr string, createSta
 			break
 		}
 	}
+}
 
-	return cs
+func (cs *ClusterStarter) LeaderUpdated(info raftio.LeaderInfo) {
+	if cs.nodeHost == nil {
+		// not initialized yet
+		return
+	}
+	nodeHostInfo := cs.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	if nodeHostInfo == nil {
+		return
+	}
+	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		if clusterInfo.ClusterID == info.ClusterID {
+			cs.markBringupComplete()
+		}
+	}
+}
+
+func (cs *ClusterStarter) markBringupComplete() {
+	cs.doneOnce.Do(func() {
+		close(cs.doneSetup)
+	})
 }
 
 func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
@@ -97,6 +127,7 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	// auto bringup below...
 	clustersAlreadyConfigured, err := cs.rejoinConfiguredClusters()
 	if err != nil {
+		cs.markBringupComplete()
 		return err
 	}
 
@@ -105,6 +136,17 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	// in the Join list have announced themselves to us.
 	cs.bootstrapped = clustersAlreadyConfigured > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
+
+	autoBringupEligible := false
+	for _, joinAddr := range cs.join {
+		if cs.listenAddr == joinAddr {
+			autoBringupEligible = true
+		}
+	}
+
+	if cs.bootstrapped || !autoBringupEligible {
+		cs.markBringupComplete()
+	}
 
 	// Exit early if we are not the first node in the join list.
 	if cs.listenAddr != cs.join[0] {
@@ -118,12 +160,23 @@ func (cs *ClusterStarter) InitializeClusters() error {
 		for !cs.bootstrapped {
 			if err := cs.attemptQueryAndBringupOnce(); err != nil {
 				cs.log.Errorf("attemptQueryAndBringupOnce err: %s", err)
-			} else {
-				cs.bootstrapped = true
+				continue
 			}
+			cs.bootstrapped = true
 		}
 	}()
 	return nil
+}
+
+func (cs *ClusterStarter) Done() bool {
+	done := false
+	select {
+	case <-cs.doneSetup:
+		done = true
+	default:
+		done = false
+	}
+	return done
 }
 
 // Runs one round of the algorithm that queries gossip for other bringup nodes
@@ -156,7 +209,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 }
 
 func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
-	if cs.bootstrapped {
+	if cs.Done() {
 		return
 	}
 	switch updateType {

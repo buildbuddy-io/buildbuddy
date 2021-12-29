@@ -138,7 +138,7 @@ func (s *Store) releaseRange(clusterID uint64) {
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
-func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
+func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Printf("AddRange: %+v", rd)
 	if len(rd.GetReplicas()) == 0 {
 		return
@@ -168,7 +168,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor) {
 	}
 }
 
-func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor) {
+func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Printf("RemoveRange: %+v", rd)
 	clusterID := rd.GetReplicas()[0].GetClusterId()
 	s.rangeMu.Lock()

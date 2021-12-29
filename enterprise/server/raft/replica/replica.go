@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -28,6 +27,11 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
+
+type RangeTracker interface {
+	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
+	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
+}
 
 // KVs are stored directly in Pebble by the raft state machine, so the key and
 // value types must match what Pebble expects. Rather than storing all blob
@@ -82,7 +86,7 @@ type Replica struct {
 	clusterID uint64
 	nodeID    uint64
 
-	rangeTracker     interfaces.RangeTracker
+	rangeTracker     RangeTracker
 	sender           *sender.Sender
 	apiClient        *client.APIClient
 	lastAppliedIndex uint64
@@ -147,7 +151,7 @@ func (sm *Replica) maybeSetRange(key, val []byte) error {
 			Left:  rangeDescriptor.GetLeft(),
 			Right: rangeDescriptor.GetRight(),
 		}
-		sm.rangeTracker.AddRange(sm.rangeDescriptor)
+		sm.rangeTracker.AddRange(sm.rangeDescriptor, sm)
 	}
 	sm.rangeMu.Unlock()
 	return nil
@@ -237,7 +241,7 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.closed = false
 	sm.closedMu.Unlock()
 
-	go sm.checkAndSetRangeDescriptor()
+	sm.checkAndSetRangeDescriptor()
 	return sm.getLastAppliedIndex()
 }
 
@@ -830,7 +834,7 @@ func (sm *Replica) Close() error {
 	sm.rangeMu.Unlock()
 
 	if sm.rangeTracker != nil && rangeDescriptor != nil {
-		sm.rangeTracker.RemoveRange(rangeDescriptor)
+		sm.rangeTracker.RemoveRange(rangeDescriptor, sm)
 	}
 	if sm.db != nil {
 		return sm.db.Close()
@@ -839,7 +843,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker interfaces.RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
+func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
 	return &Replica{
 		closedMu:     &sync.RWMutex{},
 		rootDir:      rootDir,

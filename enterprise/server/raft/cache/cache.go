@@ -63,12 +63,13 @@ type RaftCache struct {
 	registry      *registry.DynamicNodeRegistry
 	gossipManager *gossip.GossipManager
 
-	nodeHost   *dragonboat.NodeHost
-	store      *store.Store
-	apiServer  *api.Server
-	apiClient  *client.APIClient
-	rangeCache *rangecache.RangeCache
-	sender     *sender.Sender
+	nodeHost       *dragonboat.NodeHost
+	store          *store.Store
+	apiServer      *api.Server
+	apiClient      *client.APIClient
+	rangeCache     *rangecache.RangeCache
+	sender         *sender.Sender
+	clusterStarter *bringup.ClusterStarter
 
 	isolation    *rfpb.Isolation
 	shutdown     chan struct{}
@@ -122,6 +123,17 @@ func init() {
 	})
 }
 
+type MultiListener []raftio.IRaftEventListener
+
+func (ml MultiListener) LeaderUpdated(info raftio.LeaderInfo) {
+	for _, l := range ml {
+		l.LeaderUpdated(info)
+	}
+}
+func multiRaftListener(listeners ...raftio.IRaftEventListener) raftio.IRaftEventListener {
+	return MultiListener(listeners)
+}
+
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc := &RaftCache{
 		env:          env,
@@ -162,6 +174,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// exist before the node host is created. So we make a new empty store
 	// here, and initialize it below once nodeHost exists.
 	rc.store = &store.Store{}
+	rc.clusterStarter = &bringup.ClusterStarter{}
 
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
@@ -182,7 +195,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: rc,
 		},
-		RaftEventListener: rc.store,
+		RaftEventListener: multiRaftListener(rc.store, rc.clusterStarter),
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
@@ -219,9 +232,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	clusterStarter := bringup.NewClusterStarter(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
+	rc.clusterStarter.Initialize(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
 
-	clusterStarter.InitializeClusters()
+	rc.clusterStarter.InitializeClusters()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop()
 	})
@@ -240,6 +253,10 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		return status.FailedPreconditionError("node is shutdown")
 	default:
 		break
+	}
+
+	if !rc.clusterStarter.Done() {
+		return status.UnavailableError("node is still initializing")
 	}
 
 	key := constants.InitClusterSetupTimeKey
