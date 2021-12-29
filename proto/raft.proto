@@ -275,7 +275,7 @@ message StartClusterResponse {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Data backhaul API, used for shipping the actual bytes around, outside raft.
+// Data API, used for shipping the actual bytes around, outside raft.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -296,4 +296,14 @@ message WriteRequest {
 
 message WriteResponse {
   int64 committed_size = 1;
+}
+
+message FindMissingRequest {
+  Header header = 1;
+  Isolation isolation = 2;
+  repeated FileRecord file_record = 3;
+}
+
+message FindMissingResponse {
+  repeated FileRecord file_record = 1;
 }

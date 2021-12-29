@@ -134,6 +134,10 @@ func (s *Server) Write(stream rfspb.Api_WriteServer) error {
 	return nil
 }
 
+func (s *Server) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
+	return s.store.FindMissing(ctx, req)
+}
+
 func (s *Server) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	return s.store.SyncPropose(ctx, req)
 }

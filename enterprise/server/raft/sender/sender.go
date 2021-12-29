@@ -104,7 +104,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
 }
 
-func (s *Sender) lookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
+func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
 	rangeDescriptor := s.rangeCache.Get(key)
 	// TODO(tylerw): loop until available or context timeout?
 	if rangeDescriptor == nil {
@@ -121,7 +121,7 @@ func (s *Sender) lookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.R
 }
 
 func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]string, error) {
-	rangeDescriptor, err := s.lookupRangeDescriptor(ctx, key)
+	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 	retrier := retry.DefaultWithContext(ctx)
 	var lastErr error
 	for retrier.Next() {
-		rangeDescriptor, err := s.lookupRangeDescriptor(ctx, key)
+		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
 		if err != nil {
 			lastErr = err
 			continue

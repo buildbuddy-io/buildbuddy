@@ -219,6 +219,15 @@ func (sm *Replica) getDBDir() string {
 		fmt.Sprintf("node-%d", sm.nodeID))
 }
 
+func (sm *Replica) DB() (*pebble.DB, error) {
+	sm.closedMu.RLock()
+	defer sm.closedMu.RUnlock()
+	if sm.closed {
+		return nil, status.FailedPreconditionError("db is closed.")
+	}
+	return sm.db, nil
+}
+
 // Open opens the existing on disk state machine to be used or it creates a
 // new state machine with empty state if it does not exist. Open returns the
 // most recent index value of the Raft log that has been persisted, or it
@@ -288,22 +297,22 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	if err != nil {
 		return nil, err
 	}
-	protoBytes, err := proto.Marshal(req)
+	protoBytes, err := proto.Marshal(req.GetFileRecord())
+	if err != nil {
+		return nil, err
+	}
+	fileKey, err := constants.FileKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
-		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, []byte(f), protoBytes)
+		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
 	}
 	if err := sm.readFileFromPeer(context.Background(), req.GetFileRecord()); err != nil {
 		log.Errorf("ReadFileFromPeer failed: %s", err)
 		return nil, err
 	}
 	if exists, err := disk.FileExists(f); err == nil && exists {
-		fileKey, err := constants.FileKey(req.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
 		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
 	}
 	return nil, status.FailedPreconditionError("file did not exist")

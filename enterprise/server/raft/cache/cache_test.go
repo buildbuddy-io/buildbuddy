@@ -363,3 +363,67 @@ func TestDistributedRanges(t *testing.T) {
 
 	waitForShutdown(t, raftCaches...)
 }
+
+func TestFindMissingBlobs(t *testing.T) {
+	l1 := localAddr(t)
+	l2 := localAddr(t)
+	l3 := localAddr(t)
+	join := []string{l1, l2, l3}
+
+	env, _, ctx := getEnvAuthAndCtx(t)
+
+	var rc1, rc2, rc3 *raft_cache.RaftCache
+	eg := errgroup.Group{}
+
+	// startup 3 cache nodes
+	eg.Go(func() error {
+		var err error
+		rc1, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l1, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc2, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l2, join))
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		rc3, err = raft_cache.NewRaftCache(env, getCacheConfig(t, l3, join))
+		return err
+	})
+	require.Nil(t, eg.Wait())
+
+	// wait for them all to become healthy
+	waitForHealthy(t, rc1, rc2, rc3)
+
+	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+	require.Nil(t, err)
+
+	digestsWritten := make([]*repb.Digest, 0)
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		digestsWritten = append(digestsWritten, d)
+		writeDigest(t, ctx, cache, d, buf)
+	}
+
+	missingDigests := make([]*repb.Digest, 0)
+	expectedMissingHashes := make([]string, 0)
+	for i := 0; i < 10; i++ {
+		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+		missingDigests = append(missingDigests, d)
+		expectedMissingHashes = append(expectedMissingHashes, d.GetHash())
+	}
+
+	missing, err := cache.FindMissing(ctx, append(digestsWritten, missingDigests...))
+	require.Nil(t, err)
+
+	missingHashes := make([]string, 0)
+	for _, d := range missing {
+		missingHashes = append(missingHashes, d.GetHash())
+	}
+	require.Equal(t, expectedMissingHashes, missingHashes)
+
+	waitForShutdown(t, rc1, rc2, rc3)
+}

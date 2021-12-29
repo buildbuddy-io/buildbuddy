@@ -13,7 +13,8 @@ service Api {
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
 
-  // Data backhaul.
+  // Data API.
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
 }

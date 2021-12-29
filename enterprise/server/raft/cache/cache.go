@@ -255,6 +255,10 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		break
 	}
 
+	// Before this check, the tests were somewhat flaky. This check
+	// ensures that the clusterStarter has "finished", meaning it has read
+	// clusters from disk, created them automatically, or decided that it's
+	// not going to do either.
 	if !rc.clusterStarter.Done() {
 		return status.UnavailableError("node is still initializing")
 	}
@@ -319,6 +323,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	if err != nil {
 		return nil, err
 	}
+
 	var readCloser io.ReadCloser
 	err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := rc.apiClient.RemoteReader(ctx, c, fileRecord, offset)
@@ -396,26 +401,87 @@ func (rc *RaftCache) Stop() error {
 }
 
 func (rc *RaftCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return false, nil
+	missing, err := rc.FindMissing(ctx, []*repb.Digest{d})
+	if err != nil {
+		return false, err
+	}
+	return len(missing) == 0, nil
 }
-func (rc *RaftCache) ContainsMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	return nil, nil
-}
+
 func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return nil, nil
+	reqs := make(map[uint64]*rfpb.FindMissingRequest)
+	for _, d := range digests {
+		fileRecord, err := rc.makeFileRecord(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		fileKey, err := constants.FileKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		rangeDescriptor, err := rc.sender.LookupRangeDescriptor(ctx, fileKey)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := reqs[rangeDescriptor.GetRangeId()]; !ok {
+			reqs[rangeDescriptor.GetRangeId()] = &rfpb.FindMissingRequest{}
+		}
+		req := reqs[rangeDescriptor.GetRangeId()]
+		req.FileRecord = append(req.FileRecord, fileRecord)
+	}
+
+	missingDigests := make([]*repb.Digest, 0)
+	for _, req := range reqs {
+		fileKey, err := constants.FileKey(req.GetFileRecord()[0])
+		if err != nil {
+			return nil, err
+		}
+		err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+			req.Header = h
+			rsp, err := c.FindMissing(ctx, req)
+			if err != nil {
+				return err
+			}
+			for _, fr := range rsp.GetFileRecord() {
+				missingDigests = append(missingDigests, fr.GetDigest())
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return missingDigests, nil
 }
+
 func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return nil, nil
+	r, err := rc.Reader(ctx, d, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }
+
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	return nil, nil
 }
+
 func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	return nil
+	wc, err := rc.Writer(ctx, d)
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(data); err != nil {
+		return err
+	}
+	return wc.Close()
 }
+
 func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	return nil
 }
+
 func (rc *RaftCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return nil
 }

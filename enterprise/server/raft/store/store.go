@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"sort"
 	"sync"
@@ -36,11 +37,13 @@ type Store struct {
 	liveness *nodeliveness.Liveness
 
 	rangeMu       sync.RWMutex
-	activeRanges  map[uint64]struct{}
 	clusterRanges map[uint64]*rfpb.RangeDescriptor
 
 	leaseMu sync.RWMutex
 	leases  map[uint64]*rangelease.Lease
+
+	replicaMu sync.RWMutex
+	replicas  map[uint64]*replica.Replica
 }
 
 func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) {
@@ -51,12 +54,15 @@ func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHos
 	s.sender = sender
 	s.apiClient = apiClient
 	s.liveness = nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost})
+
 	s.rangeMu = sync.RWMutex{}
-	s.activeRanges = make(map[uint64]struct{})
 	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
 
 	s.leaseMu = sync.RWMutex{}
 	s.leases = make(map[uint64]*rangelease.Lease)
+
+	s.replicaMu = sync.RWMutex{}
+	s.replicas = make(map[uint64]*replica.Replica)
 }
 
 func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
@@ -67,9 +73,9 @@ func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
 	clusterID := info.ClusterID
 	leader := s.isLeader(clusterID)
 	if leader {
-		s.leaseRange(clusterID)
+		s.acquireRangeLease(clusterID)
 	} else {
-		s.releaseRange(clusterID)
+		s.releaseRangeLease(clusterID)
 	}
 }
 
@@ -90,7 +96,7 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return nil
 }
 
-func (s *Store) leaseRange(clusterID uint64) {
+func (s *Store) acquireRangeLease(clusterID uint64) {
 	rd := s.lookupRange(clusterID)
 	if rd == nil {
 		log.Warningf("No range descriptor found for cluster: %d", clusterID)
@@ -113,7 +119,7 @@ func (s *Store) leaseRange(clusterID uint64) {
 	}()
 }
 
-func (s *Store) releaseRange(clusterID uint64) {
+func (s *Store) releaseRangeLease(clusterID uint64) {
 	rd := s.lookupRange(clusterID)
 	if rd == nil {
 		log.Warningf("No range descriptor found for cluster: %d", clusterID)
@@ -141,8 +147,10 @@ func (s *Store) releaseRange(clusterID uint64) {
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Printf("AddRange: %+v", rd)
 	if len(rd.GetReplicas()) == 0 {
+		log.Error("range descriptor had no replicas; this should not happen")
 		return
 	}
+
 	if containsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -155,24 +163,31 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 	clusterID := rd.GetReplicas()[0].GetClusterId()
 
+	s.replicaMu.Lock()
+	s.replicas[rd.GetRangeId()] = r
+	s.replicaMu.Unlock()
+
 	s.rangeMu.Lock()
-	s.activeRanges[rd.GetRangeId()] = struct{}{}
 	s.clusterRanges[clusterID] = rd
 	s.rangeMu.Unlock()
 
 	leader := s.isLeader(clusterID)
 	if leader {
-		s.leaseRange(clusterID)
+		s.acquireRangeLease(clusterID)
 	} else {
-		s.releaseRange(clusterID)
+		s.releaseRangeLease(clusterID)
 	}
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Printf("RemoveRange: %+v", rd)
 	clusterID := rd.GetReplicas()[0].GetClusterId()
+
+	s.replicaMu.Lock()
+	delete(s.replicas, rd.GetRangeId())
+	s.replicaMu.Unlock()
+
 	s.rangeMu.Lock()
-	delete(s.activeRanges, rd.GetRangeId())
 	delete(s.clusterRanges, clusterID)
 	s.rangeMu.Unlock()
 }
@@ -286,4 +301,37 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	return &rfpb.SyncReadResponse{
 		Batch: batchResponse,
 	}, nil
+}
+
+func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
+	s.replicaMu.RLock()
+	defer s.replicaMu.RUnlock()
+	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+		log.Errorf("Range not active, returning err: %s", err)
+		return nil, err
+	}
+	r, ok := s.replicas[req.GetHeader().GetRangeId()]
+	if !ok {
+		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+	}
+	db, err := r.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := &rfpb.FindMissingResponse{}
+	iter := db.NewIter(nil)
+	defer iter.Close()
+
+	for _, fileRecord := range req.GetFileRecord() {
+		fileKey, err := constants.FileKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if !iter.SeekGE(fileKey) || bytes.Compare(iter.Key(), fileKey) != 0 {
+			rsp.FileRecord = append(rsp.FileRecord, fileRecord)
+		}
+	}
+	return rsp, nil
 }

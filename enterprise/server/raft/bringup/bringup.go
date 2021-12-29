@@ -337,9 +337,11 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 	}
 	clusterID := uint64(constants.InitialClusterID)
 	rangeID := uint64(constants.InitialRangeID)
+
 	for _, rangeDescriptor := range startingRanges {
 		bootstrapInfo := MakeBootstrapInfo(clusterID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
+		rangeDescriptor.RangeId = rangeID
 		rdBuf, err := proto.Marshal(rangeDescriptor)
 		if err != nil {
 			return err
