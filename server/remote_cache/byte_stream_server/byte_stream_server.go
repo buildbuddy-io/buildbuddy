@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cachelog"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -119,6 +118,13 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	defer reader.Close()
 
+	// TODO(DO NOT MERGE): Decide whether we want to keep this decompressive transcoding.
+	if resource.Compression == repb.Compressor_IDENTITY && s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		reader = zstd.NewReader(reader)
+		defer reader.Close()
+	}
+	// TODO(DO NOT MERGE): Decide whether we want compressive transcoding.
+
 	downloadTracker := ht.TrackDownload(resource.Digest)
 
 	bufSize := int64(readBufSizeBytes)
@@ -159,14 +165,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 // `complete` or not.
 
 type writeState struct {
-	writer                   io.WriteCloser
-	checksum                 hash.Hash
-	checksumWriteCloser      io.WriteCloser
-	uncompressedBytesWritten int64
-	nextExpectedWriteOffset  int64
-	d                        *repb.Digest
-	activeResourceName       string
-	alreadyExists            bool
+	writer                  io.WriteCloser
+	checksum                *Checksum
+	nextExpectedWriteOffset int64
+	d                       *repb.Digest
+	activeResourceName      string
+	alreadyExists           bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -225,81 +229,81 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	var wc io.WriteCloser
+	var cacheWriter io.WriteCloser
 	if resource.GetHash() != digest.EmptySha256 && !exists {
-		wc, err = cache.Writer(ctx, resource.Digest)
+		cacheWriter, err = cache.Writer(ctx, resource.Digest)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		wc = devnull.NewWriteCloser()
 	}
-	ws.checksum = sha256.New()
+
+	ws.checksum = NewChecksum(resource.Digest)
+	// Set up the stream processing pipeline, starting with the checksum as the
+	// final stage and adding more pre-processing stages if applicable.
+	//
+	// NOTE: We don't close any WriteClosers in this function because closing
+	// needs to happen at the end of the Write. When closing, we only close the
+	// WriteCloser at the beginning of the pipeline. So, to ensure that all
+	// WriteClosers are closed, each WriteCloser has the semantics that any
+	// "wrapped" WriteClosers must be closed when calling Close.
+	//
+	// TODO(DO NOT MERGE): Probably simpler to append each closer to a list
+	// and loop over all closers, rather than having this recursive closing
+	// behavior which might be error prone. It would also avoid the need for
+	// MultiWriteCloser.
+	var wc io.WriteCloser = ws.checksum
+	// If the cache stores blobs uncompressed, then write to cache before
+	// computing the checksum, since the checksum operates on uncompressed
+	// bytes.
+	if cacheWriter != nil && !s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		wc = MultiWriteCloser(cacheWriter, wc)
+	}
+	// If the incoming data is compressed, feed it through a decompressor before
+	// it gets to the final stage. Decompression is always required in this case
+	// because we need to compute the checksum over the decompressed bytes.
 	if resource.Compression == repb.Compressor_ZSTD {
-		// Pipeline:
-		//     compressed chunks >> pipe: pw,pr >> decompressor >> checksum goroutine
-		pr, pw := io.Pipe()
-		decompressor := zstd.NewReader(pr)
-		done := make(chan struct{})
-		// TODO(bduffany): This goroutine is blocking, because reads are not placed
-		// on a queue. Test to see how this affects performance.
-		go func() {
-			defer close(done)
-			buf := make([]byte, 512)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default: // fallthrough
-				}
-				n, err := decompressor.Read(buf)
-				if n > 0 {
-					if _, err := ws.checksum.Write(buf[:n]); err != nil {
-						log.Errorf("Failed to update checksum: %s", err)
-						return
-					}
-					// Update with the number of *uncompressed* bytes written.
-					ws.uncompressedBytesWritten += int64(n)
-				}
-				if err == io.EOF {
-					return
-				}
-				if err != nil {
-					log.Errorf("Failed to decompress bytes for checksum: %s", err)
-					return
-				}
-			}
-		}()
-		close := func() error {
-			pw.Close()
-			<-done
-			return decompressor.Close()
-		}
-		ws.checksumWriteCloser = &writeCloser{pw.Write, close}
-	} else {
-		write := func(p []byte) (int, error) {
-			n, err := ws.checksum.Write(p)
-			ws.uncompressedBytesWritten += int64(n)
-			return n, err
-		}
-		ws.checksumWriteCloser = &writeCloser{write, nopCloseFn}
+		wc = NewZstdDecompressor(ctx, wc)
 	}
+	// If the incoming data is compressed and we want to store data compressed,
+	// tee it into the cache before it gets to the decompression stage.
+	if resource.Compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		wc = MultiWriteCloser(cacheWriter, wc)
+	}
+	// If the incoming data is *not* compressed, but we only want to store
+	// compressed data, then we need a compression stage as well.
+	if cacheWriter != nil && resource.Compression == repb.Compressor_IDENTITY && s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		compressor := NewZstdCompressor(cacheWriter)
+		wc = MultiWriteCloser(compressor, wc)
+	}
+
+	// Final picture:
+	//
+	//    data >> 1 >> [[compressor] >> cache]
+	//            2 >> [decompressor] >> 1 >> [cache]
+	//                                   2 >> checksum
+	//
+	// Components in [square brackets] are conditionally present, `>>` indicates
+	// data flow via calls to Write(), and a numbered list indicates an ordered
+	// sequence of writes, where data propagates to the end of each step before
+	// moving on to the next step.
+
 	ws.writer = wc
 	ws.alreadyExists = exists
-	if exists {
-		ws.uncompressedBytesWritten = resource.GetSizeBytes()
-	} else {
-		ws.uncompressedBytesWritten = 0
-	}
 	return ws, nil
 }
 
+func (w *writeState) BytesWritten() int64 {
+	if w.alreadyExists {
+		return w.d.GetSizeBytes()
+	}
+	return w.checksum.BytesWritten()
+}
+
 func (w *writeState) Write(buf []byte) error {
-	_, err := w.writer.Write(buf)
+	n, err := w.writer.Write(buf)
 	if err != nil {
 		return err
 	}
-	n, err := w.checksumWriteCloser.Write(buf)
 	// Note: Protocol says the next expected write offset refers to the
 	// *compressed* byte stream. buf here is compressed, so we update the next
 	// expected write offset by the number of bytes written from buf.
@@ -308,18 +312,6 @@ func (w *writeState) Write(buf []byte) error {
 }
 
 func (w *writeState) Close() error {
-	// Verify that digest length and hash match.
-	if err := w.checksumWriteCloser.Close(); err != nil {
-		log.Errorf("Failed to close checksum writer: %s", err)
-	}
-	computedDigest := fmt.Sprintf("%x", w.checksum.Sum(nil))
-	//fmt.Println("█ ByteStreamServer: Checksum=", computedDigest)
-	if computedDigest != w.d.GetHash() {
-		return status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, w.d.GetHash())
-	}
-	if w.uncompressedBytesWritten != w.d.GetSizeBytes() {
-		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", w.uncompressedBytesWritten, w.d.GetSizeBytes())
-	}
 	return w.writer.Close()
 }
 
@@ -334,7 +326,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	var streamState *writeState
 	for {
 		req, err := stream.Recv()
-		//fmt.Println("█ ByteStreamServer: Write:", req, err)
 		if err == io.EOF {
 			break
 		}
@@ -365,7 +356,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 			if streamState.alreadyExists {
 				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.uncompressedBytesWritten,
+					CommittedSize: streamState.BytesWritten(),
 				})
 			}
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
@@ -386,7 +377,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: streamState.uncompressedBytesWritten,
+				CommittedSize: streamState.BytesWritten(),
 			})
 		}
 	}
@@ -394,15 +385,8 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 }
 
 func (s *ByteStreamServer) supportsCompression(compression repb.Compressor_Value) bool {
-	// DO NOT MERGE: This impl is for local benchmarking only to ensure we are
-	// only testing one type of compression at a time.
-	if s.env.GetConfigurator().GetCacheZstdEnabled() {
-		return compression == repb.Compressor_ZSTD
-	}
-	return compression == repb.Compressor_IDENTITY
-
-	// CORRECT IMPL:
-	// return compression == repb.Compressor_IDENTITY || compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdEnabled()
+	return compression == repb.Compressor_IDENTITY ||
+		compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdAccepted()
 }
 
 // `QueryWriteStatus()` is used to find the `committed_size` for a resource
@@ -428,12 +412,193 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-var nopCloseFn = func() error { return nil }
+type Checksum struct {
+	hash         hash.Hash
+	bytesWritten int64
 
-type writeCloser struct {
-	WriteFn func(p []byte) (int, error)
-	CloseFn func() error
+	d *repb.Digest
 }
 
-func (wc *writeCloser) Write(p []byte) (int, error) { return wc.WriteFn(p) }
-func (wc *writeCloser) Close() error                { return wc.CloseFn() }
+func NewChecksum(d *repb.Digest) *Checksum {
+	return &Checksum{
+		hash:         sha256.New(),
+		bytesWritten: 0,
+		d:            d,
+	}
+}
+
+func (s *Checksum) BytesWritten() int64 {
+	return s.bytesWritten
+}
+
+func (s *Checksum) Write(p []byte) (int, error) {
+	n, err := s.hash.Write(p)
+	if err != nil {
+		log.Errorf("Failed to update checksum: %s", err)
+		return n, err
+	}
+	s.bytesWritten += int64(n)
+	return n, nil
+}
+
+func (s *Checksum) Close() error {
+	// When closing, verify digest and length.
+	computedDigest := fmt.Sprintf("%x", s.hash.Sum(nil))
+	if computedDigest != s.d.GetHash() {
+		return status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, s.d.GetHash())
+	}
+	if s.bytesWritten != s.d.GetSizeBytes() {
+		return status.DataLossErrorf("%d bytes were uploaded but %d were expected.", s.bytesWritten, s.d.GetSizeBytes())
+	}
+	return nil
+}
+
+type zstdCompressor struct {
+	*zstd.Writer
+	sink io.WriteCloser
+}
+
+// NewZstdCompressor returns a WriteCloser that writes the zstd-compressed bytes
+// to the given WriteCloser. When closed, it also closes the given WriteCloser.
+func NewZstdCompressor(sink io.WriteCloser) io.WriteCloser {
+	return &zstdCompressor{
+		Writer: zstd.NewWriter(sink),
+		sink:   sink,
+	}
+}
+
+func (c *zstdCompressor) Close() error {
+	var out error
+	if err := c.Writer.Close(); err != nil {
+		out = err
+	}
+	if err := c.sink.Close(); err != nil {
+		out = err
+	}
+	return out
+}
+
+type zstdDecompressor struct {
+	pw         *io.PipeWriter
+	zstdReader io.ReadCloser
+	done       chan error
+}
+
+// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
+// and streams the decompressed bytes to the given writer.
+//
+// Note that writes are not matched one-to-one, since the compression scheme may
+// require more than one chunk of compressed data in order to write a single
+// chunk of decompressed data.
+func NewZstdDecompressor(ctx context.Context, wc io.WriteCloser) io.WriteCloser {
+	pr, pw := io.Pipe()
+	d := &zstdDecompressor{
+		pw:         pw,
+		zstdReader: zstd.NewReader(pr),
+		done:       make(chan error, 1),
+	}
+	// TODO(bduffany): Consider buffering write operations in a channel to avoid
+	// blocking writes on decompression.
+	go func() {
+		defer pr.Close()
+		defer close(d.done)
+		buf := make([]byte, 512)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default: // fallthrough
+			}
+			n, err := d.zstdReader.Read(buf)
+			if n > 0 {
+				if _, err := wc.Write(buf[:n]); err != nil {
+					d.done <- err
+					return
+				}
+			}
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				log.Errorf("Failed to decompress bytes for checksum: %s", err)
+				return
+			}
+		}
+	}()
+	return d
+}
+
+func (d *zstdDecompressor) Write(p []byte) (int, error) {
+	return d.pw.Write(p)
+}
+
+func (d *zstdDecompressor) Close() error {
+	d.pw.Close()
+	defer func() {
+		if err := d.zstdReader.Close(); err != nil {
+			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
+		}
+	}()
+	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
+	// since the write-end of the pipe is closed, reads from the decompressor should
+	// no longer be blocking, and it should return EOF as soon as the remaining decompressed
+	// bytes are drained.
+	err, ok := <-d.done
+	if ok {
+		return err
+	}
+	return nil
+}
+
+type multiWriteCloser struct {
+	writeClosers []io.WriteCloser
+}
+
+// MultiWriteCloser creates a WriteCloser that duplicates its write and close
+// operations to all the provided WriteClosers, similar to the Unix tee(1)
+// command.
+//
+// Each write is written to each listed writer, one at a time. If a listed
+// writer returns an error, that overall write operation stops and returns the
+// error; it does not continue down the list.
+//
+// The close operation is also applied to each listed closer, one at a time. If
+// a listed closer returns an error, the remaining closers are still closed. If
+// an error is returned from one or more close operations, the last non-nil
+// error is returned.
+func MultiWriteCloser(wcs ...io.WriteCloser) io.WriteCloser {
+	allWriteClosers := make([]io.WriteCloser, 0, len(wcs))
+	for _, wc := range wcs {
+		// Flatten child MultiWriteClosers, consistent with io.MultiWriter implementation.
+		if mwc, ok := wc.(*multiWriteCloser); ok {
+			allWriteClosers = append(allWriteClosers, mwc.writeClosers...)
+		} else {
+			allWriteClosers = append(allWriteClosers, wc)
+		}
+	}
+	return &multiWriteCloser{allWriteClosers}
+}
+
+func (m *multiWriteCloser) Write(p []byte) (int, error) {
+	for _, wc := range m.writeClosers {
+		n, err := wc.Write(p)
+		if err != nil {
+			return n, err
+		}
+		if n != len(p) {
+			return n, io.ErrShortWrite
+		}
+	}
+	return len(p), nil
+}
+
+func (m *multiWriteCloser) Close() error {
+	var out error
+	for _, wc := range m.writeClosers {
+		if err := wc.Close(); err != nil {
+			// TODO: aggregate errors instead of only returning the last one.
+			out = err
+		}
+	}
+	return out
+}

@@ -196,16 +196,30 @@ type RedisCacheConfig struct {
 }
 
 type cacheConfig struct {
-	Disk             DiskConfig             `yaml:"disk"`
-	RedisTarget      string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
-	S3               S3CacheConfig          `yaml:"s3"`
-	GCS              GCSCacheConfig         `yaml:"gcs"`
-	MemcacheTargets  []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
-	Redis            RedisCacheConfig       `yaml:"redis"`
-	DistributedCache DistributedCacheConfig `yaml:"distributed_cache"`
-	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
-	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
-	ZstdEnabled      bool                   `yaml:"zstd_enabled" usage:"Whether to enable zstd-compression support."`
+	Disk                  DiskConfig             `yaml:"disk"`
+	RedisTarget           string                 `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	S3                    S3CacheConfig          `yaml:"s3"`
+	GCS                   GCSCacheConfig         `yaml:"gcs"`
+	MemcacheTargets       []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
+	Redis                 RedisCacheConfig       `yaml:"redis"`
+	DistributedCache      DistributedCacheConfig `yaml:"distributed_cache"`
+	MaxSizeBytes          int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
+	InMemory              bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
+	ZstdStorageEnabled    bool                   `yaml:"zstd_storage_enabled" usage:"Whether to store blobs in zstd-compressed format."`
+	ZstdCapabilityEnabled bool                   `yaml:"zstd_capability_enabled" usage:"Whether to advertise zstd support via the capabilities API."`
+	ZstdAccepted          bool                   `yaml:"zstd_accepted" usage:"Whether to accept zstd reads/writes even if the capability is not yet advertised by this server."`
+
+	// NOTE: the zstd_accepted flag is used only for rollout purposes.
+	//
+	// Rollout be done as follows:
+	//
+	// (1) Set zstd_accepted=true in one rollout. This will "silently" enable zstd
+	// support, with the server not yet advertising that zstd is supported.
+	//
+	// (2) Set zstd_capability_enabled=true in a subsequent rollout. Then, servers
+	// will start advertising that zstd is supported, but during the
+	// rollout if a zstd request hits a server that does not yet advertise zstd
+	// support, the server can still handle the request.
 }
 
 type authConfig struct {
@@ -712,8 +726,16 @@ func (c *Configurator) GetCacheInMemory() bool {
 	return c.gc.Cache.InMemory
 }
 
-func (c *Configurator) GetCacheZstdEnabled() bool {
-	return c.gc.Cache.ZstdEnabled
+func (c *Configurator) GetCacheZstdCapabilityEnabled() bool {
+	return c.gc.Cache.ZstdCapabilityEnabled
+}
+
+func (c *Configurator) GetCacheZstdAccepted() bool {
+	return c.gc.Cache.ZstdAccepted || c.gc.Cache.ZstdCapabilityEnabled
+}
+
+func (c *Configurator) GetCacheZstdStorageEnabled() bool {
+	return c.gc.Cache.ZstdStorageEnabled
 }
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {

@@ -167,7 +167,8 @@ func TestReadCompressedBlobFromClientAcceptingIdentityOnly(t *testing.T) {
 }
 
 func TestReadAndWriteCompressed(t *testing.T) {
-	app := buildbuddy_enterprise.Run(t, "--cache.zstd_enabled=true")
+	app := buildbuddy_enterprise.Run(
+		t, "--cache.zstd_capability_enabled=true", "--cache.zstd_storage_enabled=true")
 	ctx := context.Background()
 
 	capsClient := app.CapabilitiesClient(t)
@@ -231,6 +232,71 @@ func TestReadAndWriteCompressed(t *testing.T) {
 		decompressedBlobs[i] = zstdDecompress(t, resp.Data)
 	}
 	require.Equal(t, [][]byte{blob}, decompressedBlobs)
+}
+
+func TestReadAndWriteWithStorageLevelCompressionOnly(t *testing.T) {
+	app := buildbuddy_enterprise.Run(t, "--cache.zstd_storage_enabled=true")
+	ctx := context.Background()
+
+	capsClient := app.CapabilitiesClient(t)
+	casClient := app.ContentAddressableStorageClient(t)
+
+	caps, err := capsClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{})
+	require.NoError(t, err)
+
+	require.NotContains(
+		t, caps.GetCacheCapabilities().GetSupportedBatchUpdateCompressors(), repb.Compressor_ZSTD,
+		"cache should not advertise that it supports zstd compression for CAS API")
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// FindMissingBlobs should report that the blob is missing, initially.
+	missingResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{d},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, digestStrings(d), digestStrings(missingResp.MissingBlobDigests...))
+
+	// Upload blob via BatchUpdate.
+	batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{
+			{Digest: d, Data: blob, Compressor: repb.Compressor_IDENTITY},
+		},
+	})
+	require.NoError(t, err)
+	for i, resp := range batchUpdateResp.Responses {
+		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
+	}
+
+	// FindMissingBlobs should not report the blob missing after uploading.
+	missingResp, err = casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{d},
+	})
+
+	require.NoError(t, err)
+	require.Equal(
+		t, []string{}, digestStrings(missingResp.MissingBlobDigests...),
+		"digest should not be missing after uploading blob")
+
+	// Read back the blob we just uploaded. Should get back the original blob
+	// contents.
+	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests:               []*repb.Digest{d},
+		AcceptableCompressors: []repb.Compressor_Value{repb.Compressor_IDENTITY},
+	})
+
+	require.NoError(t, err)
+	responseBlobs := make([][]byte, len(readResp.Responses))
+	for i, resp := range readResp.Responses {
+		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
+		responseBlobs[i] = resp.Data
+	}
+	require.Equal(t, [][]byte{blob}, responseBlobs)
 }
 
 func digestStrings(digests ...*repb.Digest) []string {

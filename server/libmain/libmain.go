@@ -289,7 +289,7 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
 		enableCache,      /*=supportCAS*/
 		enableRemoteExec, /*=supportRemoteExec*/
-		env.GetConfigurator().GetCacheZstdEnabled(), /*=supportZstdCompression*/
+		env.GetConfigurator().GetCacheZstdCapabilityEnabled(), /*=supportZstdCompression*/
 	)
 	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }

@@ -16,7 +16,6 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/cachelog",
         "//server/util/capabilities",
-        "//server/util/devnull",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
@@ -31,7 +30,6 @@ go_test(
     srcs = ["byte_stream_server_test.go"],
     embed = [":byte_stream_server"],
     deps = [
-        "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
@@ -40,6 +38,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_datadog_zstd//:zstd",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//require",

@@ -412,8 +412,8 @@ func main() {
 		if len(blobs) == 0 {
 			log.Fatalf("No blobs found in blob dir %q", *blobDir)
 		}
-		log.Infof("Computing blob stats ...")
 		if *showBlobStats {
+			log.Infof("Computing blob stats ...")
 			printBlobStats(blobs)
 		}
 	}

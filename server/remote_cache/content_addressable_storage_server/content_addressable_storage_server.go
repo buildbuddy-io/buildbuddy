@@ -162,14 +162,25 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			// write empty files.
 			continue
 		}
-		checksum := sha256.New()
-		data, err := decompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes(), uploadRequest.GetCompressor())
-		if err != nil {
+		if !s.supportsCompression(uploadRequest.Compressor) {
+			err := status.UnimplementedError("Unsupported compression type")
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadDigest,
 				Status: gstatus.Convert(err).Proto(),
 			})
 			continue
+		}
+		checksum := sha256.New()
+		data := uploadRequest.GetData()
+		if uploadRequest.Compressor == repb.Compressor_ZSTD {
+			data, err = zstdDecompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes())
+			if err != nil {
+				rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+					Digest: uploadDigest,
+					Status: gstatus.Convert(err).Proto(),
+				})
+				continue
+			}
 		}
 		checksum.Write(data)
 		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
@@ -190,9 +201,22 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		cachelog.Log(ctx, cachelog.ByteStreamWrite, uploadDigest.Hash, uploadDigest.SizeBytes)
-		// TODO(DO NOT MERGE): compress data before storing if server only supports
-		// compression and client hasn't compressed
-		kvs[uploadDigest] = uploadRequest.GetData()
+		storedData := uploadRequest.GetData()
+		if uploadRequest.Compressor == repb.Compressor_ZSTD && !s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+			storedData = /*decompressed*/ data
+		} else if uploadRequest.Compressor == repb.Compressor_IDENTITY && s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+			// Compress before storing
+			b, err := zstd.Compress( /*dst=*/ nil, uploadRequest.GetData())
+			if err != nil {
+				rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+					Digest: uploadDigest,
+					Status: gstatus.Convert(err).Proto(),
+				})
+				continue
+			}
+			storedData = b
+		}
+		kvs[uploadDigest] = storedData
 	}
 
 	if err := cache.SetMulti(ctx, kvs); err != nil {
@@ -286,9 +310,14 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			}
 		}
 
+		compressor := repb.Compressor_IDENTITY
+		if s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+			compressor = repb.Compressor_ZSTD
+		}
 		blobRsp := &repb.BatchReadBlobsResponse_Response{
-			Digest: d,
-			Data:   data,
+			Digest:     d,
+			Data:       data,
+			Compressor: compressor,
 		}
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
@@ -297,15 +326,46 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
+			blobRsp = s.transcodeCompression(req.AcceptableCompressors, blobRsp)
 		}
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}
 	return rsp, nil
 }
 
+func (s *ContentAddressableStorageServer) transcodeCompression(acceptableCompressors []repb.Compressor_Value, blobRsp *repb.BatchReadBlobsResponse_Response) *repb.BatchReadBlobsResponse_Response {
+	// If data is compressed but the client cannot handle compressed data,
+	// decompress it before serving.
+	// TODO(DO NOT MERGE): Decide whether we want to keep this decompressive transcoding.
+	if blobRsp.Compressor == repb.Compressor_ZSTD && !acceptsCompression(acceptableCompressors, repb.Compressor_ZSTD) {
+		b, err := zstdDecompress(blobRsp.Data, blobRsp.Digest.GetSizeBytes())
+		if err != nil {
+			log.Errorf(err.Error())
+			return &repb.BatchReadBlobsResponse_Response{
+				Digest: blobRsp.Digest,
+				Status: gstatus.Convert(err).Proto(),
+			}
+		}
+		blobRsp.Data = b
+		blobRsp.Compressor = repb.Compressor_IDENTITY
+		return blobRsp
+	}
+
+	// If data is uncompressed, keep it uncompressed for now, even if the client
+	// supports compression.
+	// TODO(DO NOT MERGE): Decide whether we want compressive transcoding.
+
+	return blobRsp
+}
+
+func (s *ContentAddressableStorageServer) supportsCompression(compression repb.Compressor_Value) bool {
+	return compression == repb.Compressor_IDENTITY ||
+		compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdAccepted()
+}
+
 func (s *ContentAddressableStorageServer) decompressedLengthEqual(data []byte, expectedDecompressedLength int64) (bool, error) {
-	if s.env.GetConfigurator().GetCacheZstdEnabled() {
-		decompressed, err := decompress(data, expectedDecompressedLength, repb.Compressor_ZSTD)
+	if s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		decompressed, err := zstdDecompress(data, expectedDecompressedLength)
 		if err != nil {
 			return false, err
 		}
@@ -315,22 +375,29 @@ func (s *ContentAddressableStorageServer) decompressedLengthEqual(data []byte, e
 	return len(data) == int(expectedDecompressedLength), nil
 }
 
-func decompress(data []byte, decompressedLength int64, compression repb.Compressor_Value) ([]byte, error) {
+func acceptsCompression(acceptableCompressors []repb.Compressor_Value, compression repb.Compressor_Value) bool {
+	// Per protocol, IDENTITY is always accepted.
 	if compression == repb.Compressor_IDENTITY {
-		return data, nil
+		return true
 	}
-	if compression == repb.Compressor_ZSTD {
-		buf := make([]byte, decompressedLength)
-		out, err := zstd.Decompress(buf, data)
-		if err != nil {
-			return nil, status.InternalErrorf("Failed to decompress zstd-compressed blob: %s", err)
+	for _, c := range acceptableCompressors {
+		if c == compression {
+			return true
 		}
-		if !byteSlicesIdentical(buf, out) {
-			return nil, status.DataLossError("Unexpected buffer re-allocation while decompressing blob; this likely indicates data corruption")
-		}
-		return buf, nil
 	}
-	return nil, status.UnimplementedError("Unsupported compression type")
+	return false
+}
+
+func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {
+	buf := make([]byte, decompressedLength)
+	out, err := zstd.Decompress(buf, data)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to decompress zstd-compressed blob: %s", err)
+	}
+	if !byteSlicesIdentical(buf, out) {
+		return nil, status.DataLossError("Unexpected buffer re-allocation while decompressing blob; this likely indicates data corruption")
+	}
+	return buf, nil
 }
 
 func byteSlicesIdentical(s1, s2 []byte) bool {
