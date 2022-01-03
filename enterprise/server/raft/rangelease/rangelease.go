@@ -307,7 +307,6 @@ func (l *Lease) keepLeaseAlive() {
 	for {
 		select {
 		case <-l.quitLease:
-			// TODO(tylerw): attempt to drop lease gracefully.
 			return
 		case <-time.After(l.timeUntilLeaseRenewal):
 			l.ensureValidLease(true /*forceRenewal*/)
