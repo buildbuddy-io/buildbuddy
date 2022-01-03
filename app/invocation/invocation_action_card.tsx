@@ -97,7 +97,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchStdoutAndStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
-    console.log("fetch stdout and stderr ");
     let stdoutUrl =
       "bytestream://" +
       this.getCacheAddress() +
