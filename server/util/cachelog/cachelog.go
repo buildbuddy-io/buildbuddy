@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
+const enabled = false
+
 var (
 	initOnce sync.Once
 	msgs     chan *logMsg
@@ -50,6 +52,9 @@ func initialize() {
 }
 
 func Log(ctx context.Context, op Op, hash string, sizeBytes int64) {
+	if !enabled {
+		return
+	}
 	initialize()
 	id, ok := ctx.Value("uuid").(string)
 	if !ok {

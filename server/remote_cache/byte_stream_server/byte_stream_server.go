@@ -196,6 +196,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+	fmt.Println("Write", req.ResourceName)
 	resource, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
@@ -286,7 +287,6 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// data flow via calls to Write(), and a numbered list indicates an ordered
 	// sequence of writes, where data propagates to the end of each step before
 	// moving on to the next step.
-
 	ws.writer = wc
 	ws.alreadyExists = exists
 	return ws, nil

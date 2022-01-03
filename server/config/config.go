@@ -209,17 +209,18 @@ type cacheConfig struct {
 	ZstdCapabilityEnabled bool                   `yaml:"zstd_capability_enabled" usage:"Whether to advertise zstd support via the capabilities API."`
 	ZstdAccepted          bool                   `yaml:"zstd_accepted" usage:"Whether to accept zstd reads/writes even if the capability is not yet advertised by this server."`
 
-	// NOTE: the zstd_accepted flag is used only for rollout purposes.
-	//
-	// Rollout be done as follows:
+	// NOTE: the zstd_accepted flag is used only for rollout purposes. Rollout is
+	// intended to be done as follows:
 	//
 	// (1) Set zstd_accepted=true in one rollout. This will "silently" enable zstd
-	// support, with the server not yet advertising that zstd is supported.
+	// support; the server will not yet advertise that zstd is supported, but can
+	// accept zstd requests and will actively transcode as needed in order to
+	// satisfy the API.
 	//
 	// (2) Set zstd_capability_enabled=true in a subsequent rollout. Then, servers
-	// will start advertising that zstd is supported, but during the
-	// rollout if a zstd request hits a server that does not yet advertise zstd
-	// support, the server can still handle the request.
+	// will start advertising that zstd is supported. During the rollout, if a
+	// zstd request hits a server that does not yet advertise zstd support, the
+	// server can still handle the request, because it has zstd_accepted=true.
 }
 
 type authConfig struct {
