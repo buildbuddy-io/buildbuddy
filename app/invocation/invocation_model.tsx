@@ -29,7 +29,6 @@ export default class InvocationModel {
   brokenTest: build_event_stream.BuildEvent[] = [];
   flakyTest: build_event_stream.BuildEvent[] = [];
   timeoutTest: build_event_stream.BuildEvent[] = [];
-  files: Map<string, build_event_stream.IFile[]> = new Map();
   structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
   aborted: build_event_stream.BuildEvent;
@@ -58,6 +57,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
 
+  private fileSetNameToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
+
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
     model.invocations = invocations as invocation.Invocation[];
@@ -75,7 +76,7 @@ export default class InvocationModel {
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
         if (buildEvent.namedSetOfFiles) {
-          model.files.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
+          model.fileSetNameToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
         }
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {
@@ -520,9 +521,13 @@ export default class InvocationModel {
       return [];
     }
     if (event.completed.importantOutput?.length) {
-      return event.completed.importantOutput;
+      return event.completed.importantOutput || [];
     }
-    return event.completed.outputGroup?.flatMap((group) => group.fileSets).flatMap((set) => this.files.get(set.id));
+    return (
+      event.completed.outputGroup
+        ?.flatMap((group) => group.fileSets)
+        .flatMap((set) => this.fileSetNameToFilesMap.get(set.id)) || []
+    );
   }
 
   isQuery() {
