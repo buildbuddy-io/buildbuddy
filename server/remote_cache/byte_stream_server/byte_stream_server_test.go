@@ -236,7 +236,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	require.Equal(t, blob, string(buf.Bytes()))
 }
 
-func TestRPCReadAndWriteCompressed(t *testing.T) {
+func TestRPCWriteAndReadCompressed(t *testing.T) {
 	flags.Set(t, "cache.zstd_capability_enabled", "true")
 	flags.Set(t, "cache.zstd_storage_enabled", "true")
 	ctx := context.Background()
@@ -357,6 +357,56 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	// Read back the blob we just uploaded, but reference the compressed resource
 	// name. Server should serve it back compressed since there is no overhead
 	// (zstd storage is enabled).
+	downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	decompressedBlob := zstdDecompress(t, downloadBuf)
+	require.Equal(t, blob, decompressedBlob)
+}
+
+func TestRPCWriteAndReadCompressedStoreUncompressed(t *testing.T) {
+	flags.Set(t, "cache.zstd_capability_enabled", "true")
+	flags.Set(t, "cache.zstd_storage_enabled", "false")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := zstdCompress(t, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// ByteStream.Read should return NOT_FOUND initially.
+	resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: resourceName})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "error code should be NOT_FOUND")
+
+	// Upload compressed blob.
+	uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
+	mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+
+	// Read back the compressed blob we just uploaded. After decompressing, should
+	// get back the original blob contents.
 	downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
 	downloadBuf := []byte{}
 	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{

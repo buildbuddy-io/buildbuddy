@@ -123,7 +123,23 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		reader = zstd.NewReader(reader)
 		defer reader.Close()
 	}
-	// TODO(DO NOT MERGE): Decide whether we want compressive transcoding.
+	// TODO(DO NOT MERGE): Decide whether we want to keep this compressive transcoding.
+	if resource.Compression == repb.Compressor_ZSTD && !s.env.GetConfigurator().GetCacheZstdStorageEnabled() {
+		pr, pw := io.Pipe()
+		compressor := zstd.NewWriter(pw)
+		originalReader := reader
+		go func() {
+			_, err := io.Copy(compressor, originalReader)
+			defer func(err error) {
+				pw.CloseWithError(err)
+			}(err)
+			if err := compressor.Close(); err != nil {
+				log.Errorf("Failed to close zstd writer; some zstd resources may not be cleaned up properly: %s", err)
+			}
+		}()
+		reader = pr
+		defer reader.Close()
+	}
 
 	downloadTracker := ht.TrackDownload(resource.Digest)
 
@@ -196,7 +212,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	fmt.Println("Write", req.ResourceName)
+	// fmt.Println(">>> Write", req.ResourceName)
 	resource, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
@@ -480,6 +496,7 @@ func (c *zstdCompressor) Close() error {
 
 type zstdDecompressor struct {
 	pw         *io.PipeWriter
+	wc         io.WriteCloser
 	zstdReader io.ReadCloser
 	done       chan error
 }
@@ -494,6 +511,7 @@ func NewZstdDecompressor(ctx context.Context, wc io.WriteCloser) io.WriteCloser 
 	pr, pw := io.Pipe()
 	d := &zstdDecompressor{
 		pw:         pw,
+		wc:         wc,
 		zstdReader: zstd.NewReader(pr),
 		done:       make(chan error, 1),
 	}
@@ -539,15 +557,19 @@ func (d *zstdDecompressor) Close() error {
 			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
 		}
 	}()
+	var out error
 	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
 	// since the write-end of the pipe is closed, reads from the decompressor should
 	// no longer be blocking, and it should return EOF as soon as the remaining decompressed
 	// bytes are drained.
 	err, ok := <-d.done
 	if ok {
-		return err
+		out = err
 	}
-	return nil
+	if err := d.wc.Close(); err != nil {
+		out = err
+	}
+	return out
 }
 
 type multiWriteCloser struct {
