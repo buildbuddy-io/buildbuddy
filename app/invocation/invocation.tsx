@@ -322,7 +322,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
           {activeTab == "action" && (
-            <InvocationActionCardComponent model={this.state.model} search={this.props.search} />
+            <InvocationActionCardComponent
+              model={this.state.model}
+              search={this.props.search}
+              preferences={this.props.preferences}
+            />
           )}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}
