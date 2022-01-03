@@ -57,7 +57,7 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
 
-  private fileSetNameToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
+  private fileSetIDToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
 
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
@@ -76,7 +76,7 @@ export default class InvocationModel {
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
         if (buildEvent.namedSetOfFiles) {
-          model.fileSetNameToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
+          model.fileSetIDToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
         }
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {
@@ -526,7 +526,7 @@ export default class InvocationModel {
     return (
       event.completed.outputGroup
         ?.flatMap((group) => group.fileSets)
-        .flatMap((set) => this.fileSetNameToFilesMap.get(set.id)) || []
+        .flatMap((set) => this.fileSetIDToFilesMap.get(set.id)) || []
     );
   }
 
