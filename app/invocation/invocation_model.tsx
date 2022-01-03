@@ -526,7 +526,7 @@ export default class InvocationModel {
     return (
       event.completed.outputGroup
         ?.flatMap((group) => group.fileSets)
-        .flatMap((set) => this.fileSetIDToFilesMap.get(set.id)) || []
+        .flatMap((set) => this.fileSetIDToFilesMap.get(set.id) || []) || []
     );
   }
 
