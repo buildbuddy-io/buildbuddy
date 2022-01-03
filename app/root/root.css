@@ -981,10 +981,6 @@ code .comment {
   overflow: visible;
 }
 
-.terminal-search-placholder {
-  min-width: 278px;
-}
-
 .terminal .ReactVirtualized__Grid {
   /* !important is needed here to override react-virtualized inline style attribute */
   overflow-x: scroll !important;
@@ -1111,7 +1107,7 @@ code .comment {
     display: none;
   }
   .terminal-search-placeholder {
-    width: 150px;
+    width: 170px;
   }
 }
 
