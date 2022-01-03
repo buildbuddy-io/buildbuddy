@@ -1033,11 +1033,11 @@ code .comment {
   opacity: 0.7;
 }
 
-.terminal {
+.terminal-container {
   background: #222;
 }
 
-.light-terminal .terminal {
+.terminal-container.light-terminal {
   background: #fafafa;
 }
 
