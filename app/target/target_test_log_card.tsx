@@ -103,6 +103,16 @@ export default class TargetTestLogCardComponent extends React.Component {
     }
   }
   render() {
+    const title = <div className="title">Test log</div>;
+    const subtitle = (
+      <div className="test-subtitle">
+        {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
+        {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard{" "}
+        {this.props.testResult.buildEvent.id.testResult.shard} (Run {this.props.testResult.buildEvent.id.testResult.run}
+        , Attempt {this.props.testResult.buildEvent.id.testResult.attempt})
+      </div>
+    );
+
     return (
       <div
         className={`card ${
@@ -110,16 +120,10 @@ export default class TargetTestLogCardComponent extends React.Component {
         } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
         <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
-          <div className="title">Test log</div>
-          <div className="test-subtitle">
-            {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
-            {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard{" "}
-            {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
-            {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
-            {this.props.testResult.buildEvent.id.testResult.attempt})
-          </div>
           {!this.state.cacheEnabled && (
             <div className="empty-state">
+              {title}
+              {subtitle}
               Test log uploading isn't enabled for this invocation.
               <br />
               <br />
@@ -128,22 +132,16 @@ export default class TargetTestLogCardComponent extends React.Component {
               <SetupCodeComponent />
             </div>
           )}
-          {this.state.cacheEnabled && this.state.testLog && (
+          {this.state.cacheEnabled && (
             <div className="test-log">
-              <TerminalComponent value={this.state.testLog} lightTheme={!this.props.dark} />
+              <TerminalComponent
+                title={title}
+                subtitle={subtitle}
+                value={this.state.testLog || "Empty log"}
+                loading={this.state.loading}
+                lightTheme={!this.props.dark}
+              />
             </div>
-          )}
-          {this.state.cacheEnabled && this.state.loading && (
-            <span>
-              <br />
-              Loading...
-            </span>
-          )}
-          {this.state.cacheEnabled && !this.state.loading && !this.state.testLog && (
-            <span>
-              <br />
-              Empty log
-            </span>
           )}
         </div>
       </div>

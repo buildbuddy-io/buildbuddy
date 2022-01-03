@@ -14,6 +14,6 @@ func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
 	return "", nil
 }
 
-func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool {
-	return false
+func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error) {
+	return "", "", nil
 }

@@ -10,8 +10,11 @@ package xcode
 import "C"
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"unsafe"
 
@@ -32,7 +35,7 @@ type xcodeLocator struct {
 type xcodeVersion struct {
 	version          string
 	developerDirPath string
-	sdks             []string
+	sdks             map[string]string
 }
 
 func NewXcodeLocator() (*xcodeLocator, error) {
@@ -41,27 +44,20 @@ func NewXcodeLocator() (*xcodeLocator, error) {
 	return xl, err
 }
 
-// Finds the Xcode developer directory that most closely matches the given Xcode version.
-func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {
-	xv := x.xcodeVersionForVersionString(version)
+// Finds the Xcode that matches the given Xcode version.
+// Returns the developer directory for that Xcode and the SDK root for the given SDK.
+func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error) {
+	xv := x.xcodeVersionForVersionString(xcodeVersion)
 	if xv == nil {
-		return "", status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %+v", version, x.versions)
-	}
-	return xv.developerDirPath, nil
-}
 
-// Return true if the given SDK path is present in the given Xcode version.
-func (x *xcodeLocator) IsSDKPathPresentForVersion(sdkPath, version string) bool {
-	xv := x.xcodeVersionForVersionString(version)
-	if xv == nil {
-		return false
+		return "", "", status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %s", xcodeVersion, versionsString(x.versions))
 	}
-	for _, sdk := range xv.sdks {
-		if sdk == sdkPath {
-			return true
-		}
+	sdkPath, ok := xv.sdks[sdk]
+	if !ok {
+		return "", "", status.FailedPreconditionErrorf("SDK %s not available for Xcode %s. Available SDKs are %s", sdk, xcodeVersion, sdksString(xv.sdks))
 	}
-	return false
+	sdkRoot := fmt.Sprintf("%s/%s", xv.developerDirPath, sdkPath)
+	return xv.developerDirPath, sdkRoot, nil
 }
 
 // Returns the xcodeVersion most closely matching the version string.
@@ -76,7 +72,7 @@ func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersio
 	return nil
 }
 
-// Locates all all Xcode versions installed on the host machine.
+// Locates all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
 func (x *xcodeLocator) locate() error {
 	bundleID := stringToCFString(xcodeBundleID)
@@ -113,12 +109,16 @@ func (x *xcodeLocator) locate() error {
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
-		sdks, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
+		sdkPaths, err := fs.Glob(os.DirFS(developerDirPath), "Platforms/*.platform/Developer/SDKs/*")
 		if err != nil {
 			log.Warningf("Error reading Xcode SDKs from %s: %s", path, err.Error())
 			continue
 		}
-		log.Infof("Found Xcode version %s.%s at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
+		sdks := make(map[string]string)
+		for _, sdkPath := range sdkPaths {
+			sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
+		}
+		log.Infof("Found Xcode version %s (%s) at path %s", xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion, path)
 		versions := expandXcodeVersions(xcodePlist.CFBundleShortVersionString, xcodePlist.ProductBuildVersion)
 		mostPreciseVersion := versions[len(versions)-1]
 		for _, version := range versions {
@@ -167,4 +167,22 @@ func stringToCFString(gostr string) C.CFStringRef {
 // Converts a CFStringRef into a go string.
 func stringFromCFString(cfStr C.CFStringRef) string {
 	return C.GoString(C.CFStringGetCStringPtr(cfStr, C.kCFStringEncodingUTF8))
+}
+
+func sdksString(sdks map[string]string) string {
+	availableSDKs := make([]string, 0, len(sdks))
+	for sdk, _ := range sdks {
+		availableSDKs = append(availableSDKs, sdk)
+	}
+	sort.Strings(availableSDKs)
+	return strings.Join(availableSDKs, ", ")
+}
+
+func versionsString(versions map[string]*xcodeVersion) string {
+	availableVersions := make([]string, 0, len(versions))
+	for version, _ := range versions {
+		availableVersions = append(availableVersions, version)
+	}
+	sort.Strings(availableVersions)
+	return strings.Join(availableVersions, ", ")
 }

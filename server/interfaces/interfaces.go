@@ -572,11 +572,9 @@ type HealthChecker interface {
 
 // Locates all Xcode versions installed on the host system.
 type XcodeLocator interface {
-	// Returns the developer directory and SDKs for the given Xcode version.
-	DeveloperDirForVersion(version string) (string, error)
-
-	// Returns true if the given SDK path is present in the given Xcode version.
-	IsSDKPathPresentForVersion(sdkPath, version string) bool
+	// Finds the Xcode that matches the given Xcode version.
+	// Returns the developer directory for that Xcode and the SDK root for the given SDK.
+	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
 // LRU implements a Least Recently Used cache.
