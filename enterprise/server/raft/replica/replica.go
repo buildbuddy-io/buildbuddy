@@ -29,6 +29,9 @@ import (
 )
 
 type RangeTracker interface {
+	OpenReplica(r *Replica) // called as soon as a replica opens
+	CloseReplica(r *Replica) // called when a replica closes
+	GetDB(clusterID, nodeID uint64) (*pebble.DB, error) // can be used to load a snapshot in an open, uninitialized DB
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 }
@@ -251,7 +254,11 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.closedMu.Unlock()
 
 	sm.checkAndSetRangeDescriptor()
-	return sm.getLastAppliedIndex()
+	lastApplied, err := sm.getLastAppliedIndex()
+	if err != nil {
+		sm.rangeTracker.OpenReplica(sm)
+	}
+	return lastApplied, err
 }
 
 func (sm *Replica) checkAndSetRangeDescriptor() {
@@ -842,8 +849,11 @@ func (sm *Replica) Close() error {
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
 
-	if sm.rangeTracker != nil && rangeDescriptor != nil {
-		sm.rangeTracker.RemoveRange(rangeDescriptor, sm)
+	if sm.rangeTracker != nil {
+		if rangeDescriptor != nil {
+			sm.rangeTracker.RemoveRange(rangeDescriptor, sm)
+		}
+		sm.rangeTracker.CloseReplica(sm)
 	}
 	if sm.db != nil {
 		return sm.db.Close()
