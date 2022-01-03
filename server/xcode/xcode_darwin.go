@@ -105,8 +105,9 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
-		xcodePlist := xcodePlistForPath(path + versionPlistPath)
-		if xcodePlist == nil {
+		xcodePlist, err := xcodePlistForPath(path + versionPlistPath)
+		if err != nil {
+			log.Warningf("Error reading plist for Xcode located at %s: %s", path, err.Error())
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
@@ -138,18 +139,16 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 	return versionMap
 }
 
-func xcodePlistForPath(path string) *xcodePlist {
+func xcodePlistForPath(path string) (*xcodePlist, error) {
 	var xcodePlist xcodePlist
 	versionFileReader, err := os.Open(path)
 	if err != nil {
-		log.Warningf("Error reading plist for Xcode located at %s: %s", path, err.Error())
-		return nil
+		return nil, fmt.Errorf("Failed to open %s: %s", path, err.Error())
 	}
 	if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
-		log.Warningf("Error decoding plist for Xcode located at %s: %s", path, err.Error())
-		return nil
+		return nil, fmt.Errorf("Failed to decode %s: %s", path, err.Error())
 	}
-	return &xcodePlist
+	return &xcodePlist, nil
 }
 
 // Expands a single Xcode version into all component combinations in order of increasing precision.
