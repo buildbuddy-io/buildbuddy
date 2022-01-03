@@ -16,6 +16,7 @@ const (
 	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
 	MetaRangeTag   = "meta_range"
+	NodeUsageTag   = "node_usage"
 
 	RegistryUpdateEvent = "registry_update_event"
 	RegistryQueryEvent  = "registry_query_event"

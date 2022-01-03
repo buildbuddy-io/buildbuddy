@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -142,6 +143,27 @@ func (s *Store) releaseRangeLease(clusterID uint64) {
 	}()
 }
 
+func (s *Store) gossipUsage() {
+	usage := &rfpb.NodeUsage{
+		Nhid: s.nodeHost.ID(),
+	}
+
+	s.replicaMu.RLock()
+	usage.NumRanges = int64(len(s.replicas))
+	s.replicaMu.RUnlock()
+
+	du, err := disk.GetDirUsage(s.fileDir)
+	if err != nil {
+		log.Errorf("error getting fs usage: %s", err)
+		return
+	}
+	usage.DiskBytesTotal = int64(du.TotalBytes)
+	usage.DiskBytesUsed = int64(du.UsedBytes)
+
+	log.Printf("Gossipping usage: %s", proto.MarshalTextString(usage))
+	s.gossipManager.SetTag(constants.NodeUsageTag, proto.MarshalTextString(usage))
+}
+
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
@@ -178,6 +200,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	} else {
 		s.releaseRangeLease(clusterID)
 	}
+	s.gossipUsage()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -191,6 +214,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Lock()
 	delete(s.clusterRanges, clusterID)
 	s.rangeMu.Unlock()
+	s.gossipUsage()
 }
 
 // called as soon as a replica opens

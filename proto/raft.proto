@@ -207,6 +207,14 @@ message BringupResponse {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+message NodeUsage {
+  string nhid = 1;
+
+  int64 num_ranges = 2;
+  int64 disk_bytes_total = 3;
+  int64 disk_bytes_used = 4;
+}
+
 message NodeDescriptor {
   string nhid = 1;
   string raft_address = 2;

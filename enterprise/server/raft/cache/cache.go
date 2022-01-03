@@ -213,6 +213,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// FileDir is a parent directory where files will be stored. This data
 	// is managed entirely by the raft statemachine.
 	fileDir := filepath.Join(conf.RootDir, "files")
+	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
+		return nil, err
+	}
 
 	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)

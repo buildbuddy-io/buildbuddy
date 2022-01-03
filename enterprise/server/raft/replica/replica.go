@@ -29,8 +29,8 @@ import (
 )
 
 type RangeTracker interface {
-	OpenReplica(r *Replica) // called as soon as a replica opens
-	CloseReplica(r *Replica) // called when a replica closes
+	OpenReplica(r *Replica)                             // called as soon as a replica opens
+	CloseReplica(r *Replica)                            // called when a replica closes
 	GetDB(clusterID, nodeID uint64) (*pebble.DB, error) // can be used to load a snapshot in an open, uninitialized DB
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
