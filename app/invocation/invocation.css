@@ -50,6 +50,11 @@
   height: 18px;
 }
 
+.invocation-action-card .terminal-container {
+  padding: 8px 32px;
+  border-radius: 8px;
+}
+
 .file-name {
   display: flex;
   align-items: flex-start;
