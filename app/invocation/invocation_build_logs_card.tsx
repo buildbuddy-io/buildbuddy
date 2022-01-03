@@ -19,21 +19,14 @@ export default class BuildLogsCardComponent extends React.Component<Props> {
         }`}>
         <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
-          <div className="title">Build logs </div>
           <div className="details">
-            {this.props.loading ? (
-              // "terminal" class makes sure the loading container's size
-              // is the same as the terminal that will take its place.
-              <div className="terminal">
-                <div className={`loading ${this.props.dark ? "loading-dark" : ""}`} />
-              </div>
-            ) : (
-              <TerminalComponent
-                value={this.props.value}
-                lightTheme={!this.props.dark}
-                fullLogsFetcher={this.props.fullLogsFetcher}
-              />
-            )}
+            <TerminalComponent
+              title={<div className="title">Build logs</div>}
+              loading={this.props.loading}
+              value={this.props.value}
+              lightTheme={!this.props.dark}
+              fullLogsFetcher={this.props.fullLogsFetcher}
+            />
           </div>
         </div>
       </div>
