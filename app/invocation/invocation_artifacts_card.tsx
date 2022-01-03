@@ -44,12 +44,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     const filteredTargets = this.props.model.succeeded
       .map((event) => ({
         label: event.id.targetCompleted.label,
-        outputs: event.completed.importantOutput.filter(
-          (output) =>
-            !this.props.filter ||
-            event.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
-            output.name.toLowerCase().includes(this.props.filter.toLowerCase())
-        ),
+        outputs: this.props.model
+          .getFiles(event)
+          .filter(
+            (output) =>
+              !this.props.filter ||
+              event.id.targetCompleted.label.toLowerCase().includes(this.props.filter.toLowerCase()) ||
+              output.name.toLowerCase().includes(this.props.filter.toLowerCase())
+          ),
       }))
       .filter((target) => target.outputs.length);
 

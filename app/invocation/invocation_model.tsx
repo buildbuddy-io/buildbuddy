@@ -29,7 +29,6 @@ export default class InvocationModel {
   brokenTest: build_event_stream.BuildEvent[] = [];
   flakyTest: build_event_stream.BuildEvent[] = [];
   timeoutTest: build_event_stream.BuildEvent[] = [];
-  files: build_event_stream.NamedSetOfFiles[] = [];
   structuredCommandLine: command_line.CommandLine[] = [];
   finished: build_event_stream.BuildFinished;
   aborted: build_event_stream.BuildEvent;
@@ -58,6 +57,8 @@ export default class InvocationModel {
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
 
+  private fileSetIDToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
+
   static modelFromInvocations(invocations: invocation.Invocation[]) {
     let model = new InvocationModel();
     model.invocations = invocations as invocation.Invocation[];
@@ -74,8 +75,9 @@ export default class InvocationModel {
 
       for (let event of invocation.event) {
         let buildEvent = event.buildEvent;
-        if (buildEvent.namedSetOfFiles)
-          model.files.push(buildEvent.namedSetOfFiles as build_event_stream.NamedSetOfFiles);
+        if (buildEvent.namedSetOfFiles) {
+          model.fileSetIDToFilesMap.set(buildEvent.id.namedSet.id, buildEvent.namedSetOfFiles.files);
+        }
         if (buildEvent.configured) model.targets.push(buildEvent as build_event_stream.BuildEvent);
         if (buildEvent.configured) {
           model.configuredMap.set(buildEvent.id.targetConfigured.label, event as invocation.InvocationEvent);
@@ -511,6 +513,20 @@ export default class InvocationModel {
       links
         ?.map((link) => link?.match(/\[(?<linkText>.*)\]\((?<linkUrl>.*)\)/)?.groups)
         ?.filter((link) => link?.linkUrl?.startsWith("http://") || link?.linkUrl?.startsWith("https://")) || []
+    );
+  }
+
+  getFiles(event: build_event_stream.IBuildEvent): build_event_stream.IFile[] {
+    if (!event?.completed) {
+      return [];
+    }
+    if (event.completed.importantOutput?.length) {
+      return event.completed.importantOutput || [];
+    }
+    return (
+      event.completed.outputGroup
+        ?.flatMap((group) => group.fileSets)
+        .flatMap((set) => this.fileSetIDToFilesMap.get(set.id)) || []
     );
   }
 

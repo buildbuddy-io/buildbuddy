@@ -17,6 +17,7 @@ interface Props {
   targetLabel: string;
   hash: string;
 
+  files: build_event_stream.IFile[];
   configuredEvent: invocation.InvocationEvent;
   completedEvent: invocation.InvocationEvent;
   skippedEvent: invocation.InvocationEvent;
@@ -161,7 +162,7 @@ export default class TargetComponent extends React.Component {
   render() {
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
-    let files = this.props?.completedEvent?.buildEvent?.completed.importantOutput || [];
+    let files = this.props.files || [];
     for (const resultEvent of resultEvents) {
       files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
     }
