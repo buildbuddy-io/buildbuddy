@@ -839,15 +839,15 @@ func getValuesForOptionNameFromOptions(options, value string) ([]string, error) 
 		return values, err
 	}
 	flag := "--" + value
-	for i, option := range(optionsList) {
+	for i, option := range optionsList {
 		if option == "--" {
 			break
 		}
-		if strings.HasPrefix(option, flag + "=") {
-			values = append(values, strings.TrimPrefix(option, flag + "="))
+		if strings.HasPrefix(option, flag+"=") {
+			values = append(values, strings.TrimPrefix(option, flag+"="))
 		} else if option == flag {
-			if i < len(optionsList) - 1 {
-				values = append(values, optionsList[i + 1])
+			if i < len(optionsList)-1 {
+				values = append(values, optionsList[i+1])
 			} else {
 				values = append(values, "")
 			}
