@@ -80,7 +80,7 @@ type Command struct {
 
 	gRPCClientSource GRPCClientSource
 
-	actionDigest *digest.InstanceNameDigest
+	actionResourceName *digest.ResourceName
 
 	cancelExecutionRequest context.CancelFunc
 	accepted               chan string
@@ -101,19 +101,19 @@ func (c *Command) AcceptedChannel() <-chan string {
 	return c.accepted
 }
 
-func (c *Command) GetActionDigest() *digest.InstanceNameDigest {
-	return c.actionDigest
+func (c *Command) GetActionResourceName() *digest.ResourceName {
+	return c.actionResourceName
 }
 
 func (c *Command) Start(ctx context.Context) error {
 	executionClient := c.gRPCClientSource.GetRemoteExecutionClient()
 	req := &repb.ExecuteRequest{
-		InstanceName:    c.actionDigest.GetInstanceName(),
-		ActionDigest:    c.actionDigest.Digest,
+		InstanceName:    c.actionResourceName.GetInstanceName(),
+		ActionDigest:    c.actionResourceName.GetDigest(),
 		SkipCacheLookup: true,
 	}
 
-	log.Debugf("Executing command %q with action digest %s", c.Name, c.actionDigest.GetHash())
+	log.Debugf("Executing command %q with action digest %s", c.Name, c.actionResourceName.GetDigest().GetHash())
 
 	beforeExecuteTime := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
@@ -237,7 +237,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 			Stage:        repb.ExecutionStage_COMPLETED,
 			Executor:     response.GetResult().GetExecutionMetadata().GetWorker(),
 			ExitCode:     int(response.GetResult().GetExitCode()),
-			InstanceName: c.actionDigest.GetInstanceName(),
+			InstanceName: c.actionResourceName.GetInstanceName(),
 			ActionResult: response.GetResult(),
 			LocalStats: LocalStats{
 				ExecuteRPCStarted:  c.afterExecuteTime.Sub(c.beforeExecuteTime),
@@ -268,9 +268,9 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	}
 
 	command := &Command{
-		gRPCClientSource: c.gRPClientSource,
-		Name:             name,
-		actionDigest:     digest.NewInstanceNameDigest(actionDigest, instanceName),
+		gRPCClientSource:   c.gRPClientSource,
+		Name:               name,
+		actionResourceName: digest.NewResourceName(actionDigest, instanceName),
 	}
 
 	return command, nil
@@ -282,7 +282,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewInstanceNameDigest(out.GetDigest(), res.InstanceName)
+		d := digest.NewResourceName(out.GetDigest(), res.InstanceName)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -298,7 +298,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewInstanceNameDigest(dir.GetTreeDigest(), res.InstanceName)
+		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err

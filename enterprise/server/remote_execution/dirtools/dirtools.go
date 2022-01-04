@@ -156,7 +156,7 @@ func trimPathPrefix(fullPath, prefix string) string {
 }
 
 type fileToUpload struct {
-	ad           *digest.InstanceNameDigest
+	resourceName *digest.ResourceName
 	info         os.FileInfo
 	fullFilePath string
 
@@ -173,7 +173,7 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	ad, err := cachetools.ComputeDigest(reader, instanceName)
+	r, err := cachetools.ComputeDigest(reader, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 	return &fileToUpload{
 		fullFilePath: filepath.Join(parentDir, info.Name()),
 		info:         info,
-		ad:           ad,
+		resourceName: r,
 		data:         data,
 		dir:          dir,
 	}, nil
@@ -196,7 +196,7 @@ func newFileToUpload(instanceName, parentDir string, info os.FileInfo) (*fileToU
 	return &fileToUpload{
 		fullFilePath: fullFilePath,
 		info:         info,
-		ad:           ad,
+		resourceName: ad,
 	}, nil
 }
 
@@ -215,7 +215,7 @@ func (f *fileToUpload) ReadSeekCloser() (io.ReadSeekCloser, error) {
 func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 	return &repb.OutputFile{
 		Path:         trimPathPrefix(f.fullFilePath, rootDir),
-		Digest:       f.ad.Digest,
+		Digest:       f.resourceName.GetDigest(),
 		IsExecutable: f.info.Mode()&0111 != 0,
 	}
 }
@@ -223,7 +223,7 @@ func (f *fileToUpload) OutputFile(rootDir string) *repb.OutputFile {
 func (f *fileToUpload) FileNode() *repb.FileNode {
 	return &repb.FileNode{
 		Name:         f.info.Name(),
-		Digest:       f.ad.Digest,
+		Digest:       f.resourceName.GetDigest(),
 		IsExecutable: f.info.Mode()&0111 != 0,
 	}
 }
@@ -231,14 +231,14 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 func (f *fileToUpload) OutputDirectory(rootDir string) *repb.OutputDirectory {
 	return &repb.OutputDirectory{
 		Path:       trimPathPrefix(f.fullFilePath, rootDir),
-		TreeDigest: f.ad.Digest,
+		TreeDigest: f.resourceName.GetDigest(),
 	}
 }
 
 func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	return &repb.DirectoryNode{
 		Name:   f.info.Name(),
-		Digest: f.ad.Digest,
+		Digest: f.resourceName.GetDigest(),
 	}
 }
 
@@ -275,7 +275,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 			return err
 		}
 		// Note: uploader.Upload closes the file after it is uploaded.
-		if err := uploader.Upload(uploadableFile.ad.Digest, rsc); err != nil {
+		if err := uploader.Upload(uploadableFile.resourceName.GetDigest(), rsc); err != nil {
 			return err
 		}
 	}
@@ -627,7 +627,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewInstanceNameDigest(fp.FileNode.Digest, instanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewResourceName(fp.FileNode.Digest, instanceName), f); err != nil {
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -647,7 +647,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	return nil
 }
 
-func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *digest.InstanceNameDigest) (*repb.Directory, error) {
+func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *digest.ResourceName) (*repb.Directory, error) {
 	dir := &repb.Directory{}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, reqDigest, dir); err != nil {
 		return nil, err
@@ -675,13 +675,13 @@ func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest
 	return rootDigest, dirMap, nil
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, d *digest.InstanceNameDigest) (*repb.Tree, error) {
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
 	var dirs []*repb.Directory
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:   d.Digest,
-			InstanceName: d.GetInstanceName(),
+			RootDigest:   r.GetDigest(),
+			InstanceName: r.GetInstanceName(),
 			PageToken:    nextPageToken,
 		})
 		if err != nil {

@@ -28,22 +28,22 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer) error {
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		return nil
 	}
 	req := &bspb.ReadRequest{
-		ResourceName: digest.DownloadResourceName(d.Digest, d.GetInstanceName()),
+		ResourceName: r.DownloadString(),
 		ReadOffset:   0,
-		ReadLimit:    d.GetSizeBytes(),
+		ReadLimit:    r.GetDigest().GetSizeBytes(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(d.Digest)
+			return digest.MissingDigestError(r.GetDigest())
 		}
 		return err
 	}
@@ -61,15 +61,15 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.Inst
 	return nil
 }
 
-func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.InstanceNameDigest, error) {
+func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
 	d, err := digest.Compute(in)
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewInstanceNameDigest(d, instanceName), nil
+	return digest.NewResourceName(d, instanceName), nil
 }
 
-func ComputeFileDigest(fullFilePath, instanceName string) (*digest.InstanceNameDigest, error) {
+func ComputeFileDigest(fullFilePath, instanceName string) (*digest.ResourceName, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -78,14 +78,14 @@ func ComputeFileDigest(fullFilePath, instanceName string) (*digest.InstanceNameD
 	return ComputeDigest(f, instanceName)
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *digest.InstanceNameDigest, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.ReadSeeker) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if ad.Digest.GetHash() == digest.EmptySha256 {
-		return ad.Digest, nil
+	if r.GetDigest().GetHash() == digest.EmptySha256 {
+		return r.GetDigest(), nil
 	}
-	resourceName, err := digest.UploadResourceName(ad.Digest, ad.GetInstanceName())
+	resourceName, err := r.UploadString()
 	if err != nil {
 		return nil, err
 	}
@@ -125,27 +125,27 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, ad *d
 	if err != nil {
 		return nil, err
 	}
-	return ad.Digest, nil
+	return r.GetDigest(), nil
 }
 
-func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ad *digest.InstanceNameDigest) (*repb.ActionResult, error) {
+func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ResourceName) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
 	}
 	req := &repb.GetActionResultRequest{
-		ActionDigest: ad.Digest,
-		InstanceName: ad.GetInstanceName(),
+		ActionDigest: ar.GetDigest(),
+		InstanceName: ar.GetInstanceName(),
 	}
 	return acClient.GetActionResult(ctx, req)
 }
 
-func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, ad *digest.InstanceNameDigest, ar *repb.ActionResult) error {
+func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r *digest.ResourceName, ar *repb.ActionResult) error {
 	if acClient == nil {
 		return status.FailedPreconditionError("ActionCacheClient not configured")
 	}
 	req := &repb.UpdateActionResultRequest{
-		InstanceName: ad.GetInstanceName(),
-		ActionDigest: ad.Digest,
+		InstanceName: r.GetInstanceName(),
+		ActionDigest: r.GetDigest(),
 		ActionResult: ar,
 	}
 	_, err := acClient.UpdateActionResult(ctx, req)
@@ -158,7 +158,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	ad, err := ComputeDigest(reader, instanceName)
+	resourceName, err := ComputeDigest(reader, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +166,11 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, reader)
+	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
 func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	ad, err := ComputeDigest(in, instanceName)
+	resourceName, err := ComputeDigest(in, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, in)
+	return UploadFromReader(ctx, bsClient, resourceName, in)
 }
 
 func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
@@ -187,7 +187,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 		return nil, err
 	}
 	defer f.Close()
-	ad, err := ComputeDigest(f, instanceName)
+	resourceName, err := ComputeDigest(f, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -195,41 +195,41 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, f)
+	return UploadFromReader(ctx, bsClient, resourceName, f)
 }
 
-func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out proto.Message) error {
-	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-	if err := GetBlob(ctx, bsClient, d, buf); err != nil {
+func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
+	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
+	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
 }
 
-func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.InstanceNameDigest) (*repb.Action, *repb.Command, error) {
+func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
 	if err := GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch action")
 	}
 	cmd := &repb.Command{}
-	if err := GetBlobAsProto(ctx, bsClient, digest.NewInstanceNameDigest(action.GetCommandDigest(), actionDigest.GetInstanceName()), cmd); err != nil {
+	if err := GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName()), cmd); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch command")
 	}
 	return action, cmd, nil
 }
 
-func readProtoFromCache(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
-	data, err := cache.Get(ctx, d.Digest)
+func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
+	data, err := cache.Get(ctx, r.GetDigest())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(d.Digest)
+			return digest.MissingDigestError(r.GetDigest())
 		}
 		return err
 	}
 	return proto.Unmarshal([]byte(data), out)
 }
 
-func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
+func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
 	cas, err := namespace.CASCache(ctx, cache, d.GetInstanceName())
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.Ins
 	return readProtoFromCache(ctx, cas, d, out)
 }
 
-func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.InstanceNameDigest, out proto.Message) error {
+func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
 	ac, err := namespace.ActionCache(ctx, cache, d.GetInstanceName())
 	if err != nil {
 		return err
@@ -360,7 +360,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 	if d.GetSizeBytes() > gRPCMaxSize {
 		ul.eg.Go(func() error {
 			defer r.Close()
-			_, err := UploadFromReader(ul.ctx, ul.byteStreamClient, digest.NewInstanceNameDigest(d, ul.instanceName), r)
+			_, err := UploadFromReader(ul.ctx, ul.byteStreamClient, digest.NewResourceName(d, ul.instanceName), r)
 			return err
 		})
 		return nil

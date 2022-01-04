@@ -98,7 +98,7 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 
 	// Verify that it returns NotFound error when looking up action result with unmodified
 	// action digest when the action failed.
-	_, err = cachetools.GetActionResult(ctx, rbe.GetActionResultStorageClient(), cmd.GetActionDigest())
+	_, err = cachetools.GetActionResult(ctx, rbe.GetActionResultStorageClient(), cmd.GetActionResourceName())
 	assert.True(t, status.IsNotFoundError(err))
 }
 

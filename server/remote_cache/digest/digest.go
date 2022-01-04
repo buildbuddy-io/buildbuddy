@@ -39,25 +39,66 @@ var (
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex      = regexp.MustCompile("^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	downloadRegex    = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
-	actionCacheRegex = regexp.MustCompile("^(?:(?P<instance_name>.*)/)?blobs/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\\d+)")
+	uploadRegex      = regexp.MustCompile(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
+	downloadRegex    = regexp.MustCompile(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
+	actionCacheRegex = regexp.MustCompile(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
 )
 
-type InstanceNameDigest struct {
-	*repb.Digest
+type ResourceName struct {
+	digest       *repb.Digest
 	instanceName string
+	compressor   repb.Compressor_Value
 }
 
-func NewInstanceNameDigest(d *repb.Digest, instanceName string) *InstanceNameDigest {
-	return &InstanceNameDigest{
-		Digest:       d,
+func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	return &ResourceName{
+		digest:       d,
 		instanceName: instanceName,
+		compressor:   repb.Compressor_IDENTITY,
 	}
 }
 
-func (i *InstanceNameDigest) GetInstanceName() string {
-	return i.instanceName
+func (r *ResourceName) GetDigest() *repb.Digest {
+	return r.digest
+}
+
+func (r *ResourceName) GetInstanceName() string {
+	return r.instanceName
+}
+
+func (r *ResourceName) GetCompressor() repb.Compressor_Value {
+	return r.compressor
+}
+
+func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
+	r.compressor = compressor
+}
+
+// DownloadString returns a string representing the resource name for download
+// purposes.
+func (r *ResourceName) DownloadString() string {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	return fmt.Sprintf(
+		"%s/%s/%s/%d",
+		instanceName, blobTypeSegment(r.GetCompressor()),
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+}
+
+// UploadString returns a string representing the resource name for upload
+// purposes.
+func (r *ResourceName) UploadString() (string, error) {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	u, err := guuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s/uploads/%s/%s/%s/%d",
+		instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
+	), nil
 }
 
 // Key is a representation of a digest that can be used as a map key.
@@ -130,30 +171,7 @@ func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Di
 	}, nil
 }
 
-func DownloadResourceName(d *repb.Digest, instanceName string) string {
-	// Haven't found docs on what a valid instance name looks like. But generally
-	// seems like a string, possibly separated by "/".
-
-	// Ensure there is no trailing slash and path has components.
-	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
-	return fmt.Sprintf("%s/blobs/%s/%d", instanceName, d.GetHash(), d.GetSizeBytes())
-}
-
-func UploadResourceName(d *repb.Digest, instanceName string) (string, error) {
-	// Haven't found docs on what a valid instance name looks like. But generally
-	// seems like a string, possibly separated by "/".
-
-	// Ensure there is no trailing slash and path has components.
-	instanceName = filepath.Join(filepath.SplitList(instanceName)...)
-
-	u, err := guuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s/uploads/%s/blobs/%s/%d", instanceName, u.String(), d.GetHash(), d.GetSizeBytes()), nil
-}
-
-func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.Digest, error) {
+func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
 	for i, name := range matcher.SubexpNames() {
@@ -164,14 +182,14 @@ func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.D
 	hash, hashOK := result["hash"]
 	sizeStr, sizeOK := result["size"]
 	if !hashOK || !sizeOK {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
+		return nil, status.InvalidArgumentErrorf("Unparsable resource name: %s", resourceName)
 	}
 	if hash == "" {
-		return "", nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
+		return nil, status.InvalidArgumentErrorf("Unparsable resource name (empty hash?): %s", resourceName)
 	}
 	sizeBytes, err := strconv.ParseInt(sizeStr, 10, 0)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// Set the instance name, if one was present.
@@ -180,22 +198,39 @@ func extractDigest(resourceName string, matcher *regexp.Regexp) (string, *repb.D
 		instanceName = in
 	}
 
-	return instanceName, &repb.Digest{
-		Hash:      hash,
-		SizeBytes: sizeBytes,
-	}, nil
+	// Determine compression level from blob type segment
+	blobTypeStr, sizeOK := result["blob_type"]
+	if !sizeOK {
+		// Should never happen since the regex would not match otherwise.
+		return nil, status.InvalidArgumentError(`Unparsable resource name: "/blobs" or "/compressed-blobs/zstd" missing or out of place`)
+	}
+	compressor := repb.Compressor_IDENTITY
+	if blobTypeStr == "compressed-blobs/zstd" {
+		compressor = repb.Compressor_ZSTD
+	}
+	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
+	r := NewResourceName(d, instanceName)
+	r.SetCompressor(compressor)
+	return r, nil
 }
 
-func ExtractDigestFromUploadResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, uploadRegex)
+func ParseUploadResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, uploadRegex)
 }
 
-func ExtractDigestFromDownloadResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, downloadRegex)
+func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, downloadRegex)
 }
 
-func ExtractDigestFromActionCacheResourceName(resourceName string) (string, *repb.Digest, error) {
-	return extractDigest(resourceName, actionCacheRegex)
+func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
+	return parseResourceName(resourceName, actionCacheRegex)
+}
+
+func blobTypeSegment(compressor repb.Compressor_Value) string {
+	if compressor == repb.Compressor_ZSTD {
+		return "compressed-blobs/zstd"
+	}
+	return "blobs"
 }
 
 func IsCacheDebuggingEnabled(ctx context.Context) bool {
