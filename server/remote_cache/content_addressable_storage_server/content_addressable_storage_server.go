@@ -295,18 +295,18 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	return rsp, nil
 }
 
-func (s *ContentAddressableStorageServer) supportsCompressor(compression repb.Compressor_Value) bool {
-	return compression == repb.Compressor_IDENTITY ||
-		compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdTranscodingEnabled()
+func (s *ContentAddressableStorageServer) supportsCompressor(compressor repb.Compressor_Value) bool {
+	return compressor == repb.Compressor_IDENTITY ||
+		compressor == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdTranscodingEnabled()
 }
 
-func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, compression repb.Compressor_Value) bool {
+func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, compressor repb.Compressor_Value) bool {
 	// Per protocol, IDENTITY is always accepted.
-	if compression == repb.Compressor_IDENTITY {
+	if compressor == repb.Compressor_IDENTITY {
 		return true
 	}
 	for _, c := range acceptableCompressors {
-		if c == compression {
+		if c == compressor {
 			return true
 		}
 	}
