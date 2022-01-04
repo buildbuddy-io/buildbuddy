@@ -116,7 +116,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	downloadTracker := ht.TrackDownload(r.Digest)
 
 	bufSize := int64(readBufSizeBytes)
-	if r.GetSizeBytes() > 0 && r.Digest.GetSizeBytes() < bufSize {
+	if r.GetSizeBytes() > 0 && r.GetSizeBytes() < bufSize {
 		bufSize = r.GetSizeBytes()
 	}
 	copyBuf := s.bufferPool.Get(bufSize)
