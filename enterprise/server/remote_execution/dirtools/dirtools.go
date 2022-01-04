@@ -173,7 +173,7 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	ad, err := cachetools.ComputeDigest(reader, instanceName)
+	r, err := cachetools.ComputeDigest(reader, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 	return &fileToUpload{
 		fullFilePath: filepath.Join(parentDir, info.Name()),
 		info:         info,
-		resourceName: ad,
+		resourceName: r,
 		data:         data,
 		dir:          dir,
 	}, nil
