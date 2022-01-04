@@ -107,7 +107,7 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
 		xcodePlist, err := xcodePlistForPath(path + versionPlistPath)
 		if err != nil {
-			log.Warningf("Error reading plist for Xcode located at %s: %s", path, err.Error())
+			log.Warningf("Error reading plist for Xcode: %s", err.Error())
 			continue
 		}
 		developerDirPath := path + developerDirectoryPath
