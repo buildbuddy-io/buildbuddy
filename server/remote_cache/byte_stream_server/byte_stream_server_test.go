@@ -3,10 +3,12 @@ package byte_stream_server
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -14,11 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
-
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -81,13 +84,13 @@ func TestRPCRead(t *testing.T) {
 		return rstr
 	}
 	cases := []struct {
-		wantError          error
-		instanceNameDigest *digest.ResourceName
-		wantData           string
-		offset             int64
+		wantError    error
+		resourceName *digest.ResourceName
+		wantData     string
+		offset       int64
 	}{
 		{ // Simple Read
-			instanceNameDigest: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -96,7 +99,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Large Read
-			instanceNameDigest: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewResourceName(&repb.Digest{
 				Hash:      "ffd14ebb6c1b2701ac793ea1aff6dddf8540e734bd6d051ac2a24aa3ec062781",
 				SizeBytes: 1000 * 1000 * 100,
 			}, ""),
@@ -105,7 +108,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // 0 length read
-			instanceNameDigest: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewResourceName(&repb.Digest{
 				Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 				SizeBytes: 0,
 			}, ""),
@@ -114,7 +117,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Offset
-			instanceNameDigest: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -123,7 +126,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    1,
 		},
 		{ // Max offset
-			instanceNameDigest: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -140,13 +143,13 @@ func TestRPCRead(t *testing.T) {
 
 	for _, tc := range cases {
 		// Set the value in the cache.
-		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.GetDigest(), []byte(tc.wantData)); err != nil {
+		if err := te.GetCache().Set(ctx, tc.resourceName.GetDigest(), []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
 		}
 
 		// Now read it back with the bytestream API.
 		var buf bytes.Buffer
-		gotErr := readBlob(ctx, bsClient, tc.instanceNameDigest, &buf, tc.offset)
+		gotErr := readBlob(ctx, bsClient, tc.resourceName, &buf, tc.offset)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 			t.Errorf("got %v; want %v", gotErr, tc.wantError)
 			//			continue
@@ -231,4 +234,180 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	err = readBlob(ctx, bsClient, instanceNameDigest, &buf, 0)
 	require.NoError(t, err)
 	require.Equal(t, blob, string(buf.Bytes()))
+}
+
+func TestRPCWriteAndReadCompressed(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := zstdCompress(t, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// ByteStream.Read should return NOT_FOUND initially.
+	resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: resourceName})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "error code should be NOT_FOUND")
+
+	// Upload compressed blob.
+	uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
+	mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+
+	// Read back the compressed blob we just uploaded. After decompressing, should
+	// get back the original blob contents.
+	downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	decompressedBlob := zstdDecompress(t, downloadBuf)
+	require.Equal(t, blob, decompressedBlob)
+}
+
+func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := zstdCompress(t, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// ByteStream.Read should return NOT_FOUND initially.
+	resourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: resourceName})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "error code should be NOT_FOUND")
+
+	// Upload the compressed blob.
+	uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
+	mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+
+	// Read back the compressed blob we just uploaded, but reference the
+	// decompressed resource name. Server should decompress it for us.
+	downloadResourceName := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	require.Equal(t, blob, downloadBuf)
+}
+
+func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	// Upload uncompressed via bytestream.
+	uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
+	mustUploadChunked(t, ctx, bsClient, uploadResourceName, blob)
+
+	// Read back the blob we just uploaded, but reference the compressed resource
+	// name. Server should serve it back compressed since there is no overhead
+	// (zstd storage is enabled).
+	downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
+	downloadBuf := []byte{}
+	downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: downloadResourceName,
+	})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	decompressedBlob := zstdDecompress(t, downloadBuf)
+	require.Equal(t, blob, decompressedBlob)
+}
+
+func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, uploadResourceName string, blob []byte) {
+	uploadStream, err := bsClient.Write(ctx)
+	require.NoError(t, err)
+	blobChunk1 := blob[:len(blob)/2]
+	err = uploadStream.Send(&bspb.WriteRequest{
+		ResourceName: uploadResourceName,
+		Data:         blobChunk1,
+	})
+	require.NoError(t, err)
+	blobChunk2 := blob[len(blobChunk1):]
+	err = uploadStream.Send(&bspb.WriteRequest{
+		ResourceName: uploadResourceName,
+		// Per protocol, write offset refers to the *compressed* stream.
+		WriteOffset: int64(len(blobChunk1)),
+		Data:        blobChunk2,
+		FinishWrite: true,
+	})
+	require.NoError(t, err)
+	_, err = uploadStream.CloseAndRecv()
+	require.NoError(t, err)
+}
+
+func zstdCompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Compress(nil, b)
+	require.NoError(t, err)
+	return out
+}
+
+func zstdDecompress(t *testing.T, b []byte) []byte {
+	out, err := zstd.Decompress(nil, b)
+	require.NoError(t, err, "failed to decompress blob")
+	return out
+}
+
+func newUUID(t *testing.T) string {
+	uuid, err := guuid.NewRandom()
+	require.NoError(t, err)
+	return uuid.String()
 }
