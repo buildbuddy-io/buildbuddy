@@ -43,9 +43,9 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 	return clientConn
 }
 
-func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.InstanceNameDigest, out io.Writer, offset int64) error {
+func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.ResourceName, out io.Writer, offset int64) error {
 	req := &bspb.ReadRequest{
-		ResourceName: digest.DownloadResourceName(d.Digest, d.GetInstanceName()),
+		ResourceName: digest.DownloadResourceName(d),
 		ReadOffset:   offset,
 		ReadLimit:    d.GetSizeBytes(),
 	}
@@ -82,7 +82,7 @@ func TestRPCRead(t *testing.T) {
 	}
 	cases := []struct {
 		wantError          error
-		instanceNameDigest *digest.InstanceNameDigest
+		instanceNameDigest *digest.ResourceName
 		wantData           string
 		offset             int64
 	}{

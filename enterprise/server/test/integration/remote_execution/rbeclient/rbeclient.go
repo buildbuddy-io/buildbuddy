@@ -80,7 +80,7 @@ type Command struct {
 
 	gRPCClientSource GRPCClientSource
 
-	actionDigest *digest.InstanceNameDigest
+	actionDigest *digest.ResourceName
 
 	cancelExecutionRequest context.CancelFunc
 	accepted               chan string
@@ -101,7 +101,7 @@ func (c *Command) AcceptedChannel() <-chan string {
 	return c.accepted
 }
 
-func (c *Command) GetActionDigest() *digest.InstanceNameDigest {
+func (c *Command) GetActionDigest() *digest.ResourceName {
 	return c.actionDigest
 }
 

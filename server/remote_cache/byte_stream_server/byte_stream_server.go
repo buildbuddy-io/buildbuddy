@@ -88,7 +88,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
-	instanceName, d, err := digest.ExtractDigestFromDownloadResourceName(req.GetResourceName())
+	r, err := digest.ParseDownloadResourceName(req.GetResourceName())
 	if err != nil {
 		return err
 	}
@@ -98,26 +98,26 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache, err := s.getCache(ctx, instanceName)
+	cache, err := s.getCache(ctx, r.GetInstanceName())
 	if err != nil {
 		return err
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	if r.GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, d, req.ReadOffset)
+	reader, err := cache.Reader(ctx, r.Digest, req.ReadOffset)
 	if err != nil {
-		ht.TrackMiss(d)
+		ht.TrackMiss(r.Digest)
 		return err
 	}
 	defer reader.Close()
 
-	downloadTracker := ht.TrackDownload(d)
+	downloadTracker := ht.TrackDownload(r.Digest)
 
 	bufSize := int64(readBufSizeBytes)
-	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
-		bufSize = d.GetSizeBytes()
+	if r.GetSizeBytes() > 0 && r.Digest.GetSizeBytes() < bufSize {
+		bufSize = r.GetSizeBytes()
 	}
 	copyBuf := s.bufferPool.Get(bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
@@ -183,7 +183,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+	r, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -191,14 +191,14 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.getCache(ctx, instanceName)
+	cache, err := s.getCache(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	ws := &writeState{
 		activeResourceName: req.ResourceName,
-		d:                  d,
+		d:                  r.Digest,
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -209,13 +209,13 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.Contains(ctx, d)
+	exists, err := cache.Contains(ctx, r.Digest)
 	if err != nil {
 		return nil, err
 	}
 	var wc io.WriteCloser
-	if d.GetHash() != digest.EmptySha256 && !exists {
-		wc, err = cache.Writer(ctx, d)
+	if r.GetHash() != digest.EmptySha256 && !exists {
+		wc, err = cache.Writer(ctx, r.Digest)
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +226,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.writer = wc
 	ws.alreadyExists = exists
 	if exists {
-		ws.bytesWritten = d.GetSizeBytes()
+		ws.bytesWritten = r.GetSizeBytes()
 	} else {
 		ws.bytesWritten = 0
 	}
@@ -280,11 +280,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				_, d, err := digest.ExtractDigestFromUploadResourceName(req.ResourceName)
+				r, err := digest.ParseUploadResourceName(req.ResourceName)
 				if err != nil {
 					return err
 				}
-				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: d.GetSizeBytes()})
+				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetSizeBytes()})
 			}
 
 			streamState, err = s.initStreamState(ctx, req)

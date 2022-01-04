@@ -14,61 +14,71 @@ import (
 // written in a "table-driven" way -- where you enumerate a list of expected
 // inputs and outputs, often in an anonymous struct, and then exercise a method
 // under test across those cases.
-func TestExtractDigest(t *testing.T) {
+func TestParseResourceName(t *testing.T) {
 	cases := []struct {
-		wantError        error
-		matcher          *regexp.Regexp
-		wantDigest       *repb.Digest
-		resourceName     string
-		wantInstanceName string
+		resourceName string
+		matcher      *regexp.Regexp
+		wantParsed   *ResourceName
+		wantError    error
 	}{
 		{ // download, bad hash
-			resourceName:     "my_instance_name/blobs/invalid_hash/1234",
-			matcher:          downloadRegex,
-			wantInstanceName: "",
-			wantDigest:       nil,
-			wantError:        status.InvalidArgumentError(""),
+			resourceName: "my_instance_name/blobs/invalid_hash/1234",
+			matcher:      downloadRegex,
+			wantError:    status.InvalidArgumentError(""),
 		},
 		{ // download, missing size
-			resourceName:     "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/",
-			matcher:          downloadRegex,
-			wantInstanceName: "",
-			wantDigest:       nil,
-			wantError:        status.InvalidArgumentError(""),
+			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/",
+			matcher:      downloadRegex,
+			wantError:    status.InvalidArgumentError(""),
+		},
+		{ // download, bad compression type
+			resourceName: "/compressed-blobs/unknownCompressionType/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      downloadRegex,
+			wantError:    status.InvalidArgumentError(""),
 		},
 		{ // download, resource with instance name
-			resourceName:     "my_instance_name/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-			matcher:          downloadRegex,
-			wantInstanceName: "my_instance_name",
-			wantDigest:       &repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234},
-			wantError:        nil,
+			resourceName: "my_instance_name/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      downloadRegex,
+			wantParsed:   NewInstanceNameDigest(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name"),
 		},
-		{ // download, resource without instance name
-			resourceName:     "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-			matcher:          downloadRegex,
-			wantInstanceName: "",
-			wantDigest:       &repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234},
-			wantError:        nil,
+		{ // download, resource with zstd compression
+			resourceName: "/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      downloadRegex,
+			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "", repb.Compressor_ZSTD),
+		},
+		{ // download, resource with zstd compression and instance name
+			resourceName: "my_instance_name/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      downloadRegex,
+			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "my_instance_name", repb.Compressor_ZSTD),
+		},
+		{ // download, resource with digest only
+			resourceName: "/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      downloadRegex,
+			wantParsed:   NewInstanceNameDigest(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, ""),
 		},
 		{ // upload, UUID and instance name
-			resourceName:     "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
-			matcher:          uploadRegex,
-			wantInstanceName: "instance_name",
-			wantDigest:       &repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234},
-			wantError:        nil,
+			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/blobs/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      uploadRegex,
+			wantParsed:   NewInstanceNameDigest(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
+		},
+		{ // upload, UUID, instance name, and compression
+			resourceName: "instance_name/uploads/2148e1f1-aacc-41eb-a31c-22b6da7c7ac1/compressed-blobs/zstd/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      uploadRegex,
+			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name", repb.Compressor_ZSTD),
 		},
 	}
 	for _, tc := range cases {
-		gotInstanceName, gotDigest, gotErr := extractDigest(tc.resourceName, tc.matcher)
+		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
-			t.Errorf("extractDigest(%q) returned %v; want %v", tc.resourceName, gotErr, tc.wantError)
+			t.Errorf("parseResourceName(%q) got err %v; want %v", tc.resourceName, gotErr, tc.wantError)
 			continue
 		}
-		if gotInstanceName != tc.wantInstanceName {
-			t.Errorf("extractDigest(%q): got instance_name: %v; want %v", tc.resourceName, gotInstanceName, tc.wantInstanceName)
-		}
-		if gotDigest.GetHash() != tc.wantDigest.GetHash() || gotDigest.GetSizeBytes() != tc.wantDigest.GetSizeBytes() {
-			t.Errorf("extractDigest(%q) got digest: %v; want %v", tc.resourceName, gotDigest, tc.wantDigest)
+		if tc.wantParsed != nil && (gotParsed == nil ||
+			gotParsed.GetHash() != tc.wantParsed.GetHash() ||
+			gotParsed.GetSizeBytes() != tc.wantParsed.GetSizeBytes() ||
+			gotParsed.GetInstanceName() != tc.wantParsed.GetInstanceName() ||
+			gotParsed.GetCompressor() != tc.wantParsed.GetCompressor()) {
+			t.Errorf("parseResourceName(%q): got %+v; want %+v", tc.resourceName, gotParsed, tc.wantParsed)
 		}
 	}
 }

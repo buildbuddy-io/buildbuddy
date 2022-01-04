@@ -70,7 +70,7 @@ func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
 }
 
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
-	_, d, err := digest.ExtractDigestFromDownloadResourceName(in.ExecutionID)
+	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +79,16 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 {
 		// Action Result with unmodified action digest is only uploaded when there is no error
 		// from the CommandResult(i.e. status code is OK) and the exit code is zero.
-		actionResultDigest = proto.Clone(d).(*repb.Digest)
+		actionResultDigest = proto.Clone(r.Digest).(*repb.Digest)
 	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(d, in.InvocationID)
+		actionResultDigest, err = digest.AddInvocationIDToDigest(r.Digest, in.InvocationID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	out := &espb.Execution{
-		ActionDigest:       d,
+		ActionDigest:       r.Digest,
 		ActionResultDigest: actionResultDigest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,

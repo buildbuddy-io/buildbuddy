@@ -204,7 +204,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
-func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, d *digest.InstanceNameDigest) (*repb.ActionResult, error) {
+func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, d *digest.ResourceName) (*repb.ActionResult, error) {
 	cache, err := namespace.ActionCache(ctx, s.cache, d.GetInstanceName())
 	if err != nil {
 		return nil, err
@@ -223,7 +223,7 @@ func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, d *dig
 	return actionResult, nil
 }
 
-func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *digest.InstanceNameDigest) (*repb.ActionResult, error) {
+func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *digest.ResourceName) (*repb.ActionResult, error) {
 	actionResult, err := s.getUnvalidatedActionResult(ctx, d)
 	if err != nil {
 		return nil, err
@@ -265,7 +265,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", err
 	}
 
-	executionID, err := digest.UploadResourceName(req.GetActionDigest(), req.GetInstanceName())
+	r := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+	executionID, err := digest.UploadResourceName(r)
 	if err != nil {
 		return "", err
 	}
@@ -350,7 +351,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			executionID, err := digest.UploadResourceName(req.GetActionDigest(), req.GetInstanceName())
+			r := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+			executionID, err := digest.UploadResourceName(r)
 			if err != nil {
 				return err
 			}
@@ -472,13 +474,12 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		// Send a best-effort initial "in progress" update to client.
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
-		instanceName, d, err := digest.ExtractDigestFromUploadResourceName(req.GetName())
+		r, err := digest.ParseUploadResourceName(req.GetName())
 		if err != nil {
 			log.Errorf("Could not extract digest from %q: %s", req.GetName(), err)
 			return err
 		}
-		id := digest.NewInstanceNameDigest(d, instanceName)
-		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), id)
+		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), r)
 		err = stateChangeFn(repb.ExecutionStage_UNKNOWN, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
 			log.Warningf("Could not send initial update: %s", err)
@@ -520,12 +521,12 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 }
 
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
-	remoteInstanceName, d, err := digest.ExtractDigestFromDownloadResourceName(taskID)
+	r, err := digest.ParseDownloadResourceName(taskID)
 	if err != nil {
 		log.Warningf("Could not parse taskID: %s", err)
 		return err
 	}
-	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, digest.NewInstanceNameDigest(d, remoteInstanceName), reason)
+	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, r, reason)
 	if err != nil {
 		return err
 	}
@@ -642,22 +643,21 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	if executeResponse.GetCachedResult() {
 		return nil
 	}
-	instanceName, d, err := digest.ExtractDigestFromUploadResourceName(taskID)
+	actionResourceName, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		return err
 	}
-	actionInstanceNameDigest := digest.NewInstanceNameDigest(d, instanceName)
 	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionInstanceNameDigest, action); err != nil {
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
 		return err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, instanceName)
+	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, actionResourceName.GetInstanceName())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return err
 	}
 	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, instanceName, nodeID)
+	router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	return nil
 }

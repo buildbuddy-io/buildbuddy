@@ -156,7 +156,7 @@ func trimPathPrefix(fullPath, prefix string) string {
 }
 
 type fileToUpload struct {
-	ad           *digest.InstanceNameDigest
+	ad           *digest.ResourceName
 	info         os.FileInfo
 	fullFilePath string
 
@@ -647,7 +647,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	return nil
 }
 
-func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *digest.InstanceNameDigest) (*repb.Directory, error) {
+func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *digest.ResourceName) (*repb.Directory, error) {
 	dir := &repb.Directory{}
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, reqDigest, dir); err != nil {
 		return nil, err
@@ -675,7 +675,7 @@ func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest
 	return rootDigest, dirMap, nil
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, d *digest.InstanceNameDigest) (*repb.Tree, error) {
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, d *digest.ResourceName) (*repb.Tree, error) {
 	var dirs []*repb.Directory
 	nextPageToken := ""
 	for {

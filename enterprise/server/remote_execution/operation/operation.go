@@ -18,7 +18,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func Assemble(stage repb.ExecutionStage_Value, name string, d *digest.InstanceNameDigest, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
+func Assemble(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	if d == nil || er == nil {
 		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
 	}
@@ -45,7 +45,7 @@ func Assemble(stage repb.ExecutionStage_Value, name string, d *digest.InstanceNa
 	return operation, nil
 }
 
-func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.InstanceNameDigest, status error) (*longrunning.Operation, error) {
+func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, status error) (*longrunning.Operation, error) {
 	op, err := Assemble(stage, name, d, &repb.ExecuteResponse{
 		Status: gstatus.Convert(status).Proto(),
 	})
@@ -60,7 +60,7 @@ type StreamLike interface {
 type StateChangeFunc func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error
 type FinishWithErrorFunc func(finalErr error) error
 
-func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.InstanceNameDigest) StateChangeFunc {
+func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
 		if err != nil {
@@ -77,7 +77,7 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.InstanceNameDigest, finalErr error) error {
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, finalErr error) error {
 	stage := repb.ExecutionStage_COMPLETED
 	if op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr); err == nil {
 		log.Warningf("Failed action %q (returning err: %s via operation)", taskID, finalErr)
