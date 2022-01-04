@@ -143,10 +143,10 @@ func xcodePlistForPath(path string) (*xcodePlist, error) {
 	var xcodePlist xcodePlist
 	versionFileReader, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to open %s: %s", path, err.Error())
+		return nil, status.InternalErrorf("Failed to open %s: %s", path, err.Error())
 	}
 	if err := plist.NewXMLDecoder(versionFileReader).Decode(&xcodePlist); err != nil {
-		return nil, fmt.Errorf("Failed to decode %s: %s", path, err.Error())
+		return nil, status.InternalErrorf("Failed to decode %s: %s", path, err.Error())
 	}
 	return &xcodePlist, nil
 }
