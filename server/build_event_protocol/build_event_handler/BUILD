@@ -35,6 +35,7 @@ go_library(
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@com_github_google_shlex//:shlex",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",

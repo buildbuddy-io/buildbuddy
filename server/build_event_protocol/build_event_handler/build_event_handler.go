@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -661,7 +663,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid)
+				linesToRetain, err := getCursesLinesFromStartedBuildEvent(&bazelBuildEvent)
+				if err != nil {
+					return err
+				}
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, linesToRetain)
 			}
 		}
 
@@ -787,6 +793,67 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 		return p.Started.OptionsDescription, nil
 	}
 	return "", nil
+}
+
+func getCursesLinesFromStartedBuildEvent(event *build_event_stream.BuildEvent) (int, error) {
+	// the number of lines curses can overwrite is 2 + the ui_actions shown:
+	// 1 for the progress tracker, 1 for each action, and 1 blank line
+	options, err := extractOptionsFromStartedBuildEvent(event)
+	if err != nil {
+		return 0, err
+	}
+	actionsShownValues, err := getValuesForOptionNameFromOptions(options, "ui_actions_shown")
+	if err != nil {
+		return 0, err
+	}
+	cursesValues, err := getValuesForOptionNameFromOptions(options, "ui_actions_shown")
+	if err != nil {
+		return 0, err
+	}
+	if len(cursesValues) > 1 {
+		log.Errorf("Too many arguments to curses, assuming auto : %v", cursesValues)
+	}
+	if len(cursesValues) == 1 && cursesValues[0] == "no" {
+		return 0, nil
+	}
+	if len(actionsShownValues) > 1 {
+		log.Errorf("Too many arguments to ui_actions_shown, defaulting to 8: %v", actionsShownValues)
+	}
+	if len(actionsShownValues) == 1 {
+		n, err := strconv.Atoi(actionsShownValues[0])
+		if err != nil {
+			log.Errorf("Invalid argument to ui_actions_shown, defaulting to 8: %v", err)
+		} else if n < 1 {
+			return 3, nil
+		} else {
+			return n + 2, nil
+		}
+	}
+	return 10, nil
+}
+
+func getValuesForOptionNameFromOptions(options, value string) ([]string, error) {
+	values := []string{}
+	optionsList, err := shlex.Split(options)
+	if err != nil {
+		return values, err
+	}
+	flag := "--" + value
+	for i, option := range(optionsList) {
+		if option == "--" {
+			break
+		}
+		if strings.HasPrefix(option, flag + "=") {
+			values = append(values, strings.TrimPrefix(option, flag + "="))
+		} else if option == flag {
+			if i < len(optionsList) - 1 {
+				values = append(values, optionsList[i + 1])
+			} else {
+				values = append(values, "")
+			}
+		}
+	}
+	return values, nil
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {

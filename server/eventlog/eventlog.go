@@ -28,10 +28,6 @@ const (
 	// passes with no new data being written.
 	defaultChunkTimeout = 15 * time.Second
 
-	// Number of lines to keep in the screen buffer so that they may be modified
-	// by ANSI Cursor control codes.
-	linesToRetainForANSICursor = 10
-
 	// Max number of workers to run in parallel when fetching chunks.
 	numReadWorkers = 16
 )
@@ -269,7 +265,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string, linesToRetain int) *EventLogWriter {
 	eventLogPath := GetEventLogPathFromInvocationId(invocationId)
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
@@ -289,8 +285,9 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
-		WriteWithTailCloser: cw,
-		screenWriter:        terminal.NewScreenWriter(),
+		WriteWithTailCloser:        cw,
+		screenWriter:               terminal.NewScreenWriter(),
+		linesToRetainForANSICursor: linesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
@@ -352,6 +349,10 @@ type WriteWithTailCloser interface {
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
 	screenWriter *terminal.ScreenWriter
+
+	// Number of lines to keep in the screen buffer so that they may be modified
+	// by ANSI Cursor control codes.
+	linesToRetainForANSICursor int
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
@@ -361,7 +362,7 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if _, err := w.screenWriter.Write(p); err != nil {
 		return 0, err
 	}
-	popped := w.screenWriter.PopExtraLinesAsANSI(linesToRetainForANSICursor)
+	popped := w.screenWriter.PopExtraLinesAsANSI(w.linesToRetainForANSICursor)
 	if len(popped) != 0 {
 		popped = append(popped, '\n')
 	}
