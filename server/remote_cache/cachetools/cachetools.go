@@ -158,7 +158,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	ad, err := ComputeDigest(reader, instanceName)
+	resourceName, err := ComputeDigest(reader, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -166,11 +166,11 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, reader)
+	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
 func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	ad, err := ComputeDigest(in, instanceName)
+	resourceName, err := ComputeDigest(in, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, in)
+	return UploadFromReader(ctx, bsClient, resourceName, in)
 }
 
 func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
@@ -187,7 +187,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 		return nil, err
 	}
 	defer f.Close()
-	ad, err := ComputeDigest(f, instanceName)
+	resourceName, err := ComputeDigest(f, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	return UploadFromReader(ctx, bsClient, ad, f)
+	return UploadFromReader(ctx, bsClient, resourceName, f)
 }
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
