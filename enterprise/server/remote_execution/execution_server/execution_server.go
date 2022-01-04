@@ -204,15 +204,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // not validate it.
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
-func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, d *digest.ResourceName) (*repb.ActionResult, error) {
-	cache, err := namespace.ActionCache(ctx, s.cache, d.GetInstanceName())
+func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
+	cache, err := namespace.ActionCache(ctx, s.cache, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
-	data, err := cache.Get(ctx, d.Digest)
+	data, err := cache.Get(ctx, r.GetDigest())
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return nil, digest.MissingDigestError(d.Digest)
+			return nil, digest.MissingDigestError(r.GetDigest())
 		}
 		return nil, err
 	}

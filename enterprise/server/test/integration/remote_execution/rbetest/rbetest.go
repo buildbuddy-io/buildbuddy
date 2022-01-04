@@ -773,13 +773,13 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 }
 
 func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, invocationID string) (*repb.ActionResult, error) {
-	d := cmd.GetActionDigest().Digest
+	d := cmd.GetActionResourceName().GetDigest()
 	actionResultDigest, err := digest.AddInvocationIDToDigest(d, invocationID)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
 	}
 	req := &repb.GetActionResultRequest{
-		InstanceName: cmd.GetActionDigest().GetInstanceName(),
+		InstanceName: cmd.GetActionResourceName().GetInstanceName(),
 		ActionDigest: actionResultDigest,
 	}
 	acClient := r.GetActionResultStorageClient()
@@ -790,7 +790,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
 		d := digest.NewResourceName(actionResult.GetStdoutDigest(), instanceName)
-		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
 			return "", "", status.UnavailableErrorf("error retrieving stdout from CAS: %v", err)
@@ -801,7 +801,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 	stderr := ""
 	if actionResult.GetStderrDigest() != nil {
 		d := digest.NewResourceName(actionResult.GetStderrDigest(), instanceName)
-		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
 			return "", "", status.InternalErrorf("error retrieving stderr from CAS: %v", err)

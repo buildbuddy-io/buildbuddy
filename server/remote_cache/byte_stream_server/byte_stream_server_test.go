@@ -43,11 +43,11 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 	return clientConn
 }
 
-func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.ResourceName, out io.Writer, offset int64) error {
+func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset int64) error {
 	req := &bspb.ReadRequest{
-		ResourceName: d.DownloadString(),
+		ResourceName: r.DownloadString(),
 		ReadOffset:   offset,
-		ReadLimit:    d.GetSizeBytes(),
+		ReadLimit:    r.GetDigest().GetSizeBytes(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestRPCRead(t *testing.T) {
 
 	for _, tc := range cases {
 		// Set the value in the cache.
-		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.Digest, []byte(tc.wantData)); err != nil {
+		if err := te.GetCache().Set(ctx, tc.instanceNameDigest.GetDigest(), []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
 		}
 

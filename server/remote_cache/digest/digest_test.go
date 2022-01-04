@@ -74,8 +74,8 @@ func TestParseResourceName(t *testing.T) {
 			continue
 		}
 		if tc.wantParsed != nil && (gotParsed == nil ||
-			gotParsed.GetHash() != tc.wantParsed.GetHash() ||
-			gotParsed.GetSizeBytes() != tc.wantParsed.GetSizeBytes() ||
+			gotParsed.GetDigest().GetHash() != tc.wantParsed.GetDigest().GetHash() ||
+			gotParsed.GetDigest().GetSizeBytes() != tc.wantParsed.GetDigest().GetSizeBytes() ||
 			gotParsed.GetInstanceName() != tc.wantParsed.GetInstanceName() ||
 			gotParsed.GetCompressor() != tc.wantParsed.GetCompressor()) {
 			t.Errorf("parseResourceName(%q): got %+v; want %+v", tc.resourceName, gotParsed, tc.wantParsed)

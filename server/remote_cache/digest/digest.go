@@ -45,17 +45,21 @@ var (
 )
 
 type ResourceName struct {
-	*repb.Digest
+	digest       *repb.Digest
 	instanceName string
 	compressor   repb.Compressor_Value
 }
 
 func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	return &ResourceName{
-		Digest:       d,
+		digest:       d,
 		instanceName: instanceName,
 		compressor:   repb.Compressor_IDENTITY,
 	}
+}
+
+func (r *ResourceName) GetDigest() *repb.Digest {
+	return r.digest
 }
 
 func (r *ResourceName) GetInstanceName() string {
@@ -78,7 +82,7 @@ func (r *ResourceName) DownloadString() string {
 	return fmt.Sprintf(
 		"%s/%s/%s/%d",
 		instanceName, blobTypeSegment(r.GetCompressor()),
-		r.GetHash(), r.GetSizeBytes())
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 }
 
 // UploadString returns a string representing the resource name for upload
@@ -93,7 +97,7 @@ func (r *ResourceName) UploadString() (string, error) {
 	return fmt.Sprintf(
 		"%s/uploads/%s/%s/%s/%d",
 		instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
-		r.GetHash(), r.GetSizeBytes(),
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
 	), nil
 }
 

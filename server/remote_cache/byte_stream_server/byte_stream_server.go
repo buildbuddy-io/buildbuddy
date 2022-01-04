@@ -102,22 +102,22 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if err != nil {
 		return err
 	}
-	if r.GetHash() == digest.EmptySha256 {
+	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, r.Digest, req.ReadOffset)
+	reader, err := cache.Reader(ctx, r.GetDigest(), req.ReadOffset)
 	if err != nil {
-		ht.TrackMiss(r.Digest)
+		ht.TrackMiss(r.GetDigest())
 		return err
 	}
 	defer reader.Close()
 
-	downloadTracker := ht.TrackDownload(r.Digest)
+	downloadTracker := ht.TrackDownload(r.GetDigest())
 
 	bufSize := int64(readBufSizeBytes)
-	if r.GetSizeBytes() > 0 && r.GetSizeBytes() < bufSize {
-		bufSize = r.GetSizeBytes()
+	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
+		bufSize = r.GetDigest().GetSizeBytes()
 	}
 	copyBuf := s.bufferPool.Get(bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
@@ -198,7 +198,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws := &writeState{
 		activeResourceName: req.ResourceName,
-		d:                  r.Digest,
+		d:                  r.GetDigest(),
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -209,13 +209,13 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.Contains(ctx, r.Digest)
+	exists, err := cache.Contains(ctx, r.GetDigest())
 	if err != nil {
 		return nil, err
 	}
 	var wc io.WriteCloser
-	if r.GetHash() != digest.EmptySha256 && !exists {
-		wc, err = cache.Writer(ctx, r.Digest)
+	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+		wc, err = cache.Writer(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
 		}
@@ -226,7 +226,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.writer = wc
 	ws.alreadyExists = exists
 	if exists {
-		ws.bytesWritten = r.GetSizeBytes()
+		ws.bytesWritten = r.GetDigest().GetSizeBytes()
 	} else {
 		ws.bytesWritten = 0
 	}
@@ -284,7 +284,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				if err != nil {
 					return err
 				}
-				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetSizeBytes()})
+				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
 			}
 
 			streamState, err = s.initStreamState(ctx, req)

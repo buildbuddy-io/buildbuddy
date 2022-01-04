@@ -79,16 +79,16 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 {
 		// Action Result with unmodified action digest is only uploaded when there is no error
 		// from the CommandResult(i.e. status code is OK) and the exit code is zero.
-		actionResultDigest = proto.Clone(r.Digest).(*repb.Digest)
+		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
 	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(r.Digest, in.InvocationID)
+		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), in.InvocationID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	out := &espb.Execution{
-		ActionDigest:       r.Digest,
+		ActionDigest:       r.GetDigest(),
 		ActionResultDigest: actionResultDigest,
 		Status: &statuspb.Status{
 			Code:    in.StatusCode,

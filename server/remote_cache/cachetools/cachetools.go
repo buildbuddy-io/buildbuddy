@@ -28,22 +28,22 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.ResourceName, out io.Writer) error {
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		return nil
 	}
 	req := &bspb.ReadRequest{
-		ResourceName: d.DownloadString(),
+		ResourceName: r.DownloadString(),
 		ReadOffset:   0,
-		ReadLimit:    d.GetSizeBytes(),
+		ReadLimit:    r.GetDigest().GetSizeBytes(),
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(d.Digest)
+			return digest.MissingDigestError(r.GetDigest())
 		}
 		return err
 	}
@@ -82,8 +82,8 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.Digest.GetHash() == digest.EmptySha256 {
-		return r.Digest, nil
+	if r.GetDigest().GetHash() == digest.EmptySha256 {
+		return r.GetDigest(), nil
 	}
 	resourceName, err := r.UploadString()
 	if err != nil {
@@ -125,27 +125,27 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		return nil, err
 	}
-	return r.Digest, nil
+	return r.GetDigest(), nil
 }
 
-func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ad *digest.ResourceName) (*repb.ActionResult, error) {
+func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *digest.ResourceName) (*repb.ActionResult, error) {
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
 	}
 	req := &repb.GetActionResultRequest{
-		ActionDigest: ad.Digest,
-		InstanceName: ad.GetInstanceName(),
+		ActionDigest: ar.GetDigest(),
+		InstanceName: ar.GetInstanceName(),
 	}
 	return acClient.GetActionResult(ctx, req)
 }
 
-func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, ad *digest.ResourceName, ar *repb.ActionResult) error {
+func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r *digest.ResourceName, ar *repb.ActionResult) error {
 	if acClient == nil {
 		return status.FailedPreconditionError("ActionCacheClient not configured")
 	}
 	req := &repb.UpdateActionResultRequest{
-		InstanceName: ad.GetInstanceName(),
-		ActionDigest: ad.Digest,
+		InstanceName: r.GetInstanceName(),
+		ActionDigest: r.GetDigest(),
 		ActionResult: ar,
 	}
 	_, err := acClient.UpdateActionResult(ctx, req)
@@ -198,9 +198,9 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return UploadFromReader(ctx, bsClient, ad, f)
 }
 
-func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.ResourceName, out proto.Message) error {
-	buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
-	if err := GetBlob(ctx, bsClient, d, buf); err != nil {
+func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
+	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
+	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
 		return err
 	}
 	return proto.Unmarshal(buf.Bytes(), out)
@@ -218,11 +218,11 @@ func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 	return action, cmd, nil
 }
 
-func readProtoFromCache(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	data, err := cache.Get(ctx, d.Digest)
+func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
+	data, err := cache.Get(ctx, r.GetDigest())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(d.Digest)
+			return digest.MissingDigestError(r.GetDigest())
 		}
 		return err
 	}

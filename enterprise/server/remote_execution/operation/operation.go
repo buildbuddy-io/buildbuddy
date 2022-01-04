@@ -18,13 +18,13 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-func Assemble(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
-	if d == nil || er == nil {
+func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
+	if r == nil || er == nil {
 		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
 	}
 	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
 		Stage:        stage,
-		ActionDigest: d.Digest,
+		ActionDigest: r.GetDigest(),
 	})
 	if err != nil {
 		return nil, err
