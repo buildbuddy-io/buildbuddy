@@ -50,16 +50,12 @@ type ResourceName struct {
 	compressor   repb.Compressor_Value
 }
 
-func NewResourceName(d *repb.Digest, instanceName string, compressor repb.Compressor_Value) *ResourceName {
+func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	return &ResourceName{
 		Digest:       d,
 		instanceName: instanceName,
-		compressor:   compressor,
+		compressor:   repb.Compressor_IDENTITY,
 	}
-}
-
-func NewInstanceNameDigest(d *repb.Digest, instanceName string) *ResourceName {
-	return NewResourceName(d, instanceName, repb.Compressor_IDENTITY)
 }
 
 func (r *ResourceName) GetInstanceName() string {
@@ -68,6 +64,37 @@ func (r *ResourceName) GetInstanceName() string {
 
 func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.compressor
+}
+
+func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
+	r.compressor = compressor
+}
+
+// DownloadString returns a string representing the resource name for download
+// purposes.
+func (r *ResourceName) DownloadString() string {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	return fmt.Sprintf(
+		"%s/%s/%s/%d",
+		instanceName, blobTypeSegment(r.GetCompressor()),
+		r.GetHash(), r.GetSizeBytes())
+}
+
+// UploadString returns a string representing the resource name for upload
+// purposes.
+func (r *ResourceName) UploadString() (string, error) {
+	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
+	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	u, err := guuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s/uploads/%s/%s/%s/%d",
+		instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
+		r.GetHash(), r.GetSizeBytes(),
+	), nil
 }
 
 // Key is a representation of a digest that can be used as a map key.
@@ -140,36 +167,6 @@ func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Di
 	}, nil
 }
 
-func DownloadResourceName(resource *ResourceName) string {
-	// Haven't found docs on what a valid instance name looks like. But generally
-	// seems like a string, possibly separated by "/".
-
-	// Ensure there is no trailing slash and path has components.
-	instanceName := filepath.Join(filepath.SplitList(resource.GetInstanceName())...)
-	return fmt.Sprintf(
-		"%s/%s/%s/%d",
-		instanceName, blobTypeSegment(resource.GetCompressor()),
-		resource.GetHash(), resource.GetSizeBytes())
-}
-
-func UploadResourceName(resource *ResourceName) (string, error) {
-	// Haven't found docs on what a valid instance name looks like. But generally
-	// seems like a string, possibly separated by "/".
-
-	// Ensure there is no trailing slash and path has components.
-	instanceName := filepath.Join(filepath.SplitList(resource.GetInstanceName())...)
-
-	u, err := guuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf(
-		"%s/uploads/%s/%s/%s/%d",
-		instanceName, u.String(), blobTypeSegment(resource.GetCompressor()),
-		resource.GetHash(), resource.GetSizeBytes(),
-	), nil
-}
-
 func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
@@ -208,7 +205,9 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceNa
 		compressor = repb.Compressor_ZSTD
 	}
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
-	return NewResourceName(d, instanceName, compressor), nil
+	r := NewResourceName(d, instanceName)
+	r.SetCompressor(compressor)
+	return r, nil
 }
 
 func ParseUploadResourceName(resourceName string) (*ResourceName, error) {

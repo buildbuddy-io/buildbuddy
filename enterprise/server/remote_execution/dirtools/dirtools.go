@@ -627,7 +627,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewInstanceNameDigest(fp.FileNode.Digest, instanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewResourceName(fp.FileNode.Digest, instanceName), f); err != nil {
 		return err
 	}
 	if err := f.Close(); err != nil {

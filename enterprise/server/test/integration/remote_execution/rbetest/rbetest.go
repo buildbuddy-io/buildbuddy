@@ -789,7 +789,7 @@ func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, 
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
-		d := digest.NewInstanceNameDigest(actionResult.GetStdoutDigest(), instanceName)
+		d := digest.NewResourceName(actionResult.GetStdoutDigest(), instanceName)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
@@ -800,7 +800,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 
 	stderr := ""
 	if actionResult.GetStderrDigest() != nil {
-		d := digest.NewInstanceNameDigest(actionResult.GetStderrDigest(), instanceName)
+		d := digest.NewResourceName(actionResult.GetStderrDigest(), instanceName)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {

@@ -835,7 +835,7 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, digest.NewInstanceNameDigest(d, *remoteInstanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, digest.NewResourceName(d, *remoteInstanceName), f); err != nil {
 		_ = f.Close()
 		return err
 	}

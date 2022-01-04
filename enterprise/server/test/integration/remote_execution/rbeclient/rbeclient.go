@@ -270,7 +270,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	command := &Command{
 		gRPCClientSource: c.gRPClientSource,
 		Name:             name,
-		actionDigest:     digest.NewInstanceNameDigest(actionDigest, instanceName),
+		actionDigest:     digest.NewResourceName(actionDigest, instanceName),
 	}
 
 	return command, nil
@@ -282,7 +282,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewInstanceNameDigest(out.GetDigest(), res.InstanceName)
+		d := digest.NewResourceName(out.GetDigest(), res.InstanceName)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -298,7 +298,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewInstanceNameDigest(dir.GetTreeDigest(), res.InstanceName)
+		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err

@@ -252,21 +252,21 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if scheduler == nil {
 		return "", status.FailedPreconditionErrorf("No scheduler service configured")
 	}
-	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
 		log.Errorf("Error fetching action: %s", err.Error())
 		return "", err
 	}
-	cmdInstanceDigest := digest.NewInstanceNameDigest(action.GetCommandDigest(), req.GetInstanceName())
+	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName())
 	command := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
 		log.Errorf("Error fetching command: %s", err.Error())
 		return "", err
 	}
 
-	r := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
-	executionID, err := digest.UploadResourceName(r)
+	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+	executionID, err := r.UploadString()
 	if err != nil {
 		return "", err
 	}
@@ -343,7 +343,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
-	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
@@ -351,8 +351,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			r := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
-			executionID, err := digest.UploadResourceName(r)
+			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+			executionID, err := r.UploadString()
 			if err != nil {
 				return err
 			}
@@ -652,7 +652,7 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 		return err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewInstanceNameDigest(cmdDigest, actionResourceName.GetInstanceName())
+	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return err

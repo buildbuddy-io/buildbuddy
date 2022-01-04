@@ -45,7 +45,7 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 
 func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, d *digest.ResourceName, out io.Writer, offset int64) error {
 	req := &bspb.ReadRequest{
-		ResourceName: digest.DownloadResourceName(d),
+		ResourceName: d.DownloadString(),
 		ReadOffset:   offset,
 		ReadLimit:    d.GetSizeBytes(),
 	}
@@ -87,7 +87,7 @@ func TestRPCRead(t *testing.T) {
 		offset             int64
 	}{
 		{ // Simple Read
-			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+			instanceNameDigest: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -96,7 +96,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Large Read
-			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+			instanceNameDigest: digest.NewResourceName(&repb.Digest{
 				Hash:      "ffd14ebb6c1b2701ac793ea1aff6dddf8540e734bd6d051ac2a24aa3ec062781",
 				SizeBytes: 1000 * 1000 * 100,
 			}, ""),
@@ -105,7 +105,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // 0 length read
-			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+			instanceNameDigest: digest.NewResourceName(&repb.Digest{
 				Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 				SizeBytes: 0,
 			}, ""),
@@ -114,7 +114,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Offset
-			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+			instanceNameDigest: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -123,7 +123,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    1,
 		},
 		{ // Max offset
-			instanceNameDigest: digest.NewInstanceNameDigest(&repb.Digest{
+			instanceNameDigest: digest.NewResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -166,7 +166,7 @@ func TestRPCWrite(t *testing.T) {
 
 	// Test that a regular bytestream upload works.
 	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
-	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "")
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestRPCMalformedWrite(t *testing.T) {
 
 	// Test that a malformed upload (incorrect digest) is rejected.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "")
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
@@ -200,7 +200,7 @@ func TestRPCTooLongWrite(t *testing.T) {
 	// Test that a malformed upload (wrong bytesize) is rejected.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	d.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
-	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "")
 
 	readSeeker := bytes.NewReader(buf)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
@@ -220,7 +220,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	require.NoError(t, err)
 	d, err := digest.Compute(strings.NewReader(blob))
 	require.NoError(t, err)
-	instanceNameDigest := digest.NewInstanceNameDigest(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "")
 
 	// Write
 	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))
