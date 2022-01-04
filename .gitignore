@@ -25,6 +25,11 @@ tramp
 # Bazel directories
 bazel-*
 
+# Generated protos
+**/proto/**/*.pb.go
+**/proto/**/*_ts_proto.d.ts
+**/proto/**/*_ts_proto.js
+
 # Node dependencies
 node_modules
 
