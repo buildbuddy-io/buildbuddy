@@ -284,10 +284,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
-		}
-
-		if blobRsp.Status.Code == int32(codes.OK) && s.env.GetConfigurator().GetCacheZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD) {
-			blobRsp = zstdCompressResponse(blobRsp, req.AcceptableCompressors)
+			if s.env.GetConfigurator().GetCacheZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD) {
+				blobRsp = zstdCompressResponse(blobRsp, req.AcceptableCompressors)
+			}
 		}
 
 		rsp.Responses = append(rsp.Responses, blobRsp)
@@ -316,7 +315,7 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 func zstdCompressResponse(blobRsp *repb.BatchReadBlobsResponse_Response, acceptableCompressors []repb.Compressor_Value) *repb.BatchReadBlobsResponse_Response {
 	data, err := zstd.Compress(nil, blobRsp.Data)
 	if err != nil {
-		log.Errorf("Failed to compress blob: %s", err.Error())
+		log.Errorf("Failed to compress blob: %s", err)
 		return &repb.BatchReadBlobsResponse_Response{
 			Digest: blobRsp.Digest,
 			Status: gstatus.Convert(err).Proto(),
