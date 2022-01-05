@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -215,21 +214,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	delete(s.clusterRanges, clusterID)
 	s.rangeMu.Unlock()
 	s.gossipUsage()
-}
-
-// called as soon as a replica opens
-func (s *Store) OpenReplica(r *replica.Replica) {
-
-}
-
-// called when a replica closes
-func (s *Store) CloseReplica(r *replica.Replica) {
-
-}
-
-// can be used to load a snapshot in an open, uninitialized DB
-func (s *Store) GetDB(clusterID, nodeID uint64) (*pebble.DB, error) {
-	return nil, nil
 }
 
 func (s *Store) RangeIsActive(rangeID uint64) bool {
