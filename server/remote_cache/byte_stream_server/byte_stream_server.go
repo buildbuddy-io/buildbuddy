@@ -164,11 +164,10 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 type writeState struct {
 	// Top-level writer that handles incoming bytes.
 	writer io.Writer
-	// Optional writer that decompresses incoming bytes and writes them to both
-	// the checksum and the cache.
-	decompressor io.WriteCloser
-	// Writer which writes uncompressed bytes to the cache.
-	cacheWriter        io.WriteCloser
+
+	decompressorCloser io.Closer
+	cacheCloser        io.Closer
+
 	checksum           *Checksum
 	d                  *repb.Digest
 	activeResourceName string
@@ -236,18 +235,21 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
+	var cacheWriteCloser io.WriteCloser
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		ws.cacheWriter, err = cache.Writer(ctx, r.GetDigest())
+		cacheWriteCloser, err = cache.Writer(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		ws.cacheWriter = devnull.NewWriteCloser()
+		cacheWriteCloser = devnull.NewWriteCloser()
 	}
-	ws.writer = io.MultiWriter(ws.checksum, ws.cacheWriter)
+	ws.cacheCloser = cacheWriteCloser
+	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		ws.decompressor = NewZstdDecompressor(ws.writer)
-		ws.writer = ws.decompressor
+		decompressor := NewZstdDecompressor(ws.writer)
+		ws.writer = decompressor
+		ws.decompressorCloser = decompressor
 	}
 	return ws, nil
 }
@@ -268,12 +270,12 @@ func (w *writeState) Write(buf []byte) error {
 }
 
 func (w *writeState) Close() error {
-	if w.decompressor != nil {
+	if w.decompressorCloser != nil {
 		// Close the decompressor, flushing any currently buffered bytes to the
 		// checksum+cache multi-writer. If this fails, don't bother computing the
 		// checksum or commiting the file to cache, since the incoming data is
 		// likely corrupt anyway.
-		if err := w.decompressor.Close(); err != nil {
+		if err := w.decompressorCloser.Close(); err != nil {
 			log.Warning(err.Error())
 			return err
 		}
@@ -285,7 +287,7 @@ func (w *writeState) Close() error {
 		return err
 	}
 
-	return w.cacheWriter.Close()
+	return w.cacheCloser.Close()
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
@@ -451,7 +453,10 @@ func (d *zstdDecompressor) Write(p []byte) (int, error) {
 }
 
 func (d *zstdDecompressor) Close() error {
-	d.pw.Close()
+	var lastErr error
+	if err := d.pw.Close(); err != nil {
+		lastErr = err
+	}
 	defer func() {
 		if err := d.zstdReader.Close(); err != nil {
 			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
@@ -463,9 +468,9 @@ func (d *zstdDecompressor) Close() error {
 	// remaining decompressed bytes are drained.
 	err, ok := <-d.done
 	if ok {
-		return err
+		lastErr = err
 	}
-	return nil
+	return lastErr
 }
 
 func NewZstdCompressor(reader io.Reader) io.ReadCloser {
