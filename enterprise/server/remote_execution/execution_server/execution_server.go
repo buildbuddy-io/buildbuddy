@@ -598,9 +598,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if stage == repb.ExecutionStage_COMPLETED {
 			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
-				if err := s.updateRouter(ctx, taskID, response); err != nil {
-					// Errors from updating the router should not be fatal.
-					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
+				if err := s.updateTaskAccounting(ctx, taskID, response); err != nil {
+					// Errors from accounting-type updates (task router, usage tracker)
+					// should not be fatal.
+					log.Errorf("Failed to update task accounting for task %s: %s", taskID, err)
 				}
 			}
 		}
@@ -633,14 +634,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 }
 
-func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
+func (s *ExecutionServer) updateTaskAccounting(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
 	router := s.env.GetTaskRouter()
-	if router == nil {
-		return nil
-	}
 	// If the result was served from cache, nothing was actually executed, so no
 	// need to update the task router.
-	if executeResponse.GetCachedResult() {
+	shouldUpdateRouter := router != nil && !executeResponse.GetCachedResult()
+
+	ut := s.env.GetUsageTracker()
+	shouldUpdateUsage := ut != nil
+
+	// Don't bother looking up the action + command if we don't need to.
+	if !shouldUpdateRouter && !shouldUpdateUsage {
 		return nil
 	}
 	actionResourceName, err := digest.ParseUploadResourceName(taskID)
@@ -657,7 +661,47 @@ func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, execu
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return err
 	}
-	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	md := executeResponse.GetResult().GetExecutionMetadata()
+	nodeID := md.GetExecutorId()
+
+	if shouldUpdateRouter {
+		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	}
+
+	if shouldUpdateUsage {
+		dur, err := executionDuration(md)
+		if err != nil {
+			return err
+		}
+		counts := &tables.UsageCounts{}
+		plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+		if plat.OS == platform.DarwinOperatingSystemName {
+			counts.MacExecutionDurationUsec += dur.Microseconds()
+		} else if plat.OS == platform.LinuxOperatingSystemName {
+			counts.LinuxExecutionDurationUsec += dur.Microseconds()
+		} else {
+			return status.InternalErrorf("Unsupported platform %s", plat.OS)
+		}
+		if err := ut.Increment(ctx, counts); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
+	if err := md.GetOutputUploadCompletedTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	if err := md.GetQueuedTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	end := md.GetOutputUploadCompletedTimestamp().AsTime()
+	start := md.GetQueuedTimestamp().AsTime()
+	dur := end.Sub(start)
+	if dur <= 0 {
+		return 0, status.InternalErrorf("Execution duration is <= 0")
+	}
+	return dur, nil
 }

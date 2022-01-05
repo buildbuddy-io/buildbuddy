@@ -427,10 +427,12 @@ func (wf *Workflow) TableName() string {
 }
 
 type UsageCounts struct {
-	Invocations            int64
-	CASCacheHits           int64
-	ActionCacheHits        int64
-	TotalDownloadSizeBytes int64
+	Invocations                int64
+	CASCacheHits               int64
+	ActionCacheHits            int64
+	TotalDownloadSizeBytes     int64
+	LinuxExecutionDurationUsec int64
+	MacExecutionDurationUsec   int64
 }
 
 // Usage holds usage counter values for a group during a particular time period.
