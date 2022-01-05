@@ -9,7 +9,7 @@ module.exports = {
       "rbe-github-actions",
       "rbe-pools",
     ],
-    "Workflows (CI)": ["workflows-setup", "workflows-config"],
+    "Workflows (CI)": ["workflows-introduction", "workflows-setup", "workflows-config"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
     Enterprise: [
       "enterprise",
