@@ -23,7 +23,7 @@ jobs:
 
       - name: Update deps.bzl
         run: |
-          cp deps.zl ../buildbuddy-internal/deps.bzl
+          cp deps.bzl ../buildbuddy-internal/deps.bzl
 
       - name: Update SHA
         run: |
