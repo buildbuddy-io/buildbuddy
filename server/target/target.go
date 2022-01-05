@@ -92,8 +92,8 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
 		return nil, err
 	}
-	q.AddWhereClause("i.created_at_usec > ?", startUsec)
-	q.AddWhereClause("i.created_at_usec + i.duration_usec < ?", endUsec)
+	q.AddWhereClause("ts.start_time_usec > ?", startUsec)
+	q.AddWhereClause("ts.start_time_usec < ?", endUsec)
 
 	tq := req.GetQuery()
 	if repo := tq.GetRepoUrl(); repo != "" {
