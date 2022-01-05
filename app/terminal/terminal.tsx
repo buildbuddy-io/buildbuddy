@@ -6,6 +6,11 @@ import Spinner from "../components/spinner/spinner";
 
 export interface TerminalProps {
   value?: string;
+  loading?: boolean;
+
+  title?: JSX.Element;
+  subtitle?: JSX.Element;
+
   lightTheme?: boolean;
   fullLogsFetcher?: () => Promise<string>;
 }
@@ -30,37 +35,57 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   render() {
     return (
-      <div className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""}`}>
-        <div className="terminal-actions">
-          <button
-            title="Wrap"
-            onClick={this.handleWrapClicked.bind(this)}
-            className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
-            <WrapText className="icon white" />
-          </button>
-          {this.state.isLoadingFullLog ? (
-            <Spinner />
-          ) : (
-            <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
-              <Download className="icon white" />
-            </button>
-          )}
-        </div>
-        <div className="terminal" ref={this.terminalRef}>
-          <LazyLog
-            selectableLines={true}
-            caseInsensitive={true}
-            rowHeight={20}
-            enableSearch={true}
-            lineClassName="terminal-line"
-            follow={true}
-            // Ensure a trailing blank line to prevent the horizontal scrollbar
-            // from covering up the last line of logs.
-            text={(this.wrapText(this.props.value) || "No build logs...") + "\n\n"}
-            // This spread works around lightTheme not being included in @types/react-lazylog
-            // (it's a custom prop we added in our fork).
-            {...{ lightTheme: this.props.lightTheme }}
-          />
+      <div
+        className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""} ${
+          this.props.subtitle ? "has-subtitle" : ""
+        }`}>
+        <div className="terminal-content">
+          <div className="terminal-top-bar">
+            {this.props.title && (
+              <div className="terminal-titles">
+                {this.props.title}
+                {this.props.subtitle}
+              </div>
+            )}
+            {/* Search bar is actually rendered by react-lazylog.
+              This div is just a placeholder for layout purposes. */}
+            <div className="terminal-search-placeholder" />
+            <div className="terminal-actions">
+              <button
+                title="Wrap"
+                onClick={this.handleWrapClicked.bind(this)}
+                className={`terminal-action ${this.state.wrap ? "active" : ""}`}>
+                <WrapText className="icon white" />
+              </button>
+              {this.state.isLoadingFullLog ? (
+                <Spinner />
+              ) : (
+                <button title="Download" onClick={this.handleDownloadClicked.bind(this)} className="terminal-action">
+                  <Download className="icon white" />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="terminal" ref={this.terminalRef}>
+            {this.props.loading ? (
+              <div className={`loading ${this.props.lightTheme ? "" : "loading-dark"}`} />
+            ) : (
+              <LazyLog
+                selectableLines={true}
+                caseInsensitive={true}
+                rowHeight={20}
+                enableSearch={true}
+                lineClassName="terminal-line"
+                follow={true}
+                // Ensure a trailing blank line to prevent the horizontal scrollbar
+                // from covering up the last line of logs.
+                text={(this.wrapText(this.props.value) || "No build logs...") + "\n\n"}
+                // This spread works around lightTheme not being included in @types/react-lazylog
+                // (it's a custom prop we added in our fork).
+                {...{ lightTheme: this.props.lightTheme }}
+              />
+            )}
+          </div>
         </div>
       </div>
     );

@@ -50,6 +50,11 @@
   height: 18px;
 }
 
+.invocation-action-card .terminal-container {
+  padding: 8px 32px;
+  border-radius: 8px;
+}
+
 .file-name {
   display: flex;
   align-items: flex-start;
@@ -117,12 +122,12 @@
   color: #222;
 }
 
-.action-section div {
+.action-section > div {
   flex-grow: 1;
   font-size: 13px;
 }
 
-.action-section div.action-property-title {
+.action-section .action-property-title {
   width: 20%;
   flex-grow: 0;
   flex-shrink: 0;

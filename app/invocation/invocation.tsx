@@ -183,6 +183,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <TargetComponent
           invocationId={this.props.invocationId}
           hash={this.props.hash}
+          files={this.state.model.getFiles(completed.buildEvent)}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
@@ -321,7 +322,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab == "timing" && <TimingCardComponent model={this.state.model} />}
 
           {activeTab == "action" && (
-            <InvocationActionCardComponent model={this.state.model} search={this.props.search} />
+            <InvocationActionCardComponent
+              model={this.state.model}
+              search={this.props.search}
+              preferences={this.props.preferences}
+            />
           )}
 
           {activeTab == "fetches" && <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />}

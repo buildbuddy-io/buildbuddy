@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
 func EnsureDirectoryExists(dir string) error {
@@ -33,6 +34,8 @@ func DeleteLocalFileIfExists(filename string) {
 }
 
 func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return 0, err
 	}
@@ -55,6 +58,8 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 }
 
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	data, err := ioutil.ReadFile(fullPath)
 	if os.IsNotExist(err) {
 		return nil, status.NotFoundError(err.Error())
@@ -63,6 +68,8 @@ func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
 }
 
 func DeleteFile(ctx context.Context, fullPath string) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	return os.Remove(fullPath)
 }
 
@@ -77,12 +84,19 @@ func FileExists(fullPath string) (bool, error) {
 	}
 }
 
-type SectionReaderCloser struct {
+type readCloser struct {
 	*io.SectionReader
 	io.Closer
+	ctx context.Context
 }
 
-func FileReader(ctx context.Context, fullPath string, offset, length int64) (*SectionReaderCloser, error) {
+func (r *readCloser) Read(p []byte) (int, error) {
+	_, spn := tracing.StartSpan(r.ctx)
+	defer spn.End()
+	return r.SectionReader.Read(p)
+}
+
+func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.ReadCloser, error) {
 	f, err := os.Open(fullPath)
 	if err != nil {
 		return nil, err
@@ -92,14 +106,21 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (*Se
 		return nil, err
 	}
 	if length > 0 {
-		return &SectionReaderCloser{io.NewSectionReader(f, offset, length), f}, nil
+		return &readCloser{io.NewSectionReader(f, offset, length), f, ctx}, nil
 	}
-	return &SectionReaderCloser{io.NewSectionReader(f, offset, info.Size()-offset), f}, nil
+	return &readCloser{io.NewSectionReader(f, offset, info.Size()-offset), f, ctx}, nil
 }
 
 type writeMover struct {
 	*os.File
+	ctx       context.Context
 	finalPath string
+}
+
+func (w *writeMover) Write(p []byte) (int, error) {
+	_, spn := tracing.StartSpan(w.ctx)
+	defer spn.End()
+	return w.File.Write(p)
 }
 
 func (w *writeMover) Close() error {
@@ -126,6 +147,7 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 	}
 	wm := &writeMover{
 		File:      f,
+		ctx:       ctx,
 		finalPath: fullPath,
 	}
 	// Ensure that the temp file is cleaned up here too!

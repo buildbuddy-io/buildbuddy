@@ -177,7 +177,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
-	adInstanceDigest := digest.NewInstanceNameDigest(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 
 	acClient := s.env.GetActionCacheClient()
 
@@ -227,7 +227,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	md.InputFetchStartTimestamp = ptypes.TimestampNow()
 
-	rootInstanceDigest := digest.NewInstanceNameDigest(
+	rootInstanceDigest := digest.NewResourceName(
 		task.GetAction().GetInputRootDigest(),
 		task.GetExecuteRequest().GetInstanceName(),
 	)
@@ -349,7 +349,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			if err != nil {
 				return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 			}
-			adInstanceDigest = digest.NewInstanceNameDigest(resultDigest, req.GetInstanceName())
+			adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName())
 		}
 		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))

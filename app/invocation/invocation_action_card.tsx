@@ -6,10 +6,13 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent, { parseDigest } from "../components/digest/digest";
+import TerminalComponent from "../terminal/terminal";
+import UserPreferences from "../preferences/preferences";
 
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
+  preferences: UserPreferences;
 }
 
 interface State {
@@ -21,6 +24,8 @@ interface State {
   inputDirs?: InputNode[];
   treeShaToExpanded?: Map<string, boolean>;
   treeShaToChildrenMap?: Map<string, InputNode[]>;
+  stderr?: string;
+  stdout?: string;
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -86,8 +91,44 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.setState({
           actionResult: build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(buffer)),
         });
+        this.fetchStdoutAndStderr(this.state.actionResult);
       })
       .catch((e) => console.error("Failed to fetch action result:", e));
+  }
+
+  fetchStdoutAndStderr(actionResult: build.bazel.remote.execution.v2.ActionResult) {
+    let stdoutUrl =
+      "bytestream://" +
+      this.getCacheAddress() +
+      "/blobs/" +
+      actionResult.stdoutDigest.hash +
+      "/" +
+      actionResult.stdoutDigest.sizeBytes;
+
+    rpcService
+      .fetchBytestreamFile(stdoutUrl, this.props.model.getId())
+      .then((content: string) => {
+        this.setState({
+          stdout: content,
+        });
+      })
+      .catch((e) => console.error("Failed to fetch stdout:", e));
+
+    let stderrUrl =
+      "bytestream://" +
+      this.getCacheAddress() +
+      "/blobs/" +
+      actionResult.stderrDigest.hash +
+      "/" +
+      actionResult.stderrDigest.sizeBytes;
+    rpcService
+      .fetchBytestreamFile(stderrUrl, this.props.model.getId())
+      .then((content: string) => {
+        this.setState({
+          stderr: content,
+        });
+      })
+      .catch((e) => console.error("Failed to fetch stderr:", e));
   }
 
   fetchCommand(action: build.bazel.remote.execution.v2.Action) {
@@ -428,6 +469,32 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       ) : (
                         <div>None</div>
                       )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Stderr</div>
+                      <div>
+                        {this.state.stderr ? (
+                          <TerminalComponent
+                            value={this.state.stderr}
+                            lightTheme={this.props.preferences.lightTerminalEnabled}
+                          />
+                        ) : (
+                          <div>None</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Stdout</div>
+                      <div>
+                        {this.state.stdout ? (
+                          <TerminalComponent
+                            value={this.state.stdout}
+                            lightTheme={this.props.preferences.lightTerminalEnabled}
+                          />
+                        ) : (
+                          <div>None</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (

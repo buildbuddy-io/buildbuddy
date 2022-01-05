@@ -214,6 +214,7 @@ type cacheConfig struct {
 	RaftCache        RaftCacheConfig        `yaml:"raft"`
 	MaxSizeBytes     int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	InMemory         bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
+	ZstdTranscodingEnabled bool                   `yaml:"zstd_transcoding_enabled" usage:"Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly."`
 }
 
 type authConfig struct {
@@ -726,6 +727,10 @@ func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
 
 func (c *Configurator) GetCacheInMemory() bool {
 	return c.gc.Cache.InMemory
+}
+
+func (c *Configurator) GetCacheZstdTranscodingEnabled() bool {
+	return c.gc.Cache.ZstdTranscodingEnabled
 }
 
 func (c *Configurator) GetAnonymousUsageEnabled() bool {

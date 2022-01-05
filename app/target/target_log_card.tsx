@@ -17,13 +17,14 @@ export default class TargetLogCardComponent extends React.Component {
       <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
         <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
-          <div className="title">{this.props.title}</div>
-          <div className="test-subtitle">{this.props.subtitle}</div>
-          {this.props.contents && (
-            <div className="test-log">
-              <TerminalComponent value={this.props.contents} lightTheme={!this.props.dark} />
-            </div>
-          )}
+          <div className="test-log">
+            <TerminalComponent
+              title={<div className="title">{this.props.title}</div>}
+              subtitle={<div className="test-subtitle">{this.props.subtitle}</div>}
+              value={this.props.contents}
+              lightTheme={!this.props.dark}
+            />
+          </div>
         </div>
       </div>
     );
