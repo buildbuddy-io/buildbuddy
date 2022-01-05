@@ -86,9 +86,7 @@ export default class TargetTestCasesCardComponent extends React.Component {
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          <div className="test-case-contents">
-                            {child.innerHTML.replace("<![CDATA[", "").replace("--]]>", "")}
-                          </div>
+                          <div className="test-case-contents">{child.textContent}</div>
                         </div>
                       ))}
                     </div>

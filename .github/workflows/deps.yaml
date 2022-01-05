@@ -16,10 +16,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v1
+
+      - name: Checkout internal
+        uses: actions/checkout@v1
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: "master"
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
+
+      - name: Update deps.bzl
+        run: |
+          cp deps.bzl ../buildbuddy-internal/deps.bzl
 
       - name: Update SHA
         run: |
@@ -32,6 +39,7 @@ jobs:
           git config --local user.email ${{ github.event.head_commit.author.email }}
           git config --local user.name ${{ github.event.head_commit.author.name }}
           git add WORKSPACE
+          git add deps.bzl
           cat <<EOF > message.txt
           🔄 ${{ github.event.head_commit.message }}
           Update buildbuddy-io/buildbuddy commit SHA
