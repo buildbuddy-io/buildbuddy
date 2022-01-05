@@ -315,7 +315,8 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 func zstdCompressResponse(blobRsp *repb.BatchReadBlobsResponse_Response, acceptableCompressors []repb.Compressor_Value) *repb.BatchReadBlobsResponse_Response {
 	data, err := zstd.Compress(nil, blobRsp.Data)
 	if err != nil {
-		log.Errorf("Failed to compress blob: %s", err)
+		err = status.InternalErrorf("Failed to compress blob: %s", err)
+		log.Error(err.Error())
 		return &repb.BatchReadBlobsResponse_Response{
 			Digest: blobRsp.Digest,
 			Status: gstatus.Convert(err).Proto(),
