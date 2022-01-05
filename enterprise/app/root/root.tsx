@@ -165,15 +165,15 @@ export default class EnterpriseRootComponent extends React.Component {
           className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
             login ? "dark" : ""
           }`}>
-          {menu && (
-            <MenuComponent
-              user={this.state.user}
-              showHamburger={!this.state.user && !!invocationId}
-              preferences={this.state.preferences}>
-              <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
-            </MenuComponent>
-          )}
-          <div className="page">
+          <div className={`page ${menu ? "has-menu" : ""}`}>
+            {menu && (
+              <MenuComponent
+                user={this.state.user}
+                showHamburger={!this.state.user && !!invocationId}
+                preferences={this.state.preferences}>
+                <div onClick={this.handleOrganizationClicked.bind(this)}>{this.state.user?.selectedGroupName()}</div>
+              </MenuComponent>
+            )}
             {sidebar && (
               <SidebarComponent
                 path={this.state.path}
