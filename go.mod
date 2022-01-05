@@ -20,6 +20,7 @@ require (
 	github.com/containerd/containerd v1.5.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/crewjam/saml v0.4.5
+	github.com/DataDog/zstd v1.5.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.7+incompatible
