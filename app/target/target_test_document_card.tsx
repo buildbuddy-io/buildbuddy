@@ -136,7 +136,7 @@ export default class TargetTestDocumentCardComponent extends React.Component {
                   )
                   .map((child) => (
                     <TargetLogCardComponent
-                      contents={child.innerHTML.replace("<![CDATA[", "").replace("--]]>", "")}
+                      contents={child.textContent}
                       title={testSuite.getAttribute("name")}
                       subtitle={`${child.tagName}`}
                       dark={this.props.dark}
