@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v1
+
+      - name: Checkout internal
+        uses: actions/checkout@v1
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: "master"
