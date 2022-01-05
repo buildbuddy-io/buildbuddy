@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -241,7 +240,6 @@ func (l *Lease) renewLease() error {
 		// This means we set the lease succesfully.
 		l.leaseRecord = leaseRequest
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
-		log.Errorf("another lease was active, saving it.")
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
 		// and witness its epoch so that our next set request has a higher one.

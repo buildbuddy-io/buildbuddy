@@ -143,8 +143,6 @@ func (sm *Replica) maybeSetRange(key, val []byte) error {
 		return err
 	}
 	sm.rangeMu.Lock()
-	log.Printf("rangeDescriptor is %+v", rangeDescriptor)
-	log.Printf("mappedRange is: %+v", sm.mappedRange)
 	if sm.mappedRange == nil {
 		sm.rangeDescriptor = rangeDescriptor
 		sm.mappedRange = &rangemap.Range{

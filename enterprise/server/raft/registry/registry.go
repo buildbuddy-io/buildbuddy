@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -92,10 +93,26 @@ type fixedPartitioner struct {
 }
 
 func (p *DynamicNodeRegistry) String() string {
-	buf := fmt.Sprintf("\nnhid: %q, raftAddr: %q, grpcAddr: %q\n", p.nhid, p.raftAddress, p.grpcAddress)
-	buf += fmt.Sprintf("nodeTargets: %+v\n", p.nodeTargets)
-	buf += fmt.Sprintf("raftAddrs: %+v\n", p.raftAddrs)
-	buf += fmt.Sprintf("grpcAddrs: %+v\n", p.grpcAddrs)
+	nodeHostClusters := make(map[string][]raftio.NodeInfo)
+	for nodeInfo, nodeHost := range p.nodeTargets {
+		nodeHostClusters[nodeHost] = append(nodeHostClusters[nodeHost], nodeInfo)
+	}
+	for _, clusters := range nodeHostClusters {
+		sort.Slice(clusters, func(i, j int) bool {
+			if clusters[i].ClusterID == clusters[j].ClusterID {
+				return clusters[i].NodeID < clusters[j].NodeID
+			}
+			return clusters[i].ClusterID < clusters[j].ClusterID
+		})
+	}
+
+	buf := fmt.Sprintf("\nRegistry(%q) [raftAddr: %q, grpcAddr: %q]\n", p.nhid, p.raftAddress, p.grpcAddress)
+	for nodeHost, clusters := range nodeHostClusters {
+		grpcAddr := p.grpcAddrs[nodeHost]
+		raftAddr := p.raftAddrs[nodeHost]
+		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", nodeHost, raftAddr, grpcAddr)
+		buf += fmt.Sprintf("   %+v\n", clusters)
+	}
 	return buf
 }
 

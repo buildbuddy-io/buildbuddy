@@ -100,30 +100,37 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 func (s *Store) acquireRangeLease(clusterID uint64) {
 	rd := s.lookupRange(clusterID)
 	if rd == nil {
-		log.Warningf("No range descriptor found for cluster: %d", clusterID)
 		return
 	}
-	rl := rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd)
+	var rl *rangelease.Lease
+
 	s.leaseMu.Lock()
-	s.leases[rd.GetRangeId()] = rl
+	if existingLease, ok := s.leases[rd.GetRangeId()]; ok {
+		rl = existingLease
+	} else {
+		rl = rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd)
+		s.leases[rd.GetRangeId()] = rl
+	}
 	s.leaseMu.Unlock()
 
 	go func() {
 		for {
+			if rl.Valid() {
+				return
+			}
 			err := rl.Lease()
 			if err == nil {
-				break
+				log.Printf("Succesfully leased range: %+v", rl)
+				return
 			}
 			log.Warningf("Error leasing range: %s", err)
 		}
-		log.Printf("Succesfully leased range: %+v", rl)
 	}()
 }
 
 func (s *Store) releaseRangeLease(clusterID uint64) {
 	rd := s.lookupRange(clusterID)
 	if rd == nil {
-		log.Warningf("No range descriptor found for cluster: %d", clusterID)
 		return
 	}
 
@@ -134,7 +141,6 @@ func (s *Store) releaseRangeLease(clusterID uint64) {
 	}
 	s.leaseMu.Unlock()
 	if !ok {
-		log.Warningf("Attempted to release range that is not held")
 		return
 	}
 	go func() {
@@ -159,7 +165,6 @@ func (s *Store) gossipUsage() {
 	usage.DiskBytesTotal = int64(du.TotalBytes)
 	usage.DiskBytesUsed = int64(du.UsedBytes)
 
-	log.Printf("Gossipping usage: %s", proto.MarshalTextString(usage))
 	s.gossipManager.SetTag(constants.NodeUsageTag, proto.MarshalTextString(usage))
 }
 
