@@ -663,11 +663,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-				linesToRetain, err := getCursesLinesFromStartedBuildEvent(&bazelBuildEvent)
-				if err != nil {
-					return err
-				}
-				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, linesToRetain)
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, getCursesLinesFromStartedBuildEvent(&bazelBuildEvent))
 			}
 		}
 
@@ -795,26 +791,26 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 	return "", nil
 }
 
-func getCursesLinesFromStartedBuildEvent(event *build_event_stream.BuildEvent) (int, error) {
+func getCursesLinesFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
 	// the number of lines curses can overwrite is 2 + the ui_actions shown:
 	// 1 for the progress tracker, 1 for each action, and 1 blank line
 	options, err := extractOptionsFromStartedBuildEvent(event)
 	if err != nil {
-		return 0, err
+		log.Errorf("Could not extract options for ui_actions_show, defaulting to 8: %v", err)
+		return 10
 	}
-	actionsShownValues, err := getValuesForOptionNameFromOptions(options, "ui_actions_shown")
+	optionsList, err := shlex.Split(options)
 	if err != nil {
-		return 0, err
+		log.Errorf("Could not shlex split options for ui_actions_show, defaulting to 8: %v", err)
+		return 10
 	}
-	cursesValues, err := getValuesForOptionNameFromOptions(options, "ui_actions_shown")
-	if err != nil {
-		return 0, err
-	}
+	actionsShownValues := getValuesForOptionNameFromOptionsList(optionsList, "ui_actions_shown")
+	cursesValues := getValuesForOptionNameFromOptionsList(optionsList, "ui_actions_shown")
 	if len(cursesValues) > 1 {
-		log.Errorf("Too many arguments to curses, assuming auto : %v", cursesValues)
+		log.Errorf("Too many arguments to curses, assuming auto: %v", cursesValues)
 	}
 	if len(cursesValues) == 1 && cursesValues[0] == "no" {
-		return 0, nil
+		return 0
 	}
 	if len(actionsShownValues) > 1 {
 		log.Errorf("Too many arguments to ui_actions_shown, defaulting to 8: %v", actionsShownValues)
@@ -824,20 +820,16 @@ func getCursesLinesFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 		if err != nil {
 			log.Errorf("Invalid argument to ui_actions_shown, defaulting to 8: %v", err)
 		} else if n < 1 {
-			return 3, nil
+			return 3
 		} else {
-			return n + 2, nil
+			return n + 2
 		}
 	}
-	return 10, nil
+	return 10
 }
 
-func getValuesForOptionNameFromOptions(options, value string) ([]string, error) {
+func getValuesForOptionNameFromOptionsList(optionsList []string, value string) []string {
 	values := []string{}
-	optionsList, err := shlex.Split(options)
-	if err != nil {
-		return values, err
-	}
 	flag := "--" + value
 	for i, option := range optionsList {
 		if option == "--" {
@@ -853,7 +845,7 @@ func getValuesForOptionNameFromOptions(options, value string) ([]string, error) 
 			}
 		}
 	}
-	return values, nil
+	return values
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
