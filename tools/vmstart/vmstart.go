@@ -163,7 +163,7 @@ func main() {
 			log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
 		}
 
-		actionInstanceDigest := digest.NewInstanceNameDigest(d, *remoteInstanceName)
+		actionInstanceDigest := digest.NewResourceName(d, *remoteInstanceName)
 
 		action, cmd, err := cachetools.GetActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
 		if err != nil {
@@ -172,7 +172,7 @@ func main() {
 		log.Infof("Action:\n%s", proto.MarshalTextString(action))
 		log.Infof("Command:\n%s", proto.MarshalTextString(cmd))
 
-		tree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewInstanceNameDigest(action.GetInputRootDigest(), *remoteInstanceName))
+		tree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName))
 		if err != nil {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}
