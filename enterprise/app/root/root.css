@@ -8,6 +8,10 @@ body {
   flex-grow: 1;
 }
 
+.page.has-menu {
+  flex-direction: column;
+}
+
 .impersonation-toolbar {
   background-color: #ffc107;
   padding: 4px 32px;
