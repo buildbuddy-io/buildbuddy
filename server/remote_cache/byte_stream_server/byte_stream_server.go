@@ -95,7 +95,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 	if !s.supportsCompressor(r.GetCompressor()) {
-		return status.InvalidArgumentErrorf("Unsupported compressor %s", r.GetCompressor())
+		return status.UnimplementedErrorf("Unsupported compressor %s", r.GetCompressor())
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
@@ -235,14 +235,12 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
-	var cacheWriteCloser io.WriteCloser
+	cacheWriteCloser := devnull.NewWriteCloser()
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
 		cacheWriteCloser, err = cache.Writer(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		cacheWriteCloser = devnull.NewWriteCloser()
 	}
 	ws.cacheCloser = cacheWriteCloser
 	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
