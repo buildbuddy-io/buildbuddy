@@ -6526,9 +6526,9 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
+              "expr": "sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
-              "legendFormat": "{{grpc_method}}",
+              "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
               "queryType": "randomWalk",
               "refId": "A"
             }
