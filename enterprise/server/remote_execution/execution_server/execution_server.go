@@ -595,26 +595,24 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if stage == repb.ExecutionStage_COMPLETED {
 			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
-				actionResourceName, err := digest.ParseUploadResourceName(taskID)
-				if err != nil {
+				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
 					log.Error(err.Error())
-				} else {
-					// Before publishing the COMPLETED operation, update the task router
-					// so that subsequent tasks with similar routing properties can get
-					// routed back to the same executor.
-					if err := s.updateRouter(ctx, actionResourceName, response); err != nil {
-						// Errors from updating the router should not be fatal.
-						log.Errorf("Failed to update task router for task %s: %s", taskID, err)
-					}
-					// Also update usage, but it can wait until we're done handling the
-					// operation.
-					defer func() {
-						if err := s.updateUsage(ctx, actionResourceName, response); err != nil {
-							// Errors from updating usage should not be fatal.
-							log.Errorf("Failed to update usage for task %s: %s", taskID, err)
-						}
-					}()
 				}
+				// Before publishing the COMPLETED operation, update the task router
+				// so that subsequent tasks with similar routing properties can get
+				// routed back to the same executor.
+				if err := s.updateRouter(ctx, actionResourceName, response); err != nil {
+					// Errors from updating the router should not be fatal.
+					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
+				}
+				// Also update usage, but it can wait until we're done handling the
+				// operation.
+				defer func() {
+					if err := s.updateUsage(ctx, actionResourceName, response); err != nil {
+						// Errors from updating usage should not be fatal.
+						log.Errorf("Failed to update usage for task %s: %s", taskID, err)
+					}
+				}()
 			}
 		}
 
@@ -646,22 +644,25 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 }
 
-func (s *ExecutionServer) updateRouter(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse) error {
-	router := s.env.GetTaskRouter()
-	if router == nil {
-		return nil
-	}
-	// If the result was served from cache, nothing was actually executed, so no
-	// need to update the task router.
-	if executeResponse.GetCachedResult() {
-		return nil
+// markTaskComplete contains logic to be run when the task is complete but
+// before letting the client know that the task has completed.
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
+	actionResourceName, err := digest.ParseUploadResourceName(taskID)
+	if err != nil {
+		return err
 	}
 	cmd, err := s.fetchCommandForTask(ctx, actionResourceName)
 	if err != nil {
 		return err
 	}
-	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+
+	router := s.env.GetTaskRouter()
+	// Only update the router if a task was actually executed
+	if router != nil && !executeResponse.GetCachedResult() {
+		nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
+		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	}
+
 	return nil
 }
 
