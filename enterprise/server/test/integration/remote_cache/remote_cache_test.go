@@ -159,3 +159,34 @@ func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.
 		"second build should be cached since anonymous users have cache write capabilities by default",
 	)
 }
+
+func TestBuild_RemoteCacheFlags_Compression_SecondBuildIsCached(t *testing.T) {
+	app := buildbuddy_enterprise.RunWithConfig(
+		t, buildbuddy_enterprise.NoAuthConfig, "--cache.zstd_transcoding_enabled=true")
+	ctx := context.Background()
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	buildFlags := []string{"//:hello.txt", "--experimental_remote_cache_compression"}
+	buildFlags = append(buildFlags, app.BESBazelFlags()...)
+	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
+
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	require.NotContains(
+		t, result.Stderr, "1 remote cache hit",
+		"sanity check: initial build shouldn't be cached",
+	)
+
+	// Clear the local cache so we can try for a remote cache hit.
+	testbazel.Clean(ctx, t, ws)
+
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	assert.Contains(
+		t, result.Stderr, "1 remote cache hit",
+		"second build should be cached since anonymous users have cache write capabilities by default",
+	)
+}
