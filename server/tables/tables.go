@@ -432,7 +432,7 @@ type UsageCounts struct {
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
 
-	// NOTE: New fields should added here should be annotated with
+	// NOTE: New fields added here should be annotated with
 	// `gorm:"not null;default:0"`
 
 	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
