@@ -392,7 +392,8 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 	require.NoError(t, err)
 	res, err := uploadStream.CloseAndRecv()
 	require.NoError(t, err)
-	// NOTE: If the blob already exists, this assertion will fail.
+	// NOTE: If the blob already exists, this assertion will fail if the blob is
+	// compressed.
 	require.Equal(t, len(blob), res.CommittedSize)
 }
 
