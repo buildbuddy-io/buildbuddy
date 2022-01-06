@@ -596,23 +596,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
 				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
 					log.Error(err.Error())
 				}
-				// Before publishing the COMPLETED operation, update the task router
-				// so that subsequent tasks with similar routing properties can get
-				// routed back to the same executor.
-				if err := s.updateRouter(ctx, actionResourceName, response); err != nil {
-					// Errors from updating the router should not be fatal.
-					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
-				}
-				// Also update usage, but it can wait until we're done handling the
-				// operation.
-				defer func() {
-					if err := s.updateUsage(ctx, actionResourceName, response); err != nil {
-						// Errors from updating usage should not be fatal.
-						log.Errorf("Failed to update usage for task %s: %s", taskID, err)
-					}
-				}()
 			}
 		}
 
@@ -661,6 +647,10 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	if router != nil && !executeResponse.GetCachedResult() {
 		nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	}
+
+	if err := s.updateUsage(ctx, actionResourceName, executeResponse); err != nil {
+		return err
 	}
 
 	return nil
