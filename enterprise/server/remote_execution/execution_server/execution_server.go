@@ -649,23 +649,19 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	}
 
-	if err := s.updateUsage(ctx, actionResourceName, executeResponse); err != nil {
+	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
 	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
-	if err != nil {
-		return err
-	}
-	cmd, err := s.fetchCommandForTask(ctx, actionResourceName)
 	if err != nil {
 		return err
 	}
