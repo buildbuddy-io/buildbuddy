@@ -390,8 +390,10 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 		FinishWrite: true,
 	})
 	require.NoError(t, err)
-	_, err = uploadStream.CloseAndRecv()
+	res, err := uploadStream.CloseAndRecv()
 	require.NoError(t, err)
+	// NOTE: If the blob already exists, this assertion will fail.
+	require.Equal(t, len(blob), res.CommittedSize)
 }
 
 func zstdCompress(t *testing.T, b []byte) []byte {

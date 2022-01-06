@@ -252,15 +252,6 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	return ws, nil
 }
 
-// BytesWritten returns the effective number of *uncompressed* bytes that have
-// been written to the stream. If the digest already exists,
-func (w *writeState) BytesWritten() int64 {
-	if w.alreadyExists {
-		return w.d.GetSizeBytes()
-	}
-	return w.checksum.BytesWritten()
-}
-
 func (w *writeState) Write(buf []byte) error {
 	n, err := w.writer.Write(buf)
 	w.offset += int64(n)
@@ -317,7 +308,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				if err != nil {
 					return err
 				}
-				return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
+				return stream.SendAndClose(&bspb.WriteResponse{
+					CommittedSize: r.GetDigest().GetSizeBytes(),
+				})
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
@@ -326,7 +319,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 			if streamState.alreadyExists {
 				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.BytesWritten(),
+					CommittedSize: streamState.d.GetSizeBytes(),
 				})
 			}
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
@@ -346,7 +339,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: streamState.BytesWritten(),
+				CommittedSize: streamState.offset,
 			})
 		}
 	}
