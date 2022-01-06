@@ -649,11 +649,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	}
 
-	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
-		return err
-	}
-
-	return nil
+	return s.updateUsage(ctx, cmd, executeResponse)
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
