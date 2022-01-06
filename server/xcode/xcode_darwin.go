@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,6 +28,7 @@ const xcodeBundleID = "com.apple.dt.Xcode"
 const versionPlistPath = "Contents/version.plist"
 const developerDirectoryPath = "Contents/Developer"
 const filePrefix = "file://"
+const defaultXcodeVersion = "default-xcode-version"
 
 type xcodeLocator struct {
 	versions map[string]*xcodeVersion
@@ -53,10 +55,19 @@ func NewXcodeLocator() (*xcodeLocator, error) {
 // Finds the Xcode that matches the given Xcode version.
 // Returns the developer directory for that Xcode and the SDK root for the given SDK.
 func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error) {
+	if xcodeVersion == "" {
+		xcodeVersion = defaultXcodeVersion
+	}
+
 	xv := x.xcodeVersionForVersionString(xcodeVersion)
 	if xv == nil {
-
-		return "", "", status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %s", xcodeVersion, versionsString(x.versions))
+		var err error
+		if xcodeVersion == defaultXcodeVersion {
+			err = status.FailedPreconditionErrorf("Default Xcode version not set on remote executor and xcode-select set to an invalid path. Available Xcode versions are %s", versionsString(x.versions))
+		} else {
+			err = status.FailedPreconditionErrorf("Xcode version %s not installed on remote executor. Available Xcode versions are %s", xcodeVersion, versionsString(x.versions))
+		}
+		return "", "", err
 	}
 	sdkPath, ok := xv.sdks[sdk]
 	if !ok {
@@ -102,6 +113,7 @@ func (x *xcodeLocator) locate() error {
 }
 
 func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
+	defaultDeveloperDir := xcodeSelectDeveloperDir()
 	versionMap := make(map[string]*xcodeVersion)
 	for _, urlRef := range urlRefs {
 		path := "/" + strings.TrimLeft(stringFromCFString(C.CFURLGetString(C.CFURLRef(urlRef))), filePrefix)
@@ -129,13 +141,34 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 				continue
 			}
 			log.Debugf("Mapped Xcode Version %s=>%s with SDKs %+v", version, developerDirPath, sdks)
-			versionMap[version] = &xcodeVersion{
+			xv := &xcodeVersion{
 				version:          mostPreciseVersion,
 				developerDirPath: developerDirPath,
 				sdks:             sdks,
 			}
+			versionMap[version] = xv
+			if defaultDeveloperDir == developerDirPath {
+				versionMap[defaultXcodeVersion] = xv
+			}
 		}
 	}
+
+	if xv, ok := versionMap[defaultXcodeVersion]; ok {
+		log.Infof("xcode-select set to Xcode version %s", xv.version)
+		return versionMap
+	}
+
+	// If we are here then defaultDeveloperDir is not a valid Xcode path
+	if defaultDeveloperDir == "/Library/Developer/CommandLineTools" {
+		version := commandLineToolsVersionString()
+		log.Infof("xcode-select set to Command Line Tools (%s)", version)
+		if xv := commandLineToolsVersion(defaultDeveloperDir); xv != nil {
+			versionMap[defaultXcodeVersion] = xv
+		}
+	} else if defaultDeveloperDir != "" {
+		log.Warningf("xcode-select set to an invalid Xcode path: %s", defaultDeveloperDir)
+	}
+
 	return versionMap
 }
 
@@ -149,6 +182,48 @@ func xcodePlistForPath(path string) (*xcodePlist, error) {
 		return nil, status.InternalErrorf("Failed to decode %s: %s", path, err.Error())
 	}
 	return &xcodePlist, nil
+}
+
+func commandLineToolsVersion(developerDir string) *xcodeVersion {
+	sdkPaths, err := fs.Glob(os.DirFS(developerDir), "SDKs/*")
+	if err != nil {
+		log.Warningf("Error reading CommandLineTools SDKs from %s: %s", developerDir, err.Error())
+		return nil
+	}
+	sdks := make(map[string]string)
+	for _, sdkPath := range sdkPaths {
+		sdks[strings.TrimSuffix(filepath.Base(sdkPath), ".sdk")] = sdkPath
+	}
+	return &xcodeVersion{
+		version:          defaultXcodeVersion,
+		developerDirPath: developerDir,
+		sdks:             sdks,
+	}
+}
+
+// Returns the version of the Xcode Command Line Tools, or "unknown" if it
+// can't be determined.
+func commandLineToolsVersionString() string {
+	out, err := exec.Command(
+		"sh", "-c",
+		"pkgutil --pkg-info=com.apple.pkg.CLTools_Executables | awk '/version:/ {print $2}'",
+	).Output()
+	if err != nil {
+		log.Warningf("Error determining Xcode Command Line Tools version: %s", err.Error())
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// Returns the active developer directory according to xcode-select, or the
+// empty string if xcode-select failed to run.
+func xcodeSelectDeveloperDir() string {
+	out, err := exec.Command("xcode-select", "-p").Output()
+	if err != nil {
+		log.Warningf("Error calling xcode-select: %s", err.Error())
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // Expands a single Xcode version into all component combinations in order of increasing precision.
@@ -194,6 +269,9 @@ func sdksString(sdks map[string]string) string {
 func versionsString(versions map[string]*xcodeVersion) string {
 	availableVersions := make([]string, 0, len(versions))
 	for version, _ := range versions {
+		if version == defaultXcodeVersion {
+			continue
+		}
 		availableVersions = append(availableVersions, version)
 	}
 	sort.Strings(availableVersions)
