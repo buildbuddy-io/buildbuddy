@@ -258,8 +258,25 @@ func (w *writeState) Write(buf []byte) error {
 	return err
 }
 
+func (w *writeState) CloseAndCommit() error {
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	// Verify the checksum. If it does not match, note that the cache writer is
+	// not closed, since that commits the file to cache.
+	if err := w.checksum.Check(w.d); err != nil {
+		return err
+	}
+
+	return w.cacheCloser.Close()
+}
+
 func (w *writeState) Close() error {
 	if w.decompressorCloser != nil {
+		defer func() {
+			w.decompressorCloser = nil
+		}()
 		// Close the decompressor, flushing any currently buffered bytes to the
 		// checksum+cache multi-writer. If this fails, don't bother computing the
 		// checksum or commiting the file to cache, since the incoming data is
@@ -270,13 +287,7 @@ func (w *writeState) Close() error {
 		}
 	}
 
-	// Verify the checksum. If it does not match, note that the cache writer is
-	// not closed, since that commits the file to cache.
-	if err := w.checksum.Check(w.d); err != nil {
-		return err
-	}
-
-	return w.cacheCloser.Close()
+	return nil
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
@@ -317,6 +328,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
+			defer func() {
+				if err := streamState.Close(); err != nil {
+					log.Error(err.Error())
+				}
+			}()
 			if streamState.alreadyExists {
 				return stream.SendAndClose(&bspb.WriteResponse{
 					CommittedSize: streamState.d.GetSizeBytes(),
@@ -335,7 +351,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if req.FinishWrite {
-			if err := streamState.Close(); err != nil {
+			if err := streamState.CloseAndCommit(); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
