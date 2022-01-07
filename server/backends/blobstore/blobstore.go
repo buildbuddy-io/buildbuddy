@@ -45,7 +45,7 @@ const (
 )
 
 // Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore(ctx context.Context, c *config.Configurator) (interfaces.Blobstore, error) {
+func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
 	if c.GetStorageDiskRootDir() != "" {
 		log.Debug("Disk blobstore configured")
@@ -303,7 +303,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 		return nil, err
 	}
 	start := time.Now()
-	_, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	b, err := ioutil.ReadAll(reader)
 	spn.End()
 	recordReadMetrics(gcsLabel, start, b, err)
