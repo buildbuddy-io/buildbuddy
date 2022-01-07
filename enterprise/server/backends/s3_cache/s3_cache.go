@@ -110,18 +110,17 @@ func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
 
 func (s3c *S3Cache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := s3c.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
-	spn.End()
-	if err == nil {
-		return true, nil
+	defer spn.End()
+	if _, err := s3c.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)}); err != nil {
+		aerr := err.(awserr.Error)
+		// AWS returns codes as strings
+		// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
+		if aerr.Code() != "NotFound" {
+			return false, err
+		}
+		return false, nil
 	}
-	aerr := err.(awserr.Error)
-	// AWS returns codes as strings
-	// https://github.com/aws/aws-sdk-go/blob/master/service/s3/s3manager/bucket_region_test.go#L70
-	if aerr.Code() != "NotFound" {
-		return false, err
-	}
-	return false, nil
+	return true, nil
 }
 
 func (s3c *S3Cache) createBucketIfNotExists(ctx context.Context, bucketName string) error {
@@ -465,7 +464,6 @@ func (w *waitForUploadWriteCloser) Write(p []byte) (int, error) {
 	_, spn := tracing.StartSpan(w.ctx)
 	defer spn.End()
 	return w.WriteCloser.Write(p)
-
 }
 
 func (w *waitForUploadWriteCloser) Close() error {
