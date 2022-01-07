@@ -350,8 +350,8 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if req.FinishWrite {
-			// Note: Need to Close before committing, since this will ensure the
-			// remaining bytes will be decompressed and written to the cache writer.
+			// Note: Need to Close before committing, since this flushes any currently
+			// buffered bytes from the decompressor to the cache writer.
 			if err := streamState.Close(); err != nil {
 				return err
 			}
