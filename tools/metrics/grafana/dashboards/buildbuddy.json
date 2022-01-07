@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1639614910611,
+  "iteration": 1641593367054,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -6357,7 +6357,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 19
       },
       "id": 71,
       "panels": [
@@ -6576,7 +6576,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 20
       },
       "id": 962,
       "panels": [
@@ -6620,7 +6620,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -6630,13 +6631,41 @@
               },
               "unit": "Bps"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "E"
+                },
+                "properties": [
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  },
+                  {
+                    "id": "custom.stacking",
+                    "value": {
+                      "group": "A",
+                      "mode": "normal"
+                    }
+                  },
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  },
+                  {
+                    "id": "custom.axisSoftMax",
+                    "value": 1
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
             "w": 6,
             "x": 0,
-            "y": 20
+            "y": 21
           },
           "id": 992,
           "options": {
@@ -6698,6 +6727,18 @@
               "interval": "",
               "legendFormat": "{{device}} tx",
               "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "1 - (avg by(mode) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})))",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "cpu",
+              "refId": "E"
             }
           ],
           "title": "${kubenode} disk and network IO",
@@ -6713,7 +6754,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 21
       },
       "id": 8,
       "panels": [
