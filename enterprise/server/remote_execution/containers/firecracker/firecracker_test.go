@@ -298,7 +298,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		if exists, err := disk.FileExists(ctx, fullPath); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
-		if exists, err := disk.FileExists(ctx, fullPath + ".out"); err != nil || !exists {
+		if exists, err := disk.FileExists(ctx, fullPath+".out"); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}
