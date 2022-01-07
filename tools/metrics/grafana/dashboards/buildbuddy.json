@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1641593367054,
+  "iteration": 1641596622434,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -5978,12 +5978,6 @@
             "uid": "prom"
           },
           "description": "Number of heap bytes allocated and still in use.",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -6013,7 +6007,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6074,12 +6068,6 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -6109,7 +6097,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6168,12 +6156,6 @@
             "uid": "prom"
           },
           "description": "% of time spent in the garbage collector since the program started.",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -6203,7 +6185,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6261,12 +6243,6 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -6296,7 +6272,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6578,6 +6554,304 @@
         "x": 0,
         "y": 20
       },
+      "id": 1088,
+      "panels": [
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 1127,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})))",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "{{nodename}}",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMax": 100000000,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "id": 1166,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "max by (nodename) (rate(node_disk_read_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"}))",
+              "interval": "",
+              "legendFormat": "reads {{nodename}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "max by (nodename) (rate(node_disk_written_bytes_total[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"}))\n",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "writes {{nodename}}",
+              "refId": "B"
+            }
+          ],
+          "title": "Disk",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMax": 100000000,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "id": 1168,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "rate(node_network_receive_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})\n",
+              "interval": "",
+              "legendFormat": "rx {{nodename}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "rate(node_network_transmit_bytes_total{device=~\"ens.*\"}[1m]) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-[0-9a-z]{4}$\"})\n",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "tx {{nodename}}",
+              "refId": "B"
+            }
+          ],
+          "title": "Network",
+          "type": "timeseries"
+        }
+      ],
+      "repeat": "kubepool",
+      "title": "Kubernetes Nodes Overview (${kubepool})",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
       "id": 962,
       "panels": [
         {
@@ -6620,8 +6894,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -6754,7 +7027,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 24
       },
       "id": 8,
       "panels": [
@@ -7161,6 +7434,28 @@
         "tagsQuery": "",
         "type": "query",
         "useTags": false
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "definition": "label_values(node_uname_info, nodename)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": false,
+        "name": "kubepool",
+        "options": [],
+        "query": {
+          "query": "label_values(node_uname_info, nodename)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "^(gke-.*)-([0-9a-f]{8})-([0-9a-z]{4})$",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
       },
       {
         "current": {
