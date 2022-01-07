@@ -155,7 +155,7 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 		return "", err
 	}
 	casPath := filepath.Join(fileHome, filepath.Base(fileName))
-	if exists, err := disk.FileExists(casPath); err == nil && exists {
+	if exists, err := disk.FileExists(ctx, casPath); err == nil && exists {
 		log.Debugf("Found existing %q in path: %q", fileName, casPath)
 		return casPath, nil
 	}
@@ -690,10 +690,10 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer func() {
 		log.Debugf("copyOutputsToWorkspace took %s", time.Since(start))
 	}()
-	if exists, err := disk.FileExists(c.workspaceFSPath); err != nil || !exists {
+	if exists, err := disk.FileExists(ctx, c.workspaceFSPath); err != nil || !exists {
 		return status.FailedPreconditionErrorf("workspacefs path %q not found", c.workspaceFSPath)
 	}
-	if exists, err := disk.FileExists(c.actionWorkingDir); err != nil || !exists {
+	if exists, err := disk.FileExists(ctx, c.actionWorkingDir); err != nil || !exists {
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
 	}
 
@@ -712,7 +712,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 			return nil
 		}
 		targetLocation := filepath.Join(c.actionWorkingDir, path)
-		alreadyExists, err := disk.FileExists(targetLocation)
+		alreadyExists, err := disk.FileExists(ctx, targetLocation)
 		if err != nil {
 			return err
 		}
@@ -1018,7 +1018,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 }
 
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
-	diskImagePath, err := containerutil.CachedDiskImagePath(c.jailerRoot, c.containerImage)
+	diskImagePath, err := containerutil.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return false, err
 	}

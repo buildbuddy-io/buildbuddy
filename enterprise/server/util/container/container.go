@@ -41,7 +41,7 @@ func hashFile(filename string) (string, error) {
 // CachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
+func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
 	hashedContainerName := hashString(containerImage)
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 	files, err := os.ReadDir(containerImagesPath)
@@ -66,7 +66,7 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 		return iUnix < jUnix
 	})
 	diskImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), diskImageFileName)
-	exists, err := disk.FileExists(diskImagePath)
+	exists, err := disk.FileExists(ctx, diskImagePath)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func CachedDiskImagePath(workspaceDir, containerImage string) (string, error) {
 // remote registry to ensure that the image can be accessed. The path to the
 // disk image is returned.
 func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
-	existingPath, err := CachedDiskImagePath(workspaceDir, containerImage)
+	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
 	if err != nil {
 		return "", err
 	}

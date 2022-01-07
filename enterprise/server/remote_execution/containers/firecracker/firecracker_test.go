@@ -295,10 +295,10 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	assert.Equal(t, expectedResult, res)
 
 	for _, fullPath := range files {
-		if exists, err := disk.FileExists(fullPath); err != nil || !exists {
+		if exists, err := disk.FileExists(ctx, fullPath); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
-		if exists, err := disk.FileExists(fullPath + ".out"); err != nil || !exists {
+		if exists, err := disk.FileExists(ctx, fullPath + ".out"); err != nil || !exists {
 			t.Fatalf("File %q not found in workspace.", fullPath)
 		}
 	}

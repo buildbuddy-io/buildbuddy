@@ -49,7 +49,7 @@ func GetConfiguredBlobstore(ctx context.Context, c *config.Configurator) (interf
 	log.Debug("Configuring blobstore")
 	if c.GetStorageDiskRootDir() != "" {
 		log.Debug("Disk blobstore configured")
-		return NewDiskBlobStore(ctx, c.GetStorageDiskRootDir())
+		return NewDiskBlobStore(c.GetStorageDiskRootDir())
 	}
 	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
 		log.Debug("Configuring GCS blobstore")
@@ -133,7 +133,7 @@ type DiskBlobStore struct {
 	rootDir string
 }
 
-func NewDiskBlobStore(ctx context.Context, rootDir string) (*DiskBlobStore, error) {
+func NewDiskBlobStore(rootDir string) (*DiskBlobStore, error) {
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
@@ -247,9 +247,7 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	ctx, spn := tracing.StartSpan(ctx)
-	defer spn.End()
-	return disk.FileExists(fullPath)
+	return disk.FileExists(ctx, fullPath)
 }
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
