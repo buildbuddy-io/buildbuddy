@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -21,10 +22,13 @@ import (
 var userMap = testauth.TestUsers("user1", "group1")
 
 func TestGetInvocation(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: "abc"}})
+	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Invocation))
@@ -32,47 +36,69 @@ func TestGetInvocation(t *testing.T) {
 
 func TestGetInvocationNotFound(t *testing.T) {
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+	streamBuild(t, env, testInvocationID)
+	testUUID, err = uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID2 := testUUID.String()
 	s := NewAPIServer(env)
-	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: "doesntexist"}})
+	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: testInvocationID2}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 0, len(resp.Invocation))
 }
 
 func TestGetInvocationAuth(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: "abc"}})
+	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
 
 func TestGetTarget(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: "abc"}})
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 3, len(resp.Target))
 }
 
 func TestGetTargetAuth(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: "abc"}})
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
 
 func TestGetTargetByLabel(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: "abc", Label: "//my/target:foo"}})
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID, Label: "//my/target:foo"}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Target))
@@ -80,21 +106,29 @@ func TestGetTargetByLabel(t *testing.T) {
 }
 
 func TestGetTargetByTag(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: "abc", Tag: "tag-b"}})
+	resp, err := s.GetTarget(ctx, &apipb.GetTargetRequest{Selector: &apipb.TargetSelector{InvocationId: testInvocationID, Tag: "tag-b"}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 2, len(resp.Target))
 }
 
 func TestGetAction(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
-	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: "abc"})
+	streamBuild(t, env, testInvocationID)
+	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
 	s := NewAPIServer(env)
-	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: "abc"}})
+	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Action))
@@ -103,29 +137,41 @@ func TestGetAction(t *testing.T) {
 }
 
 func TestGetActionAuth(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: "abc"}})
+	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
 
 func TestLog(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "user1")
-	streamBuild(t, env, "abc")
-	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: "abc"})
+	streamBuild(t, env, testInvocationID)
+	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
 	s := NewAPIServer(env)
-	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: "abc"}})
+	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 }
 
 func TestGetLogAuth(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+
 	env, ctx := getEnvAndCtx(t, "")
-	streamBuild(t, env, "abc")
+	streamBuild(t, env, testInvocationID)
 	s := NewAPIServer(env)
-	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: "abc"}})
+	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
 }
