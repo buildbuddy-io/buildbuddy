@@ -20,7 +20,10 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_datadog_zstd//:zstd",
+        "@com_github_klauspost_compress//zstd",
+        "@com_github_valyala_gozstd//:gozstd",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 

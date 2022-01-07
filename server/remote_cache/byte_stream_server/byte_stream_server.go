@@ -3,9 +3,12 @@ package byte_stream_server
 import (
 	"context"
 	"crypto/sha256"
+	"flag"
 	"fmt"
 	"hash"
 	"io"
+	"runtime"
+	"sync"
 
 	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -19,9 +22,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	kzstd "github.com/klauspost/compress/zstd"
+	vzstd "github.com/valyala/gozstd"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -30,10 +36,27 @@ const (
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
+var (
+	useZstdPools   = flag.Bool("zstd_pool", false, "")
+	zstdWriterPool = NewCompressorPool()
+	zstdReaderPool = NewDecompressorPool()
+
+	klauspostEncoder = mustGetEncoder()
+)
+
+func mustGetEncoder() *kzstd.Encoder {
+	enc, err := kzstd.NewWriter(nil)
+	if err != nil {
+		panic(err)
+	}
+	return enc
+}
+
 type ByteStreamServer struct {
-	env        environment.Env
-	cache      interfaces.Cache
-	bufferPool *bytebufferpool.Pool
+	env           environment.Env
+	cache         interfaces.Cache
+	bufferPool    *bytebufferpool.Pool
+	kpEncoderPool *sync.Pool
 }
 
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
@@ -45,6 +68,15 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		env:        env,
 		cache:      cache,
 		bufferPool: bytebufferpool.New(readBufSizeBytes),
+		kpEncoderPool: &sync.Pool{
+			New: func() interface{} {
+				enc, err := kzstd.NewWriter(nil)
+				if err != nil {
+					return err
+				}
+				return enc
+			},
+		},
 	}, nil
 }
 
@@ -118,9 +150,24 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	defer reader.Close()
 
+	log.Infof("BS.Read %.2f KB %s", float64(r.GetDigest().GetSizeBytes())/1e3, r.GetCompressor())
+
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader = NewZstdCompressor(reader)
-		defer reader.Close()
+		if lib := zstdLib(ctx); lib == "datadog" {
+			reader = NewZstdCompressor(reader)
+			defer reader.Close()
+		} else if lib == "klauspost" {
+			reader, err = NewKlauspostChunkedCompressor(reader, r.GetDigest().GetSizeBytes() /*, s.kpEncoderPool */)
+			// reader, err = NewKlauspostCompressor(reader, s.kpEncoderPool)
+			if err != nil {
+				return status.InternalErrorf("Failed to initialize zstd compressor: %s", err)
+			}
+			defer reader.Close()
+		} else {
+			// reader = NewValyalaCompressor(reader)
+			reader = NewValyalaChunkedCompressor(reader, r.GetDigest().GetSizeBytes())
+			defer reader.Close()
+		}
 	}
 
 	downloadTracker := ht.TrackDownload(r.GetDigest())
@@ -236,7 +283,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
 	cacheWriteCloser := devnull.NewWriteCloser()
-	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+	if hasDevnullHeader(ctx) {
+		log.Debugf("Writing to devnull")
+	} else if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
 		cacheWriteCloser, err = cache.Writer(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
@@ -245,7 +294,17 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.cacheCloser = cacheWriteCloser
 	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor := NewZstdDecompressor(ws.writer)
+		var decompressor io.WriteCloser
+		if lib := zstdLib(ctx); lib == "datadog" {
+			decompressor = NewZstdDecompressor(ws.writer)
+		} else if lib == "klauspost" {
+			decompressor, err = NewKlauspostDecompressor(ws.writer)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			decompressor = NewValyalaDecompressor(ws.writer)
+		}
 		ws.writer = decompressor
 		ws.decompressorCloser = decompressor
 	}
@@ -260,6 +319,9 @@ func (w *writeState) Write(buf []byte) error {
 
 func (w *writeState) Close() error {
 	if w.decompressorCloser != nil {
+		defer func() {
+			w.decompressorCloser = nil
+		}()
 		// Close the decompressor, flushing any currently buffered bytes to the
 		// checksum+cache multi-writer. If this fails, don't bother computing the
 		// checksum or commiting the file to cache, since the incoming data is
@@ -270,6 +332,10 @@ func (w *writeState) Close() error {
 		}
 	}
 
+	return nil
+}
+
+func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not closed, since that commits the file to cache.
 	if err := w.checksum.Check(w.d); err != nil {
@@ -317,11 +383,22 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
+			defer func() {
+				if err := streamState.Close(); err != nil {
+					log.Error(err.Error())
+				}
+			}()
 			if streamState.alreadyExists {
+				log.Warningf("AlreadyExists; size=%d", streamState.d.GetSizeBytes())
 				return stream.SendAndClose(&bspb.WriteResponse{
 					CommittedSize: streamState.d.GetSizeBytes(),
 				})
 			}
+			r, err := digest.ParseUploadResourceName(req.ResourceName)
+			if err != nil {
+				return err
+			}
+			log.Infof("BS.Write %.2f KB %s", float64(streamState.d.GetSizeBytes())/1e3, r.GetCompressor())
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
@@ -335,7 +412,14 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if req.FinishWrite {
+			// Note: Need to Close before committing, since this flushes any currently
+			// buffered bytes from the decompressor to the cache writer.
 			if err := streamState.Close(); err != nil {
+				log.Errorf(err.Error())
+				return err
+			}
+			if err := streamState.Commit(); err != nil {
+				log.Errorf("COMMIT err: %s", err)
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
@@ -411,6 +495,281 @@ func (s *Checksum) Check(d *repb.Digest) error {
 	return nil
 }
 
+type ZstdWriterPool struct {
+	pool sync.Pool
+}
+
+func NewCompressorPool() *ZstdWriterPool {
+	return &ZstdWriterPool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				w := vzstd.NewWriter(nil)
+				runtime.SetFinalizer(w, func(w *vzstd.Writer) {
+					w.Release()
+				})
+				return w
+			},
+		},
+	}
+}
+
+func (p *ZstdWriterPool) Get() *vzstd.Writer {
+	zw := p.pool.Get().(*vzstd.Writer)
+	return zw
+}
+
+func (p *ZstdWriterPool) Put(w *vzstd.Writer) {
+	p.pool.Put(w)
+}
+
+type ZstdReaderPool struct {
+	pool sync.Pool
+}
+
+func NewDecompressorPool() *ZstdReaderPool {
+	return &ZstdReaderPool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				r := vzstd.NewReader(nil)
+				return r
+			},
+		},
+	}
+}
+
+func (p *ZstdReaderPool) Get() *vzstd.Reader {
+	zr := p.pool.Get().(*vzstd.Reader)
+	return zr
+}
+
+func (p *ZstdReaderPool) Put(r *vzstd.Reader) {
+	if r == nil {
+		panic("Tried to put nil reader into pool")
+	}
+	p.pool.Put(r)
+}
+
+type valyalaZstdDecompressor struct {
+	pw         *io.PipeWriter
+	zstdReader *vzstd.Reader
+	done       chan error
+}
+
+func NewValyalaDecompressor(writer io.Writer) io.WriteCloser {
+	pr, pw := io.Pipe()
+	var dc *vzstd.Reader
+	if *useZstdPools {
+		dc = zstdReaderPool.Get()
+		dc.Reset(pr, nil)
+	} else {
+		dc = vzstd.NewReader(pr)
+	}
+	d := &valyalaZstdDecompressor{
+		pw:         pw,
+		zstdReader: dc,
+		done:       make(chan error, 1),
+	}
+	go func() {
+		if *useZstdPools {
+			defer zstdReaderPool.Put(dc)
+		} else {
+			defer d.zstdReader.Release()
+		}
+		defer pr.Close()
+		_, err := d.zstdReader.WriteTo(writer)
+		d.done <- err
+		close(d.done)
+	}()
+	return d
+}
+
+func (d *valyalaZstdDecompressor) Write(p []byte) (int, error) {
+	return d.pw.Write(p)
+}
+
+func (d *valyalaZstdDecompressor) Close() error {
+	var lastErr error
+	if err := d.pw.Close(); err != nil {
+		lastErr = err
+	}
+	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
+	// since the write-end of the pipe is closed, reads from the decompressor
+	// should no longer be blocking, and it should return EOF as soon as the
+	// remaining decompressed bytes are drained.
+	err, ok := <-d.done
+	if ok {
+		lastErr = err
+	}
+	return lastErr
+}
+
+func NewValyalaCompressor(reader io.Reader) io.ReadCloser {
+	pr, pw := io.Pipe()
+	w := vzstd.NewWriter(pw)
+	go func() {
+		defer w.Release()
+		_, err := w.ReadFrom(reader)
+		defer func(err error) {
+			// Pipe writer needs to be closed after the compressor is closed, since
+			// closing the compressor may result in more bytes written to the pipe.
+			pw.CloseWithError(err)
+		}(err)
+		if err := w.Close(); err != nil {
+			log.Error(err.Error())
+			return
+		}
+	}()
+	return pr
+}
+
+func NewValyalaChunkedCompressor(reader io.Reader, uncompressedLength int64) io.ReadCloser {
+	pr, pw := io.Pipe()
+	go func() {
+		bufLength := readBufSizeBytes
+		if uncompressedLength < int64(bufLength) {
+			bufLength = int(uncompressedLength)
+		}
+		rbuf := make([]byte, bufLength)
+		cbuf := make([]byte, bufLength)
+		for {
+			n, err := reader.Read(rbuf)
+			if n > 0 {
+				cbuf = vzstd.Compress(cbuf[:0], rbuf[:n])
+				if _, err := pw.Write(cbuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return pr
+}
+
+type klauspostZstdDecompressor struct {
+	pw      *io.PipeWriter
+	decoder *kzstd.Decoder
+	done    chan error
+}
+
+func NewKlauspostDecompressor(writer io.Writer) (io.WriteCloser, error) {
+	pr, pw := io.Pipe()
+	decoder, err := kzstd.NewReader(pr)
+	if err != nil {
+		return nil, err
+	}
+	d := &klauspostZstdDecompressor{
+		pw:      pw,
+		decoder: decoder,
+		done:    make(chan error, 1),
+	}
+	go func() {
+		defer pr.Close()
+		_, err := decoder.WriteTo(writer)
+		d.done <- err
+		close(d.done)
+	}()
+	return d, nil
+}
+
+func (d *klauspostZstdDecompressor) Write(p []byte) (int, error) {
+	return d.pw.Write(p)
+}
+
+func (d *klauspostZstdDecompressor) Close() error {
+	var lastErr error
+	if err := d.pw.Close(); err != nil {
+		lastErr = err
+	}
+	defer func() {
+		d.decoder.Close()
+	}()
+	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
+	// since the write-end of the pipe is closed, reads from the decompressor
+	// should no longer be blocking, and it should return EOF as soon as the
+	// remaining decompressed bytes are drained.
+	err, ok := <-d.done
+	if ok {
+		lastErr = err
+	}
+	return lastErr
+}
+
+func NewKlauspostCompressor(reader io.Reader, pool *sync.Pool) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+
+	pooled := pool.Get()
+	if err, ok := pooled.(error); ok {
+		return nil, err
+	}
+	enc, ok := pooled.(*kzstd.Encoder)
+	if !ok {
+		return nil, status.InternalErrorf("Unexpected type %T retrieved from zstd encoder pool", enc)
+	}
+	enc.Reset(pw)
+	go func() {
+		_, err := enc.ReadFrom(reader)
+		defer func(err error) {
+			// Pipe writer needs to be closed after the compressor is closed, since
+			// closing the compressor may result in more bytes written to the pipe.
+			pw.CloseWithError(err)
+		}(err)
+		if err := enc.Close(); err != nil {
+			log.Errorf("Failed to close zstd writer; some zstd resources may not be cleaned up properly: %s", err)
+			return
+		}
+		pool.Put(enc)
+	}()
+	return pr, nil
+}
+
+func NewKlauspostChunkedCompressor(reader io.Reader, uncompressedLength int64 /*, pool *sync.Pool */) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+
+	// pooled := pool.Get()
+	// if err, ok := pooled.(error); ok {
+	// 	return nil, err
+	// }
+	// enc, ok := pooled.(*kzstd.Encoder)
+	// if !ok {
+	// 	return nil, status.InternalErrorf("Unexpected type %T retrieved from zstd encoder pool", enc)
+	// }
+	// enc.Reset(nil)
+
+	go func() {
+		// defer func() {
+		// 	log.Infof("Klosed Pool")
+		// 	enc.Close()
+		// 	pool.Put(enc)
+		// }()
+
+		bufLength := readBufSizeBytes
+		if uncompressedLength < int64(bufLength) {
+			bufLength = int(uncompressedLength)
+		}
+		rbuf := make([]byte, bufLength)
+		cbuf := make([]byte, bufLength)
+		for {
+			n, err := reader.Read(rbuf)
+			if n > 0 {
+				cbuf = klauspostEncoder.EncodeAll(rbuf[:n], cbuf[:0])
+				if _, err := pw.Write(cbuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return pr, nil
+}
+
 type zstdDecompressor struct {
 	pw         *io.PipeWriter
 	zstdReader io.ReadCloser
@@ -457,8 +816,8 @@ func (d *zstdDecompressor) Close() error {
 	// since the write-end of the pipe is closed, reads from the decompressor
 	// should no longer be blocking, and it should return EOF as soon as the
 	// remaining decompressed bytes are drained.
-	err, ok := <-d.done
-	if ok {
+	err := <-d.done
+	if err != nil {
 		lastErr = err
 	}
 	return lastErr
@@ -479,4 +838,26 @@ func NewZstdCompressor(reader io.Reader) io.ReadCloser {
 		}
 	}()
 	return pr
+}
+
+func hasDevnullHeader(ctx context.Context) bool {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	if vals := md.Get("x-buildbuddy-cache-devnull-writer"); len(vals) > 0 {
+		return vals[0] == "true"
+	}
+	return false
+}
+
+func zstdLib(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "valyala"
+	}
+	if vals := md.Get("x-buildbuddy-cache-zstd-lib"); len(vals) > 0 {
+		return vals[0]
+	}
+	return "valyala"
 }

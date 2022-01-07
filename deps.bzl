@@ -3259,6 +3259,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.0.1",
     )
     go_repository(
+        name = "com_github_valyala_gozstd",
+        importpath = "github.com/valyala/gozstd",
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:com_github_valyala_gozstd.patch"],
+        sum = "h1:mtK5+UU774dXzuWtCqukhLyVOCM5NClDU3wUDazx90w=",
+        version = "v1.14.2",
+    )
+
+    go_repository(
         name = "com_github_valyala_quicktemplate",
         importpath = "github.com/valyala/quicktemplate",
         sum = "h1:k0vgK7zlmFzqAoIBIOrhrfmZ6JoTGJlLRPLbkPGr2/M=",
@@ -3424,13 +3433,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:9x7Bx0A9R5/M9jibeJeZWqjeVEIxYW9fZYqB9a70/bY=",
         version = "v1.1.0",
     )
-    go_repository(
-        name = "com_google_cloud_go_iam",
-        importpath = "cloud.google.com/go/iam",
-        sum = "h1:W2vbGCrE3Z7J/x3WXLxxGl9LMSB2uhsAA7Ss/6u/qRY=",
-        version = "v0.1.0",
-    )
-
     go_repository(
         name = "com_google_cloud_go_pubsub",
         importpath = "cloud.google.com/go/pubsub",

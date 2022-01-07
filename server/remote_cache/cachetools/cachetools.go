@@ -93,6 +93,12 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		return nil, err
 	}
+	// sentFinishWrite := false
+	// defer func() {
+	// 	if !sentFinishWrite {
+	// 		log.Errorf("Did not send FinishWrite req!!!")
+	// 	}
+	// }()
 
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
@@ -115,6 +121,9 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			}
 			return nil, err
 		}
+		// if readDone {
+		// 	sentFinishWrite = true
+		// }
 		bytesUploaded += int64(n)
 		if readDone {
 			break

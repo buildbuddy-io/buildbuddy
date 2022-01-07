@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
+    timeInterval: 2s
     access: proxy
     uid: prom
     isDefault: true

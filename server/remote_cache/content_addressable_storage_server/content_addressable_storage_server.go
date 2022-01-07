@@ -141,7 +141,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	kvs := make(map[*repb.Digest][]byte, len(req.Requests))
+	totalSize := int64(0)
 	for _, uploadRequest := range req.Requests {
+		totalSize += uploadRequest.GetDigest().GetSizeBytes()
 		uploadDigest := uploadRequest.GetDigest()
 		_, err := digest.Validate(uploadDigest)
 		if err != nil {
@@ -205,6 +207,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	if err := cache.SetMulti(ctx, kvs); err != nil {
 		return nil, err
 	}
+
+	log.Infof("CAS.Update %.1f KB / %d blobs", float64(totalSize)/1e3, len(req.Requests))
+
 	for uploadDigest := range kvs {
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: uploadDigest,
