@@ -332,7 +332,7 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{}
-	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, schedulerOpts)
+	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executionServer.Name(), schedulerOpts)
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)
 	}

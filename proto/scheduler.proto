@@ -203,6 +203,11 @@ message ExecutionNode {
   //
   // Ex. "34c5cf7e-b3b1-4e20-b43c-3e196b30d983"
   string executor_id = 9;
+
+  // Name of the execution server this executor is running on
+  //
+  // Ex. "8BiY6U0F"
+  string execution_server_name = 10;
 }
 
 message GetExecutionNodesRequest {
