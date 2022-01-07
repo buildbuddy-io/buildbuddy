@@ -663,7 +663,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, getCursesLinesFromStartedBuildEvent(&bazelBuildEvent))
+				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
+				if numLinesToRetain != 0 {
+					// the number of lines curses can overwrite is 2 + the ui_actions shown:
+					// 1 for the progress tracker, 1 for each action, and 1 blank line.
+					// 0 indicates that curses is not being used.
+					numLinesToRetain += 2
+				}
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, numLinesToRetain)
 			}
 		}
 
@@ -791,58 +798,50 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 	return "", nil
 }
 
-func getCursesLinesFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
-	// the number of lines curses can overwrite is 2 + the ui_actions shown:
-	// 1 for the progress tracker, 1 for each action, and 1 blank line
+func getNumActionsShownFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
 	options, err := extractOptionsFromStartedBuildEvent(event)
 	if err != nil {
-		log.Errorf("Could not extract options for ui_actions_show, defaulting to 8: %v", err)
-		return 10
+		log.Warningf("Could not extract options for ui_actions_show, defaulting to 8: %v", err)
+		return 8
 	}
 	optionsList, err := shlex.Split(options)
 	if err != nil {
-		log.Errorf("Could not shlex split options for ui_actions_show, defaulting to 8: %v", err)
-		return 10
+		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to 8: %v", err)
+		return 8
 	}
-	actionsShownValues := getValuesForOptionNameFromOptionsList(optionsList, "ui_actions_shown")
-	cursesValues := getValuesForOptionNameFromOptionsList(optionsList, "ui_actions_shown")
+	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
+	cursesValues := getOptionValues(optionsList, "curses")
 	if len(cursesValues) > 1 {
-		log.Errorf("Too many arguments to curses, assuming auto: %v", cursesValues)
+		log.Warningf("Too many arguments to curses, assuming auto: %v", cursesValues)
 	}
 	if len(cursesValues) == 1 && cursesValues[0] == "no" {
 		return 0
 	}
 	if len(actionsShownValues) > 1 {
-		log.Errorf("Too many arguments to ui_actions_shown, defaulting to 8: %v", actionsShownValues)
+		log.Warningf("Too many arguments to ui_actions_shown, defaulting to 8: %v", actionsShownValues)
 	}
 	if len(actionsShownValues) == 1 {
 		n, err := strconv.Atoi(actionsShownValues[0])
 		if err != nil {
-			log.Errorf("Invalid argument to ui_actions_shown, defaulting to 8: %v", err)
+			log.Warningf("Invalid argument to ui_actions_shown, defaulting to 8: %v", err)
 		} else if n < 1 {
-			return 3
+			return 1
 		} else {
-			return n + 2
+			return n
 		}
 	}
-	return 10
+	return 8
 }
 
-func getValuesForOptionNameFromOptionsList(optionsList []string, value string) []string {
+func getOptionValues(options []string, optionName string) []string {
 	values := []string{}
-	flag := "--" + value
-	for i, option := range optionsList {
+	flag := "--" + optionName
+	for _, option := range options {
 		if option == "--" {
 			break
 		}
 		if strings.HasPrefix(option, flag+"=") {
 			values = append(values, strings.TrimPrefix(option, flag+"="))
-		} else if option == flag {
-			if i < len(optionsList)-1 {
-				values = append(values, optionsList[i+1])
-			} else {
-				values = append(values, "")
-			}
 		}
 	}
 	return values

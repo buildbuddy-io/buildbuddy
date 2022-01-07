@@ -265,7 +265,7 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string, linesToRetain int) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string, numLinesToRetain int) *EventLogWriter {
 	eventLogPath := GetEventLogPathFromInvocationId(invocationId)
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
@@ -285,9 +285,9 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
-		WriteWithTailCloser:        cw,
-		screenWriter:               terminal.NewScreenWriter(),
-		linesToRetainForANSICursor: linesToRetain,
+		WriteWithTailCloser:           cw,
+		screenWriter:                  terminal.NewScreenWriter(),
+		numLinesToRetainForANSICursor: numLinesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
@@ -352,7 +352,7 @@ type ANSICursorBufferWriter struct {
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.
-	linesToRetainForANSICursor int
+	numLinesToRetainForANSICursor int
 }
 
 func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, error) {
@@ -362,7 +362,7 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if _, err := w.screenWriter.Write(p); err != nil {
 		return 0, err
 	}
-	popped := w.screenWriter.PopExtraLinesAsANSI(w.linesToRetainForANSICursor)
+	popped := w.screenWriter.PopExtraLinesAsANSI(w.numLinesToRetainForANSICursor)
 	if len(popped) != 0 {
 		popped = append(popped, '\n')
 	}
