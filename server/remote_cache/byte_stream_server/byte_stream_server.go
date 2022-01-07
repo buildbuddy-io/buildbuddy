@@ -173,7 +173,6 @@ type writeState struct {
 	activeResourceName string
 	offset             int64
 	alreadyExists      bool
-	closed             bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -260,12 +259,10 @@ func (w *writeState) Write(buf []byte) error {
 }
 
 func (w *writeState) Close() error {
-	if w.closed {
-		return nil
-	}
-	w.closed = true
-
 	if w.decompressorCloser != nil {
+		defer func() {
+			w.decompressorCloser = nil
+		}()
 		// Close the decompressor, flushing any currently buffered bytes to the
 		// checksum+cache multi-writer. If this fails, don't bother computing the
 		// checksum or commiting the file to cache, since the incoming data is
