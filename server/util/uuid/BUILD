@@ -5,5 +5,8 @@ go_library(
     srcs = ["uuid.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/uuid",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_google_uuid//:uuid"],
+    deps = [
+        "//server/util/status",
+        "@com_github_google_uuid//:uuid",
+    ],
 )

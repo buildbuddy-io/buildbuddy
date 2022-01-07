@@ -7,10 +7,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+)
+
+const (
+	sqliteDialect = "sqlite"
 )
 
 type tableDescriptor struct {
@@ -117,7 +122,8 @@ type Invocation struct {
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
-	InvocationPK                     int64 `gorm:"uniqueIndex:invocation_invocation_pk"`
+	InvocationPK                     int64  `gorm:"uniqueIndex:invocation_invocation_pk"`
+	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 }
 
@@ -386,13 +392,14 @@ func (t *Target) TableName() string {
 // The Status of a target.
 type TargetStatus struct {
 	Model
-	TargetID      int64 `gorm:"primaryKey;autoIncrement:false"`
-	InvocationPK  int64 `gorm:"primaryKey;autoIncrement:false;index:target_status_invocation_pk"`
-	TargetType    int32
-	TestSize      int32
-	Status        int32
-	StartTimeUsec int64
-	DurationUsec  int64
+	TargetID       int64  `gorm:"primaryKey;autoIncrement:false"`
+	InvocationPK   int64  `gorm:"primaryKey;autoIncrement:false;index:target_status_invocation_pk"`
+	InvocationUUID []byte `gorm:"size:16;index:target_status_invocation_uuid"`
+	TargetType     int32
+	TestSize       int32
+	Status         int32
+	StartTimeUsec  int64
+	DurationUsec   int64
 }
 
 func (ts *TargetStatus) TableName() string {
@@ -481,6 +488,12 @@ func (*Usage) TableName() string {
 
 type PostAutoMigrateLogic func() error
 
+type invocationIDs struct {
+	invocationID   string
+	invocationPK   int64
+	invocationUUID []byte
+}
+
 // Manual migration called before auto-migration.
 //
 // May return a list of functions to be executed after auto-migration.
@@ -562,6 +575,76 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			}
 			return nil
 		})
+	}
+
+	// Populate invocation_uuid if the column doesn't exist.
+	if m.HasTable("Invocations") && !m.HasColumn(&Invocation{}, "invocation_uuid") {
+		if db.Dialector.Name() == sqliteDialect {
+			// Close the rows before executing update statements for SQLite; otherwise, it will result in a deadlock.
+			postMigrate = append(postMigrate, func() error {
+				rows, err := db.Raw(`SELECT invocation_id, invocation_pk FROM Invocations`).Rows()
+				if err != nil {
+					return err
+				}
+				ids := []invocationIDs{}
+				for rows.Next() {
+					var invocationID string
+					var invocationPK int64
+					if err := rows.Scan(&invocationID, &invocationPK); err != nil {
+						return err
+					}
+					invocationUUID, err := uuid.StringToBytes(invocationID)
+					if err != nil {
+						return err
+					}
+					ids = append(ids, invocationIDs{
+						invocationID:   invocationID,
+						invocationUUID: invocationUUID,
+						invocationPK:   invocationPK,
+					})
+				}
+				rows.Close()
+
+				for _, id := range ids {
+					log.Info("update TargetStatuses")
+					if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, id.invocationUUID, id.invocationPK).Error; err != nil {
+						return err
+					}
+					log.Info("update invocations")
+					if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, id.invocationUUID, id.invocationID).Error; err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		} else {
+			postMigrate = append(postMigrate, func() error {
+				rows, err := db.Raw(`SELECT invocation_id, invocation_pk FROM Invocations`).Rows()
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
+				for rows.Next() {
+					var invocationID string
+					var invocationPK int64
+					if err := rows.Scan(&invocationID, &invocationPK); err != nil {
+						return err
+					}
+					invocationUUID, err := uuid.StringToBytes(invocationID)
+					if err != nil {
+						return err
+					}
+					if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocationPK).Error; err != nil {
+						return err
+					}
+					if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocationID).Error; err != nil {
+						return err
+					}
+				}
+
+				return nil
+			})
+		}
 	}
 	return postMigrate, nil
 }

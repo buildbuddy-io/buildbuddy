@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
 
@@ -224,19 +225,24 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
 	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
+	invocationUUID, err := uuid.StringToBytes(t.buildEventAccumulator.InvocationID())
+	if err != nil {
+		return err
+	}
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
 	for _, target := range t.targets {
 		if !isTest(target) {
 			continue
 		}
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{
-			TargetID:      md5Int64(repoURL + target.label),
-			InvocationPK:  invocationPK,
-			TargetType:    int32(target.targetType),
-			TestSize:      int32(target.testSize),
-			Status:        int32(target.overallStatus),
-			StartTimeUsec: int64(target.firstStartMillis * 1000),
-			DurationUsec:  int64(target.totalDurationMillis * 1000),
+			TargetID:       md5Int64(repoURL + target.label),
+			InvocationPK:   invocationPK,
+			InvocationUUID: invocationUUID,
+			TargetType:     int32(target.targetType),
+			TestSize:       int32(target.testSize),
+			Status:         int32(target.overallStatus),
+			StartTimeUsec:  int64(target.firstStartMillis * 1000),
+			DurationUsec:   int64(target.totalDurationMillis * 1000),
 		})
 	}
 	if err := insertOrUpdateTargetStatuses(ctx, t.env, newTargetStatuses); err != nil {
@@ -453,9 +459,10 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
-			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationPK)
+			valueArgs = append(valueArgs, t.InvocationUUID)
 			valueArgs = append(valueArgs, t.TargetType)
 			valueArgs = append(valueArgs, t.TestSize)
 			valueArgs = append(valueArgs, t.Status)
@@ -465,7 +472,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_pk, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_pk, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {
