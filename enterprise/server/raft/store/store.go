@@ -290,7 +290,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
-		log.Errorf("Range not active, returning err: %s", err)
+		log.Infof("Rangelease(%d) not held on %q, returning err: %s", req.GetHeader().GetRangeId(), s.nodeHost.ID(), err)
 		return nil, err
 	}
 	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
@@ -305,7 +305,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
-		log.Errorf("Range not active, returning err: %s", err)
+		log.Infof("Rangelease(%d) not held on %q, returning err: %s", req.GetHeader().GetRangeId(), s.nodeHost.ID(), err)
 		return nil, err
 	}
 	buf, err := proto.Marshal(req.GetBatch())

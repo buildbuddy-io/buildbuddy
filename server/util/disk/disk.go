@@ -13,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/sys/unix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"golang.org/x/sys/unix"
 )
 
 func EnsureDirectoryExists(dir string) error {

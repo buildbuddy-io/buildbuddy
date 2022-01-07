@@ -9,7 +9,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
-        "@org_golang_x_sys//unix",
         "//server/util/tracing",
+        "@org_golang_x_sys//unix",
     ],
 )

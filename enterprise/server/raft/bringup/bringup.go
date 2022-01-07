@@ -159,7 +159,7 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	go func() {
 		for !cs.bootstrapped {
 			if err := cs.attemptQueryAndBringupOnce(); err != nil {
-				cs.log.Errorf("attemptQueryAndBringupOnce err: %s", err)
+				cs.log.Debugf("attemptQueryAndBringupOnce did not succeed yet: %s", err)
 				continue
 			}
 			cs.bootstrapped = true
@@ -272,7 +272,7 @@ func MakeBootstrapInfo(clusterID uint64, nodeGrpcAddrs map[string]string) *Clust
 }
 
 func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
-	log.Warningf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
+	log.Debugf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
 	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeSetupTimeKey,

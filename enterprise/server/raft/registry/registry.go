@@ -122,7 +122,7 @@ func (p *fixedPartitioner) GetPartitionID(clusterID uint64) uint64 {
 }
 
 func (dnr *DynamicNodeRegistry) processRegistryUpdate(update *rfpb.RegistryUpdate) {
-	// log.Printf("Processing registry update: %+v", update)
+	//log.Printf("Processing registry update: %+v", update)
 	dnr.addRaftNodeHost(update.GetNhid(), update.GetRaftAddress())
 	dnr.addGRPCNodeHost(update.GetNhid(), update.GetGrpcAddress())
 	for _, add := range update.GetAdds() {
@@ -141,14 +141,16 @@ func (dnr *DynamicNodeRegistry) assembleRegistryUpdate(clusterID, nodeID uint64)
 	defer dnr.mu.RUnlock()
 	rsp := &rfpb.RegistryUpdate{}
 	for nodeInfo, target := range dnr.nodeTargets {
+		// Skip clusters that are not our target
 		if nodeInfo.ClusterID != clusterID {
 			continue
 		}
+		// Skip nodes that are not our target
 		if nodeInfo.NodeID != nodeID {
 			continue
 		}
+		// Skip targets that don't have a grpc and raft address
 		if dnr.grpcAddrs[target] == "" || dnr.raftAddrs[target] == "" {
-			log.Printf("Skipping nodeInfo: %+v, no addrs for target: %s", nodeInfo, target)
 			continue
 		}
 		rsp.Adds = append(rsp.Adds, &rfpb.RegistryUpdate_Add{
@@ -185,7 +187,6 @@ func (dnr *DynamicNodeRegistry) handleGossipQuery(query *serf.Query) {
 	if err := query.Respond(buf); err != nil {
 		dnr.log.Debugf("Error responding to gossip query: %s", err)
 	}
-	dnr.log.Debugf("Responded to registry query for %d %d %+v!", rq.GetClusterId(), rq.GetNodeId(), rsp)
 }
 
 // OnEvent is called when a node joins, leaves, or is updated.
@@ -341,6 +342,15 @@ func (dnr *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target stri
 	}
 	added := dnr.add(clusterID, nodeID, target)
 
+	dnr.mu.RLock()
+	_, raftOK := dnr.raftAddrs[target]
+	_, gprcOK := dnr.grpcAddrs[target]
+	dnr.mu.RUnlock()
+	if !raftOK || !gprcOK {
+		go dnr.resolveWithGossip(clusterID, nodeID)
+		return
+	}
+
 	if added {
 		// Only gossip the add if it's new to us.
 		dnr.gossipAdd(clusterID, nodeID, target)
@@ -465,7 +475,7 @@ func (dnr *DynamicNodeRegistry) resolveAllLocal(clusterID uint64, nodeID uint64)
 	dnr.mu.RUnlock()
 
 	if !raftOK || !gprcOK {
-		log.Warningf("Error resolving %q: registry: %s", target, dnr)
+		// log.Debugf("Error resolving locally %q: registry: %s", target, dnr)
 		return "", "", "", TargetAddressUnknownError
 	}
 	return raftAddr, grpcAddr, key, nil
@@ -482,7 +492,7 @@ func (dnr *DynamicNodeRegistry) resolveAllGossip(clusterID uint64, nodeID uint64
 	dnr.mu.RUnlock()
 
 	if !raftOK || !gprcOK {
-		log.Errorf("resolveWithGossip did not return a raft or grpc addr; this should not happen!")
+		log.Debugf("Error resolving over gossip %q: registry: %s", target, dnr)
 		return "", "", "", TargetAddressUnknownError
 	}
 	return raftAddr, grpcAddr, key, nil
@@ -507,7 +517,7 @@ func (dnr *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
-		dnr.log.Debugf("Error resolving %d %d: %s", clusterID, nodeID, err)
+		dnr.log.Warningf("Error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 	return raftAddr, key, nil
@@ -522,7 +532,7 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 	}
 	// if that still fails, we're out of options.
 	if err != nil {
-		dnr.log.Debugf("Error resolving %d %d: %s", clusterID, nodeID, err)
+		dnr.log.Warningf("Error resolving %d %d: %s", clusterID, nodeID, err)
 		return "", "", err
 	}
 	return grpcAddr, key, nil
