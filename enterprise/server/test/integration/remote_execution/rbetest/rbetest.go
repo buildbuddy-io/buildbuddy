@@ -677,7 +677,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		NodeNameOverride: options.Name,
 		APIKeyOverride:   options.APIKey,
 	}
-	registration, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, opts)
+	registration, err := scheduler_client.NewRegistration(env,taskScheduler, executorID, options.Name, opts)
 	if err != nil {
 		assert.FailNowf(r.t, "could not create executor registration", err.Error())
 	}
