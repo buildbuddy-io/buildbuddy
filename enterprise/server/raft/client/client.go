@@ -258,7 +258,6 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			if dragonboat.IsTempError(err) {
-				log.Debugf("temporary err: %s, retrying...", err)
 				continue
 			}
 			return nil, err

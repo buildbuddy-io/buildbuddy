@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	"os"
+	//	"os"
 	"sync"
 	"testing"
 	"time"
@@ -50,10 +50,10 @@ func getTmpDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
+		//		err := os.RemoveAll(dir)
+		//		if err != nil {
+		//			t.Fatal(err)
+		//		}
 	})
 	return dir
 }

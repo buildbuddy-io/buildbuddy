@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",

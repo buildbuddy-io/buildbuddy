@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
@@ -174,7 +175,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// exist before the node host is created. So we make a new empty store
 	// here, and initialize it below once nodeHost exists.
 	rc.store = &store.Store{}
-	rc.clusterStarter = &bringup.ClusterStarter{}
 
 	// A NodeHost is basically a single node (think 'computer') that can be
 	// a member of raft clusters. This nodehost is configured with a dynamic
@@ -187,6 +187,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// use the metarange to find which other clusters / nodes contain which
 	// keys. The rangeCache is where this information is cached, and the
 	// sender interface is what makes it simple to use.
+	globalListener := listener.DefaultListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
@@ -195,7 +196,8 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: rc,
 		},
-		RaftEventListener: multiRaftListener(rc.store, rc.clusterStarter),
+		RaftEventListener:   multiRaftListener(rc.store, globalListener),
+		SystemEventListener: globalListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
@@ -204,7 +206,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.nodeHost = nodeHost
 
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	log.Printf("nodeHostInfo: %+v", nodeHostInfo)
 
 	// PebbleLogDir is a parent directory for pebble data. Within this
 	// directory, subdirs will be created per raft (cluster_id, node_id).
@@ -235,7 +236,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter.Initialize(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
+	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
 
 	rc.clusterStarter.InitializeClusters()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

@@ -23,7 +23,6 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	raftio "github.com/lni/dragonboat/v3/raftio"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
@@ -51,24 +50,19 @@ type ClusterStarter struct {
 	log log.Logger
 }
 
-func NewClusterStarter(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) *ClusterStarter {
-	cs := &ClusterStarter{}
-	cs.Initialize(nodeHost, grpcAddr, createStateMachineFn, gossipMan)
-	return cs
-}
-
-func (cs *ClusterStarter) Initialize(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) {
-	cs.nodeHost = nodeHost
-	cs.createStateMachineFn = createStateMachineFn
-	cs.grpcAddr = grpcAddr
-	cs.listenAddr = gossipMan.ListenAddr
-	cs.join = gossipMan.Join
-	cs.gossipManager = gossipMan
-	cs.bootstrapped = false
-	cs.doneOnce = sync.Once{}
-	cs.doneSetup = make(chan struct{})
-	cs.log = log.NamedSubLogger(nodeHost.ID())
-
+func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) *ClusterStarter {
+	cs := &ClusterStarter{
+		nodeHost:             nodeHost,
+		createStateMachineFn: createStateMachineFn,
+		grpcAddr:             grpcAddr,
+		listenAddr:           gossipMan.ListenAddr,
+		join:                 gossipMan.Join,
+		gossipManager:        gossipMan,
+		bootstrapped:         false,
+		doneOnce:             sync.Once{},
+		doneSetup:            make(chan struct{}),
+		log:                  log.NamedSubLogger(nodeHost.ID()),
+	}
 	sort.Strings(cs.join)
 
 	// Only nodes in the "join" list should register as gossip listeners to
@@ -79,26 +73,13 @@ func (cs *ClusterStarter) Initialize(nodeHost *dragonboat.NodeHost, grpcAddr str
 			break
 		}
 	}
-}
 
-func (cs *ClusterStarter) LeaderUpdated(info raftio.LeaderInfo) {
-	if cs.nodeHost == nil {
-		// not initialized yet
-		return
-	}
-	nodeHostInfo := cs.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	if nodeHostInfo == nil {
-		return
-	}
-	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
-		if clusterInfo.ClusterID == info.ClusterID {
-			cs.markBringupComplete()
-		}
-	}
+	return cs
 }
 
 func (cs *ClusterStarter) markBringupComplete() {
 	cs.doneOnce.Do(func() {
+		log.Printf("Bringup is complete on %s", cs.nodeHost.ID())
 		close(cs.doneSetup)
 	})
 }
@@ -137,19 +118,10 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	cs.bootstrapped = clustersAlreadyConfigured > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
 
-	autoBringupEligible := false
-	for _, joinAddr := range cs.join {
-		if cs.listenAddr == joinAddr {
-			autoBringupEligible = true
-		}
-	}
+	isBringupCoordinator := cs.listenAddr == cs.join[0]
 
-	if cs.bootstrapped || !autoBringupEligible {
+	if cs.bootstrapped || !isBringupCoordinator {
 		cs.markBringupComplete()
-	}
-
-	// Exit early if we are not the first node in the join list.
-	if cs.listenAddr != cs.join[0] {
 		return nil
 	}
 
@@ -163,6 +135,7 @@ func (cs *ClusterStarter) InitializeClusters() error {
 				continue
 			}
 			cs.bootstrapped = true
+			cs.markBringupComplete()
 		}
 	}()
 	return nil
@@ -209,9 +182,6 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 }
 
 func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
-	if cs.Done() {
-		return
-	}
 	switch updateType {
 	case serf.EventQuery:
 		query, _ := event.(*serf.Query)
@@ -378,10 +348,11 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 				},
 			})
 		}
+		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
 		if err := StartCluster(ctx, bootstrapInfo, batch); err != nil {
 			return err
 		}
-		log.Printf("StartCluster started a new cluster successfully!")
+		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
 
 		// Increment clusterID and rangeID before creating the next cluster.
 		batch = rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
@@ -412,14 +383,12 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 			return err
 		}
 		clusterID = clusterIncrResponse.GetValue()
-		log.Printf("Cluster ID is now: %d", clusterID)
-
 		rangeIncrResponse, err := rsp.IncrementResponse(1)
 		if err != nil {
 			return err
 		}
 		rangeID = rangeIncrResponse.GetValue()
-		log.Printf("Range ID is now: %d", rangeID)
 	}
+
 	return nil
 }

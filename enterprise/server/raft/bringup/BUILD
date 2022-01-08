@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
+        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",

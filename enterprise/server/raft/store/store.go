@@ -5,9 +5,11 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -260,6 +262,15 @@ func (s *Store) isLeader(clusterID uint64) bool {
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
+	waitErr := make(chan error, 1)
+	// Wait for the notification that the cluster node is ready on the local
+	// nodehost.
+	go func() {
+		err := listener.DefaultListener().WaitForClusterReady(ctx, req.GetClusterId())
+		waitErr <- err
+		close(waitErr)
+	}()
+
 	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrClusterAlreadyExist {
@@ -267,8 +278,14 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		}
 		return nil, err
 	}
-	rsp := &rfpb.StartClusterResponse{}
 
+	err, ok := <-waitErr
+	if ok && err != nil {
+		log.Errorf("Got a WaitForClusterReady error: %s", err)
+		return nil, err
+	}
+
+	rsp := &rfpb.StartClusterResponse{}
 	// If we are the first member in the cluster, we'll do the syncPropose.
 	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
 	for nodeID, _ := range req.GetInitialMember() {
@@ -276,9 +293,8 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 	if req.GetNodeId() == nodeIDs[0] {
-		log.Printf("I am the first node! running sync propose")
+		time.Sleep(100 * time.Millisecond)
 		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
-		log.Printf("first node syncpropose response: %+v, err: %s", batchResponse, err)
 		if err != nil {
 			return nil, err
 		}
