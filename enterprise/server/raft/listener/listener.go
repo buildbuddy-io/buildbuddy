@@ -24,20 +24,28 @@ func DefaultListener() *RaftListener {
 }
 
 type RaftListener struct {
-	mu                 sync.Mutex
-	nodeReadyCallbacks map[*NodeCB]struct{}
+	mu                     sync.Mutex
+	nodeReadyCallbacks     map[*NodeCB]struct{}
+	leaderUpdatedCallbacks map[*LeaderCB]struct{}
 }
 
 func NewRaftListener() *RaftListener {
 	return &RaftListener{
-		mu:                 sync.Mutex{},
-		nodeReadyCallbacks: make(map[*NodeCB]struct{}),
+		mu:                     sync.Mutex{},
+		nodeReadyCallbacks:     make(map[*NodeCB]struct{}),
+		leaderUpdatedCallbacks: make(map[*LeaderCB]struct{}),
 	}
 }
 
-func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {}
-func (rl *RaftListener) NodeHostShuttingDown()                {}
-func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo)    {}
+func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for cbp, _ := range rl.leaderUpdatedCallbacks {
+		cb := *cbp
+		cb(info)
+	}
+}
+
 func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -46,6 +54,9 @@ func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
 		cb(info)
 	}
 }
+
+func (rl *RaftListener) NodeHostShuttingDown()                            {}
+func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo)                {}
 func (rl *RaftListener) MembershipChanged(info raftio.NodeInfo)           {}
 func (rl *RaftListener) ConnectionEstablished(info raftio.ConnectionInfo) {}
 func (rl *RaftListener) ConnectionFailed(info raftio.ConnectionInfo)      {}
@@ -68,6 +79,18 @@ func (rl *RaftListener) RegisterNodeReadyCB(cb *NodeCB) {
 func (rl *RaftListener) UnregisterNodeReadyCB(cb *NodeCB) {
 	rl.mu.Lock()
 	delete(rl.nodeReadyCallbacks, cb)
+	rl.mu.Unlock()
+}
+
+func (rl *RaftListener) RegisterLeaderUpdatedCB(cb *LeaderCB) {
+	rl.mu.Lock()
+	rl.leaderUpdatedCallbacks[cb] = struct{}{}
+	rl.mu.Unlock()
+}
+
+func (rl *RaftListener) UnregisterLeaderUpdatedCB(cb *LeaderCB) {
+	rl.mu.Lock()
+	delete(rl.leaderUpdatedCallbacks, cb)
 	rl.mu.Unlock()
 }
 

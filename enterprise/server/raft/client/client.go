@@ -253,7 +253,6 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	var raftResponse dbsm.Result
 	retrier := retry.DefaultWithContext(ctx)
-	start := time.Now()
 	for retrier.Next() {
 		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
@@ -262,7 +261,6 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 			}
 			return nil, err
 		}
-		log.Debugf("SyncProposeLocal succeeded after %s", time.Since(start))
 		break
 	}
 	batchResponse := &rfpb.BatchCmdResponse{}

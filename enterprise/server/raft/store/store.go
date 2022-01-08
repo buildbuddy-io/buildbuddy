@@ -49,23 +49,29 @@ type Store struct {
 	replicas  map[uint64]*replica.Replica
 }
 
-func (s *Store) Initialize(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) {
-	s.rootDir = rootDir
-	s.fileDir = fileDir
-	s.nodeHost = nodeHost
-	s.gossipManager = gossipManager
-	s.sender = sender
-	s.apiClient = apiClient
-	s.liveness = nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost})
+func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
+	s := &Store{
+		rootDir:       rootDir,
+		fileDir:       fileDir,
+		nodeHost:      nodeHost,
+		gossipManager: gossipManager,
+		sender:        sender,
+		apiClient:     apiClient,
+		liveness:      nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost}),
 
-	s.rangeMu = sync.RWMutex{}
-	s.clusterRanges = make(map[uint64]*rfpb.RangeDescriptor)
+		rangeMu:       sync.RWMutex{},
+		clusterRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-	s.leaseMu = sync.RWMutex{}
-	s.leases = make(map[uint64]*rangelease.Lease)
+		leaseMu: sync.RWMutex{},
+		leases:  make(map[uint64]*rangelease.Lease),
 
-	s.replicaMu = sync.RWMutex{}
-	s.replicas = make(map[uint64]*replica.Replica)
+		replicaMu: sync.RWMutex{},
+		replicas:  make(map[uint64]*replica.Replica),
+	}
+
+	cb := listener.LeaderCB(s.LeaderUpdated)
+	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
+	return s
 }
 
 func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
