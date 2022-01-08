@@ -16,6 +16,7 @@ import (
 
 const (
 	sqliteDialect = "sqlite"
+	mysqlDialect  = "mysql"
 )
 
 type tableDescriptor struct {
@@ -617,33 +618,20 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				}
 				return nil
 			})
-		} else {
+		} else if db.Dialector.Name() == mysqlDialect {
 			postMigrate = append(postMigrate, func() error {
-				rows, err := db.Raw(`SELECT invocation_id, invocation_pk FROM Invocations`).Rows()
-				if err != nil {
+				if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id)`).Error; err != nil {
 					return err
 				}
-				defer rows.Close()
-				for rows.Next() {
-					var invocationID string
-					var invocationPK int64
-					if err := rows.Scan(&invocationID, &invocationPK); err != nil {
-						return err
-					}
-					invocationUUID, err := uuid.StringToBytes(invocationID)
-					if err != nil {
-						return err
-					}
-					if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocationPK).Error; err != nil {
-						return err
-					}
-					if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocationID).Error; err != nil {
-						return err
-					}
-				}
-
-				return nil
+				return db.Exec(
+					`UPDATE TargetStatuses ts
+					 SET invocation_uuid=(
+					   SELECT invocation_uuid FROM Invocations i 
+					   WHERE i.invocation_pk=ts.invocation_pk
+					 )`).Error
 			})
+		} else {
+			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
 	return postMigrate, nil
