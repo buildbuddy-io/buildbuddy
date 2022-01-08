@@ -265,6 +265,14 @@ func (s *Store) isLeader(clusterID uint64) bool {
 	return false
 }
 
+func (s *Store) AddNode(ctx context.Context, req *rfpb.AddNodeRequest) (*rfpb.AddNodeResponse, error) {
+	err := s.nodeHost.SyncRequestAddNode(ctx, req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID(), req.GetConfigChangeIndex())
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.AddNodeResponse{}, nil
+}
+
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
