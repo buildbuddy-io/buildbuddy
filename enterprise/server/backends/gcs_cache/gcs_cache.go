@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -60,10 +61,18 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 	return g, nil
 }
 
+func (g *GCSCache) bucketExists(ctx context.Context, bucketName string) (bool, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	return err == nil, err
+}
 func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName string) error {
-	if _, err := g.gcsClient.Bucket(bucketName).Attrs(ctx); err != nil {
+	if exists, _ := g.bucketExists(ctx, bucketName); !exists {
 		log.Printf("Creating storage bucket: %s", bucketName)
 		g.bucketHandle = g.gcsClient.Bucket(bucketName)
+		ctx, spn := tracing.StartSpan(ctx)
+		defer spn.End()
 		return g.bucketHandle.Create(ctx, g.projectID, nil)
 	}
 	g.bucketHandle = g.gcsClient.Bucket(bucketName)
@@ -71,7 +80,10 @@ func (g *GCSCache) createBucketIfNotExists(ctx context.Context, bucketName strin
 }
 
 func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDays int64) error {
-	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
+	traceCtx, spn := tracing.StartSpan(ctx)
+	spn.SetName("Attrs for GCSCache SetBucketTTL")
+	attrs, err := g.gcsClient.Bucket(bucketName).Attrs(traceCtx)
+	spn.End()
 	if err != nil {
 		return err
 	}
@@ -93,8 +105,11 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 			},
 		},
 	}
+	traceCtx, spn = tracing.StartSpan(ctx)
+	spn.SetName("Update for GCSCache SetBucketTTL")
+	defer spn.End()
 	// Update the bucket TTL, regardless of whatever value is set.
-	_, err = g.gcsClient.Bucket(bucketName).Update(ctx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
+	_, err = g.gcsClient.Bucket(bucketName).Update(traceCtx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
 	return err
 }
 
@@ -139,7 +154,9 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	_, spn := tracing.StartSpan(ctx)
 	b, err := ioutil.ReadAll(reader)
+	spn.End()
 	timer.ObserveGet(len(b), err)
 	// Note, if we decide to retry reads in the future, be sure to
 	// add a new metric for retry count.
@@ -207,7 +224,10 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 		setChunkSize(d, writer)
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
-		if _, err = writer.Write(data); err == nil {
+		_, spn := tracing.StartSpan(ctx)
+		_, err = writer.Write(data)
+		spn.End()
+		if err == nil {
 			err = swallowGCSAlreadyExistsError(writer.Close())
 		}
 		timer.ObserveSet(len(data), err)
@@ -245,7 +265,9 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	ctx, spn := tracing.StartSpan(ctx)
 	err = g.bucketHandle.Object(k).Delete(ctx)
+	spn.End()
 	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
@@ -257,7 +279,9 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 		return true
 	}
 	obj := g.bucketHandle.Object(key)
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := obj.CopierFrom(obj).Run(ctx)
+	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false
 	}
@@ -276,7 +300,9 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	numAttempts := 0
 	for {
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
+		ctx, spn := tracing.StartSpan(ctx)
 		attrs, err := g.bucketHandle.Object(k).Attrs(ctx)
+		spn.End()
 		timer.ObserveContains(err)
 		numAttempts++
 		finalErr = err
@@ -329,7 +355,9 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 	if err != nil {
 		return nil, err
 	}
+	ctx, spn := tracing.StartSpan(ctx)
 	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
+	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
@@ -337,6 +365,7 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	// rely on google's internal tracing to capture read calls from the returned reader
 	return io.NopCloser(timer.NewInstrumentedReader(reader, d.GetSizeBytes())), nil
 }
 
