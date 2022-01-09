@@ -19,7 +19,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@com_github_datadog_zstd//:zstd",
+        "@com_github_valyala_gozstd//:gozstd",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )
@@ -39,7 +39,6 @@ go_test(
         "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
-        "@com_github_datadog_zstd//:zstd",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

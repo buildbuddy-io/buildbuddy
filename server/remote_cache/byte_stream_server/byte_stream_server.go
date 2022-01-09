@@ -7,7 +7,6 @@ import (
 	"hash"
 	"io"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/valyala/gozstd"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -119,7 +119,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	defer reader.Close()
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader = NewZstdCompressor(reader)
+		reader = NewZstdCompressor(reader, r.GetDigest().GetSizeBytes())
 		defer reader.Close()
 	}
 
@@ -430,7 +430,7 @@ func (s *Checksum) Check(d *repb.Digest) error {
 
 type zstdDecompressor struct {
 	pw         *io.PipeWriter
-	zstdReader io.ReadCloser
+	zstdReader *gozstd.Reader
 	done       chan error
 }
 
@@ -444,7 +444,7 @@ func NewZstdDecompressor(writer io.Writer) io.WriteCloser {
 	pr, pw := io.Pipe()
 	d := &zstdDecompressor{
 		pw:         pw,
-		zstdReader: zstd.NewReader(pr),
+		zstdReader: gozstd.NewReader(pr),
 		done:       make(chan error, 1),
 	}
 	go func() {
@@ -465,11 +465,7 @@ func (d *zstdDecompressor) Close() error {
 	if err := d.pw.Close(); err != nil {
 		lastErr = err
 	}
-	defer func() {
-		if err := d.zstdReader.Close(); err != nil {
-			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
-		}
-	}()
+	defer d.zstdReader.Release()
 	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
 	// since the write-end of the pipe is closed, reads from the decompressor
 	// should no longer be blocking, and it should return EOF as soon as the
@@ -481,18 +477,31 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-func NewZstdCompressor(reader io.Reader) io.ReadCloser {
+func NewZstdCompressor(reader io.Reader, uncompressedLength int64) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
-		compressor := zstd.NewWriter(pw)
-		_, err := io.Copy(compressor, reader)
-		defer func(err error) {
-			// Pipe writer needs to be closed after the compressor is closed, since
-			// closing the compressor may result in more bytes written to the pipe.
-			pw.CloseWithError(err)
-		}(err)
-		if err := compressor.Close(); err != nil {
-			log.Errorf("Failed to close zstd writer; some zstd resources may not be cleaned up properly: %s", err)
+		bufLength := readBufSizeBytes
+		if uncompressedLength < int64(bufLength) {
+			bufLength = int(uncompressedLength)
+		}
+		rbuf := make([]byte, bufLength)
+		cbuf := make([]byte, bufLength)
+		for {
+			n, err := reader.Read(rbuf)
+			if n > 0 {
+				// Note: We compress chunk-by-chunk here rather than using the streaming
+				// API (gozstd.NewWriter). Chunking costs a few % of compression ratio
+				// but achieves an order of magnitude higher throughput.
+				cbuf = gozstd.Compress(cbuf[:0], rbuf[:n])
+				if _, err := pw.Write(cbuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
 		}
 	}()
 	return pr

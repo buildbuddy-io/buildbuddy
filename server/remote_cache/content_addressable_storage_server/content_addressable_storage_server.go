@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -20,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
+	"github.com/valyala/gozstd"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
@@ -285,7 +285,8 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 			if s.env.GetConfigurator().GetCacheZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD) {
-				blobRsp = zstdCompressResponse(blobRsp, req.AcceptableCompressors)
+				blobRsp.Data = gozstd.Compress(nil, blobRsp.Data)
+				blobRsp.Compressor = repb.Compressor_ZSTD
 			}
 		}
 
@@ -312,24 +313,9 @@ func clientAcceptsCompressor(acceptableCompressors []repb.Compressor_Value, comp
 	return false
 }
 
-func zstdCompressResponse(blobRsp *repb.BatchReadBlobsResponse_Response, acceptableCompressors []repb.Compressor_Value) *repb.BatchReadBlobsResponse_Response {
-	data, err := zstd.Compress(nil, blobRsp.Data)
-	if err != nil {
-		err = status.InternalErrorf("Failed to compress blob: %s", err)
-		log.Error(err.Error())
-		return &repb.BatchReadBlobsResponse_Response{
-			Digest: blobRsp.Digest,
-			Status: gstatus.Convert(err).Proto(),
-		}
-	}
-	blobRsp.Data = data
-	blobRsp.Compressor = repb.Compressor_ZSTD
-	return blobRsp
-}
-
 func zstdDecompress(data []byte, decompressedLength int64) ([]byte, error) {
-	buf := make([]byte, decompressedLength)
-	out, err := zstd.Decompress(buf, data)
+	buf := make([]byte, 0, decompressedLength)
+	out, err := gozstd.Decompress(buf, data)
 	if err != nil {
 		return nil, status.InternalErrorf("Failed to decompress zstd-compressed blob: %s", err)
 	}

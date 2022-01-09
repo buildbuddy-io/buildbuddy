@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -18,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"github.com/valyala/gozstd"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -245,7 +245,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
-	compressedBlob := zstdCompress(t, blob)
+	compressedBlob := gozstd.Compress(nil, blob)
 	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 	// Note: Digest is of uncompressed contents
@@ -294,7 +294,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
-	compressedBlob := zstdCompress(t, blob)
+	compressedBlob := gozstd.Compress(nil, blob)
 	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 	// Note: Digest is of uncompressed contents
@@ -398,13 +398,12 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 }
 
 func zstdCompress(t *testing.T, b []byte) []byte {
-	out, err := zstd.Compress(nil, b)
-	require.NoError(t, err)
+	out := gozstd.Compress(nil, b)
 	return out
 }
 
 func zstdDecompress(t *testing.T, b []byte) []byte {
-	out, err := zstd.Decompress(nil, b)
+	out, err := gozstd.Decompress(nil, b)
 	require.NoError(t, err, "failed to decompress blob")
 	return out
 }

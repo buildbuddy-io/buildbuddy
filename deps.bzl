@@ -668,12 +668,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:BUCKk5nlK2m+kRIsoj+wb/5hazHvHeZieBKWd9Afa8Q=",
         version = "v0.2.4",
     )
-    go_repository(
-        name = "com_github_datadog_zstd",
-        importpath = "github.com/DataDog/zstd",
-        sum = "h1:+K/VEwIAaPcHiMtQvpLD4lqW7f0Gk3xdYZmI1hD+CXo=",
-        version = "v1.5.0",
-    )
 
     go_repository(
         name = "com_github_davecgh_go_spew",
@@ -3258,6 +3252,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:tY9CJiPnMXf1ERmG2EyK7gNUd+c6RKGD0IfU8WdUSz8=",
         version = "v1.0.1",
     )
+    go_repository(
+        name = "com_github_valyala_gozstd",
+        importpath = "github.com/valyala/gozstd",
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:com_github_valyala_gozstd.patch"],
+        sum = "h1:mtK5+UU774dXzuWtCqukhLyVOCM5NClDU3wUDazx90w=",
+        version = "v1.14.2",
+    )
+
     go_repository(
         name = "com_github_valyala_quicktemplate",
         importpath = "github.com/valyala/quicktemplate",
