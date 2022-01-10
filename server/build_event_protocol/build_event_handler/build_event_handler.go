@@ -65,6 +65,9 @@ const (
 
 	// How long to wait before giving up on webhook requests.
 	webhookNotifyTimeout = 1 * time.Minute
+
+	// Default number of actions shown by bazel
+	defaultActionsShown = 8
 )
 
 var (
@@ -801,36 +804,35 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 func getNumActionsShownFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
 	options, err := extractOptionsFromStartedBuildEvent(event)
 	if err != nil {
-		log.Warningf("Could not extract options for ui_actions_show, defaulting to 8: %v", err)
-		return 8
+		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		return defaultActionsShown
 	}
 	optionsList, err := shlex.Split(options)
 	if err != nil {
-		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to 8: %v", err)
-		return 8
+		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		return defaultActionsShown
 	}
 	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
 	cursesValues := getOptionValues(optionsList, "curses")
-	if len(cursesValues) > 1 {
-		log.Warningf("Too many arguments to curses, assuming auto: %v", cursesValues)
+	if len(cursesValues) > 0 {
+		curses := cursesValues[len(cursesValues)-1]
+		if curses == "no" {
+			return 0
+		} else if curses != "yes" && curses != "auto" {
+			log.Warningf("Unrecognized argument to curses, assuming auto: %v", curses)
+		}
 	}
-	if len(cursesValues) == 1 && cursesValues[0] == "no" {
-		return 0
-	}
-	if len(actionsShownValues) > 1 {
-		log.Warningf("Too many arguments to ui_actions_shown, defaulting to 8: %v", actionsShownValues)
-	}
-	if len(actionsShownValues) == 1 {
-		n, err := strconv.Atoi(actionsShownValues[0])
+	if len(actionsShownValues) > 0 {
+		n, err := strconv.Atoi(actionsShownValues[len(actionsShownValues)-1])
 		if err != nil {
-			log.Warningf("Invalid argument to ui_actions_shown, defaulting to 8: %v", err)
+			log.Warningf("Invalid argument to ui_actions_shown, defaulting to %d: %v", defaultActionsShown, err)
 		} else if n < 1 {
 			return 1
 		} else {
 			return n
 		}
 	}
-	return 8
+	return defaultActionsShown
 }
 
 func getOptionValues(options []string, optionName string) []string {
