@@ -59,7 +59,7 @@ func (d *InvocationDB) createInvocation(tx *db.DB, ctx context.Context, ti *tabl
 // update the existing invocation. It returns whether a new row was created.
 func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	created := false
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
 		var existing tables.Invocation
 		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
 			if !db.IsRecordNotFound(err) {
