@@ -75,7 +75,6 @@ const (
 
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
-	ContainerdContainerType  ContainerType = "containerd"
 	FirecrackerContainerType ContainerType = "firecracker"
 )
 
@@ -214,16 +213,9 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
 		}
 	}
-	if executorConfig.ContainerdSocket != "" {
-		if runtime.GOOS == "darwin" {
-			log.Warning("Containerd was enabled, but is unsupported on darwin. Ignoring.")
-		} else {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, ContainerdContainerType)
-		}
-	}
 
-	// Special case: for backwards compatibility, support bare-runners when neither docker nor
-	// containerd are not enabled. Typically, this happens for macs.
+	// Special case: for backwards compatibility, support bare-runners when docker
+	// is not enabled. Typically, this happens for macs.
 	if executorConfig.EnableBareRunner || len(p.SupportedIsolationTypes) == 0 {
 		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, BareContainerType)
 	}

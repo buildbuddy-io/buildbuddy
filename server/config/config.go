@@ -267,7 +267,6 @@ type ExecutorConfig struct {
 	DisableLocalCache         bool                      `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
 	DockerSocket              string                    `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
 	APIKey                    string                    `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
-	ContainerdSocket          string                    `yaml:"containerd_socket" usage:"(UNSTABLE) If set, run execution commands in containerd using the provided socket."`
 	DockerMountMode           string                    `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool                RunnerPoolConfig          `yaml:"runner_pool"`
 	DockerNetHost             bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
