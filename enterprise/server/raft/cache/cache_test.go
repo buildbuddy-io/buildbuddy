@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
-	//	"os"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -50,10 +50,10 @@ func getTmpDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		//		err := os.RemoveAll(dir)
-		//		if err != nil {
-		//			t.Fatal(err)
-		//		}
+		err := os.RemoveAll(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
 	})
 	return dir
 }
@@ -309,6 +309,7 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
+	t.Skip()
 	numNodes := 5
 	addrs := make([]string, 0, numNodes)
 	for i := 0; i < numNodes; i++ {
