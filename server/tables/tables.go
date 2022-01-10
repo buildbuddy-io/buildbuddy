@@ -607,11 +607,9 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				rows.Close()
 
 				for _, id := range ids {
-					log.Info("update TargetStatuses")
 					if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, id.invocationUUID, id.invocationPK).Error; err != nil {
 						return err
 					}
-					log.Info("update invocations")
 					if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, id.invocationUUID, id.invocationID).Error; err != nil {
 						return err
 					}
