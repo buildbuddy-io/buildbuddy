@@ -6,10 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	golog "log"
 	"os"
 	"strings"
 	"time"
+
+	golog "log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
