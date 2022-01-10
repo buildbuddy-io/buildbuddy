@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -353,12 +352,11 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 // have their execution suspended. The pool doesn't currently account for CPU
 // usage in this case.
 type Pool struct {
-	env              environment.Env
-	imageCacheAuth   *container.ImageCacheAuthenticator
-	podID            string
-	buildRoot        string
-	dockerClient     *dockerclient.Client
-	containerdSocket string
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
+	podID          string
+	buildRoot      string
+	dockerClient   *dockerclient.Client
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -382,18 +380,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 	}
 
 	var dockerClient *dockerclient.Client
-	containerdSocket := ""
-	if executorConfig.ContainerdSocket != "" {
-		_, err := os.Stat(executorConfig.ContainerdSocket)
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Containerd socket %q not found", executorConfig.ContainerdSocket)
-		}
-		containerdSocket = executorConfig.ContainerdSocket
-		log.Info("Using containerd for execution")
-		if executorConfig.DockerSocket != "" {
-			log.Warning("containerd_socket and docker_socket both specified. Ignoring docker_socket in favor of containerd.")
-		}
-	} else if executorConfig.DockerSocket != "" {
+	if executorConfig.DockerSocket != "" {
 		_, err := os.Stat(executorConfig.DockerSocket)
 		if os.IsNotExist(err) {
 			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", executorConfig.DockerSocket)
@@ -410,13 +397,12 @@ func NewPool(env environment.Env) (*Pool, error) {
 	}
 
 	p := &Pool{
-		env:              env,
-		imageCacheAuth:   container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
-		podID:            podID,
-		dockerClient:     dockerClient,
-		containerdSocket: containerdSocket,
-		buildRoot:        executorConfig.GetRootDirectory(),
-		runners:          []*CommandRunner{},
+		env:            env,
+		imageCacheAuth: container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
+		podID:          podID,
+		dockerClient:   dockerClient,
+		buildRoot:      executorConfig.GetRootDirectory(),
+		runners:        []*CommandRunner{},
 	}
 	p.setLimits(&executorConfig.RunnerPool)
 	return p, nil
@@ -771,8 +757,6 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,
 		)
-	case platform.ContainerdContainerType:
-		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
