@@ -30,8 +30,6 @@ type Options struct {
 	HostnameOverride string
 	// TESTING ONLY: overrides the port reported when registering executor
 	PortOverride int32
-	// TESTING ONLY: overrides the name reported when registering executor
-	NodeNameOverride string
 	// TESTING ONLY: overrides the API key sent by the client
 	APIKeyOverride string
 }
@@ -52,10 +50,6 @@ func makeExecutionNode(pool, executorID, executionServerName string, options *Op
 			return nil, status.InternalErrorf("could not determine local port: %s", err)
 		}
 		port = resPort
-	}
-	nodeName := options.NodeNameOverride
-	if nodeName == "" {
-		nodeName = resources.GetNodeName()
 	}
 	return &scpb.ExecutionNode{
 		Host:                  hostname,
