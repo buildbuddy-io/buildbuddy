@@ -422,6 +422,9 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				log.Errorf("COMMIT err: %s", err)
 				return err
 			}
+			if err := streamState.Commit(); err != nil {
+				return err
+			}
 			return stream.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: streamState.offset,
 			})

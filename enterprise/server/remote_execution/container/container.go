@@ -37,7 +37,7 @@ type Stats struct {
 	MemoryUsageBytes int64
 
 	// TODO: add CPU usage once we have a reliable way to measure it.
-	// CPU only applies to bare execution, since Docker and Containerd containers
+	// CPU only applies to bare execution, since Docker containers
 	// are frozen when not in use, reducing their CPU usage to 0.
 }
 

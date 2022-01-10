@@ -3598,6 +3598,18 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "io_bazel_bazel-5.0.0rc3-darwin-x86_64",
+        sha256 = "450064319e6835610b8d9bbe0ae710286f450995b3190059cc2a43cfa0b49a72",
+        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-darwin-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-5.0.0rc3-linux-x86_64",
+        sha256 = "125b5d1d53f18f27b9bcd062c3b7fa7fce50c1beeb16664f7ae82e1ffece4cb2",
+        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-linux-x86_64"],
+        executable = True,
+    )
+    http_file(
         name = "io_bazel_bazelisk-1.10.1-darwin-amd64",
         sha256 = "e485bbf84532d02a60b0eb23c702610b5408df3a199087a4f2b5e0995bbf2d5a",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"],
