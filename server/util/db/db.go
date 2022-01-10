@@ -80,11 +80,9 @@ type DB = gorm.DB
 type txRunner func(tx *DB) error
 
 func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts *Options) *DB {
-	var db *DB
+	db := dbh.DB
 	if opts.readOnly && opts.allowStaleReads && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
-	} else {
-		db = dbh.DB
 	}
 
 	db = db.WithContext(ctx)
