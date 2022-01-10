@@ -2,6 +2,7 @@ package usage_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ var (
 	usage1Collection1Start = usage1Start.Add(0 * collectionPeriodDuration)
 	usage1Collection2Start = usage1Start.Add(1 * collectionPeriodDuration)
 	usage1Collection3Start = usage1Start.Add(2 * collectionPeriodDuration)
+	usage1Collection4Start = usage1Start.Add(3 * collectionPeriodDuration)
 )
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
@@ -414,4 +416,64 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 			UsageCounts:     tables.UsageCounts{CASCacheHits: 1},
 		},
 	}, usages)
+}
+
+func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
+	counts1 := increasingCountsStartingAt(100)
+	counts2 := increasingCountsStartingAt(10000)
+	te := setupEnv(t)
+	clock := testclock.StartingAt(usage1Collection1Start)
+	ctx := authContext(te, "US1")
+	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
+	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{})
+
+	// Increment twice to test both insert and update queries.
+
+	err := ut.Increment(ctx, counts1)
+	require.NoError(t, err)
+
+	err = rbuf.Flush(context.Background())
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	err = ut.Increment(ctx, counts2)
+	require.NoError(t, err)
+
+	err = rbuf.Flush(context.Background())
+	require.NoError(t, err)
+	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
+	err = ut.FlushToDB(ctx)
+	require.NoError(t, err)
+
+	usages := queryAllUsages(t, te)
+	expectedCounts := addCounts(counts1, counts2)
+	require.Equal(t, []*tables.Usage{{
+		PeriodStartUsec: usage1Start.UnixMicro(),
+		FinalBeforeUsec: usage1Collection4Start.UnixMicro(),
+		GroupID:         "GR1",
+		UsageCounts:     *expectedCounts,
+	}}, usages)
+}
+
+func increasingCountsStartingAt(value int64) *tables.UsageCounts {
+	counts := &tables.UsageCounts{}
+	countsValue := reflect.ValueOf(counts).Elem()
+	for i := 0; i < countsValue.NumField(); i++ {
+		countsValue.Field(i).Set(reflect.ValueOf(value))
+		value++
+	}
+	return counts
+}
+
+func addCounts(c1, c2 *tables.UsageCounts) *tables.UsageCounts {
+	counts := &tables.UsageCounts{}
+	countsValue := reflect.ValueOf(counts).Elem()
+	for i := 0; i < countsValue.NumField(); i++ {
+		v1 := reflect.ValueOf(c1).Elem().Field(i).Int()
+		v2 := reflect.ValueOf(c2).Elem().Field(i).Int()
+		countsValue.Field(i).Set(reflect.ValueOf(v1 + v2))
+	}
+	return counts
 }

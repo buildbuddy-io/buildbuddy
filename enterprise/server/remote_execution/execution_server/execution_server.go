@@ -191,7 +191,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	return s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
 		var existing tables.Execution
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err
@@ -592,15 +592,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.Debugf("PublishOperation: operation %q stage: %s", taskID, stage)
 
-		// Before publishing the COMPLETED operation, update the task router
-		// so that subsequent tasks with similar routing properties can get
-		// routed back to the same executor.
 		if stage == repb.ExecutionStage_COMPLETED {
 			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
-				if err := s.updateRouter(ctx, taskID, response); err != nil {
-					// Errors from updating the router should not be fatal.
-					log.Errorf("Failed to update task router for task %s: %s", taskID, err)
+				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
+					log.Error(err.Error())
 				}
 			}
 		}
@@ -633,31 +630,75 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 }
 
-func (s *ExecutionServer) updateRouter(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
-	router := s.env.GetTaskRouter()
-	if router == nil {
-		return nil
-	}
-	// If the result was served from cache, nothing was actually executed, so no
-	// need to update the task router.
-	if executeResponse.GetCachedResult() {
-		return nil
-	}
+// markTaskComplete contains logic to be run when the task is complete but
+// before letting the client know that the task has completed.
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
 	actionResourceName, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		return err
 	}
+	cmd, err := s.fetchCommandForTask(ctx, actionResourceName)
+	if err != nil {
+		return err
+	}
+
+	router := s.env.GetTaskRouter()
+	// Only update the router if a task was actually executed
+	if router != nil && !executeResponse.GetCachedResult() {
+		nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
+		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	}
+
+	return s.updateUsage(ctx, cmd, executeResponse)
+}
+
+func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
+	ut := s.env.GetUsageTracker()
+	if ut == nil {
+		return nil
+	}
+	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
+	if err != nil {
+		return err
+	}
+	counts := &tables.UsageCounts{}
+	plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+	if plat.OS == platform.DarwinOperatingSystemName {
+		counts.MacExecutionDurationUsec += dur.Microseconds()
+	} else if plat.OS == platform.LinuxOperatingSystemName {
+		counts.LinuxExecutionDurationUsec += dur.Microseconds()
+	} else {
+		return status.InternalErrorf("Unsupported platform %s", plat.OS)
+	}
+	return ut.Increment(ctx, counts)
+}
+
+func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Command, error) {
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
-		return err
+		return nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
-		return err
+		return nil, err
 	}
-	nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
-	router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
-	return nil
+	return cmd, nil
+}
+
+func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
+	if err := md.GetOutputUploadCompletedTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	if err := md.GetQueuedTimestamp().CheckValid(); err != nil {
+		return 0, err
+	}
+	end := md.GetOutputUploadCompletedTimestamp().AsTime()
+	start := md.GetQueuedTimestamp().AsTime()
+	dur := end.Sub(start)
+	if dur <= 0 {
+		return 0, status.InternalErrorf("Execution duration is <= 0")
+	}
+	return dur, nil
 }

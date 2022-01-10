@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -64,6 +66,9 @@ const (
 
 	// How long to wait before giving up on webhook requests.
 	webhookNotifyTimeout = 1 * time.Minute
+
+	// Default number of actions shown by bazel
+	defaultActionsShown = 8
 )
 
 var (
@@ -665,7 +670,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid)
+				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
+				if numLinesToRetain != 0 {
+					// the number of lines curses can overwrite is 2 + the ui_actions shown:
+					// 1 for the progress tracker, 1 for each action, and 1 blank line.
+					// 0 indicates that curses is not being used.
+					numLinesToRetain += 2
+				}
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, numLinesToRetain)
 			}
 		}
 
@@ -799,6 +811,54 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 		return p.Started.OptionsDescription, nil
 	}
 	return "", nil
+}
+
+func getNumActionsShownFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
+	options, err := extractOptionsFromStartedBuildEvent(event)
+	if err != nil {
+		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		return defaultActionsShown
+	}
+	optionsList, err := shlex.Split(options)
+	if err != nil {
+		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		return defaultActionsShown
+	}
+	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
+	cursesValues := getOptionValues(optionsList, "curses")
+	if len(cursesValues) > 0 {
+		curses := cursesValues[len(cursesValues)-1]
+		if curses == "no" {
+			return 0
+		} else if curses != "yes" && curses != "auto" {
+			log.Warningf("Unrecognized argument to curses, assuming auto: %v", curses)
+		}
+	}
+	if len(actionsShownValues) > 0 {
+		n, err := strconv.Atoi(actionsShownValues[len(actionsShownValues)-1])
+		if err != nil {
+			log.Warningf("Invalid argument to ui_actions_shown, defaulting to %d: %v", defaultActionsShown, err)
+		} else if n < 1 {
+			return 1
+		} else {
+			return n
+		}
+	}
+	return defaultActionsShown
+}
+
+func getOptionValues(options []string, optionName string) []string {
+	values := []string{}
+	flag := "--" + optionName
+	for _, option := range options {
+		if option == "--" {
+			break
+		}
+		if strings.HasPrefix(option, flag+"=") {
+			values = append(values, strings.TrimPrefix(option, flag+"="))
+		}
+	}
+	return values
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {

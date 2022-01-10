@@ -439,6 +439,12 @@ type UsageCounts struct {
 	CASCacheHits           int64
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
+
+	// NOTE: New fields added here should be annotated with
+	// `gorm:"not null;default:0"`
+
+	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
+	MacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.

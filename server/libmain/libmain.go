@@ -286,7 +286,11 @@ func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) 
 	}
 	// Register to handle GetCapabilities messages, which tell the client
 	// that this server supports CAS functionality.
-	capabilitiesServer := capabilities_server.NewCapabilitiesServer( /*supportCAS=*/ enableCache /*supportRemoteExec=*/, enableRemoteExec)
+	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
+		/*supportCAS=*/ enableCache,
+		/*supportRemoteExec=*/ enableRemoteExec,
+		/*supportZstd=*/ env.GetConfigurator().GetCacheZstdTranscodingEnabled(),
+	)
 	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
 }
 

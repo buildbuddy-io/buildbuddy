@@ -45,7 +45,7 @@ func defaultSortParams() *inpb.InvocationSort {
 }
 
 func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, sql string, values ...interface{}) ([]*tables.Invocation, error) {
-	rows, err := s.h.Raw(sql, values...).Rows()
+	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("search_invocations"), sql, values...).Rows()
 	if err != nil {
 		return nil, err
 	}
