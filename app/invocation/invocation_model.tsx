@@ -268,17 +268,15 @@ export default class InvocationModel {
   }
 
   getRepo() {
-    return this.buildMetadataMap.get("REPO_URL") || this.workspaceStatusMap.get("REPO_URL") || this.getGithubRepo();
+    return this.getGithubRepo();
   }
 
   getCommit() {
-    return this.buildMetadataMap.get("COMMIT_SHA") || this.workspaceStatusMap.get("COMMIT_SHA") || this.getGithubSHA();
+    return this.getGithubSHA();
   }
 
   getBranchName() {
-    return (
-      this.buildMetadataMap.get("GIT_BRANCH") || this.workspaceStatusMap.get("GIT_BRANCH") || this.getGithubBranch()
-    );
+    return this.getGithubBranch();
   }
 
   getGithubUser() {
@@ -294,11 +292,11 @@ export default class InvocationModel {
   }
 
   getGithubRepo() {
-    return this.clientEnvMap.get("GITHUB_REPOSITORY");
+    return this.invocations.find(() => true)?.repoUrl || "";
   }
 
   getGithubSHA() {
-    return this.clientEnvMap.get("GITHUB_SHA");
+    return this.invocations.find(() => true)?.commitSha || "";
   }
 
   getGithubRef() {
@@ -306,13 +304,7 @@ export default class InvocationModel {
   }
 
   getGithubBranch() {
-    if (this.clientEnvMap.get("GITHUB_HEAD_REF")) {
-      return this.clientEnvMap.get("GITHUB_HEAD_REF");
-    }
-    if (this.clientEnvMap.get("GITHUB_REF") && this.clientEnvMap.get("GITHUB_REF").startsWith("refs/heads/")) {
-      return this.clientEnvMap.get("GITHUB_REF").slice("refs/heads/".length);
-    }
-    return "";
+    return this.invocations.find(() => true)?.branchName || "";
   }
 
   getGithubRun() {
