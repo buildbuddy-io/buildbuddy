@@ -318,7 +318,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		return 0, err
 	}
 	start := time.Now()
-	_, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	n, err := writer.Write(compressedData)
 	spn.End()
 	recordWriteMetrics(gcsLabel, start, n, err)
@@ -422,7 +422,7 @@ func NewAwsS3BlobStore(awsConfig *config.AwsS3Config) (*AwsS3BlobStore, error) {
 }
 
 func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (bool, error) {
-	_, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.s3.HeadBucketWithContext(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
 	spn.End()
 	if err == nil {
@@ -602,7 +602,7 @@ func (z *AzureBlobStore) isAzureError(err error, code azblob.ServiceCodeType) bo
 }
 
 func (z *AzureBlobStore) containerExists(ctx context.Context) (bool, error) {
-	_, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	_, err := z.containerURL.GetProperties(ctx, azblob.LeaseAccessConditions{})
 	spn.End()
 	if err == nil {
@@ -639,7 +639,7 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	start := time.Now()
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
-	_, spn := tracing.StartSpan(ctx)
+	ctx, spn := tracing.StartSpan(ctx)
 	b, err := ioutil.ReadAll(readCloser)
 	spn.End()
 	if err != nil {
