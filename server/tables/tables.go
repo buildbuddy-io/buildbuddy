@@ -584,6 +584,24 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
+	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_uuid") {
+		if db.Dialector.Name() == mysqlDialect {
+			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id) WHERE invocation_uuid IS NULL`).Error; err != nil {
+				return postMigrate, err
+			}
+			if err := db.Exec(
+				`UPDATE TargetStatuses ts
+			     SET invocation_uuid=(
+				   SELECT invocation_uuid FROM Invocations i 
+				   WHERE i.invocation_pk=ts.invocation_pk)
+				 WHERE invocation_uuid IS NULL  
+			    `).Error; err != nil {
+				return postMigrate, err
+			}
+
+		}
+	}
+
 	// Populate invocation_uuid if the column doesn't exist.
 	if m.HasTable("Invocations") && !m.HasColumn(&Invocation{}, "invocation_uuid") {
 		if db.Dialector.Name() == sqliteDialect {
