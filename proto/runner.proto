@@ -62,6 +62,10 @@ message RunRequest {
   // changing this key will mean hitting a different cache and remote executor.
   // Optional.
   string instance_name = 5;
+
+  // Key used to indicate preference to which Bazel instance the request should
+  // be routed to.
+  string session_affinity_key = 6;
 }
 
 message RunResponse {

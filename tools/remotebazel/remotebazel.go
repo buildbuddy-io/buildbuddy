@@ -24,6 +24,7 @@ var (
 	remoteInstanceName = flag.String("remote_instance_name", "", "The remote instance name, if one should be used.")
 	repo               = flag.String("repo", "", "git repo URL")
 	patch              = flag.String("patch", "", "Optional patch to apply after checking out the repo")
+	affinityKey        = flag.String("affinity_key", "", "Preference for which Bazel instance the request is routed to")
 )
 
 const (
@@ -77,9 +78,10 @@ func main() {
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: *repo,
 		},
-		RepoState:    &rnpb.RunRequest_RepoState{},
-		BazelCommand: cmd,
-		InstanceName: *remoteInstanceName,
+		RepoState:          &rnpb.RunRequest_RepoState{},
+		BazelCommand:       cmd,
+		InstanceName:       *remoteInstanceName,
+		SessionAffinityKey: *affinityKey,
 	}
 	if *patch != "" {
 		patchContents, err := os.ReadFile(*patch)
