@@ -89,10 +89,14 @@ func BenchmarkDataDogChunkedStreamingCompression(t *testing.B) {
 }
 
 func BenchmarkDataDogSingleCompression(t *testing.B) {
-	benchmarkCompressionWithBytes(t, func(p []byte) []byte {
-		b, err := datadog.Compress(nil, p)
+	benchmarkCompressionWithBytes(t, func(p []byte, data interface{}) ([]byte, interface{}) {
+		if data == nil {
+			data = datadog.NewCtx()
+		}
+		zctx := data.(datadog.Ctx)
+		b, err := zctx.Compress(nil, p)
 		require.NoError(t, err)
-		return b
+		return b, data
 	})
 }
 
@@ -137,13 +141,13 @@ func BenchmarkKlauspostChunkedStreamingCompression(t *testing.B) {
 func BenchmarkKlauspostSingleCompression(t *testing.B) {
 	enc, err := klauspost.NewWriter(nil)
 	require.NoError(t, err)
-
-	benchmarkCompressionWithBytes(t, func(b []byte) []byte {
-		// c, err := klauspost_zstd.NewWriter(nil)
-		// require.NoError(t, err)
+	t.Cleanup(func() {
+		err := enc.Close()
+		require.NoError(t, err)
+	})
+	benchmarkCompressionWithBytes(t, func(b []byte, ctx interface{}) ([]byte, interface{}) {
 		c := enc.EncodeAll(b, nil)
-		enc.Reset(nil)
-		return c
+		return c, nil
 	})
 }
 
@@ -189,8 +193,8 @@ func BenchmarkValyalaChunkedStreamingCompression(t *testing.B) {
 }
 
 func BenchmarkValyalaSingleCompression(t *testing.B) {
-	benchmarkCompressionWithBytes(t, func(b []byte) []byte {
-		return valyala.Compress(nil, b)
+	benchmarkCompressionWithBytes(t, func(b []byte, _ interface{}) ([]byte, interface{}) {
+		return valyala.Compress(nil, b), nil
 	})
 }
 
@@ -199,69 +203,85 @@ func BenchmarkValyalaSingleCompression(t *testing.B) {
 func BenchmarkValyalaStreamingDecompression(t *testing.B) {
 	benchmarkDecompressionWithReader(t, func(w io.Writer, r io.Reader) {
 		d := valyala.NewReader(r)
+		defer d.Release()
 		_, err := d.WriteTo(w)
 		require.NoError(t, err)
 	})
 }
 
 func BenchmarkValyalaSingleDecompression(t *testing.B) {
-	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte) []byte {
+	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte, _ interface{}) ([]byte, interface{}) {
 		out, err := valyala.Decompress(dst, src)
 		require.NoError(t, err)
-		return out
+		return out, nil
 	})
 }
 
 func BenchmarkDataDogStreamingDecompression(t *testing.B) {
 	benchmarkDecompressionWithReader(t, func(w io.Writer, r io.Reader) {
 		d := datadog.NewReader(r)
+		defer d.Close()
 		_, err := io.Copy(w, d)
 		require.NoError(t, err)
 	})
 }
 
 func BenchmarkDataDogSingleDecompression(t *testing.B) {
-	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte) []byte {
-		out, err := datadog.Decompress(dst, src)
+	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte, data interface{}) ([]byte, interface{}) {
+		if data == nil {
+			data = datadog.NewCtx()
+		}
+		zctx := data.(datadog.Ctx)
+		out, err := zctx.Decompress(dst, src)
 		require.NoError(t, err)
-		return out
+		return out, data
 	})
 }
 
 func BenchmarkKlauspostStreamingDecompression(t *testing.B) {
+	pool := NewDecoderPool()
 	benchmarkDecompressionWithReader(t, func(w io.Writer, r io.Reader) {
-		d, err := klauspost.NewReader(r)
+		d, err := pool.Get()
 		require.NoError(t, err)
+
+		err = d.Reset(r)
+		require.NoError(t, err)
+
 		_, err = d.WriteTo(w)
 		require.NoError(t, err)
+
+		d.Reset(nil)
+		pool.Put(d)
 	})
 }
 
 func BenchmarkKlauspostSingleDecompression(t *testing.B) {
-	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte) []byte {
+	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte, _ interface{}) ([]byte, interface{}) {
 		out, err := klauspostDecompressor.DecodeAll(src, dst)
 		require.NoError(t, err)
-		return out
+		return out, nil
 	})
 }
 
 func benchmarkDecompressionWithReader(t *testing.B, testFunc func(io.Writer, io.Reader)) {
-	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte) []byte {
+	benchmarkDecompressionWithBytes(t, func(dst []byte, src []byte, _ interface{}) ([]byte, interface{}) {
 		buf := bytes.NewBuffer(dst)
 		r := bytes.NewReader(src)
 		testFunc(buf, r)
-		return buf.Bytes()
+		return buf.Bytes(), nil
 	})
 }
 
-func benchmarkDecompressionWithBytes(t *testing.B, testFunc func(dst []byte, src []byte) []byte) {
+func benchmarkDecompressionWithBytes(t *testing.B, testFunc func([]byte, []byte, interface{}) ([]byte, interface{})) {
 	b := mustReadAll(t, *blobPath)
 	t.SetBytes(int64(len(b)))
 	src := valyala.Compress(nil, b)
 	dst := make([]byte, 0, len(b))
+	// Uncomment to use compressed bytes (i.e. incoming bytes) for reported throughput
+	// t.SetBytes(int64(len(src)))
 
-	run := func() {
-		out := testFunc(dst, src)
+	run := func(data interface{}) interface{} {
+		out, data := testFunc(dst, src, data)
 		if !*runParallel {
 			ratio := float64(len(src)) / float64(len(b))
 			t.ReportMetric(ratio, "comp")
@@ -269,36 +289,39 @@ func benchmarkDecompressionWithBytes(t *testing.B, testFunc func(dst []byte, src
 		if *checkCorrectness {
 			require.Equal(t, b, out)
 		}
+		return data
 	}
 
 	t.ResetTimer()
 	if *runParallel {
 		t.RunParallel(func(pb *testing.PB) {
+			var data interface{}
 			for pb.Next() {
-				run()
+				data = run(data)
 			}
 		})
 	} else {
+		var data interface{}
 		for i := 0; i < t.N; i++ {
-			run()
+			data = run(data)
 		}
 	}
 }
 
 func benchmarkCompressionWithReader(t *testing.B, testFunc func(w io.Writer, r io.Reader, size int)) {
-	benchmarkCompressionWithBytes(t, func(p []byte) []byte {
+	benchmarkCompressionWithBytes(t, func(p []byte, data interface{}) ([]byte, interface{}) {
 		buf := &bytes.Buffer{}
 		testFunc(buf, bytes.NewReader(p), len(p))
-		return buf.Bytes()
+		return buf.Bytes(), nil
 	})
 }
 
-func benchmarkCompressionWithBytes(t *testing.B, testFunc func([]byte) []byte) {
+func benchmarkCompressionWithBytes(t *testing.B, testFunc func([]byte, interface{}) ([]byte, interface{})) {
 	t.SetBytes(fileSize(t, *blobPath))
 	b := mustReadAll(t, *blobPath)
 
-	run := func() {
-		c := testFunc(b)
+	run := func(data interface{}) interface{} {
+		c, data := testFunc(b, data)
 		if !*runParallel {
 			ratio := float64(len(c)) / float64(len(b))
 			t.ReportMetric(ratio, "comp")
@@ -312,18 +335,21 @@ func benchmarkCompressionWithBytes(t *testing.B, testFunc func([]byte) []byte) {
 			require.NoError(t, err)
 			require.Equal(t, b, dbuf)
 		}
+		return data
 	}
 
 	t.ResetTimer()
 	if *runParallel {
 		t.RunParallel(func(pb *testing.PB) {
+			var data interface{}
 			for pb.Next() {
-				run()
+				data = run(data)
 			}
 		})
 	} else {
+		var data interface{}
 		for i := 0; i < t.N; i++ {
-			run()
+			data = run(data)
 		}
 	}
 }
@@ -363,4 +389,35 @@ func (p *VZstdWriterPool) Get() *valyala.Writer {
 
 func (p *VZstdWriterPool) Put(w *valyala.Writer) {
 	p.pool.Put(w)
+}
+
+type DecoderPool struct {
+	pool sync.Pool
+}
+
+func NewDecoderPool() *DecoderPool {
+	return &DecoderPool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				dc, err := klauspost.NewReader(nil)
+				if err != nil {
+					return err
+				}
+				return dc
+			},
+		},
+	}
+}
+
+func (p *DecoderPool) Get() (*klauspost.Decoder, error) {
+	val := p.pool.Get()
+	if err, ok := val.(error); ok {
+		return nil, err
+	}
+	return val.(*klauspost.Decoder), nil
+}
+
+func (p *DecoderPool) Put(d *klauspost.Decoder) {
+	d.Reset(nil)
+	p.pool.Put(d)
 }

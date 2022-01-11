@@ -41,7 +41,8 @@ var (
 	zstdWriterPool = NewCompressorPool()
 	zstdReaderPool = NewDecompressorPool()
 
-	klauspostEncoder = mustGetEncoder()
+	klauspostEncoder     = mustGetEncoder()
+	klauspostDecoderPool = NewDecoderPool()
 )
 
 func mustGetEncoder() *kzstd.Encoder {
@@ -150,7 +151,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	defer reader.Close()
 
-	log.Infof("BS.Read %.2f KB %s", float64(r.GetDigest().GetSizeBytes())/1e3, r.GetCompressor())
+	log.Infof("BS.Read %.2f KB %s %s", float64(r.GetDigest().GetSizeBytes())/1e3, r.GetCompressor(), zstdLib(ctx))
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		if lib := zstdLib(ctx); lib == "datadog" {
@@ -298,7 +299,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		if lib := zstdLib(ctx); lib == "datadog" {
 			decompressor = NewZstdDecompressor(ws.writer)
 		} else if lib == "klauspost" {
-			decompressor, err = NewKlauspostDecompressor(ws.writer)
+			decompressor, err = NewKlauspostDecompressor(ws.writer, klauspostDecoderPool)
 			if err != nil {
 				return nil, err
 			}
@@ -398,7 +399,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			log.Infof("BS.Write %.2f KB %s", float64(streamState.d.GetSizeBytes())/1e3, r.GetCompressor())
+			log.Infof("BS.Write %.2f KB %s %s", float64(streamState.d.GetSizeBytes())/1e3, r.GetCompressor(), zstdLib(ctx))
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
@@ -416,10 +417,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			// buffered bytes from the decompressor to the cache writer.
 			if err := streamState.Close(); err != nil {
 				log.Errorf(err.Error())
-				return err
-			}
-			if err := streamState.Commit(); err != nil {
-				log.Errorf("COMMIT err: %s", err)
 				return err
 			}
 			if err := streamState.Commit(); err != nil {
@@ -658,9 +655,9 @@ type klauspostZstdDecompressor struct {
 	done    chan error
 }
 
-func NewKlauspostDecompressor(writer io.Writer) (io.WriteCloser, error) {
+func NewKlauspostDecompressor(writer io.Writer, pool *DecoderPool) (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
-	decoder, err := kzstd.NewReader(pr)
+	decoder, err := pool.Get(pr)
 	if err != nil {
 		return nil, err
 	}
@@ -670,6 +667,11 @@ func NewKlauspostDecompressor(writer io.Writer) (io.WriteCloser, error) {
 		done:    make(chan error, 1),
 	}
 	go func() {
+		defer func() {
+			if err := pool.Put(decoder); err != nil {
+				log.Error(err.Error())
+			}
+		}()
 		defer pr.Close()
 		_, err := decoder.WriteTo(writer)
 		d.done <- err
@@ -687,9 +689,9 @@ func (d *klauspostZstdDecompressor) Close() error {
 	if err := d.pw.Close(); err != nil {
 		lastErr = err
 	}
-	defer func() {
-		d.decoder.Close()
-	}()
+	// NOTE: We don't close the decompressor since it cannot be reused once closed.
+	// Instead we let the pool close it once garbage collected.
+
 	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
 	// since the write-end of the pipe is closed, reads from the decompressor
 	// should no longer be blocking, and it should return EOF as soon as the
@@ -843,6 +845,10 @@ func NewZstdCompressor(reader io.Reader) io.ReadCloser {
 	return pr
 }
 
+// func NewChunkedZstdCompressor(reader io.Reader) io.ReadCloser {
+// 	pr, pw := io.Pipe()
+// }
+
 func hasDevnullHeader(ctx context.Context) bool {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -863,4 +869,46 @@ func zstdLib(ctx context.Context) string {
 		return vals[0]
 	}
 	return "valyala"
+}
+
+type DecoderPool struct {
+	pool sync.Pool
+}
+
+func NewDecoderPool() *DecoderPool {
+	return &DecoderPool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				dc, err := kzstd.NewReader(nil)
+				if err != nil {
+					return err
+				}
+				runtime.SetFinalizer(dc, func(dc *kzstd.Decoder) {
+					dc.Close() // does not have a return value
+				})
+				return dc
+			},
+		},
+	}
+}
+
+func (p *DecoderPool) Get(reader io.Reader) (*kzstd.Decoder, error) {
+	val := p.pool.Get()
+	if err, ok := val.(error); ok {
+		return nil, err
+	}
+	decoder := val.(*kzstd.Decoder)
+	if err := decoder.Reset(reader); err != nil {
+		return nil, err
+	}
+	return decoder, nil
+}
+
+func (p *DecoderPool) Put(decoder *kzstd.Decoder) error {
+	// Release reference to enclosed reader before adding back to the pool.
+	if err := decoder.Reset(nil); err != nil {
+		return err
+	}
+	p.pool.Put(decoder)
+	return nil
 }
