@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -31,8 +33,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
@@ -59,9 +63,17 @@ const (
 	// The vSock path (also relative to the chroot).
 	firecrackerVSockPath = "/run/v.sock"
 
-	// The names to use when creating a full snapshot (relative to chroot).
-	fullDiskSnapshotName = "full-disk.snap"
-	fullMemSnapshotName  = "full-mem.snap"
+	// The names to use when creating snapshots (relative to chroot).
+	vmStateSnapshotName = "vmstate.snap"
+	fullMemSnapshotName = "full-mem.snap"
+	diffMemSnapshotName = "diff-mem.snap"
+
+	fullSnapshotType = "Full"
+	diffSnapshotType = "Diff"
+
+	mergeDiffSnapshotConcurrency = 4
+	// Firecracker writes changed blocks in 4Kb blocks.
+	mergeDiffSnapshotBlockSize = 4096
 
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
@@ -263,6 +275,7 @@ type FirecrackerContainer struct {
 	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
+	enableDiffSnapshots  bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -320,12 +333,13 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			EnableNetworking: opts.EnableNetworking,
 			DebugMode:        opts.DebugMode,
 		},
-		jailerRoot:         opts.JailerRoot,
-		containerImage:     opts.ContainerImage,
-		actionWorkingDir:   opts.ActionWorkingDirectory,
-		env:                env,
-		imageCacheAuth:     imageCacheAuth,
-		allowSnapshotStart: opts.AllowSnapshotStart,
+		jailerRoot:          opts.JailerRoot,
+		containerImage:      opts.ContainerImage,
+		actionWorkingDir:    opts.ActionWorkingDirectory,
+		env:                 env,
+		imageCacheAuth:      imageCacheAuth,
+		allowSnapshotStart:  opts.AllowSnapshotStart,
+		enableDiffSnapshots: env.GetConfigurator().GetExecutorConfig().EnableFirecrackerDiffSnapshots,
 	}
 
 	if err := c.newID(); err != nil {
@@ -337,29 +351,157 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 	return c, nil
 }
 
-func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest) (*repb.Digest, error) {
+// isZeroes checks whether the passed byte buffer contains all zero bytes.
+// based on https://stackoverflow.com/questions/45506424/how-to-check-if-byte-is-all-zeros-in-go
+func isZeroes(data []byte) bool {
+	n := len(data)
+
+	// Largest length which could be divided by 8.
+	nlen8 := n & 0xFFFFFFF8
+	i := 0
+
+	// Interpret every 8 raw bytes as an uint64 and compare to zero.
+	for ; i < nlen8; i += 8 {
+		b := *(*uint64)(unsafe.Pointer(uintptr(unsafe.Pointer(&data[0])) + uintptr(i)))
+		if b != 0 {
+			return false
+		}
+	}
+
+	// Check trailing bytes that do not divide evenly into 8.
+	for ; i < n; i++ {
+		if data[i] != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks into the baseSnapshotPath file.
+func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapshotPath string, concurrency int, bufSize int) error {
+	out, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
+	if err != nil {
+		return status.UnavailableErrorf("Could not open base snapshot file %q: %s", baseSnapshotPath, err)
+	}
+	defer out.Close()
+
+	in, err := os.Open(diffSnapshotPath)
+	if err != nil {
+		return status.UnavailableErrorf("Could not open diff snapshot file %q: %s", diffSnapshotPath, err)
+	}
+	defer in.Close()
+
+	inInfo, err := in.Stat()
+	if err != nil {
+		return status.UnavailableErrorf("Could not stat diff snapshot file %q: %s", diffSnapshotPath, err)
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+
+	perThreadBytes := int64(math.Ceil(float64(inInfo.Size()) / float64(concurrency)))
+	perThreadBytes = ((perThreadBytes + int64(bufSize)) / int64(bufSize)) * int64(bufSize)
+	for i := 0; i < concurrency; i++ {
+		i := i
+		offset := perThreadBytes * int64(i)
+		regionEnd := perThreadBytes * int64(i+1)
+		eg.Go(func() error {
+			buf := make([]byte, bufSize)
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					break
+				}
+				if offset >= regionEnd {
+					break
+				}
+				n, err := in.ReadAt(buf, offset)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return err
+				}
+				if isZeroes(buf[:n]) {
+					offset += int64(n)
+					continue
+				}
+				if _, err := out.WriteAt(buf[:n], offset); err != nil {
+					return err
+				}
+				offset += int64(n)
+			}
+			return nil
+		})
+	}
+
+	return eg.Wait()
+}
+
+func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest, baseSnapshotDigest *repb.Digest) (*repb.Digest, error) {
 	start := time.Now()
 	defer func() {
 		log.Debugf("SaveSnapshot took %s", time.Since(start))
 	}()
 
+	// If a snapshot already exists, get a reference to the memory snapshot so that we can perform a diff snapshot and
+	// merge the modified pages on top of the existing memory snapshot.
+	baseMemSnapshotPath := ""
+	if baseSnapshotDigest != nil && c.enableDiffSnapshots {
+		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, baseSnapshotDigest)
+		if err != nil {
+			return nil, err
+		}
+		baseDir := filepath.Join(c.getChroot(), "base")
+		if err := disk.EnsureDirectoryExists(baseDir); err != nil {
+			return nil, err
+		}
+		if err := loader.UnpackSnapshot(baseDir); err != nil {
+			return nil, err
+		}
+		baseMemSnapshotPath = filepath.Join(baseDir, fullMemSnapshotName)
+	}
+
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.Errorf("Error pausing VM: %s", err)
 		return nil, err
 	}
-	memSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
-	diskSnapshotPath := filepath.Join(c.getChroot(), fullDiskSnapshotName)
+
+	snapshotType := fullSnapshotType
+	memSnapshotFile := fullMemSnapshotName
+	if c.enableDiffSnapshots {
+		snapshotType = diffSnapshotType
+		memSnapshotFile = diffMemSnapshotName
+	}
+	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
+	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
 	disk.DeleteLocalFileIfExists(memSnapshotPath)
-	disk.DeleteLocalFileIfExists(diskSnapshotPath)
+	disk.DeleteLocalFileIfExists(vmStateSnapshotPath)
 
 	machineStart := time.Now()
-	if err := c.machine.CreateSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
+	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
+		params.Body.SnapshotType = snapshotType
+	}
+	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
 		log.Errorf("Error creating snapshot: %s", err)
 		return nil, err
 	}
-	log.Debugf("VMM CreateSnapshot took %s", time.Since(machineStart))
+
+	log.Debugf("VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
+
+	if baseMemSnapshotPath != "" {
+		mergeStart := time.Now()
+		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
+			return nil, err
+		}
+		log.Debugf("VMM merge diff snapshot took %s", time.Since(mergeStart))
+		// Use the merged memory snapshot.
+		memSnapshotPath = baseMemSnapshotPath
+	}
 
 	configJson, err := json.Marshal(c.constants)
 	if err != nil {
@@ -368,7 +510,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	opts := &snaploader.LoadSnapshotOptions{
 		ConfigurationData:   configJson,
 		MemSnapshotPath:     memSnapshotPath,
-		DiskSnapshotPath:    diskSnapshotPath,
+		VMStateSnapshotPath: vmStateSnapshotPath,
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
@@ -491,7 +633,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("timeout waiting for firecracker socket: %s", err)
 	}
 	log.Debugf("waitforsocket took %s", time.Since(socketWaitStart))
-	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, fullDiskSnapshotName); err != nil {
+	enableDiffSnapshotsOpt := func(params *operations.LoadSnapshotParams) {
+		params.Body.EnableDiffSnapshots = true
+	}
+	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, vmStateSnapshotName, enableDiffSnapshotsOpt); err != nil {
 		return status.InternalErrorf("error loading snapshot: %s", err)
 	}
 	if workspaceDirOverride != "" {
@@ -637,9 +782,10 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
-			VcpuCount:  fcclient.Int64(c.constants.NumCPUs),
-			MemSizeMib: fcclient.Int64(c.constants.MemSizeMB),
-			HtEnabled:  fcclient.Bool(false),
+			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
+			MemSizeMib:      fcclient.Int64(c.constants.MemSizeMB),
+			HtEnabled:       fcclient.Bool(false),
+			TrackDirtyPages: true,
 		},
 	}
 
@@ -830,7 +976,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			// before saving the snapshot so it's not uploaded.
 			wsPath := c.workspaceFSPath
 			c.workspaceFSPath = ""
-			if _, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, snapDigest); err != nil {
+			if _, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, snapDigest, nil /*=baseSnapshotDigest*/); err != nil {
 				return nonCmdExit(err)
 			}
 			c.workspaceFSPath = wsPath
@@ -1085,7 +1231,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer func() {
 		log.Debugf("Pause took %s", time.Since(start))
 	}()
-	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/)
+	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/, c.pausedSnapshotDigest)
 	if err != nil {
 		log.Errorf("Error saving snapshot: %s", err)
 		return err
