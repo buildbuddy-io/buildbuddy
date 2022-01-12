@@ -1,0 +1,1 @@
+{"documents":[{"id":1,"pageTitle":"index","sectionTitle":"index","sectionRoute":"/blog/index","type":"blog"}],"index":{"version":"2.3.9","fields":["title","content"],"fieldVectors":[["title/1",[0,0.288]],["content/1",[1,0.288]]],"invertedIndex":[["found",{"_index":1,"title":{},"content":{"1":{}}}],["index",{"_index":0,"title":{"1":{}},"content":{}}]],"pipeline":["stemmer"]}}

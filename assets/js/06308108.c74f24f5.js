@@ -1,1 +1,0 @@
-(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[436],{6353:function(e){"use strict";e.exports=JSON.parse('{"title":"Recent posts","items":[{"title":"index","permalink":"/blog/index"}]}')}}]);

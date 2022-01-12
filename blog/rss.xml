@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0">
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
     <channel>
         <title>BuildBuddy Blog</title>
         <link>https://docs.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 12 Jan 2022 17:51:02 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 12 Jan 2022 17:51:30 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <item>
             <title><![CDATA[index]]></title>
             <link>https://docs.buildbuddy.io/blog/index</link>
-            <guid>index</guid>
-            <pubDate>Wed, 12 Jan 2022 17:51:02 GMT</pubDate>
+            <guid>/index</guid>
+            <pubDate>Wed, 12 Jan 2022 17:51:30 GMT</pubDate>
             <description><![CDATA[Not found!]]></description>
+            <content:encoded><![CDATA[<p>Not found!</p>]]></content:encoded>
         </item>
     </channel>
 </rss>
