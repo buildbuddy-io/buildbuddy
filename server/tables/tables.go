@@ -635,7 +635,8 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 }
 
 func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
-	// Close the rows before executing update statements for SQLite; otherwise, it will result in a deadlock.
+	// SQLite doesn't have UUID_TO_BIN function; so we need to calculate
+	// invocationUUID in the app.
 	var results []Invocation
 	res := db.Select("invocation_id", "invocation_pk").FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
 		for _, invocation := range results {
