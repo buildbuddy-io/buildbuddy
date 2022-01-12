@@ -20,6 +20,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
@@ -165,7 +166,7 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	handler := build_event_handler.NewBuildEventHandler(te)

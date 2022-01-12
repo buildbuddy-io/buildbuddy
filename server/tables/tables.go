@@ -586,77 +586,73 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_uuid") {
 		if db.Dialector.Name() == mysqlDialect {
-			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id) WHERE invocation_uuid IS NULL`).Error; err != nil {
-				return postMigrate, err
-			}
-			if err := db.Exec(
-				`UPDATE TargetStatuses ts
-			     SET invocation_uuid=(
-				   SELECT invocation_uuid FROM Invocations i 
-				   WHERE i.invocation_pk=ts.invocation_pk)
-				 WHERE invocation_uuid IS NULL  
-			    `).Error; err != nil {
-				return postMigrate, err
-			}
-
+			err := backfillInvocationUUIDIfNull(db)
+			return postMigrate, err
 		}
 	}
 
 	// Populate invocation_uuid if the column doesn't exist.
 	if m.HasTable("Invocations") && !m.HasColumn(&Invocation{}, "invocation_uuid") {
 		if db.Dialector.Name() == sqliteDialect {
-			// Close the rows before executing update statements for SQLite; otherwise, it will result in a deadlock.
 			postMigrate = append(postMigrate, func() error {
-				rows, err := db.Raw(`SELECT invocation_id, invocation_pk FROM Invocations`).Rows()
-				if err != nil {
-					return err
-				}
-				ids := []invocationIDs{}
-				for rows.Next() {
-					var invocationID string
-					var invocationPK int64
-					if err := rows.Scan(&invocationID, &invocationPK); err != nil {
-						return err
-					}
-					invocationUUID, err := uuid.StringToBytes(invocationID)
-					if err != nil {
-						return err
-					}
-					ids = append(ids, invocationIDs{
-						invocationID:   invocationID,
-						invocationUUID: invocationUUID,
-						invocationPK:   invocationPK,
-					})
-				}
-				rows.Close()
-
-				for _, id := range ids {
-					if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, id.invocationUUID, id.invocationPK).Error; err != nil {
-						return err
-					}
-					if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, id.invocationUUID, id.invocationID).Error; err != nil {
-						return err
-					}
-				}
-				return nil
+				return postMigrateInvocationUUIDForSQLite(db)
 			})
 		} else if db.Dialector.Name() == mysqlDialect {
 			postMigrate = append(postMigrate, func() error {
-				if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id)`).Error; err != nil {
-					return err
-				}
-				return db.Exec(
-					`UPDATE TargetStatuses ts
-					 SET invocation_uuid=(
-					   SELECT invocation_uuid FROM Invocations i 
-					   WHERE i.invocation_pk=ts.invocation_pk
-					 )`).Error
+				return postMigrateInvocationUUIDForMySQL(db)
 			})
 		} else {
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
 	return postMigrate, nil
+}
+
+func backfillInvocationUUIDIfNull(db *gorm.DB) error {
+	if err := db.Exec(`
+		UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id) 
+		WHERE invocation_uuid IS NULL
+	`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		UPDATE TargetStatuses ts SET invocation_uuid=
+			(SELECT invocation_uuid FROM Invocations i 
+			WHERE i.invocation_pk=ts.invocation_pk)
+		WHERE invocation_uuid IS NULL
+	`).Error
+}
+
+func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
+	if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id)`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		UPDATE TargetStatuses ts SET invocation_uuid=
+		(SELECT invocation_uuid FROM Invocations i 
+		WHERE i.invocation_pk=ts.invocation_pk)
+	`).Error
+}
+
+func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
+	// Close the rows before executing update statements for SQLite; otherwise, it will result in a deadlock.
+	var results []Invocation
+	res := db.Select("invocation_id", "invocation_pk").FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
+		for _, invocation := range results {
+			invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
+			if err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return res.Error
 }
 
 // Manual migration called after auto-migration.

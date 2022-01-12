@@ -23,7 +23,7 @@ var userMap = testauth.TestUsers("user1", "group1")
 
 func TestGetInvocation(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 	env, ctx := getEnvAndCtx(t, "user1")
 	streamBuild(t, env, testInvocationID)
@@ -37,7 +37,7 @@ func TestGetInvocation(t *testing.T) {
 func TestGetInvocationNotFound(t *testing.T) {
 	env, ctx := getEnvAndCtx(t, "user1")
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 	streamBuild(t, env, testInvocationID)
 	testUUID, err = uuid.NewRandom()
@@ -52,7 +52,7 @@ func TestGetInvocationNotFound(t *testing.T) {
 
 func TestGetInvocationAuth(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	env, ctx := getEnvAndCtx(t, "")
@@ -65,7 +65,7 @@ func TestGetInvocationAuth(t *testing.T) {
 
 func TestGetTarget(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	env, ctx := getEnvAndCtx(t, "user1")
@@ -92,7 +92,7 @@ func TestGetTargetAuth(t *testing.T) {
 
 func TestGetTargetByLabel(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	env, ctx := getEnvAndCtx(t, "user1")
