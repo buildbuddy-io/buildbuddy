@@ -12,10 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -95,9 +96,11 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 
 func setWorkerMetadata(ar *repb.ActionResult) {
 	if ar.ExecutionMetadata == nil {
-		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
-			Worker: base64.StdEncoding.EncodeToString(uuid.NodeID()),
+		hostID, err := uuid.GetHostID()
+		if err != nil {
+			log.Warningf("Encountered error when fetching the host ID: %v", err)
 		}
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{Worker: hostID}
 	}
 }
 

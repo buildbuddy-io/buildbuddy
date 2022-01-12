@@ -17,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/uuid"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -78,7 +78,11 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	rootDir = filepath.Join(rootDir, base64.StdEncoding.EncodeToString(uuid.NodeID()))
+	hostID, err := uuid.GetHostID()
+	if err != nil {
+		log.Warningf("Encountered error when fetching the host ID: %v", err)
+	}
+	rootDir = filepath.Join(rootDir, hostID)
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
