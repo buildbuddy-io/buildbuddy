@@ -22,18 +22,18 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 - **Build log improvements** - the build log viewer is core to the BuildBuddy experience. We've made a ton of improvements in this release to make this log viewing experience even better. Build logs are now **live** and update much more frequently. You can also now **search** build logs with a built-in search bar, **download** the raw build log text, and even **wrap** long lines.
 
-![](images/build_logs.png)
+![](../static/img/blog/build_logs.png)
 
 - **Cache miss debugging UI** - one of the requests we get most frequently is for help debugging remote cache misses. There's a [guide](https://docs.bazel.build/versions/main/remote-execution-caching-debug.html) in the Bazel documentation, but it can be cumbersome to follow. We've made this process easier by surfacing individual action cache misses directly on the BuildBuddy cache tab. This allows you to quickly dive into which targets and actions missed cache and compare them against previous builds. You can click on any of these action hashes to explore the action's input files, environment variables, and command arguments. This is just the first step in making cache misses easier to debug - we're working on making this process even easier.
 
-![](images/cache_misses.png)
+![](../static/img/blog/cache_misses.png)
 
 - **Member management & roles** - we've heard from many of the large organizations that we work with that they'd like to be able to limit which members of their organization are able to access certain BuildBuddy functionality - like editing organization settings. In order to support this, we've added a new member management UI on the BuildBuddy organization settings page. Here you can assign either `Admin` or `Developer` roles to members of your BuildBuddy organization.
 
-![](images/members.png)
+![](../static/img/blog/members.png)
 
 - **Usage page** - while our Trends page gives users great insight into how their build metrics are trending over time, it's less useful for getting a sense of your total BuildBuddy usage for the current month (and previous months). We've introduced a new Usage page that allows you to get a quick glance of the metrics that are important for billing.
-  ![](images/usage.png)
+  ![](../static/img/blog/usage.png)
 
 - **And much much more** - Every release comes packed with so many new features, performance improvements and bug fixes that we can't get to them all. Here are some more highlights:
   - Mac support for remote persistent workers
