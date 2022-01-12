@@ -81,7 +81,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
                                      i.invocation_id, i.commit_sha, i.branch_name, i.repo_url, i.created_at_usec
                                      FROM Targets as t
                                      JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
-                                     JOIN Invocations AS i ON ts.invocation_uuid = i.invocation_uuid`)
+                                     JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk`)
 	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
 	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
 	// Adds user / permissions to targets (t) table.
