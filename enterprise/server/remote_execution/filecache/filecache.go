@@ -1,7 +1,6 @@
 package filecache
 
 import (
-	"encoding/base64"
 	"errors"
 	"io/fs"
 	"os"

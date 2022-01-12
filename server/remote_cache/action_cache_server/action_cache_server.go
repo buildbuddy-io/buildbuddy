@@ -2,7 +2,6 @@ package action_cache_server
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"sync"
 
