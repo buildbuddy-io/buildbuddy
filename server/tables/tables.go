@@ -585,22 +585,25 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_uuid") {
-		if db.Dialector.Name() == mysqlDialect {
-			err := backfillInvocationUUIDIfNull(db)
-			return postMigrate, err
-		}
+		// TODO(luluz): Disable migration code for now
+		// if db.Dialector.Name() == mysqlDialect {
+		// 		err := backfillInvocationUUIDIfNull(db)
+		//	return postMigrate, err
+		//}
 	}
 
 	// Populate invocation_uuid if the column doesn't exist.
 	if m.HasTable("Invocations") && !m.HasColumn(&Invocation{}, "invocation_uuid") {
 		if db.Dialector.Name() == sqliteDialect {
-			postMigrate = append(postMigrate, func() error {
-				return postMigrateInvocationUUIDForSQLite(db)
-			})
+			// TODO(luluz): Disable migration code for now
+			//postMigrate = append(postMigrate, func() error {
+			//	return postMigrateInvocationUUIDForSQLite(db)
+			//})
 		} else if db.Dialector.Name() == mysqlDialect {
-			postMigrate = append(postMigrate, func() error {
-				return postMigrateInvocationUUIDForMySQL(db)
-			})
+			// TODO(luluz): Disable migration code for now
+			// postMigrate = append(postMigrate, func() error {
+			// return postMigrateInvocationUUIDForMySQL(db)
+			// })
 		} else {
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
