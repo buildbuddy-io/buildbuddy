@@ -33,6 +33,7 @@ go_library(
         "//server/util/protofile",
         "//server/util/redact",
         "//server/util/status",
+        "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_shlex//:shlex",
@@ -61,7 +62,9 @@ go_test(
         "//server/util/protofile",
         "//server/util/testing/flags",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//proto/wkt:any_go_proto",
     ],
 )

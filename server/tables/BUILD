@@ -11,6 +11,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/role",
+        "//server/util/uuid",
         "@io_gorm_gorm//:gorm",
     ],
 )

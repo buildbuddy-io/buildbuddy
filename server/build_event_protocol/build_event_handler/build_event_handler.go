@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
@@ -517,7 +518,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	ti := tableInvocationFromProto(invocation, iid)
+	ti, err := tableInvocationFromProto(invocation, iid)
+	if err != nil {
+		return err
+	}
 	recordInvocationMetrics(ti)
 	if _, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
@@ -677,9 +681,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 		}
 
+		invocationUUID, err := uuid.StringToBytes(iid)
+		if err != nil {
+			return err
+		}
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationPK:     md5Int64(iid),
+			InvocationUUID:   invocationUUID,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 		}
@@ -786,7 +795,10 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
+	ti, err = tableInvocationFromProto(invocationProto, ti.BlobID)
+	if err != nil {
+		return err
+	}
 	if _, err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
@@ -921,10 +933,16 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
-func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
+func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
+	uuid, err := uuid.StringToBytes(p.InvocationId)
+	if err != nil {
+		return nil, err
+	}
+
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
 	i.InvocationPK = md5Int64(p.InvocationId)
+	i.InvocationUUID = uuid
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
@@ -948,7 +966,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	}
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
-	return i
+	return i, nil
 }
 
 func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
