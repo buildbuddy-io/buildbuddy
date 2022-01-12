@@ -486,16 +486,19 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-func NewZstdCompressor(reader io.Reader, decompressedLength int64) (io.ReadCloser, error) {
-	// Optimization: If we can send the whole response in one message,
-	// decompress all at once, instead of Read() then Close(), which may issue two
-	// separate responses since Close() may flush some buffered data.
-	if decompressedLength <= readBufSizeBytes {
+func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
+	// Optimization: If we can send the whole response in one message, compress
+	// all at once, instead of Read() then Close(), which may issue two separate
+	// responses since Close() may flush some buffered data. Note that if the
+	// decompressed length is very close to the read buffer size and the
+	// compression ratio is >= 1, we'll wind up sending two responses anyway, but
+	// this scenario is very rare in practice.
+	if decompressedSizeBytes <= readBufSizeBytes {
 		buf := &bytes.Buffer{}
 		if _, err := io.Copy(buf, reader); err != nil {
 			return nil, err
 		}
-		out, err := zstd.Compress(make([]byte, 0, int(decompressedLength)), buf.Bytes())
+		out, err := zstd.Compress(make([]byte, 0, int(decompressedSizeBytes)), buf.Bytes())
 		if err != nil {
 			return nil, err
 		}
@@ -514,8 +517,9 @@ func NewZstdCompressor(reader io.Reader, decompressedLength int64) (io.ReadClose
 		if err := compressor.Close(); err != nil {
 			// ErrClosePipe means the compressor tried to flush its remaining data to
 			// the pipe, but the pipe was closed since the client canceled their
-			// request or some other error occurred. This can be safely ignored;
-			// the compressor will still clean up properly in this case.
+			// request or some other error occurred that has already been returned to
+			// the client. This can be safely ignored; the compressor will still have been cleaned
+			// up properly in this case.
 			if err == io.ErrClosedPipe {
 				return
 			}
