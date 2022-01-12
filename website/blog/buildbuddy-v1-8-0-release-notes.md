@@ -31,11 +31,11 @@ Our focus for this release was on reliability, performance, improved documentati
 
 - **Read-only API keys** - when using Bazel remote caching, teams often need to configure which machines have write access to the cache. While Bazel has some flags to control cache writes, using these can be error prone and insecure. BuildBuddy now makes this easy by introducing the ability to create both read-only and read+write api keys on your organization settings page. You can create as many API keys (and certificates) as you'd like and distribute them to your CI machines, workstations, and other endpoints.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/60529f08fe396cda68cb1499_Screen%20Shot%202021-03-17%20at%205.29.09%20PM.png)
+![](../static/img/blog/read-only.png)
 
 - **Improved docs** - we've completely revamped [our documentation](https://docs.buildbuddy.io/) and added support for tables of contents, syntax highlighting, better navigation, dark mode (!!), interactive widgets, and an "Edit this page" button that links directly to the correct file in our [GitHub docs directory](https://github.com/buildbuddy-io/buildbuddy/tree/master/docs) for submitting pull requests. With these great new features, we'll be ramping up documentation on both new and existing BuildBuddy features to make the lives of BuildBuddy users easier.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/60529f3ecbd5bf1d4ccb635b_Screen%20Shot%202021-03-17%20at%205.30.45%20PM.png)
+![](../static/img/blog/docsv2.png)
 
 - **Testing improvements** - we've invested heavily in our testing infrastructure, adding new integration tests and test fixtures that make testing BuildBuddy's interactions with Bazel easier. This will lead to more stable releases and faster iteration cycles going forward.
 
@@ -43,11 +43,11 @@ Our focus for this release was on reliability, performance, improved documentati
 
 - **Buildkite integration -** invocations that are kicked off from Buildkite now link back to the Buildkite job that triggered them.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/6052a05f32acfea7cc471cbb_Screen%20Shot%202021-03-17%20at%205.35.16%20PM.png)
+![](../static/img/blog/buildkite.png)
 
 - **Grafana** - our [Helm charts](https://github.com/buildbuddy-io/buildbuddy-helm) make deploying BuildBuddy to Kubernetess cluster a breeze. One thing that's been tricky for many users has been accessing the Prometheus data that BuildBuddy exports in an easily digestible format. To fix this, we made it easy to [deploy Grafana and Prometheus](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise#example-with-prometheus--grafana) via our Helm charts with just a couple lines of configuration. It comes out of the box with a default dashboard that shows popular BuildBuddy metrics and can be easily extended to add more graphs.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/6052a1f479e3910be45d5c1f_Screen%20Shot%202021-03-17%20at%205.42.10%20PM.png)
+![](../static/img/blog/grafana.png)
 
 - **More to come** - we've been laying the groundwork for two major projects that will go live in the coming weeks to make building and testing your Bazel projects even faster.
 

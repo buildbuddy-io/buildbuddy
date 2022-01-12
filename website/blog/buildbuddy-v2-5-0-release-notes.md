@@ -18,43 +18,43 @@ Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. W
 
 - **The new global filter** - BuildBuddy collects lots of build information across CI and local builds. In order to make navigating these builds easier, we've introduced a new global filter. The global filter allows you to filter by status and role on any page - with more options including user, repo, and branch coming soon.
 
-![](images/global_filter.png)
+![](../static/img/blog/global_filter.png)
 
 - **Date picker** - To complement the new global filter, we've also added a date picker. The date picker allows you to select a time range and see builds, trends, etc. for exactly the time period you're interested in.
 
-![](images/date_picker.png)
+![](../static/img/blog/date_picker.png)
 
 - **Clickable trends** - Now that you can filter any view by date, we've added a feature to the Trends page that allows you to click on a data point and be taken to a filtered view of builds from just that time period. As part of this change, the trends page now also respects your local time zone.
 
-![](images/trends.png)
+![](../static/img/blog/trends.png)
 
 - **Branch information** - BuildBuddy now collects information about a build's git branch in addition to the repo and commit info already collected. This makes it even easier to navigate your builds.
 
-![](images/branch.png)
+![](../static/img/blog/branch.png)
 
 - **Light terminal theme** - For those of you who suffer from eye strain when reading light text on dark backgrounds: we've heard your feedback. We've added a new light terminal theme that can be enabled in your personal settings.
 
-![](images/light_terminal.png)
+![](../static/img/blog/light_terminal.png)
 
 - **Improved flaky test support** - Flaky tests can destroy developer productivity. To make them easier to deal with, we've added a new feature that calls out flaky tests & timeouts more explicitly. We've also improved the behavior of our RBE to reduce flakes due to timeouts when caused by external factors like Docker image pulls.
 
-![](images/flaky_test.png)
+![](../static/img/blog/flaky_test.png)
 
 - **Remote executions tab** - We've had a hidden feature for a while that allowed you to click on the `Remote execution on` label to see an overview of remotely executed actions for RBE builds. We've now promoted this feature to its own `Executions` tab. With this change come new features like search and filtering.
 
-![](images/executions_tab.png)
+![](../static/img/blog/executions_tab.png)
 
 - **Action input & output files** - When clicking on an individual remotely executed actions, we now have a new file viewer that allows you to navigate the input files of the action. You can click on any of these files (as well as any output files the action has) to download them from the remote cache.
 
-![](images/file_tree.png)
+![](../static/img/blog/file_tree.png)
 
 - **Action timing** - The timing tab gives you a breakdown of execution timing from Bazel's point of view, but there's another story to tell from the remote executor's point of view. Action pages now show a visual breakdown of time spent in queue, downloading inputs, executing, and uploading outputs for each remotely executed action.
 
-![](images/action_timeline.png)
+![](../static/img/blog/action_timeline.png)
 
 - **Revamped settings page** - We've revamped the settings page to make it easier to manage your BuildBuddy account.
 
-![](images/settings.png)
+![](../static/img/blog/settings.png)
 
 - **And much much more** - Every release comes packed with so many new features, performance improvements and bug fixes that we can't get to them all. Here are some more highlights:
   - Support for serving static files from a CDN
