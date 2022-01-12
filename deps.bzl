@@ -2080,8 +2080,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_klauspost_compress",
         importpath = "github.com/klauspost/compress",
-        sum = "h1:eSvu8Tmq6j2psUJqJrLcWH6K3w5Dwc+qipbaA6eVEN4=",
-        version = "v1.11.13",
+        sum = "h1:hLQYb23E8/fO+1u53d02A97a8UnsddcvYzq4ERRU4ds=",
+        version = "v1.14.1",
     )
     go_repository(
         name = "com_github_klauspost_pgzip",

@@ -1,26 +1,25 @@
 package byte_stream_server
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"hash"
 	"io"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/klauspost/compress/zstd"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -250,7 +249,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.cacheCloser = cacheWriteCloser
 	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor := NewZstdDecompressor(ws.writer)
+		decompressor, err := NewZstdDecompressor(ws.writer)
+		if err != nil {
+			return nil, err
+		}
 		ws.writer = decompressor
 		ws.decompressorCloser = decompressor
 	}
@@ -433,52 +435,53 @@ func (s *Checksum) Check(d *repb.Digest) error {
 	return nil
 }
 
-type zstdDecompressor struct {
-	pw         *io.PipeWriter
-	zstdReader io.ReadCloser
-	done       chan error
+type ZstdDecompressor struct {
+	pw      *io.PipeWriter
+	decoder *zstd.Decoder
+	done    chan error
 }
 
-// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
-// and streams the decompressed bytes to the given writer.
-//
-// Note that writes are not matched one-to-one, since the compression scheme may
-// require more than one chunk of compressed data in order to write a single
-// chunk of decompressed data.
-func NewZstdDecompressor(writer io.Writer) io.WriteCloser {
+func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
-	d := &zstdDecompressor{
-		pw:         pw,
-		zstdReader: zstd.NewReader(pr),
-		done:       make(chan error, 1),
+	decoder, err := compression.ZstdDecoderPool.Get(pr)
+	if err != nil {
+		return nil, err
+	}
+	d := &ZstdDecompressor{
+		pw:      pw,
+		decoder: decoder,
+		done:    make(chan error, 1),
 	}
 	go func() {
+		defer func() {
+			if err := compression.ZstdDecoderPool.Put(decoder); err != nil {
+				log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+			}
+		}()
 		defer pr.Close()
-		_, err := io.Copy(writer, d.zstdReader)
+		_, err := decoder.WriteTo(writer)
 		d.done <- err
 		close(d.done)
 	}()
-	return d
+	return d, nil
 }
 
-func (d *zstdDecompressor) Write(p []byte) (int, error) {
+func (d *ZstdDecompressor) Write(p []byte) (int, error) {
 	return d.pw.Write(p)
 }
 
-func (d *zstdDecompressor) Close() error {
+func (d *ZstdDecompressor) Close() error {
 	var lastErr error
 	if err := d.pw.Close(); err != nil {
 		lastErr = err
 	}
-	defer func() {
-		if err := d.zstdReader.Close(); err != nil {
-			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
-		}
-	}()
+
+	// NOTE: We don't close the decompressor here since it cannot be reused once
+	// closed. The decompressor will be closed when finalized.
+
 	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
-	// since the write-end of the pipe is closed, reads from the decompressor
-	// should no longer be blocking, and it should return EOF as soon as the
-	// remaining decompressed bytes are drained.
+	// since we just closed the write-end of the pipe, the decoder will see an
+	// EOF from the read-end and the goroutine should exit.
 	err, ok := <-d.done
 	if ok {
 		lastErr = err
@@ -487,43 +490,28 @@ func (d *zstdDecompressor) Close() error {
 }
 
 func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
-	// Optimization: If we can send the whole response in one message, compress
-	// all at once, instead of Read() then Close(), which may issue two separate
-	// responses since Close() may flush some buffered data. Note that if the
-	// decompressed length is very close to the read buffer size and the
-	// compression ratio is >= 1, we'll wind up sending two responses anyway, but
-	// this scenario is very rare in practice.
-	if decompressedSizeBytes <= readBufSizeBytes {
-		buf := &bytes.Buffer{}
-		if _, err := io.Copy(buf, reader); err != nil {
-			return nil, err
-		}
-		out, err := zstd.Compress(make([]byte, 0, int(decompressedSizeBytes)), buf.Bytes())
-		if err != nil {
-			return nil, err
-		}
-		return cachetools.NewBytesReadSeekCloser(out), nil
-	}
-
 	pr, pw := io.Pipe()
+
 	go func() {
-		compressor := zstd.NewWriter(pw)
-		_, err := io.Copy(compressor, reader)
-		defer func(err error) {
-			// Pipe writer needs to be closed after the compressor is closed, since
-			// closing the compressor may result in more bytes written to the pipe.
-			pw.CloseWithError(err)
-		}(err)
-		if err := compressor.Close(); err != nil {
-			// ErrClosePipe means the compressor tried to flush its remaining data to
-			// the pipe, but the pipe was closed since the client canceled their
-			// request or some other error occurred that has already been returned to
-			// the client. This can be safely ignored; the compressor will still have been cleaned
-			// up properly in this case.
-			if err == io.ErrClosedPipe {
+		bufLength := readBufSizeBytes
+		if decompressedSizeBytes < int64(bufLength) {
+			bufLength = int(decompressedSizeBytes)
+		}
+		rbuf := make([]byte, bufLength)
+		cbuf := make([]byte, bufLength)
+		for {
+			n, err := reader.Read(rbuf)
+			if n > 0 {
+				cbuf = compression.CompressZstd(cbuf[:0], rbuf[:n])
+				if _, err := pw.Write(cbuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
 				return
 			}
-			log.Errorf("Failed to close zstd writer: %s", err)
 		}
 	}()
 	return pr, nil

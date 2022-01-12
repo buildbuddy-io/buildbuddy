@@ -10,7 +10,6 @@ replace (
 require (
 	cloud.google.com/go/storage v1.12.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
-	github.com/DataDog/zstd v1.5.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/rules_go v0.24.3
@@ -49,6 +48,7 @@ require (
 	github.com/hashicorp/serf v0.9.6
 	github.com/jhump/protoreflect v1.8.2
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
+	github.com/klauspost/compress v1.14.1
 	github.com/lestrrat-go/jwx v1.2.11
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
