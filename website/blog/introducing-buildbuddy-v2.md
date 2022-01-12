@@ -14,7 +14,7 @@ Our mission at BuildBuddy is to make developers more productive. When we release
 
 Today we're excited to announce v2 of BuildBuddy! We've completely revamped our caching and remote build execution infrastructure to give our users and customers the one thing they care about above all else: **speed**.
 
-![](images/tensorflow.svg)
+![](../static/img/blog/tensorflow.svg)
 
 When optimizing the performance of a remote build execution system, there are 3 critical bottlenecks: Caching, Sandboxing, and Execution. We've made order of magnitude improvements in each of these areas, bringing clean, uncached build times for [TensorFlow](https://github.com/tensorflow/tensorflow) (7,000+ actions) on BuildBuddy RBE down from 28 minutes last August to just **3.47 minutes** with BuildBuddy v2. This build takes over **4 hours** (250 min) on a 3.3GHz i7 Macbook Pro.
 
@@ -32,7 +32,7 @@ For a more in-depth look at optimizing for high throughput and low latency, we h
 
 All of these improvements, when taken together, have driven a colossal improvement in both upload and download throughput across file sizes. We have more work to do in this area, but we're really pleased with the results in this release.
 
-![](images/upload_throughput.svg)
+![](../static/img/blog/upload_throughput.svg)
 
 ## Sandboxing
 
@@ -57,7 +57,7 @@ We've made significant improvements here as well:
 - Our new caching and auto-scaling infrastructure supports scaling up and down from just a few executors to hundreds of machines depending on load while still supporting the `--remote_download_minimal` flag.
 - The groundwork has been laid for what we call **Bring Your Own Executors**. This will allow users to take advantage of BuildBuddy's UI and global caching infrastructure while running their own executor pools.
 
-![](images/autoscaling.png)
+![](../static/img/blog/autoscaling.png)
 
 ## Other improvements
 
