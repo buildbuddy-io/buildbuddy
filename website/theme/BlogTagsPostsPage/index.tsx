@@ -59,6 +59,7 @@ function BlogTagsPostPage(props: Props): JSX.Element {
                 <BlogPostItem
                   key={BlogPostContent.metadata.permalink}
                   frontMatter={BlogPostContent.frontMatter}
+                  assets={BlogPostContent.assets}
                   metadata={BlogPostContent.metadata}
                   truncated>
                   <BlogPostContent />
