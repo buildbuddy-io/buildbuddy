@@ -1,0 +1,41 @@
+.jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jobsTitle {
+  font-size: 56px;
+  line-height: 64px;
+  font-weight: 700;
+  margin-bottom: 32px;
+}
+
+.job {
+  border-top: 1px solid #eee;
+  padding: 32px 16px;
+  max-width: 710px;
+  box-sizing: border-box;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: 300ms padding ease-in-out;
+  padding-right: 32px;
+}
+
+.job:hover {
+  padding-right: 0;
+}
+
+.jobName {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.jobLocation {
+  font-size: 16px;
+}
