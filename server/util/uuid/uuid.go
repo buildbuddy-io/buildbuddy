@@ -14,6 +14,10 @@ import (
 
 const (
 	uuidContextKey = "uuid"
+
+	// Name of the configuration directory in os.UserConfigDir
+	configDirName = "buildbuddy"
+
 	hostIDFilename = "host_id"
 )
 
@@ -55,54 +59,49 @@ func StringToBytes(text string) ([]byte, error) {
 	return uuidBytes, nil
 }
 
-func handleHostIDError(err error) {
-	hostIDError = err
-	fillHostId()
-}
-
-func fillHostId() {
-	id, err := guuid.NewRandom()
-	hostID = id.String()
-	if err != nil {
-		hostIDError = err
-		hostID = string(guuid.NodeID())
-	}
-}
-
 func GetHostID() (string, error) {
 	hostIDOnce.Do(
 		func() {
-			userConfigDir, err := os.UserConfigDir()
-			if err != nil {
-				handleHostIDError(err)
+			userConfigDir, hostIDError := os.UserConfigDir()
+			if hostIDError != nil {
+				// Home dir is not defined
 				return
 			}
-			hostIDFilepath := path.Join(userConfigDir, "buildbuddy", hostIDFilename)
+			configDirPath := path.Join(userConfigDir, configDirName)
+			hostIDError = os.MkdirAll(configDirPath, 0755)
+			if hostIDError != nil {
+				return
+			}
+			hostIDFilepath := path.Join(configDirPath, hostIDFilename)
 			// try to create the file to write a new ID, if it already exists this will fail
-			hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-			if err != nil {
-				if err == os.ErrExist {
-					// the file exists, read the file to get the host ID
-					hostIDFile, err := os.Open(hostIDFilepath)
-					if err != nil {
-						handleHostIDError(err)
-						return
-					}
-					id, err := io.ReadAll(hostIDFile)
-					hostID = string(id)
-					if err != nil {
-						handleHostIDError(err)
-					}
+			hostIDFile, hostIDError := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+			if hostIDError != nil {
+				if hostIDError != os.ErrExist {
+					// some other I/O error ocurred when creating the file, we can't write the ID down
 					return
 				}
-				// some other I/O error ocurred when creating the file, we can't write the ID down
-				handleHostIDError(err)
+				// the file exists, read the file to get the host ID
+				hostIDFile, hostIDError := os.Open(hostIDFilepath)
+				if hostIDError != nil {
+					return
+				}
+				id, hostIDError := io.ReadAll(hostIDFile)
+				if hostIDError != nil {
+					return
+				}
+				hostID = string(id)
 				return
 			}
 			// we successfully opened the file, generate and record the host id
-			fillHostId()
-			_, hostIDError = io.WriteString(hostIDFile, hostID)
-			return
+			id, hostIDError := guuid.NewRandom()
+			if hostIDError != nil {
+				// read failed from rand.Reader; basically this should never happen
+				return
+			}
+			if _, hostIDError = io.WriteString(hostIDFile, id.String()); hostIDError != nil {
+				return
+			}
+			hostID = id.String()
 		},
 	)
 	return hostID, hostIDError

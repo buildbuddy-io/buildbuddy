@@ -82,7 +82,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 		var err error
 		hostID, err = uuid.GetHostID()
 		if err != nil {
-			log.Warningf("Encountered error when fetching the host ID: %v", err)
+			return nil, err
 		}
 	}
 	runnerPool, err := runner.NewPool(env)

@@ -79,7 +79,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	}
 	hostID, err := uuid.GetHostID()
 	if err != nil {
-		log.Warningf("Encountered error when fetching the host ID: %v", err)
+		return nil, err
 	}
 	rootDir = filepath.Join(rootDir, hostID)
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {

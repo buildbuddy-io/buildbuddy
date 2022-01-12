@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -93,14 +92,15 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 	return checkFilesExist(ctx, cache, outputFileDigests)
 }
 
-func setWorkerMetadata(ar *repb.ActionResult) {
+func setWorkerMetadata(ar *repb.ActionResult) error {
 	if ar.ExecutionMetadata == nil {
 		hostID, err := uuid.GetHostID()
 		if err != nil {
-			log.Warningf("Encountered error when fetching the host ID: %v", err)
+			return err
 		}
 		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{Worker: hostID}
 	}
+	return nil
 }
 
 // Retrieve a cached execution result.
@@ -209,7 +209,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	setWorkerMetadata(req.ActionResult)
+	if err := setWorkerMetadata(req.ActionResult); err != nil {
+		return nil, err
+	}
 
 	blob, err := proto.Marshal(req.ActionResult)
 	if err != nil {
