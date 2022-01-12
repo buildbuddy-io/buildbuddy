@@ -14,7 +14,7 @@ To fulfill our mission of bringing the world's best developer tools to every com
 
 Lulu joins us from Thumbtack. Prior to Thumbtack, Lulu spent 5 years at Google where she worked on Google Play, Project Fi, and Area 120.
 
-![](images/welcome_lulu.png)
+![](../static/img/blog/welcome_lulu.png)
 
 We look forward to working alongside Lulu to build the future of developer tools.
 
