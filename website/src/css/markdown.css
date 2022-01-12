@@ -32,3 +32,8 @@ html[data-theme="dark"] .markdown a {
   margin: 0 calc(-1 * var(--ifm-pre-padding));
   padding: 0 var(--ifm-pre-padding);
 }
+.mdx-page h2 {
+  --ifm-h2-font-size: 2rem;
+  margin-bottom: 0.5em;
+  margin-top: 1.5em;
+}
