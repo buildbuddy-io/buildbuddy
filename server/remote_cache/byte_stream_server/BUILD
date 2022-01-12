@@ -20,7 +20,6 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@com_github_klauspost_compress//zstd",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )
@@ -36,6 +35,7 @@ go_test(
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/compression",
         "//server/util/prefix",
         "//server/util/random",
         "//server/util/status",
