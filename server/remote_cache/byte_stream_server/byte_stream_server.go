@@ -435,22 +435,26 @@ func (s *Checksum) Check(d *repb.Digest) error {
 	return nil
 }
 
-type ZstdDecompressor struct {
-	pw      *io.PipeWriter
-	decoder *zstd.Decoder
-	done    chan error
+type zstdDecompressor struct {
+	pw   *io.PipeWriter
+	done chan error
 }
 
+// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
+// and streams the decompressed bytes to the given writer.
+//
+// Note that writes are not matched one-to-one, since the compression scheme may
+// require more than one chunk of compressed data in order to write a single
+// chunk of decompressed data.
 func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
 	pr, pw := io.Pipe()
 	decoder, err := compression.ZstdDecoderPool.Get(pr)
 	if err != nil {
 		return nil, err
 	}
-	d := &ZstdDecompressor{
-		pw:      pw,
-		decoder: decoder,
-		done:    make(chan error, 1),
+	d := &zstdDecompressor{
+		pw:   pw,
+		done: make(chan error, 1),
 	}
 	go func() {
 		defer func() {
@@ -466,11 +470,11 @@ func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
 	return d, nil
 }
 
-func (d *ZstdDecompressor) Write(p []byte) (int, error) {
+func (d *zstdDecompressor) Write(p []byte) (int, error) {
 	return d.pw.Write(p)
 }
 
-func (d *ZstdDecompressor) Close() error {
+func (d *zstdDecompressor) Close() error {
 	var lastErr error
 	if err := d.pw.Close(); err != nil {
 		lastErr = err
@@ -491,7 +495,6 @@ func (d *ZstdDecompressor) Close() error {
 
 func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
-
 	go func() {
 		bufLength := readBufSizeBytes
 		if decompressedSizeBytes < int64(bufLength) {
