@@ -18,9 +18,9 @@ const (
 )
 
 var (
-	hostID string
+	hostID      string
 	hostIDError error
-	hostIDOnce sync.Once
+	hostIDOnce  sync.Once
 )
 
 func GetFromContext(ctx context.Context) (string, error) {
@@ -79,7 +79,7 @@ func GetHostID() (string, error) {
 			}
 			hostIDFilepath := path.Join(userConfigDir, "buildbuddy", hostIDFilename)
 			// try to create the file to write a new ID, if it already exists this will fail
-			hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE | os.O_EXCL | os.O_WRONLY, 0644)
+			hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 			if err != nil {
 				if err == os.ErrExist {
 					// the file exists, read the file to get the host ID
