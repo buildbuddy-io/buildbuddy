@@ -1,0 +1,117 @@
+.priceTiers {
+  display: grid;
+  margin: 0 auto;
+  gap: 24px;
+  grid-template-columns: 1fr 1fr 1fr;
+  padding-bottom: 96px;
+}
+
+.priceTier {
+  border-radius: 8px;
+  padding: 48px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.priceTierTitle {
+  font-size: 2em;
+  font-weight: 700;
+}
+
+.priceTierDescription {
+  margin-bottom: 16px;
+}
+
+.priceTierFeatures {
+  margin-top: 32px;
+}
+
+.price {
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.priceTierFeatures svg {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.priceTierFeatures li {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.featureGrid {
+  margin-top: 32px;
+  margin-bottom: 96px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
+.featureGrid div {
+  border-bottom: 1px solid #eee;
+  padding: 8px;
+}
+
+.featureGridHeader {
+  font-weight: 700;
+  margin-top: 32px;
+}
+
+div.featureGridHeader {
+  border-bottom: 0;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+}
+
+.questions {
+  margin-top: 64px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.question {
+  margin-bottom: 32px;
+}
+
+.questionQuestion {
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.questions a {
+  font-weight: 700;
+}
+
+/** Disable self service Tier for now */
+
+.priceTiers {
+  grid-template-columns: 1fr 1fr;
+}
+.priceTier:nth-of-type(2) {
+  display: none;
+}
+.featureGrid div:nth-of-type(4n + 3) {
+  display: none;
+}
+.featureGrid {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* Responsiveness */
+
+@media (max-width: 900px) {
+  .priceTiers {
+    grid-template-columns: 1fr;
+  }
+  .questions {
+    grid-template-columns: 1fr;
+  }
+}
