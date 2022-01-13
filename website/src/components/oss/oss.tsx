@@ -12,7 +12,7 @@ function Component() {
           <div className={styles.title}>
             BuildBuddy <span className={styles.heart}>&hearts;</span> Open Source
           </div>
-          <div className={common.subtitle}>
+          <div className={styles.subtitle}>
             BuildBuddy is{" "}
             <a target="_blank" className={styles.link} href="https://en.wikipedia.org/wiki/Open-core_model">
               open-core
@@ -31,7 +31,7 @@ function Component() {
       <div className={`${common.container} ${common.splitContainer} ${styles.ossContainer}`}>
         <div className={common.text}>
           <div className={styles.title}>Powered by BuildBuddy</div>
-          <div className={common.subtitle}>
+          <div className={styles.subtitle}>
             Here are some of our favorite open source repositories that are powered by BuildBuddy.
           </div>
         </div>

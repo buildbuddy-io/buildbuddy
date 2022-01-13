@@ -58,7 +58,7 @@
 }
 
 @media (max-width: 1200px) {
-  .splitContainer {
+  div.splitContainer {
     display: flex;
     align-items: center;
     justify-self: center;
@@ -71,7 +71,7 @@
 }
 
 @media (max-width: 460px) {
-  .section.sectionRounded .container {
+  div.section.sectionRounded .container {
     padding: 0 32px;
   }
 }
@@ -102,7 +102,7 @@
 }
 
 @media (max-width: 600px) {
-  .title {
+  div.title {
     font-size: 48px;
   }
 }
