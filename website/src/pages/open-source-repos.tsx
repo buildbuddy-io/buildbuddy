@@ -10,6 +10,7 @@ let form = {
   name: React.createRef<HTMLInputElement>(),
   email: React.createRef<HTMLInputElement>(),
   repo: React.createRef<HTMLInputElement>(),
+  button: React.createRef<HTMLButtonElement>(),
 };
 
 function OpenSource() {
@@ -43,6 +44,7 @@ function OpenSource() {
               <input ref={form.email} placeholder="Email address" />
               <input ref={form.repo} placeholder="Repo URL" className={contact.span2} />
               <button
+                ref={form.button}
                 onClick={() => sendMessage()}
                 className={`${common.button} ${common.buttonPrimary} ${contact.span2}`}>
                 Submit your repo
@@ -59,6 +61,8 @@ function sendMessage() {
   message(
     `New Open Source Repo!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nRepo URL: ${form.repo.current.value}`
   );
+  form.button.current.innerText = "Submitted!";
+  form.button.current.disabled = true;
 }
 
 export default OpenSource;
