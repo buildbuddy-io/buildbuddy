@@ -45,7 +45,8 @@ def run_or_die(cmd):
     print("(debug) running cmd: %s" % cmd)
     p = subprocess.Popen(cmd,
                          shell=True, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
+                         stderr=subprocess.STDOUT,
+                         universal_newlines=True)
     p.wait()
     rsp = "\n".join(p.stdout.readlines())
     print("(debug) response: %s" % rsp)
