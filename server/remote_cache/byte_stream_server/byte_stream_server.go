@@ -118,8 +118,17 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	defer reader.Close()
 
+	bufSize := int64(readBufSizeBytes)
+	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
+		bufSize = r.GetDigest().GetSizeBytes()
+	}
+
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader, err = NewZstdCompressor(reader, r.GetDigest().GetSizeBytes())
+		rbuf := s.bufferPool.Get(bufSize)
+		defer s.bufferPool.Put(rbuf)
+		cbuf := s.bufferPool.Get(bufSize)
+		defer s.bufferPool.Put(cbuf)
+		reader, err = compression.NewZstdChunkingCompressor(reader, rbuf[:bufSize], cbuf[:bufSize])
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -128,13 +137,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	bufSize := int64(readBufSizeBytes)
-	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
-		bufSize = r.GetDigest().GetSizeBytes()
-	}
 	copyBuf := s.bufferPool.Get(bufSize)
+	defer s.bufferPool.Put(copyBuf)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	s.bufferPool.Put(copyBuf)
 	if err == nil {
 		downloadTracker.Close()
 	}
@@ -248,7 +253,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.cacheCloser = cacheWriteCloser
 	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor, err := NewZstdDecompressor(ws.writer)
+		decompressor, err := compression.NewZstdDecompressor(ws.writer)
 		if err != nil {
 			return nil, err
 		}
@@ -432,89 +437,4 @@ func (s *Checksum) Check(d *repb.Digest) error {
 		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
 	}
 	return nil
-}
-
-type zstdDecompressor struct {
-	pw   *io.PipeWriter
-	done chan error
-}
-
-// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
-// and streams the decompressed bytes to the given writer.
-//
-// Note that writes are not matched one-to-one, since the compression scheme may
-// require more than one chunk of compressed data in order to write a single
-// chunk of decompressed data.
-func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
-	pr, pw := io.Pipe()
-	decoder, err := compression.ZstdDecoderPool.Get(pr)
-	if err != nil {
-		return nil, err
-	}
-	d := &zstdDecompressor{
-		pw:   pw,
-		done: make(chan error, 1),
-	}
-	go func() {
-		defer func() {
-			if err := compression.ZstdDecoderPool.Put(decoder); err != nil {
-				log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
-			}
-		}()
-		defer pr.Close()
-		_, err := decoder.WriteTo(writer)
-		d.done <- err
-		close(d.done)
-	}()
-	return d, nil
-}
-
-func (d *zstdDecompressor) Write(p []byte) (int, error) {
-	return d.pw.Write(p)
-}
-
-func (d *zstdDecompressor) Close() error {
-	var lastErr error
-	if err := d.pw.Close(); err != nil {
-		lastErr = err
-	}
-
-	// NOTE: We don't close the decompressor here since it cannot be reused once
-	// closed. The decompressor will be closed when finalized.
-
-	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
-	// since we just closed the write-end of the pipe, the decoder will see an
-	// EOF from the read-end and the goroutine should exit.
-	err, ok := <-d.done
-	if ok {
-		lastErr = err
-	}
-	return lastErr
-}
-
-func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
-	pr, pw := io.Pipe()
-	go func() {
-		bufLength := readBufSizeBytes
-		if decompressedSizeBytes < int64(bufLength) {
-			bufLength = int(decompressedSizeBytes)
-		}
-		rbuf := make([]byte, bufLength)
-		cbuf := make([]byte, bufLength)
-		for {
-			n, err := reader.Read(rbuf)
-			if n > 0 {
-				cbuf = compression.CompressZstd(cbuf[:0], rbuf[:n])
-				if _, err := pw.Write(cbuf); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
-			}
-			if err != nil {
-				pw.CloseWithError(err)
-				return
-			}
-		}
-	}()
-	return pr, nil
 }

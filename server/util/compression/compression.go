@@ -14,14 +14,14 @@ import (
 
 var (
 	// zstdEncoder can be shared across goroutines to compress chunks of data
-	// using EncodeAll. Streaming functions should not be used. The encoder should
-	// not be closed.
+	// using EncodeAll. Streaming functions such as encoder.ReadFrom or io.Copy
+	// *must not* be used. The encoder *must not* be closed.
 	zstdEncoder = mustGetZstdEncoder()
 
-	// ZstdDecoderPool can be used across goroutines to retrieve ZSTD decoders,
+	// zstdDecoderPool can be used across goroutines to retrieve ZSTD decoders,
 	// either for streaming decompression using ReadFrom or batch decompression
 	// using DecodeAll. The returned decoders *must not* be closed.
-	ZstdDecoderPool = newZstdDecoderPool()
+	zstdDecoderPool = NewZstdDecoderPool()
 )
 
 func mustGetZstdEncoder() *zstd.Encoder {
@@ -32,8 +32,9 @@ func mustGetZstdEncoder() *zstd.Encoder {
 	return enc
 }
 
-// CompressZstd compresses a chunk of data into dst using zstd compression.
-// If dst is not big enough then a new buffer will be allocated.
+// CompressZstd compresses a chunk of data into dst using zstd compression at
+// the default level. If dst is not big enough, then a new buffer will be
+// allocated.
 func CompressZstd(dst []byte, src []byte) []byte {
 	return zstdEncoder.EncodeAll(src, dst[:0])
 }
@@ -41,25 +42,123 @@ func CompressZstd(dst []byte, src []byte) []byte {
 // DecompressZstd decompresses a full chunk of zstd data into dst. If dst is
 // not big enough then a new buffer will be allocated.
 func DecompressZstd(dst []byte, src []byte) ([]byte, error) {
-	dec, err := ZstdDecoderPool.Get(nil)
+	dec, err := zstdDecoderPool.Get(nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := ZstdDecoderPool.Put(dec); err != nil {
+		if err := zstdDecoderPool.Put(dec); err != nil {
 			log.Errorf("Failed to return zstd decoder to pool: %s", err)
 		}
 	}()
 	return dec.DecodeAll(src, dst[:0])
 }
 
+type zstdDecompressor struct {
+	pw   *io.PipeWriter
+	done chan error
+}
+
+// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
+// and streams the decompressed bytes to the given writer.
+//
+// Note that writes are not matched one-to-one, since the compression scheme may
+// require more than one chunk of compressed data in order to write a single
+// chunk of decompressed data.
+func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
+	pr, pw := io.Pipe()
+	decoder, err := zstdDecoderPool.Get(pr)
+	if err != nil {
+		return nil, err
+	}
+	d := &zstdDecompressor{
+		pw:   pw,
+		done: make(chan error, 1),
+	}
+	go func() {
+		defer func() {
+			if err := zstdDecoderPool.Put(decoder); err != nil {
+				log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+			}
+		}()
+		defer pr.Close()
+		_, err := decoder.WriteTo(writer)
+		d.done <- err
+		close(d.done)
+	}()
+	return d, nil
+}
+
+func (d *zstdDecompressor) Write(p []byte) (int, error) {
+	return d.pw.Write(p)
+}
+
+func (d *zstdDecompressor) Close() error {
+	var lastErr error
+	if err := d.pw.Close(); err != nil {
+		lastErr = err
+	}
+
+	// NOTE: We don't close the decompressor here since it cannot be reused once
+	// closed. The decompressor will be closed when finalized.
+
+	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
+	// since we just closed the write-end of the pipe, the decoder will see an
+	// EOF from the read-end and the goroutine should exit.
+	err, ok := <-d.done
+	if ok {
+		lastErr = err
+	}
+	return lastErr
+}
+
+// NewZstdChunkingCompressor returns a reader that reads chunks from the given
+// reader into the read buffer, and makes the zstd-compressed chunks available
+// on the output reader. Each chunk read into the read buffer is immediately
+// compressed, independently of other chunks, and piped to the output reader.
+// The default compression level is used.
+//
+// The read buffer must have a non-zero length, and should have a relatively
+// large length in order to get a good compression ratio, since chunks are
+// compressed independently. If the length of the byte stream provided by the
+// given reader is known, and is relatively small, then it is recommended to
+// provide a read buffer that can exactly fit the full contents of the stream.
+//
+// The compression buffer is optional and is used as a staging buffer for
+// compressed contents before sending to the output reader. It is recommended to
+// set this to a buffer that has a capacity equal to the read buffer. If any
+// compressed chunk's size is greater than the uncompressed chunk, then a new
+// compression buffer is allocated internally. This scenario should be rare if
+// the data is even modestly compressible and the compression buffer capacity is
+// at least a few hundred bytes.
+func NewZstdChunkingCompressor(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+	go func() {
+		for {
+			n, err := reader.Read(readBuf)
+			if n > 0 {
+				compressBuf = CompressZstd(compressBuf[:0], readBuf[:n])
+				if _, err := pw.Write(compressBuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return pr, nil
+}
+
 // ZstdDecoderPool allows reusing zstd decoders to avoid excessive allocations.
-type zstdDecoderPool struct {
+type ZstdDecoderPool struct {
 	pool sync.Pool
 }
 
-func newZstdDecoderPool() *zstdDecoderPool {
-	return &zstdDecoderPool{
+func NewZstdDecoderPool() *ZstdDecoderPool {
+	return &ZstdDecoderPool{
 		pool: sync.Pool{
 			New: func() interface{} {
 				dc, err := zstd.NewReader(nil)
@@ -78,7 +177,7 @@ func newZstdDecoderPool() *zstdDecoderPool {
 //
 // If the returned decoder will only be used to decode chunks via DecodeAll, a
 // nil reader can be passed.
-func (p *zstdDecoderPool) Get(reader io.Reader) (*zstd.Decoder, error) {
+func (p *ZstdDecoderPool) Get(reader io.Reader) (*zstd.Decoder, error) {
 	val := p.pool.Get()
 	if err, ok := val.(error); ok {
 		return nil, err
@@ -91,7 +190,7 @@ func (p *zstdDecoderPool) Get(reader io.Reader) (*zstd.Decoder, error) {
 	return decoder, nil
 }
 
-func (p *zstdDecoderPool) Put(decoder *zstd.Decoder) error {
+func (p *ZstdDecoderPool) Put(decoder *zstd.Decoder) error {
 	// Release reference to enclosed reader before adding back to the pool.
 	if err := decoder.Reset(nil); err != nil {
 		return err
