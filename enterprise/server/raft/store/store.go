@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -36,8 +37,8 @@ type Store struct {
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	apiClient     *client.APIClient
-
-	liveness *nodeliveness.Liveness
+	driver        *driver.Driver
+	liveness      *nodeliveness.Liveness
 
 	rangeMu       sync.RWMutex
 	clusterRanges map[uint64]*rfpb.RangeDescriptor
@@ -68,13 +69,19 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicaMu: sync.RWMutex{},
 		replicas:  make(map[uint64]*replica.Replica),
 	}
+	s.driver = driver.New(nodeHost, gossipManager, sender, apiClient, s)
 
-	cb := listener.LeaderCB(s.LeaderUpdated)
+	cb := listener.LeaderCB(s.leaderUpdated)
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
+	s.gossipUsage()
 	return s
 }
 
-func (s *Store) LeaderUpdated(info raftio.LeaderInfo) {
+func (s *Store) Stop() {
+	s.driver.Stop()
+}
+
+func (s *Store) leaderUpdated(info raftio.LeaderInfo) {
 	if s.nodeHost == nil {
 		// not initialized yet
 		return
@@ -156,6 +163,21 @@ func (s *Store) releaseRangeLease(clusterID uint64) {
 	}()
 }
 
+func (s *Store) GetRangeLease(clusterID uint64) *rangelease.Lease {
+	rd := s.lookupRange(clusterID)
+	if rd == nil {
+		return nil
+	}
+
+	s.leaseMu.RLock()
+	defer s.leaseMu.RUnlock()
+	rl, ok := s.leases[rd.GetRangeId()]
+	if !ok {
+		return nil
+	}
+	return rl
+}
+
 func (s *Store) gossipUsage() {
 	usage := &rfpb.NodeUsage{
 		Nhid: s.nodeHost.ID(),
@@ -185,6 +207,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		log.Error("range descriptor had no replicas; this should not happen")
 		return
 	}
+	clusterID := rd.GetReplicas()[0].GetClusterId()
 
 	if containsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
@@ -196,7 +219,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		}
 		s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
-	clusterID := rd.GetReplicas()[0].GetClusterId()
 
 	s.replicaMu.Lock()
 	s.replicas[rd.GetRangeId()] = r
@@ -266,7 +288,8 @@ func (s *Store) isLeader(clusterID uint64) bool {
 }
 
 func (s *Store) AddNode(ctx context.Context, req *rfpb.AddNodeRequest) (*rfpb.AddNodeResponse, error) {
-	err := s.nodeHost.SyncRequestAddNode(ctx, req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID(), req.GetConfigChangeIndex())
+	log.Printf("AddNode request: %+v", req)
+	err := s.nodeHost.SyncRequestAddNode(ctx, req.GetClusterId(), req.GetNodeId(), req.GetNhid(), req.GetConfigChangeIndex())
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +308,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		close(waitErr)
 	}()
 
-	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), false /*=join*/, s.ReplicaFactoryFn, rc)
+	err := s.nodeHost.StartOnDiskCluster(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrClusterAlreadyExist {
 			err = status.AlreadyExistsError(err.Error())

@@ -136,10 +136,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	if len(conf.Join) < 3 {
 		return nil, status.InvalidArgumentError("Join must contain at least 3 nodes.")
 	}
-
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
 		return nil, err
 	}
+
 	// Parse the listenAddress into host and port; we'll listen for grpc and
 	// raft traffic on the same interface but on different ports.
 	listenHost, _, err := network.ParseAddress(conf.ListenAddress)
@@ -157,7 +157,8 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.gossipManager = gossipManager
 
-	// Register the range cache to get callbacks.
+	// Register the range cache as a gossip listener, so that it can
+	// discover which nodes maintain the meta range..
 	rc.gossipManager.AddListener(rc.rangeCache)
 
 	// A NodeHost is basically a single node (think 'computer') that can be
@@ -170,8 +171,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// nodes maintaining the meta range, who broadcast their presence, and
 	// use the metarange to find which other clusters / nodes contain which
 	// keys. The rangeCache is where this information is cached, and the
-	// sender interface is what makes it simple to use.
-	globalListener := listener.DefaultListener()
+	// sender interface is what makes it simple to address data across the
+	// cluster.
+	raftListener := listener.DefaultListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(conf.RootDir, "wal"),
 		NodeHostDir:    filepath.Join(conf.RootDir, "nodehost"),
@@ -180,16 +182,14 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: rc,
 		},
-		RaftEventListener:   globalListener,
-		SystemEventListener: globalListener,
+		RaftEventListener:   raftListener,
+		SystemEventListener: raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
 		return nil, err
 	}
 	rc.nodeHost = nodeHost
-
-	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 
 	// PebbleLogDir is a parent directory for pebble data. Within this
 	// directory, subdirs will be created per raft (cluster_id, node_id).
@@ -202,13 +202,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
-	rc.apiClient = client.NewAPIClient(env, nodeHostInfo.NodeHostID)
+	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
 
-	// smFunc is a function that creates a new statemachine for a given
-	// (cluster_id, node_id), within the pebbleLogDir. Data written via raft
-	// will live in a pebble database driven by this statemachine.
 	apiServer, err := api.NewServer(fileDir, rc.store)
 	if err != nil {
 		return nil, err
@@ -220,9 +217,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager)
-
+	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager, rc.apiClient)
 	rc.clusterStarter.InitializeClusters()
+
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop()
 	})
@@ -380,6 +377,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
+		//rc.store.Stop()
 		rc.nodeHost.Stop()
 		// rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()

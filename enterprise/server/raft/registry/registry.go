@@ -265,6 +265,7 @@ func (dnr *DynamicNodeRegistry) Close() error {
 }
 
 func (dnr *DynamicNodeRegistry) gossipUpdate(up *rfpb.RegistryUpdate) error {
+	// OMG FIX THIS REMOVE THESE JESUS DO SOMETHING
 	up.Nhid = dnr.nhid
 	up.GrpcAddress = dnr.grpcAddress
 	up.RaftAddress = dnr.raftAddress
@@ -408,15 +409,6 @@ func (dnr *DynamicNodeRegistry) getConnectionKey(addr string, clusterID uint64) 
 	return fmt.Sprintf("%s-%d", addr, dnr.partitioner.GetPartitionID(clusterID))
 }
 
-// ResolveGRPCAddress returns the current GRPC address for a nodeHostID.
-func (dnr *DynamicNodeRegistry) ResolveGRPCAddress(nhid string) (string, error) {
-	grpcAddr, ok := dnr.grpcAddrs[nhid]
-	if !ok {
-		return "", TargetAddressUnknownError
-	}
-	return grpcAddr, nil
-}
-
 func (dnr *DynamicNodeRegistry) resolveNHID(clusterID uint64, nodeID uint64) (string, string, error) {
 	dnr.mu.RLock()
 	nodeInfo := raftio.GetNodeInfo(clusterID, nodeID)
@@ -536,4 +528,13 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 		return "", "", err
 	}
 	return grpcAddr, key, nil
+}
+
+// ResolveGRPCAddress returns the current GRPC address for a nodeHostID.
+func (dnr *DynamicNodeRegistry) MyNodeDescriptor() *rfpb.NodeDescriptor {
+	return &rfpb.NodeDescriptor{
+		Nhid:        dnr.nhid,
+		RaftAddress: dnr.raftAddress,
+		GrpcAddress: dnr.grpcAddress,
+	}
 }

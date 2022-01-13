@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
-        "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",

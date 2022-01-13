@@ -11,25 +11,6 @@ package raft;
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-message NodeLivenessRecord {
-  int64 epoch = 1;
-  int64 expiration = 2;
-}
-
-message RangeLeaseRecord {
-  message NodeLiveness {
-    int64 epoch = 1;
-    bytes node_id = 2;
-  }
-
-  // A RangeLease can either be time based or based off of a node liveness
-  // record.
-  oneof value {
-    NodeLiveness node_liveness = 1;
-    int64 expiration = 2;
-  }
-}
-
 // KV is a basic proto type that represents data written to pebble.
 message KV {
   bytes key = 1;
@@ -201,11 +182,40 @@ message BringupResponse {
   string grpc_address = 2;
 }
 
+message Constraint {
+  // TODO(tylerw): support placement constraints
+}
+
+message PlacementQuery {
+  uint64 target_cluster_id = 1;
+
+  repeated Constraint constraints = 2;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Raft meta-API, used by placement driver to manage data locations etc.
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+message NodeLivenessRecord {
+  int64 epoch = 1;
+  int64 expiration = 2;
+}
+
+message RangeLeaseRecord {
+  message NodeLiveness {
+    int64 epoch = 1;
+    bytes node_id = 2;
+  }
+
+  // A RangeLease can either be time based or based off of a node liveness
+  // record.
+  oneof value {
+    NodeLiveness node_liveness = 1;
+    int64 expiration = 2;
+  }
+}
 
 message NodeUsage {
   string nhid = 1;
@@ -219,8 +229,6 @@ message NodeDescriptor {
   string nhid = 1;
   string raft_address = 2;
   string grpc_address = 3;
-
-  repeated ReplicaDescriptor replica_descriptor = 4;
 }
 
 message ReplicaDescriptor {
@@ -275,6 +283,8 @@ message StartClusterRequest {
   // The following commands will be SyncProposed on the local
   // nodehost after the cluster has been created.
   BatchCmdRequest batch = 4;
+
+  bool join = 5;
 }
 
 message StartClusterResponse {
@@ -285,9 +295,23 @@ message AddNodeRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
   uint64 config_change_index = 3;
+  string raft_address = 4;
+  string nhid = 5;
 }
 
 message AddNodeResponse {}
+
+message Operation {
+  enum OpType {
+    UNKNOWN_TYPE = 0;
+    ADD_NODE = 1;
+    REMOVE_NODE = 2;
+  }
+
+  OpType op_type = 1;
+  uint64 cluster_id = 2;
+  uint64 node_id = 3;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -22,7 +21,6 @@ import (
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
@@ -38,6 +36,7 @@ type ClusterStarter struct {
 	listenAddr    string
 	join          []string
 	gossipManager *gossip.GossipManager
+	apiClient     *client.APIClient
 
 	bootstrapped bool
 
@@ -50,7 +49,7 @@ type ClusterStarter struct {
 	log log.Logger
 }
 
-func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager) *ClusterStarter {
+func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn dbsm.CreateOnDiskStateMachineFunc, gossipMan *gossip.GossipManager, apiClient *client.APIClient) *ClusterStarter {
 	cs := &ClusterStarter{
 		nodeHost:             nodeHost,
 		createStateMachineFn: createStateMachineFn,
@@ -58,6 +57,7 @@ func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn db
 		listenAddr:           gossipMan.ListenAddr,
 		join:                 gossipMan.Join,
 		gossipManager:        gossipMan,
+		apiClient:            apiClient,
 		bootstrapped:         false,
 		doneOnce:             sync.Once{},
 		doneSetup:            make(chan struct{}),
@@ -217,7 +217,7 @@ type ClusterBootstrapInfo struct {
 	Replicas       []*rfpb.ReplicaDescriptor
 }
 
-func MakeBootstrapInfo(clusterID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
+func MakeBootstrapInfo(clusterID, firstNodeID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
 	bi := &ClusterBootstrapInfo{
 		clusterID:      clusterID,
 		initialMembers: make(map[uint64]string, len(nodeGrpcAddrs)),
@@ -226,22 +226,23 @@ func MakeBootstrapInfo(clusterID uint64, nodeGrpcAddrs map[string]string) *Clust
 	}
 	i := uint64(1)
 	for nhid, grpcAddress := range nodeGrpcAddrs {
+		nodeID := i - 1 + firstNodeID
 		bi.nodes = append(bi.nodes, bootstrapNode{
 			grpcAddress: grpcAddress,
 			nodeHostID:  nhid,
-			index:       i,
+			index:       nodeID,
 		})
 		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
 			ClusterId: clusterID,
-			NodeId:    i,
+			NodeId:    nodeID,
 		})
-		bi.initialMembers[i] = nhid
+		bi.initialMembers[nodeID] = nhid
 		i += 1
 	}
 	return bi
 }
 
-func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+func (cs *ClusterStarter) StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
 	log.Debugf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
 	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -259,12 +260,11 @@ func StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batc
 	for _, node := range bootstrapInfo.nodes {
 		node := node
 		eg.Go(func() error {
-			conn, err := grpc_client.DialTarget("grpc://" + node.grpcAddress)
+			apiClient, err := cs.apiClient.Get(ctx, node.grpcAddress)
 			if err != nil {
 				return err
 			}
-			client := rfspb.NewApiClient(conn)
-			_, err = client.StartCluster(ctx, &rfpb.StartClusterRequest{
+			_, err = apiClient.StartCluster(ctx, &rfpb.StartClusterRequest{
 				ClusterId:     bootstrapInfo.clusterID,
 				NodeId:        node.index,
 				InitialMember: bootstrapInfo.initialMembers,
@@ -306,10 +306,11 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 		},
 	}
 	clusterID := uint64(constants.InitialClusterID)
+	nodeID := uint64(constants.InitialNodeID)
 	rangeID := uint64(constants.InitialRangeID)
 
 	for _, rangeDescriptor := range startingRanges {
-		bootstrapInfo := MakeBootstrapInfo(clusterID, nodeGrpcAddrs)
+		bootstrapInfo := MakeBootstrapInfo(clusterID, nodeID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
 		rdBuf, err := proto.Marshal(rangeDescriptor)
@@ -329,11 +330,15 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 		if clusterID == uint64(constants.InitialClusterID) {
 			batch = batch.Add(&rfpb.IncrementRequest{
 				Key:   constants.LastClusterIDKey,
-				Delta: 1,
+				Delta: uint64(constants.InitialClusterID),
+			})
+			batch = batch.Add(&rfpb.IncrementRequest{
+				Key:   constants.LastNodeIDKey,
+				Delta: uint64(constants.InitialNodeID),
 			})
 			batch = batch.Add(&rfpb.IncrementRequest{
 				Key:   constants.LastRangeIDKey,
-				Delta: 1,
+				Delta: uint64(constants.InitialRangeID),
 			})
 			batch = batch.Add(&rfpb.DirectWriteRequest{
 				Kv: &rfpb.KV{
@@ -349,15 +354,19 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
-		if err := StartCluster(ctx, bootstrapInfo, batch); err != nil {
+		if err := cs.StartCluster(ctx, bootstrapInfo, batch); err != nil {
 			return err
 		}
 		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
 
-		// Increment clusterID and rangeID before creating the next cluster.
+		// Increment clusterID, nodeID and rangeID before creating the next cluster.
 		batch = rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 			Key:   constants.LastClusterIDKey,
 			Delta: 1,
+		})
+		batch = batch.Add(&rfpb.IncrementRequest{
+			Key:   constants.LastNodeIDKey,
+			Delta: uint64(len(bootstrapInfo.Replicas)),
 		})
 		batch = batch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastRangeIDKey,
@@ -383,7 +392,12 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 			return err
 		}
 		clusterID = clusterIncrResponse.GetValue()
-		rangeIncrResponse, err := rsp.IncrementResponse(1)
+		nodeIncrResponse, err := rsp.IncrementResponse(1)
+		if err != nil {
+			return err
+		}
+		nodeID = nodeIncrResponse.GetValue()
+		rangeIncrResponse, err := rsp.IncrementResponse(2)
 		if err != nil {
 			return err
 		}
