@@ -6,7 +6,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -112,6 +114,8 @@ func (d *Driver) drainOps() {
 		case op := <-d.operationQueue:
 			if err := d.handleOp(op); err != nil {
 				log.Warningf("error handling op: %+v %s", op, err)
+			} else {
+				log.Warningf("successfully handled op: %+v", op)
 			}
 		default:
 			return
@@ -178,7 +182,6 @@ func (d *Driver) handleOp(op *rfpb.Operation) error {
 		return nil
 	}
 
-	log.Printf("handleOp: %+xv", op)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -188,7 +191,7 @@ func (d *Driver) handleOp(op *rfpb.Operation) error {
 	case rfpb.Operation_REMOVE_NODE:
 		return d.removeNodeFromCluster(ctx, op.GetClusterId(), op.GetNodeId())
 	default:
-		log.Warningf("Unsupported op: %+v", op)
+		log.Warningf("Skipping op: %+v", op)
 	}
 
 	// to prevent thundering herd: a node should be able to *reject* requests to take
@@ -333,6 +336,80 @@ func (d *Driver) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
 	return ids, nil
 }
 
+func (d *Driver) updateRangeDescriptor(ctx context.Context, clusterID uint64, old, new *rfpb.RangeDescriptor) error {
+	oldBuf, err := proto.Marshal(old)
+	if err != nil {
+		return err
+	}
+	newBuf, err := proto.Marshal(new)
+	if err != nil {
+		return err
+	}
+	rangeLocalBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: newBuf,
+		},
+		ExpectedValue: oldBuf,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+
+	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetRight())
+	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   metaRangeDescriptorKey,
+			Value: newBuf,
+		},
+		ExpectedValue: oldBuf,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+
+	// first update the range descriptor in the range itself
+	rangeLocalRsp, err := client.SyncProposeLocal(ctx, d.nodeHost, clusterID, rangeLocalBatch)
+	if err != nil {
+		return err
+	}
+	_, err = rbuilder.NewBatchResponseFromProto(rangeLocalRsp).CASResponse(0)
+	if err != nil {
+		return err
+	}
+
+	// then update the metarange
+	metaRangeRsp, err := d.sender.SyncPropose(ctx, metaRangeDescriptorKey, metaRangeBatch)
+	if err != nil {
+		return err
+	}
+	_, err = rbuilder.NewBatchResponseFromProto(metaRangeRsp).CASResponse(0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Driver) addReplicaToRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
+		ClusterId: clusterID,
+		NodeId:    nodeID,
+	})
+	return d.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
+}
+
+func (d *Driver) removeReplicaFromRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	for i, replica := range newDescriptor.Replicas {
+		if replica.GetNodeId() == nodeID {
+			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
+			break
+		}
+	}
+	return d.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
+}
+
 func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 	rl := d.leaseTracker.GetRangeLease(clusterID)
 	if rl == nil {
@@ -398,7 +475,7 @@ func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 		break
 	}
 
-	// finally, start the cluster on the new nodehost.
+	// now, start the cluster on the new nodehost.
 	c, err := d.apiClient.Get(ctx, node.GetGrpcAddress())
 	if err != nil {
 		return err
@@ -408,7 +485,10 @@ func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 		NodeId:    nodeID,
 		Join:      true,
 	})
-	return err
+
+	// finally, update the range descriptor information
+	rangeDescriptor := rl.GetRangeDescriptor()
+	return d.addReplicaToRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
 }
 
 func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID uint64) error {
@@ -424,12 +504,7 @@ func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID ui
 	}
 	configChangeID := membership.ConfigChangeID
 
-	grpcAddr, _, err := d.registry.ResolveGRPC(clusterID, nodeID)
-	if err != nil {
-		return err
-	}
-
-	// propose the config change (this adds the node)
+	// then, propose the config change (this removes the node from raft)
 	retrier := retry.DefaultWithContext(ctx)
 	for retrier.Next() {
 		err := d.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
@@ -442,10 +517,7 @@ func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID ui
 		break
 	}
 
-	// Gossip remove the node? Do we need to do this?
-	//	d.registry.Remove(clusterID, nodeID)
-
-	// finally, remove the data from the stopped node.
+	// then, remove the data from the stopped node.
 	c, err := d.apiClient.Get(ctx, grpcAddr)
 	if err != nil {
 		return err
@@ -454,5 +526,11 @@ func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID ui
 		ClusterId: clusterID,
 		NodeId:    nodeID,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// finally, update the range descriptor information
+	rangeDescriptor := rl.GetRangeDescriptor()
+	return d.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
 }

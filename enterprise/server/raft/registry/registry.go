@@ -291,30 +291,30 @@ func (dnr *DynamicNodeRegistry) gossipAdd(clusterID, nodeID uint64, target strin
 }
 
 func (dnr *DynamicNodeRegistry) gossipRemove(clusterID, nodeID uint64) {
-	go func() {
-		err := dnr.gossipUpdate(&rfpb.RegistryUpdate{
-			Removes: []*rfpb.RegistryUpdate_Remove{{
-				ClusterId: clusterID,
-				NodeId:    nodeID,
-			}},
-		})
-		if err != nil {
-			dnr.log.Warningf("Error sending registry update: %s", err)
-		}
-	}()
+	// go func() {
+	// 	err := dnr.gossipUpdate(&rfpb.RegistryUpdate{
+	// 		Removes: []*rfpb.RegistryUpdate_Remove{{
+	// 			ClusterId: clusterID,
+	// 			NodeId:    nodeID,
+	// 		}},
+	// 	})
+	// 	if err != nil {
+	// 		dnr.log.Warningf("Error sending registry update: %s", err)
+	// 	}
+	// }()
 }
 
 func (dnr *DynamicNodeRegistry) gossipRemoveCluster(clusterID uint64) {
-	go func() {
-		err := dnr.gossipUpdate(&rfpb.RegistryUpdate{
-			ClusterRemoves: []*rfpb.RegistryUpdate_RemoveCluster{{
-				ClusterId: clusterID,
-			}},
-		})
-		if err != nil {
-			dnr.log.Warningf("Error sending registry update: %s", err)
-		}
-	}()
+	// go func() {
+	// 	err := dnr.gossipUpdate(&rfpb.RegistryUpdate{
+	// 		ClusterRemoves: []*rfpb.RegistryUpdate_RemoveCluster{{
+	// 			ClusterId: clusterID,
+	// 		}},
+	// 	})
+	// 	if err != nil {
+	// 		dnr.log.Warningf("Error sending registry update: %s", err)
+	// 	}
+	// }()
 }
 
 func (dnr *DynamicNodeRegistry) add(clusterID uint64, nodeID uint64, target string) bool {
@@ -382,20 +382,20 @@ func (dnr *DynamicNodeRegistry) Remove(clusterID uint64, nodeID uint64) {
 }
 
 func (dnr *DynamicNodeRegistry) removeCluster(clusterID uint64) {
-	toRemove := make([]raftio.NodeInfo, 0)
-	dnr.mu.RLock()
-	for ni, _ := range dnr.nodeTargets {
-		if ni.ClusterID == clusterID {
-			toRemove = append(toRemove, ni)
-		}
-	}
-	dnr.mu.RUnlock()
+	// toRemove := make([]raftio.NodeInfo, 0)
+	// dnr.mu.RLock()
+	// for ni, _ := range dnr.nodeTargets {
+	// 	if ni.ClusterID == clusterID {
+	// 		toRemove = append(toRemove, ni)
+	// 	}
+	// }
+	// dnr.mu.RUnlock()
 
-	dnr.mu.Lock()
-	for _, nodeInfo := range toRemove {
-		delete(dnr.nodeTargets, nodeInfo)
-	}
-	dnr.mu.Unlock()
+	// dnr.mu.Lock()
+	// for _, nodeInfo := range toRemove {
+	// 	delete(dnr.nodeTargets, nodeInfo)
+	// }
+	// dnr.mu.Unlock()
 }
 
 // RemoveCluster removes the specified node from the registry.
