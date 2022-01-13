@@ -303,14 +303,15 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	if err != nil {
 		return nil, err
 	}
-	if exists, err := disk.FileExists(f); err == nil && exists {
+	ctx := context.Background()
+	if exists, err := disk.FileExists(ctx, f); err == nil && exists {
 		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
 	}
-	if err := sm.readFileFromPeer(context.Background(), req.GetFileRecord()); err != nil {
+	if err := sm.readFileFromPeer(ctx, req.GetFileRecord()); err != nil {
 		log.Errorf("ReadFileFromPeer failed: %s", err)
 		return nil, err
 	}
-	if exists, err := disk.FileExists(f); err == nil && exists {
+	if exists, err := disk.FileExists(ctx, f); err == nil && exists {
 		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
 	}
 	return nil, status.FailedPreconditionError("file did not exist")
