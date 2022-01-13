@@ -41,10 +41,10 @@ function OpenSource() {
             <div className={contact.form}>
               <input ref={form.name} placeholder="Name" />
               <input ref={form.email} placeholder="Email address" />
-              <input ref={form.repo} placeholder="Repo URL" className={styles.span2} />
+              <input ref={form.repo} placeholder="Repo URL" className={contact.span2} />
               <button
                 onClick={() => sendMessage()}
-                className={`${common.button} ${common.buttonPrimary} ${styles.span2}`}>
+                className={`${common.button} ${common.buttonPrimary} ${contact.span2}`}>
                 Submit your repo
               </button>
             </div>
