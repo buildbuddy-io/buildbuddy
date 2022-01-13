@@ -73,7 +73,14 @@ function sendMessage() {
   message(
     `New Contact Form Message!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nMessage: ${form.message.current.value}`
   );
-  form.button.current.innerText = "Sent!";
+
+  form.firstName.current.disabled = true;
+  form.lastName.current.disabled = true;
+  form.email.current.disabled = true;
+  form.company.current.disabled = true;
+  form.message.current.disabled = true;
+
+  form.button.current.innerText = "Message Sent!";
   form.button.current.disabled = true;
 }
 
