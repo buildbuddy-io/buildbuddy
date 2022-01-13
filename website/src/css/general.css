@@ -84,6 +84,10 @@ svg[aria-hidden="true"] {
   display: none;
 }
 
+.navbar__toggle svg[aria-hidden="true"] {
+  display: block;
+}
+
 .pagination-nav__item:first-child .pagination-nav__label::before {
   display: none;
 }

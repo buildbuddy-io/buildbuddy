@@ -11,4 +11,12 @@
 .brands .image {
   max-height: 72px;
   opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brands img {
+  max-height: 72px !important;
+  width: auto !important;
 }
