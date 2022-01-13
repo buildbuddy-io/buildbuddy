@@ -2,15 +2,19 @@ import Image from "@theme/IdealImage";
 
 # Security & Data Privacy
 
+<div className="pill">Updated January 13, 2022</div>
+
 Security and data privacy are top priorities of ours. We go through great lengths to make sure build events sent to BuildBuddy Cloud are secured and that users have full control over their data.
 
 For companies & users that want full control over their BuildBuddy instance - we offer a self hosted on-prem version of BuildBuddy.
 
-<Image img={require("../../static/img/soc2.jpg")} style={{ float: "right", padding: "0 24px" }} />
-
 ## Compliance
 
 BuildBuddy continues to invest in security best practices and pursue security certifications that matter to our customers. We are proud to announce that we've achieved SOC 2 for our BuildBuddy Cloud service and undergo annual penetration tests by independent third-party security researchers.
+
+<center>
+  <Image img={require("../../static/img/soc2.jpg")} />
+</center>
 
 ## Authentication
 
@@ -32,7 +36,7 @@ We follow best security practices to prevent XSS attacks - we don't generate HTM
 
 We forbid the use of features that could expose us to XSS vulnerabilities like dangerouslySetInnerHTML and eval. We also use HttpOnly cookies as an extra layer of protection against XSS.
 
-When it comes to XHRF/CSRF attacks - we use SameSite cookies to mitigate this attack vector.
+When it comes to XSRF/CSRF attacks - we use SameSite cookies to mitigate this attack vector.
 
 ## Usage data
 

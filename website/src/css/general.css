@@ -76,12 +76,21 @@ html[data-theme="dark"] .footer--dark {
 }
 
 .docs-wrapper {
+  width: 100%;
   max-width: 1296px;
   margin: 0 auto;
 }
 
 svg[aria-hidden="true"] {
   display: none;
+}
+
+.navbar__toggle svg[aria-hidden="true"] {
+  display: block;
+}
+
+.docs-wrapper svg[aria-hidden="true"] {
+  display: inline;
 }
 
 .pagination-nav__item:first-child .pagination-nav__label::before {
@@ -93,12 +102,19 @@ svg[aria-hidden="true"] {
 }
 
 .pill {
-  background-color: #bae8e8;
+  background-color: #b3e5fc;
   color: #141414;
-  padding: 2px 12px;
+  padding: 2px 16px;
   display: inline-block;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 32px;
+}
+
+@media (min-width: 997px) {
+  .table-of-contents:before {
+    content: "On this page";
+    font-weight: 600;
+  }
 }

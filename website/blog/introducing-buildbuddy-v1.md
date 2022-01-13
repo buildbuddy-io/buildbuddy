@@ -21,7 +21,7 @@ Our three major focuses for this release were on better build artifact handling,
 
 ## New to Open Source BuildBuddy
 
-- **Remote cache support** - we've added a built-in Bazel remote cache to BuildBuddy, implementing the GRPC remote caching APIs. This allows BuildBuddy to optionally collect build artifacts, timing profile information, test logs, and more.
+- **Remote cache support** - we've added a built-in Bazel remote cache to BuildBuddy, implementing the gRPC remote caching APIs. This allows BuildBuddy to optionally collect build artifacts, timing profile information, test logs, and more.
 
 - **Clickable build artifacts** - this was our most requested feature. Clicking on build artifacts in the BuildBuddy UI now downloads the artifact when using either the built-in BuildBuddy cache, or a third-party cache running in GRPC mode that supports the bytestream API - like [bazel-remote](https://github.com/buchgr/bazel-remote).
 
@@ -47,7 +47,7 @@ Our open source BuildBuddy distribution is targeted at individuals viewing and d
 
 - **OpenID Connect auth support** - organizations can now specify an OpenID Connect provider to handle authentication for their BuildBuddy instance. This allows for the flexibility to use Google login if you use GSuite, auth services like Okta, or an in-house solution that supports OpenID Connect.
 
-- **Authenticated build log & cache uploads** - BuildBuddy now supports generating authenticated upload urls for both the build event and remote cache backends. Events uploaded with authentication will be associated with your organziation and will not be viewable by unauthorized clients.
+- **Authenticated build log & cache uploads** - BuildBuddy now supports generating authenticated upload URLs for both the build event and remote cache backends. Events uploaded with authentication will be associated with your organization and will not be viewable by unauthorized clients.
 
 - **Organization support** - BuildBuddy now supports creating organizations that allow builds to be viewed and aggregated across your team/company.
 

@@ -10,6 +10,7 @@ let form = {
   firstName: React.createRef<HTMLInputElement>(),
   lastName: React.createRef<HTMLInputElement>(),
   engineerCount: React.createRef<HTMLInputElement>(),
+  button: React.createRef<HTMLButtonElement>(),
 };
 
 function RequestDemo() {
@@ -34,6 +35,7 @@ function RequestDemo() {
               <input ref={form.lastName} placeholder="Last name" />
               <input ref={form.engineerCount} placeholder="Number of engineers" className={styles.span2} />
               <button
+                ref={form.button}
                 onClick={() => sendMessage()}
                 className={`${common.button} ${common.buttonPrimary} ${styles.span2}`}>
                 Request a Demo
@@ -50,6 +52,15 @@ function sendMessage() {
   message(
     `New Demo Request!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nNumber of Engineers: ${form.engineerCount.current.value}`
   );
+
+  form.company.current.disabled = true;
+  form.email.current.disabled = true;
+  form.firstName.current.disabled = true;
+  form.lastName.current.disabled = true;
+  form.engineerCount.current.disabled = true;
+
+  form.button.current.innerText = "Request Sent!";
+  form.button.current.disabled = true;
 }
 
 export default RequestDemo;

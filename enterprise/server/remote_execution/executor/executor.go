@@ -2,7 +2,6 @@ package executor
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"syscall"
 	"time"
@@ -24,8 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 
@@ -61,7 +60,7 @@ type Executor struct {
 	env        environment.Env
 	runnerPool *runner.Pool
 	id         string
-	name       string
+	hostID     string
 }
 
 type Options struct {
@@ -78,9 +77,13 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	if err := disk.EnsureDirectoryExists(executorConfig.GetRootDirectory()); err != nil {
 		return nil, err
 	}
-	name := options.NameOverride
-	if name == "" {
-		name = base64.StdEncoding.EncodeToString(uuid.NodeID())
+	hostID := options.NameOverride
+	if hostID == "" {
+		var err error
+		hostID, err = uuid.GetHostID()
+		if err != nil {
+			return nil, err
+		}
 	}
 	runnerPool, err := runner.NewPool(env)
 	if err != nil {
@@ -89,7 +92,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	s := &Executor{
 		env:        env,
 		id:         id,
-		name:       name,
+		hostID:     hostID,
 		runnerPool: runnerPool,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
@@ -100,8 +103,8 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	return s, nil
 }
 
-func (s *Executor) Name() string {
-	return s.name
+func (s *Executor) HostID() string {
+	return s.hostID
 }
 
 func (s *Executor) Warmup() {
@@ -193,7 +196,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	md := &repb.ExecutedActionMetadata{
-		Worker:               s.name,
+		Worker:               s.hostID,
 		QueuedTimestamp:      task.QueuedTimestamp,
 		WorkerStartTimestamp: ptypes.TimestampNow(),
 		ExecutorId:           s.id,

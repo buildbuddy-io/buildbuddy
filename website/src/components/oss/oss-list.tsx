@@ -1,4 +1,5 @@
 import React from "react";
+import common from "../../css/common.module.css";
 import styles from "./oss.module.css";
 import Image from "@theme/IdealImage";
 
@@ -64,6 +65,7 @@ function Component(props) {
           <a href={`https://github.com/${repo.name}`} target="_blank" className={styles.link}>
             Learn more
           </a>
+          <div className={common.spacer}></div>
         </div>
       ))}
     </div>

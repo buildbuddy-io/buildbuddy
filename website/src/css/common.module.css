@@ -58,7 +58,7 @@
 }
 
 @media (max-width: 1200px) {
-  .splitContainer {
+  div.splitContainer {
     display: flex;
     align-items: center;
     justify-self: center;
@@ -71,7 +71,7 @@
 }
 
 @media (max-width: 460px) {
-  .section.sectionRounded .container {
+  div.section.sectionRounded .container {
     padding: 0 32px;
   }
 }
@@ -91,18 +91,18 @@
 }
 
 .pillTitle {
-  background-color: #bae8e8;
+  background-color: #b3e5fc;
   color: #141414;
-  padding: 2px 12px;
+  padding: 2px 16px;
   display: inline-block;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 16px;
   margin-bottom: 16px;
 }
 
 @media (max-width: 600px) {
-  .title {
+  div.title {
     font-size: 48px;
   }
 }
@@ -143,10 +143,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 300ms ease-in-out;
 }
 
 .button.buttonPrimary {
   background-color: #263238;
+  color: #fff;
+}
+
+.button.buttonPrimary:disabled {
+  background-color: #607d8b;
   color: #fff;
 }
 

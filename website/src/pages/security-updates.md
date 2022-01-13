@@ -1,12 +1,14 @@
 # Security Updates
 
+<div className="pill">Updated January 13, 2022</div>
+
 To report security issues please see the **[BuildBuddy Responsible Disclosure Policy](security-vulnerability-report)**. To sign up for notifications when a security fix is released, email security-updates@buildbuddy.io.
 
 ## Penetration testing
 
-BuildBuddy software undergoes regular security review and penetration testing by organizations preparing for deployment, by paid third party security researches, and through internal review and testing.
+BuildBuddy software undergoes regular security review and penetration testing by organizations preparing for deployment, by paid third party security researchers, and through internal review and testing.
 
-Copies of our penetration testing reports are avaialable by emailing security-requests@buildbuddy.io.
+Copies of our penetration testing reports are available by emailing security-requests@buildbuddy.io.
 
 ## Public disclosure
 

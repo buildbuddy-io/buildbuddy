@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1641596622434,
+  "iteration": 1642038390503,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -6596,8 +6596,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -6683,8 +6682,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -6781,8 +6779,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -7441,14 +7438,14 @@
           "text": "All",
           "value": "$__all"
         },
-        "definition": "label_values(node_uname_info, nodename)",
+        "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "kubepool",
         "options": [],
         "query": {
-          "query": "label_values(node_uname_info, nodename)",
+          "query": "label_values(node_uname_info{region=\"$region\"}, nodename)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -7463,14 +7460,14 @@
           "text": "All",
           "value": "$__all"
         },
-        "definition": "label_values(node_uname_info, nodename)",
+        "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "kubenode",
         "options": [],
         "query": {
-          "query": "label_values(node_uname_info, nodename)",
+          "query": "label_values(node_uname_info{region=\"$region\"}, nodename)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

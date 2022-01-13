@@ -87,6 +87,7 @@ html[data-theme="dark"] .menu {
 .navbar__toggle {
   position: absolute;
   right: 24px;
+  margin: 0;
 }
 
 .navbar-sidebar {

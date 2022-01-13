@@ -11,6 +11,7 @@ let form = {
   firstName: React.createRef<HTMLInputElement>(),
   lastName: React.createRef<HTMLInputElement>(),
   message: React.createRef<HTMLTextAreaElement>(),
+  button: React.createRef<HTMLButtonElement>(),
 };
 
 function Contact() {
@@ -55,6 +56,7 @@ function Contact() {
               <input ref={form.lastName} placeholder="Last name" />
               <textarea ref={form.message} placeholder="Your message" className={styles.span2} />
               <button
+                ref={form.button}
                 onClick={() => sendMessage()}
                 className={`${common.button} ${common.buttonPrimary} ${styles.span2}`}>
                 Send message
@@ -71,6 +73,15 @@ function sendMessage() {
   message(
     `New Contact Form Message!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nMessage: ${form.message.current.value}`
   );
+
+  form.firstName.current.disabled = true;
+  form.lastName.current.disabled = true;
+  form.email.current.disabled = true;
+  form.company.current.disabled = true;
+  form.message.current.disabled = true;
+
+  form.button.current.innerText = "Message Sent!";
+  form.button.current.disabled = true;
 }
 
 export default Contact;
