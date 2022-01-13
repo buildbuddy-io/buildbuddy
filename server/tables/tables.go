@@ -495,12 +495,6 @@ func (*Usage) TableName() string {
 
 type PostAutoMigrateLogic func() error
 
-type invocationIDs struct {
-	invocationID   string
-	invocationPK   int64
-	invocationUUID []byte
-}
-
 // Manual migration called before auto-migration.
 //
 // May return a list of functions to be executed after auto-migration.
@@ -584,26 +578,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
-	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_uuid") {
-		// TODO(luluz): Disable migration code for now
-		// if db.Dialector.Name() == mysqlDialect {
-		// 		err := backfillInvocationUUIDIfNull(db)
-		//	return postMigrate, err
-		//}
-	}
-
 	// Populate invocation_uuid if the column doesn't exist.
-	if m.HasTable("Invocations") && !m.HasColumn(&Invocation{}, "invocation_uuid") {
+	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_pk") {
 		if db.Dialector.Name() == sqliteDialect {
-			// TODO(luluz): Disable migration code for now
-			//postMigrate = append(postMigrate, func() error {
-			//	return postMigrateInvocationUUIDForSQLite(db)
-			//})
+			postMigrate = append(postMigrate, func() error {
+				return postMigrateInvocationUUIDForSQLite(db)
+			})
 		} else if db.Dialector.Name() == mysqlDialect {
-			// TODO(luluz): Disable migration code for now
-			// postMigrate = append(postMigrate, func() error {
-			// return postMigrateInvocationUUIDForMySQL(db)
-			// })
+			postMigrate = append(postMigrate, func() error {
+				return postMigrateInvocationUUIDForMySQL(db)
+			})
 		} else {
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
@@ -611,51 +595,56 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	return postMigrate, nil
 }
 
-func backfillInvocationUUIDIfNull(db *gorm.DB) error {
-	if err := db.Exec(`
-		UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id) 
-		WHERE invocation_uuid IS NULL
-	`).Error; err != nil {
-		return err
+func updateInBatch(db *gorm.DB, baseQuery string, batchSize int64) error {
+	totalRows := int64(0)
+	for {
+		tx := db.Exec(baseQuery+" LIMIT ?", batchSize)
+		if err := tx.Error; err != nil {
+			return err
+		}
+		totalRows += tx.RowsAffected
+		log.Infof("updated %d rows in total for base query %q", totalRows, baseQuery)
+		if tx.RowsAffected == 0 {
+			return nil
+		}
 	}
-	return db.Exec(`
-		UPDATE TargetStatuses ts SET invocation_uuid=
-			(SELECT invocation_uuid FROM Invocations i 
-			WHERE i.invocation_pk=ts.invocation_pk)
-		WHERE invocation_uuid IS NULL
-	`).Error
 }
 
 func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
-	if err := db.Exec(`UPDATE Invocations SET invocation_uuid = UUID_TO_BIN(invocation_id)`).Error; err != nil {
+	updateInvocationStmt := `UPDATE Invocations SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+	err := updateInBatch(db, updateInvocationStmt, 10000)
+	if err != nil {
 		return err
 	}
-	return db.Exec(`
+	updateTargetStatusStmt := `
 		UPDATE TargetStatuses ts SET invocation_uuid=
-		(SELECT invocation_uuid FROM Invocations i 
-		WHERE i.invocation_pk=ts.invocation_pk)
-	`).Error
+			(SELECT invocation_uuid FROM Invocations i 
+			WHERE i.invocation_pk=ts.invocation_pk)
+		WHERE invocation_uuid IS NULL`
+	return updateInBatch(db, updateTargetStatusStmt, 10000)
 }
 
 func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
-	// SQLite doesn't have UUID_TO_BIN function; so we need to calculate
+	// SQLite doesn't have UNHEX function; so we need to calculate
 	// invocationUUID in the app.
 	var results []Invocation
-	res := db.Select("invocation_id", "invocation_pk").FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
-		for _, invocation := range results {
-			invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
-			if err != nil {
-				return err
+	res := db.Select("invocation_id", "invocation_pk").
+		Where("invocation_uuid IS NULL").
+		FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
+			for _, invocation := range results {
+				invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
+				if err != nil {
+					return err
+				}
+				if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+					return err
+				}
+				if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+					return err
+				}
 			}
-			if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
-				return err
-			}
-			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+			return nil
+		})
 	return res.Error
 }
 
