@@ -265,10 +265,6 @@ func (dnr *DynamicNodeRegistry) Close() error {
 }
 
 func (dnr *DynamicNodeRegistry) gossipUpdate(up *rfpb.RegistryUpdate) error {
-	// OMG FIX THIS REMOVE THESE JESUS DO SOMETHING
-	up.Nhid = dnr.nhid
-	up.GrpcAddress = dnr.grpcAddress
-	up.RaftAddress = dnr.raftAddress
 	buf, err := proto.Marshal(up)
 	if err != nil {
 		return err
