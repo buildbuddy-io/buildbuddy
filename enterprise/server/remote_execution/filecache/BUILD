@@ -13,7 +13,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
-        "@com_github_google_uuid//:uuid",
+        "//server/util/uuid",
     ],
 )
 

@@ -167,7 +167,7 @@ type PriorityTaskScheduler struct {
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
-	sublog := log.NamedSubLogger(exec.Name())
+	sublog := log.NamedSubLogger(exec.HostID())
 
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
@@ -372,7 +372,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.untrackTask(reservation, &cancel)
 		}()
 
-		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.Name(), reservation.GetTaskId())
+		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.HostID(), reservation.GetTaskId())
 		ctx, serializedTask, err := taskLease.Claim(ctx)
 		if err != nil {
 			// NotFound means the task is already claimed.

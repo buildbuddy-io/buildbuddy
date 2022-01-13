@@ -16,8 +16,8 @@ go_library(
         "//server/util/capabilities",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_google_uuid//:uuid",
         "@org_golang_x_sync//errgroup",
     ],
 )
