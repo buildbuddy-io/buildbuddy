@@ -7,15 +7,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
-	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -53,6 +54,7 @@ type Driver struct {
 	apiClient      *client.APIClient
 	gossipManager  *gossip.GossipManager
 	sender         *sender.Sender
+	registry       *registry.DynamicNodeRegistry
 	leaseTracker   LeaseTracker
 	pendingOps     map[string]struct{}
 	operationQueue chan *rfpb.Operation
@@ -63,23 +65,24 @@ type LeaseTracker interface {
 	GetRangeLease(clusterID uint64) *rangelease.Lease
 }
 
-func New(nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient, leaseTracker LeaseTracker) *Driver {
+func New(nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient, registry *registry.DynamicNodeRegistry, leaseTracker LeaseTracker) *Driver {
 	d := &Driver{
 		lastSeen:       make(map[replicaStruct]time.Time),
 		nodeHost:       nodeHost,
 		apiClient:      apiClient,
 		gossipManager:  gossipManager,
 		sender:         sender,
+		registry:       registry,
 		leaseTracker:   leaseTracker,
 		pendingOps:     make(map[string]struct{}),
 		operationQueue: make(chan *rfpb.Operation, maxPendingOperations),
 		quitChan:       make(chan struct{}),
 	}
 	d.gossipManager.AddListener(d)
-	//	go func() {
-	//		time.Sleep(10 * time.Second)
-	//		d.pollUntilQuit()
-	//	}()
+	go func() {
+		time.Sleep(10 * time.Second)
+		d.pollUntilQuit()
+	}()
 	return d
 }
 
@@ -137,12 +140,10 @@ func (d *Driver) handlePlacementDriverQuery(query *serf.Query) {
 	if err := proto.Unmarshal(query.Payload, pq); err != nil {
 		return
 	}
-	log.Debugf("got placementdriverquery: %+v", pq)
 	nodeHostInfo := d.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	if nodeHostInfo != nil {
 		for _, logInfo := range nodeHostInfo.LogInfo {
 			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				log.Debugf("%s already contains a node (%d) in cluster %d.", d.nodeHost.ID(), logInfo.NodeID, logInfo.ClusterID)
 				return
 			}
 		}
@@ -330,25 +331,26 @@ func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 	if rl == nil {
 		return status.FailedPreconditionErrorf("rangelease not held for cluster: %d", clusterID)
 	}
-	rd := rl.GetRangeDescriptor()
 
-	// first we reserve a new node ID
+	// first, reserve a new node ID
 	nodeIDs, err := d.reserveNodeIDs(ctx, 1)
 	if err != nil {
 		return err
 	}
 	nodeID := nodeIDs[0]
 
-	// then we get the config change index from nodehost locally
+	// then, get the config change index from nodehost locally
 	membership, err := d.nodeHost.SyncGetClusterMembership(ctx, clusterID)
 	if err != nil {
 		return err
 	}
 	configChangeID := membership.ConfigChangeID
 
-	// use gossip to find a new node to join this cluster
+	// then, use gossip to look for a new node to join this cluster
 	buf, err := proto.Marshal(&rfpb.PlacementQuery{
 		TargetClusterId: clusterID,
+		// TODO(tylerw): in future, this would contain constraints
+		// read from a zoneconfig.
 	})
 	if err != nil {
 		return err
@@ -357,49 +359,40 @@ func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 	if err != nil {
 		return err
 	}
-	nodeDescriptor := &rfpb.NodeDescriptor{}
+	node := &rfpb.NodeDescriptor{}
 	for nodeRsp := range rsp.ResponseCh() {
 		if nodeRsp.Payload == nil {
 			continue
 		}
-		err := proto.Unmarshal(nodeRsp.Payload, nodeDescriptor)
+		err := proto.Unmarshal(nodeRsp.Payload, node)
 		if err == nil {
 			break
 		}
 	}
-	log.Printf("Got nodeDescriptor: %+v", nodeDescriptor)
+	if node.GetNhid() == "" {
+		return status.FailedPreconditionError("No candidate nodes available")
+	}
+	log.Printf("Got nodeDescriptor: %+v", node)
 
 	// use gossip to tell other clusters where they can find this node
 	// later on.
+	d.registry.AddWithAddr(clusterID, nodeID, node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
-	// then we call SyncRequestAddNode on all live nodes in the cluster.
-	// some failures are allowed (on nodes we're removing because they are dead)
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, replicaDescriptor := range rd.GetReplicas() {
-		replica := replicaDescriptor
-		eg.Go(func() error {
-			c, err := d.sender.ConnectionForReplicaDesciptor(ctx, replica)
-			if err != nil {
-				return err
+	// propose the config change (this adds the node)
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		err := d.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
 			}
-			_, err = c.AddNode(ctx, &rfpb.AddNodeRequest{
-				ClusterId:         clusterID,
-				NodeId:            nodeID,
-				ConfigChangeIndex: configChangeID,
-				RaftAddress:       nodeDescriptor.GetRaftAddress(),
-				Nhid:              nodeDescriptor.GetNhid(),
-			})
-			if err != nil {
-				log.Warningf("AddNode error on %+v: %s", replica, err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return err
+			return err
+		}
+		break
 	}
 
-	c, err := d.apiClient.Get(ctx, nodeDescriptor.GetGrpcAddress())
+	// finally, start the cluster on the new nodehost.
+	c, err := d.apiClient.Get(ctx, node.GetGrpcAddress())
 	if err != nil {
 		return err
 	}

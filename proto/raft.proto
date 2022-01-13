@@ -291,16 +291,6 @@ message StartClusterResponse {
   BatchCmdResponse batch = 1;
 }
 
-message AddNodeRequest {
-  uint64 cluster_id = 1;
-  uint64 node_id = 2;
-  uint64 config_change_index = 3;
-  string raft_address = 4;
-  string nhid = 5;
-}
-
-message AddNodeResponse {}
-
 message Operation {
   enum OpType {
     UNKNOWN_TYPE = 0;

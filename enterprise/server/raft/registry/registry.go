@@ -331,6 +331,12 @@ func (dnr *DynamicNodeRegistry) add(clusterID uint64, nodeID uint64, target stri
 	return false
 }
 
+func (dnr *DynamicNodeRegistry) AddWithAddr(clusterID, nodeID uint64, target, raftAddress, grpcAddress string) {
+	dnr.addRaftNodeHost(target, raftAddress)
+	dnr.addGRPCNodeHost(target, grpcAddress)
+	dnr.Add(clusterID, nodeID, target)
+}
+
 // Add adds a new node with its known NodeHostID to the registry.
 func (dnr *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string) {
 	if dnr.validator != nil && !dnr.validator(target) {

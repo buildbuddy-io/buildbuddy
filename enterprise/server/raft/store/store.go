@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -36,6 +37,7 @@ type Store struct {
 	nodeHost      *dragonboat.NodeHost
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
+	registry      *registry.DynamicNodeRegistry
 	apiClient     *client.APIClient
 	driver        *driver.Driver
 	liveness      *nodeliveness.Liveness
@@ -50,13 +52,14 @@ type Store struct {
 	replicas  map[uint64]*replica.Replica
 }
 
-func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient) *Store {
+func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry *registry.DynamicNodeRegistry, apiClient *client.APIClient) *Store {
 	s := &Store{
 		rootDir:       rootDir,
 		fileDir:       fileDir,
 		nodeHost:      nodeHost,
 		gossipManager: gossipManager,
 		sender:        sender,
+		registry:      registry,
 		apiClient:     apiClient,
 		liveness:      nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost}),
 
@@ -69,7 +72,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicaMu: sync.RWMutex{},
 		replicas:  make(map[uint64]*replica.Replica),
 	}
-	s.driver = driver.New(nodeHost, gossipManager, sender, apiClient, s)
+	s.driver = driver.New(nodeHost, gossipManager, sender, apiClient, registry, s)
 
 	cb := listener.LeaderCB(s.leaderUpdated)
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
@@ -287,15 +290,6 @@ func (s *Store) isLeader(clusterID uint64) bool {
 	return false
 }
 
-func (s *Store) AddNode(ctx context.Context, req *rfpb.AddNodeRequest) (*rfpb.AddNodeResponse, error) {
-	log.Printf("AddNode request: %+v", req)
-	err := s.nodeHost.SyncRequestAddNode(ctx, req.GetClusterId(), req.GetNodeId(), req.GetNhid(), req.GetConfigChangeIndex())
-	if err != nil {
-		return nil, err
-	}
-	return &rfpb.AddNodeResponse{}, nil
-}
-
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
@@ -323,6 +317,10 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 
 	rsp := &rfpb.StartClusterResponse{}
+	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
+		return rsp, nil
+	}
+
 	// If we are the first member in the cluster, we'll do the syncPropose.
 	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
 	for nodeID, _ := range req.GetInitialMember() {

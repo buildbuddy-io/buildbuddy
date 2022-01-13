@@ -204,7 +204,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.apiClient)
+	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
 
 	apiServer, err := api.NewServer(fileDir, rc.store)
 	if err != nil {

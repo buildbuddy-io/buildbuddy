@@ -56,10 +56,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
-func (s *Server) AddNode(ctx context.Context, req *rfpb.AddNodeRequest) (*rfpb.AddNodeResponse, error) {
-	return s.store.AddNode(ctx, req)
-}
-
 func (s *Server) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	return s.store.StartCluster(ctx, req)
 }
