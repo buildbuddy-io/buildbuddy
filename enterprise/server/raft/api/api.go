@@ -60,6 +60,10 @@ func (s *Server) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest
 	return s.store.StartCluster(ctx, req)
 }
 
+func (s *Server) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
+	return s.store.RemoveData(ctx, req)
+}
+
 type streamWriter struct {
 	stream rfspb.Api_ReadServer
 }

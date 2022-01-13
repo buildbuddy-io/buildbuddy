@@ -291,6 +291,13 @@ message StartClusterResponse {
   BatchCmdResponse batch = 1;
 }
 
+message RemoveDataRequest {
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+}
+
+message RemoveDataResponse {}
+
 message Operation {
   enum OpType {
     UNKNOWN_TYPE = 0;

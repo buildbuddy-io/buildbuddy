@@ -338,6 +338,14 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	return rsp, nil
 }
 
+func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
+	err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId())
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.RemoveDataResponse{}, nil
+}
+
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())

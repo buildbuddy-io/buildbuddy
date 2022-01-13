@@ -178,12 +178,19 @@ func (d *Driver) handleOp(op *rfpb.Operation) error {
 		return nil
 	}
 
-	log.Printf("handleOp: %+v", op)
+	log.Printf("handleOp: %+xv", op)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if op.GetOpType() == rfpb.Operation_ADD_NODE {
+
+	switch op.GetOpType() {
+	case rfpb.Operation_ADD_NODE:
 		return d.addNodeToCluster(ctx, op.GetClusterId())
+	case rfpb.Operation_REMOVE_NODE:
+		return d.removeNodeFromCluster(ctx, op.GetClusterId(), op.GetNodeId())
+	default:
+		log.Warningf("Unsupported op: %+v", op)
 	}
+
 	// to prevent thundering herd: a node should be able to *reject* requests to take
 	// on a range. IF a request gets rejected, we'll just drop it for now.
 	// Ensure that we only remove a range if there are more than 3.
@@ -400,6 +407,52 @@ func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
 		ClusterId: clusterID,
 		NodeId:    nodeID,
 		Join:      true,
+	})
+	return err
+}
+
+func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID uint64) error {
+	rl := d.leaseTracker.GetRangeLease(clusterID)
+	if rl == nil {
+		return status.FailedPreconditionErrorf("rangelease not held for cluster: %d", clusterID)
+	}
+
+	// first, get the config change index from nodehost locally
+	membership, err := d.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	configChangeID := membership.ConfigChangeID
+
+	grpcAddr, _, err := d.registry.ResolveGRPC(clusterID, nodeID)
+	if err != nil {
+		return err
+	}
+
+	// propose the config change (this adds the node)
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		err := d.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
+			}
+			return err
+		}
+		break
+	}
+
+	// Gossip remove the node? Do we need to do this?
+	//	d.registry.Remove(clusterID, nodeID)
+
+	// finally, remove the data from the stopped node.
+	c, err := d.apiClient.Get(ctx, grpcAddr)
+	if err != nil {
+		return err
+	}
+	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ClusterId: clusterID,
+		NodeId:    nodeID,
 	})
 	return err
 }
