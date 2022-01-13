@@ -1,5 +1,7 @@
 # Security Updates
 
+<div className="pill">Updated January 13, 2022</div>
+
 To report security issues please see the **[BuildBuddy Responsible Disclosure Policy](security-vulnerability-report)**. To sign up for notifications when a security fix is released, email security-updates@buildbuddy.io.
 
 ## Penetration testing
