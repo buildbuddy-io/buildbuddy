@@ -10,27 +10,26 @@ We're looking for generalist software engineers to help us fulfill this mission.
 
 This is a unique opportunity to shape the future of how engineers build and test software.
 
-## ‍You will
+## You will
 
 - Design, build, test, deploy, and maintain reliable software
 - Debug complex production issues across the stack
 - Plan for the growth of our platform and infrastructure
 - Build a great customer experience for our users (other engineers!)
 
-## ‍We're looking for someone who
+## We're looking for someone who
 
 - Is comfortable with ambiguity and working outside of their comfort zone
 - Can manage priorities well when there's a lot to be done
 - Holds yourself and others to a high bar when working with production
 - Is able to write high quality code in a programming language (e.g. Golang, Typescript).
 
-## ‍Who you'll work with
+## Who you'll work with
 
 - Tyler Williams - GitHub: @tylerwilliams, Twitter: @tylerbw
-- Siggi Simonarson - Github: @siggisim, Twitter: @siggi
-- Brandon Duffany - Github: @bduffany, Twitter: @brandon_duffany
-- Vadim Berezniker - Github: @vadimberezniker
-  ‍
+- Siggi Simonarson - GitHub: @siggisim, Twitter: @siggi
+- Brandon Duffany - GitHub: @bduffany, Twitter: @brandon_duffany
+- Vadim Berezniker - GitHub: @vadimberezniker
 
 ## What's it like to work at BuildBuddy?
 

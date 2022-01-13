@@ -8,7 +8,7 @@ BuildBuddy was founded to make developers more productive. Today we're solving a
 
 This is a unique opportunity to shape the future of how engineers build and test software. You’ll be working directly with engineering organizations developing the most cutting-edge tech.
 
-## ‍You will
+## You will
 
 - Build a great customer experience for our users (other engineers!)
 - Define and prioritize product features, goals, roadmap, and strategy based on your frontline knowledge of customer needs
@@ -19,7 +19,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Create or update documentation based on customer interactions
 - Continually research and learn the current and future best practices of using Bazel
 
-## ‍We're looking for someone who
+## We're looking for someone who
 
 - Cares deeply about creating the best possible experience for our customers
 - Can lead technical discussions and help drive technical decisions
@@ -30,13 +30,12 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Has knowledge of DevOps methodologies and appreciates the value technologies like Serverless and Kubernetes bring to the software deployment and development process
 - Is experienced with build tools and CI/CD.
 
-## ‍Who you'll work with
+## Who you'll work with
 
 - Tyler Williams - GitHub: @tylerwilliams, Twitter: @tylerbw
-- Siggi Simonarson - Github: @siggisim, Twitter: @siggi
-- Brandon Duffany - Github: @bduffany, Twitter: @brandon_duffany
-- Vadim Berezniker - Github: @vadimberezniker
-  ‍
+- Siggi Simonarson - GitHub: @siggisim, Twitter: @siggi
+- Brandon Duffany - GitHub: @bduffany, Twitter: @brandon_duffany
+- Vadim Berezniker - GitHub: @vadimberezniker
 
 ## What's it like to work at BuildBuddy?
 
