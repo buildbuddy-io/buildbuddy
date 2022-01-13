@@ -43,7 +43,11 @@ func New(rangeCache *rangecache.RangeCache, nodeRegistry *registry.DynamicNodeRe
 	}
 }
 
-func (s *Sender) connectionForReplicaDesciptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+func (s *Sender) MyNodeDescriptor() *rfpb.NodeDescriptor {
+	return s.nodeRegistry.MyNodeDescriptor()
+}
+
+func (s *Sender) ConnectionForReplicaDesciptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
 	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetClusterId(), rd.GetNodeId())
 	if err != nil {
 		return nil, err
@@ -58,7 +62,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	}
 
 	for _, replica := range rangeDescriptor.GetReplicas() {
-		client, err := s.connectionForReplicaDesciptor(ctx, replica)
+		client, err := s.ConnectionForReplicaDesciptor(ctx, replica)
 		if err != nil {
 			log.Errorf("Error getting api conn: %s", err)
 			continue
@@ -229,4 +233,24 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 		return nil, err
 	}
 	return rsp.GetBatch(), nil
+}
+
+func (s *Sender) Increment(ctx context.Context, key []byte, n uint64) (uint64, error) {
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   key,
+		Delta: n,
+	}).ToProto()
+	if err != nil {
+		return 0, err
+	}
+	rsp, err := s.SyncPropose(ctx, key, batch)
+	if err != nil {
+		return 0, err
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+	incResponse, err := batchResp.IncrementResponse(0)
+	if err != nil {
+		return 0, err
+	}
+	return incResponse.GetValue(), nil
 }
