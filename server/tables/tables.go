@@ -595,7 +595,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	return postMigrate, nil
 }
 
-func updateInBatch(db *gorm.DB, baseQuery string, batchSize int64) error {
+func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 	totalRows := int64(0)
 	for {
 		tx := db.Exec(baseQuery+" LIMIT ?", batchSize)
@@ -612,8 +612,7 @@ func updateInBatch(db *gorm.DB, baseQuery string, batchSize int64) error {
 
 func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	updateInvocationStmt := `UPDATE Invocations SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
-	err := updateInBatch(db, updateInvocationStmt, 10000)
-	if err != nil {
+	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
 		return err
 	}
 	updateTargetStatusStmt := `
@@ -621,30 +620,29 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 			(SELECT invocation_uuid FROM Invocations i 
 			WHERE i.invocation_pk=ts.invocation_pk)
 		WHERE invocation_uuid IS NULL`
-	return updateInBatch(db, updateTargetStatusStmt, 10000)
+	return updateInBatches(db, updateTargetStatusStmt, 10000)
 }
 
 func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 	// SQLite doesn't have UNHEX function; so we need to calculate
 	// invocationUUID in the app.
 	var results []Invocation
-	res := db.Select("invocation_id", "invocation_pk").
-		Where("invocation_uuid IS NULL").
-		FindInBatches(&results, 100, func(tx *gorm.DB, batch int) error {
-			for _, invocation := range results {
-				invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
-				if err != nil {
-					return err
-				}
-				if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
-					return err
-				}
-				if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
-					return err
-				}
+	updateFunc := func(tx *gorm.DB, batch int) error {
+		for _, invocation := range results {
+			invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
+			if err != nil {
+				return err
 			}
-			return nil
-		})
+			if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	res := db.Select("invocation_id", "invocation_pk").Where("invocation_uuid IS NULL").FindInBatches(&results, 100, updateFunc)
 	return res.Error
 }
 
