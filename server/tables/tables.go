@@ -495,12 +495,6 @@ func (*Usage) TableName() string {
 
 type PostAutoMigrateLogic func() error
 
-type invocationIDs struct {
-	invocationID   string
-	invocationPK   int64
-	invocationUUID []byte
-}
-
 // Manual migration called before auto-migration.
 //
 // May return a list of functions to be executed after auto-migration.
