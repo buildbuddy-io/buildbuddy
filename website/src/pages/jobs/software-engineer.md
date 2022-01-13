@@ -27,9 +27,9 @@ This is a unique opportunity to shape the future of how engineers build and test
 ## ‍Who you'll work with
 
 - Tyler Williams - GitHub: @tylerwilliams, Twitter: @tylerbw
-- Siggi Simonarson - Github: @siggisim, Twitter: @siggi
-- Brandon Duffany - Github: @bduffany, Twitter: @brandon_duffany
-- Vadim Berezniker - Github: @vadimberezniker
+- Siggi Simonarson - GitHub: @siggisim, Twitter: @siggi
+- Brandon Duffany - GitHub: @bduffany, Twitter: @brandon_duffany
+- Vadim Berezniker - GitHub: @vadimberezniker
   ‍
 
 ## What's it like to work at BuildBuddy?
