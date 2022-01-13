@@ -74,7 +74,7 @@ func getOrCreateHostId() (string, error) {
 	// try to create the file to write a new ID, if it already exists this will fail
 	hostIDFile, err := os.OpenFile(hostIDFilepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		if err != os.ErrExist {
+		if !os.IsExist(err) {
 			// some other I/O error ocurred when creating the file, we can't write the ID down
 			return "", err
 		}
