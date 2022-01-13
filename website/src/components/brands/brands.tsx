@@ -6,15 +6,15 @@ function Component() {
   return (
     <div className={styles.brands}>
       <a target="_blank" href="https://www.ycombinator.com/companies?query=buildbuddy">
-        <Image img={require("../../../static/img/yc_monochrome.png")} />
+        <Image className={styles.image} img={require("../../../static/img/yc_monochrome.png")} />
       </a>
       <a target="_blank" href="https://cloud.google.com/partners">
-        <Image img={require("../../../static/img/gcp_monochrome.png")} />
+        <Image className={styles.image} img={require("../../../static/img/gcp_monochrome.png")} />
       </a>
       <a
         target="_blank"
         href="https://techcrunch.com/2020/12/01/yc-backed-buildbuddy-raises-3-15m-to-help-developers-build-software-more-quickly/">
-        <Image img={require("../../../static/img/tc_monochrome.png")} />
+        <Image className={styles.image} img={require("../../../static/img/tc_monochrome.png")} />
       </a>
     </div>
   );
