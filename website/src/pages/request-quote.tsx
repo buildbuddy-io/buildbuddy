@@ -10,6 +10,7 @@ let form = {
   firstName: React.createRef<HTMLInputElement>(),
   lastName: React.createRef<HTMLInputElement>(),
   engineerCount: React.createRef<HTMLInputElement>(),
+  button: React.createRef<HTMLButtonElement>(),
 };
 
 function RequestQuote() {
@@ -34,6 +35,7 @@ function RequestQuote() {
               <input ref={form.lastName} placeholder="Last name" />
               <input ref={form.engineerCount} placeholder="Number of engineers" className={styles.span2} />
               <button
+                ref={form.button}
                 onClick={() => sendMessage()}
                 className={`${common.button} ${common.buttonPrimary} ${styles.span2}`}>
                 Request a Quote
@@ -50,6 +52,8 @@ function sendMessage() {
   message(
     `New Quote Request!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nNumber of Engineers: ${form.engineerCount.current.value}`
   );
+  form.button.current.innerText = "Sent!";
+  form.button.current.disabled = true;
 }
 
 export default RequestQuote;

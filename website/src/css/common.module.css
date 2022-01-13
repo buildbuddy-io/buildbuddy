@@ -150,6 +150,11 @@
   color: #fff;
 }
 
+.button.buttonPrimary:disabled {
+  background-color: #607d8b;
+  color: #fff;
+}
+
 /* Spacers */
 
 .spacer {
