@@ -33,7 +33,7 @@
 }
 
 @media (max-width: 512px) {
-  .deploymentModel {
+  div.deploymentModel {
     padding: 36px 36px;
   }
 }
