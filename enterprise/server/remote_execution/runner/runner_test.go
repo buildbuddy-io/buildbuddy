@@ -66,6 +66,14 @@ func newWorkflowTask() *repb.ExecutionTask {
 	return t
 }
 
+func newTaskWithAffinityKey(key string) *repb.ExecutionTask {
+	t := newTask()
+	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+		Name: platform.HostedBazelAffinityKeyPropertyName, Value: key,
+	})
+	return t
+}
+
 func newWorkspace(t *testing.T, env *testenv.TestEnv) *workspace.Workspace {
 	tmpDir := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, tmpDir, &workspace.Opts{})
@@ -395,6 +403,36 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	require.Equal(t, 0, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
 	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
+}
+
+func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	r1 := mustGetNewRunner(t, ctx, pool, newTaskWithAffinityKey("key1"))
+
+	mustAddWithoutEviction(t, ctx, pool, r1)
+
+	r2 := mustGetPausedRunner(t, ctx, pool, newTaskWithAffinityKey("key1"))
+
+	assert.Same(t, r1, r2)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
+	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
+
+	r1 := mustGetNewRunner(t, ctxUser1, pool, newTaskWithAffinityKey("key1"))
+
+	mustAddWithoutEviction(t, ctxUser1, pool, r1)
+
+	r2 := mustGetNewRunner(t, ctxUser2, pool, newTaskWithAffinityKey("key2"))
+
+	assert.NotSame(t, r1, r2)
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {

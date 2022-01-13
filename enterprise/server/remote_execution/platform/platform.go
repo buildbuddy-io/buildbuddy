@@ -51,6 +51,7 @@ const (
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
 	enableVFSPropertyName                = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 
 	operatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -75,7 +76,6 @@ const (
 
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
-	ContainerdContainerType  ContainerType = "containerd"
 	FirecrackerContainerType ContainerType = "firecracker"
 )
 
@@ -111,6 +111,7 @@ type Properties struct {
 	PersistentWorkerKey      string
 	PersistentWorkerProtocol string
 	WorkflowID               string
+	HostedBazelAffinityKey   string
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -161,6 +162,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
+		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 	}
 }
 
@@ -214,16 +216,9 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
 		}
 	}
-	if executorConfig.ContainerdSocket != "" {
-		if runtime.GOOS == "darwin" {
-			log.Warning("Containerd was enabled, but is unsupported on darwin. Ignoring.")
-		} else {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, ContainerdContainerType)
-		}
-	}
 
-	// Special case: for backwards compatibility, support bare-runners when neither docker nor
-	// containerd are not enabled. Typically, this happens for macs.
+	// Special case: for backwards compatibility, support bare-runners when docker
+	// is not enabled. Typically, this happens for macs.
 	if executorConfig.EnableBareRunner || len(p.SupportedIsolationTypes) == 0 {
 		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, BareContainerType)
 	}

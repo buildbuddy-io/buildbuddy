@@ -1,0 +1,72 @@
+.text {
+  width: 100%;
+  max-width: 800px;
+  text-align: center;
+}
+.title {
+  font-size: 28px;
+  line-height: 44px;
+}
+
+.team {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 96px;
+}
+
+.teamMember {
+  max-width: 360px;
+}
+
+.teamMemberImage img {
+  border: 1px solid #eee;
+  border-radius: 16px;
+  width: 100%;
+}
+
+.teamMemberName {
+  font-weight: 700;
+  font-size: 1.4em;
+}
+
+.teamMemberEmail {
+  font-weight: 600;
+}
+
+.button {
+  margin-top: 24px;
+}
+
+.investors {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  text-align: center;
+  font-weight: 700;
+  gap: 48px;
+}
+
+.investors a {
+  color: #ccc;
+}
+
+.investors img {
+  height: 64px;
+}
+
+@media (max-width: 800px) {
+  .team {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .team {
+    grid-template-columns: 1fr;
+  }
+
+  .investors {
+    grid-template-columns: 1fr;
+  }
+}

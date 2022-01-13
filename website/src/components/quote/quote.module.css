@@ -1,0 +1,38 @@
+.stats {
+  gap: 0 20%;
+}
+
+.stat {
+  text-align: center;
+  margin-bottom: 32px;
+  margin-top: 24px;
+}
+
+.statNumber {
+  line-height: 72px;
+  font-weight: 700;
+  font-size: 65px;
+}
+
+.statTitle {
+  font-size: 20px;
+  line-height: 34px;
+  font-weight: 400;
+}
+
+.quote {
+  line-height: 44px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.attribution {
+  font-size: 16px;
+  line-height: 22px;
+  margin-top: 32px;
+}
+
+.logo {
+  height: 100px;
+  margin-top: 32px;
+}

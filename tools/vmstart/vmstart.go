@@ -113,6 +113,7 @@ func main() {
 		ActionWorkingDirectory: emptyActionDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
+		DiskSlackSpaceMB:       100,
 		EnableNetworking:       true,
 		DebugMode:              true,
 		ForceVMIdx:             vmIdx,
@@ -149,7 +150,7 @@ func main() {
 		for {
 			<-sigc
 			log.Errorf("Capturing snapshot...")
-			snapshotDigest, err := c.SaveSnapshot(ctx, *remoteInstanceName, nil)
+			snapshotDigest, err := c.SaveSnapshot(ctx, *remoteInstanceName, nil, nil /*=baseSnapshotDigest*/)
 			if err != nil {
 				log.Fatalf("Error dumping snapshot: %s", err)
 			}

@@ -1,0 +1,64 @@
+import Image from "@theme/IdealImage";
+
+# Security & Data Privacy
+
+Security and data privacy are top priorities of ours. We go through great lengths to make sure build events sent to BuildBuddy Cloud are secured and that users have full control over their data.
+
+For companies & users that want full control over their BuildBuddy instance - we offer a self hosted on-prem version of BuildBuddy.
+
+<Image img={require("../../static/img/soc2.jpg")} style={{ float: "right", padding: "0 24px" }} />
+
+## Compliance
+
+BuildBuddy continues to invest in security best practices and pursue security certifications that matter to our customers. We are proud to announce that we've achieved SOC 2 for our BuildBuddy Cloud service and undergo annual penetration tests by independent third-party security researchers.
+
+## Authentication
+
+BuildBuddy supports the OpenID Connect and SAML authentication standards which integrates with most major authentication providers including Google Auth, Okta, Auth0, and others. Authenticated build logs are be viewable to you and to members of your organization by default.
+
+If you choose to use BuildBuddy without authentication ("anonymous mode") - invocations will be hosted on Google photos-style publicly accessible URLs.
+
+## Data encryption
+
+We store build logs in Google Cloud Storage, and metadata in Google Cloud SQL which are both encrypted at rest.
+
+We implement gRPCS (gRPC with SSL/TLS) which encrypts build events as they travel between Bazel and Google Cloud Platform GFEs. Once build events hit a GFE - communication between services is encrypted through ATLS.
+
+Together, this means that your build events & artifacts are encrypted both in transit and at rest.
+
+## Web application security
+
+We follow best security practices to prevent XSS attacks - we don't generate HTML by hand and use React/JSX which escapes values before rendering them to prevent these types of attacks.
+
+We forbid the use of features that could expose us to XSS vulnerabilities like dangerouslySetInnerHTML and eval. We also use HttpOnly cookies as an extra layer of protection against XSS.
+
+When it comes to XHRF/CSRF attacks - we use SameSite cookies to mitigate this attack vector.
+
+## Usage data
+
+Pseudonymized usage data is gathered by a BuildBuddy service and a third-party service (Google Analytics) about how users are using the BuildBuddy product and how well it is performing.
+
+This data is analyzed and used to improve the BuildBuddy product. Administrators can disable these services for their instance by contacting support@buildbuddy.io. It may include pseudonymized data regarding any interaction you have with the site or platform, such as which functionalities are used and the frequency of use.
+
+## Data deletion
+
+Build logs are retained for a minimum period of time based on your plan. Beyond that minimum retention period, we periodically delete build logs to protect your privacy and to maintain reasonable resource requirements.
+
+If you'd like your BuildBuddy data to be deleted for any reason - don't hesitate to contact us at data-defenders@buildbuddy.io.
+
+## Security updates
+
+Security updates address newly discovered attacks reported to Iteration, Inc. by the security research community. Disclosures are made confidentially, under the BuildBuddy responsible disclosure policy, allowing for Iteration, Inc. to provide security updates to the community prior to public disclosure.
+
+For more information, please see:
+
+- **[BuildBuddy Security Updates](/security-updates)**<br/>
+  A summary of security updates made based on past and on-going security analysis and penetration testing.
+
+- **[BuildBuddy Responsible Disclosure Policy](/security-vulnerability-report)**<br/>
+  An overview of how security issues are confidentially reported to and addressed by Iteration, Inc.
+
+## Questions
+
+Have a question about how BuildBuddy handles security or data privacy?
+Email us at data-defenders@buildbuddy.io.

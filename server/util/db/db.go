@@ -39,6 +39,7 @@ const (
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
+	gormQueryNameKey                 = "buildbuddy:query_name"
 )
 
 var (
@@ -52,44 +53,51 @@ type DBHandle struct {
 	dialect       string
 }
 
-type Options interface {
-	ReadOnly() bool
-	AllowStaleReads() bool
-}
-
-type optionsImpl struct {
+type Options struct {
 	readOnly        bool
 	allowStaleReads bool
+	queryName       string
 }
 
-func (oi *optionsImpl) ReadOnly() bool        { return oi.readOnly }
-func (oi *optionsImpl) AllowStaleReads() bool { return oi.allowStaleReads }
+func Opts() *Options {
+	return &Options{}
+}
+
+func (o *Options) WithStaleReads() *Options {
+	o.readOnly = true
+	o.allowStaleReads = true
+	return o
+}
+
+// WithQueryName specifies the query label to use in exported metrics.
+func (o *Options) WithQueryName(queryName string) *Options {
+	o.queryName = queryName
+	return o
+}
 
 type DB = gorm.DB
 
 type txRunner func(tx *DB) error
 
-func StaleReadOptions() Options {
-	return &optionsImpl{
-		readOnly:        true,
-		allowStaleReads: true,
+func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts *Options) *DB {
+	db := dbh.DB
+	if opts.readOnly && opts.allowStaleReads && dbh.readReplicaDB != nil {
+		db = dbh.readReplicaDB
 	}
+
+	db = db.WithContext(ctx)
+	if opts.queryName != "" {
+		db = db.Set(gormQueryNameKey, opts.queryName)
+	}
+	return db
 }
 
-func ReadWriteOptions() Options {
-	return &optionsImpl{
-		readOnly:        false,
-		allowStaleReads: false,
-	}
+func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts *Options, sql string, values ...interface{}) *gorm.DB {
+	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
-func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts Options, txn txRunner) error {
-	if opts.ReadOnly() && opts.AllowStaleReads() {
-		if dbh.readReplicaDB != nil {
-			return dbh.readReplicaDB.WithContext(ctx).Transaction(txn)
-		}
-	}
-	return dbh.DB.WithContext(ctx).Transaction(txn)
+func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts *Options, txn txRunner) error {
+	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
 }
 
 func (dbh *DBHandle) Transaction(ctx context.Context, txn txRunner) error {
@@ -154,9 +162,15 @@ func instrumentGORM(gdb *gorm.DB) {
 		if db.DryRun || db.Statement == nil {
 			return
 		}
-		labels := prometheus.Labels{
-			metrics.SQLQueryTemplateLabel: db.Statement.SQL.String(),
+
+		labels := prometheus.Labels{}
+		qv, _ := db.Get(gormQueryNameKey)
+		if queryName, ok := qv.(string); ok {
+			labels[metrics.SQLQueryTemplateLabel] = queryName
+		} else {
+			labels[metrics.SQLQueryTemplateLabel] = db.Statement.SQL.String()
 		}
+
 		metrics.SQLQueryCount.With(labels).Inc()
 		// v will be nil if our key is not in the map so we can ignore the presence indicator.
 		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)

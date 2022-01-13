@@ -73,7 +73,9 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
-func FileExists(fullPath string) (bool, error) {
+func FileExists(ctx context.Context, fullPath string) (bool, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	_, err := os.Stat(fullPath)
 	if err == nil {
 		return true, nil

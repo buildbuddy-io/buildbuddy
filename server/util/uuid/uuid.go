@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	guuid "github.com/google/uuid"
 )
 
@@ -29,4 +30,16 @@ func SetInContext(ctx context.Context) (context.Context, error) {
 		return nil, fmt.Errorf("UUID %q already set in context!", ou)
 	}
 	return context.WithValue(ctx, uuidContextKey, u.String()), nil
+}
+
+func StringToBytes(text string) ([]byte, error) {
+	uuid, err := guuid.Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	uuidBytes, err := uuid.MarshalBinary()
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to parse uuid into bytes: %s", err)
+	}
+	return uuidBytes, nil
 }

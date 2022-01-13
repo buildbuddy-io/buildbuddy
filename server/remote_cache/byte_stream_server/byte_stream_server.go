@@ -1,6 +1,7 @@
 package byte_stream_server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
@@ -119,7 +121,10 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	defer reader.Close()
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader = NewZstdCompressor(reader)
+		reader, err = NewZstdCompressor(reader, r.GetDigest().GetSizeBytes())
+		if err != nil {
+			return status.InternalErrorf("Failed to compress blob: %s", err)
+		}
 		defer reader.Close()
 	}
 
@@ -481,7 +486,25 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-func NewZstdCompressor(reader io.Reader) io.ReadCloser {
+func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
+	// Optimization: If we can send the whole response in one message, compress
+	// all at once, instead of Read() then Close(), which may issue two separate
+	// responses since Close() may flush some buffered data. Note that if the
+	// decompressed length is very close to the read buffer size and the
+	// compression ratio is >= 1, we'll wind up sending two responses anyway, but
+	// this scenario is very rare in practice.
+	if decompressedSizeBytes <= readBufSizeBytes {
+		buf := &bytes.Buffer{}
+		if _, err := io.Copy(buf, reader); err != nil {
+			return nil, err
+		}
+		out, err := zstd.Compress(make([]byte, 0, int(decompressedSizeBytes)), buf.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		return cachetools.NewBytesReadSeekCloser(out), nil
+	}
+
 	pr, pw := io.Pipe()
 	go func() {
 		compressor := zstd.NewWriter(pw)
@@ -492,8 +515,16 @@ func NewZstdCompressor(reader io.Reader) io.ReadCloser {
 			pw.CloseWithError(err)
 		}(err)
 		if err := compressor.Close(); err != nil {
-			log.Errorf("Failed to close zstd writer; some zstd resources may not be cleaned up properly: %s", err)
+			// ErrClosePipe means the compressor tried to flush its remaining data to
+			// the pipe, but the pipe was closed since the client canceled their
+			// request or some other error occurred that has already been returned to
+			// the client. This can be safely ignored; the compressor will still have been cleaned
+			// up properly in this case.
+			if err == io.ErrClosedPipe {
+				return
+			}
+			log.Errorf("Failed to close zstd writer: %s", err)
 		}
 	}()
-	return pr
+	return pr, nil
 }

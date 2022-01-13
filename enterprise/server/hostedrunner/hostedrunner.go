@@ -141,6 +141,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		args = append(args, "--patch_digest="+patchDigest)
 	}
 
+	affinityKey := req.GetSessionAffinityKey()
+	if affinityKey == "" {
+		affinityKey = req.GetGitRepo().GetRepoUrl()
+	}
+
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
@@ -150,7 +155,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: platform.WorkflowIDPropertyName, Value: "hostedrunner-" + req.GetGitRepo().GetRepoUrl()},
+				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "workload-isolation-type", Value: "firecracker"},

@@ -6,7 +6,7 @@ author_title: Head of Sales @ BuildBuddy
 date: 2021-04-28:12:00:00
 author_url: https://www.linkedin.com/in/gli/
 author_image_url: https://avatars.githubusercontent.com/u/27219306?v=4
-image: https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/606de9e9765e01d812105cf7_socforserviceorganizationslogosos.jpeg
+image: /img/blog/soc2.jpg
 tags: [company, security]
 ---
 
@@ -15,7 +15,7 @@ Our mission at BuildBuddy is to help developers be more productive. It's our hig
 Today, we’re excited to share that BuildBuddy has achieved SOC 2 certification.
 
 <p align="center">
-  <img src="https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/606de9e9765e01d812105cf7_socforserviceorganizationslogosos.jpeg" />
+  <img src="/img/blog/soc2.jpg" />
 </p>
 
 The audit was conducted by [The Cadence Group](https://thecadencegroup.com/), compliance specialists who have performed SOC reporting examinations for some of the largest software companies in the world. Our certification means that we adhere to the highest standards of security, processing integrity, and risk management.
