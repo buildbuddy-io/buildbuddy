@@ -18,9 +18,10 @@ const (
 	MetaRangeTag   = "meta_range"
 	NodeUsageTag   = "node_usage"
 
-	RegistryUpdateEvent = "registry_update_event"
-	RegistryQueryEvent  = "registry_query_event"
-	AutoBringupEvent    = "auto_bringup_event"
+	RegistryUpdateEvent       = "registry_update_event"
+	RegistryQueryEvent        = "registry_query_event"
+	AutoBringupEvent          = "auto_bringup_event"
+	PlacementDriverQueryEvent = "placement_driver_query_event"
 )
 
 // Key range contants
@@ -45,6 +46,7 @@ const (
 // Other constants
 const (
 	InitialClusterID = 1
+	InitialNodeID    = 1
 	InitialRangeID   = 1
 
 	MinByte = 0
@@ -63,6 +65,9 @@ var (
 
 	// The last clusterID that was generated.
 	LastClusterIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_cluster_id"))
+
+	// The last nodeID that was generated.
+	LastNodeIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_node_id"))
 
 	// The last rangeID that was generated.
 	LastRangeIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_range_id"))
