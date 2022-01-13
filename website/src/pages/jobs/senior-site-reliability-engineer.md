@@ -15,7 +15,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Plan for growth, and scale our platform and infrastructure
 - Work with the team to identify opportunities and implement solutions that improve our reliability and resiliency
 - Build solutions that improve the developer experience and product overall
-- Debug and fix complex production issues across the stack‍
+- Debug and fix complex production issues across the stack
 
 ## We're looking for someone who
 
