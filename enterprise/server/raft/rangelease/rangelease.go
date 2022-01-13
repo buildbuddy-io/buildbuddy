@@ -94,6 +94,10 @@ func (l *Lease) Release() error {
 	return nil
 }
 
+func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
+	return l.rangeDescriptor
+}
+
 func (l *Lease) String() string {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
