@@ -14,31 +14,54 @@ function Component() {
       <div className={common.container}>
         <div className={styles.logos}>
           <Image
+            alt="Github Integration Octocat"
             className={styles.logo}
             style={{ padding: "20px 0", marginRight: "-32px" }}
             img={require("../../../static/img/github-image.png")}
           />
           <Image
+            alt="Github Integration"
             className={styles.logo}
             style={{ padding: "20px 0" }}
             img={require("../../../static/img/github-text.png")}
           />
-          <img className={styles.logo} src="/img/slack.svg" />
-          <img className={styles.logo} src="/img/gitlab.svg" />
-          <img className={styles.logo} style={{ padding: "28px 0" }} src="/img/buildkite.svg" />
+          <img alt="Slack Integration" width="244px" height="100px" className={styles.logo} src="/img/slack.svg" />
+          <img alt="Gitlab Integration" width="226px" height="100px" className={styles.logo} src="/img/gitlab.svg" />
+          <img
+            alt="Buildkite Integration"
+            width="247px"
+            height="100px"
+            className={styles.logo}
+            style={{ padding: "28px 0" }}
+            src="/img/buildkite.svg"
+          />
           <Image
+            alt="CircleCI Integration"
             className={styles.logo}
             style={{ padding: "16px 0" }}
             img={require("../../../static/img/circleci.png")}
           />
           <Image
+            alt="Travis Integration"
             className={styles.logo}
             style={{ padding: "12px 0" }}
             img={require("../../../static/img/travis.png")}
           />
-          <img className={styles.logo} style={{ padding: "16px 0" }} src="/img/jenkins.svg" />
-          <Image className={styles.logo} img={require("../../../static/img/gcp.png")} />
-          <Image className={styles.logo} style={{ padding: "24px 0" }} img={require("../../../static/img/aws.png")} />
+          <img
+            alt="Jenkins Integration"
+            width="211px"
+            height="100px"
+            className={styles.logo}
+            style={{ padding: "16px 0" }}
+            src="/img/jenkins.svg"
+          />
+          <Image alt="GCP Integration" className={styles.logo} img={require("../../../static/img/gcp.png")} />
+          <Image
+            alt="AWS Integration"
+            className={styles.logo}
+            style={{ padding: "24px 0" }}
+            img={require("../../../static/img/aws.png")}
+          />
         </div>
       </div>
     </div>
