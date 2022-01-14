@@ -59,8 +59,8 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 		xcodeVersion = defaultXcodeVersion
 	}
 
-	xv := x.xcodeVersionForVersionString(xcodeVersion)
-	if xv == nil {
+	xv, ok := x.versions[xcodeVersion]
+	if !ok {
 		var err error
 		if xcodeVersion == defaultXcodeVersion {
 			err = status.FailedPreconditionErrorf("Default Xcode version not set on remote executor and xcode-select set to an invalid path. Available Xcode versions are %s", versionsString(x.versions))
@@ -75,18 +75,6 @@ func (x *xcodeLocator) PathsForVersionAndSDK(xcodeVersion string, sdk string) (s
 	}
 	sdkRoot := fmt.Sprintf("%s/%s", xv.developerDirPath, sdkPath)
 	return xv.developerDirPath, sdkRoot, nil
-}
-
-// Returns the xcodeVersion most closely matching the version string.
-func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersion {
-	versionComponents := strings.Split(version, ".")
-	for i := range versionComponents {
-		subVersion := strings.Join(versionComponents[0:len(versionComponents)-i], ".")
-		if xcodeVersion, ok := x.versions[subVersion]; ok {
-			return xcodeVersion
-		}
-	}
-	return nil
 }
 
 // Locates all Xcode versions installed on the host machine.
