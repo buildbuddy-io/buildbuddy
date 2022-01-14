@@ -6,6 +6,11 @@ go_test(
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
+    # Run the ci_runner_test in the same environment that the CI runner uses in prod,
+    # since we invoke the ci runner binary directly.
+    exec_properties = {
+        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7",
+    },
     shard_count = 6,
     visibility = [
         "//enterprise:__subpackages__",
