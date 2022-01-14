@@ -125,6 +125,8 @@ func checkRunnerResult(t *testing.T, res *result) {
 	assert.Equal(t, 1, len(res.InvocationIDs), "no invocation IDs found in runner output")
 	if res.ExitCode != 0 || len(res.InvocationIDs) != 1 {
 		t.Logf("runner output:\n===\n%s\n===\n", res.Output)
+		out, err := exec.Command("git", "--version").CombinedOutput()
+		t.Logf("git --version output:\n===\n%s\n%s\n===\n", out, err)
 		t.FailNow()
 	}
 }
