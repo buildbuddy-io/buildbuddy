@@ -12,9 +12,9 @@ Examples:
   $0
 
   # Run actions for a local repo
-  REPO=~/src/scratch/hello_world $0
+  REPO_PATH=~/src/scratch/hello_world $0
 
-  # Override action runner args
+  # Override CI runner args
   $0 --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 "
 if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
@@ -23,36 +23,47 @@ if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
 fi
 
 # cd to workspace root
-while ! [ -e ".git" ]; do cd ..; done
+cd "$(dirname "$0")"
+while ! [ -e "WORKSPACE" ]; do
+  cd ..
+  if [[ "$PWD" == / ]]; then
+    echo >&2 "Failed to find the bazel workspace root containing this script."
+    exit 1
+  fi
+done
 
-# CI runner bazel cache can be set to a fixed directory in order
+dir_abspath() (cd "$1" && pwd)
+
+# CI runner bazel cache is set to a fixed directory in order
 # to speed up builds, but note that in production we don't yet
 # have persistent local caching.
-: "${CI_RUNNER_BAZEL_CACHE_DIR:=$(mktemp -d)}"
-: "${REPO:=$PWD}"
-: "${BRANCH=$(cd "$REPO" && git branch --show-current)}"
-: "${TRIGGER_BRANCH:=master}"
+TEMPDIR=$(mktemp --dry-run | xargs dirname)
+: "${CI_RUNNER_BAZEL_CACHE_DIR:=$TEMPDIR/buildbuddy_ci_runner_bazel_cache}"
 
-bazel build //enterprise/server/cmd/ci_runner
-runner=$(realpath ./bazel-bin/enterprise/server/cmd/ci_runner/ci_runner_/ci_runner)
+: "${REPO_PATH:=$PWD}"
+
+bazel build //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner
+RUNNER_PATH="$PWD/bazel-bin/enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
+echo "$RUNNER_PATH"
 
 mkdir -p "$CI_RUNNER_BAZEL_CACHE_DIR"
 
 docker run \
-  --volume "$runner:/bin/ci_runner" \
+  --volume "$RUNNER_PATH:/bin/ci_runner" \
   --volume "$CI_RUNNER_BAZEL_CACHE_DIR:/root/.cache/bazel" \
-  --volume "$(realpath "$REPO"):/root/mounted_repo" \
+  --volume "$(dir_abspath "$REPO_PATH"):/root/mounted_repo" \
+  --net host \
   --interactive \
   --tty \
-  --net host \
   --rm \
-  gcr.io/flame-public/buildbuddy-ci-runner:v1.7.1 \
+  gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7 \
   ci_runner \
-  --repo_url="file:///root/mounted_repo" \
-  --commit_sha="$(cd "$REPO" && git rev-parse HEAD)" \
-  --trigger_event=push \
-  --branch="$BRANCH" \
-  --trigger_branch="$TRIGGER_BRANCH" \
+  --pushed_repo_url="file:///root/mounted_repo" \
+  --target_repo_url="file:///root/mounted_repo" \
+  --commit_sha="$(cd "$REPO_PATH" && git rev-parse HEAD)" \
+  --pushed_branch="$(cd "$REPO_PATH" && git branch --show-current)" \
+  --target_branch="master" \
+  --trigger_event=pull_request \
   --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
   "$@"
