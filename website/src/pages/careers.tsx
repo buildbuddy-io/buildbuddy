@@ -13,7 +13,7 @@ const careers = [
 
 function Careers() {
   return (
-    <Layout>
+    <Layout title="Careers">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

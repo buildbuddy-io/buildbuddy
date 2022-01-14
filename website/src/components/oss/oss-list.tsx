@@ -57,9 +57,10 @@ function Component(props) {
     <div className={styles.repos}>
       {repos.slice(0, props.length).map((repo) => (
         <div className={styles.repo} key={repo.name}>
-          <div className={styles.repoImage}>
-            <Image img={require(`../../../static/img/oss/${repo.name.replaceAll("/", "_")}.png`)} />
-          </div>
+            alt={`${repo.name} Github Repository Powered By BuildBuddy`}
+            className={styles.repoImage}
+            img={require(`../../../static/img/oss/${repo.name.replaceAll("/", "_")}.png`)}
+          />
           <div className={styles.repoTitle}>{repo.name}</div>
           <div className={styles.repoDescription}>{repo.description}</div>
           <a href={`https://github.com/${repo.name}`} target="_blank" className={styles.link}>

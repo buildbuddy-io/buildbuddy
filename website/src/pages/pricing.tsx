@@ -7,7 +7,7 @@ import CTA from "../components/cta/cta";
 
 function Index() {
   return (
-    <Layout>
+    <Layout title="Pricing">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

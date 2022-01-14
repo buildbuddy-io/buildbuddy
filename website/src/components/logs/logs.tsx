@@ -17,7 +17,11 @@ function Component() {
             can dive deep into and easily share the details of each and every build.
           </div>
         </div>
-        <Image className={styles.image} img={require("../../../static/img/logs.png")} />
+        <Image
+          alt="BuildBuddy Bazel build and test logs"
+          className={styles.image}
+          img={require("../../../static/img/logs.png")}
+        />
       </div>
     </div>
   );

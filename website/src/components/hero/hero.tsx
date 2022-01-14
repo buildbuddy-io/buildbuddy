@@ -25,7 +25,7 @@ function Component() {
           </div>
         </div>
         <div className={styles.image}>
-          <Image img={require("../../../static/img/hero.png")} />
+          <Image alt="BuildBuddy Enterprise Bazel Results UI" img={require("../../../static/img/hero.png")} />
         </div>
       </div>
     </div>
