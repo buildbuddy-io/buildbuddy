@@ -1,20 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-USAGE="Runs the action runner against a local git repo.
+USAGE="
+Usage:  [REPO_PATH=/path/to/local/repo] $0 [ci_runner_args ...]
 
-This is mainly useful for testing the action runner locally without needing
-to manually craft the exact webhook payloads that would be needed to trigger
-it correctly.
+Runs configured workflows for a repo using the same environment that the
+CI runner uses in prod.
+
+This is useful for testing the CI runner locally without needing
+to create real workflows and trigger the workflows via real webhook events.
 
 Examples:
-  # Run actions for the BuildBuddy repo
+  # Run workflows for the local BuildBuddy repo
   $0
 
-  # Run actions for a local repo
+  # Run workflows for a different local repo
   REPO_PATH=~/src/scratch/hello_world $0
 
-  # Override CI runner args
+  # Run a workflow simulating a pull request to 'foo/bar:master' from 'fork/bar:feature'
+  $0 --target_repo_url=https://github.com/foo/bar --target_branch=master --pushed_repo_url=https://github.com/FORK/bar --pushed_branch=feature
+
+  # Override arbitrary CI runner args
   $0 --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 "
 if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
