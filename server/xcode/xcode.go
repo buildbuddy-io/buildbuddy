@@ -6,8 +6,8 @@ package xcode
 type xcodeLocator struct {
 }
 
-func NewXcodeLocator() (*xcodeLocator, error) {
-	return &xcodeLocator{}, nil
+func NewXcodeLocator() *xcodeLocator {
+	return &xcodeLocator{}
 }
 
 func (x *xcodeLocator) DeveloperDirForVersion(version string) (string, error) {

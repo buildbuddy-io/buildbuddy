@@ -46,10 +46,10 @@ type xcodePlist struct {
 	ProductBuildVersion        string `plist:"ProductBuildVersion"`
 }
 
-func NewXcodeLocator() (*xcodeLocator, error) {
+func NewXcodeLocator() *xcodeLocator {
 	xl := &xcodeLocator{}
-	err := xl.locate()
-	return xl, err
+	xl.locate()
+	return xl
 }
 
 // Finds the Xcode that matches the given Xcode version.
@@ -91,25 +91,28 @@ func (x *xcodeLocator) xcodeVersionForVersionString(version string) *xcodeVersio
 
 // Locates all Xcode versions installed on the host machine.
 // Very losely based on https://github.com/bazelbuild/bazel/blob/master/tools/osx/xcode_locator.m
-func (x *xcodeLocator) locate() error {
-	bundleID := stringToCFString(xcodeBundleID)
-	defer C.CFRelease(C.CFTypeRef(bundleID))
+func (x *xcodeLocator) locate() {
+	x.versions = versionMap(urlRefs(xcodeBundleID))
+}
 
-	urlsPointer := C.LSCopyApplicationURLsForBundleIdentifier(bundleID, nil)
+func urlRefs(bundleID string) []C.CFURLRef {
+	cfBundleID := stringToCFString(bundleID)
+	defer C.CFRelease(C.CFTypeRef(cfBundleID))
+
+	urlsPointer := C.LSCopyApplicationURLsForBundleIdentifier(cfBundleID, nil)
 
 	if urlsPointer == C.CFArrayRef(unsafe.Pointer(nil)) {
-		return status.FailedPreconditionErrorf("cannot find Xcode bundle: %q. Make sure Xcode is installed.", xcodeBundleID)
+		return []C.CFURLRef{}
 	}
 	defer C.CFRelease(C.CFTypeRef(urlsPointer))
 
 	urlsArrayRef := C.CFArrayRef(urlsPointer)
 	n := C.CFArrayGetCount(urlsArrayRef)
 
-	urlRefs := make([]C.CFURLRef, n)
-	C.CFArrayGetValues(urlsArrayRef, C.CFRange{0, n}, (*unsafe.Pointer)(unsafe.Pointer(&urlRefs[0])))
+	refs := make([]C.CFURLRef, n)
+	C.CFArrayGetValues(urlsArrayRef, C.CFRange{0, n}, (*unsafe.Pointer)(unsafe.Pointer(&refs[0])))
 
-	x.versions = versionMap(urlRefs)
-	return nil
+	return refs
 }
 
 func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
@@ -153,7 +156,9 @@ func versionMap(urlRefs []C.CFURLRef) map[string]*xcodeVersion {
 		}
 	}
 
-	if xv, ok := versionMap[defaultXcodeVersion]; ok {
+	if len(versionMap) == 0 {
+		log.Warningf("Could not find any installed Xcode apps")
+	} else if xv, ok := versionMap[defaultXcodeVersion]; ok {
 		log.Infof("xcode-select set to Xcode version %s", xv.version)
 		return versionMap
 	}
