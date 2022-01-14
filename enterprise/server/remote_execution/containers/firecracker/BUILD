@@ -57,8 +57,10 @@ go_test(
     tags = ["manual"],  # Don't include this target in wildcard patterns
     deps = [
         ":firecracker",
+        "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/util/networking",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/config",
@@ -71,7 +73,9 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/disk",
+        "//server/util/fileresolver",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )

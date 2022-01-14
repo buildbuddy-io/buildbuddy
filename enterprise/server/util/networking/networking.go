@@ -271,6 +271,25 @@ func findDefaultDevice(ctx context.Context) (string, error) {
 	return "", status.FailedPreconditionError("Unable to determine default device.")
 }
 
+// FindDefaultRouteIP finds the default IP used for routing traffic, typically
+// corresponding to a local router or access point.
+//
+// Equivalent to "ip route | grep default | awk '{print $3}'.
+func FindDefaultRouteIP(ctx context.Context) (string, error) {
+	out, err := sudoCommand(ctx, "ip", "route")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "default") {
+			if parts := strings.Split(line, " "); len(parts) > 5 {
+				return parts[2], nil
+			}
+		}
+	}
+	return "", status.FailedPreconditionError("Unable to determine default route.")
+}
+
 // EnableMasquerading turns on ipmasq for the default device. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
