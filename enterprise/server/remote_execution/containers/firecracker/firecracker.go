@@ -936,8 +936,10 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	// These cleanup functions should not depend on each other, so try cleaning
 	// up everything and return the last error if there is one.
 	var lastErr error
-	if err := c.cleanupVethPair(); err != nil {
-		lastErr = err
+	if c.cleanupVethPair != nil {
+		if err := c.cleanupVethPair(); err != nil {
+			lastErr = err
+		}
 	}
 	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
 		lastErr = err
