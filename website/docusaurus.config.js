@@ -14,6 +14,11 @@ module.exports = {
         content:
           "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
       },
+      {
+        name: "og:description",
+        content:
+          "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
+      },
     ],
     colorMode: {
       disableSwitch: true,
