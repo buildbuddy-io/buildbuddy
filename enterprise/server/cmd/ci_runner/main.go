@@ -815,11 +815,10 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := git(ctx, ws.log, "init"); err != nil {
+	if err := ws.clone(ctx, *targetRepoURL); err != nil {
 		return err
 	}
-	// Don't use a credential helper since we always use explicit credentials.
-	if err := git(ctx, ws.log, "config", "--local", "credential.helper", ""); err != nil {
+	if err := ws.config(ctx); err != nil {
 		return err
 	}
 	return ws.sync(ctx)
@@ -847,11 +846,6 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	// Setup config before we do anything.
-	if err := ws.config(ctx); err != nil {
-		return err
-	}
-
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -938,6 +932,20 @@ func (ws *workspace) config(ctx context.Context) error {
 	return nil
 }
 
+func (ws *workspace) clone(ctx context.Context, remoteURL string) error {
+	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+	if err != nil {
+		return err
+	}
+	writeCommandSummary(ws.log, "Cloning target repo...")
+	// Don't show command since the URL may contain the repo access token.
+	args := []string{"clone", "--config=credential.helper=", "--filter=blob:none", "--no-checkout", authURL, "."}
+	if err := runCommand(ctx, "git", args, map[string]string{}, ws.log); err != nil {
+		return status.UnknownError("Command `git clone --filter=blob:none --no-checkout <url>` failed.")
+	}
+	return nil
+}
+
 func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []string) error {
 	if len(branches) == 0 {
 		return nil
@@ -953,7 +961,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
-	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
+	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
 	if err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
