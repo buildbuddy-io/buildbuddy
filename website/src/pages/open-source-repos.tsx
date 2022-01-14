@@ -15,7 +15,7 @@ let form = {
 
 function OpenSource() {
   return (
-    <Layout>
+    <Layout title="Powered By BuildBuddy">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

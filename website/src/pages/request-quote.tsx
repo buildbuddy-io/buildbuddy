@@ -15,7 +15,7 @@ let form = {
 
 function RequestQuote() {
   return (
-    <Layout>
+    <Layout title="Request a Quote">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

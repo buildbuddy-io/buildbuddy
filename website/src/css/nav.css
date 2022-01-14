@@ -73,6 +73,11 @@ html[data-theme="dark"] .menu {
   box-shadow: rgba(38, 50, 56, 0.1) 0 0 0 2px, inset rgba(38, 50, 56, 0.1) 0 0 0 2px !important;
 }
 
+.dsla-search-wrapper {
+  width: 47px;
+  height: 44px;
+}
+
 @media (max-width: 996px) {
   .dsla-search-wrapper {
     margin-right: 48px;

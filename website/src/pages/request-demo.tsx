@@ -15,7 +15,7 @@ let form = {
 
 function RequestDemo() {
   return (
-    <Layout>
+    <Layout title="Request a Demo">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

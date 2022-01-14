@@ -14,7 +14,7 @@ import CTA from "../components/cta/cta";
 
 function Index() {
   return (
-    <Layout>
+    <Layout title="Bazel at Enterprise Scale">
       <div className={common.page}>
         <Hero />
         <Brands />

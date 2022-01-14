@@ -66,7 +66,7 @@ const teamMembers = [
 
 function Team() {
   return (
-    <Layout>
+    <Layout title="Team">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

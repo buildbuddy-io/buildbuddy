@@ -1,3 +1,7 @@
+---
+title: Enterprise Terms & Conditions
+---
+
 # Enterprise Terms & Conditions
 
 <div className="pill">Updated December 3, 2020</div>

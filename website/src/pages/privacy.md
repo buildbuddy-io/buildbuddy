@@ -1,3 +1,7 @@
+---
+title: Privacy Policy
+---
+
 # Privacy Policy
 
 <div class="pill">Updated April 20, 2020</div>

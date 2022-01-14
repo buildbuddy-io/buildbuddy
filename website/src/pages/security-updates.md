@@ -1,3 +1,7 @@
+---
+title: Security Updates
+---
+
 # Security Updates
 
 <div className="pill">Updated January 13, 2022</div>

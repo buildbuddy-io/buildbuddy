@@ -16,7 +16,7 @@ let form = {
 
 function Contact() {
   return (
-    <Layout>
+    <Layout title="Contact Us">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>

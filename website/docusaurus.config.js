@@ -8,6 +8,13 @@ module.exports = {
   organizationName: "buildbuddy-io",
   projectName: "buildbuddy",
   themeConfig: {
+    metadata: [
+      {
+        name: "description",
+        content:
+          "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
+      },
+    ],
     colorMode: {
       disableSwitch: true,
       switchConfig: {
@@ -26,6 +33,8 @@ module.exports = {
         srcDark: "img/logo_white.svg",
         target: "_self",
         href: "/",
+        width: "191px",
+        height: "32px",
       },
       items: [
         {
@@ -74,7 +83,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="/"><img alt="BuildBuddy Logo" src="/img/logo_white.svg" width="281px" height="32px" class="footer-logo" /></a>`,
             },
           ],
         },
@@ -221,7 +230,12 @@ module.exports = {
     ],
   ],
   plugins: [
-    "@docusaurus/plugin-ideal-image",
+    [
+      "@docusaurus/plugin-ideal-image",
+      {
+        sizes: [100, 400, 800, 1200],
+      },
+    ],
     [
       require.resolve("@cmfcmf/docusaurus-search-local"),
       {
