@@ -281,7 +281,6 @@ func EnableMasquerading(ctx context.Context) error {
 	// Skip appending the rule if it's already in the table.
 	err = runCommand(ctx, "iptables", "-t", "nat", "--check", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
 	if err == nil {
-		// If the check succeeded, no need
 		return nil
 	}
 	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
