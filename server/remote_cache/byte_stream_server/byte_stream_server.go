@@ -1,22 +1,20 @@
 package byte_stream_server
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"hash"
 	"io"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -120,8 +118,17 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	defer reader.Close()
 
+	bufSize := int64(readBufSizeBytes)
+	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
+		bufSize = r.GetDigest().GetSizeBytes()
+	}
+
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		reader, err = NewZstdCompressor(reader, r.GetDigest().GetSizeBytes())
+		rbuf := s.bufferPool.Get(bufSize)
+		defer s.bufferPool.Put(rbuf)
+		cbuf := s.bufferPool.Get(bufSize)
+		defer s.bufferPool.Put(cbuf)
+		reader, err = compression.NewZstdChunkingCompressor(reader, rbuf[:bufSize], cbuf[:bufSize])
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -130,13 +137,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	bufSize := int64(readBufSizeBytes)
-	if r.GetDigest().GetSizeBytes() > 0 && r.GetDigest().GetSizeBytes() < bufSize {
-		bufSize = r.GetDigest().GetSizeBytes()
-	}
 	copyBuf := s.bufferPool.Get(bufSize)
+	defer s.bufferPool.Put(copyBuf)
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	s.bufferPool.Put(copyBuf)
 	if err == nil {
 		downloadTracker.Close()
 	}
@@ -250,7 +253,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.cacheCloser = cacheWriteCloser
 	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor := NewZstdDecompressor(ws.writer)
+		decompressor, err := compression.NewZstdDecompressor(ws.writer)
+		if err != nil {
+			return nil, err
+		}
 		ws.writer = decompressor
 		ws.decompressorCloser = decompressor
 	}
@@ -431,100 +437,4 @@ func (s *Checksum) Check(d *repb.Digest) error {
 		return status.DataLossErrorf("Uploaded bytes length (%d bytes) did not match digest (%d).", s.BytesWritten(), d.GetSizeBytes())
 	}
 	return nil
-}
-
-type zstdDecompressor struct {
-	pw         *io.PipeWriter
-	zstdReader io.ReadCloser
-	done       chan error
-}
-
-// NewZstdDecompressor returns a WriteCloser that accepts zstd-compressed bytes,
-// and streams the decompressed bytes to the given writer.
-//
-// Note that writes are not matched one-to-one, since the compression scheme may
-// require more than one chunk of compressed data in order to write a single
-// chunk of decompressed data.
-func NewZstdDecompressor(writer io.Writer) io.WriteCloser {
-	pr, pw := io.Pipe()
-	d := &zstdDecompressor{
-		pw:         pw,
-		zstdReader: zstd.NewReader(pr),
-		done:       make(chan error, 1),
-	}
-	go func() {
-		defer pr.Close()
-		_, err := io.Copy(writer, d.zstdReader)
-		d.done <- err
-		close(d.done)
-	}()
-	return d
-}
-
-func (d *zstdDecompressor) Write(p []byte) (int, error) {
-	return d.pw.Write(p)
-}
-
-func (d *zstdDecompressor) Close() error {
-	var lastErr error
-	if err := d.pw.Close(); err != nil {
-		lastErr = err
-	}
-	defer func() {
-		if err := d.zstdReader.Close(); err != nil {
-			log.Errorf("Failed to close decompressor; some objects in the zstd library may not be freed properly: %s", err)
-		}
-	}()
-	// Wait for the remaining bytes to be decompressed by the goroutine. Note that
-	// since the write-end of the pipe is closed, reads from the decompressor
-	// should no longer be blocking, and it should return EOF as soon as the
-	// remaining decompressed bytes are drained.
-	err, ok := <-d.done
-	if ok {
-		lastErr = err
-	}
-	return lastErr
-}
-
-func NewZstdCompressor(reader io.Reader, decompressedSizeBytes int64) (io.ReadCloser, error) {
-	// Optimization: If we can send the whole response in one message, compress
-	// all at once, instead of Read() then Close(), which may issue two separate
-	// responses since Close() may flush some buffered data. Note that if the
-	// decompressed length is very close to the read buffer size and the
-	// compression ratio is >= 1, we'll wind up sending two responses anyway, but
-	// this scenario is very rare in practice.
-	if decompressedSizeBytes <= readBufSizeBytes {
-		buf := &bytes.Buffer{}
-		if _, err := io.Copy(buf, reader); err != nil {
-			return nil, err
-		}
-		out, err := zstd.Compress(make([]byte, 0, int(decompressedSizeBytes)), buf.Bytes())
-		if err != nil {
-			return nil, err
-		}
-		return cachetools.NewBytesReadSeekCloser(out), nil
-	}
-
-	pr, pw := io.Pipe()
-	go func() {
-		compressor := zstd.NewWriter(pw)
-		_, err := io.Copy(compressor, reader)
-		defer func(err error) {
-			// Pipe writer needs to be closed after the compressor is closed, since
-			// closing the compressor may result in more bytes written to the pipe.
-			pw.CloseWithError(err)
-		}(err)
-		if err := compressor.Close(); err != nil {
-			// ErrClosePipe means the compressor tried to flush its remaining data to
-			// the pipe, but the pipe was closed since the client canceled their
-			// request or some other error occurred that has already been returned to
-			// the client. This can be safely ignored; the compressor will still have been cleaned
-			// up properly in this case.
-			if err == io.ErrClosedPipe {
-				return
-			}
-			log.Errorf("Failed to close zstd writer: %s", err)
-		}
-	}()
-	return pr, nil
 }

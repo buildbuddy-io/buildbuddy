@@ -1,3 +1,7 @@
+---
+title: Terms & Conditions
+---
+
 # Terms & Conditions
 
 <div class="pill">Updated April 21, 2020</div>

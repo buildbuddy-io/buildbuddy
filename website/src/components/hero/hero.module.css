@@ -10,6 +10,10 @@
   max-width: 500px;
 }
 
+.image div {
+  background-image: none !important;
+}
+
 @media (max-width: 1200px) {
   .image {
     display: none;

@@ -19,10 +19,14 @@
 .logo {
   height: 100px;
   box-sizing: border-box;
+  background-image: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logo img {
-  height: 100% !important;
+  max-height: 100% !important;
   width: auto !important;
 }
 

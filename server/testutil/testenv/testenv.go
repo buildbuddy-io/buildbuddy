@@ -5,6 +5,7 @@ import (
 	"context"
 	"io/ioutil"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"text/template"
@@ -19,7 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -123,11 +124,29 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 	return configPath, nil
 }
 
+func ensureHomeDir(t testing.TB) {
+	// uuid.GetHostID (used in several places) requires either XDG_CONFIG_HOME or
+	// HOME to be set, otherwise it will return an error. So we initialize HOME to
+	// a test-scoped temp directory if neither of these are set. This is needed
+	// for tests where Bazel sandboxing is disabled.
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("XDG_CONFIG_HOME")
+	}
+	if home == "" {
+		home = testfs.MakeTempDir(t)
+		err := os.Setenv("HOME", home)
+		require.NoError(t, err)
+	}
+}
+
 // All instances of the configurator use the same config struct instance in order to support flag overrides.
 // We instantiate a single configurator per test to avoid triggering the race detector.
 var currentConfigurator *config.Configurator
 
 func GetTestEnv(t testing.TB) *TestEnv {
+	ensureHomeDir(t)
+
 	testRootDir := testfs.MakeTempDir(t)
 	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {

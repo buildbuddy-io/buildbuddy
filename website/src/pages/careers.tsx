@@ -13,12 +13,12 @@ const careers = [
 
 function Careers() {
   return (
-    <Layout>
+    <Layout title="Careers">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>
             <div className={styles.jobs}>
-              <div className={styles.jobsTitle}>Current Openings</div>
+              <div className={common.title}>Current Openings</div>
               {careers.map((career) => (
                 <a
                   href={`/jobs/${career.name.toLowerCase().replaceAll(" ", "-")}`}

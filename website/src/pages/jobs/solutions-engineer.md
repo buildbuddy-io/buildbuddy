@@ -1,8 +1,12 @@
+---
+title: Solutions Engineer
+---
+
 import Apply from '../../components/apply/apply.tsx'
 
 # Solutions Engineer
 
-## Full-Time, San Francisco Bay Area & Remote
+<div className="pill"> Full-Time, San Francisco Bay Area & Remote</div>
 
 BuildBuddy was founded to make developers more productive. Today we're solving a small piece of this problem with an open-core remote build execution platform for Bazel - but our ambitions are much larger. Our mission is to take the world class engineering tools that are only available to employees of large companies and make them available to everyone.
 

@@ -1,28 +1,23 @@
 .jobs {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.jobsTitle {
-  font-size: 56px;
-  line-height: 64px;
-  font-weight: 700;
-  margin-bottom: 32px;
+  width: 100%;
+  max-width: 710px;
+  box-sizing: border-box;
 }
 
 .job {
   border-top: 1px solid #eee;
-  padding: 32px 16px;
-  max-width: 710px;
+  padding-top: 32px;
+  margin-top: 32px;
   box-sizing: border-box;
-  width: 100vw;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   transition: 300ms padding ease-in-out;
   padding-right: 32px;
+  gap: 8px;
 }
 
 .job:hover {

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DataDog/zstd"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -92,7 +92,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
-	compressedBlob := zstdCompress(t, blob)
+	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
 	d, err := digest.Compute(bytes.NewReader(blob))
@@ -114,6 +114,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for i, resp := range batchUpdateResp.Responses {
+		require.Equal(t, "", resp.Status.Message)
 		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
 	}
 
@@ -165,7 +166,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
 	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
-	compressedBlob := zstdCompress(t, blob)
+	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
 	d, err := digest.Compute(bytes.NewReader(blob))
@@ -266,15 +267,8 @@ func digestStrings(digests ...*repb.Digest) []string {
 	return out
 }
 
-func zstdCompress(t *testing.T, b []byte) []byte {
-	out, err := zstd.Compress(nil, b)
-	require.NoError(t, err)
-	require.NotEqual(t, out, b, "sanity check that compression did something")
-	return out
-}
-
 func zstdDecompress(t *testing.T, b []byte) []byte {
-	out, err := zstd.Decompress(nil, b)
+	out, err := compression.DecompressZstd(nil, b)
 	require.NoError(t, err, "failed to decompress blob")
 	return out
 }

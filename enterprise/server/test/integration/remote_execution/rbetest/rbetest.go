@@ -589,10 +589,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
 	env.SetAuthenticator(r.newTestAuthenticator())
-	xl, err := xcode.NewXcodeLocator()
-	if err != nil {
-		assert.FailNowf(r.t, "Failed to set XcodeLocator: %s", err.Error())
-	}
+	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
 
 	bundleFS, err := bundle.Get()

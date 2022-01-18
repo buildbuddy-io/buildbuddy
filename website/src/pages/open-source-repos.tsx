@@ -15,7 +15,7 @@ let form = {
 
 function OpenSource() {
   return (
-    <Layout>
+    <Layout title="Powered By BuildBuddy">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>
@@ -61,7 +61,12 @@ function sendMessage() {
   message(
     `New Open Source Repo!\nName: ${form.name.current.value}\nEmail: ${form.email.current.value}\nRepo URL: ${form.repo.current.value}`
   );
-  form.button.current.innerText = "Submitted!";
+
+  form.name.current.disabled = true;
+  form.email.current.disabled = true;
+  form.repo.current.disabled = true;
+
+  form.button.current.innerText = "Repo Submitted!";
   form.button.current.disabled = true;
 }
 

@@ -15,7 +15,7 @@ let form = {
 
 function RequestQuote() {
   return (
-    <Layout>
+    <Layout title="Request a Quote">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>
@@ -52,7 +52,14 @@ function sendMessage() {
   message(
     `New Quote Request!\nName: ${form.firstName.current.value} ${form.lastName.current.value}\nEmail: ${form.email.current.value}\nCompany: ${form.company.current.value}\nNumber of Engineers: ${form.engineerCount.current.value}`
   );
-  form.button.current.innerText = "Sent!";
+
+  form.firstName.current.disabled = true;
+  form.lastName.current.disabled = true;
+  form.email.current.disabled = true;
+  form.company.current.disabled = true;
+  form.engineerCount.current.disabled = true;
+
+  form.button.current.innerText = "Request Sent!";
   form.button.current.disabled = true;
 }
 
