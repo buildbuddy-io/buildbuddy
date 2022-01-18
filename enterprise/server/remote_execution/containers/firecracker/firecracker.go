@@ -283,6 +283,8 @@ type FirecrackerContainer struct {
 	// method, so in that case we wait for the external jailer command
 	// to finish, rather than calling "Wait()" on the sdk machine object.
 	externalJailerCmd *exec.Cmd
+
+	cleanupVethPair func() error
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
@@ -899,9 +901,11 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
 		return err
 	}
-	if err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx); err != nil {
+	cleanupVethPair, err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx)
+	if err != nil {
 		return err
 	}
+	c.cleanupVethPair = cleanupVethPair
 	return nil
 }
 
@@ -929,10 +933,21 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
 	}
-	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
-		return err
+	// These cleanup functions should not depend on each other, so try cleaning
+	// up everything and return the last error if there is one.
+	var lastErr error
+	if c.cleanupVethPair != nil {
+		if err := c.cleanupVethPair(); err != nil {
+			lastErr = err
+		}
 	}
-	return networking.DeleteRoute(ctx, c.vmIdx)
+	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
+		lastErr = err
+	}
+	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
+		lastErr = err
+	}
+	return lastErr
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
