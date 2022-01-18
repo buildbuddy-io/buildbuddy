@@ -12,7 +12,7 @@ require (
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
 	github.com/aws/aws-sdk-go v1.35.37
-	github.com/bazelbuild/rules_go v0.24.3
+	github.com/bazelbuild/rules_go v0.29.0
 	github.com/bazelbuild/rules_webtesting v0.2.0
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
@@ -99,6 +99,7 @@ require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
+	github.com/bazelbuild/bazelisk v1.11.0 // indirect
 	github.com/beevik/etree v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
