@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -46,10 +45,6 @@ import (
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
-)
-
-var (
-	forceDebugMode = flag.Bool("debug_firecracker_force_debug_mode", false, "Whether to force firecracker debug_mode, streaming firecracker logs to the console. Not intended for production use.")
 )
 
 const (
@@ -332,18 +327,13 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		return nil, err
 	}
 
-	debugMode := opts.DebugMode
-	if *forceDebugMode {
-		debugMode = true
-	}
-
 	c := &FirecrackerContainer{
 		constants: Constants{
 			NumCPUs:          opts.NumCPUs,
 			MemSizeMB:        opts.MemSizeMB,
 			DiskSlackSpaceMB: opts.DiskSlackSpaceMB,
 			EnableNetworking: opts.EnableNetworking,
-			DebugMode:        debugMode,
+			DebugMode:        opts.DebugMode,
 		},
 		jailerRoot:          opts.JailerRoot,
 		containerImage:      opts.ContainerImage,
