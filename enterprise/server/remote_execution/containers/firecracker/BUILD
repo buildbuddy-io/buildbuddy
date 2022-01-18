@@ -54,7 +54,10 @@ go_library(
 go_test(
     name = "firecracker_test",
     srcs = ["firecracker_test.go"],
-    tags = ["manual"],  # Don't include this target in wildcard patterns
+    tags = [
+        "manual",  # Don't include this target in wildcard patterns
+        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
+    ],
     deps = [
         ":firecracker",
         "//enterprise/server/remote_execution/container",
