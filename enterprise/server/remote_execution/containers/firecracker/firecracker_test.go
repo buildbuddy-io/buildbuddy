@@ -75,9 +75,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
 	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 	env.SetFileCache(fc)
 	return env
 }
