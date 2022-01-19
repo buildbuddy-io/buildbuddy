@@ -96,27 +96,46 @@ function BlogPostItem(props: Props): JSX.Element {
         </TitleHeading>
         {subtitle && <SubtitleHeading className={styles.subtitle}>{subtitle}</SubtitleHeading>}
         <div className="margin-vert--md">
-          <time dateTime={date} className={styles.blogPostDate}>
-            <Translate
-              id="theme.blog.post.date"
-              description="The label to display the blog post date"
-              values={{ day, month, year }}>
-              {"{month} {day}, {year}"}
-            </Translate>{" "}
-            {readingTime && (
-              <>
-                {" · "}
+          <div className={styles.heading}>
+            <div className={styles.headingPhoto}>
+              {authorImageURL && (
+                <Link className={`avatar__photo-link avatar__photo ${styles.avatarImage}`} href={authorURL}>
+                  <img src={authorImageURL} alt={author} />
+                </Link>
+              )}
+            </div>
+            <div className={styles.headingDetails}>
+              <span>
+                <Link className={styles.authorName} href={authorURL}>
+                  {author}
+                </Link>
+                {", "}
+                <span className={styles.authorTitle}>{authorTitle}</span>
+              </span>
+              <time dateTime={date} className={styles.blogPostDate}>
+                <br />
                 <Translate
-                  id="theme.blog.post.readingTime"
-                  description="The label to display reading time of the blog post"
-                  values={{
-                    readingTime: Math.ceil(readingTime),
-                  }}>
-                  {"{readingTime} min read"}
-                </Translate>
-              </>
-            )}
-          </time>
+                  id="theme.blog.post.date"
+                  description="The label to display the blog post date"
+                  values={{ day, month, year }}>
+                  {"{month} {day}, {year}"}
+                </Translate>{" "}
+                {readingTime && (
+                  <>
+                    {" · "}
+                    <Translate
+                      id="theme.blog.post.readingTime"
+                      description="The label to display reading time of the blog post"
+                      values={{
+                        readingTime: Math.ceil(readingTime),
+                      }}>
+                      {"{readingTime} min read"}
+                    </Translate>
+                  </>
+                )}
+              </time>
+            </div>
+          </div>
         </div>
       </header>
     );
@@ -131,35 +150,17 @@ function BlogPostItem(props: Props): JSX.Element {
         <div className="markdown">
           <MDXProvider components={MDXComponents}>{children}</MDXProvider>
         </div>
-        {author && <h4 className={styles.blogAuthorTitle}>Author:</h4>}
-        <div className="avatar margin-vert--md">
-          {authorImageURL && (
-            <Link className="avatar__photo-link avatar__photo" href={authorURL}>
-              <img src={authorImageURL} alt={author} />
-            </Link>
-          )}
-          <div className="avatar__intro">
-            {author && (
-              <>
-                <h4 className="avatar__name">
-                  <Link href={authorURL}>{author}</Link>
-                </h4>
-                <small className="avatar__subtitle">{authorTitle}</small>
-              </>
-            )}
-          </div>
-        </div>
         {(tags.length > 0 || truncated) && (
           <footer className="row margin-vert--lg">
             {tags.length > 0 && (
-              <div className="col">
+              <div className={styles.tags}>
                 <strong>
                   <Translate id="theme.tags.tagsListLabel" description="The label alongside a tag list">
                     Tags:
                   </Translate>
                 </strong>
                 {tags.map(({ label, permalink: tagPermalink }) => (
-                  <Link key={tagPermalink} className="margin-horiz--sm" to={tagPermalink}>
+                  <Link key={tagPermalink} className={styles.tag} to={tagPermalink}>
                     {label}
                   </Link>
                 ))}
