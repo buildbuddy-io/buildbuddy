@@ -2,91 +2,92 @@ package driver
 
 import (
 	"context"
+	"math"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
-	"github.com/hashicorp/serf/serf"
-	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/raftio"
-
+	
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 const (
 	// If a replica has not been seen for longer than this, a new replica
 	// should be started on a new node.
-	replicaTimeoutDuration = 5 * time.Minute
+	defaultReplicaTimeoutDuration = 5 * time.Minute
 
-	// If a node's disk is fuller than this (by percentage), it is not
-	// eligible to receive ranges moved from other nodes.
-	maximumDiskCapacity = .95
-
-	// A node must have this * idealRangeCount number of ranges to be
-	// eligible for moving ranges to other nodes.
-	rangeMoveThreshold = 1.05
+	// A node must have this * idealReplicaCount number of replicas to be
+	// eligible for moving a replica to another node.
+	replicaMoveThreshold = 1.05
 
 	// Poll every this often to check if ranges need to move, etc.
 	driverPollPeriod = 5 * time.Second
-
-	// Max pending operations. No more than this many operations will be
-	// enqueued at a time, others will be dropped until these have been
-	// completed.
-	maxPendingOperations = 100
 )
+
+type IPlacer interface {
+	GetManagedClusters(ctx context.Context) []uint64
+	GetRangeDescriptor(ctx context.Context, clusterID uint64) (*rfpb.RangeDescriptor, error)
+	GetNodeUsage(ctx context.Context, replica *rfpb.ReplicaDescriptor) (*rfpb.NodeUsage, error)
+	FindNodes(ctx context.Context, query *rfpb.PlacementQuery) ([]*rfpb.NodeDescriptor, error)
+	SeenNodes() int64
+
+	SplitRange(ctx context.Context, clusterID uint64) error
+	AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error
+	RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, targetNodeID uint64) error
+}
 
 type replicaStruct struct {
 	clusterID uint64
 	nodeID    uint64
 }
 
-type Driver struct {
-	lastSeen       map[replicaStruct]time.Time
-	nodeHost       *dragonboat.NodeHost
-	apiClient      *client.APIClient
-	gossipManager  *gossip.GossipManager
-	sender         *sender.Sender
-	registry       *registry.DynamicNodeRegistry
-	leaseTracker   LeaseTracker
-	pendingOps     map[string]struct{}
-	operationQueue chan *rfpb.Operation
-	quitChan       chan struct{}
-}
-
-type LeaseTracker interface {
-	GetRangeLease(clusterID uint64) *rangelease.Lease
-}
-
-func New(nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, apiClient *client.APIClient, registry *registry.DynamicNodeRegistry, leaseTracker LeaseTracker) *Driver {
-	d := &Driver{
-		lastSeen:       make(map[replicaStruct]time.Time),
-		nodeHost:       nodeHost,
-		apiClient:      apiClient,
-		gossipManager:  gossipManager,
-		sender:         sender,
-		registry:       registry,
-		leaseTracker:   leaseTracker,
-		pendingOps:     make(map[string]struct{}),
-		operationQueue: make(chan *rfpb.Operation, maxPendingOperations),
-		quitChan:       make(chan struct{}),
+func (rs replicaStruct) ToDescriptor() *rfpb.ReplicaDescriptor {
+	return &rfpb.ReplicaDescriptor{
+		ClusterId: rs.clusterID,
+		NodeId:    rs.nodeID,
 	}
-	d.gossipManager.AddListener(d)
+}
+
+func structFromDescriptor(rd *rfpb.ReplicaDescriptor) replicaStruct {
+	return replicaStruct{
+		clusterID: rd.GetClusterId(),
+		nodeID:    rd.GetNodeId(),
+	}
+}
+
+type Driver struct {
+	lastSeen map[replicaStruct]time.Time
+	placer   IPlacer
+	quitChan chan struct{}
+	opts     Opts
+}
+
+type Opts struct {
+	ReplicaTimeoutDuration time.Duration
+}
+
+func DefaultOpts() Opts {
+	return Opts{
+		ReplicaTimeoutDuration: defaultReplicaTimeoutDuration,
+	}
+}
+
+func New(placer IPlacer, opts Opts) *Driver {
+	d := &Driver{
+		lastSeen: make(map[replicaStruct]time.Time),
+		placer:   placer,
+		quitChan: make(chan struct{}),
+		opts:     opts,
+	}
 	go func() {
-		time.Sleep(10 * time.Second)
+		// wait for stabilization?
+		time.Sleep(5 * time.Second)
 		d.pollUntilQuit()
 	}()
 	return d
 }
+
 
 func (d *Driver) Stop() {
 	close(d.quitChan)
@@ -94,443 +95,195 @@ func (d *Driver) Stop() {
 
 func (d *Driver) pollUntilQuit() {
 	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
 		select {
 		case <-d.quitChan:
 			break
 		case <-time.After(driverPollPeriod):
-			if err := d.loopOnce(); err != nil {
-				log.Warningf("driver poll error: %s", err)
-			}
-			d.drainOps()
-		}
-	}
-}
-
-func (d *Driver) drainOps() {
-	for {
-		select {
-		case <-d.quitChan:
-			break
-		case op := <-d.operationQueue:
-			if err := d.handleOp(op); err != nil {
-				log.Warningf("error handling op: %+v %s", op, err)
-			} else {
-				log.Warningf("successfully handled op: %+v", op)
-			}
-		default:
-			return
-		}
-	}
-}
-
-func (d *Driver) OnEvent(updateType serf.EventType, event serf.Event) {
-	switch updateType {
-	case serf.EventQuery:
-		query, _ := event.(*serf.Query)
-		d.handlePlacementDriverQuery(query)
-	default:
-		break
-	}
-}
-
-func (d *Driver) handlePlacementDriverQuery(query *serf.Query) {
-	if query.Name != constants.PlacementDriverQueryEvent {
-		return
-	}
-	if query.Payload == nil {
-		return
-	}
-	pq := &rfpb.PlacementQuery{}
-	if err := proto.Unmarshal(query.Payload, pq); err != nil {
-		return
-	}
-	nodeHostInfo := d.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	if nodeHostInfo != nil {
-		for _, logInfo := range nodeHostInfo.LogInfo {
-			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				return
+			if err := d.LoopOnce(ctx); err != nil {
+				log.Warningf("driver error: %s", err)
 			}
 		}
 	}
-	buf, err := proto.Marshal(d.sender.MyNodeDescriptor())
-	if err != nil {
-		return
-	}
-	if err := query.Respond(buf); err != nil {
-		log.Warningf("Error responding to gossip query: %s", err)
-	}
 }
 
-func getUsage(m serf.Member) (*rfpb.NodeUsage, error) {
-	buf, ok := m.Tags[constants.NodeUsageTag]
-	if !ok {
-		return nil, status.FailedPreconditionErrorf("NodeUsage tag not set for member: %q", m.Name)
-	}
-	usage := &rfpb.NodeUsage{}
-	if err := proto.UnmarshalText(buf, usage); err != nil {
-		return nil, err
-	}
-	return usage, nil
-}
+// to prevent thundering herd: a node should be able to *reject* requests to take
+// on a range. IF a request gets rejected, we'll just drop it for now.
+// Ensure that we only remove a range if there are more than 3.
 
-func (d *Driver) handleOp(op *rfpb.Operation) error {
-	defer func() {
-		delete(d.pendingOps, proto.CompactTextString(op))
-	}()
-	if !d.holdsValidRangeLease(op.GetClusterId()) {
-		log.Debugf("Skipping op: %+v, we no longer hold the range lease for this cluster.", op)
-		return nil
+func (d *Driver) moveReplica(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, replica *rfpb.ReplicaDescriptor, targetNode *rfpb.NodeDescriptor) error {
+	if err := d.placer.AddNodeToCluster(ctx, rangeDescriptor, targetNode); err != nil {
+		return err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	switch op.GetOpType() {
-	case rfpb.Operation_ADD_NODE:
-		return d.addNodeToCluster(ctx, op.GetClusterId())
-	case rfpb.Operation_REMOVE_NODE:
-		return d.removeNodeFromCluster(ctx, op.GetClusterId(), op.GetNodeId())
-	default:
-		log.Warningf("Skipping op: %+v", op)
+	log.Printf("Added %+v to cluster: %+v", targetNode, rangeDescriptor)
+	if err := d.placer.RemoveNodeFromCluster(ctx, rangeDescriptor, replica.GetNodeId()); err != nil {
+		return err
 	}
-
-	// to prevent thundering herd: a node should be able to *reject* requests to take
-	// on a range. IF a request gets rejected, we'll just drop it for now.
-	// Ensure that we only remove a range if there are more than 3.
+	log.Printf("Removed node %d from cluster: %+v", replica.GetNodeId(), rangeDescriptor)
 	return nil
 }
 
-func (d *Driver) holdsValidRangeLease(clusterID uint64) bool {
-	rl := d.leaseTracker.GetRangeLease(clusterID)
-	if rl == nil {
-		return false
-	}
-	return rl.Valid()
-}
-
-func (d *Driver) loopOnce() error {
-	nodeHostInfo := d.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	if nodeHostInfo == nil {
+func (d *Driver) LoopOnce(ctx context.Context) error {
+	clustersManaged := d.placer.GetManagedClusters(ctx)
+	if len(clustersManaged) == 0 {
 		return nil
 	}
 
-	myUsage, err := getUsage(d.gossipManager.LocalMember())
-	if err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), driverPollPeriod)
-	defer cancel()
-
-	// A list of potential operations to apply. (we'll filter out dupes below)
-	potentialOps := make([]*rfpb.Operation, 0)
-	ourLogInfos := make([]raftio.NodeInfo, 0, len(nodeHostInfo.LogInfo))
-	for _, logInfo := range nodeHostInfo.LogInfo {
-		// If we are not the holder of the rangelease for this cluster, ignore it for now.
-		if !d.holdsValidRangeLease(logInfo.ClusterID) {
-			continue
-		}
-		ourLogInfos = append(ourLogInfos, logInfo)
-	}
-	if len(ourLogInfos) == 0 {
-		return nil
-	}
-
-	for _, logInfo := range ourLogInfos {
-		// Check all replicas, if any are down for more than 5 minutes, bring
-		// up a new replica, delete the old one
-		membership, err := d.nodeHost.GetClusterMembership(ctx, logInfo.ClusterID)
+	numReplicas := int64(0)
+	replicas := make(map[string][]*rfpb.ReplicaDescriptor)
+	usage := make(map[string]*rfpb.NodeUsage)
+	for _, clusterID := range clustersManaged {
+		rangeDescriptor, err := d.placer.GetRangeDescriptor(ctx, clusterID)
 		if err != nil {
 			return err
 		}
-		for nodeID, _ := range membership.Nodes {
-			d.lastSeen[replicaStruct{logInfo.ClusterID, nodeID}] = time.Now()
+		for _, replica := range rangeDescriptor.GetReplicas() {
+			nodeUsage, err := d.placer.GetNodeUsage(ctx, replica)
+			if err == nil {
+				nhid := nodeUsage.GetNhid()
+				d.lastSeen[structFromDescriptor(replica)] = time.Now()
+				if _, ok := usage[nhid]; !ok {
+					usage[nhid] = nodeUsage
+				}
+				replicas[nhid] = append(replicas[nhid], replica)
+			}
 		}
 	}
 
+	// Replace any dead replicas that are found.
+	for _, replica := range d.findDeadReplicas() {
+		rangeDescriptor, err := d.placer.GetRangeDescriptor(ctx, replica.GetClusterId())
+		if err != nil {
+			return err
+		}
+		placementQuery := &rfpb.PlacementQuery{TargetClusterId: replica.GetClusterId()}
+		eligibleNodes, err := d.placer.FindNodes(ctx, placementQuery)
+		if err != nil {
+			return err
+		}
+		if len(eligibleNodes) == 0 {
+			return status.FailedPreconditionErrorf("no eligible nodes to replace dead replica c%dn%d", replica.GetClusterId(), replica.GetNodeId())
+		}
+		return d.moveReplica(ctx, rangeDescriptor, replica, eligibleNodes[0])
+	}
+
+	for _, usage := range usage {
+		numReplicas += usage.GetNumReplicas()
+	}
+	idealReplicaCount := float64(numReplicas) / float64(d.placer.SeenNodes())
+	log.Printf("idealReplicaCount was %2.2f (num replicas: %d, total num nodes: %d)", idealReplicaCount, numReplicas, d.placer.SeenNodes())
+
+	// Find the most overloaded nodeHost.
+	var maxOverload float64
+	var overloadedNhid string
+	for nhid, usage := range usage {
+		if float64(usage.GetNumReplicas()) > replicaMoveThreshold*idealReplicaCount {
+			overload := float64(usage.GetNumReplicas()) - idealReplicaCount
+			if overload > maxOverload {
+				maxOverload = overload
+				overloadedNhid = nhid
+			}
+		}
+	}
+
+	// If none were overloaded, exit early.
+	if overloadedNhid == "" {
+		return nil
+	}
+
+	// Compute the current "fit" score across all nodes we've seen.
+	// We'll only move a replica around if it will improve the fit score.
+	usages := copyUsageValues(usage)
+	currentFitScore := d.globalFitScore(usages, idealReplicaCount)
+	log.Printf("cur fit score: %2.2f", currentFitScore)
+
+	replicaToMove := replicas[overloadedNhid][0]
+	candidateNodes, err := d.placer.FindNodes(ctx, &rfpb.PlacementQuery{TargetClusterId: replicaToMove.GetClusterId()})
+	if err != nil {
+		return err
+	}
+	for _, candidate := range candidateNodes {
+		candidateNhid := candidate.GetNhid()
+		usages := copyUsageValues(usage)
+		// if we don't have usage data for the candidate node, initialize to 0.
+		if _, ok := usage[candidateNhid]; !ok {
+			usages = append(usages, &rfpb.NodeUsage{
+				Nhid: candidateNhid,
+				NumReplicas: 0,
+			})
+		}
+		// Simulate the move and ensure the fit score would improve.
+		for _, u := range usages {
+			if u.GetNhid() == overloadedNhid {
+				u.NumReplicas -=1
+			}
+			if u.GetNhid() == candidateNhid {
+				u.NumReplicas +=1
+			}
+		}
+		newFitScore := d.globalFitScore(usages, idealReplicaCount)
+		log.Printf("new fit score: %2.2f for move to %s", newFitScore, candidateNhid)
+		if newFitScore < currentFitScore {
+			log.Printf("new fit score: %2.2f is better than previous: %2.2f, executing move", newFitScore, currentFitScore)
+			rangeDescriptor, err := d.placer.GetRangeDescriptor(ctx, replicaToMove.GetClusterId())
+			if err != nil {
+				return err
+			}
+			return d.moveReplica(ctx, rangeDescriptor, replicaToMove, candidate)
+		}
+	}
+	return nil
+}
+
+func copyUsageValues(in map[string]*rfpb.NodeUsage) []*rfpb.NodeUsage {
+	out := make([]*rfpb.NodeUsage, 0, len(in))
+	for _, usage := range in {
+		usageCopy := proto.Clone(usage).(*rfpb.NodeUsage)
+		out = append(out, usageCopy)
+	}
+	return out
+}
+
+func (d *Driver) findDeadReplicas() []*rfpb.ReplicaDescriptor {
+	deadReplicas := make([]*rfpb.ReplicaDescriptor, 0)
 	for replicaStruct, lastSeen := range d.lastSeen {
-		if time.Now().Sub(lastSeen) > replicaTimeoutDuration {
-			log.Printf("The following replica needs replacement: (cluster: %d, node: %d)", replicaStruct.clusterID, replicaStruct.nodeID)
-			potentialOps = append(potentialOps, &rfpb.Operation{
-				OpType:    rfpb.Operation_ADD_NODE,
-				ClusterId: replicaStruct.clusterID,
-			})
-			potentialOps = append(potentialOps, &rfpb.Operation{
-				OpType:    rfpb.Operation_REMOVE_NODE,
-				ClusterId: replicaStruct.clusterID,
-				NodeId:    replicaStruct.nodeID,
-			})
+		if time.Now().Sub(lastSeen) > d.opts.ReplicaTimeoutDuration {
+			deadReplicas = append(deadReplicas, replicaStruct.ToDescriptor())
 		}
 	}
-
-	// Check if another node would be better off owning any of our replicas
-	members := d.gossipManager.Members()
-	numRanges := int64(0)
-	for _, member := range members {
-		u, err := getUsage(member)
-		if err != nil {
-			log.Debugf("Error getting usage for %+v: %s", member, err)
-			continue
-		}
-		numRanges += u.GetNumRanges()
-	}
-
-	idealRangeCount := int64(float64(numRanges) / float64(len(members)))
-	myRangeCount := myUsage.GetNumRanges()
-	overage := int(myRangeCount - idealRangeCount)
-
-	// if a store has > (idealReplicaCount * rangeMoveThreshold): it can
-	// move, otherwise no. if the move doesn't make things better, don't do
-	// it.
-	if myRangeCount > idealRangeCount {
-		log.Printf("This node has %d too many ranges: would move some to other nodes.", overage)
-	}
-
-	log.Printf("Ideal range count: %d, my range count: %d", idealRangeCount, myRangeCount)
-	log.Printf("My usage: %2.2f", float64(myUsage.GetDiskBytesUsed())/float64(myUsage.GetDiskBytesTotal()))
-	for i := 0; i < overage; i++ {
-		// don't run off the end of the slice
-		if i == len(ourLogInfos) {
-			break
-		}
-		logInfo := ourLogInfos[i]
-		potentialOps = append(potentialOps, &rfpb.Operation{
-			OpType:    rfpb.Operation_ADD_NODE,
-			ClusterId: logInfo.ClusterID,
-		})
-		potentialOps = append(potentialOps, &rfpb.Operation{
-			OpType:    rfpb.Operation_REMOVE_NODE,
-			ClusterId: logInfo.ClusterID,
-			NodeId:    logInfo.NodeID,
-		})
-	}
-
-	for _, op := range potentialOps {
-		opKey := proto.CompactTextString(op)
-		_, ok := d.pendingOps[opKey]
-		if ok {
-			// don't repeat pending ops.
-			continue
-		}
-
-		// write the op to operationQueue and mark it as pending.
-		select {
-		case d.operationQueue <- op:
-			d.pendingOps[opKey] = struct{}{}
-		default:
-			log.Warningf("Dropping ops: op channel is full up.")
-		}
-	}
-	return nil
+	return deadReplicas
 }
 
-func (d *Driver) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
-	newVal, err := d.sender.Increment(ctx, constants.LastNodeIDKey, uint64(n))
-	if err != nil {
-		return nil, err
+func sttdev(samples []float64, mean float64) float64 {
+	var diffSquaredSum float64
+	for _, s := range samples {
+		diffSquaredSum += math.Pow(s - mean, 2)
 	}
-	ids := make([]uint64, 0, n)
-	for i := 0; i < n; i++ {
-		ids = append(ids, newVal-uint64(i))
-	}
-	return ids, nil
+	return math.Sqrt(diffSquaredSum/float64(len(samples)))
 }
 
-func (d *Driver) updateRangeDescriptor(ctx context.Context, clusterID uint64, old, new *rfpb.RangeDescriptor) error {
-	oldBuf, err := proto.Marshal(old)
-	if err != nil {
-		return err
+func variance(samples []float64, mean float64) float64 {
+	if len(samples) <= 1 {
+		return 0
 	}
-	newBuf, err := proto.Marshal(new)
-	if err != nil {
-		return err
+	var diffSquaredSum float64
+	for _, s := range samples {
+		diffSquaredSum += math.Pow(s - mean, 2)
 	}
-	rangeLocalBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newBuf,
-		},
-		ExpectedValue: oldBuf,
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-
-	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetRight())
-	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   metaRangeDescriptorKey,
-			Value: newBuf,
-		},
-		ExpectedValue: oldBuf,
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-
-	// first update the range descriptor in the range itself
-	rangeLocalRsp, err := client.SyncProposeLocal(ctx, d.nodeHost, clusterID, rangeLocalBatch)
-	if err != nil {
-		return err
-	}
-	_, err = rbuilder.NewBatchResponseFromProto(rangeLocalRsp).CASResponse(0)
-	if err != nil {
-		return err
-	}
-
-	// then update the metarange
-	metaRangeRsp, err := d.sender.SyncPropose(ctx, metaRangeDescriptorKey, metaRangeBatch)
-	if err != nil {
-		return err
-	}
-	_, err = rbuilder.NewBatchResponseFromProto(metaRangeRsp).CASResponse(0)
-	if err != nil {
-		return err
-	}
-	return nil
+	return diffSquaredSum/float64(len(samples)-1)
 }
 
-func (d *Driver) addReplicaToRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
-	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
-	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
-	})
-	return d.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
-}
-
-func (d *Driver) removeReplicaFromRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
-	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
-	for i, replica := range newDescriptor.Replicas {
-		if replica.GetNodeId() == nodeID {
-			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
-			break
-		}
-	}
-	return d.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
-}
-
-func (d *Driver) addNodeToCluster(ctx context.Context, clusterID uint64) error {
-	rl := d.leaseTracker.GetRangeLease(clusterID)
-	if rl == nil {
-		return status.FailedPreconditionErrorf("rangelease not held for cluster: %d", clusterID)
+func (d *Driver) globalFitScore(usages []*rfpb.NodeUsage, idealReplicaCount float64) float64 {
+	samples := make([]float64, 0, len(usages))
+	for _, nodeUsage := range usages {
+		samples = append(samples, float64(nodeUsage.GetNumReplicas()))
 	}
 
-	// first, reserve a new node ID
-	nodeIDs, err := d.reserveNodeIDs(ctx, 1)
-	if err != nil {
-		return err
-	}
-	nodeID := nodeIDs[0]
+	dev := sttdev(samples, idealReplicaCount)
+	vari := variance(samples, idealReplicaCount)
+	log.Printf("variance: %2.2f, stdev: %2.2f, num usages: %d", dev, vari, len(usages))
 
-	// then, get the config change index from nodehost locally
-	membership, err := d.nodeHost.SyncGetClusterMembership(ctx, clusterID)
-	if err != nil {
-		return err
-	}
-	configChangeID := membership.ConfigChangeID
-
-	// then, use gossip to look for a new node to join this cluster
-	buf, err := proto.Marshal(&rfpb.PlacementQuery{
-		TargetClusterId: clusterID,
-		// TODO(tylerw): in future, this would contain constraints
-		// read from a zoneconfig.
-	})
-	if err != nil {
-		return err
-	}
-	rsp, err := d.gossipManager.Query(constants.PlacementDriverQueryEvent, buf, nil)
-	if err != nil {
-		return err
-	}
-	node := &rfpb.NodeDescriptor{}
-	for nodeRsp := range rsp.ResponseCh() {
-		if nodeRsp.Payload == nil {
-			continue
-		}
-		err := proto.Unmarshal(nodeRsp.Payload, node)
-		if err == nil {
-			break
-		}
-	}
-	if node.GetNhid() == "" {
-		return status.FailedPreconditionError("No candidate nodes available")
-	}
-	log.Printf("Got nodeDescriptor: %+v", node)
-
-	// use gossip to tell other clusters where they can find this node
-	// later on.
-	d.registry.AddWithAddr(clusterID, nodeID, node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
-
-	// propose the config change (this adds the node)
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		err := d.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return err
-		}
-		break
-	}
-
-	// now, start the cluster on the new nodehost.
-	c, err := d.apiClient.Get(ctx, node.GetGrpcAddress())
-	if err != nil {
-		return err
-	}
-	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
-		Join:      true,
-	})
-
-	// finally, update the range descriptor information
-	rangeDescriptor := rl.GetRangeDescriptor()
-	return d.addReplicaToRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
-}
-
-func (d *Driver) removeNodeFromCluster(ctx context.Context, clusterID, nodeID uint64) error {
-	rl := d.leaseTracker.GetRangeLease(clusterID)
-	if rl == nil {
-		return status.FailedPreconditionErrorf("rangelease not held for cluster: %d", clusterID)
-	}
-
-	// first, get the config change index from nodehost locally
-	membership, err := d.nodeHost.SyncGetClusterMembership(ctx, clusterID)
-	if err != nil {
-		return err
-	}
-	configChangeID := membership.ConfigChangeID
-
-	// then, propose the config change (this removes the node from raft)
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		err := d.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return err
-		}
-		break
-	}
-
-	// then, remove the data from the stopped node.
-	c, err := d.apiClient.Get(ctx, grpcAddr)
-	if err != nil {
-		return err
-	}
-	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		ClusterId: clusterID,
-		NodeId:    nodeID,
-	})
-	if err != nil {
-		return err
-	}
-
-	// finally, update the range descriptor information
-	rangeDescriptor := rl.GetRangeDescriptor()
-	return d.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
+	return vari
 }

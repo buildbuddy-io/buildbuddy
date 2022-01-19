@@ -532,6 +532,18 @@ func (dnr *DynamicNodeRegistry) ResolveGRPC(clusterID uint64, nodeID uint64) (st
 	return grpcAddr, key, nil
 }
 
+func (dnr *DynamicNodeRegistry) ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error) {
+	target, key, err := dnr.resolveNHID(clusterID, nodeID)
+	if err != nil {
+		target, key, err = dnr.resolveWithGossip(clusterID, nodeID)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return target, key, nil
+
+}
+
 // ResolveGRPCAddress returns the current GRPC address for a nodeHostID.
 func (dnr *DynamicNodeRegistry) MyNodeDescriptor() *rfpb.NodeDescriptor {
 	return &rfpb.NodeDescriptor{

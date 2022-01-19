@@ -217,12 +217,19 @@ message RangeLeaseRecord {
   }
 }
 
+message ReplicaUsage {
+  ReplicaDescriptor replica = 1;
+  int64 estimated_disk_bytes_used = 2;
+}
+
 message NodeUsage {
   string nhid = 1;
 
-  int64 num_ranges = 2;
+  int64 num_replicas = 2;
   int64 disk_bytes_total = 3;
   int64 disk_bytes_used = 4;
+
+  repeated ReplicaUsage replica_usage = 5;
 }
 
 message NodeDescriptor {

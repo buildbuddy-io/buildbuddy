@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/placer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -39,6 +40,7 @@ type Store struct {
 	sender        *sender.Sender
 	registry      *registry.DynamicNodeRegistry
 	apiClient     *client.APIClient
+	placer        *placer.Placer
 	driver        *driver.Driver
 	liveness      *nodeliveness.Liveness
 
@@ -72,7 +74,8 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicaMu: sync.RWMutex{},
 		replicas:  make(map[uint64]*replica.Replica),
 	}
-	s.driver = driver.New(nodeHost, gossipManager, sender, apiClient, registry, s)
+	s.placer = placer.New(nodeHost, apiClient, gossipManager, sender, registry, s)
+	s.driver = driver.New(s.placer, driver.DefaultOpts())
 
 	cb := listener.LeaderCB(s.leaderUpdated)
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
@@ -166,6 +169,10 @@ func (s *Store) releaseRangeLease(clusterID uint64) {
 	}()
 }
 
+func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
+	return s.lookupRange(clusterID)
+}
+
 func (s *Store) GetRangeLease(clusterID uint64) *rangelease.Lease {
 	rd := s.lookupRange(clusterID)
 	if rd == nil {
@@ -187,7 +194,7 @@ func (s *Store) gossipUsage() {
 	}
 
 	s.replicaMu.RLock()
-	usage.NumRanges = int64(len(s.replicas))
+	usage.NumReplicas = int64(len(s.replicas))
 	s.replicaMu.RUnlock()
 
 	du, err := disk.GetDirUsage(s.fileDir)
@@ -197,7 +204,7 @@ func (s *Store) gossipUsage() {
 	}
 	usage.DiskBytesTotal = int64(du.TotalBytes)
 	usage.DiskBytesUsed = int64(du.UsedBytes)
-
+	s.gossipManager.SetTag(constants.NodeHostIDTag, string(s.nodeHost.ID()))
 	s.gossipManager.SetTag(constants.NodeUsageTag, proto.MarshalTextString(usage))
 }
 
