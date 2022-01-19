@@ -898,7 +898,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
 			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
