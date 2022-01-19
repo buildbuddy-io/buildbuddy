@@ -3,8 +3,7 @@
 }
 
 .blogPostDate {
-  font-size: 0.9rem;
-  color: #888;
+  color: #666;
 }
 
 .blogAuthorTitle {
@@ -14,4 +13,41 @@
 .subtitle {
   font-weight: 500;
   color: var(--ifm-color-emphasis-600);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.9rem;
+  margin: 24px 0;
+}
+
+.headingPhoto {
+  border: 1px solid #ccc;
+  padding: 3px;
+  border-radius: 100px;
+}
+
+.avatar {
+  display: flex;
+  margin: 32px 0;
+}
+
+.authorName {
+  font-weight: 500;
+}
+
+.tags {
+  padding: 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tag {
+  padding: 2px 12px;
+  border: 1px solid #eee;
+  border-radius: 8px;
 }
