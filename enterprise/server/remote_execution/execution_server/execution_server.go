@@ -307,7 +307,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	props := platform.ParseProperties(executionTask)
 
-	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS)
+	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS, props.UseSelfHostedExecutors)
 	if err != nil {
 		return "", err
 	}
