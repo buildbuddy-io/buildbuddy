@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,14 +24,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
+
+	b, err := bundle.Get()
+	require.NoError(t, err)
+	env.SetFileResolver(fileresolver.New(b, "enterprise"))
+
 	diskCacheSize := 10_000_000_000 // 10GB
 	testRootDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
@@ -71,7 +80,16 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	return env
 }
 
-func TestFirecrackerRun(t *testing.T) {
+func tempJailerRoot(t *testing.T) string {
+	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
+	// testfs.MakeTempDir(t).
+	root := "/tmp/buildbuddy-test-jailer-root"
+	err := os.MkdirAll(root, 0755)
+	require.NoError(t, err)
+	return root
+}
+
+func TestFirecrackerRunSimple(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
@@ -100,6 +118,8 @@ func TestFirecrackerRun(t *testing.T) {
 		NumCPUs:                1,
 		MemSizeMB:              2500,
 		EnableNetworking:       false,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -144,6 +164,8 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		NumCPUs:                1,
 		MemSizeMB:              2500,
 		EnableNetworking:       false,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -193,6 +215,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		NumCPUs:                1,
 		MemSizeMB:              200, // small to make snapshotting faster.
 		EnableNetworking:       false,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	if err != nil {
@@ -279,6 +303,8 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		NumCPUs:                1,
 		MemSizeMB:              200,
 		EnableNetworking:       false,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -306,7 +332,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	workDir := testfs.MakeDirAll(t, rootDir, "work1")
 
 	path := filepath.Join(workDir, "world.txt")
 	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
@@ -332,6 +358,8 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		MemSizeMB:              200,
 		EnableNetworking:       false,
 		AllowSnapshotStart:     true,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -350,7 +378,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	// Now do the same thing again, but with a twist. The attached
 	// files and command run will be different. This command would
 	// fail if the new workspace were not properly attached.
-	workDir = makeDir(t, rootDir)
+	workDir = testfs.MakeDirAll(t, rootDir, "work2")
 	opts.ActionWorkingDirectory = workDir
 
 	path = filepath.Join(workDir, "mars.txt")
@@ -389,4 +417,44 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	// snapshot.
 	// TODO(tylerw): debug this.
 	assert.Less(t, secondRunDuration, firstRunDuration)
+}
+
+func TestFirecrackerRunWithNetwork(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	// Make sure the container can at least send packets via the default route.
+	defaultRouteIP, err := networking.FindDefaultRouteIP(ctx)
+	require.NoError(t, err, "failed to find default route IP")
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", defaultRouteIP}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       true,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
 }
