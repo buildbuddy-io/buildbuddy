@@ -541,6 +541,10 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 }
 
 func (p *Pool) hostBuildRoot() string {
+	// If host root dir is explicitly configured, prefer that.
+	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
+		return filepath.Join(hd, "remotebuilds")
+	}
 	if p.podID == "" {
 		// Probably running on bare metal -- return the build root directly.
 		return p.buildRoot
@@ -549,9 +553,6 @@ func (p *Pool) hostBuildRoot() string {
 	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
 	// People might have conventions other than executor-data for the volume name + remotebuilds
 	// for the build root dir.
-	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
-		return filepath.Join(hd, "remotebuilds")
-	}
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
