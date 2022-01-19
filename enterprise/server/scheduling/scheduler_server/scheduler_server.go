@@ -733,7 +733,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
-func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string) (string, string, error) {
+func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string, useSelfHosted bool) (string, string, error) {
 	defaultPool := s.env.GetConfigurator().GetRemoteExecutionConfig().DefaultPoolName
 	if !s.enableUserOwnedExecutors {
 		return "", defaultPool, nil
@@ -744,6 +744,9 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 				return "", "", status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}
+			if useSelfHosted {
+				return "", "", status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
+			}
 			return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
 		}
 		return "", "", err
@@ -752,6 +755,9 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 		return user.GetGroupID(), "", nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
+		return user.GetGroupID(), "", nil
+	}
+	if useSelfHosted {
 		return user.GetGroupID(), "", nil
 	}
 	return s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID, defaultPool, nil
@@ -1535,7 +1541,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
-			Enabled: !s.requireExecutorAuthorization ||
+			IsDefault: !s.requireExecutorAuthorization ||
 				groupID == s.env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID ||
 				(s.enableUserOwnedExecutors &&
 					(useGroupOwnedExecutors || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
