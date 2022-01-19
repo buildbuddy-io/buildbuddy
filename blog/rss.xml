@@ -12,7 +12,7 @@
             <link>https://www.buildbuddy.io/blog/whats-new-in-bazel-5-0</link>
             <guid>whats-new-in-bazel-5-0</guid>
             <pubDate>Wed, 19 Jan 2022 12:00:00 GMT</pubDate>
-            <description><![CDATA[Bazel 5.0 includes nearly 3,000 changes since 4.2.2.]]></description>
+            <description><![CDATA[We reviewed nearly 3,000 commits and summarized them, so you don’t have to!]]></description>
             <content:encoded><![CDATA[<p>Bazel 5.0 includes <a href="https://github.com/bazelbuild/bazel/compare/4.2.2...5.0.0">nearly 3,000 changes</a> since 4.2.2.<sup id="fnref-1"><a href="#fn-1" class="footnote-ref">1</a></sup>
 It&#x27;s the first major release since 4.0 was release in January of last year,
 and it&#x27;s Bazel&#x27;s <a href="https://docs.bazel.build/versions/5.0.0/versioning.html">second LTS release</a>.
