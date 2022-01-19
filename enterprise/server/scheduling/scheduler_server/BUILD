@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "scheduler_server",
@@ -26,5 +26,18 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//peer",
+    ],
+)
+
+go_test(
+    name = "scheduler_server_test",
+    srcs = ["scheduler_server_test.go"],
+    embed = [":scheduler_server"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//enterprise/server/testutil/testredis",
+        "//server/interfaces",
+        "//server/testutil/testauth",
+        "@com_github_stretchr_testify//require",
     ],
 )
