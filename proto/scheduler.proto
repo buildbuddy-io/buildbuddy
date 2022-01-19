@@ -217,9 +217,8 @@ message GetExecutionNodesResponse {
   message Executor {
     ExecutionNode node = 1;
 
-    // Whether tasks can be routed to this node. If this is false, it is likely
-    // due to a misconfiguration.
-    bool enabled = 2;
+    // Whether tasks will be routed to this node by default.
+    bool is_default = 2;
   }
 
   bool user_owned_executors_supported = 3;
