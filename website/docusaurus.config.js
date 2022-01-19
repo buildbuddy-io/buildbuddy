@@ -210,7 +210,7 @@ module.exports = {
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/",
           showLastUpdateAuthor: true,
-          showLastUpdateTime: true,        
+          showLastUpdateTime: true,
         },
         blog: {
           path: "blog",
