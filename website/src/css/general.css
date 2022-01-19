@@ -89,7 +89,8 @@ svg[aria-hidden="true"] {
   display: block;
 }
 
-.docs-wrapper svg[aria-hidden="true"] {
+.docs-wrapper svg[aria-hidden="true"],
+.theme-edit-this-page svg[aria-hidden="true"] {
   display: inline;
 }
 
