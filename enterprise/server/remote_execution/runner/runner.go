@@ -696,6 +696,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	if err != nil {
+		return nil, err
+	}
 	ctr, err := p.newContainer(ctx, props, task)
 	if err != nil {
 		return nil, err

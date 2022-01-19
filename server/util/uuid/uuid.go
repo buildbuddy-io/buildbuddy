@@ -59,7 +59,12 @@ func StringToBytes(text string) ([]byte, error) {
 	return uuidBytes, nil
 }
 
-func getOrCreateHostId() (string, error) {
+func configDir() (string, error) {
+	// HOME and XDG_CONFIG_HOME may not be defined when running with `bazel test`.
+	if testTmpDir := os.Getenv("TEST_TMPDIR"); testTmpDir != "" {
+		return os.MkdirTemp(testTmpDir, "buildbuddy-config-*")
+	}
+
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		// Home dir is not defined
@@ -67,6 +72,14 @@ func getOrCreateHostId() (string, error) {
 	}
 	configDirPath := path.Join(userConfigDir, configDirName)
 	err = os.MkdirAll(configDirPath, 0755)
+	if err != nil {
+		return "", err
+	}
+	return configDirPath, nil
+}
+
+func getOrCreateHostId() (string, error) {
+	configDirPath, err := configDir()
 	if err != nil {
 		return "", err
 	}
