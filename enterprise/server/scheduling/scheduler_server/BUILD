@@ -35,7 +35,6 @@ go_test(
     embed = [":scheduler_server"],
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
-        "//enterprise/server/testutil/testredis",
         "//server/interfaces",
         "//server/testutil/testauth",
         "@com_github_stretchr_testify//require",
