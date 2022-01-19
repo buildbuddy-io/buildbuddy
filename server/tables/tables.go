@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+)
+
+var (
+	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
 )
 
 const (
@@ -577,7 +582,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Populate invocation_uuid if the column doesn't exist.
-	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_pk") {
+	if m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_uuid") {
 		if db.Dialector.Name() == sqliteDialect {
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
@@ -595,10 +600,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		}
 
 		postMigrate = append(postMigrate, func() error {
-			if m.HasIndex("TargetStatuses", "target_status_invocation_uuid") {
-				if err := m.DropIndex("TargetStatuses", "target_status_invocation_uuid"); err != nil {
-					return err
-				}
+			if err := m.DropIndex("TargetStatuses", "target_status_invocation_uuid"); err != nil {
+				return err
 			}
 			return nil
 		})
@@ -634,7 +637,7 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
 		return err
 	}
-	return db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid) ").Error
+	return db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error
 }
 
 type invocationIDs struct {
@@ -709,26 +712,45 @@ func PostAutoMigrate(db *gorm.DB) error {
 		}
 	}
 
-	// Drop old columns at the very end of the migration.
-	for _, ref := range []struct {
+	type ColRef struct {
 		table  Table
 		column string
-	}{
+	}
+
+	colsToDelete := []ColRef{
 		// Group.api_key has been migrated to a single row in the APIKeys table.
 		{&Group{}, "api_key"},
-		// Invocation.invocation_pk has been migrated to Invocation.invocation_uuid
-		{&Invocation{}, "invocation_pk"},
-		// TargetStatus.invocation_pk has been migrated to Invocation.invocation_uuid
-		{&TargetStatus{}, "invocation_pk"},
-	} {
+	}
+
+	if *dropInvocationPKCol {
+		colsToDelete = append(colsToDelete,
+			// Invocation.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&Invocation{}, "invocation_pk"},
+			// TargetStatus.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&TargetStatus{}, "invocation_pk"})
+	}
+
+	// Drop old columns at the very end of the migration.
+	for _, ref := range colsToDelete {
 		if !m.HasColumn(ref.table, ref.column) {
 			continue
 		}
-		if err := m.DropColumn(ref.table, ref.column); err != nil {
+		var err error
+		if db.Dialector.Name() == mysqlDialect {
+			err = dropColumnInPlaceForMySQL(db, ref.table, ref.column)
+		} else {
+			err = m.DropColumn(ref.table, ref.column)
+		}
+		if err != nil {
 			log.Warningf("Failed to drop column %s.%s: %s", ref.table.TableName(), ref.column, err)
 		}
 	}
+
 	return nil
+}
+
+func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
+	return db.Exec("ALTER TABLE " + table.TableName() + " DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
 }
 
 func init() {
