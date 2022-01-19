@@ -240,7 +240,7 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 	return true
 }
 
-// Container invariants which cannot bechanged across snapshot/resume cycles.
+// Container invariants which cannot be changed across snapshot/resume cycles.
 // Things like the container used to create the image, the numCPUs / RAM, etc.
 // Importantly, the files attached in the actionWorkingDir, which are attached
 // to the VM, can change. This string will be hashed into the snapshot ID, so
@@ -251,6 +251,7 @@ type Constants struct {
 	MemSizeMB        int64
 	DiskSlackSpaceMB int64
 	EnableNetworking bool
+	InitDockerd      bool
 	DebugMode        bool
 }
 
@@ -294,6 +295,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
 		fmt.Sprintf("net=%t", c.constants.EnableNetworking),
+		fmt.Sprintf("dockerd=%t", c.constants.InitDockerd),
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
 		fmt.Sprintf("container=%s", c.containerImage),
 	}
@@ -333,6 +335,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			MemSizeMB:        opts.MemSizeMB,
 			DiskSlackSpaceMB: opts.DiskSlackSpaceMB,
 			EnableNetworking: opts.EnableNetworking,
+			InitDockerd:      opts.InitDockerd,
 			DebugMode:        opts.DebugMode,
 		},
 		jailerRoot:          opts.JailerRoot,
@@ -747,6 +750,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 	if c.constants.EnableNetworking {
 		bootArgs = "--set_default_route " + bootArgs
 	}
+	if c.constants.InitDockerd {
+		bootArgs = "--init_dockerd " + bootArgs
+	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
@@ -978,6 +984,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
+		log.Debugf("Pulling image %q", c.containerImage)
 		if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.containerImage); err != nil {
 			return nonCmdExit(err)
 		}

@@ -681,6 +681,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			User:                   user,
 			ContainerImage:         props.ContainerImage,
 			WorkflowID:             props.WorkflowID,
+			WorkloadIsolationType:  platform.ContainerType(props.WorkloadIsolationType),
+			InitDockerd:            props.InitDockerd,
 			HostedBazelAffinityKey: props.HostedBazelAffinityKey,
 			InstanceName:           instanceName,
 			WorkerKey:              workerKey,
@@ -771,6 +773,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			DiskSlackSpaceMB:       int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 			EnableNetworking:       true,
+			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
@@ -799,6 +802,11 @@ type query struct {
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
+	// WorkloadIsolationType specifies the isolation type.
+	// Required.
+	WorkloadIsolationType platform.ContainerType
+	// InitDockerd specifies whether dockerd should be initialized.
+	InitDockerd bool
 	// WorkerKey is the key used to tell if a persistent worker can be reused.
 	// Required; the zero-value "" matches non-persistent-worker runners.
 	WorkerKey string
@@ -824,6 +832,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		r := p.runners[i]
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
+			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
+			r.PlatformProperties.InitDockerd != q.InitDockerd ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
 			r.PlatformProperties.HostedBazelAffinityKey != q.HostedBazelAffinityKey ||
 			r.WorkerKey != q.WorkerKey ||
