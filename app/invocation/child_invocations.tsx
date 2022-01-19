@@ -1,22 +1,28 @@
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import InvocationModel from "./invocation_model";
-import WorkflowCommandsCard from "./workflow_commands_card";
+import ChildInvocationCard from "./child_invocation_card";
 import { CheckCircle, PlayCircle, XCircle } from "lucide-react";
 
-export type WorkflowCommandsProps = {
+export type ChildInvocationProps = {
   model: InvocationModel;
 };
 
 export type BazelCommandResult = {
-  invocation: build_event_stream.WorkflowConfigured.IInvocationMetadata;
+  invocation:
+    | build_event_stream.WorkflowConfigured.IInvocationMetadata
+    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
   durationMillis?: number;
 };
 
-export default class WorkflowCommands extends React.Component<WorkflowCommandsProps> {
+export default class ChildInvocations extends React.Component<ChildInvocationProps> {
   render() {
-    const configuredEvent = this.props.model.workflowConfigured!;
-    const completedEventsById = this.props.model.workflowCommandCompletedByInvocationId;
+    const workflowConfiguredEvent = this.props.model.workflowConfigured!;
+    const childInvocationsConfiguredEvent = this.props.model.childInvocationsConfigured;
+    const invocations = childInvocationsConfiguredEvent
+      ? childInvocationsConfiguredEvent.invocation
+      : workflowConfiguredEvent.invocation;
+    const completedEventsById = this.props.model.childInvocationCompletedByInvocationId;
 
     const isInProgress = !this.props.model.finished;
 
@@ -26,7 +32,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
     const inProgress: BazelCommandResult[] = [];
     const queued: BazelCommandResult[] = [];
 
-    for (const invocation of configuredEvent.invocation) {
+    for (const invocation of invocations) {
       const completedEvent = completedEventsById.get(invocation.invocationId);
       if (!completedEvent) {
         if (isInProgress) {
@@ -53,7 +59,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
     return (
       <>
         {failed.length > 0 && (
-          <WorkflowCommandsCard
+          <ChildInvocationCard
             status="failed"
             results={failed}
             className="card-failure"
@@ -61,7 +67,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
           />
         )}
         {inProgress.length > 0 && (
-          <WorkflowCommandsCard
+          <ChildInvocationCard
             status="in progress"
             results={inProgress}
             className="card-in-progress"
@@ -69,7 +75,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
           />
         )}
         {queued.length > 0 && (
-          <WorkflowCommandsCard
+          <ChildInvocationCard
             status="queued"
             results={queued}
             className="card-neutral"
@@ -78,7 +84,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
           />
         )}
         {notRun.length > 0 && (
-          <WorkflowCommandsCard
+          <ChildInvocationCard
             status="not run"
             results={notRun}
             className="card-neutral"
@@ -87,7 +93,7 @@ export default class WorkflowCommands extends React.Component<WorkflowCommandsPr
           />
         )}
         {succeeded.length > 0 && (
-          <WorkflowCommandsCard
+          <ChildInvocationCard
             status="succeeded"
             results={succeeded}
             className="card-success"

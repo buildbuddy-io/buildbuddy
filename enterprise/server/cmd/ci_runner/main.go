@@ -143,9 +143,10 @@ type workspace struct {
 }
 
 type buildEventReporter struct {
-	apiKey string
-	bep    *build_event_publisher.Publisher
-	log    *invocationLog
+	isWorkflow bool
+	apiKey     string
+	bep        *build_event_publisher.Publisher
+	log        *invocationLog
 
 	invocationID          string
 	startTime             time.Time
@@ -155,7 +156,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		iid = newUUID()
@@ -166,7 +167,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
-	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -189,11 +190,16 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		optionsDescription = fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey)
 	}
 
+	cmd := ""
+	if !r.isWorkflow {
+		cmd = *bazelSubCommand
+	}
+
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
-			{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
+			{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
@@ -202,7 +208,11 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			Uuid:               r.invocationID,
 			StartTimeMillis:    startTime.UnixMilli(),
 			OptionsDescription: optionsDescription,
+			Command:            cmd,
 		}},
+	}
+	if r.isWorkflow {
+		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
@@ -380,7 +390,7 @@ func main() {
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
-		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
+		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 		if err != nil {
 			fatal(err)
 		}
@@ -442,7 +452,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
-			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
+			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 			if err != nil {
 				fatal(err)
 			}
@@ -454,10 +464,11 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		// the user to see in the invocation UI needs to go in that log, instead of
 		// the global `log.Print`.
 		ar := &actionRunner{
-			action:   action,
-			reporter: buildEventReporter,
-			hostname: ws.hostname,
-			username: ws.username,
+			isWorkflow: *workflowID != "",
+			action:     action,
+			reporter:   buildEventReporter,
+			hostname:   ws.hostname,
+			username:   ws.username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -535,10 +546,11 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action   *config.Action
-	reporter *buildEventReporter
-	username string
-	hostname string
+	isWorkflow bool
+	action     *config.Action
+	reporter   *buildEventReporter
+	username   string
+	hostname   string
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
@@ -561,9 +573,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		TargetRepoUrl:      *targetRepoURL,
 		TargetBranch:       *targetBranch,
 	}
-	configuredEvent := &bespb.BuildEvent{
+	wfcEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
 		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
+	}
+
+	cic := &bespb.ChildInvocationsConfigured{}
+	cicEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
 	}
 	// If the triggering commit merges cleanly with the target branch, the runner
 	// will execute the configured bazel commands. Otherwise, the runner will
@@ -576,25 +594,42 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 				InvocationId: iid,
 				BazelCommand: bazelCmd,
 			})
-			eventID := &bespb.BuildEventId{
+			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
 				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
 					InvocationId: iid,
 				}},
-			}
-			configuredEvent.Children = append(configuredEvent.Children, eventID)
+			})
+			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}},
+			})
 		}
 	}
-	if err := ar.reporter.Publish(configuredEvent); err != nil {
+	if ar.isWorkflow {
+		if err := ar.reporter.Publish(wfcEvent); err != nil {
+			return nil
+		}
+	}
+	if err := ar.reporter.Publish(cicEvent); err != nil {
 		return nil
 	}
 
+	buildMetadata := &bespb.BuildMetadata{
+		Metadata: map[string]string{},
+	}
+	if ar.isWorkflow {
+		buildMetadata.Metadata["ROLE"] = "CI_RUNNER"
+	} else {
+		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
+	}
 	buildMetadataEvent := &bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
-		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
-			Metadata: map[string]string{
-				"ROLE": "CI_RUNNER",
-			},
-		}},
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
+		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	}
 	if err := ar.reporter.Publish(buildMetadataEvent); err != nil {
 		return nil
@@ -663,6 +698,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
+			break
+		}
+		childCompletedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+				ExitCode:        int32(exitCode),
+				StartTimeMillis: cmdStartTime.UnixMilli(),
+				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+			}},
+		}
+		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
 			break
 		}
 

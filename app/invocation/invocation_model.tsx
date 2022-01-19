@@ -10,6 +10,7 @@ import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
+export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 
 export const InvocationStatus = invocation.Invocation.InvocationStatus;
 
@@ -34,7 +35,11 @@ export default class InvocationModel {
   aborted: build_event_stream.BuildEvent;
   toolLogs: build_event_stream.BuildToolLogs;
   workflowConfigured: build_event_stream.WorkflowConfigured;
-  workflowCommandCompletedByInvocationId = new Map<string, build_event_stream.IWorkflowCommandCompleted>();
+  childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured;
+  childInvocationCompletedByInvocationId = new Map<
+    string,
+    build_event_stream.IChildInvocationCompleted | build_event_stream.IWorkflowCommandCompleted
+  >();
   workspaceStatus: build_event_stream.WorkspaceStatus;
   configuration: build_event_stream.Configuration;
   workspaceConfig: build_event_stream.WorkspaceConfig;
@@ -117,10 +122,19 @@ export default class InvocationModel {
         if (buildEvent.workflowConfigured) {
           model.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
         }
+        if (buildEvent.childInvocationsConfigured) {
+          model.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
+        }
         if (buildEvent.workflowCommandCompleted) {
-          model.workflowCommandCompletedByInvocationId.set(
+          model.childInvocationCompletedByInvocationId.set(
             buildEvent.id.workflowCommandCompleted.invocationId,
             buildEvent.workflowCommandCompleted
+          );
+        }
+        if (buildEvent.childInvocationCompleted) {
+          model.childInvocationCompletedByInvocationId.set(
+            buildEvent.id.childInvocationCompleted.invocationId,
+            buildEvent.childInvocationCompleted
           );
         }
         if (buildEvent.configuration && buildEvent?.id?.configuration?.id != "none") {
@@ -331,16 +345,22 @@ export default class InvocationModel {
     return this.getRole() === CI_RUNNER_ROLE;
   }
 
+  isHostedBazelInvocation() {
+    return this.getRole() === HOSTED_BAZEL_ROLE;
+  }
+
   isBazelInvocation() {
-    return !this.isWorkflowInvocation();
+    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
   }
 
   getTool() {
-    if (this.isBazelInvocation()) {
-      return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
+    if (this.isWorkflowInvocation()) {
+      return "BuildBuddy workflow runner";
     }
-
-    return "BuildBuddy workflow runner";
+    if (this.isHostedBazelInvocation()) {
+      return "BuildBuddy hosted bazel";
+    }
+    return `bazel v${this.started?.buildToolVersion} ` + this.started?.command || "build";
   }
 
   getPattern() {
