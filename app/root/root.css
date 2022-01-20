@@ -570,7 +570,7 @@ svg.icon.orange {
 
 .card .icon {
   margin-right: 16px;
-  padding-top: 2px;
+  padding-top: 1px;
 }
 
 .card .title {
@@ -1004,13 +1004,7 @@ code .comment {
 
   display: flex;
   align-items: start;
-}
-
-.terminal-search-placeholder {
-  margin-left: auto;
-  width: 290px;
-  flex-shrink: 0;
-  align-self: stretch;
+  justify-content: space-between;
 }
 
 .terminal-actions {
@@ -1066,6 +1060,7 @@ code .comment {
   background-color: transparent;
   cursor: pointer;
   padding: 12px;
+  margin: -12px 0;
   opacity: 0.6;
 }
 
@@ -1087,6 +1082,7 @@ code .comment {
 .react-lazylog-searchbar.react-lazylog-searchbar {
   margin-right: 80px;
   background-color: transparent;
+  padding: 1px 0 16px 0;
 }
 
 .terminal-container.has-subtitle .react-lazylog-searchbar {
@@ -1106,9 +1102,6 @@ code .comment {
   .terminal .react-lazylog-searchbar-matches {
     display: none;
   }
-  .terminal-search-placeholder {
-    width: 170px;
-  }
 }
 
 @media (max-width: 525px) {
@@ -1116,7 +1109,7 @@ code .comment {
     margin-top: 0;
   }
   .react-lazylog-searchbar {
-    display: none !important;
+    opacity: 0;
   }
 }
 
@@ -2158,6 +2151,11 @@ code .comment {
   background: #263238;
 }
 
-.loading.loading-dark:before {
+.loading.loading-dark-terminal {
+  background: #222;
+}
+
+.loading.loading-dark:before,
+.loading.loading-dark-terminal:before {
   background-image: url("/image/loader-white.svg");
 }

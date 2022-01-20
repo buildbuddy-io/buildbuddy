@@ -5,7 +5,7 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
-import { PauseCircle } from "lucide-react";
+import { CheckCircle, Clock, HelpCircle, PauseCircle, XCircle } from "lucide-react";
 
 interface Props {
   testResult: invocation.InvocationEvent;
@@ -102,49 +102,68 @@ export default class TargetTestLogCardComponent extends React.Component {
         return "card-failure";
     }
   }
+
+  getStatusIcon(status: build_event_stream.TestStatus) {
+    switch (status) {
+      case build_event_stream.TestStatus.PASSED:
+        return <CheckCircle className="icon green" />;
+      case build_event_stream.TestStatus.FLAKY:
+        return <HelpCircle className="icon orange" />;
+      case build_event_stream.TestStatus.TIMEOUT:
+        return <Clock className="icon" />;
+      default:
+        return <XCircle className="icon red" />;
+    }
+  }
+
   render() {
     const title = <div className="title">Test log</div>;
-    const subtitle = (
-      <div className="test-subtitle">
-        {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
-        {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard{" "}
-        {this.props.testResult.buildEvent.id.testResult.shard} (Run {this.props.testResult.buildEvent.id.testResult.run}
-        , Attempt {this.props.testResult.buildEvent.id.testResult.attempt})
-      </div>
-    );
-
     return (
-      <div
-        className={`card ${
-          this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
-        } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
-        <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
-        <div className="content">
-          {!this.state.cacheEnabled && (
-            <div className="empty-state">
-              {title}
-              {subtitle}
-              Test log uploading isn't enabled for this invocation.
-              <br />
-              <br />
-              To enable test log uploading you must add GRPC remote caching. You can do so by checking{" "}
-              <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-              <SetupCodeComponent />
+      <>
+        <div className={`card ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
+          {this.getStatusIcon(this.props.testResult.buildEvent.testResult.status)}
+          <div className="content">
+            <div className="title">
+              {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
+              {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)}
             </div>
-          )}
-          {this.state.cacheEnabled && (
-            <div className="test-log">
-              <TerminalComponent
-                title={title}
-                subtitle={subtitle}
-                value={this.state.testLog || "Empty log"}
-                loading={this.state.loading}
-                lightTheme={!this.props.dark}
-              />
+            <div className="subtitle">
+              On Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
+              {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
+              {this.props.testResult.buildEvent.id.testResult.attempt})
             </div>
-          )}
+          </div>
         </div>
-      </div>
+        <div
+          className={`card ${
+            this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
+          } ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
+          <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+          <div className="content">
+            {!this.state.cacheEnabled && (
+              <div className="empty-state">
+                {title}
+                Test log uploading isn't enabled for this invocation.
+                <br />
+                <br />
+                To enable test log uploading you must add GRPC remote caching. You can do so by checking{" "}
+                <b>Enable cache</b> below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
+                <SetupCodeComponent />
+              </div>
+            )}
+            {this.state.cacheEnabled && (
+              <div className="test-log">
+                <TerminalComponent
+                  title={title}
+                  value={this.state.testLog || "Empty log"}
+                  loading={this.state.loading}
+                  lightTheme={!this.props.dark}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </>
     );
   }
 }
