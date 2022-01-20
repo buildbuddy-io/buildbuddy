@@ -94,10 +94,17 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 	return finalErr
 }
 
+// ExecuteResponseWithCachedResult returns an ExecuteResponse for an action
+// result served from cache.
 func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteResponse {
 	return ExecuteResponseWithResult(ar, nil /*=summary*/, nil /*=err*/)
 }
 
+// ExecuteResponseWithResult returns an ExecuteResponse for an action result
+// produced by actually executing an action. The given summary pertains to the
+// execution, and the error is any pertinent error encountered during execution.
+// If a non-nil error is provided, an action result (incomplete or partial) may
+// still be provided, and clients are expected to handle this case properly.
 func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSummary, err error) *repb.ExecuteResponse {
 	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
 	if ar != nil {
