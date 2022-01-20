@@ -2151,6 +2151,11 @@ code .comment {
   background: #263238;
 }
 
-.loading.loading-dark:before {
+.loading.loading-dark-terminal {
+  background: #222;
+}
+
+.loading.loading-dark:before,
+.loading.loading-dark-terminal:before {
   background-image: url("/image/loader-white.svg");
 }

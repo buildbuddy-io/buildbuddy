@@ -125,8 +125,10 @@ export default class TargetTestLogCardComponent extends React.Component {
           <div className="content">
             <div className="title">
               {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
-              {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)} on Shard{" "}
-              {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
+              {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)}
+            </div>
+            <div className="subtitle">
+              On Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
               {this.props.testResult.buildEvent.id.testResult.run}, Attempt{" "}
               {this.props.testResult.buildEvent.id.testResult.attempt})
             </div>

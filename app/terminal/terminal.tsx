@@ -56,7 +56,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
           </div>
           <div className="terminal" ref={this.terminalRef}>
             {this.props.loading ? (
-              <div className={`loading ${this.props.lightTheme ? "" : "loading-dark"}`} />
+              <div className={`loading ${this.props.lightTheme ? "" : "loading-dark-terminal"}`} />
             ) : (
               <LazyLog
                 selectableLines={true}
