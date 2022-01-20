@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -26,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -208,7 +209,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		}
 		actionResult, err := cachetools.GetActionResult(ctx, acClient, adInstanceDigest)
 		if err == nil {
-			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, nil /*=summary*/, codes.OK)); err != nil {
+			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return true, err
 			}
 			return false, nil
@@ -323,7 +324,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	if cmdResult.ExitCode != 0 {
-		log.Debugf("%q finished with non-zero exit code (%d). Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Stdout, cmdResult.Stderr)
+		log.Debugf("%q finished with non-zero exit code (%d). Err: %s, Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Error, cmdResult.Stdout, cmdResult.Stderr)
+	}
+	// Exit codes < 0 mean that the command either never started or was killed.
+	// Make sure we return an error in this case.
+	if cmdResult.ExitCode < 0 {
+		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
@@ -393,13 +399,29 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		},
 		ExecutedActionMetadata: md,
 	}
-	code := gstatus.Code(cmdResult.Error)
-	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, code)); err != nil {
+	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {
 		logActionResult(taskID, md)
 		return finishWithErrFn(err) // CHECK (these errors should not happen).
 	}
 	finishedCleanly = true
 	return false, nil
+}
+
+func incompleteExecutionError(exitCode int, err error) error {
+	if err == nil {
+		alert.UnexpectedEvent("incomplete_command_with_nil_error")
+		return status.UnknownErrorf("Command did not complete, for unknown reasons (internal status %d)", exitCode)
+	}
+	// Ensure that if the command was not found, we return FAILED_PRECONDITION,
+	// per RBE protocol. This is done because container/command implementations
+	// don't really have a good way to distinguish this error from other types of
+	// errors anyway (this is true for at least the bare and docker
+	// implementations at time of writing)
+	msg := status.Message(err)
+	if strings.Contains(msg, "no such file or directory") {
+		return status.FailedPreconditionError(msg)
+	}
+	return err
 }
 
 func observeStageDuration(groupID string, stage string, start *timestamppb.Timestamp, end *timestamppb.Timestamp) {

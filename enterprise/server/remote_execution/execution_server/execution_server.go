@@ -33,7 +33,6 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -357,7 +356,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 				return err
 			}
 			stateChangeFn := operation.GetStateChangeFunc(stream, executionID, adInstanceDigest)
-			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, nil, codes.OK)); err != nil {
+			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return err // CHECK (these errors should not happen).
 			}
 			return nil
