@@ -262,6 +262,7 @@ type ExecutorConfig struct {
 	AppTarget                      string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
 	Pool                           string                    `yaml:"pool" usage:"Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified."`
 	RootDirectory                  string                    `yaml:"root_directory" usage:"The root directory to use for build files."`
+	HostRootDirectory              string                    `yaml:"host_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
 	LocalCacheDirectory            string                    `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
 	LocalCacheSizeBytes            int64                     `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
 	DisableLocalCache              bool                      `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
@@ -276,7 +277,6 @@ type ExecutorConfig struct {
 	EnableBareRunner               bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
 	EnableFirecracker              bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	EnableFirecrackerDiffSnapshots bool                      `yaml:"enable_firecracker_diff_snapshots" usage:"Enables incremental memory snapshots for firecracker VMs."`
-	HostExecutorRootDirectory      string                    `yaml:"host_executor_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
 	ContainerRegistries            []ContainerRegistryConfig `yaml:"container_registries"`
 	EnableVFS                      bool                      `yaml:"enable_vfs" usage:"Whether FUSE based filesystem is enabled."`
 	DefaultImage                   string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
