@@ -116,6 +116,20 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 	assert.Equal(t, "bye\n", res.Stderr, "stderr should be propagated")
 }
 
+func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	cmd := rbe.ExecuteCustomCommand("/usr/local/bin/NOT_FOUND")
+	err := cmd.MustFail()
+
+	require.Error(t, err)
+	assert.True(t, status.IsFailedPreconditionError(err))
+	assert.Contains(t, status.Message(err), "no such file or directory")
+}
+
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 

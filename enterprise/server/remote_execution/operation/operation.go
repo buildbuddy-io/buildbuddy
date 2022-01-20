@@ -10,11 +10,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/grpc/codes"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -96,10 +94,12 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 	return finalErr
 }
 
-func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSummary, code codes.Code) *repb.ExecuteResponse {
-	rsp := &repb.ExecuteResponse{
-		Status: &statuspb.Status{Code: int32(code)},
-	}
+func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteResponse {
+	return ExecuteResponseWithResult(ar, nil /*=summary*/, nil /*=err*/)
+}
+
+func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSummary, err error) *repb.ExecuteResponse {
+	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
 	if ar != nil {
 		rsp.Result = ar
 	}
@@ -112,7 +112,7 @@ func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSum
 }
 
 func InProgressExecuteResponse() *repb.ExecuteResponse {
-	return ExecuteResponseWithResult(nil, nil, codes.OK)
+	return ExecuteResponseWithResult(nil /*=result*/, nil /*=summary*/, nil /*=error*/)
 }
 
 func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
