@@ -110,9 +110,6 @@ export default class ActionCardComponent extends React.Component {
 
   render() {
     const title = <div className="title">Error Log</div>;
-    const subtitle = (
-      <div className="test-subtitle">{this.getStatusTitle(this.props.action.buildEvent.action.success)}</div>
-    );
     return (
       <div className="target-action-card">
         {this.props.action?.buildEvent?.action?.stderr?.uri && (
@@ -125,7 +122,6 @@ export default class ActionCardComponent extends React.Component {
               {!this.state.cacheEnabled && (
                 <>
                   {title}
-                  {subtitle}
                   <div className="empty-state">
                     Log uploading isn't enabled for this invocation.
                     <br />
@@ -140,7 +136,6 @@ export default class ActionCardComponent extends React.Component {
               {this.state.cacheEnabled && (
                 <TerminalComponent
                   title={title}
-                  subtitle={subtitle}
                   loading={this.state.loadingStderr}
                   value={this.state.stdErr || "Empty log"}
                   lightTheme={!this.props.dark}

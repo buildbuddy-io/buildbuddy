@@ -4,7 +4,6 @@ import { TerminalComponent } from "../terminal/terminal";
 
 interface Props {
   title: string;
-  subtitle: string;
   contents: string;
   dark: boolean;
 }
@@ -20,7 +19,6 @@ export default class TargetLogCardComponent extends React.Component {
           <div className="test-log">
             <TerminalComponent
               title={<div className="title">{this.props.title}</div>}
-              subtitle={<div className="test-subtitle">{this.props.subtitle}</div>}
               value={this.props.contents}
               lightTheme={!this.props.dark}
             />
