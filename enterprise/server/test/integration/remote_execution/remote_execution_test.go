@@ -122,7 +122,7 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
-	cmd := rbe.ExecuteCustomCommand("/usr/local/bin/NOT_FOUND")
+	cmd := rbe.ExecuteCustomCommand("/COMMAND_THAT_DOES_NOT_EXIST")
 	err := cmd.MustFail()
 
 	require.Error(t, err)
