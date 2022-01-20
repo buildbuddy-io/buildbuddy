@@ -722,6 +722,11 @@ func PostAutoMigrate(db *gorm.DB) error {
 		{&Group{}, "api_key"},
 	}
 
+	// Dropping invocation_pk columns behind a flag. The columns
+	// should be dropped only when all the servers in production
+	// no longer use invocation_pk.
+	// On-prem users could use this flag to control when to drop
+	// the columns.
 	if *dropInvocationPKCol {
 		colsToDelete = append(colsToDelete,
 			// Invocation.invocation_pk has been migrated to Invocation.invocation_uuid
