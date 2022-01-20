@@ -224,7 +224,6 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 
 func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
 	repoURL := t.buildEventAccumulator.RepoURL()
-	invocationPK := md5Int64(t.buildEventAccumulator.InvocationID())
 	invocationUUID, err := uuid.StringToBytes(t.buildEventAccumulator.InvocationID())
 	if err != nil {
 		return err
@@ -236,7 +235,6 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 		}
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{
 			TargetID:       md5Int64(repoURL + target.label),
-			InvocationPK:   invocationPK,
 			InvocationUUID: invocationUUID,
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
@@ -459,9 +457,8 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
-			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?")
 			valueArgs = append(valueArgs, t.TargetID)
-			valueArgs = append(valueArgs, t.InvocationPK)
 			valueArgs = append(valueArgs, t.InvocationUUID)
 			valueArgs = append(valueArgs, t.TargetType)
 			valueArgs = append(valueArgs, t.TestSize)
