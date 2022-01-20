@@ -239,7 +239,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
                   {this.props.invocation.command}
                 </div>
               )}
-              {this.props.invocation.pattern && (
+              {this.props.invocation.pattern.length > 0 && (
                 <div className="detail">
                   <LayoutGrid className="icon" />
                   {format.truncateList(this.props.invocation.pattern)}

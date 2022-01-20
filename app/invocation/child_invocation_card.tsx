@@ -1,9 +1,9 @@
 import React from "react";
 import format from "../format/format";
 import router from "../router/router";
-import { BazelCommandResult } from "./workflow_commands";
+import { BazelCommandResult } from "./child_invocations";
 
-export type WorkflowCommandsCardProps = {
+export type ChildInvocationCardProps = {
   status: string;
   results: BazelCommandResult[];
   className: string;
@@ -11,7 +11,7 @@ export type WorkflowCommandsCardProps = {
   linksDisabled?: boolean;
 };
 
-export default class WorkflowCommandsCard extends React.Component<WorkflowCommandsCardProps> {
+export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
   private handleCommandClicked(invocationId: string, e: React.MouseEvent) {
     e.preventDefault();
     router.navigateTo(`/invocation/${invocationId}`);

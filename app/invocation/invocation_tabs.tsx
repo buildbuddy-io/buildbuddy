@@ -1,5 +1,5 @@
 import React from "react";
-import { CI_RUNNER_ROLE } from "./invocation_model";
+import { CI_RUNNER_ROLE, HOSTED_BAZEL_ROLE } from "./invocation_model";
 
 export type InvocationTabsProps = TabsContext;
 
@@ -50,7 +50,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
   }
 
   render() {
-    const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE;
+    const isBazelInvocation = this.props.role !== CI_RUNNER_ROLE && this.props.role !== HOSTED_BAZEL_ROLE;
 
     return (
       <div className="tabs">

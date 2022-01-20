@@ -20,7 +20,7 @@ import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
 import InvocationLogsModel from "./invocation_logs_model";
-import WorkflowCommands from "./workflow_commands";
+import ChildInvocations from "./child_invocations";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
@@ -253,9 +253,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <ErrorCardComponent model={this.state.model} />
           )}
 
-          {this.state.model.workflowConfigured && (activeTab === "all" || activeTab === "commands") && (
-            <WorkflowCommands model={this.state.model} />
-          )}
+          {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
+            (activeTab === "all" || activeTab === "commands") && <ChildInvocations model={this.state.model} />}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
             <TargetsComponent

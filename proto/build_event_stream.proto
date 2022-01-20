@@ -211,6 +211,17 @@ message BuildEventId {
     string invocation_id = 1;
   }
 
+  // Identifier of an event providing a list of commands that are
+  // run as children of this invocation.
+  message ChildInvocationsConfiguredId {}
+
+  // Identifier of an event providing the status of a completed child
+  // invocation.
+  message ChildInvocationCompletedId {
+    // Invocation ID of the command that was completed.
+    string invocation_id = 1;
+  }
+
   oneof id {
     UnknownBuildEventId unknown = 1;
     ProgressId progress = 2;
@@ -244,6 +255,8 @@ message BuildEventId {
 
     WorkflowConfiguredId workflow_configured = 1000;
     WorkflowCommandCompletedId workflow_command_completed = 1001;
+    ChildInvocationsConfiguredId child_invocations_configured = 1002;
+    ChildInvocationCompletedId child_invocation_completed = 1003;
   }
 }
 
@@ -861,6 +874,37 @@ message WorkflowCommandCompleted {
   int64 duration_millis = 3;
 }
 
+message ChildInvocationsConfigured {
+  // Metadata for a child Bazel invocation spawned from the current invocation.
+  message InvocationMetadata {
+    // Bazel invocation ID (UUIDV4) for a sub-invocation.
+    // Should not be set for bazel commands that do not create invocations, such
+    // as `bazel version`. Example: "86083af6-4699-4957-a0a3-d6a806104bb3"
+    string invocation_id = 1;
+
+    // Bazel command.
+    // Example: "test //..."
+    string bazel_command = 2;
+  }
+
+  // Child Bazel invocations.
+  repeated InvocationMetadata invocation = 1;
+}
+
+// Event describing completion of a child invocation.
+// Note: the event ID holds the invocation ID that identifies the command.
+message ChildInvocationCompleted {
+  // The overall status of the command. A command was successful if and only if
+  // this value is equal to 0.
+  int32 exit_code = 1;
+
+  // Start time of the invocation, in milliseconds since epoch.
+  int64 start_time_millis = 2;
+
+  // How long it took for the invocation to complete, in milliseconds.
+  int64 duration_millis = 3;
+}
+
 // Message describing a build event. Events will have an identifier that
 // is unique within a given build invocation; they also announce follow-up
 // events as children. More details, which are specific to the kind of event
@@ -901,5 +945,7 @@ message BuildEvent {
 
     WorkflowConfigured workflow_configured = 1000;
     WorkflowCommandCompleted workflow_command_completed = 1001;
+    ChildInvocationsConfigured child_invocations_configured = 1002;
+    ChildInvocationCompleted child_invocation_completed = 1003;
   }
 }
