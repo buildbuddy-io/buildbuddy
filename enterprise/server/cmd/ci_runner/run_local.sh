@@ -62,7 +62,7 @@ docker run \
   --interactive \
   --tty \
   --rm \
-  gcr.io/flame-public/buildbuddy-ci-runner:v2.2.7 \
+  gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8 \
   ci_runner \
   --pushed_repo_url="file:///root/mounted_repo" \
   --target_repo_url="file:///root/mounted_repo" \
