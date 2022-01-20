@@ -60,9 +60,12 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
         </Select>
         <code>
           <pre>
-            {`docker run --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\
+            {`docker run \\
+    --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\
+    --volume /tmp/buildbuddy:/buildbuddy \\
     gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
     --executor.docker_socket=/var/run/docker.sock \\
+    --executor.host_root_directory=/tmp/buildbuddy \\
     --executor.app_target=${this.props.schedulerUri} \\
     --executor.api_key=${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
           </pre>

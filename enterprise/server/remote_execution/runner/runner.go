@@ -542,7 +542,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 
 func (p *Pool) hostBuildRoot() string {
 	// If host root dir is explicitly configured, prefer that.
-	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
+	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
 	}
 	if p.podID == "" {
