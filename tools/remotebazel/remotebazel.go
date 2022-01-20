@@ -68,10 +68,6 @@ func main() {
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", *apiKey)
 
-	// --isatty=1 makes Bazel think it's running in an interactive terminal which enables nicer UI output
-	// TODO(vadim): propagate terminal width
-	cmd := flag.Args()[0] + " --isatty=1 " + strings.Join(flag.Args()[1:], " ")
-
 	log.Infof("Sending request...")
 
 	req := &rnpb.RunRequest{
@@ -79,7 +75,7 @@ func main() {
 			RepoUrl: *repo,
 		},
 		RepoState:          &rnpb.RunRequest_RepoState{},
-		BazelCommand:       cmd,
+		BazelCommand:       strings.Join(flag.Args(), " "),
 		InstanceName:       *remoteInstanceName,
 		SessionAffinityKey: *affinityKey,
 	}

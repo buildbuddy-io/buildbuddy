@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/creack/pty"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -348,6 +349,11 @@ func main() {
 	if err := ensurePath(); err != nil {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
+	// Configure TERM to get prettier output from executed commands.
+	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
+		fatal(status.WrapError(err, "could not setup TERM"))
+	}
+
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
 		wd, err := os.Getwd()
@@ -883,7 +889,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
 			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
@@ -1035,12 +1041,22 @@ func gitRemoteName(repoURL string) string {
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Stdout = outputSink
-	cmd.Stderr = outputSink
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	return cmd.Run()
+	f, err := pty.Start(cmd)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	copyOutputDone := make(chan struct{})
+	go func() {
+		io.Copy(outputSink, f)
+		copyOutputDone <- struct{}{}
+	}()
+	err = cmd.Wait()
+	<-copyOutputDone
+	return err
 }
 
 func getExitCode(err error) int {

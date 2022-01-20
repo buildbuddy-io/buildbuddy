@@ -208,8 +208,18 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 	runnerInvocation := singleInvocation(t, app, result)
 	assert.Contains(
 		t, runnerInvocation.ConsoleBuffer,
-		"Executed 2 out of 2 tests: 1 test passes and 1 fails locally.",
-		"pass.sh test should have passed and fail.sh should have failed.",
+		"Executed 2 out of 2 tests",
+		"2 tests should have been executed",
+	)
+	assert.Contains(
+		t, runnerInvocation.ConsoleBuffer,
+		"1 test passes",
+		"1 test should have passed",
+	)
+	assert.Contains(
+		t, runnerInvocation.ConsoleBuffer,
+		"1 fails locally",
+		"1 test should have failed",
 	)
 }
 

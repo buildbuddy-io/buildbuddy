@@ -26,6 +26,7 @@ go_library(
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_creack_pty//:pty",
         "@com_github_google_shlex//:shlex",
         "@com_github_google_uuid//:uuid",
         "@com_github_logrusorgru_aurora//:aurora",
