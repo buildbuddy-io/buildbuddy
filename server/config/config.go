@@ -59,6 +59,7 @@ type appConfig struct {
 	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
 	UserManagementEnabled     bool     `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
 	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
+	TestGridV2Enabled         bool     `yaml:"test_grid_v2_enabled" usage:"Whether to enable test grid V2"`
 	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 	UsageStartDate            string   `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
 	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
@@ -600,6 +601,10 @@ func (c *Configurator) GetAppGlobalFilterEnabled() bool {
 
 func (c *Configurator) GetAppUsageEnabled() bool {
 	return c.gc.App.UsageEnabled
+}
+
+func (c *Configurator) GetAppTestGridV2Enabled() bool {
+	return c.gc.App.TestGridV2Enabled
 }
 
 func (c *Configurator) GetAppUsageStartDate() string {

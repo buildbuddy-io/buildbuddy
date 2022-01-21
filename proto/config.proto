@@ -53,4 +53,7 @@ message FrontendConfig {
 
   // Whether Darwin (macOS) executors must be self-hosted.
   bool force_user_owned_darwin_executors = 17;
+
+  // Whether test grid V2 is enabled.
+  bool test_grid_v2_enabled = 18;
 }
