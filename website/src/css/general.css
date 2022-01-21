@@ -85,6 +85,11 @@ svg[aria-hidden="true"] {
   display: none;
 }
 
+/* https://css-tricks.com/fixed-headers-and-jump-links-the-solution-is-scroll-margin-top/ */
+.navbar--fixed-top + .main-wrapper [id] {
+  scroll-margin-top: 90px; /* = navbar height */
+}
+
 .navbar__toggle svg[aria-hidden="true"] {
   display: block;
 }
