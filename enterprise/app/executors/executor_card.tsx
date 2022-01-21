@@ -15,32 +15,34 @@ export default class ExecutorCardComponent extends React.Component<Props> {
     return (
       <div className={`card ${isDefault ? "card-success" : "card-neutral"}`}>
         <Cloud className="icon" />
-        <div className="details">
-          <div className="executor-section">
-            <div className="executor-section-title">Address:</div>
-            <div>
-              {node.host}:{node.port}
+        <div className="content">
+          <div className="details">
+            <div className="executor-section">
+              <div className="executor-section-title">Address:</div>
+              <div>
+                {node.host}:{node.port}
+              </div>
             </div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section-title">ID:</div>
-            <div>{node.executorId}</div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section-title">Assignable Memory:</div>
-            <div>{format.bytes(+node.assignableMemoryBytes)}</div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section-title">Assignable Milli CPU:</div>
-            <div>{node.assignableMilliCpu}</div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section-title">Version:</div>
-            <div>{node.version}</div>
-          </div>
-          <div className="executor-section">
-            <div className="executor-section-title">Default:</div>
-            <div>{isDefault ? "True" : "False"}</div>
+            <div className="executor-section">
+              <div className="executor-section-title">ID:</div>
+              <div>{node.executorId}</div>
+            </div>
+            <div className="executor-section">
+              <div className="executor-section-title">Assignable Memory:</div>
+              <div>{format.bytes(+node.assignableMemoryBytes)}</div>
+            </div>
+            <div className="executor-section">
+              <div className="executor-section-title">Assignable Milli CPU:</div>
+              <div>{node.assignableMilliCpu}</div>
+            </div>
+            <div className="executor-section">
+              <div className="executor-section-title">Version:</div>
+              <div>{node.version}</div>
+            </div>
+            <div className="executor-section">
+              <div className="executor-section-title">Default:</div>
+              <div>{isDefault ? "True" : "False"}</div>
+            </div>
           </div>
         </div>
       </div>
