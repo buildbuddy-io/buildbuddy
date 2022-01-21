@@ -1,13 +1,14 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import { Download, Info } from "lucide-react";
+import { Download, Info, HelpCircle } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent, { parseDigest } from "../components/digest/digest";
 import TerminalComponent from "../terminal/terminal";
 import UserPreferences from "../preferences/preferences";
+import router from "../router/router";
 
 interface Props {
   model: InvocationModel;
@@ -17,6 +18,7 @@ interface Props {
 
 interface State {
   action?: build.bazel.remote.execution.v2.Action;
+  loadingAction?: boolean;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
   command?: build.bazel.remote.execution.v2.Command;
   error?: string;
@@ -33,6 +35,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, InputNode[]>(),
     inputDirs: [],
+    loadingAction: true,
   };
 
   componentDidMount() {
@@ -41,6 +44,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchAction() {
+    this.setState({ loadingAction: true });
     const digest = parseDigest(this.props.search.get("actionDigest"));
     const actionUrl = `bytestream://${this.getCacheAddress()}/blobs/${digest.hash}/${digest.sizeBytes ?? 1}`;
     rpcService
@@ -53,7 +57,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest);
       })
-      .catch((e) => console.error("Failed to fetch action:", e));
+      .catch((e) => console.error("Failed to fetch action:", e))
+      .finally(() => this.setState({ loadingAction: false }));
   }
 
   fetchInputRoot(rootDigest: build.bazel.remote.execution.v2.IDigest) {
@@ -314,16 +319,78 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return;
   }
 
+  private onClickSetup(e: React.MouseEvent) {
+    e.preventDefault();
+    router.navigateTo("/docs/setup");
+  }
+
+  private renderNotFoundDetails() {
+    const hasRemoteUploadLocalResults = this.props.model.booleanCommandLineOption("remote_upload_local_results");
+    const hasRemoteExecutor = Boolean(this.props.model.stringCommandLineOption("remote_executor"));
+    const hasRemoteCache = Boolean(this.props.model.booleanCommandLineOption("remote_cache"));
+
+    if (hasRemoteExecutor) {
+      return <p>The action may have expired from cache, or the action may not be cacheable.</p>;
+    }
+    if (!hasRemoteCache) {
+      return (
+        <p>
+          Action results are available for builds with{" "}
+          <a href="/docs/setup" className="text-link" onClick={this.onClickSetup.bind(this)}>
+            full cache or remote execution
+          </a>{" "}
+          enabled.
+        </p>
+      );
+    }
+    if (!hasRemoteUploadLocalResults) {
+      return (
+        <>
+          <p>
+            Action results for locally executed actions are available for builds with{" "}
+            <a href="/docs/setup" className="text-link" onClick={this.onClickSetup.bind(this)}>
+              full cache
+            </a>{" "}
+            enabled (<span className="inline-code">--remote_upload_local_results</span>).
+          </p>
+        </>
+      );
+    }
+    return (
+      <p>
+        The action may have expired from cache, or the action may not be cacheable.{" "}
+        {!this.props.model.isAnonymousInvocation() && (
+          <>This can also happen if the invocation was authenticated with a read-only API key.</>
+        )}
+      </p>
+    );
+  }
+
   render() {
     const digest = parseDigest(this.props.search.get("actionDigest"));
+
     return (
       <div className="invocation-action-card">
-        <div className="card">
-          <Info className="icon purple" />
-          <div className="content">
-            <div className="title">Action details </div>
-            <div className="details">
-              {this.state.action ? (
+        {this.state.loadingAction && (
+          <div className="card">
+            <div className="loading" />
+          </div>
+        )}
+        {!this.state.loadingAction && !this.state.action && (
+          <div className="card">
+            <HelpCircle className="icon purple" />
+            <div className="content">
+              <div className="title">Action not found</div>
+              <div className="details">{this.renderNotFoundDetails()}</div>
+            </div>
+          </div>
+        )}
+        {!this.state.loadingAction && this.state.action && (
+          <div className="card">
+            <Info className="icon purple" />
+            <div className="content">
+              <div className="title">Action details</div>
+              <div className="details">
                 <div>
                   <div className="action-section">
                     <div className="action-property-title">Digest</div>
@@ -373,137 +440,137 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     )}
                   </div>
                 </div>
-              ) : (
-                <div>No action details were found.</div>
-              )}
-              <div className="action-line">
-                <div className="action-title">Command details</div>
-                {this.state.command ? (
-                  <div>
-                    <div className="action-section">
-                      <div className="action-property-title">Arguments</div>
-                      {this.displayList(this.state.command.arguments)}
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Environment variables</div>
-                      <div className="action-list">
-                        {this.state.command.environmentVariables.map((variable) => (
-                          <div>
-                            <span className="prop-name">{variable.name}</span>
-                            <span className="prop-value">={variable.value}</span>
-                          </div>
-                        ))}
+                <div className="action-line">
+                  <div className="action-title">Command details</div>
+                  {this.state.command ? (
+                    <div>
+                      <div className="action-section">
+                        <div className="action-property-title">Arguments</div>
+                        {this.displayList(this.state.command.arguments)}
                       </div>
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Platform properties</div>
-                      <div className="action-list">
-                        {this.state.command.platform.properties.map((property) => (
-                          <div>
-                            <span className="prop-name">{property.name}</span>
-                            <span className="prop-value">={property.value}</span>
-                          </div>
-                        ))}
-                        {!this.state.command.platform.properties.length && <div>(Default)</div>}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div>No command details were found.</div>
-                )}
-              </div>
-              <div className="action-line">
-                <div className="action-title">Result details</div>
-                {this.state.actionResult ? (
-                  <div>
-                    <div className="action-section">
-                      <div className="action-property-title">Exit code</div>
-                      <div>{this.state.actionResult.exitCode}</div>
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Execution metadata</div>
-                      {this.state.actionResult.executionMetadata ? (
+                      <div className="action-section">
+                        <div className="action-property-title">Environment variables</div>
                         <div className="action-list">
-                          <div className="metadata-title">Worker</div>
-                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
-                          <div className="metadata-title">Executor ID</div>
-                          <div className="metadata-detail">{this.state.actionResult.executionMetadata.executorId}</div>
-                          <div className="metadata-title">Timeline</div>
-                          {this.renderTimelines()}
-                        </div>
-                      ) : (
-                        <div>None found</div>
-                      )}
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Output files</div>
-                      {this.state.actionResult.outputFiles ? (
-                        <div className="action-list">
-                          {this.state.actionResult.outputFiles.map((file) => (
-                            <div
-                              className="file-name clickable"
-                              onClick={this.handleOutputFileClicked.bind(this, file)}>
-                              <span>
-                                <Download className="icon file-icon" />
-                              </span>
-                              <span className="prop-link">{file.path}</span>
-                              {file.isExecutable && <span className="detail"> (executable)</span>}
-                              <DigestComponent digest={file.digest} />
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div>None found</div>
-                      )}
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Output directories</div>
-                      {this.state.actionResult.outputDirectories.length ? (
-                        <div className="action-list">
-                          {this.state.actionResult.outputDirectories.map((dir) => (
+                          {this.state.command.environmentVariables.map((variable) => (
                             <div>
-                              <span>{dir.path}</span>
+                              <span className="prop-name">{variable.name}</span>
+                              <span className="prop-value">={variable.value}</span>
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <div>None</div>
-                      )}
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Platform properties</div>
+                        <div className="action-list">
+                          {this.state.command.platform.properties.map((property) => (
+                            <div>
+                              <span className="prop-name">{property.name}</span>
+                              <span className="prop-value">={property.value}</span>
+                            </div>
+                          ))}
+                          {!this.state.command.platform.properties.length && <div>(Default)</div>}
+                        </div>
+                      </div>
                     </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Stderr</div>
-                      <div>
-                        {this.state.stderr ? (
-                          <TerminalComponent
-                            value={this.state.stderr}
-                            lightTheme={this.props.preferences.lightTerminalEnabled}
-                          />
+                  ) : (
+                    <div>No command details were found.</div>
+                  )}
+                </div>
+                <div className="action-line">
+                  <div className="action-title">Result details</div>
+                  {this.state.actionResult ? (
+                    <div>
+                      <div className="action-section">
+                        <div className="action-property-title">Exit code</div>
+                        <div>{this.state.actionResult.exitCode}</div>
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Execution metadata</div>
+                        {this.state.actionResult.executionMetadata ? (
+                          <div className="action-list">
+                            <div className="metadata-title">Worker</div>
+                            <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
+                            <div className="metadata-title">Executor ID</div>
+                            <div className="metadata-detail">
+                              {this.state.actionResult.executionMetadata.executorId}
+                            </div>
+                            <div className="metadata-title">Timeline</div>
+                            {this.renderTimelines()}
+                          </div>
+                        ) : (
+                          <div>None found</div>
+                        )}
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Output files</div>
+                        {this.state.actionResult.outputFiles ? (
+                          <div className="action-list">
+                            {this.state.actionResult.outputFiles.map((file) => (
+                              <div
+                                className="file-name clickable"
+                                onClick={this.handleOutputFileClicked.bind(this, file)}>
+                                <span>
+                                  <Download className="icon file-icon" />
+                                </span>
+                                <span className="prop-link">{file.path}</span>
+                                {file.isExecutable && <span className="detail"> (executable)</span>}
+                                <DigestComponent digest={file.digest} />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div>None found</div>
+                        )}
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Output directories</div>
+                        {this.state.actionResult.outputDirectories.length ? (
+                          <div className="action-list">
+                            {this.state.actionResult.outputDirectories.map((dir) => (
+                              <div>
+                                <span>{dir.path}</span>
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <div>None</div>
                         )}
                       </div>
-                    </div>
-                    <div className="action-section">
-                      <div className="action-property-title">Stdout</div>
-                      <div>
-                        {this.state.stdout ? (
-                          <TerminalComponent
-                            value={this.state.stdout}
-                            lightTheme={this.props.preferences.lightTerminalEnabled}
-                          />
-                        ) : (
-                          <div>None</div>
-                        )}
+                      <div className="action-section">
+                        <div className="action-property-title">Stderr</div>
+                        <div>
+                          {this.state.stderr ? (
+                            <TerminalComponent
+                              value={this.state.stderr}
+                              lightTheme={this.props.preferences.lightTerminalEnabled}
+                            />
+                          ) : (
+                            <div>None</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="action-section">
+                        <div className="action-property-title">Stdout</div>
+                        <div>
+                          {this.state.stdout ? (
+                            <TerminalComponent
+                              value={this.state.stdout}
+                              lightTheme={this.props.preferences.lightTerminalEnabled}
+                            />
+                          ) : (
+                            <div>None</div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div>No action result details found.</div>
-                )}
+                  ) : (
+                    <div>No action result details found.</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }

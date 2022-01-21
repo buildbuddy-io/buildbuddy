@@ -44,6 +44,12 @@
   flex-shrink: 0;
 }
 
+.invocation-action-card .text-link {
+  font-weight: 600;
+  text-decoration: underline;
+  color: #263238;
+}
+
 .invocation-action-card .icon.file-icon {
   margin-right: 4px;
   width: 18px;

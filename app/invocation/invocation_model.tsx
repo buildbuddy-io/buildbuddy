@@ -245,12 +245,28 @@ export default class InvocationModel {
     return groups.find((group) => group.id === invocation.acl.groupId) || null;
   }
 
+  isAnonymousInvocation(): boolean {
+    return this.invocations.find(() => true)?.acl?.groupId === "";
+  }
+
   getId() {
     return this.invocations.find(() => true)?.invocationId;
   }
 
   getHost() {
     return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
+  }
+
+  booleanCommandLineOption(name: string, defaultValue = false): boolean {
+    const rawVal = this.optionsMap.get(name);
+    if (rawVal === undefined) return defaultValue;
+    return rawVal !== "0";
+  }
+
+  stringCommandLineOption(name: string, defaultValue = ""): string {
+    const rawVal = this.optionsMap.get(name);
+    if (rawVal === undefined) return defaultValue;
+    return rawVal;
   }
 
   getCache() {
@@ -270,7 +286,7 @@ export default class InvocationModel {
   }
 
   getIsRBEEnabled() {
-    return this.optionsMap.get("remote_executor");
+    return Boolean(this.stringCommandLineOption("remote_executor"));
   }
 
   getRBE() {
