@@ -598,13 +598,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		} else {
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
-
-		postMigrate = append(postMigrate, func() error {
-			if err := m.DropIndex("TargetStatuses", "target_status_invocation_uuid"); err != nil {
-				return err
-			}
-			return nil
-		})
 	}
 	return postMigrate, nil
 }
@@ -637,7 +630,10 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
 		return err
 	}
-	return db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error
+	if err := db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
+		return err
+	}
+	return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
 }
 
 type invocationIDs struct {
