@@ -96,7 +96,7 @@ message GetTargetRequest {
   context.RequestContext request_context = 1;
 
   // The filters to apply to this query. Required.
-  // When version == 1, only repo_url takes effect. 
+  // When version == 1, only repo_url takes effect.
   TargetQuery query = 2;
 
   // Return records that were run *after* this timestamp.
@@ -107,14 +107,15 @@ message GetTargetRequest {
   // Deprecated when version = 1
   int64 end_time_usec = 4;
 
-  // The version of the API. 
+  // The version of the API.
   //   -- When it is not set or set to 0, the server returns all
   // target statuses that satisfy TargetQuery within the time period
-  // (start_time_usec, end_time_usec). 
+  // (start_time_usec, end_time_usec).
   //   -- When it is set to 1, the server returns paginated results.
   int64 version = 5;
 
-  // The pagination token. If unset, the server returns the first page of the result.
+  // The pagination token. If unset, the server returns the first page of the
+  // result.
   string page_token = 6;
 }
 
