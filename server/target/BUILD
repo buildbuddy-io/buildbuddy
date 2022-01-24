@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "target",
-    srcs = ["target.go"],
+    srcs = [
+        "pagination.go",
+        "target.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/target",
     visibility = ["//visibility:public"],
     deps = [
@@ -11,6 +14,7 @@ go_library(
         "//proto/api/v1:common_go_proto",
         "//server/environment",
         "//server/util/db",
+        "//server/util/git",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
