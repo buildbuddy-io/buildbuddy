@@ -110,9 +110,9 @@ message GetTargetRequest {
   // This boolean is used to roll out server side pagination.
   bool server_side_pagination = 5
 
-  // The pagination token. If unset, the server returns the first page of the
-  // result.
-  string page_token = 6;
+      // The pagination token. If unset, the server returns the first page of
+      // the result.
+      string page_token = 6;
 }
 
 message GetTargetResponse {
