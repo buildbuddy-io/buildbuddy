@@ -23,7 +23,7 @@ tramp
 .\#*
 
 # Bazel directories
-bazel-*
+/bazel-*
 
 # Generated protos
 **/proto/**/*.pb.go
