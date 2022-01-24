@@ -154,7 +154,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
       return this.props.invocation?.user
         ? `${this.props.invocation.user}'s in progress ${
             this.props.invocation.command || "build"
-          } ${format.truncateList(this.props.invocation.pattern)}...`
+          } ${format.truncateList(this.props.invocation.pattern)}`
         : "In progress build...";
     }
 
