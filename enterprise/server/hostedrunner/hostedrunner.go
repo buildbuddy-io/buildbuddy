@@ -155,6 +155,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
+				{Name: "Pool", Value: "hostedbazel"},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
