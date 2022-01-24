@@ -50,8 +50,6 @@ We'll be adding more documentation on getting started with BuildBuddy RBE in th
 
 - **Performance and reliability improvements** - we put a lot of work into improving performance and reliability in this release. This includes changes like better event flushing (no more getting stuck on 15 build events), better shutdown behavior, speed improvements and optimizations in build artifact uploading and downloading, and more.
 
-‍
-
 ## New to Cloud & Enterprise BuildBuddy
 
 - **Remote Build Execution** - BuildBuddy Cloud and enterprise on-prem now support Remote Build Execution. Features include custom Docker image support, automatic scaling, multiple caching layers, and more. Additional features like Mac support, viewing of remote build actions in BuildBuddy, and more are coming soon.

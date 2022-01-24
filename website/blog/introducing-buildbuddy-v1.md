@@ -23,11 +23,11 @@ Our three major focuses for this release were on better build artifact handling,
 
 - **Remote cache support** - we've added a built-in Bazel remote cache to BuildBuddy, implementing the gRPC remote caching APIs. This allows BuildBuddy to optionally collect build artifacts, timing profile information, test logs, and more.
 
-- **Clickable build artifacts** - this was our most requested feature. Clicking on build artifacts in the BuildBuddy UI now downloads the artifact when using either the built-in BuildBuddy cache, or a third-party cache running in GRPC mode that supports the bytestream API - like [bazel-remote](https://github.com/buchgr/bazel-remote).
+- **Clickable build artifacts** - this was our most requested feature. Clicking on build artifacts in the BuildBuddy UI now downloads the artifact when using either the built-in BuildBuddy cache, or a third-party cache running in gRPC mode that supports the Byte Stream API - like [bazel-remote](https://github.com/buchgr/bazel-remote).
 
 - **Detailed timing information** - getting detailed timing information on your Bazel builds can be a hassle. Now BuildBuddy invocations include a new "Timing" tab - which pulls the Bazel profile logs from your build cache and displays them in a human-readable format. Stay tuned for flame charts!
 
-- **Viewable test logs** - digging into test logs for your Bazel runs can be a pain. Now BuildBuddy surfaces test logs directly in the UI when you click on a test target (GRPC remote cache required).
+- **Viewable test logs** - digging into test logs for your Bazel runs can be a pain. Now BuildBuddy surfaces test logs directly in the UI when you click on a test target (gRPC remote cache required).
 
 - **Multiple test-run support** - one of our favorite features of Bazel is that it will rerun flaky tests for you. BuildBuddy now supports viewing information about multiple attempts of a single test run.
 
@@ -40,8 +40,6 @@ Our three major focuses for this release were on better build artifact handling,
 - **Slack webhook support** - we've added a configuration option that allows you to message a Slack channel when builds finish. This is a nice way of getting a quick notification when a long running build completes, or a CI build fails. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/CONFIG.md#integrations) for more information.
 
 Our open source BuildBuddy distribution is targeted at individuals viewing and debugging their Bazel builds. For teams and organizations, we provide an enterprise version of BuildBuddy that adds support for team-specific features.
-
-‍
 
 ## New to Enterprise BuildBuddy
 
