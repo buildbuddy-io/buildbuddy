@@ -1,6 +1,6 @@
 ---
 slug: whats-new-in-bazel-5-0
-title: "What's New in Bazel 5.0"
+title: "What's new in Bazel 5.0"
 description: We reviewed nearly 3,000 commits and summarized them, so you don’t have to!
 author: Brentley Jones
 author_title: Developer Evangelist @ BuildBuddy
@@ -24,25 +24,25 @@ so I've included a table of contents to allow easy navigation to the changes tha
 
 <nav class="toc">
 
-- [Command-Line Flag Changes](#command-line-flag-changes)
+- [Command-line flag changes](#command-line-flag-changes)
   - [Renamed](#renamed)
-  - [Default Values Changed](#default-values-changed)
+  - [Default values changed](#default-values-changed)
   - [Deprecated](#deprecated)
-  - [No-Op](#no-op)
+  - [No-op](#no-op)
   - [Removed](#removed)
 - [Remote](#remote)
   - [gRPC](#grpc)
-  - [Remote Caching](#remote-caching)
-  - [Remote Execution](#remote-execution)
+  - [Remote caching](#remote-caching)
+  - [Remote execution](#remote-execution)
   - [Build Event Service (BES)](#build-event-service-bes)
 - [Logging](#logging)
   - [Build Event Protocol (BEP)](#build-event-protocol-bep)
   - [Timing Profile](#timing-profile)
   - [Execution Log](#execution-log)
 - [Query](#query)
-- [Dependency Management](#dependency-management)
-- [Platforms and Toolchains](#platforms-and-toolchains)
-- [Execution Platforms](#execution-platforms)
+- [Dependency management](#dependency-management)
+- [Platforms and toolchains](#platforms-and-toolchains)
+- [Execution platforms](#execution-platforms)
   - [Linux](#linux)
   - [macOS](#macos)
 - [Target Platforms](#target-platforms)
@@ -54,8 +54,9 @@ so I've included a table of contents to allow easy navigation to the changes tha
   - [Objective-C](#objective-c)
 - [Rules Authoring](#rules-authoring)
   - [Aspects](#aspects)
-  - [Persistent Workers](#persistent-workers)
+  - [Persistent workers](#persistent-workers)
   - [Starlark](#starlark)
+- [Misc](#misc)
 
 </nav>
 
@@ -67,7 +68,7 @@ so I've included a table of contents to allow easy navigation to the changes tha
     The GitHub UI shows some commits that already exist in the 4.x series of releases due to cherry-picking,
     so the number of unique commits is actually smaller.
 
-## Command-Line Flag Changes
+## Command-line flag changes
 
 Bazel's [LTS strategy][versioning] allows for breaking changes between major versions.
 In particular,
@@ -84,7 +85,7 @@ In the following sections I collected all such flag changes I could find.
 - [`--experimental_existing_rules_immutable_view` is now `--incompatible_existing_rules_immutable_view`.](https://github.com/bazelbuild/bazel/commit/35182000bfc5303254008896481b1350c91c3256)
 - [`--project_id` is now `--bes_instance_name`.](https://github.com/bazelbuild/bazel/commit/2b48c6b9a447756fcb3295b8a75899b96efa7fd4)
 
-### Default Values Changed
+### Default values changed
 
 - [`--analysis_testing_deps_limit=800`](https://github.com/bazelbuild/bazel/commit/de3b3caed60d47da7e6464478ec9eb814bc794db)
 - [`--experimental_enable_aggregating_middleman=false`](https://github.com/bazelbuild/bazel/commit/64d5bae3b805fad68e9f80512595702472f086f1)
@@ -115,7 +116,7 @@ In the following sections I collected all such flag changes I could find.
 - [`--experimental_spawn_scheduler`](https://github.com/bazelbuild/bazel/commit/b41576b2f5bb87f3817dfb1ee09493b8220a9634)
 - [`--watchfs`](https://github.com/bazelbuild/bazel/commit/03bd0eb6ecd80f824ee8d5b028db96c43721a3b6)
 
-### No-Op
+### No-op
 
 These flags now do nothing, but still exist to allow for migration off of them:
 
@@ -179,7 +180,7 @@ There were a couple changes that applied at this foundational level:
 - [Added mnemonic and label to remote cache and remote execution requests.](https://github.com/bazelbuild/bazel/commit/a750a56f8f4061516ec3056ae8a8295ea8279903)
 - [Bazel no longer crashes on errors returned while creating a gRPC connection.](https://github.com/bazelbuild/bazel/commit/b0ae0afd451bbe374be24c905579cece793b90c7)
 
-### Remote Caching
+### Remote caching
 
 Using a remote cache is one of the most popular ways of speeding up a Bazel build.
 Thankfully these changes make using a remote cache both more performant and more reliable:
@@ -194,7 +195,7 @@ Thankfully these changes make using a remote cache both more performant and more
 - [Fixed "file not found" errors when remote cache is changed from enabled to disabled.](https://github.com/bazelbuild/bazel/commit/f94898915268be5670fb1e93a16c03e9b14d2a58)
 - [`chmod 0555` is now consistently set on outputs.](https://github.com/bazelbuild/bazel/commit/11066c7731b5a16f2f11db93f6716a1595650aad)
 
-### Remote Execution
+### Remote execution
 
 For some projects,
 using remote execution is the ultimate performance unlock for their Bazel builds.
@@ -261,7 +262,7 @@ though some are fixes and improvements:
 [build_event_binary_file]: https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--build_event_binary_file
 [build_event_json_file]: https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--build_event_json_file
 
-### Timing Profile
+### Timing profile
 
 The action timing profile,
 which is enabled by default with [`--profile`][profile],
@@ -280,7 +281,7 @@ These changes add more detail and clarity to the profile:
 [performance-profiling]: https://docs.bazel.build/versions/5.0.0/skylark/performance.html#performance-profiling
 [profile]: https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--profile
 
-### Execution Log
+### Execution log
 
 Bazel logs all of the [spawns][spawns] it executes in the execution log,
 which is enabled with the [`--execution_log_json_file`][execution_log_json_file] or [`--execution_log_binary_file`][execution_log_binary_file] flags.
@@ -304,7 +305,7 @@ Here are some changes that were made to the `query` family of commands:
 - [Added execution platform information to `aquery` output.](https://github.com/bazelbuild/bazel/commit/11c09c5254e6dc5e17016a17c345fe374b3d799d)
 - [Fixed output of `config_setting` visibility.](https://github.com/bazelbuild/bazel/commit/5dfffefef58da0c426cfa0b3d70132dde77950b0)
 
-## Dependency Management
+## Dependency management
 
 A new
 (currently experimental)
@@ -318,7 +319,7 @@ there was one more notable dependency management related change:
 
 [bzlmod]: https://docs.bazel.build/versions/5.0.0/bzlmod.html
 
-## Platforms and Toolchains
+## Platforms and toolchains
 
 The C++, Android, and Apple rules are being migrated to support [building with Platforms][building-with-platforms].
 While [progress has been made][platforms-progress],
@@ -338,7 +339,7 @@ Here are some of the platforms and toolchains related changes which weren't tied
 [building-with-platforms]: https://docs.bazel.build/versions/5.0.0/platforms-intro.html
 [platforms-progress]: https://github.com/bazelbuild/bazel/issues/6431#issuecomment-978329014
 
-## Execution Platforms
+## Execution platforms
 
 Execution platforms are [platforms][platforms] which build tools execute on.
 These include the host platform on which Bazel runs.
@@ -375,7 +376,7 @@ macOS had a lot of changes related to it:
 - [Fixed a crash when a custom crosstool specifies a `DEVELOPER_DIR` environment variable.](https://github.com/bazelbuild/bazel/commit/1811e82ca4e68c2dd52eed7907c3d1926237e18a)
 - [Fixed JSON output for `xcode-locator`.](https://github.com/bazelbuild/bazel/commit/1bae172b8af8cd60dafada4be45e1cdffe9a763d)
 
-## Target Platforms
+## Target platforms
 
 Target platforms are [platforms][platforms] which you are ultimately building for.
 I cover the Android and Apple platforms in the following sections,
@@ -480,7 +481,7 @@ In the following sections I summarize the notable changes in support of these la
 - [Swift module maps are no longer generated in `objc_library` and `objc_import` targets.](https://github.com/bazelbuild/bazel/commit/31bec271b148a826f6d1a527e6c087e5b2d9333f)
 - [Removed the `generate_dsym` method from the `objc` fragment.](https://github.com/bazelbuild/bazel/commit/1bf58436a8fca8c704c8738520cc6d33d4f73da0)
 
-## Rules Authoring
+## Rules authoring
 
 Bazel's extensibility is powered by the ability to write custom [rules][rules].
 Most rules used in a project will be provided by open source rule sets,
@@ -503,7 +504,7 @@ These changes expanded their capabilities:
 
 [aspects]: https://docs.bazel.build/versions/5.0.0/skylark/aspects.html
 
-### Persistent Workers
+### Persistent workers
 
 [Persistent workers][workers] improve build performance by sending multiple requests to long-running processes.
 Here are some notable changes to persistent worker support:

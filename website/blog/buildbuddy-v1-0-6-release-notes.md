@@ -37,12 +37,10 @@ Our open source BuildBuddy distribution is targeted at individuals viewing and d
 
 Many of these Enterprise features are also available for free to individuals via [Cloud Hosted BuildBuddy](https://app.buildbuddy.io/).
 
-‍
-
 ## New to Cloud & Enterprise BuildBuddy
 
 - **Certificate based auth** - authentication between Bazel and BuildBuddy can now be authenticated and encrypted using certificate-based [mTLS](https://en.wikipedia.org/wiki/Mutual_authentication).
-- **Auth configuration widget** - using BuildBuddy's new configuration widget, it's easy to setup an auth configuration that makes sense for your team. This includes options to pull credentials into user-specific .bazelrc files and download generated auth certificates.
+- **Auth configuration widget** - using BuildBuddy's new configuration widget, it's easy to setup an auth configuration that makes sense for your team. This includes options to pull credentials into user-specific `.bazelrc` files and download generated auth certificates.
 
 - **Build Results API** - many teams want to do more with their build results. With BuildBuddy's [Build Results API](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto) - users have programmatic access to an invocation's targets, actions, and build artifacts. This allows teams to build out custom integrations with their existing tooling. If you'd like access to the API, or have more information you'd like exposed, email [developers@buildbuddy.io](https://buildbuddy.io/blog/buildbuddy-v1-0-6-release-notes/developers@buildbuddy.io).
 

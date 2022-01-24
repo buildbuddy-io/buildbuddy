@@ -15,7 +15,7 @@ Thanks to everyone using open source and cloud-hosted BuildBuddy. We’ve made l
 
 Our focus for this release was on giving users new tools to improve build performance, debug cache hits, and a completely redesigned Cloud & Enterprise experience.
 
-## **New to Open Source BuildBuddy**
+## New to Open Source BuildBuddy
 
 - **Timing profile explorer **- Bazel's timing profile is the best way to get detailed insights into where to spend your time optimizing your build. Unfortunately, extracting useful information out of the thousands of events can be challenging without using something like Chrome's profiling tools. Now we've built these tools right into the BuildBuddy timing tab so you can explore this info for any build. See which actions dominate your build's critical path or find out how much time is spent downloading outputs - now with a single click.
 
@@ -31,7 +31,7 @@ Get a view into cache performance for every invocation.
 
 - **Environment variable redaction controls** - when debugging cache hits, it can be useful to get a full picture of the inputs that are affecting a particular build - like the PATH environment variable. By default, BuildBuddy redacts nearly all environment variables passed into Bazel. We've added controls per invocation that allow you to optionally allow environment variables of your choice to skip redaction. Information on configuring this can be found in our[ build metadata docs](https://www.buildbuddy.io/docs/guide-metadata#environment-variable-redacting).
 
-## **New to Cloud & Enterprise BuildBuddy**
+## New to Cloud & Enterprise BuildBuddy
 
 - **Redesigned navigation **- as BuildBuddy has grown from a debugging tool to a fully-featured platform to debug, analyze, monitor, and share builds across your organization, we've outgrown the minimal navigation setup that has gotten us this far. In Cloud and Enterprise BuildBuddy, we've replaced the top menu bar with a more fully-featured left-nav. This gives us room to add new features like Trends and provides easier access to critical pages like Setup & Docs.
 
@@ -47,4 +47,4 @@ The new navigation makes room for new features.
 
 That’s it for this release. Stay tuned for more updates coming soon!
 
-As always, we love your feedback - join our[ Slack channel](https://slack.buildbuddy.io) or email us at hello@buildbuddy.io with any questions, comments, or thoughts.
+As always, we love your feedback - join our[ Slack channel](https://slack.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
