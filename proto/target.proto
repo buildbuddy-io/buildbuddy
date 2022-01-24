@@ -96,13 +96,23 @@ message GetTargetRequest {
   context.RequestContext request_context = 1;
 
   // The filters to apply to this query. Required.
+  // When server_side_pagination = true, only repo_url takes effect.
   TargetQuery query = 2;
 
   // Return records that were run *after* this timestamp.
+  // Deprecated when server_side_pagination = true.
   int64 start_time_usec = 3;
 
   // Return records that were run *before* this timestamp.
+  // Deprecated when server_side_pagination = true.
   int64 end_time_usec = 4;
+
+  // This boolean is used to roll out server side pagination.
+  bool server_side_pagination = 5;
+
+  // The pagination token. If unset, the server returns the first page of
+  // the result.
+  string page_token = 6;
 }
 
 message GetTargetResponse {
@@ -117,4 +127,7 @@ message GetTargetResponse {
   // the client should fetch additional time ranges working backwards from the
   // oldest timestamp returned.
   bool truncated_results = 3;
+
+  // The pagination token to retrieve the next page of results.
+  string next_page_token = 4;
 }
