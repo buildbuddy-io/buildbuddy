@@ -108,7 +108,7 @@ message GetTargetRequest {
   int64 end_time_usec = 4;
 
   // This boolean is used to roll out server side pagination.
-  bool server_side_pagination = 5
+  bool server_side_pagination = 5;
 
       // The pagination token. If unset, the server returns the first page of
       // the result.
