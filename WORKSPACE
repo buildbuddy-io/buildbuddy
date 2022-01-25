@@ -195,12 +195,6 @@ dockerfile_image(
 )
 
 dockerfile_image(
-    name = "default_execution_image_with_docker",
-    dockerfile = "//dockerfiles/default_execution_image_with_docker:Dockerfile",
-    visibility = ["//visibility:public"],
-)
-
-dockerfile_image(
     name = "executor_image",
     dockerfile = "//dockerfiles/executor_image:Dockerfile",
     visibility = ["//visibility:public"],
