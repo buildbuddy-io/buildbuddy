@@ -457,7 +457,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		valueArgs := []interface{}{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
-			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?")
+			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
 			valueArgs = append(valueArgs, t.TargetID)
 			valueArgs = append(valueArgs, t.InvocationUUID)
 			valueArgs = append(valueArgs, t.TargetType)
@@ -469,7 +469,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 		}
 		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
-			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_pk, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
+			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
 		if err != nil {
