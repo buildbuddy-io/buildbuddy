@@ -109,11 +109,11 @@ svg[aria-hidden="true"] {
   display: inline;
 }
 
-.pagination-nav__item:first-child .pagination-nav__label::before {
+.blog-wrapper .pagination-nav__item:first-child .pagination-nav__label::before {
   display: none;
 }
 
-.pagination-nav__item--next .pagination-nav__label::after {
+.blog-wrapper .pagination-nav__item--next .pagination-nav__label::after {
   display: none;
 }
 
