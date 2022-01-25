@@ -8,7 +8,7 @@
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <item>
-            <title><![CDATA[What's new in Bazel 5.0]]></title>
+            <title><![CDATA[What's New in Bazel 5.0]]></title>
             <link>https://www.buildbuddy.io/blog/whats-new-in-bazel-5-0</link>
             <guid>whats-new-in-bazel-5-0</guid>
             <pubDate>Wed, 19 Jan 2022 12:00:00 GMT</pubDate>

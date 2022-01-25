@@ -8,7 +8,7 @@
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
     <entry>
-        <title type="html"><![CDATA[What's new in Bazel 5.0]]></title>
+        <title type="html"><![CDATA[What's New in Bazel 5.0]]></title>
         <id>whats-new-in-bazel-5-0</id>
         <link href="https://www.buildbuddy.io/blog/whats-new-in-bazel-5-0"/>
         <updated>2022-01-19T12:00:00.000Z</updated>
