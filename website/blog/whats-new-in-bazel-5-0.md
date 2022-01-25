@@ -1,6 +1,6 @@
 ---
 slug: whats-new-in-bazel-5-0
-title: "What's new in Bazel 5.0"
+title: "What's New in Bazel 5.0"
 description: We reviewed nearly 3,000 commits and summarized them, so you don’t have to!
 author: Brentley Jones
 author_title: Developer Evangelist @ BuildBuddy
