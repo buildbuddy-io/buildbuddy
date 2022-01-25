@@ -4,9 +4,79 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 19 Jan 2022 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 25 Jan 2022 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
+        <item>
+            <title><![CDATA[How Bazel 5.0 Makes Your Builds Faster]]></title>
+            <link>https://www.buildbuddy.io/blog/how-bazel-5-0-makes-your-builds-faster</link>
+            <guid>how-bazel-5-0-makes-your-builds-faster</guid>
+            <pubDate>Tue, 25 Jan 2022 12:00:00 GMT</pubDate>
+            <description><![CDATA[In our last post,]]></description>
+            <content:encoded><![CDATA[<p>In our <a href="whats-new-in-bazel-5-0.md">last post</a>,
+we summarized the changes that were in the Bazel 5.0 release.
+There were a lot of changes though,
+so it can be hard to determine which ones are impactful to you and why.</p><p>Don&#x27;t worry, we&#x27;ve got your back.
+In this post we highlight the changes that help BuildBuddy users build even faster!</p><h2>Build Event Service (BES) improvements</h2><p>Bazel 5.0 includes many changes that make uploading BES events and artifacts to the BuildBuddy UI more reliable and performant.</p><p>Before Bazel 5.0,
+if you wanted to upload a timing profile to BuildBuddy,
+you had to be fine with Bazel uploading all outputs referenced in the BEP,
+even if they were set to not be cached
+(e.g. the <code>--noremote_upload_local_results</code> flag or the <code>no-remote-cache</code> tag).
+Now you can set the <code>--incompatible_remote_build_event_upload_respect_no_cache</code> flag,
+which causes Bazel to respect your wishes in regards to output caching.</p><p>Also,
+if you&#x27;ve had <a href="https://github.com/bazelbuild/bazel/issues/11392">warnings</a> or <a href="https://github.com/bazelbuild/bazel/issues/11408">crashes</a> when using <code>--bes_upload_mode=fully_async</code> in the past,
+those should now be fixed as well.</p><h2>Deduplicated cache calls and uploads</h2><p>Before Bazel 5.0,
+when using Remote Build Execution (RBE),
+Bazel would ask the cache which blobs it needed to upload for every input to an action that was going to be executed remotely.<sup id="fnref-1"><a href="#fn-1" class="footnote-ref">1</a></sup>
+It did this even if it had previously uploaded a specific input for a previous action.
+Similarly,
+if two actions with similar inputs were executed concurrently,
+then Bazel didn&#x27;t deduplicate the input existence checking or uploading.</p><p>For projects with a large number of shared inputs,
+which is common in C-family programming languages and Node.js,
+this can cause a significant amount of network traffic,
+resulting in long build times on low-bandwidth, high-latency connections.</p><p>On the output side of things,
+if multiple actions produced the same output,
+then Bazel would upload the output multiple times.
+If these outputs were large,
+then this caused significant network overhead.</p><p>Bazel 5.0 addresses these issues.
+If you have a project that shares a lot of inputs between actions
+(e.g. C, C++, Objective-C, and Node.js),
+and you use BuildBuddy&#x27;s Remote Execution,
+then Bazel 5.0 should improve your build times.</p><h2>Faster action cache checking</h2><p>In a similar vein as the above mentioned issues,
+Bazel can be unnecessarily slow when checking if an action with a large number of inputs is cached.
+This is because Bazel needs to build a <a href="https://en.wikipedia.org/wiki/Merkle_tree">Merkle tree</a> from an action&#x27;s inputs,
+which can be expensive if there are many.</p><p>Starting in Bazel 5.0,
+you can use the <code>--experimental_remote_merkle_tree_cache</code> and <code>--experimental_remote_merkle_tree_cache_size</code> flags to cache the nodes of these merkle trees.
+If you have a project that shares a lot of it&#x27;s inputs between actions
+(e.g. C, C++, Objective-C, and Node.js),
+and you use BuildBuddy&#x27;s Remote Cache or Remote Execution,
+then these flags should improve your build times.</p><h2>Asynchronous cache uploading</h2><p>When an action is run locally,
+and Bazel uploads the action&#x27;s outputs to a remote build cache,
+it waits for that upload to complete before it executes dependent actions.
+This is needed for dependent actions that are executed remotely,
+but it&#x27;s unnecessary if they are executed locally.
+These delays can cause builds that use BuildBuddy&#x27;s Remote Cache to sometimes be slower than if they didn&#x27;t use the cache.</p><p>Starting in Bazel 5.0,
+you can use the <code>--experimental_remote_cache_async</code> flag to have Bazel perform these uploads asynchronously.
+Uploads still need to complete before a build finishes,
+but now Bazel can speed ahead with local execution regardless of upload speed.
+Network utilization is also improved,
+as uploads can queue up quicker.
+If you have a project that uploads to BuildBuddy&#x27;s Remote Cache,
+then this flag should improve your build times.</p><h2>Compressed uploads and downloads</h2><p>Bazel 5.0 added the <code>--experimental_remote_cache_compression</code> flag,
+which causes Bazel to compresses and decompress artifact uploads and downloads with the <a href="https://en.wikipedia.org/wiki/Zstandard">zstd algorithm</a>.
+In our testing this reduces the average number of bytes transferred by 60-70%.</p><p>There is some overhead involved in this,
+both on the Bazel side and the cache side,
+so it won&#x27;t make every build for every project faster.<sup id="fnref-2"><a href="#fn-2" class="footnote-ref">2</a></sup>
+That said,
+if network bandwidth is a bottleneck in your build times,
+this flag could make those builds significantly faster.</p><h2>And more...</h2><p>Bazel 5.0 includes many additional changes that improve it&#x27;s reliability and performance.
+To dig a little deeper,
+be sure to check out our <a href="whats-new-in-bazel-5-0.md">What&#x27;s New in Bazel 5.0</a> post.</p><div class="footnotes"><hr/><ol><li id="fn-1">Specifically,
+Bazel would make a <code>FindMissingBlobs</code> that contained every input for an action,
+every time.
+Now Bazel will only include the unique inputs it hasn&#x27;t already uploaded before.<a href="#fnref-1" class="footnote-backref">↩</a></li><li id="fn-2">Eventually we might store artifacts in their compressed state,
+removing most overhead on the cache side.<a href="#fnref-2" class="footnote-backref">↩</a></li></ol></div>]]></content:encoded>
+        </item>
         <item>
             <title><![CDATA[What's New in Bazel 5.0]]></title>
             <link>https://www.buildbuddy.io/blog/whats-new-in-bazel-5-0</link>
