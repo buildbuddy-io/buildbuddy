@@ -1,0 +1,3 @@
+This image extends the default execution image with an additional layer where
+Docker is installed, so that Docker may be used by actions at runtime via
+Docker-in-Firecracker.

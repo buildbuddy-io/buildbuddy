@@ -95,3 +95,10 @@ container_image(
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
+
+container_image(
+    name = "default_base_image_with_docker",
+    base = "@default_execution_image_with_docker//image:dockerfile_image.tar",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)

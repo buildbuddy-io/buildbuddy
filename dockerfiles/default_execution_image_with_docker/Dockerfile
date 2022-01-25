@@ -1,0 +1,13 @@
+FROM gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4
+
+# Install docker.
+# Note: Some apt utils depend on /usr/bin/python3 being symlinked to python3.5, but the
+# google RBE image has python3 symlinked to python3.6. As a workaround, we temporarily
+# link /usr/bin/python3 to /usr/bin/python3.5 during this step.
+RUN mv /usr/bin/python3 /usr/bin/python3.bak && ln -s /usr/bin/python3.5 /usr/bin/python3 && \
+    apt-get update && apt-get install -y apt-transport-https software-properties-common && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - && \
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable" && \
+    apt-get update && apt-get install -y docker-ce && \
+    mv /usr/bin/python3.bak /usr/bin/python3 && \
+    apt-get clean
