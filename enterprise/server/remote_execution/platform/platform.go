@@ -31,7 +31,7 @@ const (
 	DefaultPoolValue = "default"
 
 	containerImagePropertyName = "container-image"
-	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
+	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
