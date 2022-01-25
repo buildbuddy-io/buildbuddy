@@ -33,6 +33,10 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+const (
+	imageWithDockerInstalled = "gcr.io/flame-public/bb-devtools@sha256:16ef96fe7efc61b8b703ee45c4dc2ef53d1df9011e72c362e61b40f3d03780f4"
+)
+
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 
@@ -457,4 +461,126 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
+}
+
+func TestFirecrackerRunWithDocker(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	path := filepath.Join(workDir, "world.txt")
+	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker pull busybox &>/dev/null
+
+			# Try running a few commands
+			docker run --rm busybox echo Hello
+			docker run --rm busybox echo world
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       true,
+		InitDockerd:            true,
+		DebugMode:              true,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "Hello\nworld\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              200, // small to make snapshotting faster.
+		InitDockerd:            true,
+		EnableNetworking:       true,
+		DiskSlackSpaceMB:       100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker pull busybox &>/dev/null
+
+			docker run --rm busybox echo Hello
+		`},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "Hello\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+
+	if err := c.Pause(ctx); err != nil {
+		t.Fatalf("unable to pause container: %s", err)
+	}
+	if err := c.Unpause(ctx); err != nil {
+		t.Fatalf("unable to unpause container: %s", err)
+	}
+
+	cmd = &repb.Command{
+		Arguments: []string{"bash", "-c", `
+		  # Note: Image should be cached from previous command.
+			docker run --rm busybox echo world
+		`},
+	}
+
+	res = c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+
+	if err := c.Remove(ctx); err != nil {
+		t.Fatal(err)
+	}
 }

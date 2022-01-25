@@ -50,6 +50,7 @@ const (
 	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
+	initDockerdPropertyName              = "init-dockerd"
 	enableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
@@ -94,6 +95,11 @@ type Properties struct {
 	DockerForceRoot           bool
 	RecycleRunner             bool
 	EnableVFS                 bool
+	// InitDockerd specifies whether to initialize dockerd within the execution
+	// environment if it is available in the execution image, allowing Docker
+	// containers to be spawned by actions. Only available with
+	// `workload-isolation-type=firecracker`.
+	InitDockerd bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
@@ -154,6 +160,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
+		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),

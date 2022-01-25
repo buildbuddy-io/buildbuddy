@@ -19,6 +19,10 @@ type ContainerOpts struct {
 	// Whether or not to enable networking.
 	EnableNetworking bool
 
+	// Whether or not to initialize dockerd. Docker must be installed in the
+	// VM image in order for this to work.
+	InitDockerd bool
+
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.

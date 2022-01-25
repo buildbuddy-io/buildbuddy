@@ -23,9 +23,13 @@ type Retry struct {
 	isReset        bool
 }
 
-func (r *Retry) Reset() {
-	r.currentAttempt = 0
-	r.isReset = true
+func New(ctx context.Context, opts *Options) *Retry {
+	r := &Retry{
+		ctx:  ctx,
+		opts: opts,
+	}
+	r.Reset()
+	return r
 }
 
 // DefaultWithContext returns a new retry.Retry object that is ready to use.
@@ -47,6 +51,11 @@ func DefaultWithContext(ctx context.Context) *Retry {
 	}
 	r.Reset()
 	return r
+}
+
+func (r *Retry) Reset() {
+	r.currentAttempt = 0
+	r.isReset = true
 }
 
 func (r *Retry) delay() time.Duration {
