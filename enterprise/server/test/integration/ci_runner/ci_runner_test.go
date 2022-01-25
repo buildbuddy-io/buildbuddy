@@ -90,6 +90,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	args = append(args, []string{
 		"--bazel_command=" + bazelPath,
 		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
+		"--workflow_id=test-workflow",
 	}...)
 
 	cmd := exec.Command(binPath, args...)

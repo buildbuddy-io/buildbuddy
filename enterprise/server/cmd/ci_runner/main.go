@@ -179,6 +179,33 @@ func (r *buildEventReporter) Publish(event *bespb.BuildEvent) error {
 	return r.bep.Publish(event)
 }
 
+type parsedBazelArgs struct {
+	cmd      string
+	flags    []string
+	patterns []string
+}
+
+func parseBazelArgs(cmd string) (*parsedBazelArgs, error) {
+	args, err := shlex.Split(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) < 1 {
+		return nil, status.FailedPreconditionError("missing command")
+	}
+	parsedArgs := &parsedBazelArgs{
+		cmd: args[0],
+	}
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--") {
+			parsedArgs.flags = append(parsedArgs.flags, arg)
+		} else {
+			parsedArgs.patterns = append(parsedArgs.patterns, arg)
+		}
+	}
+	return parsedArgs, nil
+}
+
 func (r *buildEventReporter) Start(startTime time.Time) error {
 	if !r.startTime.IsZero() {
 		// Already started.
@@ -192,10 +219,15 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	}
 
 	cmd := ""
+	patterns := []string{}
 	if !r.isWorkflow {
-		cmd = *bazelSubCommand
+		parsedArgs, err := parseBazelArgs(*bazelSubCommand)
+		if err != nil {
+			return err
+		}
+		cmd = parsedArgs.cmd
+		patterns = parsedArgs.patterns
 	}
-
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
@@ -214,9 +246,20 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	}
 	if r.isWorkflow {
 		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
+	} else {
+		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
+	}
+	if !r.isWorkflow {
+		patternEvent := &bespb.BuildEvent{
+			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
+			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
+		}
+		if err := r.bep.Publish(patternEvent); err != nil {
+			return err
+		}
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.
