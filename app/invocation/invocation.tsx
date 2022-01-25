@@ -183,7 +183,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <TargetComponent
           invocationId={this.props.invocationId}
           hash={this.props.hash}
-          files={this.state.model.getFiles(completed.buildEvent)}
+          files={this.state.model.getFiles(completed?.buildEvent)}
           configuredEvent={this.state.model.configuredMap.get(targetLabel)}
           skippedEvent={this.state.model.skippedMap.get(targetLabel)}
           completedEvent={completed}
