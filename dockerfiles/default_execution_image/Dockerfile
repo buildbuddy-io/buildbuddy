@@ -13,4 +13,4 @@ RUN mv /usr/bin/python3 /usr/bin/python3.bak && ln -s /usr/bin/python3.5 /usr/bi
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable" && \
     apt-get update && apt-get install -y docker-ce && \
     mv /usr/bin/python3.bak /usr/bin/python3 && \
-    apt-get clean
+    apt-get clean && rm -rf /var/lib/apt/lists/*
