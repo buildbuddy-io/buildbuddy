@@ -100,3 +100,88 @@ html[data-theme="dark"] .menu {
   right: 0;
   left: initial;
 }
+
+.docs-wrapper .menu {
+  padding: 0;
+  margin-right: 32px;
+}
+
+.navbar-sidebar .navbar-sidebar__item {
+  padding: 0 24px;
+}
+
+.navbar-sidebar .navbar__brand {
+  padding-left: 16px;
+}
+
+.navbar-sidebar .menu__link {
+  font-size: 1.4em;
+}
+
+.navbar-sidebar .theme-doc-sidebar-menu.menu__list {
+  margin-left: 24px;
+}
+
+.theme-doc-sidebar-menu.menu__list,
+.theme-doc-sidebar-menu.menu__list .menu__list {
+  padding: 0;
+  margin: 0;
+}
+
+.theme-doc-sidebar-menu.menu__list .menu__link {
+  color: #000;
+  padding: 0.375rem 0;
+}
+
+.theme-doc-sidebar-menu .menu__list-item-collapsible {
+  margin-bottom: 8px;
+}
+
+.theme-doc-sidebar-menu .menu__list-item-collapsible:hover {
+  background-color: transparent;
+}
+
+.theme-doc-sidebar-menu.menu__list .menu__list {
+  font-size: 0.9em;
+  font-weight: 500;
+  margin-bottom: 24px;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+.theme-doc-sidebar-menu.menu__list .menu__list .menu__link {
+  color: #455a64;
+  padding-left: 16px;
+  margin-left: 10px;
+  margin-right: 16px;
+}
+
+.theme-doc-sidebar-menu .menu__link.menu__link--sublist,
+.theme-doc-sidebar-menu .menu__list-item-collapsible {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.menu__list-item-collapsible button:before,
+.menu__link.menu__link--sublist::after {
+  color: #fff;
+  background-size: 18px;
+  margin-right: 16px;
+  width: 10px;
+  min-width: 10px;
+}
+
+.menu__list-item-collapsible button {
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navbar-sidebar__back {
+  padding: 24px 30px;
+  font-size: 1.4em;
+  background-color: transparent;
+}

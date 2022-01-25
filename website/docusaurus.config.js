@@ -206,6 +206,7 @@ module.exports = {
       "@docusaurus/preset-classic",
       {
         docs: {
+          sidebarCollapsed: false,
           path: "../docs",
           sidebarPath: require.resolve("./sidebars.js"),
           editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/",
