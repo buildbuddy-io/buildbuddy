@@ -61,7 +61,7 @@ type Executor struct {
 	env        environment.Env
 	runnerPool *runner.Pool
 	id         string
-	name       string
+	hostID     string
 }
 
 type Options struct {
@@ -89,7 +89,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	s := &Executor{
 		env:        env,
 		id:         id,
-		name:       name,
+		hostID:     name,
 		runnerPool: runnerPool,
 	}
 	if hc := env.GetHealthChecker(); hc != nil {
@@ -100,8 +100,8 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	return s, nil
 }
 
-func (s *Executor) Name() string {
-	return s.name
+func (s *Executor) HostID() string {
+	return s.hostID
 }
 
 func (s *Executor) Warmup() {
@@ -193,7 +193,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 
 	md := &repb.ExecutedActionMetadata{
-		Worker:               s.name,
+		Worker:               s.hostID,
 		QueuedTimestamp:      task.QueuedTimestamp,
 		WorkerStartTimestamp: ptypes.TimestampNow(),
 		ExecutorId:           s.id,

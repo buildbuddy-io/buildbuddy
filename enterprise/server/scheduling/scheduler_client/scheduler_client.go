@@ -34,7 +34,7 @@ type Options struct {
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID, executionServerName string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -61,7 +61,7 @@ func makeExecutionNode(pool, executorID, executionServerName string, options *Op
 		Pool:                  pool,
 		Version:               version.AppVersion(),
 		ExecutorId:            executorID,
-		ExecutionServerName:   executionServerName,
+		ExecutorHostId:        executorHostID,
 	}, nil
 }
 
@@ -234,12 +234,12 @@ func (r *Registration) Start(ctx context.Context) {
 
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
-func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executionServerName string, options *Options) (*Registration, error) {
+func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
 	pool := env.GetConfigurator().GetExecutorConfig().Pool
 	if pool == "" {
 		pool = resources.GetPoolName()
 	}
-	node, err := makeExecutionNode(pool, executorID, executionServerName, options)
+	node, err := makeExecutionNode(pool, executorID, executorHostID, options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
