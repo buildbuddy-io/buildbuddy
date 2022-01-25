@@ -12,7 +12,7 @@
         <id>how-bazel-5-0-makes-your-builds-faster</id>
         <link href="https://www.buildbuddy.io/blog/how-bazel-5-0-makes-your-builds-faster"/>
         <updated>2022-01-25T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[In our last post,]]></summary>
+        <summary type="html"><![CDATA[Highlighting changes in Bazel 5.0 that help BuildBuddy users build even faster!]]></summary>
         <content type="html"><![CDATA[<p>In our <a href="whats-new-in-bazel-5-0.md">last post</a>,
 we summarized the changes that were in the Bazel 5.0 release.
 There were a lot of changes though,
