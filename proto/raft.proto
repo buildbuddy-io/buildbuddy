@@ -1,0 +1,353 @@
+syntax = "proto3";
+
+import "proto/remote_execution.proto";
+import "google/rpc/status.proto";
+
+package raft;
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Raft storage and wire protos, used to represent data written to the raft log.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// KV is a basic proto type that represents data written to pebble.
+message KV {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+// Isolation represents the cache isolation type of a particular item.
+message Isolation {
+  enum CacheType {
+    UNKNOWN_TYPE = 0;
+    ACTION_CACHE = 1;
+    CAS_CACHE = 2;
+  }
+  CacheType cache_type = 1;
+  string remote_instance_name = 2;
+}
+
+message FileRecord {
+  string group_id = 1;
+  Isolation isolation = 2;
+  build.bazel.remote.execution.v2.Digest digest = 3;
+}
+
+message FileWriteRequest {
+  FileRecord file_record = 1;
+}
+
+message FileWriteResponse {}
+
+message DirectWriteRequest {
+  KV kv = 1;
+}
+
+message DirectWriteResponse {}
+
+message DirectReadRequest {
+  bytes key = 1;
+}
+
+message DirectReadResponse {
+  KV kv = 1;
+}
+
+message IncrementRequest {
+  bytes key = 1;
+  uint64 delta = 2;  // how much to increment by.
+}
+
+message IncrementResponse {
+  bytes key = 1;
+  uint64 value = 2;
+}
+
+message ScanRequest {
+  bytes left = 1;
+  bytes right = 2;
+
+  enum ScanType {
+    UNDEFINED_SCAN_TYPE = 0;
+    SEEKLT_SCAN_TYPE = 1;
+    SEEKGE_SCAN_TYPE = 2;
+  }
+  ScanType scan_type = 3;
+}
+
+message ScanResponse {
+  repeated KV kvs = 1;
+}
+
+// Compare And Set Request
+// not the other CAS...
+message CASRequest {
+  KV kv = 1;
+
+  // The expected value for the key. Before updating value to the data in KV,
+  // the existing value is matched against this field; if it matches, the update
+  // update proceeds normally, if not, an error is returned.
+  bytes expected_value = 2;
+}
+
+message CASResponse {
+  KV kv = 1;
+}
+
+// Raft CMD API, used to encode raft commands that are replicated via raft and
+// written to a log. Everything written via SyncPropose must be a RequestUnion
+// wrapped in a BatchCmdRequest..
+message RequestUnion {
+  oneof value {
+    FileWriteRequest file_write = 1;
+    DirectWriteRequest direct_write = 2;
+    DirectReadRequest direct_read = 3;
+    IncrementRequest increment = 4;
+    ScanRequest scan = 5;
+    CASRequest cas = 6;
+  }
+}
+
+// Raft CMD API, used to encode raft commands that are replicated via raft and
+// written to a log. Everything passed to SyncRead must be a RequestUnion
+// wrapped in a BatchCmdRequest and everything returned will be a
+// BatchCmdResponse.
+message ResponseUnion {
+  google.rpc.Status status = 1;
+
+  oneof value {
+    FileWriteResponse file_write = 2;
+    DirectWriteResponse direct_write = 3;
+    DirectReadResponse direct_read = 4;
+    IncrementResponse increment = 5;
+    ScanResponse scan = 6;
+    CASResponse cas = 7;
+  }
+}
+
+message BatchCmdRequest {
+  repeated RequestUnion union = 1;
+}
+
+message BatchCmdResponse {
+  repeated ResponseUnion union = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Gossip API, data that is broadcast / consumed via the gossip network.
+//
+////////////////////////////////////////////////////////////////////////////////
+message RegistryUpdate {
+  message Add {
+    uint64 cluster_id = 1;
+    uint64 node_id = 2;
+    string target = 3;
+  }
+  repeated Add adds = 1;
+
+  message Remove {
+    uint64 cluster_id = 1;
+    uint64 node_id = 2;
+    string target = 3;
+  }
+  repeated Remove removes = 2;
+
+  message RemoveCluster {
+    uint64 cluster_id = 1;
+  }
+  repeated RemoveCluster cluster_removes = 3;
+
+  string nhid = 4;
+  string grpc_address = 5;
+  string raft_address = 6;
+}
+
+// A RegistryQuery can be sent to gossip to resolve a node, the response
+// will be a RegistryUpdate with only Adds.
+message RegistryQuery {
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+}
+
+// The auto-bringup protocol is very simple: if no previous data is found on
+// startup, the first node in the sorted "join" set will query other nodes
+// until it finds all other members of the join set. If they have previous data
+// then they do not respond to the bringup query. If all nodes respond, then
+// the first node sends them a StartCluster request and provisions the initial
+// cluster.
+message BringupResponse {
+  string nhid = 1;
+  string grpc_address = 2;
+}
+
+message Constraint {
+  // TODO(tylerw): support placement constraints
+}
+
+message PlacementQuery {
+  uint64 target_cluster_id = 1;
+
+  repeated Constraint constraints = 2;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Raft meta-API, used by placement driver to manage data locations etc.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+message NodeLivenessRecord {
+  int64 epoch = 1;
+  int64 expiration = 2;
+}
+
+message RangeLeaseRecord {
+  message NodeLiveness {
+    int64 epoch = 1;
+    bytes node_id = 2;
+  }
+
+  // A RangeLease can either be time based or based off of a node liveness
+  // record.
+  oneof value {
+    NodeLiveness node_liveness = 1;
+    int64 expiration = 2;
+  }
+}
+
+message ReplicaUsage {
+  ReplicaDescriptor replica = 1;
+  int64 estimated_disk_bytes_used = 2;
+}
+
+message NodeUsage {
+  string nhid = 1;
+
+  int64 num_replicas = 2;
+  int64 disk_bytes_total = 3;
+  int64 disk_bytes_used = 4;
+
+  repeated ReplicaUsage replica_usage = 5;
+}
+
+message NodeDescriptor {
+  string nhid = 1;
+  string raft_address = 2;
+  string grpc_address = 3;
+}
+
+message ReplicaDescriptor {
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+}
+
+message Header {
+  ReplicaDescriptor replica = 1;
+  uint64 range_id = 2;
+}
+
+message RangeSet {
+  repeated RangeDescriptor ranges = 1;
+}
+
+message RangeDescriptor {
+  bytes left = 1;
+  bytes right = 2;
+
+  uint64 range_id = 3;
+  repeated ReplicaDescriptor replicas = 4;
+
+  uint64 generation = 5;
+}
+
+// SyncPropose, in proto form.
+message SyncProposeRequest {
+  Header header = 1;
+
+  BatchCmdRequest batch = 2;
+}
+
+message SyncProposeResponse {
+  BatchCmdResponse batch = 1;
+}
+
+// SyncRead, in proto form.
+message SyncReadRequest {
+  Header header = 1;
+  BatchCmdRequest batch = 2;
+}
+message SyncReadResponse {
+  BatchCmdResponse batch = 1;
+}
+
+message StartClusterRequest {
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+  map<uint64, string> initial_member = 3;
+
+  // The following commands will be SyncProposed on the local
+  // nodehost after the cluster has been created.
+  BatchCmdRequest batch = 4;
+
+  bool join = 5;
+}
+
+message StartClusterResponse {
+  BatchCmdResponse batch = 1;
+}
+
+message RemoveDataRequest {
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;
+}
+
+message RemoveDataResponse {}
+
+message Operation {
+  enum OpType {
+    UNKNOWN_TYPE = 0;
+    ADD_NODE = 1;
+    REMOVE_NODE = 2;
+  }
+
+  OpType op_type = 1;
+  uint64 cluster_id = 2;
+  uint64 node_id = 3;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Data API, used for shipping the actual bytes around, outside raft.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+message ReadRequest {
+  FileRecord file_record = 1;
+  int64 offset = 2;
+}
+
+message ReadResponse {
+  bytes data = 1;
+}
+
+message WriteRequest {
+  FileRecord file_record = 1;
+  bool finish_write = 2;
+  bytes data = 3;
+}
+
+message WriteResponse {
+  int64 committed_size = 1;
+}
+
+message FindMissingRequest {
+  Header header = 1;
+  Isolation isolation = 2;
+  repeated FileRecord file_record = 3;
+}
+
+message FindMissingResponse {
+  repeated FileRecord file_record = 1;
+}
