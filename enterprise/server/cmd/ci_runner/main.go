@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/creack/pty"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
@@ -143,9 +144,10 @@ type workspace struct {
 }
 
 type buildEventReporter struct {
-	apiKey string
-	bep    *build_event_publisher.Publisher
-	log    *invocationLog
+	isWorkflow bool
+	apiKey     string
+	bep        *build_event_publisher.Publisher
+	log        *invocationLog
 
 	invocationID          string
 	startTime             time.Time
@@ -155,7 +157,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		iid = newUUID()
@@ -166,7 +168,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
-	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -175,6 +177,33 @@ func (r *buildEventReporter) InvocationID() string {
 
 func (r *buildEventReporter) Publish(event *bespb.BuildEvent) error {
 	return r.bep.Publish(event)
+}
+
+type parsedBazelArgs struct {
+	cmd      string
+	flags    []string
+	patterns []string
+}
+
+func parseBazelArgs(cmd string) (*parsedBazelArgs, error) {
+	args, err := shlex.Split(cmd)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) < 1 {
+		return nil, status.FailedPreconditionError("missing command")
+	}
+	parsedArgs := &parsedBazelArgs{
+		cmd: args[0],
+	}
+	for _, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--") {
+			parsedArgs.flags = append(parsedArgs.flags, arg)
+		} else {
+			parsedArgs.patterns = append(parsedArgs.patterns, arg)
+		}
+	}
+	return parsedArgs, nil
 }
 
 func (r *buildEventReporter) Start(startTime time.Time) error {
@@ -189,11 +218,21 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		optionsDescription = fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey)
 	}
 
+	cmd := ""
+	patterns := []string{}
+	if !r.isWorkflow {
+		parsedArgs, err := parseBazelArgs(*bazelSubCommand)
+		if err != nil {
+			return err
+		}
+		cmd = parsedArgs.cmd
+		patterns = parsedArgs.patterns
+	}
 	startedEvent := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{Started: &bespb.BuildEventId_BuildStartedId{}}},
 		Children: []*bespb.BuildEventId{
 			{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
-			{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
+			{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
@@ -202,10 +241,25 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			Uuid:               r.invocationID,
 			StartTimeMillis:    startTime.UnixMilli(),
 			OptionsDescription: optionsDescription,
+			Command:            cmd,
 		}},
+	}
+	if r.isWorkflow {
+		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}})
+	} else {
+		startedEvent.Children = append(startedEvent.Children, &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}})
 	}
 	if err := r.bep.Publish(startedEvent); err != nil {
 		return err
+	}
+	if !r.isWorkflow {
+		patternEvent := &bespb.BuildEvent{
+			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_Pattern{Pattern: &bespb.BuildEventId_PatternExpandedId{Pattern: patterns}}},
+			Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{}},
+		}
+		if err := r.bep.Publish(patternEvent); err != nil {
+			return err
+		}
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.
@@ -348,6 +402,11 @@ func main() {
 	if err := ensurePath(); err != nil {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
+	// Configure TERM to get prettier output from executed commands.
+	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
+		fatal(status.WrapError(err, "could not setup TERM"))
+	}
+
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
 		wd, err := os.Getwd()
@@ -380,7 +439,7 @@ func main() {
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
-		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
+		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 		if err != nil {
 			fatal(err)
 		}
@@ -442,7 +501,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
-			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID)
+			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 			if err != nil {
 				fatal(err)
 			}
@@ -454,10 +513,11 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		// the user to see in the invocation UI needs to go in that log, instead of
 		// the global `log.Print`.
 		ar := &actionRunner{
-			action:   action,
-			reporter: buildEventReporter,
-			hostname: ws.hostname,
-			username: ws.username,
+			isWorkflow: *workflowID != "",
+			action:     action,
+			reporter:   buildEventReporter,
+			hostname:   ws.hostname,
+			username:   ws.username,
 		}
 		exitCode := 0
 		exitCodeName := "OK"
@@ -535,10 +595,11 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	action   *config.Action
-	reporter *buildEventReporter
-	username string
-	hostname string
+	isWorkflow bool
+	action     *config.Action
+	reporter   *buildEventReporter
+	username   string
+	hostname   string
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
@@ -561,9 +622,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		TargetRepoUrl:      *targetRepoURL,
 		TargetBranch:       *targetBranch,
 	}
-	configuredEvent := &bespb.BuildEvent{
+	wfcEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},
 		Payload: &bespb.BuildEvent_WorkflowConfigured{WorkflowConfigured: wfc},
+	}
+
+	cic := &bespb.ChildInvocationsConfigured{}
+	cicEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
 	}
 	// If the triggering commit merges cleanly with the target branch, the runner
 	// will execute the configured bazel commands. Otherwise, the runner will
@@ -576,25 +643,42 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 				InvocationId: iid,
 				BazelCommand: bazelCmd,
 			})
-			eventID := &bespb.BuildEventId{
+			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
 				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
 					InvocationId: iid,
 				}},
-			}
-			configuredEvent.Children = append(configuredEvent.Children, eventID)
+			})
+			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}},
+			})
 		}
 	}
-	if err := ar.reporter.Publish(configuredEvent); err != nil {
+	if ar.isWorkflow {
+		if err := ar.reporter.Publish(wfcEvent); err != nil {
+			return nil
+		}
+	}
+	if err := ar.reporter.Publish(cicEvent); err != nil {
 		return nil
 	}
 
+	buildMetadata := &bespb.BuildMetadata{
+		Metadata: map[string]string{},
+	}
+	if ar.isWorkflow {
+		buildMetadata.Metadata["ROLE"] = "CI_RUNNER"
+	} else {
+		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
+	}
 	buildMetadataEvent := &bespb.BuildEvent{
-		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
-		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
-			Metadata: map[string]string{
-				"ROLE": "CI_RUNNER",
-			},
-		}},
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
+		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	}
 	if err := ar.reporter.Publish(buildMetadataEvent); err != nil {
 		return nil
@@ -663,6 +747,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
+			break
+		}
+		childCompletedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+				ExitCode:        int32(exitCode),
+				StartTimeMillis: cmdStartTime.UnixMilli(),
+				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+			}},
+		}
+		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
 			break
 		}
 
@@ -815,11 +912,10 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 	if err := os.Chdir(repoDirName); err != nil {
 		return status.WrapErrorf(err, "cd %q", repoDirName)
 	}
-	if err := git(ctx, ws.log, "init"); err != nil {
+	if err := ws.clone(ctx, *targetRepoURL); err != nil {
 		return err
 	}
-	// Don't use a credential helper since we always use explicit credentials.
-	if err := git(ctx, ws.log, "config", "--local", "credential.helper", ""); err != nil {
+	if err := ws.config(ctx); err != nil {
 		return err
 	}
 	return ws.sync(ctx)
@@ -847,11 +943,6 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 }
 
 func (ws *workspace) sync(ctx context.Context) error {
-	// Setup config before we do anything.
-	if err := ws.config(ctx); err != nil {
-		return err
-	}
-
 	// Fetch the pushed and target branches from their respective remotes.
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
@@ -881,18 +972,15 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 	// Create the branch if it doesn't already exist, then update it to point to
 	// the pushed branch tip.
-	if err := git(ctx, ws.log, "checkout", "-B", *pushedBranch); err != nil {
-		return err
-	}
 	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, ws.log, "reset", "--hard", remotePushedBranchRef); err != nil {
+	if err := git(ctx, ws.log, "checkout", "-B", *pushedBranch, remotePushedBranchRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if err := git(ctx, ws.log, "merge", targetRef); err != nil && !isAlreadyUpToDate(err) {
+		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
 			if err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 				errMsg += "\n" + err.Output
@@ -938,6 +1026,20 @@ func (ws *workspace) config(ctx context.Context) error {
 	return nil
 }
 
+func (ws *workspace) clone(ctx context.Context, remoteURL string) error {
+	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+	if err != nil {
+		return err
+	}
+	writeCommandSummary(ws.log, "Cloning target repo...")
+	// Don't show command since the URL may contain the repo access token.
+	args := []string{"clone", "--config=credential.helper=", "--filter=blob:none", "--no-checkout", authURL, "."}
+	if err := runCommand(ctx, "git", args, map[string]string{}, ws.log); err != nil {
+		return status.UnknownError("Command `git clone --filter=blob:none --no-checkout <url>` failed.")
+	}
+	return nil
+}
+
 func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []string) error {
 	if len(branches) == 0 {
 		return nil
@@ -953,7 +1055,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, branches []str
 	if err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil && !isRemoteAlreadyExists(err) {
 		return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 	}
-	fetchArgs := append([]string{"fetch", "--force", remoteName}, branches...)
+	fetchArgs := append([]string{"fetch", "--filter=blob:none", "--force", remoteName}, branches...)
 	if err := git(ctx, ws.log, fetchArgs...); err != nil {
 		return err
 	}
@@ -1030,12 +1132,22 @@ func gitRemoteName(repoURL string) string {
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Stdout = outputSink
-	cmd.Stderr = outputSink
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	return cmd.Run()
+	f, err := pty.Start(cmd)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	copyOutputDone := make(chan struct{})
+	go func() {
+		io.Copy(outputSink, f)
+		copyOutputDone <- struct{}{}
+	}()
+	err = cmd.Wait()
+	<-copyOutputDone
+	return err
 }
 
 func getExitCode(err error) int {

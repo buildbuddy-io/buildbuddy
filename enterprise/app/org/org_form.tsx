@@ -170,11 +170,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="useGroupOwnedExecutors"
               checked={request.useGroupOwnedExecutors}
             />
-            {capabilities.config.forceUserOwnedDarwinExecutors ? (
-              <span>Use self-hosted Linux executors</span>
-            ) : (
-              <span>Use self-hosted executors</span>
-            )}
+            <span>Default to self-hosted executors</span>
           </label>
         )}
       </>

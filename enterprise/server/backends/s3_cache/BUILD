@@ -16,6 +16,7 @@ go_library(
         "//server/util/cache_metrics",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_aws_aws_sdk_go//aws",
         "@com_github_aws_aws_sdk_go//aws/awserr",
         "@com_github_aws_aws_sdk_go//aws/credentials",

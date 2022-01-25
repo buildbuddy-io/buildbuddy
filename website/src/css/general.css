@@ -18,11 +18,21 @@
   --ifm-navbar-background-color: #fff;
   --ifm-navbar-height: 90px;
   --ifm-navbar-padding-horizontal: 24px;
+  --ifm-navbar-link-color: rgba(0, 0, 0, 0.4);
 
-  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgba(0,0,0,0.15)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
+  --ifm-menu-link-sublist-icon: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24"><path fill="rgba(0,0,0,1)" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"></path></svg>');
   --ifm-toc-border-color: transparent;
 
   --ifm-footer-padding-vertical: 96px;
+  --ifm-h1-font-size: 3em;
+  --ifm-link-color: #000;
+}
+
+html {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans",
+    "Droid Sans", "Helvetica Neue", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 html:root {
@@ -65,4 +75,70 @@ html[data-theme="dark"] .footer--dark {
 
 .markdown figure {
   text-align: center;
+}
+
+.docs-wrapper {
+  width: 100%;
+  max-width: calc(1296 + 16px);
+  padding: 0 8px;
+  margin: 0 auto;
+}
+
+@media (min-width: 997px) {
+  .docs-wrapper {
+    max-width: calc(1296px + 48px);
+    padding: 0 24px;
+  }
+}
+
+svg[aria-hidden="true"] {
+  display: none;
+}
+
+/* https://css-tricks.com/fixed-headers-and-jump-links-the-solution-is-scroll-margin-top/ */
+.navbar--fixed-top + .main-wrapper [id] {
+  scroll-margin-top: 90px; /* = navbar height */
+}
+
+.navbar__toggle svg[aria-hidden="true"] {
+  display: block;
+}
+
+.docs-wrapper svg[aria-hidden="true"],
+.theme-edit-this-page svg[aria-hidden="true"] {
+  display: inline;
+}
+
+.blog-wrapper .pagination-nav__item:first-child .pagination-nav__label::before {
+  display: none;
+}
+
+.blog-wrapper .pagination-nav__item--next .pagination-nav__label::after {
+  display: none;
+}
+
+.pill {
+  background-color: #b3e5fc;
+  color: #141414;
+  padding: 2px 16px;
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 16px;
+  margin-bottom: 32px;
+}
+
+@media (min-width: 997px) {
+  .table-of-contents:before {
+    content: "Contents";
+    text-transform: uppercase;
+    padding: 0 8px;
+    font-weight: 700;
+    color: rgba(0, 0, 0, 0.4);
+    font-size: 0.8em;
+  }
+}
+
+.table-of-contents__link--active {
+  color: #03a9f4;
 }

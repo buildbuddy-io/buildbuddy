@@ -18,7 +18,7 @@ Brentley is a maintainer of Bazel's [rules_apple](https://github.com/bazelbuild/
 
 Brentley joins us from Lyft, where he was a Staff Software Engineer on their Client Tooling team. Prior to Lyft, Brentley was an engineer at Target, where he led their migration to Bazel.
 
-![](images/welcome_brentley.png)
+![](../static/img/blog/welcome_brentley.png)
 
 We look forward to working alongside Brentley to build the future of developer tools.
 

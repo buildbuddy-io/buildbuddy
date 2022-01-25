@@ -1,0 +1,28 @@
+.brands {
+  display: flex;
+  background-color: #f8f8f8;
+  padding: 48px 16px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  height: 168px;
+  box-sizing: border-box;
+}
+
+.brands .image {
+  aspect-ratio: 100/30;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brands div {
+  background-image: none !important;
+}
+
+.brands img {
+  max-height: 72px !important;
+  width: auto !important;
+}

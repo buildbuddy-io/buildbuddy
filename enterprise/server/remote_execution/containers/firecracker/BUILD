@@ -41,8 +41,10 @@ go_library(
             "//server/util/status",
             "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
             "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
+            "@com_github_firecracker_microvm_firecracker_go_sdk//client/operations",
             "@com_github_google_uuid//:uuid",
             "@com_github_sirupsen_logrus//:logrus",
+            "@org_golang_x_sync//errgroup",
             "@org_golang_x_sys//unix",
         ],
         "//conditions:default": [],
@@ -52,11 +54,16 @@ go_library(
 go_test(
     name = "firecracker_test",
     srcs = ["firecracker_test.go"],
-    tags = ["manual"],  # Don't include this target in wildcard patterns
+    tags = [
+        "manual",  # Don't include this target in wildcard patterns
+        "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
+    ],
     deps = [
         ":firecracker",
+        "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/util/networking",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/config",
@@ -69,7 +76,9 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/disk",
+        "//server/util/fileresolver",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],
 )

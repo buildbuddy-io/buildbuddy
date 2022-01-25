@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/containerd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -353,12 +352,11 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 // have their execution suspended. The pool doesn't currently account for CPU
 // usage in this case.
 type Pool struct {
-	env              environment.Env
-	imageCacheAuth   *container.ImageCacheAuthenticator
-	podID            string
-	buildRoot        string
-	dockerClient     *dockerclient.Client
-	containerdSocket string
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
+	podID          string
+	buildRoot      string
+	dockerClient   *dockerclient.Client
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -382,18 +380,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 	}
 
 	var dockerClient *dockerclient.Client
-	containerdSocket := ""
-	if executorConfig.ContainerdSocket != "" {
-		_, err := os.Stat(executorConfig.ContainerdSocket)
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Containerd socket %q not found", executorConfig.ContainerdSocket)
-		}
-		containerdSocket = executorConfig.ContainerdSocket
-		log.Info("Using containerd for execution")
-		if executorConfig.DockerSocket != "" {
-			log.Warning("containerd_socket and docker_socket both specified. Ignoring docker_socket in favor of containerd.")
-		}
-	} else if executorConfig.DockerSocket != "" {
+	if executorConfig.DockerSocket != "" {
 		_, err := os.Stat(executorConfig.DockerSocket)
 		if os.IsNotExist(err) {
 			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", executorConfig.DockerSocket)
@@ -410,13 +397,12 @@ func NewPool(env environment.Env) (*Pool, error) {
 	}
 
 	p := &Pool{
-		env:              env,
-		imageCacheAuth:   container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
-		podID:            podID,
-		dockerClient:     dockerClient,
-		containerdSocket: containerdSocket,
-		buildRoot:        executorConfig.GetRootDirectory(),
-		runners:          []*CommandRunner{},
+		env:            env,
+		imageCacheAuth: container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
+		podID:          podID,
+		dockerClient:   dockerClient,
+		buildRoot:      executorConfig.GetRootDirectory(),
+		runners:        []*CommandRunner{},
 	}
 	p.setLimits(&executorConfig.RunnerPool)
 	return p, nil
@@ -555,6 +541,10 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 }
 
 func (p *Pool) hostBuildRoot() string {
+	// If host root dir is explicitly configured, prefer that.
+	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
+		return filepath.Join(hd, "remotebuilds")
+	}
 	if p.podID == "" {
 		// Probably running on bare metal -- return the build root directly.
 		return p.buildRoot
@@ -563,9 +553,6 @@ func (p *Pool) hostBuildRoot() string {
 	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
 	// People might have conventions other than executor-data for the volume name + remotebuilds
 	// for the build root dir.
-	if hd := p.env.GetConfigurator().GetExecutorConfig().HostExecutorRootDirectory; hd != "" {
-		return filepath.Join(hd, "remotebuilds")
-	}
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
@@ -691,12 +678,15 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:             user,
-			ContainerImage:   props.ContainerImage,
-			WorkflowID:       props.WorkflowID,
-			InstanceName:     instanceName,
-			WorkerKey:        workerKey,
-			WorkspaceOptions: wsOpts,
+			User:                   user,
+			ContainerImage:         props.ContainerImage,
+			WorkflowID:             props.WorkflowID,
+			WorkloadIsolationType:  platform.ContainerType(props.WorkloadIsolationType),
+			InitDockerd:            props.InitDockerd,
+			HostedBazelAffinityKey: props.HostedBazelAffinityKey,
+			InstanceName:           instanceName,
+			WorkerKey:              workerKey,
+			WorkspaceOptions:       wsOpts,
 		})
 		if err != nil {
 			return nil, err
@@ -709,6 +699,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	if err != nil {
+		return nil, err
+	}
 	ctr, err := p.newContainer(ctx, props, task)
 	if err != nil {
 		return nil, err
@@ -771,8 +764,6 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,
 		)
-	case platform.ContainerdContainerType:
-		ctr = containerd.NewContainerdContainer(p.containerdSocket, props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
@@ -782,6 +773,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 			DiskSlackSpaceMB:       int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 			EnableNetworking:       true,
+			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
@@ -810,9 +802,17 @@ type query struct {
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
+	// WorkloadIsolationType specifies the isolation type.
+	// Required.
+	WorkloadIsolationType platform.ContainerType
+	// InitDockerd specifies whether dockerd should be initialized.
+	InitDockerd bool
 	// WorkerKey is the key used to tell if a persistent worker can be reused.
 	// Required; the zero-value "" matches non-persistent-worker runners.
 	WorkerKey string
+	// HostedBazelAffinityKey is used to route hosted Bazel requests to different
+	// bazel instances.
+	HostedBazelAffinityKey string
 	// InstanceName is the remote instance name that must have been used when
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
@@ -832,7 +832,10 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		r := p.runners[i]
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
+			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
+			r.PlatformProperties.InitDockerd != q.InitDockerd ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
+			r.PlatformProperties.HostedBazelAffinityKey != q.HostedBazelAffinityKey ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
 			*r.Workspace.Opts != *q.WorkspaceOptions {

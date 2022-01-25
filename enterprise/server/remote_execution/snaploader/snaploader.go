@@ -24,12 +24,12 @@ const (
 
 type LoadSnapshotOptions struct {
 	// The following fields are all required.
-	ConfigurationData []byte
-	MemSnapshotPath   string
-	DiskSnapshotPath  string
-	KernelImagePath   string
-	InitrdImagePath   string
-	ContainerFSPath   string
+	ConfigurationData   []byte
+	MemSnapshotPath     string
+	VMStateSnapshotPath string
+	KernelImagePath     string
+	InitrdImagePath     string
+	ContainerFSPath     string
 
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
@@ -77,7 +77,7 @@ func hardlinkFilesIntoDirectory(targetDir string, files ...string) error {
 func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	files := []string{
 		snapOpts.MemSnapshotPath,
-		snapOpts.DiskSnapshotPath,
+		snapOpts.VMStateSnapshotPath,
 		snapOpts.KernelImagePath,
 		snapOpts.InitrdImagePath,
 		snapOpts.ContainerFSPath,

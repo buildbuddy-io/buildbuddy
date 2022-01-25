@@ -2,13 +2,26 @@ module.exports = {
   title: "BuildBuddy",
   tagline:
     "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
-  url: process.env.BLOG ? "https://blog.buildbuddy.io" : "https://docs.buildbuddy.io",
+  url: "https://www.buildbuddy.io",
   baseUrl: "/",
   favicon: "img/favicon_black.svg",
   organizationName: "buildbuddy-io",
   projectName: "buildbuddy",
   themeConfig: {
+    metadata: [
+      {
+        name: "description",
+        content:
+          "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
+      },
+      {
+        name: "og:description",
+        content:
+          "BuildBuddy provides enterprise features for Bazel — the open source build system that allows you to build and test software 10x faster.",
+      },
+    ],
     colorMode: {
+      disableSwitch: true,
       switchConfig: {
         darkIcon: " ",
         lightIcon: " ",
@@ -17,52 +30,55 @@ module.exports = {
     prism: {
       additionalLanguages: ["promql", "protobuf"],
     },
+    image: "img/preview.png",
     navbar: {
       logo: {
         alt: "BuildBuddy Logo",
         src: "img/logo.svg",
         srcDark: "img/logo_white.svg",
         target: "_self",
-        href: "https://www.buildbuddy.io",
+        href: "/",
+        width: "191px",
+        height: "32px",
       },
       items: [
         {
-          href: "https://docs.buildbuddy.io/docs/introduction/",
-          activeBasePath: "/docs/",
-          label: "Docs",
-          position: "left",
-        },
-        {
-          href: "https://buildbuddy.io/faq",
-          target: "_self",
-          label: "FAQs",
-          position: "left",
-        },
-        {
-          href: "https://github.com/buildbuddy-io/buildbuddy",
-          target: "_self",
-          label: "GitHub",
-          position: "left",
-        },
-        {
-          href: "https://buildbuddy.io/pricing",
+          href: "/pricing",
           target: "_self",
           label: "Pricing",
           position: "left",
         },
         {
+          href: "https://github.com/buildbuddy-io/buildbuddy",
+          target: "_blank",
+          label: "GitHub",
+          position: "left",
+        },
+        {
+          href: "/blog/",
+          activeBasePath: "/blog/",
+          label: "Blog",
+          position: "left",
+        },
+        {
+          href: "/docs/introduction/",
+          activeBasePath: "/docs/",
+          label: "Docs",
+          position: "right",
+        },
+        {
           href: "https://app.buildbuddy.io/",
           target: "_self",
           label: "Login",
-          position: "left",
+          position: "right",
         },
 
         {
           href: "https://app.buildbuddy.io/",
           target: "_self",
-          label: "Sign Up",
+          label: "Get Started",
           position: "right",
-          class: "sign-up",
+          className: "sign-up",
         },
       ],
     },
@@ -72,7 +88,7 @@ module.exports = {
         {
           items: [
             {
-              html: `<a href="https://www.buildbuddy.io/"><img src="/img/logo_white.svg" class="footer-logo" /></a>`,
+              html: `<a href="/"><img alt="BuildBuddy Logo" src="/img/logo_white.svg" width="281px" height="32px" class="footer-logo" /></a>`,
             },
           ],
         },
@@ -81,17 +97,17 @@ module.exports = {
           items: [
             {
               label: "Get Started",
-              href: "https://app.buildbuddy.io/",
+              href: "https://app.buildbuddy.io",
               target: "_self",
             },
             {
               label: "Documentation",
-              href: "https://docs.buildbuddy.io/docs/introduction/",
+              href: "/docs/introduction/",
               target: "_self",
             },
             {
               label: "Pricing",
-              href: "https://www.buildbuddy.io/pricing",
+              href: "/pricing",
               target: "_self",
             },
             {
@@ -101,12 +117,12 @@ module.exports = {
             },
             {
               label: "Privacy Policy",
-              href: "https://www.buildbuddy.io/privacy",
+              href: "/privacy",
               target: "_self",
             },
             {
               label: "Terms of Service",
-              href: "https://www.buildbuddy.io/terms",
+              href: "/terms",
               target: "_self",
             },
           ],
@@ -116,7 +132,7 @@ module.exports = {
           items: [
             {
               label: "Blog",
-              href: "https://blog.buildbuddy.io/blog/",
+              href: "/blog/",
               target: "_self",
             },
             {
@@ -125,17 +141,17 @@ module.exports = {
             },
             {
               label: "Contact Us",
-              href: "https://www.buildbuddy.io/contact",
+              href: "/contact",
               target: "_self",
             },
             {
-              label: "Our Team",
-              href: "https://www.buildbuddy.io/team",
+              label: "Team",
+              href: "/team",
               target: "_self",
             },
             {
               label: "Careers",
-              href: "https://www.buildbuddy.io/careers",
+              href: "/careers",
               target: "_self",
             },
           ],
@@ -145,17 +161,17 @@ module.exports = {
           items: [
             {
               label: "Security Overview",
-              href: "https://www.buildbuddy.io/security",
+              href: "/security",
               target: "_self",
             },
             {
               label: "Security Updates",
-              href: "https://www.buildbuddy.io/security-updates",
+              href: "/security-updates",
               target: "_self",
             },
             {
               label: "Report a Vulnerability",
-              href: "https://www.buildbuddy.io/security-vulnerability-report",
+              href: "/security-vulnerability-report",
               target: "_self",
             },
           ],
@@ -189,27 +205,27 @@ module.exports = {
     [
       "@docusaurus/preset-classic",
       {
-        docs:
-          process.env.PROD && process.env.BLOG
-            ? { path: "empty" }
-            : {
-                path: "../docs",
-                sidebarPath: require.resolve("./sidebars.js"),
-                editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/",
-              },
-        blog:
-          process.env.PROD && !process.env.BLOG
-            ? { path: "empty" }
-            : {
-                path: "blog",
-                showReadingTime: true,
-                blogSidebarCount: 5,
-                editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
-                blogPostComponent: "../theme/BlogPostPage",
-                blogListComponent: "../theme/BlogListPage",
-                blogTagsListComponent: "../theme/BlogTagsListPage",
-                blogTagsPostsComponent: "../theme/BlogTagsPostsPage",
-              },
+        docs: {
+          sidebarCollapsed: false,
+          path: "../docs",
+          sidebarPath: require.resolve("./sidebars.js"),
+          editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/docs/",
+          showLastUpdateAuthor: true,
+          showLastUpdateTime: true,
+        },
+        blog: {
+          path: "blog",
+          showReadingTime: true,
+          blogSidebarCount: 10,
+          editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
+          blogPostComponent: "../theme/BlogPostPage",
+          blogListComponent: "../theme/BlogListPage",
+          blogTagsListComponent: "../theme/BlogTagsListPage",
+          blogTagsPostsComponent: "../theme/BlogTagsPostsPage",
+        },
+        googleAnalytics: {
+          trackingID: "UA-156160991-1",
+        },
         theme: {
           customCss: [
             require.resolve("./src/css/footer.css"),
@@ -223,6 +239,12 @@ module.exports = {
   ],
   plugins: [
     [
+      "@docusaurus/plugin-ideal-image",
+      {
+        sizes: [100, 400, 800, 1200],
+      },
+    ],
+    [
       require.resolve("@cmfcmf/docusaurus-search-local"),
       {
         indexDocs: true,
@@ -232,23 +254,16 @@ module.exports = {
     [
       "@docusaurus/plugin-client-redirects",
       {
-        redirects: process.env.BLOG
-          ? [
-              {
-                to: "/blog",
-                from: ["/"],
-              },
-            ]
-          : [
-              {
-                to: "/docs/introduction",
-                from: ["/"],
-              },
-              {
-                to: "/docs/introduction",
-                from: ["/docs"],
-              },
-            ],
+        redirects: [
+          {
+            to: "/docs/introduction",
+            from: ["/faq"],
+          },
+          {
+            to: "/docs/introduction",
+            from: ["/docs"],
+          },
+        ],
       },
     ],
   ],

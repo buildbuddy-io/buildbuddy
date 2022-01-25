@@ -13,7 +13,7 @@ To fulfill our mission of bringing the world's best developer tools to every com
 
 George joins us from Looker where he served as Head of APAC Sales Engineering. He joined Google Cloud through their [acquisition](https://techcrunch.com/2020/02/13/google-closes-2-6b-looker-acquisition/) of Looker in February, having helped the company grow to a $2.6B valuation.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f84d59b112797724e0e8444_george.png)
+![](../static/img/blog/welcome-george.png)
 
 We look forward to working alongside George to build the future of developer tools.
 

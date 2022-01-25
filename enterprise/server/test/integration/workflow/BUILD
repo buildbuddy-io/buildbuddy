@@ -3,6 +3,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "workflow_test",
     srcs = ["workflow_test.go"],
+    # ci_runner gets invoked directly by this test since the RBE test framework
+    # currently does not support dockerized execution of commands. So for now we
+    # run the whole test using the CI runner image.
+    exec_properties = {
+        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8",
+    },
     shard_count = 2,
     deps = [
         "//enterprise/server/invocation_search_service",

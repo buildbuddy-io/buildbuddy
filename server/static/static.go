@@ -157,6 +157,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		UsageEnabled:                  env.GetConfigurator().GetAppUsageEnabled(),
 		UserManagementEnabled:         env.GetConfigurator().GetAppUserManagementEnabled(),
 		ForceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
+		TestGridV2Enabled:             env.GetConfigurator().GetAppTestGridV2Enabled(),
 	}
 
 	configJSON := &bytes.Buffer{}

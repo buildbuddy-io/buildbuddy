@@ -1,7 +1,6 @@
 .markdown a {
-  color: #546e7a;
-  text-decoration: none;
-  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,1)" /></svg>');
+  color: #000;
+  background-image: url('data:image/svg+xml;utf8,<svg preserveAspectRatio="none" viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="1" y2="1" stroke="rgba(84,110,122 ,.3)" /></svg>');
   background-size: 1px 1px;
   background-position: 0 calc(1em + 1px);
   font-weight: 500;
@@ -31,4 +30,14 @@ html[data-theme="dark"] .markdown a {
   display: block;
   margin: 0 calc(-1 * var(--ifm-pre-padding));
   padding: 0 var(--ifm-pre-padding);
+}
+.mdx-page h2 {
+  --ifm-h2-font-size: 2rem;
+  margin-bottom: 0.5em;
+  margin-top: 1.5em;
+}
+
+a code {
+  background-image: none !important;
+  box-shadow: -4px 0px 0px 0px white, 4px 0px 0px 0px white;
 }

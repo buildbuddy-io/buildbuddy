@@ -2,7 +2,6 @@ package action_cache_server
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"sync"
 
@@ -14,8 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -93,12 +92,15 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 	return checkFilesExist(ctx, cache, outputFileDigests)
 }
 
-func setWorkerMetadata(ar *repb.ActionResult) {
+func setWorkerMetadata(ar *repb.ActionResult) error {
 	if ar.ExecutionMetadata == nil {
-		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
-			Worker: base64.StdEncoding.EncodeToString(uuid.NodeID()),
+		hostID, err := uuid.GetHostID()
+		if err != nil {
+			return err
 		}
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{Worker: hostID}
 	}
+	return nil
 }
 
 // Retrieve a cached execution result.
@@ -207,7 +209,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
-	setWorkerMetadata(req.ActionResult)
+	if err := setWorkerMetadata(req.ActionResult); err != nil {
+		return nil, err
+	}
 
 	blob, err := proto.Marshal(req.ActionResult)
 	if err != nil {

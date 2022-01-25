@@ -60,9 +60,12 @@ class ExecutorDeploy extends React.Component<ExecutorDeployProps, ExecutorDeploy
         </Select>
         <code>
           <pre>
-            {`docker run --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\
+            {`docker run \\
+    --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \\
+    --volume /tmp/buildbuddy:/buildbuddy \\
     gcr.io/flame-public/buildbuddy-executor-enterprise:latest \\
     --executor.docker_socket=/var/run/docker.sock \\
+    --executor.host_root_directory=/tmp/buildbuddy \\
     --executor.app_target=${this.props.schedulerUri} \\
     --executor.api_key=${this.props.executorKeys[this.state.selectedExecutorKeyIdx]?.value}`}
           </pre>
@@ -122,8 +125,8 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
             </div>
             <h2>2. Deploy executors</h2>
             <ExecutorDeploy executorKeys={this.props.executorKeys} schedulerUri={this.props.schedulerUri} />
-            <h2>3. Switch to self-hosted executors in organization settings</h2>
-            <p>Enable "Use self-hosted executors" on the Organization Settings page.</p>
+            <h2>3. Default to self-hosted executors in organization settings</h2>
+            <p>Enable "Default to self-hosted executors" on the Organization Settings page.</p>
             <FilledButton className="organization-settings-button">
               <a href="/settings/" onClick={linkHandler("/settings")}>
                 Open settings
@@ -317,13 +320,13 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
         {activeTab === "status" && (
           <>
-            {this.state.nodes.some((node) => !node.enabled) && (
+            {this.state.nodes.some((node) => !node.isDefault) && (
               <div className="callout warning-callout">
                 <AlertCircle className="icon orange" />
                 <div className="callout-content">
                   <div>
-                    Some executors are disabled since your organization is using BuildBuddy Cloud executors. To fix
-                    this, enable self-hosted executors in settings.
+                    Self-hosted executors are not the default for this organization. To change this, enable "Default to
+                    self-hosted executors" in your organization settings.
                   </div>
                   <div>
                     <FilledButton className="organization-settings-button">

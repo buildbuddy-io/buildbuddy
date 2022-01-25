@@ -31,7 +31,7 @@ const (
 	DefaultPoolValue = "default"
 
 	containerImagePropertyName = "container-image"
-	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"
+	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
@@ -50,7 +50,10 @@ const (
 	persistentWorkerProtocolPropertyName = "persistentWorkerProtocol"
 	WorkflowIDPropertyName               = "workflow-id"
 	workloadIsolationPropertyName        = "workload-isolation-type"
+	initDockerdPropertyName              = "init-dockerd"
 	enableVFSPropertyName                = "enable-vfs"
+	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
+	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
 
 	operatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -75,7 +78,6 @@ const (
 
 	BareContainerType        ContainerType = "none"
 	DockerContainerType      ContainerType = "docker"
-	ContainerdContainerType  ContainerType = "containerd"
 	FirecrackerContainerType ContainerType = "firecracker"
 )
 
@@ -93,6 +95,11 @@ type Properties struct {
 	DockerForceRoot           bool
 	RecycleRunner             bool
 	EnableVFS                 bool
+	// InitDockerd specifies whether to initialize dockerd within the execution
+	// environment if it is available in the execution image, allowing Docker
+	// containers to be spawned by actions. Only available with
+	// `workload-isolation-type=firecracker`.
+	InitDockerd bool
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
@@ -111,6 +118,8 @@ type Properties struct {
 	PersistentWorkerKey      string
 	PersistentWorkerProtocol string
 	WorkflowID               string
+	HostedBazelAffinityKey   string
+	UseSelfHostedExecutors   bool
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -151,6 +160,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
+		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
@@ -161,6 +171,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
+		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
+		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
 	}
 }
 
@@ -214,16 +226,9 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
 		}
 	}
-	if executorConfig.ContainerdSocket != "" {
-		if runtime.GOOS == "darwin" {
-			log.Warning("Containerd was enabled, but is unsupported on darwin. Ignoring.")
-		} else {
-			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, ContainerdContainerType)
-		}
-	}
 
-	// Special case: for backwards compatibility, support bare-runners when neither docker nor
-	// containerd are not enabled. Typically, this happens for macs.
+	// Special case: for backwards compatibility, support bare-runners when docker
+	// is not enabled. Typically, this happens for macs.
 	if executorConfig.EnableBareRunner || len(p.SupportedIsolationTypes) == 0 {
 		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, BareContainerType)
 	}

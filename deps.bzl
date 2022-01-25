@@ -221,12 +221,18 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:TYi4+3m5t6K48TGI9AUdb+IzbnSxvnvUMfuitfgcfuo=",
         version = "v0.6.0",
     )
+    go_repository(
+        name = "com_github_bazelbuild_bazelisk",
+        importpath = "github.com/bazelbuild/bazelisk",
+        sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
+        version = "v1.11.0",
+    )
 
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:BKNgfYF+WS0pBpmMy2w9k6TqMpxuzL3JI0oWmhZ4JRU=",
-        version = "v0.24.3",
+        sum = "h1:SfxjyO/V68rVnzOHop92fB0gv/Aa75KNLAN0PMqXbIw=",
+        version = "v0.29.0",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
@@ -615,8 +621,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_creack_pty",
         importpath = "github.com/creack/pty",
-        sum = "h1:07n33Z8lZxZ2qwegKbObQohDhXDQxiMMz1NOUGYlesw=",
-        version = "v1.1.11",
+        sum = "h1:QeVUsEDNrLBW4tMgZHvxy18sKtr6VI492kBhUfhDJNI=",
+        version = "v1.1.17",
     )
     go_repository(
         name = "com_github_crewjam_httperr",
@@ -1767,6 +1773,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:fv1ep09latC32wFoVwnqcnKJGnMSdBanPczbHAYm1BE=",
         version = "v1.0.1",
     )
+    go_repository(
+        name = "com_github_hashicorp_go_version",
+        importpath = "github.com/hashicorp/go-version",
+        sum = "h1:McDWVJIU/y+u1BRV06dPaLfLCaT7fUTJLp5r04x7iNw=",
+        version = "v1.3.0",
+    )
 
     go_repository(
         name = "com_github_hashicorp_golang_lru",
@@ -2080,8 +2092,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_klauspost_compress",
         importpath = "github.com/klauspost/compress",
-        sum = "h1:eSvu8Tmq6j2psUJqJrLcWH6K3w5Dwc+qipbaA6eVEN4=",
-        version = "v1.11.13",
+        sum = "h1:hLQYb23E8/fO+1u53d02A97a8UnsddcvYzq4ERRU4ds=",
+        version = "v1.14.1",
     )
     go_repository(
         name = "com_github_klauspost_pgzip",
@@ -3400,8 +3412,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_google_cloud_go",
         importpath = "cloud.google.com/go",
-        sum = "h1:i2ukt/HTgcBhgL1J0Dx9w7gb5oCe7zWEcumzQSh+9I4=",
-        version = "v0.100.1",
+        sum = "h1:t9Iw5QH5v4XtlEQaCtUY7x6sCABps8sW0acw7e2WQ6Y=",
+        version = "v0.100.2",
     )
 
     go_repository(
@@ -3409,6 +3421,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "cloud.google.com/go/bigquery",
         sum = "h1:PQcPefKFdaIzjQFbiyOgAqyx8q5djaE7x9Sqe712DPA=",
         version = "v1.8.0",
+    )
+    go_repository(
+        name = "com_google_cloud_go_compute",
+        importpath = "cloud.google.com/go/compute",
+        sum = "h1:rSUBvAyVwNJ5uQCKNJFMwPtTvJkfN38b6Pvb9zZoqJ8=",
+        version = "v0.1.0",
     )
 
     go_repository(
@@ -3441,8 +3459,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_google_cloud_go_storage",
         importpath = "cloud.google.com/go/storage",
-        sum = "h1:4y3gHptW1EHVtcPAVE0eBBlFuGqEejTTG3KdIE0lUX4=",
-        version = "v1.12.0",
+        sum = "h1:Ljj+ZXVEhCr/1+4ZhvtteN1ND7UUsNTlduGclLh8GO0=",
+        version = "v1.15.0",
     )
 
     go_repository(
@@ -3593,6 +3611,18 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazel-4.1-linux-x86_64",
         sha256 = "0eb2e378d2782e7810753e2162245ad1179c1bb12f848c692b4a595b4edf779b",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-linux-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-5.0.0rc3-darwin-x86_64",
+        sha256 = "450064319e6835610b8d9bbe0ae710286f450995b3190059cc2a43cfa0b49a72",
+        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-darwin-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-5.0.0rc3-linux-x86_64",
+        sha256 = "125b5d1d53f18f27b9bcd062c3b7fa7fce50c1beeb16664f7ae82e1ffece4cb2",
+        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-linux-x86_64"],
         executable = True,
     )
     http_file(
@@ -3937,8 +3967,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto",
         importpath = "google.golang.org/genproto",
-        sum = "h1:c5afAQ+F8m49fzDEIKvD7o/D350YjVseBMjtoKL1xsg=",
-        version = "v0.0.0-20211221195035-429b39de9b1c",
+        sum = "h1:zzNejm+EgrbLfDZ6lu9Uud2IVvHySPl8vQzf04laR5Q=",
+        version = "v0.0.0-20220118154757-00ab72f36ad5",
     )
 
     # gRPC
@@ -3946,8 +3976,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
-        sum = "h1:XT2/MFpuPFsEX2fWh3YQtHkZ+WYZFQRfaUgLZYj/p6A=",
-        version = "v1.42.0",
+        sum = "h1:Eeu7bZtDZ2DpRCsLhUlcrLnvYaMK1Gz86a+hMVvELmM=",
+        version = "v1.43.0",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
@@ -4046,8 +4076,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_time",
         importpath = "golang.org/x/time",
-        sum = "h1:O8mE0/t419eoIwhTFpKVkHiTs/Igowgfkj25AcZrtiE=",
-        version = "v0.0.0-20210220033141-f8bda1e9f3ba",
+        sum = "h1:7zkz7BUtwNFFqcowJ+RIgu2MaV/MapERkDIy+mwPyjs=",
+        version = "v0.0.0-20210723032227-1f47c861a9ac",
     )
 
     go_repository(

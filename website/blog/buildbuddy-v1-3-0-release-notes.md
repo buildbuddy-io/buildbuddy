@@ -9,67 +9,42 @@ author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 tags: [product, release-notes]
 ---
 
-Excited to share that v1.1.0 of BuildBuddy is live on both [Cloud Hosted BuildBuddy](https://app.buildbuddy.io/) and open source via [Github](https://github.com/buildbuddy-io/buildbuddy) and [Docker](https://github.com/buildbuddy-io/buildbuddy/blob/master/SETUP.md#docker-image)!
+We're excited to share that v1.3.0 of BuildBuddy is live on both[ Cloud Hosted BuildBuddy](https://app.buildbuddy.io/) and open-source via[ Github](https://github.com/buildbuddy-io/buildbuddy) and[ Docker](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/on-prem.md#docker-image)!
 
-Thanks to everyone that has tested open source and cloud-hosted BuildBuddy. We've made lots of improvements in this release based on your feedback.
+Thanks to everyone using open source and cloud-hosted BuildBuddy. We’ve made lots of improvements in this release based on your feedback.
 
-A special thank you to our new contributors:
+Our focus for this release was on giving users new tools to improve build performance, debug cache hits, and a completely redesigned Cloud & Enterprise experience.
 
-- [Sergio Rodriguez Orellana](https://github.com/SrodriguezO) who contributed support for making dense mode the default view mode.
-- [Tim Glaser](https://twitter.com/timgl?lang=en) who made some major improvements to our documentation.
+## New to Open Source BuildBuddy
 
-Our focus for this release was on our new Remote Build Execution platform. This release marks a huge step in fulfilling our mission of making developers more productive by supporting the Bazel ecosystem.
+- **Timing profile explorer **- Bazel's timing profile is the best way to get detailed insights into where to spend your time optimizing your build. Unfortunately, extracting useful information out of the thousands of events can be challenging without using something like Chrome's profiling tools. Now we've built these tools right into the BuildBuddy timing tab so you can explore this info for any build. See which actions dominate your build's critical path or find out how much time is spent downloading outputs - now with a single click.
 
-BuildBuddy's Remote Build Execution platform supports executing your Bazel build and tests in parallel across thousands of machines with automatic scaling, support for custom Docker images, and more. We've been iterating on and testing BuildBuddy RBE for months with companies of different sizes, and are excited to now make it available to everyone.
+![](../static/img/blog/timing-profile.png)
 
-While BuildBuddy RBE is not yet fully open source, we're offering Cloud RBE for free to individuals and open source projects to show our appreciation to the open source community.
+Dive into the timing for every action, critical path information, and more.
 
-We'll be adding more documentation on getting started with BuildBuddy RBE in the coming weeks, but in the meantime feel free to email us at <rbe@buildbuddy.io> or ping us in the [BuildBuddy Slack](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) and we'll be happy to help you get started.
+- **Cache stats **- one of the feature requests we get most frequently is for more information on cache hits and misses. This data can be tricky to get a hold of because it's not made easily available by Bazel's build event protocol. That's why we've introduced BuildBuddy's new cache tab. It gives you a view into cache hits, misses, and writes for every invocation that uses BuildBuddy's gRPC cache. It breaks these numbers down by action cache (AC) and content addressable store (CAS). BuildBuddy also tracks the volume and throughput of cache requests so you can see how much data is moving in and out of the cache - and at what speed.
 
-## **New to Open Source BuildBuddy**
+![](../static/img/blog/cache-stats.png)
 
-- **Cache & remote execution badges - **BuildBuddy invocations pages now show badges that indicate whether or not caching and remote execution are enabled. Clicking on these badges takes you to instructions on how to configure these if they're enabled for your BuildBuddy instance.
+Get a view into cache performance for every invocation.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f46c467b18b5b9b9a054e_Screen%20Shot%202020-07-15%20at%2011.10.53%20AM.png)
-
-- **Remote build execution configuration options** - the BuildBuddy configuration widget has now been updated to enable configuring of remote build execution if it's enabled for your BuildBuddy instance.
-
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f5044fdd7a1168e60f04d_Screen%20Shot%202020-07-15%20at%2011.51.30%20AM.png)
-
-- **Better build status support** - BuildBuddy now better distinguishes between in-progress, failed, passed, and cancelled builds with new colorful status indicators, favicons, and more.
-
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f482df789bfe48429ccdd_Screen%20Shot%202020-07-15%20at%2011.16.56%20AM.png)
-
-- **Improved documentation and new website** - we've completely revamped the BuildBuddy documentation, and it's now sync'd between GitHub and [buildbuddy.io/docs/](https://buildbuddy.io/docs/), so your docs will be fresh regardless of where you're reading them. We'll be adding new sections on configuring RBE in the coming weeks. We've also completely revamped the BuildBuddy website to make it easier to navigate and perform actions like requesting a quote, or subscribing to our [newsletter](#wf-form-Newsletter-Form).
-
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f4c7722c95645285c77bc_Screen%20Shot%202020-07-15%20at%2011.35.08%20AM.png)
-
-- **Test run grid** - BuildBuddy will now automatically display test runs as a grid when a single test target is run more than 10 times. This supports the use case of finding and fixing flaky tests by running them with **--runs_per_test=100**.
-
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f4d62b65ec8097cb159df_Screen%20Shot%202020-07-15%20at%2011.38.57%20AM.png)
-
-- **Performance and reliability improvements** - we put a lot of work into improving performance and reliability in this release. This includes changes like better event flushing (no more getting stuck on 15 build events), better shutdown behavior, speed improvements and optimizations in build artifact uploading and downloading, and more.
-
-‍
+- **Environment variable redaction controls** - when debugging cache hits, it can be useful to get a full picture of the inputs that are affecting a particular build - like the PATH environment variable. By default, BuildBuddy redacts nearly all environment variables passed into Bazel. We've added controls per invocation that allow you to optionally allow environment variables of your choice to skip redaction. Information on configuring this can be found in our[ build metadata docs](https://www.buildbuddy.io/docs/guide-metadata#environment-variable-redacting).
 
 ## New to Cloud & Enterprise BuildBuddy
 
-- **Remote Build Execution** - BuildBuddy Cloud and enterprise on-prem now support Remote Build Execution. Features include custom Docker image support, automatic scaling, multiple caching layers, and more. Additional features like Mac support, viewing of remote build actions in BuildBuddy, and more are coming soon.
+- **Redesigned navigation **- as BuildBuddy has grown from a debugging tool to a fully-featured platform to debug, analyze, monitor, and share builds across your organization, we've outgrown the minimal navigation setup that has gotten us this far. In Cloud and Enterprise BuildBuddy, we've replaced the top menu bar with a more fully-featured left-nav. This gives us room to add new features like Trends and provides easier access to critical pages like Setup & Docs.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f463422c9562d965c6e96_Screen%20Shot%202020-07-15%20at%2011.08.27%20AM.png)
+![](../static/img/blog/navigation.png)
 
-- **Invocation grouping** - BuildBuddy invocations can now be grouped by commit and by repo. These can be populated in one of three ways:
+The new navigation makes room for new features.
 
-1.  automatically by common CI environments like CircleCI and GitHub actions
-2.  manually by using build flags **--build_metadata=REPO_URL=** and **--build_metadata=COMMIT_SHA=**‍
-3.  by using a **--workspace_status_command** script like [this one](https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh)
+- **Trends **- BuildBuddy has lots of information about every invocation that it collects. Now with Trends, you can follow how your builds are changing over time. Have all of the cache improvements you've been working on decreased average build time over the last month? Has the addition of a new external dependency significantly increased the length of your slowest builds? Answering these questions is easy with BuildBuddy Trends.
 
-![](https://uploads-ssl.webflow.com/5eeba6a6c5230ea3d1a60d83/5f0f4f1e86a5cb635333d937_Screen%20Shot%202020-07-15%20at%2011.46.30%20AM.png)
+![](../static/img/blog/trends-v0.png)
 
-- **New cloud endpoint** - BuildBuddy now exposes a L7 load balanced gRPCS cloud endpoint at **cloud.buildbuddy.io** which can be used for BES, cache, and remote execution (see our [.bazelrc](https://github.com/buildbuddy-io/buildbuddy/blob/master/.bazelrc#L25) for an example). We'll gradually be migrating users to this from the old events.buildbuddy.io, and cache.buildbuddy.io endpoints with port numbers.
+- **Redis Pub/Sub support **- we've added support for Redis Pub/Sub to significantly improve remote build execution performance. It's completely optional for on-prem deployments, but in our testing it's improved performance for builds with lots of small actions by a factor of 2x. No change is required for Cloud users - just enjoy the faster builds!
 
-- **Easier enterprise deployment** - deploying enterprise BuildBuddy is now just as easy as deploying open source BuildBuddy, with a one line install script that deploys to your Kubernetes cluster. It takes your [BuildBuddy configuration file](https://www.buildbuddy.io/docs/config) as a parameter so you can easily configure things to your needs.
+That’s it for this release. Stay tuned for more updates coming soon!
 
-That's it for this release. Stay tuned for more updates coming soon!
-
-As always, we love your feedback - email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.
+As always, we love your feedback - join our[ Slack channel](https://slack.buildbuddy.io) or email us at <hello@buildbuddy.io> with any questions, comments, or thoughts.

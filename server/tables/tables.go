@@ -1,16 +1,27 @@
 package tables
 
 import (
+	"flag"
 	"fmt"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+)
+
+var (
+	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
+)
+
+const (
+	sqliteDialect = "sqlite"
+	mysqlDialect  = "mysql"
 )
 
 type tableDescriptor struct {
@@ -117,7 +128,7 @@ type Invocation struct {
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
-	InvocationPK                     int64 `gorm:"uniqueIndex:invocation_invocation_pk"`
+	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 }
 
@@ -386,13 +397,13 @@ func (t *Target) TableName() string {
 // The Status of a target.
 type TargetStatus struct {
 	Model
-	TargetID      int64 `gorm:"primaryKey;autoIncrement:false"`
-	InvocationPK  int64 `gorm:"primaryKey;autoIncrement:false;index:target_status_invocation_pk"`
-	TargetType    int32
-	TestSize      int32
-	Status        int32
-	StartTimeUsec int64
-	DurationUsec  int64
+	TargetID       int64  `gorm:"primaryKey;autoIncrement:false"`
+	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16"`
+	TargetType     int32
+	TestSize       int32
+	Status         int32
+	StartTimeUsec  int64
+	DurationUsec   int64
 }
 
 func (ts *TargetStatus) TableName() string {
@@ -431,6 +442,12 @@ type UsageCounts struct {
 	CASCacheHits           int64
 	ActionCacheHits        int64
 	TotalDownloadSizeBytes int64
+
+	// NOTE: New fields added here should be annotated with
+	// `gorm:"not null;default:0"`
+
+	LinuxExecutionDurationUsec int64 `gorm:"not null;default:0"`
+	MacExecutionDurationUsec   int64 `gorm:"not null;default:0"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
@@ -563,7 +580,106 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil
 		})
 	}
+
+	// Populate invocation_uuid if the column doesn't exist.
+	if m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_uuid") {
+		if db.Dialector.Name() == sqliteDialect {
+			// Rename the TargetStatuses table with invocation_pk as the primary key,
+			// so that during auto migration, SQLite can create TargetStatuses table with new
+			// primary keys.
+			db.Migrator().RenameTable("TargetStatuses", "TargetStatusesOld")
+			postMigrate = append(postMigrate, func() error {
+				return postMigrateInvocationUUIDForSQLite(db)
+			})
+		} else if db.Dialector.Name() == mysqlDialect {
+			postMigrate = append(postMigrate, func() error {
+				return postMigrateInvocationUUIDForMySQL(db)
+			})
+		} else {
+			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
+		}
+	}
 	return postMigrate, nil
+}
+
+func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
+	totalRows := int64(0)
+	for {
+		tx := db.Exec(baseQuery+" LIMIT ?", batchSize)
+		if err := tx.Error; err != nil {
+			return err
+		}
+		totalRows += tx.RowsAffected
+		log.Infof("updated %d rows in total for base query %q", totalRows, baseQuery)
+		if tx.RowsAffected == 0 {
+			return nil
+		}
+	}
+}
+
+func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
+	updateInvocationStmt := `UPDATE Invocations SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
+		return err
+	}
+	updateTargetStatusStmt := `
+		UPDATE TargetStatuses ts SET invocation_uuid=
+			(SELECT invocation_uuid FROM Invocations i 
+			WHERE i.invocation_pk=ts.invocation_pk)
+		WHERE invocation_uuid IS NULL`
+	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
+		return err
+	}
+	if err := db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
+		return err
+	}
+	return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
+}
+
+type invocationIDs struct {
+	InvocationID string `gorm:"primarykey"`
+	InvocationPK int64
+}
+
+func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
+	// SQLite doesn't have UNHEX function; so we need to calculate
+	// invocationUUID in the app.
+	var results []invocationIDs
+	updateFunc := func(tx *gorm.DB, batch int) error {
+		for _, invocation := range results {
+			invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
+			if err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE TargetStatusesOld SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+				return err
+			}
+			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	res := db.Table("Invocations").Select("invocation_id", "invocation_pk").Where("invocation_uuid IS NULL").FindInBatches(&results, 100, updateFunc)
+	if res.Error != nil {
+		return res.Error
+	}
+
+	// Copy data from TargetStatusesOld to the new table
+	insertStmt := `INSERT INTO TargetStatuses
+			(target_id, invocation_uuid, target_type, test_size, status,
+			start_time_usec, duration_usec, created_at_usec, updated_at_usec)
+		SELECT 
+			target_id, invocation_uuid, target_type, test_size, status,
+			start_time_usec, duration_usec, created_at_usec, updated_at_usec 
+		FROM 
+			TargetStatusesOld`
+
+	if err := db.Exec(insertStmt).Error; err != nil {
+		return err
+	}
+	db.Migrator().DropTable("TargetStatusesOld")
+	return nil
 }
 
 // Manual migration called after auto-migration.
@@ -592,22 +708,50 @@ func PostAutoMigrate(db *gorm.DB) error {
 		}
 	}
 
-	// Drop old columns at the very end of the migration.
-	for _, ref := range []struct {
+	type ColRef struct {
 		table  Table
 		column string
-	}{
+	}
+
+	colsToDelete := []ColRef{
 		// Group.api_key has been migrated to a single row in the APIKeys table.
 		{&Group{}, "api_key"},
-	} {
+	}
+
+	// Dropping invocation_pk columns behind a flag. The columns
+	// should be dropped only when all the servers in production
+	// no longer use invocation_pk.
+	// On-prem users could use this flag to control when to drop
+	// the columns.
+	if *dropInvocationPKCol {
+		colsToDelete = append(colsToDelete,
+			// Invocation.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&Invocation{}, "invocation_pk"},
+			// TargetStatus.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&TargetStatus{}, "invocation_pk"})
+	}
+
+	// Drop old columns at the very end of the migration.
+	for _, ref := range colsToDelete {
 		if !m.HasColumn(ref.table, ref.column) {
 			continue
 		}
-		if err := m.DropColumn(ref.table, ref.column); err != nil {
-			log.Warningf("Failed to drop column %s.%s", ref.table.TableName(), ref.column)
+		var err error
+		if db.Dialector.Name() == mysqlDialect {
+			err = dropColumnInPlaceForMySQL(db, ref.table, ref.column)
+		} else {
+			err = m.DropColumn(ref.table, ref.column)
+		}
+		if err != nil {
+			log.Warningf("Failed to drop column %s.%s: %s", ref.table.TableName(), ref.column, err)
 		}
 	}
+
 	return nil
+}
+
+func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
+	return db.Exec("ALTER TABLE " + table.TableName() + " DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
 }
 
 func init() {

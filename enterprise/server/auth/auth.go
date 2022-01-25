@@ -528,7 +528,7 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 		return nil, status.FailedPreconditionErrorf("No handle to query database")
 	}
 	user := &tables.User{}
-	err := dbHandle.TransactionWithOptions(ctx, db.StaleReadOptions(), func(tx *db.DB) error {
+	err := dbHandle.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err

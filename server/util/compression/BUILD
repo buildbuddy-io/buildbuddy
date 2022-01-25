@@ -5,4 +5,8 @@ go_library(
     srcs = ["compression.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/compression",
     visibility = ["//visibility:public"],
+    deps = [
+        "//server/util/log",
+        "@com_github_klauspost_compress//zstd",
+    ],
 )

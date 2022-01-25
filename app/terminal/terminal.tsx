@@ -9,7 +9,6 @@ export interface TerminalProps {
   loading?: boolean;
 
   title?: JSX.Element;
-  subtitle?: JSX.Element;
 
   lightTheme?: boolean;
   fullLogsFetcher?: () => Promise<string>;
@@ -35,21 +34,10 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
 
   render() {
     return (
-      <div
-        className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""} ${
-          this.props.subtitle ? "has-subtitle" : ""
-        }`}>
+      <div className={`terminal-container ${this.props.lightTheme ? "light-terminal" : ""}`}>
         <div className="terminal-content">
           <div className="terminal-top-bar">
-            {this.props.title && (
-              <div className="terminal-titles">
-                {this.props.title}
-                {this.props.subtitle}
-              </div>
-            )}
-            {/* Search bar is actually rendered by react-lazylog.
-              This div is just a placeholder for layout purposes. */}
-            <div className="terminal-search-placeholder" />
+            {this.props.title && <div className="terminal-titles">{this.props.title}</div>}
             <div className="terminal-actions">
               <button
                 title="Wrap"
@@ -68,7 +56,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, Te
           </div>
           <div className="terminal" ref={this.terminalRef}>
             {this.props.loading ? (
-              <div className={`loading ${this.props.lightTheme ? "" : "loading-dark"}`} />
+              <div className={`loading ${this.props.lightTheme ? "" : "loading-dark-terminal"}`} />
             ) : (
               <LazyLog
                 selectableLines={true}

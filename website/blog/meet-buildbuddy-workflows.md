@@ -40,7 +40,7 @@ This overlapping histogram chart shows the complete picture. Note that
 the majority of BuildBuddy workflow runs took 30 seconds or less, while
 nearly all runs on GitHub Actions took at least 2 minutes and 15 seconds:
 
-![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
+![overlapping histogram comparing BuildBuddy and GitHub actions](../static/img/blog/workflows.png)
 
 ## How did we make BuildBuddy Workflows so fast?
 
@@ -94,19 +94,19 @@ We added dependency graph visualizations for `bazel query` commands that use the
 
 Here's an example of a command you can run to generate a graph:
 
-```
+```shell
 bazel query '//...' --output graph --bes_backend=cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 ```
 
 And the resulting output:
 
-![Bazel query dependency graph visualization](images/query_graph.png)
+![Bazel query dependency graph visualization](../static/img/blog/query_graph.png)
 
 ### Clickable RBE Actions
 
 For actions executed with BuildBuddy Remote Build Execution, you can now click on individual actions to get the full set of command arguments, environment variables, execution metadata, output files, and more:
 
-![RBE actions view](images/clickable_rbe_actions.png)
+![RBE actions view](../static/img/blog/clickable_rbe_actions.png)
 
 That's it for this release! As always, message us on [Slack](https://buildbuddy.slack.com) or
 [file an issue](https://github.com/buildbuddy-io/buildbuddy/issues/new)

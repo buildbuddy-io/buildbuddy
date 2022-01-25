@@ -85,7 +85,6 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 
 func TestHelloWorldOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
-	flags.Set(t, "executor.containerd_socket", "")
 	ex := getTestExecutor(t)
 	ctx := context.Background()
 	tempDir := makeTempDirWithWorldTxt(t)
@@ -123,7 +122,6 @@ func TestHelloWorldOnDocker(t *testing.T) {
 
 func TestTimeoutOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
-	flags.Set(t, "executor.containerd_socket", "")
 
 	ex := getTestExecutor(t)
 	ctx := context.Background()
@@ -145,44 +143,6 @@ func TestTimeoutOnDocker(t *testing.T) {
 		t.Fatal(result.Error)
 	}
 	assert.Equal(t, codes.DeadlineExceeded.String(), gstatus.Code(result.Error).String())
-}
-
-func TestHelloWorldOnContainerd(t *testing.T) {
-	flags.Set(t, "executor.docker_socket", "")
-	flags.Set(t, "executor.containerd_socket", "/run/containerd/containerd.sock")
-	ex := getTestExecutor(t)
-	ctx := context.Background()
-	tempDir := makeTempDirWithWorldTxt(t)
-	cmd := &repb.Command{
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
-		},
-		Arguments: []string{"/bin/sh", "-c", fmt.Sprintf("printf \"$GREETING $(cat %s/world.txt)!\"", tempDir)},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				&repb.Platform_Property{
-					Name:  "container-image",
-					Value: "docker://gcr.io/flame-public/executor-docker-default:enterprise-v1.4.51",
-				},
-			},
-		},
-	}
-	// Need to give enough time to download the image.
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-
-	result := ex.executeCommand(ctx, cmd, tempDir)
-
-	if result.Error != nil {
-		t.Fatal(result.Error)
-	}
-	assert.Regexp(t, "^\\(containerd\\)\\s", result.CommandDebugString, "sanity check: command should be run with containerd")
-	assert.Equal(t, "Hello world!", string(result.Stdout),
-		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
-			"tempfile containing 'world' should be readable.)",
-	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
-	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
 func containerizedShCommand(cmd string) *repb.Command {
@@ -199,34 +159,8 @@ func containerizedShCommand(cmd string) *repb.Command {
 	}
 }
 
-func TestTimeoutOnContainerd(t *testing.T) {
-	flags.Set(t, "executor.docker_socket", "")
-	flags.Set(t, "executor.containerd_socket", "/run/containerd/containerd.sock")
-	ex := getTestExecutor(t)
-	ctx := context.Background()
-	tempDir := makeTempDirWithWorldTxt(t)
-	// Execute a no-op command once to allow time for the image to be
-	// pulled if it's not cached already.
-	initCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	result := ex.executeCommand(initCtx, containerizedShCommand(": NOP"), tempDir)
-	if result.Error != nil {
-		t.Fatal(result.Error)
-	}
-	ctx, cancel = context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-
-	result = ex.executeCommand(ctx, containerizedShCommand("/bin/sleep 10"), tempDir)
-
-	if result.Error != nil && gstatus.Code(result.Error) != codes.DeadlineExceeded {
-		t.Fatal(result.Error)
-	}
-	assert.Equal(t, codes.DeadlineExceeded.String(), gstatus.Code(result.Error).String())
-}
-
 func TestNoRunAsRootOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
-	flags.Set(t, "executor.containerd_socket", "")
 	ex := getTestExecutor(t)
 	ctx := context.Background()
 	tempDir := makeTempDirWithWorldTxt(t)
@@ -258,7 +192,6 @@ func TestNoRunAsRootOnDocker(t *testing.T) {
 
 func TestRunAsRootOnDocker(t *testing.T) {
 	flags.Set(t, "executor.docker_socket", "/var/run/docker.sock")
-	flags.Set(t, "executor.containerd_socket", "")
 	ex := getTestExecutor(t)
 	ctx := context.Background()
 	tempDir := makeTempDirWithWorldTxt(t)

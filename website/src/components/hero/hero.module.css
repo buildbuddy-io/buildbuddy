@@ -1,0 +1,21 @@
+.buttons {
+  margin-top: 48px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: stretch;
+}
+
+.image {
+  max-width: 500px;
+}
+
+.image div {
+  background-image: none !important;
+}
+
+@media (max-width: 1200px) {
+  .image {
+    display: none;
+  }
+}

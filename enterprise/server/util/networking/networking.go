@@ -124,6 +124,10 @@ func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName str
 	}
 }
 
+func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string) error {
+	return runCommand(ctx, "iptables", "--delete", "FORWARD", "-i", vethName, "-o", defaultDevice, "-j", "ACCEPT")
+}
+
 func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
@@ -135,7 +139,12 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 	return runCommand(ctx, "ip", "route", "delete", cloneIP)
 }
 
-// SetupVethPair is equivalent to:
+// SetupVethPair creates a new veth pair with one end in the given network
+// namespace and the other end in the root namespace. It returns a cleanup
+// function that removes firewall rules associated with the pair.
+//
+// It is equivalent to:
+//
 //  # create a new veth pair
 //  $ sudo ip netns exec fc0 ip link add veth1 type veth peer name veth0
 //
@@ -151,6 +160,10 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 //  # add the ip addr 10.0.0.1/24 to the veth1 end of the pair
 //  $ sudo ip addr add 10.0.0.1/24 dev veth1
 //
+//  # add a firewall rule to allow forwarding traffic from the veth1 pair to the
+//  # default device, in case forwarding is not allowed by default
+//  $ sudo iptables -A FORWARD -i veth1 -o eth0 -j ACCEPT
+//
 //  # bring the veth1 end of the pair up
 //  $ sudo ip link set dev veth1 up
 //
@@ -165,11 +178,16 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 //
 //  # add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //  $ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) error {
+func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func() error, error) {
+	defaultDevice, err := findDefaultDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// compute unique addresses for endpoints
 	veth0, veth1, err := createRandomVethPair(ctx, netNamespace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// This addr will be used for the host-side of the veth pair, so it
@@ -188,39 +206,52 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) er
 
 	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", veth0, "up")...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = attachAddressToVeth(ctx, "" /*no namespace*/, hostEndpointNet, veth1)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	err = runCommand(ctx, "ip", "link", "set", "dev", veth1, "up")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = runCommand(ctx, namespace(netNamespace, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = runCommand(ctx, namespace(netNamespace, "iptables", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", defaultDevice, "-j", "ACCEPT")
+	if err != nil {
+		return nil, err
+	}
+
+	return func() error {
+		return removeForwardAcceptRule(ctx, veth1, defaultDevice)
+	}, nil
 }
 
 // findDefaultDevice find's the device used for the default route.
@@ -240,12 +271,36 @@ func findDefaultDevice(ctx context.Context) (string, error) {
 	return "", status.FailedPreconditionError("Unable to determine default device.")
 }
 
+// FindDefaultRouteIP finds the default IP used for routing traffic, typically
+// corresponding to a local router or access point.
+//
+// Equivalent to "ip route | grep default | awk '{print $3}'.
+func FindDefaultRouteIP(ctx context.Context) (string, error) {
+	out, err := sudoCommand(ctx, "ip", "route")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "default") {
+			if parts := strings.Split(line, " "); len(parts) > 5 {
+				return parts[2], nil
+			}
+		}
+	}
+	return "", status.FailedPreconditionError("Unable to determine default route.")
+}
+
 // EnableMasquerading turns on ipmasq for the default device. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
 	defaultDevice, err := findDefaultDevice(ctx)
 	if err != nil {
 		return err
+	}
+	// Skip appending the rule if it's already in the table.
+	err = runCommand(ctx, "iptables", "-t", "nat", "--check", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
+	if err == nil {
+		return nil
 	}
 	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
 }

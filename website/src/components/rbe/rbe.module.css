@@ -1,0 +1,39 @@
+.deploymentModels {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.deploymentModel {
+  background-color: hsla(0, 0%, 100%, 0.05);
+  padding: 36px 56px;
+  border-radius: 8px;
+  max-width: 560px;
+}
+
+.deploymentModelTitle {
+  font-size: 48px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+}
+
+.deploymentModelIcon {
+  width: 48px;
+  height: 48px;
+  margin-right: 16px;
+}
+
+.deploymentModelDescription {
+  font-size: 20px;
+  line-height: 34px;
+  font-weight: 400;
+}
+
+@media (max-width: 512px) {
+  div.deploymentModel {
+    padding: 36px 36px;
+  }
+}

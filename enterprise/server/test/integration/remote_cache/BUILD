@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 go_test(
     name = "remote_cache_test",
     srcs = ["remote_cache_test.go"],
-    shard_count = 4,
+    shard_count = 5,
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/testutil/buildbuddy_enterprise",

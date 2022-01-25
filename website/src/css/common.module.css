@@ -1,0 +1,163 @@
+/* Page */
+
+.page {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+/* Sections */
+
+.section {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 96px 0;
+}
+
+.section.sectionDark {
+  background-color: #263238;
+  color: #fff;
+}
+
+.section.sectionGray {
+  background-color: #f8f8f8;
+}
+
+.section.sectionRounded {
+  width: calc(100% - 48px);
+  border-radius: 16px;
+  max-width: 1296px;
+  padding: 48px 0;
+}
+
+.section.sectionLessBottom {
+  padding-bottom: 48px;
+}
+
+/* Containers */
+
+.container {
+  display: flex;
+  max-width: 1296px;
+  padding: 0 24px;
+  gap: 48px;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.splitContainer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 1200px) {
+  div.splitContainer {
+    display: flex;
+    align-items: center;
+    justify-self: center;
+    flex-direction: column;
+  }
+}
+
+.section.sectionRounded .container {
+  padding: 0 64px;
+}
+
+@media (max-width: 460px) {
+  div.section.sectionRounded .container {
+    padding: 0 32px;
+  }
+}
+
+/* Titles */
+
+.title {
+  font-size: 56px;
+  line-height: 64px;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 20px;
+  line-height: 34px;
+  font-weight: 400;
+}
+
+.pillTitle {
+  background-color: #b3e5fc;
+  color: #141414;
+  padding: 2px 16px;
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 600px) {
+  div.title {
+    font-size: 48px;
+  }
+}
+
+/* Text */
+
+.text {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 560px;
+}
+
+.centeredText {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 800px;
+}
+
+/* Buttons */
+
+.button {
+  background-color: transparent;
+  border: 1px solid #eee;
+  padding: 18px 32px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 26px;
+  cursor: pointer;
+  flex-grow: 1;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 300ms ease-in-out;
+}
+
+.button.buttonPrimary {
+  background-color: #263238;
+  color: #fff;
+}
+
+.button.buttonPrimary:disabled {
+  background-color: #607d8b;
+  color: #fff;
+}
+
+/* Spacers */
+
+.spacer {
+  flex-grow: 1;
+}

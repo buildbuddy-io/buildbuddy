@@ -23,6 +23,17 @@ genrule(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "bazel-5.0.0rc3_crossplatform",
+    srcs = select({
+        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-5.0.0rc3-darwin-x86_64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazel-5.0.0rc3-linux-x86_64//file:downloaded"],
+    }),
+    outs = ["bazel-5.0.0rc3"],
+    cmd_bash = "cp $(SRCS) $@",
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "bazel_binaries_tar",
     srcs = [

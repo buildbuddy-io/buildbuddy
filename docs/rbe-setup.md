@@ -207,7 +207,7 @@ You can set environment variables that are available to actions with the `--acti
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--define)
 
-## --define
+### --define
 
 Define allows you to assign build variables. This is commonly use to set `EXECUTOR` to [compile singlejar and ijar from source](https://github.com/bazelbuild/bazel/issues/7254).
 
@@ -217,7 +217,7 @@ Define allows you to assign build variables. This is commonly use to set `EXECUT
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--define)
 
-## --spawn_strategy
+### --spawn_strategy
 
 Sets the list of strategies in priority order from highest to lowest. Each action picks the highest priority strategy that it can execute. The default value is `remote,worker,sandboxed,local`.
 
@@ -227,7 +227,7 @@ Sets the list of strategies in priority order from highest to lowest. Each actio
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--spawn_strategy)
 
-## --strategy
+### --strategy
 
 Explicitly setting strategies should [no longer be needed](https://github.com/bazelbuild/bazel/issues/7480) for Bazel versions post 0.27.0. It can be used to force certain bazel mnemonics to be build remotely.
 
@@ -237,7 +237,7 @@ Explicitly setting strategies should [no longer be needed](https://github.com/ba
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--strategy)
 
-## --experimental_inmemory_dotd_files
+### --experimental_inmemory_dotd_files
 
 If enabled, C++ .d files will be passed through in memory directly from the remote build nodes instead of being written to disk. This flag is automatically set when using `--remote_download_minimal`.
 
@@ -247,7 +247,7 @@ If enabled, C++ .d files will be passed through in memory directly from the remo
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--experimental_inmemory_dotd_files)
 
-## --experimental_inmemory_jdeps_files
+### --experimental_inmemory_jdeps_files
 
 If enabled, .jdeps files generated from Java compilations will be passed through in memory directly from the remote build nodes instead of being written to disk. This flag is automatically set when using `--remote_download_minimal`.
 

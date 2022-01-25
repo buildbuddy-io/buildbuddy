@@ -15,3 +15,7 @@
   margin-top: 124px;
   color: rgba(255, 255, 255, 0.2);
 }
+
+.footer .col:first-of-type .footer__title {
+  display: none;
+}

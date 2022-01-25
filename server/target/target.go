@@ -81,7 +81,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
                                      i.invocation_id, i.commit_sha, i.branch_name, i.repo_url, i.created_at_usec
                                      FROM Targets as t
                                      JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
-                                     JOIN Invocations AS i ON ts.invocation_pk = i.invocation_pk`)
+                                     JOIN Invocations AS i ON ts.invocation_uuid = i.invocation_uuid`)
 	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
 	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
 	// Adds user / permissions to targets (t) table.
@@ -92,8 +92,8 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
 		return nil, err
 	}
-	q.AddWhereClause("i.created_at_usec > ?", startUsec)
-	q.AddWhereClause("i.created_at_usec + i.duration_usec < ?", endUsec)
+	q.AddWhereClause("ts.created_at_usec > ?", startUsec)
+	q.AddWhereClause("ts.created_at_usec < ?", endUsec)
 
 	tq := req.GetQuery()
 	if repo := tq.GetRepoUrl(); repo != "" {

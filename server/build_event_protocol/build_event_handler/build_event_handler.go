@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,8 +34,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
+	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
@@ -63,6 +66,9 @@ const (
 
 	// How long to wait before giving up on webhook requests.
 	webhookNotifyTimeout = 1 * time.Minute
+
+	// Default number of actions shown by bazel
+	defaultActionsShown = 8
 )
 
 var (
@@ -512,7 +518,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	ti := tableInvocationFromProto(invocation, iid)
+	ti, err := tableInvocationFromProto(invocation, iid)
+	if err != nil {
+		return err
+	}
 	recordInvocationMetrics(ti)
 	if _, err := e.env.GetInvocationDB().InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
@@ -661,13 +670,24 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return err
 			}
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
-				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid)
+				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
+				if numLinesToRetain != 0 {
+					// the number of lines curses can overwrite is 2 + the ui_actions shown:
+					// 1 for the progress tracker, 1 for each action, and 1 blank line.
+					// 0 indicates that curses is not being used.
+					numLinesToRetain += 2
+				}
+				e.logWriter = eventlog.NewEventLogWriter(e.ctx, e.env.GetBlobstore(), e.env.GetKeyValStore(), iid, numLinesToRetain)
 			}
 		}
 
+		invocationUUID, err := uuid.StringToBytes(iid)
+		if err != nil {
+			return err
+		}
 		ti := &tables.Invocation{
 			InvocationID:     iid,
-			InvocationPK:     md5Int64(iid),
+			InvocationUUID:   invocationUUID,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 		}
@@ -774,7 +794,10 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti = tableInvocationFromProto(invocationProto, ti.BlobID)
+	ti, err = tableInvocationFromProto(invocationProto, ti.BlobID)
+	if err != nil {
+		return err
+	}
 	if _, err := db.InsertOrUpdateInvocation(ctx, ti); err != nil {
 		return err
 	}
@@ -787,6 +810,54 @@ func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (
 		return p.Started.OptionsDescription, nil
 	}
 	return "", nil
+}
+
+func getNumActionsShownFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
+	options, err := extractOptionsFromStartedBuildEvent(event)
+	if err != nil {
+		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		return defaultActionsShown
+	}
+	optionsList, err := shlex.Split(options)
+	if err != nil {
+		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		return defaultActionsShown
+	}
+	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
+	cursesValues := getOptionValues(optionsList, "curses")
+	if len(cursesValues) > 0 {
+		curses := cursesValues[len(cursesValues)-1]
+		if curses == "no" {
+			return 0
+		} else if curses != "yes" && curses != "auto" {
+			log.Warningf("Unrecognized argument to curses, assuming auto: %v", curses)
+		}
+	}
+	if len(actionsShownValues) > 0 {
+		n, err := strconv.Atoi(actionsShownValues[len(actionsShownValues)-1])
+		if err != nil {
+			log.Warningf("Invalid argument to ui_actions_shown, defaulting to %d: %v", defaultActionsShown, err)
+		} else if n < 1 {
+			return 1
+		} else {
+			return n
+		}
+	}
+	return defaultActionsShown
+}
+
+func getOptionValues(options []string, optionName string) []string {
+	values := []string{}
+	flag := "--" + optionName
+	for _, option := range options {
+		if option == "--" {
+			break
+		}
+		if strings.HasPrefix(option, flag+"=") {
+			values = append(values, strings.TrimPrefix(option, flag+"="))
+		}
+	}
+	return values
 }
 
 func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
@@ -861,10 +932,15 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
-func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocation {
+func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
+	uuid, err := uuid.StringToBytes(p.InvocationId)
+	if err != nil {
+		return nil, err
+	}
+
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
-	i.InvocationPK = md5Int64(p.InvocationId)
+	i.InvocationUUID = uuid
 	i.Success = p.Success
 	i.User = p.User
 	i.DurationUsec = p.DurationUsec
@@ -888,7 +964,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) *tables.Invocat
 	}
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
-	return i
+	return i, nil
 }
 
 func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {

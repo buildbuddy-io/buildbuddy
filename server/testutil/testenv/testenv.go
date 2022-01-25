@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -56,7 +55,10 @@ executor:
   app_target: "grpc://localhost:1985"
   local_cache_directory: "{{.TestRootDir}}/remote_execution/cache"
   local_cache_size_bytes: 1000000000  # 1GB
-  default_xcode_version: "13.1"
+  # Guarantee that we can fit at least one workflow task.
+  # If we don't actually have the memory, we'll OOM, which is OK
+  # for testing purposes.
+  memory_bytes: 10_000_000_000
 auth:
   oauth_providers:
     - issuer_url: 'https://auth.test.buildbuddy.io'

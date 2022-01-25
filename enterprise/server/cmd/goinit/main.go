@@ -19,7 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jsimonetti/rtnetlink/rtnl"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -31,6 +33,9 @@ import (
 const (
 	commonMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID
 	cgroupMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_RELATIME
+
+	dockerdInitTimeout       = 30 * time.Second
+	dockerdDefaultSocketPath = "/var/run/docker.sock"
 )
 
 var (
@@ -39,6 +44,7 @@ var (
 	debugMode       = flag.Bool("debug_mode", false, "If true, attempt to set root pw and start getty.")
 	logLevel        = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
+	initDockerd     = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -131,6 +137,41 @@ func copyFile(src, dest string, mode os.FileMode) error {
 	}
 
 	return nil
+}
+
+func startAndWaitForDockerd(ctx context.Context) error {
+	// Make sure we can locate both docker and dockerd.
+	if _, err := exec.LookPath("docker"); err != nil {
+		return err
+	}
+	if _, err := exec.LookPath("dockerd"); err != nil {
+		return err
+	}
+
+	log.Infof("Starting dockerd")
+
+	cmd := exec.CommandContext(ctx, "dockerd")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, dockerdInitTimeout)
+	defer cancel()
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: 10 * time.Microsecond,
+		MaxBackoff:     10 * time.Millisecond,
+		Multiplier:     1.5,
+	})
+	for r.Next() {
+		err := exec.CommandContext(ctx, "docker", "ps").Run()
+		if err == nil {
+			log.Infof("dockerd is ready")
+			return nil
+		}
+	}
+	return status.DeadlineExceededErrorf("docker init timed out after %s", dockerdInitTimeout)
 }
 
 // This is mostly cribbed from github.com/superfly/init-snapshot
@@ -288,6 +329,15 @@ func main() {
 			}
 		})
 	}
+
+	dockerdInitErrCh := make(chan error)
+	go func() {
+		defer close(dockerdInitErrCh)
+		if *initDockerd {
+			dockerdInitErrCh <- startAndWaitForDockerd(ctx)
+		}
+	}()
+
 	eg.Go(func() error {
 		listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
 		if err != nil {
@@ -300,6 +350,11 @@ func main() {
 			return err
 		}
 		vmxpb.RegisterExecServer(server, vmService)
+
+		// If applicable, wait for dockerd to start before accepting commands, so
+		// that commands depending on dockerd do not need to explicitly wait for it.
+		die(<-dockerdInitErrCh)
+
 		return server.Serve(listener)
 	})
 	eg.Go(func() error {

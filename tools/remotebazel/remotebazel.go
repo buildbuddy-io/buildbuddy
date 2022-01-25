@@ -24,6 +24,7 @@ var (
 	remoteInstanceName = flag.String("remote_instance_name", "", "The remote instance name, if one should be used.")
 	repo               = flag.String("repo", "", "git repo URL")
 	patch              = flag.String("patch", "", "Optional patch to apply after checking out the repo")
+	affinityKey        = flag.String("affinity_key", "", "Preference for which Bazel instance the request is routed to")
 )
 
 const (
@@ -67,19 +68,16 @@ func main() {
 
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", *apiKey)
 
-	// --isatty=1 makes Bazel think it's running in an interactive terminal which enables nicer UI output
-	// TODO(vadim): propagate terminal width
-	cmd := flag.Args()[0] + " --isatty=1 " + strings.Join(flag.Args()[1:], " ")
-
 	log.Infof("Sending request...")
 
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: *repo,
 		},
-		RepoState:    &rnpb.RunRequest_RepoState{},
-		BazelCommand: cmd,
-		InstanceName: *remoteInstanceName,
+		RepoState:          &rnpb.RunRequest_RepoState{},
+		BazelCommand:       strings.Join(flag.Args(), " "),
+		InstanceName:       *remoteInstanceName,
+		SessionAffinityKey: *affinityKey,
 	}
 	if *patch != "" {
 		patchContents, err := os.ReadFile(*patch)

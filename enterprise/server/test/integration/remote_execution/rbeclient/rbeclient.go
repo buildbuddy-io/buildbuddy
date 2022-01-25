@@ -229,7 +229,8 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
-				Err:   status.InternalErrorf("command execution failed: %v", err)})
+				Err:   err,
+			})
 			return
 		}
 

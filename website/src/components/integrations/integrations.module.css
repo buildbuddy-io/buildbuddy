@@ -1,0 +1,35 @@
+.text {
+  width: 100%;
+  max-width: 800px;
+}
+.title {
+  font-size: 28px;
+  line-height: 44px;
+}
+
+.logos {
+  display: flex;
+  max-width: 800px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0 32px;
+}
+
+.logo {
+  height: 100px;
+  box-sizing: border-box;
+  background-image: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo img {
+  max-height: 100% !important;
+  width: auto !important;
+}
+
+.integrationSection {
+  margin: 96px;
+}
