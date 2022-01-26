@@ -687,6 +687,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		ti := &tables.Invocation{
 			InvocationID:     iid,
+			InvocationPK:     md5Int64(iid),
 			InvocationUUID:   invocationUUID,
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
@@ -940,6 +941,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invoca
 
 	i := &tables.Invocation{}
 	i.InvocationID = p.InvocationId // Required.
+	i.InvocationPK = md5Int64(p.InvocationId)
 	i.InvocationUUID = uuid
 	i.Success = p.Success
 	i.User = p.User
