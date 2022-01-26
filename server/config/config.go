@@ -704,7 +704,6 @@ func (c *Configurator) GetDistributedCacheConfig() *DistributedCacheConfig {
 }
 
 func (c *Configurator) GetRaftCacheConfig() *RaftCacheConfig {
-	log.Printf("raft cache config: %+v", c.gc.Cache.RaftCache)
 	if c.gc.Cache.RaftCache.ListenAddr != "" {
 		return &c.gc.Cache.RaftCache
 	}
