@@ -91,6 +91,17 @@ proto_library(
 )
 
 proto_library(
+    name = "raft_proto",
+    srcs = [
+        "raft.proto",
+    ],
+    deps = [
+        ":remote_execution_proto",
+        "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
     name = "target_proto",
     srcs = [
         "target.proto",
@@ -229,6 +240,14 @@ proto_library(
     srcs = ["context.proto"],
     deps = [
         ":user_id_proto",
+    ],
+)
+
+proto_library(
+    name = "raft_service_proto",
+    srcs = ["raft_service.proto"],
+    deps = [
+        ":raft_proto",
     ],
 )
 
@@ -458,6 +477,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "raft_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/raft",
+    proto = ":raft_proto",
+    deps = [
+        ":remote_execution_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "runner_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/runner",
     proto = ":runner_proto",
@@ -497,6 +526,16 @@ go_proto_library(
         ":cache_go_proto",
         ":command_line_go_proto",
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "raft_service_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/raft_service",
+    proto = ":raft_service_proto",
+    deps = [
+        ":raft_go_proto",
     ],
 )
 
