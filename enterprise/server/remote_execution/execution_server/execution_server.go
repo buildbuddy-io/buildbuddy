@@ -93,9 +93,6 @@ type ExecutionServer struct {
 	env          environment.Env
 	cache        interfaces.Cache
 	streamPubSub *pubsub.StreamPubSub
-	// If enabled, users may register their own executors.
-	// When enabled, the executor group ID becomes part of the executor key.
-	enableUserOwnedExecutors bool
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
@@ -107,10 +104,9 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
 	es := &ExecutionServer{
-		env:                      env,
-		cache:                    cache,
-		enableUserOwnedExecutors: env.GetConfigurator().GetRemoteExecutionConfig().EnableUserOwnedExecutors,
-		streamPubSub:             pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
+		env:          env,
+		cache:        cache,
+		streamPubSub: pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 	}
 	return es, nil
 }

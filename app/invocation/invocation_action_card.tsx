@@ -488,7 +488,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         <div className="action-property-title">Execution metadata</div>
                         {this.state.actionResult.executionMetadata ? (
                           <div className="action-list">
-                            <div className="metadata-title">Worker</div>
+                            <div className="metadata-title">Executor Host ID</div>
                             <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
                             <div className="metadata-title">Executor ID</div>
                             <div className="metadata-detail">

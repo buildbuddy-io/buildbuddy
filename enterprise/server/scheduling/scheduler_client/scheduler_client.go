@@ -30,13 +30,11 @@ type Options struct {
 	HostnameOverride string
 	// TESTING ONLY: overrides the port reported when registering executor
 	PortOverride int32
-	// TESTING ONLY: overrides the name reported when registering executor
-	NodeNameOverride string
 	// TESTING ONLY: overrides the API key sent by the client
 	APIKeyOverride string
 }
 
-func makeExecutionNode(pool, executorID string, options *Options) (*scpb.ExecutionNode, error) {
+func makeExecutionNode(pool, executorID, executorHostID string, options *Options) (*scpb.ExecutionNode, error) {
 	hostname := options.HostnameOverride
 	if hostname == "" {
 		resHostname, err := resources.GetMyHostname()
@@ -53,10 +51,6 @@ func makeExecutionNode(pool, executorID string, options *Options) (*scpb.Executi
 		}
 		port = resPort
 	}
-	nodeName := options.NodeNameOverride
-	if nodeName == "" {
-		nodeName = resources.GetNodeName()
-	}
 	return &scpb.ExecutionNode{
 		Host:                  hostname,
 		Port:                  port,
@@ -67,6 +61,7 @@ func makeExecutionNode(pool, executorID string, options *Options) (*scpb.Executi
 		Pool:                  pool,
 		Version:               version.AppVersion(),
 		ExecutorId:            executorID,
+		ExecutorHostId:        executorHostID,
 	}, nil
 }
 
@@ -239,12 +234,12 @@ func (r *Registration) Start(ctx context.Context) {
 
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
-func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID string, options *Options) (*Registration, error) {
+func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
 	pool := env.GetConfigurator().GetExecutorConfig().Pool
 	if pool == "" {
 		pool = resources.GetPoolName()
 	}
-	node, err := makeExecutionNode(pool, executorID, options)
+	node, err := makeExecutionNode(pool, executorID, executorHostID, options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}

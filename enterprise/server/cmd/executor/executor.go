@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
@@ -47,6 +46,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
+	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -288,11 +288,11 @@ func main() {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
 	}
 	executorID := executorUUID.String()
-	executionServer, err := executor.NewExecutor(env, executorID, &executor.Options{})
+	executor, err := remote_executor.NewExecutor(env, executorID, &remote_executor.Options{})
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executionServer, &priority_task_scheduler.Options{})
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
@@ -329,14 +329,14 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{}
-	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, schedulerOpts)
+	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executor.HostID(), schedulerOpts)
 	if err != nil {
 		log.Fatalf("Error initializing executor registration: %s", err)
 	}
 
 	warmupDone := make(chan struct{})
 	go func() {
-		executionServer.Warmup()
+		executor.Warmup()
 		close(warmupDone)
 	}()
 	go func() {
