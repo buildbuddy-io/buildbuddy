@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+import "proto/raft.proto";
+
+package raft.service;
+
+option go_package = "raft_service";
+
+service Api {
+  // Raft Meta-API.
+  rpc StartCluster(raft.StartClusterRequest)
+      returns (raft.StartClusterResponse);
+  rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
+  rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
+  rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
+
+  // Data API.
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+  rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
+}
