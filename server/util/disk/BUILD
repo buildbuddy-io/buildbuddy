@@ -10,5 +10,6 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/tracing",
+        "@org_golang_x_sys//unix",
     ],
 )

@@ -33,7 +33,6 @@ func (r *Range) Contains(key []byte) bool {
 	lessThanRight := bytes.Compare(key, r.Right) == -1
 
 	contained := greaterThanOrEqualToLeft && lessThanRight
-	log.Debugf("Checking if %s contains %q returned %t", r, string(key), contained)
 	return contained
 }
 
@@ -76,7 +75,7 @@ func (rm *RangeMap) Add(left, right []byte, value interface{}) (*Range, error) {
 		rm.ranges = append(rm.ranges[:insertIndex+1], rm.ranges[insertIndex:]...)
 		rm.ranges[insertIndex] = newRange
 	}
-	log.Debugf("Added new range: %s", newRange)
+	log.Debugf("Rangemap added new range: %s", newRange)
 	return newRange, nil
 }
 

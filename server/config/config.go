@@ -191,6 +191,14 @@ type DistributedCacheConfig struct {
 	ClusterSize       int      `yaml:"cluster_size" usage:"The total number of nodes in this cluster. Required for health checking. ** Enterprise only **"`
 }
 
+type RaftCacheConfig struct {
+	RootDirectory string   `yaml:"root_directory" usage:"The root directory to use for storing cached data."`
+	ListenAddr    string   `yaml:"listen_addr" usage:"The address to listen for local gossip traffic on. Ex. 'localhost:1991"`
+	Join          []string `yaml:"join" usage:"The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'"`
+	HTTPPort      int      `yaml:"http_port" usage:"The address to listen for HTTP raft traffic. Ex. '1992'"`
+	GRPCPort      int      `yaml:"grpc_port" usage:"The address to listen for internal API traffic on. Ex. '1993'"`
+}
+
 type RedisCacheConfig struct {
 	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
 	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
@@ -204,6 +212,7 @@ type cacheConfig struct {
 	MemcacheTargets        []string               `yaml:"memcache_targets" usage:"Deprecated. Use Redis Target instead."`
 	Redis                  RedisCacheConfig       `yaml:"redis"`
 	DistributedCache       DistributedCacheConfig `yaml:"distributed_cache"`
+	RaftCache              RaftCacheConfig        `yaml:"raft"`
 	MaxSizeBytes           int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	InMemory               bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
 	ZstdTranscodingEnabled bool                   `yaml:"zstd_transcoding_enabled" usage:"Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly."`
@@ -690,6 +699,13 @@ func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
 func (c *Configurator) GetDistributedCacheConfig() *DistributedCacheConfig {
 	if c.gc.Cache.DistributedCache.ListenAddr != "" {
 		return &c.gc.Cache.DistributedCache
+	}
+	return nil
+}
+
+func (c *Configurator) GetRaftCacheConfig() *RaftCacheConfig {
+	if c.gc.Cache.RaftCache.ListenAddr != "" {
+		return &c.gc.Cache.RaftCache
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"golang.org/x/sys/unix"
 )
 
 func EnsureDirectoryExists(dir string) error {
@@ -173,4 +174,24 @@ func DirSize(path string) (int64, error) {
 		return nil
 	})
 	return size, err
+}
+
+type DirUsage struct {
+	TotalBytes uint64
+	UsedBytes  uint64
+	FreeBytes  uint64
+	AvailBytes uint64
+}
+
+func GetDirUsage(path string) (*DirUsage, error) {
+	fs := unix.Statfs_t{}
+	if err := unix.Statfs(path, &fs); err != nil {
+		return nil, err
+	}
+	return &DirUsage{
+		TotalBytes: fs.Blocks * uint64(fs.Bsize),
+		UsedBytes:  (fs.Blocks - fs.Bfree) * uint64(fs.Bsize),
+		FreeBytes:  fs.Bfree * uint64(fs.Bsize),
+		AvailBytes: fs.Bavail * uint64(fs.Bsize),
+	}, nil
 }
