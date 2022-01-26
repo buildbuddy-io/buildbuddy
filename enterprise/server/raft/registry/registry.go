@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -438,22 +437,18 @@ func (dnr *DynamicNodeRegistry) resolveWithGossip(clusterID uint64, nodeID uint6
 		return "", "", err
 	}
 
-	for {
-		select {
-		case nodeRsp := <-rsp.ResponseCh():
-			if nodeRsp.Payload == nil {
-				continue
-			}
-			update := &rfpb.RegistryUpdate{}
-			if err := proto.Unmarshal(nodeRsp.Payload, update); err != nil {
-				continue
-			}
-			dnr.processRegistryUpdate(update)
-			return dnr.resolveNHID(clusterID, nodeID)
-		case <-time.After(200 * time.Millisecond):
-			return "", "", TargetAddressUnknownError
+	for nodeRsp := range rsp.ResponseCh() {
+		if nodeRsp.Payload == nil {
+			continue
 		}
+		update := &rfpb.RegistryUpdate{}
+		if err := proto.Unmarshal(nodeRsp.Payload, update); err != nil {
+			continue
+		}
+		dnr.processRegistryUpdate(update)
+		return dnr.resolveNHID(clusterID, nodeID)
 	}
+	return "", "", TargetAddressUnknownError
 }
 
 // raftAddr, grpcAddr, key, error
