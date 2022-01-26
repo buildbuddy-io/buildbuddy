@@ -22,9 +22,10 @@ func localAddr(t *testing.T) string {
 func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.GossipManager {
 	node, err := gossip.NewGossipManager(nodeAddr, seeds)
 	require.Nil(t, err)
-	//	t.Cleanup(func() {
-	//		node.Shutdown()
-	//	})
+	t.Cleanup(func() {
+		node.Leave()
+		node.Shutdown()
+	})
 	return node
 }
 
