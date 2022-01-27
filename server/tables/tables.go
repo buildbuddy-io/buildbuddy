@@ -630,8 +630,40 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
 		return err
 	}
-	if err := db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
+
+	// Delete all the target statuses without invocation uuid. This could happen when
+	// a target status has a invocation_pk that's not in Invocations table. It's OK
+	// to delete these target statuses because these target statuses are not showing
+	// up in the UI right now.
+	deleteTargetStatusStmt := `DELETE FROM TargetStatuses WHERE invocation_uuid IS NULL`
+	if err := updateInBatches(db, deleteTargetStatusStmt, 10000); err != nil {
 		return err
+	}
+
+	// Check whether primary keys exist for TargetStatuses before dropping the primary key;
+	// Otherwise dropping primary keys will fail.
+	var primaryKeyCount int
+	countPrimaryKeyStmt := `
+		SELECT 
+			COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		WHERE 
+			table_schema = schema() AND 
+			column_key = 'PRI' AND 
+			table_name='TargetStatuses'`
+
+	if err := db.Raw(countPrimaryKeyStmt).Scan(&primaryKeyCount).Error; err != nil {
+		return err
+	}
+
+	if primaryKeyCount > 0 {
+		if err := db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
+			return err
+		}
+	} else {
+		// For some reasons there are no primary keys for TargetStatuses; skip DROP PRIMARY KEY
+		if err := db.Exec("ALTER TABLE TargetStatuses ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
+			return err
+		}
 	}
 	return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
 }
