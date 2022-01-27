@@ -101,7 +101,7 @@ func (q *Query) SetOffset(offset int64) *Query {
 	return q
 }
 func (q *Query) Build() (string, []interface{}) {
-	// Reference: SELECT foo FROM TABLE WHERE bar = baz ORDER BY ack ASC LIMIT 10
+	// Reference: SELECT foo FROM TABLE [JOIN TABLE2 ON a = b] WHERE bar = baz ORDER BY ack ASC LIMIT 10
 	fullQuery := q.baseQuery
 	var argsInJoinClauses []interface{}
 	for _, j := range q.joinClauses {
