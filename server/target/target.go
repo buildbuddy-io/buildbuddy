@@ -291,7 +291,7 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 	}
 
 	commitQuery.SetGroupBy("commit_sha")
-	commitQuery.SetOrderBy("latest_created_at_usec", false /*=ascending*/)
+	commitQuery.SetOrderBy("latest_created_at_usec DESC, commit_sha", true /*=ascending*/)
 	commitQuery.SetLimit(targetPageSize)
 
 	// Build the subquery to select columns from Invocations Table
