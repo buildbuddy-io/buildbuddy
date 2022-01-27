@@ -13,6 +13,8 @@ const (
 	offsetSQLKeyword = "OFFSET"
 	andQueryJoiner   = "AND"
 	orQueryJoiner    = "OR"
+	joinSQLKeyword   = "JOIN"
+	onSQLKeyword     = "ON"
 )
 
 func pad(clause string) string {
@@ -25,6 +27,21 @@ func pad(clause string) string {
 	return clause
 }
 
+// joinClause represents the following SQL statement:
+//   JOIN foo as f ON b.key = f.key
+type joinClause struct {
+	// This can be a table name or a sub query
+	tableSubquery *Query
+	alias         string
+	onClause      string
+}
+
+func (j *joinClause) Build() (string, []interface{}) {
+	subQuery, args := j.tableSubquery.Build()
+	q := pad(joinSQLKeyword) + "(" + subQuery + ") AS" + pad(j.alias) + pad(onSQLKeyword) + pad(j.onClause)
+	return q, args
+}
+
 type Query struct {
 	limit        *int64
 	offset       *int64
@@ -33,6 +50,7 @@ type Query struct {
 	baseQuery    string
 	arguments    []interface{}
 	whereClauses []string
+	joinClauses  []joinClause
 	ascending    bool
 }
 
@@ -50,6 +68,15 @@ func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	for _, arg := range args {
 		q.arguments = append(q.arguments, arg)
 	}
+	return q
+}
+
+func (q *Query) AddJoinClause(subQuery *Query, alias string, onClause string) *Query {
+	q.joinClauses = append(q.joinClauses, joinClause{
+		tableSubquery: subQuery,
+		alias:         alias,
+		onClause:      onClause,
+	})
 	return q
 }
 
@@ -74,8 +101,15 @@ func (q *Query) SetOffset(offset int64) *Query {
 	return q
 }
 func (q *Query) Build() (string, []interface{}) {
-	// Reference: SELECT foo FROM TABLE WHERE bar = baz ORDER BY ack ASC LIMIT 10
+	// Reference: SELECT foo FROM TABLE [JOIN TABLE2 ON a = b] WHERE bar = baz ORDER BY ack ASC LIMIT 10
 	fullQuery := q.baseQuery
+	var argsInJoinClauses []interface{}
+	for _, j := range q.joinClauses {
+		joinClause, args := j.Build()
+		argsInJoinClauses = append(argsInJoinClauses, args...)
+		fullQuery += joinClause
+	}
+	q.arguments = append(argsInJoinClauses, q.arguments...)
 	if len(q.whereClauses) > 0 {
 		whereRestrict := strings.Join(q.whereClauses, andQueryJoiner)
 		fullQuery += pad(whereSQLKeyword) + pad(whereRestrict)
