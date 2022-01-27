@@ -296,7 +296,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6} {
+	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6, 16e6} {
 		blob := compressibleBlobOfSize(blobSize)
 
 		compressedBlob := compression.CompressZstd(nil, blob)
@@ -324,6 +324,25 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 		downloadResourceName := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
 		downloadBuf := []byte{}
 		downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+			ResourceName: downloadResourceName,
+		})
+		require.NoError(t, err)
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			downloadBuf = append(downloadBuf, res.Data...)
+		}
+		require.Equal(t, blob, downloadBuf)
+
+		// Now try uploading a duplicate. The duplicate upload should not fail,
+		// and we should still be able to read the blob.
+		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+
+		downloadBuf = []byte{}
+		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
 			ResourceName: downloadResourceName,
 		})
 		require.NoError(t, err)
@@ -413,14 +432,24 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 			Data:         remaining[:chunkSize],
 			FinishWrite:  chunkSize == len(remaining),
 		})
-		require.NoError(t, err)
+		if err != io.EOF {
+			require.NoError(t, err)
+		}
 		remaining = remaining[chunkSize:]
+		if err == io.EOF {
+			break
+		}
 	}
 	res, err := uploadStream.CloseAndRecv()
 	require.NoError(t, err)
-	// NOTE: If the blob already exists, this assertion will fail if the blob is
-	// compressed.
+
+	// Note: REAPI clients are not advised to perform this committed_size check
+	// for compressed blobs, but we do this check to mimic what Bazel 5.0.0 does
+	// in practice. We also assert that we successfully sent all chunks, since the
+	// server needs all chunks in order to know the committed size. See
+	// https://github.com/bazelbuild/bazel/issues/14654
 	require.Equal(t, int64(len(blob)), res.CommittedSize)
+	require.Len(t, remaining, 0, "upload was unexpectedly short-circuited")
 }
 
 func zstdDecompress(t *testing.T, b []byte) []byte {

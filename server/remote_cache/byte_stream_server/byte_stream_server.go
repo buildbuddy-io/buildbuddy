@@ -180,7 +180,6 @@ type writeState struct {
 	d                  *repb.Digest
 	activeResourceName string
 	offset             int64
-	alreadyExists      bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -239,7 +238,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	ws.alreadyExists = exists
+	if exists {
+		return nil, status.AlreadyExistsError("Already exists")
+	}
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
@@ -322,16 +323,12 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				r, err := digest.ParseUploadResourceName(req.ResourceName)
-				if err != nil {
-					return err
-				}
-				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: r.GetDigest().GetSizeBytes(),
-				})
+				return handleAlreadyExists(stream, req)
 			}
-
 			streamState, err = s.initStreamState(ctx, req)
+			if status.IsAlreadyExistsError(err) {
+				return handleAlreadyExists(stream, req)
+			}
 			if err != nil {
 				return err
 			}
@@ -340,11 +337,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					log.Error(err.Error())
 				}
 			}()
-			if streamState.alreadyExists {
-				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.d.GetSizeBytes(),
-				})
-			}
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
@@ -400,6 +392,59 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 		CommittedSize: 0,
 		Complete:      false,
 	}, nil
+}
+
+func handleAlreadyExists(stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
+	if err != nil {
+		return err
+	}
+	// The following code implements a workaround for the way Bazel 5.0.0 handles
+	// writing compressed blobs.
+	//
+	// When the server closes the stream and sends the WriteResponse, Bazel will
+	// check whether the committed_size matches the number of bytes it has
+	// uploaded, but only if it has uploaded all bytes. But because Bazel doesn't
+	// wait for an ack before it uploads each chunk, we (generally) have no way of
+	// knowing whether Bazel has uploaded all bytes at this point. So we are
+	// forced to wait until bazel uploads all chunks, so that we know for sure
+	// that the committed_size we send back will match Bazel's expectation.
+	//
+	// There are two cases where we can short-circuit, though:
+	//
+	// - If this is an uncompressed stream, we assume that the committed_size will
+	//   match the digest size. (If the two sizes actually do mismatch, it's more
+	//   likely a Bazel problem, since we implement cache checksums).
+	// - If the first request was marked with FinishWrite, we don't expect
+	//   Bazel to send any more messages.
+	//
+	// See https://github.com/bazelbuild/bazel/issues/14654 for more context
+	committedSize := r.GetDigest().GetSizeBytes()
+	if r.GetCompressor() != repb.Compressor_IDENTITY {
+		remainingSize := int64(0)
+		if !firstRequest.FinishWrite {
+			remainingSize, err = remainingUploadSize(stream)
+			if err != nil {
+				return err
+			}
+		}
+		committedSize = int64(len(firstRequest.Data)) + remainingSize
+	}
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committedSize})
+}
+
+func remainingUploadSize(stream bspb.ByteStream_WriteServer) (int64, error) {
+	size := int64(0)
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return size, nil
+		}
+		if err != nil {
+			return size, err
+		}
+		size += int64(len(req.Data))
+	}
 }
 
 type Checksum struct {
