@@ -506,6 +506,7 @@ type PostAutoMigrateLogic func() error
 // but some info is needed before the migration takes place in order to know what
 // to do.
 func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
+	log.Info("luluz-debug: PreAutoMigrate")
 	postMigrate := make([]PostAutoMigrateLogic, 0)
 
 	m := db.Migrator()
@@ -519,6 +520,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil, err
 		}
 	}
+	log.Info("luluz-debug: UserGroups")
 
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
@@ -542,6 +544,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			}
 		}
 	}
+	log.Info("luluz-debug: Migrate Groups.API key to api key rows")
 
 	// Migrate Groups.APIKey to APIKey rows.
 	if m.HasTable("Groups") && m.HasColumn(&Group{}, "api_key") && !m.HasTable("APIKeys") {
@@ -582,12 +585,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
+	log.Info("luluz-debug: before target_status_invocation_uuid")
+
 	// Populate invocation_uuid if the column doesn't exist.
 	if m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_uuid") {
+		log.Info("luluz-debug")
 		if db.Dialector.Name() == sqliteDialect {
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
 			// primary keys.
+			log.Info("luluz-debug: rename")
 			db.Migrator().RenameTable("TargetStatuses", "TargetStatusesOld")
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForSQLite(db)

@@ -1,8 +1,12 @@
 package target
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/gob"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -49,6 +53,44 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 	}
 }
 
+// PaginationToken is a struct to represent pagination for GetTarget RPC
+type PaginationToken struct {
+	InvocationEndUsec int64
+	CommitSHA         string
+}
+
+func NewTokenFromRequest(req *trpb.GetTargetRequest) (*PaginationToken, error) {
+	strToken := req.GetPageToken()
+	if strToken == "" {
+		return nil, nil
+	}
+
+	t := &PaginationToken{}
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(strToken))
+	if err := gob.NewDecoder(decoder).Decode(t); err != nil {
+		return nil, status.InvalidArgumentErrorf("cannot decode page token %q, %s", strToken, err)
+	}
+	return t, nil
+}
+
+func (t *PaginationToken) Encode() (string, error) {
+	var buf bytes.Buffer
+	encoder := base64.NewEncoder(base64.StdEncoding, &buf)
+	if err := gob.NewEncoder(encoder).Encode(t); err != nil {
+		return "", status.InternalErrorf("failed to tokenize pagination token: %s", err)
+	}
+	encoder.Close()
+	return buf.String(), nil
+}
+
+func (t *PaginationToken) ApplyToQuery(q *query_builder.Query) {
+	o := query_builder.OrClauses{}
+	o.AddOr("created_at_usec < ? ", t.InvocationEndUsec)
+	o.AddOr("(created_at_usec = ? AND commit_sha > ?)", t.InvocationEndUsec, t.CommitSHA)
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+}
+
 func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	auth := env.GetAuthenticator()
 	if auth == nil {
@@ -61,17 +103,67 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 
 	if req.GetServerSidePagination() {
 		return readPaginatedTargets(ctx, env, req)
-	} else {
-		startUsec := int64(0)
-		endUsec := time.Now().UnixMicro()
-		if st := req.GetStartTimeUsec(); st != 0 {
-			startUsec = st
-		}
-		if et := req.GetEndTimeUsec(); et != 0 {
-			endUsec = et
-		}
-		return readTargets(ctx, env, req, startUsec, endUsec)
 	}
+
+	// TODO(luluz): delete once we fully migrated to server side pagination.
+	startUsec := int64(0)
+	endUsec := time.Now().UnixMicro()
+	if st := req.GetStartTimeUsec(); st != 0 {
+		startUsec = st
+	}
+	if et := req.GetEndTimeUsec(); et != 0 {
+		endUsec = et
+	}
+	return readTargets(ctx, env, req, startUsec, endUsec)
+}
+
+func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest, startUsec, endUsec int64) (*trpb.GetTargetResponse, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	q := query_builder.NewQuery(`SELECT t.target_id, t.label, t.rule_type, ts.target_type,
+                                     ts.test_size, ts.status, ts.start_time_usec, ts.duration_usec,
+                                     i.invocation_id, i.commit_sha, i.branch_name, i.repo_url, i.created_at_usec
+                                     FROM Targets as t
+                                     JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
+                                     JOIN Invocations AS i ON ts.invocation_uuid = i.invocation_uuid`)
+	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
+	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
+	// Adds user / permissions to targets (t) table.
+	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
+		return nil, err
+	}
+	// Adds user / permissions to invocations (i) table.
+	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
+		return nil, err
+	}
+	q.AddWhereClause("ts.created_at_usec > ?", startUsec)
+	q.AddWhereClause("ts.created_at_usec < ?", endUsec)
+
+	tq := req.GetQuery()
+	if repo := tq.GetRepoUrl(); repo != "" {
+		q.AddWhereClause("i.repo_url = ?", repo)
+	}
+	if user := tq.GetUser(); user != "" {
+		q.AddWhereClause("i.user = ?", user)
+	}
+	if host := tq.GetHost(); host != "" {
+		q.AddWhereClause("i.host = ?", host)
+	}
+	if sha := tq.GetCommitSha(); sha != "" {
+		q.AddWhereClause("i.commit_sha = ?", sha)
+	}
+	if role := tq.GetRole(); role != "" {
+		q.AddWhereClause("i.role = ?", role)
+	}
+	if targetType := tq.GetTargetType(); targetType != cmpb.TargetType_TARGET_TYPE_UNSPECIFIED {
+		q.AddWhereClause("ts.target_type = ?", int32(targetType))
+	}
+	if branchName := tq.GetBranchName(); branchName != "" {
+		q.AddWhereClause("i.branch_name = ?", branchName)
+	}
+	q.SetOrderBy("t.label ASC, i.created_at_usec", false /*=ascending*/)
+	return fetchTargetsFromDB(ctx, env, q, tq.GetRepoUrl())
 }
 
 func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string) (*trpb.GetTargetResponse, error) {
@@ -227,53 +319,4 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 		JOIN TargetStatuses as ts ON ts.target_id = t.target_id`)
 	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
 	return fetchTargetsFromDB(ctx, env, q, repo)
-}
-
-func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest, startUsec, endUsec int64) (*trpb.GetTargetResponse, error) {
-	if env.GetDBHandle() == nil {
-		return nil, status.FailedPreconditionError("database not configured")
-	}
-	q := query_builder.NewQuery(`SELECT t.target_id, t.label, t.rule_type, ts.target_type,
-                                     ts.test_size, ts.status, ts.start_time_usec, ts.duration_usec,
-                                     i.invocation_id, i.commit_sha, i.branch_name, i.repo_url, i.created_at_usec
-                                     FROM Targets as t
-                                     JOIN TargetStatuses AS ts ON t.target_id = ts.target_id
-                                     JOIN Invocations AS i ON ts.invocation_uuid = i.invocation_uuid`)
-	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
-	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
-	// Adds user / permissions to targets (t) table.
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
-		return nil, err
-	}
-	// Adds user / permissions to invocations (i) table.
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "i"); err != nil {
-		return nil, err
-	}
-	q.AddWhereClause("ts.created_at_usec > ?", startUsec)
-	q.AddWhereClause("ts.created_at_usec < ?", endUsec)
-
-	tq := req.GetQuery()
-	if repo := tq.GetRepoUrl(); repo != "" {
-		q.AddWhereClause("i.repo_url = ?", repo)
-	}
-	if user := tq.GetUser(); user != "" {
-		q.AddWhereClause("i.user = ?", user)
-	}
-	if host := tq.GetHost(); host != "" {
-		q.AddWhereClause("i.host = ?", host)
-	}
-	if sha := tq.GetCommitSha(); sha != "" {
-		q.AddWhereClause("i.commit_sha = ?", sha)
-	}
-	if role := tq.GetRole(); role != "" {
-		q.AddWhereClause("i.role = ?", role)
-	}
-	if targetType := tq.GetTargetType(); targetType != cmpb.TargetType_TARGET_TYPE_UNSPECIFIED {
-		q.AddWhereClause("ts.target_type = ?", int32(targetType))
-	}
-	if branchName := tq.GetBranchName(); branchName != "" {
-		q.AddWhereClause("i.branch_name = ?", branchName)
-	}
-	q.SetOrderBy("t.label ASC, i.created_at_usec", false /*=ascending*/)
-	return fetchTargetsFromDB(ctx, env, q, tq.GetRepoUrl())
 }
