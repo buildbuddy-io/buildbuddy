@@ -40,6 +40,15 @@ if ! go mod tidy -e &>"$tmp_log_file"; then
   exit 1
 fi
 
+# Make sure go.mod has at most two `require()` blocks (direct imports then indirect imports).
+# TODO(bduffany): Fix automatically.
+require_block_count=$(grep -c '^require (' go.mod)
+if ((require_block_count > 2)); then
+  echo "Found more than two 'require(...)' sections in go.mod." >&2
+  echo "Please fix by manually merging all require() blocks into a single block, then running tools/fix_go_deps.sh" >&2
+  exit 1
+fi
+
 # Update deps.bzl (using Gazelle)
 if ! "${GAZELLE_COMMAND[@]}" update-repos -from_file=go.mod \
   -to_macro=deps.bzl%install_buildbuddy_dependencies &>"$tmp_log_file"; then
