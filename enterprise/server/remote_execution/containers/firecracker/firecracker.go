@@ -1069,7 +1069,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return nil
 }
 
-func (c FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
