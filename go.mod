@@ -19,6 +19,7 @@ require (
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.1
+	github.com/cockroachdb/pebble v0.0.0-20210406181039-e3809b89b488
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.17
 	github.com/crewjam/saml v0.4.5
@@ -102,7 +103,6 @@ require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cockroachdb/errors v1.8.6 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f // indirect
-	github.com/cockroachdb/pebble v0.0.0-20210406181039-e3809b89b488 // indirect
 	github.com/cockroachdb/redact v1.1.1 // indirect
 	github.com/cockroachdb/sentry-go v0.6.1-cockroachdb.2 // indirect
 	github.com/containerd/containerd v1.5.2 // indirect
