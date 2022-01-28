@@ -1092,11 +1092,11 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
+	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			// If we never connected to the VM exec port, it's likely because of a
