@@ -175,18 +175,20 @@ func (a *TestAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *TestAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	matches := testApiKeyRegex.FindStringSubmatch(input)
-	if len(matches) == 0 {
+	matches := testApiKeyRegex.FindAllStringSubmatch(input, -1)
+	l := len(matches)
+	if l == 0 {
 		// The api key header is not present
 		return "", nil
 	}
-	if len(matches) != 2 {
-		return "", status.FailedPreconditionError("invalid input")
+	lastMatch := matches[l-1]
+	if len(lastMatch) != 2 {
+		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
 	}
-	if apiKey := matches[1]; apiKey != "" {
+	if apiKey := lastMatch[1]; apiKey != "" {
 		return apiKey, nil
 	}
-	return "", status.FailedPreconditionError("missing API Key")
+	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
