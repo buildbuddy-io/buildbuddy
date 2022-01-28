@@ -51,7 +51,7 @@ const (
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 3 * time.Second
+	vSocketDialTimeout = 10 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -644,7 +644,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
 	if err != nil {
-		return err
+		return status.InternalErrorf("Failed to dial firecracker VM exec port: %s", err)
 	}
 	defer conn.Close()
 
@@ -653,7 +653,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 		ClearArpCache:            true,
 	})
-	return err
+	if err != nil {
+		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
+	}
+	return nil
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -1059,16 +1062,16 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
 	}
 	defer conn.Close()
 
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "Firecracker exec failed")
 	}
-	return rsp, err
+	return rsp, nil
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
