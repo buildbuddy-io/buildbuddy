@@ -296,6 +296,10 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
+	// Note: Some larger blob sizes are included here so that we have a better
+	// chance of exercising the scenario where the gRPC client sends a burst of
+	// write requests at once without waiting to see if the server sends back
+	// a response (this is a common scenario in client-streaming uploads).
 	for _, blobSize := range []int{1, 1e2, 1e4, 1e6, 8e6, 16e6} {
 		blob := compressibleBlobOfSize(blobSize)
 
