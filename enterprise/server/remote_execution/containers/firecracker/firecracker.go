@@ -1324,10 +1324,8 @@ func (c *FirecrackerContainer) parseFatalInitError() error {
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
 	lines := strings.Split(tail, "\n")
 	for _, line := range lines {
-		if m := fatalErrPattern.FindStringSubmatch(line); m != nil {
-			if len(m) >= 1 {
-				return status.InternalErrorf("Firecracker VM crashed: %s", m[1])
-			}
+		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
+			return status.InternalErrorf("Firecracker VM crashed: %s", m[1])
 		}
 	}
 	return nil
