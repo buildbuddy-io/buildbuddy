@@ -70,17 +70,17 @@ jobs:
 
       - name: Check
         run: |
-          echo "===== gofmt diff ====="
+          echo "===== gofmt diff (fix with ./buildfix.sh) ====="
           cat gofmt-diff.txt
-          echo "===== buildifier diff ====="
+          echo "===== buildifier diff (fix with ./buildfix.sh) ====="
           cat buildifier-diff.txt
-          echo "===== gazelle diff ====="
+          echo "===== gazelle diff (fix with ./buildfix.sh --gazelle) ====="
           cat gazelle-diff.txt
-          echo "===== go deps diff (fix with tools/fix_go_deps.sh) ====="
+          echo "===== go deps diff (fix with ./buildfix.sh --fix-go-deps) ====="
           cat go-deps-diff.txt
-          echo "===== clang-format errors ====="
+          echo "===== clang-format errors (fix with ./buildfix.sh) ====="
           cat clang-format-errors.txt
-          echo "===== prettier errors ====="
+          echo "===== prettier errors (fix with ./buildfix.sh) ====="
           cat prettier-errors.txt
 
           if [ -s gazelle-diff.txt ]; then exit 1; fi
