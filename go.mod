@@ -12,6 +12,7 @@ require (
 	cloud.google.com/go/storage v1.15.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
+	github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.29.0
