@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
@@ -35,9 +37,63 @@ var (
 	besBackend  = flag.String("bes_backend", "grpcs://cloud.buildbuddy.io:443", "Server address to proxy build events to.")
 	remoteCache = flag.String("remote_cache", "", "Server address to cache events to.")
 
-	cacheDir          = flag.String("cache_directory", "", "Root directory to use for local cache")
+	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
 	cacheMaxSizeBytes = flag.Int64("cache_max_size_bytes", 0, "Max cache size, in bytes")
+	inactivityTimeout = flag.Duration("inactivity_timeout", 5*time.Minute, "Sidecar will terminate after this much inactivity")
 )
+
+var (
+	lastUseMu sync.RWMutex
+	lastUse   time.Time
+)
+
+func maybeUpdateLastUse() {
+	lastUseMu.RLock()
+	needsUpdate := time.Since(lastUse) > time.Second
+	lastUseMu.RUnlock()
+
+	if !needsUpdate {
+		return
+	}
+
+	lastUseMu.Lock()
+	lastUse = time.Now()
+	lastUseMu.Unlock()
+}
+
+func startInactivityWatcher(ctx context.Context, inactiveCallbackFn func()) {
+	maybeUpdateLastUse()
+	go func() {
+		active := true
+		for active {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+				lastUseMu.RLock()
+				if time.Since(lastUse) > *inactivityTimeout {
+					active = false
+				}
+				lastUseMu.RUnlock()
+			}
+		}
+		inactiveCallbackFn()
+	}()
+}
+
+func inactivityUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		maybeUpdateLastUse()
+		return handler(ctx, req)
+	}
+}
+
+func inactivityStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		maybeUpdateLastUse()
+		return handler(srv, stream)
+	}
+}
 
 func initializeEnv(configurator *config.Configurator) *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
@@ -63,6 +119,8 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
+		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor()),
+		grpc.ChainStreamInterceptor(inactivityStreamInterceptor()),
 		grpc.MaxRecvMsgSize(env.GetConfigurator().GetGRPCMaxRecvMsgSizeBytes()),
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -126,10 +184,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing Configurator: %s", err.Error())
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	env := initializeEnv(configurator)
 	grpcServer, lis := initializeGRPCServer(env)
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
+
+	// Shutdown the server gracefully after a period of inactivity configurable
+	// with the --inactivity_timeout flag.
+	startInactivityWatcher(ctx, func() {
+		env.GetHealthChecker().Shutdown()
+	})
 
 	if *cacheDir != "" {
 		initializeDiskCache(env)
@@ -140,9 +206,8 @@ func main() {
 	if *remoteCache != "" {
 		registerCacheProxy(ctx, env, grpcServer)
 	}
-	if *besBackend != "" || *remoteCache != "" {
-		grpcServer.Serve(lis)
-	} else {
+	if *besBackend == "" && *remoteCache == "" {
 		log.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
 	}
+	grpcServer.Serve(lis)
 }
