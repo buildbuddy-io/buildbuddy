@@ -54,6 +54,9 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 }
 
 // PaginationToken is a struct to represent pagination for GetTarget RPC
+// For page 1, we fetch N(=targetPageSize) distinct most recent commits ordered by the latest created_at_usec for the Invocation and commit_sha.
+// For the subsequent pages, we fetch commits older than InvocationEndUsec; or created
+// exactly at InvocationEndUsec, but is ordered after CommitSHA.
 type PaginationToken struct {
 	InvocationEndUsec int64
 	CommitSHA         string
@@ -172,7 +175,7 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.Target, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
-	var paginationToken *PaginationToken
+	var nextPageToken *PaginationToken
 
 	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
@@ -221,14 +224,14 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),
 				},
 			})
-			if paginationToken == nil || paginationToken.InvocationEndUsec >= row.CreatedAtUsec {
-				paginationToken = &PaginationToken{
+			if nextPageToken == nil || nextPageToken.InvocationEndUsec >= row.CreatedAtUsec {
+				nextPageToken = &PaginationToken{
 					InvocationEndUsec: row.CreatedAtUsec,
 				}
-				if paginationToken.InvocationEndUsec == row.CreatedAtUsec && paginationToken.CommitSHA > row.CommitSHA {
+				if nextPageToken.InvocationEndUsec == row.CreatedAtUsec && nextPageToken.CommitSHA > row.CommitSHA {
 					continue
 				}
-				paginationToken.CommitSHA = row.CommitSHA
+				nextPageToken.CommitSHA = row.CommitSHA
 			}
 		}
 		return nil
@@ -249,8 +252,8 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 	resp := &trpb.GetTargetResponse{
 		InvocationTargets: targetHistories,
 	}
-	if paginationToken != nil {
-		tokenStr, err := paginationToken.Encode()
+	if nextPageToken != nil {
+		tokenStr, err := nextPageToken.Encode()
 		if err != nil {
 			return nil, err
 		}
