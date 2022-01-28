@@ -55,6 +55,11 @@ else
   bazel run //tools/prettier:fix
 fi
 
+if ((GO_DEPS)); then
+  echo "Fixing go.mod, go.sum, and deps.bzl..."
+  GAZELLE_PATH=$(which gazelle || true) ./tools/fix_go_deps.sh
+fi
+
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
   if which gazelle &>/dev/null; then
@@ -62,11 +67,6 @@ if ((GAZELLE)); then
   else
     bazel run //:gazelle
   fi
-fi
-
-if ((GO_DEPS)); then
-  echo "Fixing go.mod, go.sum, and deps.bzl..."
-  GAZELLE_PATH=$(which gazelle || true) ./tools/fix_go_deps.sh
 fi
 
 echo 'All done!'
