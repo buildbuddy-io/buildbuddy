@@ -394,36 +394,29 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func handleAlreadyExists(stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
 	}
-	// The following code implements a workaround for the way Bazel 5.0.0 handles
-	// writing compressed blobs.
+	// Bazel 5.0.0 effectively requires that the committed_size match the total
+	// length of the *uploaded* payload. For compressed payloads, the uploaded
+	// payload length is not yet known, because it depends on the compression
+	// parameters used by the client. So we need to read the whole stream from the
+	// client in the compressed case.
 	//
-	// When the server closes the stream and sends the WriteResponse, Bazel will
-	// check whether the committed_size matches the number of bytes it has
-	// uploaded, but only if it has uploaded all bytes. But because Bazel doesn't
-	// wait for an ack before it uploads each chunk, we (generally) have no way of
-	// knowing whether Bazel has uploaded all bytes at this point. So we are
-	// forced to wait until bazel uploads all chunks, so that we know for sure
-	// that the committed_size we send back will match Bazel's expectation.
-	//
-	// There are two cases where we can short-circuit, though:
-	//
-	// - If this is an uncompressed stream, we assume that the committed_size will
-	//   match the digest size. (If the two sizes actually do mismatch, it's more
-	//   likely a Bazel problem, since we implement cache checksums).
-	// - If the first request was marked with FinishWrite, we don't expect
-	//   Bazel to send any more messages.
-	//
-	// See https://github.com/bazelbuild/bazel/issues/14654 for more context
+	// See https://github.com/bazelbuild/bazel/issues/14654 for context.
 	committedSize := r.GetDigest().GetSizeBytes()
 	if r.GetCompressor() != repb.Compressor_IDENTITY {
 		remainingSize := int64(0)
 		if !firstRequest.FinishWrite {
-			remainingSize, err = remainingUploadSize(stream)
+			// In the case where we read the full stream in order to determine its
+			// size, count it as an upload.
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+			uploadTracker := ht.TrackUpload(r.GetDigest())
+			defer uploadTracker.Close()
+
+			remainingSize, err = s.recvAll(stream)
 			if err != nil {
 				return err
 			}
@@ -433,7 +426,9 @@ func handleAlreadyExists(stream bspb.ByteStream_WriteServer, firstRequest *bspb.
 	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committedSize})
 }
 
-func remainingUploadSize(stream bspb.ByteStream_WriteServer) (int64, error) {
+// recvAll receives the remaining write requests from the client, and returns
+// the total (compressed) size of the uploaded bytes.
+func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
 	size := int64(0)
 	for {
 		req, err := stream.Recv()

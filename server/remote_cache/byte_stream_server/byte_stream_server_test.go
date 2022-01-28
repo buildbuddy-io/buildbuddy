@@ -442,10 +442,10 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 		remaining = remaining[chunkSize:]
 		if err == io.EOF {
 			// Server sent back a WriteResponse, which we will receive in the
-			// following CloseAndRecv call. Note that this response may have been
-			// sent in response to a WriteRequest sent in a previous loop iteration,
-			// since the gRPC client does not wait for the server to process each
-			// request before sending subsequent requests.
+			// following CloseAndRecv call. Note that this response may have been sent
+			// in response to a WriteRequest sent in a previous loop iteration, since
+			// the gRPC client does not wait for the server to process each request
+			// before sending subsequent requests.
 			break
 		}
 	}
