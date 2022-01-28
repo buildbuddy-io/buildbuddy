@@ -5,13 +5,13 @@ go 1.17
 replace (
 	github.com/firecracker-microvm/firecracker-go-sdk => github.com/tylerwilliams/firecracker-go-sdk v0.22.1
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
+	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc2
 )
 
 require (
 	cloud.google.com/go/storage v1.15.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.17.0
-	github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e
 	github.com/aws/aws-sdk-go v1.35.37
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.29.0
@@ -19,6 +19,7 @@ require (
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.1
+	github.com/cockroachdb/pebble v0.0.0-20210406181039-e3809b89b488
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.17
 	github.com/crewjam/saml v0.4.5
@@ -89,6 +90,7 @@ require (
 	cloud.google.com/go/iam v0.1.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect
+	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/Microsoft/go-winio v0.4.17 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
@@ -101,7 +103,6 @@ require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cockroachdb/errors v1.8.6 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f // indirect
-	github.com/cockroachdb/pebble v0.0.0-20210331181633-27fc006b8bfb // indirect
 	github.com/cockroachdb/redact v1.1.1 // indirect
 	github.com/cockroachdb/sentry-go v0.6.1-cockroachdb.2 // indirect
 	github.com/containerd/containerd v1.5.2 // indirect
@@ -133,7 +134,7 @@ require (
 	github.com/goccy/go-json v0.7.10 // indirect
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
-	github.com/golang/snappy v0.0.3 // indirect
+	github.com/golang/snappy v0.0.4-0.20210502035320-33fc3d5d8d99 // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
@@ -161,7 +162,8 @@ require (
 	github.com/lestrrat-go/httpcc v1.0.0 // indirect
 	github.com/lestrrat-go/iter v1.0.1 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
-	github.com/lni/goutils v1.3.0 // indirect
+	github.com/lni/goutils v1.3.1-0.20210517080819-7f56813dc438 // indirect
+	github.com/lni/vfs v0.2.0 // indirect
 	github.com/magefile/mage v1.10.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.0.0-20201213122252-bcd7e1b9601e // indirect

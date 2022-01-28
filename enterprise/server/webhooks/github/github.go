@@ -110,6 +110,10 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	}
 	switch event := event.(type) {
 	case *gh.PushEvent:
+		// Ignore branch deletion events.
+		if event.GetDeleted() {
+			return nil, nil
+		}
 		v, err := fieldgetter.ExtractValues(
 			event,
 			"HeadCommit.ID",

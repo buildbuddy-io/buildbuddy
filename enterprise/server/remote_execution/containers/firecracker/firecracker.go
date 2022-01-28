@@ -19,7 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -288,7 +287,6 @@ type FirecrackerContainer struct {
 	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
-	enableDiffSnapshots  bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -355,14 +353,13 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			InitDockerd:      opts.InitDockerd,
 			DebugMode:        opts.DebugMode,
 		},
-		jailerRoot:          opts.JailerRoot,
-		containerImage:      opts.ContainerImage,
-		actionWorkingDir:    opts.ActionWorkingDirectory,
-		env:                 env,
-		vmLog:               vmLog,
-		imageCacheAuth:      imageCacheAuth,
-		allowSnapshotStart:  opts.AllowSnapshotStart,
-		enableDiffSnapshots: env.GetConfigurator().GetExecutorConfig().EnableFirecrackerDiffSnapshots,
+		jailerRoot:         opts.JailerRoot,
+		containerImage:     opts.ContainerImage,
+		actionWorkingDir:   opts.ActionWorkingDirectory,
+		env:                env,
+		vmLog:              vmLog,
+		imageCacheAuth:     imageCacheAuth,
+		allowSnapshotStart: opts.AllowSnapshotStart,
 	}
 
 	if err := c.newID(); err != nil {
@@ -372,33 +369,6 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		c.vmIdx = opts.ForceVMIdx
 	}
 	return c, nil
-}
-
-// isZeroes checks whether the passed byte buffer contains all zero bytes.
-// based on https://stackoverflow.com/questions/45506424/how-to-check-if-byte-is-all-zeros-in-go
-func isZeroes(data []byte) bool {
-	n := len(data)
-
-	// Largest length which could be divided by 8.
-	nlen8 := n & 0xFFFFFFF8
-	i := 0
-
-	// Interpret every 8 raw bytes as an uint64 and compare to zero.
-	for ; i < nlen8; i += 8 {
-		b := *(*uint64)(unsafe.Pointer(uintptr(unsafe.Pointer(&data[0])) + uintptr(i)))
-		if b != 0 {
-			return false
-		}
-	}
-
-	// Check trailing bytes that do not divide evenly into 8.
-	for ; i < n; i++ {
-		if data[i] != 0 {
-			return false
-		}
-	}
-
-	return true
 }
 
 // mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks into the baseSnapshotPath file.
@@ -428,7 +398,15 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 		i := i
 		offset := perThreadBytes * int64(i)
 		regionEnd := perThreadBytes * int64(i+1)
+		if regionEnd > inInfo.Size() {
+			regionEnd = inInfo.Size()
+		}
 		eg.Go(func() error {
+			gin, err := os.Open(diffSnapshotPath)
+			if err != nil {
+				return status.UnavailableErrorf("Could not open diff snapshot file %q: %s", diffSnapshotPath, err)
+			}
+			defer gin.Close()
 			buf := make([]byte, bufSize)
 			for {
 				select {
@@ -437,24 +415,30 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 				default:
 					break
 				}
+				// 3 is the Linux constant for the SEEK_DATA option to lseek.
+				newOffset, err := gin.Seek(offset, 3)
+				if err != nil {
+					return err
+				}
+				offset = newOffset
 				if offset >= regionEnd {
 					break
 				}
-				n, err := in.ReadAt(buf, offset)
+
+				n, err := gin.ReadAt(buf, offset)
 				if err == io.EOF {
 					break
 				}
 				if err != nil {
 					return err
 				}
-				if isZeroes(buf[:n]) {
-					offset += int64(n)
-					continue
-				}
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
 				offset += int64(n)
+				if offset >= regionEnd {
+					break
+				}
 			}
 			return nil
 		})
@@ -472,7 +456,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	// If a snapshot already exists, get a reference to the memory snapshot so that we can perform a diff snapshot and
 	// merge the modified pages on top of the existing memory snapshot.
 	baseMemSnapshotPath := ""
-	if baseSnapshotDigest != nil && c.enableDiffSnapshots {
+	if baseSnapshotDigest != nil {
 		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, baseSnapshotDigest)
 		if err != nil {
 			return nil, err
@@ -492,10 +476,9 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		return nil, err
 	}
 
-	snapshotType := fullSnapshotType
+	snapshotType := diffSnapshotType
 	memSnapshotFile := fullMemSnapshotName
-	if c.enableDiffSnapshots {
-		snapshotType = diffSnapshotType
+	if baseSnapshotDigest != nil {
 		memSnapshotFile = diffMemSnapshotName
 	}
 	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
@@ -519,7 +502,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	if baseMemSnapshotPath != "" {
 		mergeStart := time.Now()
 		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return nil, err
+			return nil, status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.Debugf("VMM merge diff snapshot took %s", time.Since(mergeStart))
 		// Use the merged memory snapshot.
@@ -675,7 +658,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return err
+		return status.InternalErrorf("Failed to dial firecracker VM exec port: %s", err)
 	}
 	defer conn.Close()
 
@@ -1096,7 +1079,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
 	}
 	defer conn.Close()
 
