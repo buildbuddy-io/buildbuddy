@@ -2559,8 +2559,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_lni_dragonboat_v3",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/lni/dragonboat/v3",
-        sum = "h1:hh/XOeTC+fN1xJ5GsidYwKt2oeCe/V9WUjoB9dEKoJY=",
-        version = "v3.3.4",
+        replace = "github.com/tylerwilliams/dragonboat/v3",
+        sum = "h1:rgT2w+T0OLmZoRSez1eiAwVgZ0ZIBE0zyzry++mUNbM=",
+        version = "v3.3.4-rc2",
     )
 
     go_repository(
