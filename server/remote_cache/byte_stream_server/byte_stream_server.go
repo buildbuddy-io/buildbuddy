@@ -323,11 +323,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				return handleAlreadyExists(stream, req)
+				return s.handleAlreadyExists(ctx, stream, req)
 			}
 			streamState, err = s.initStreamState(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				return handleAlreadyExists(stream, req)
+				return s.handleAlreadyExists(ctx, stream, req)
 			}
 			if err != nil {
 				return err
