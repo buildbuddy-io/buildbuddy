@@ -698,10 +698,10 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
-	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
 
@@ -712,10 +712,10 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure old files were not deleted
-	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
 
@@ -765,10 +765,10 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
-	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
 
@@ -778,15 +778,15 @@ func TestRetryOnDisconnect(t *testing.T) {
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	// Make sure the old protofile was removed
-	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	// Make sure the old protofile was not removed
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
-	assert.False(t, exists)
+	assert.True(t, exists)
 
-	// Make sure old event log was deleted
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	// Make sure old event log was not deleted
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
-	assert.False(t, exists)
+	assert.True(t, exists)
 
 	// Send workspace status event with commit sha (which causes a flush)
 	request = streamRequest(workspaceStatusEvent("COMMIT_SHA", "def456"), testInvocationID, 2)
@@ -814,6 +814,16 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "def456", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+
+	// Make sure the new protofile exists
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 2), 0))
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
+	// Make sure the new event log exists
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 2))
+	assert.NoError(t, err)
+	assert.True(t, exists)
 }
 
 func TestRetryOnOldDisconnect(t *testing.T) {
@@ -863,10 +873,10 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.Equal(t, "abc123", invocation.CommitSha)
 	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
-	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
 
@@ -880,10 +890,10 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Make sure old files were not deleted
-	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(testInvocationID, 0))
+	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
 	assert.True(t, exists)
-	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationId(testInvocationID))
+	exists, err = chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
 	assert.NoError(t, err)
 	assert.True(t, exists)
 }
