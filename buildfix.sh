@@ -6,7 +6,23 @@ cd "$(dirname "$0")"
 # If ~/go/bin exists, make sure we respect it
 export PATH="$PATH:$HOME/go/bin"
 
-gazelle=$([[ "${1:-}" == '-g' ]] || [[ "${1:-}" == '--gazelle' ]] && echo 1 || echo 0)
+GAZELLE=0
+FIX_GO_DEPS=0
+while [[ $# -gt 0 ]]; do
+  case $1 in
+  -a | --all)
+    GAZELLE=1
+    FIX_GO_DEPS=1
+    ;;
+  -g | --gazelle)
+    GAZELLE=1
+    ;;
+  -d | --fix-go-deps)
+    FIX_GO_DEPS=1
+    ;;
+  esac
+  shift
+done
 
 c_yellow="\x1b[33m"
 c_reset="\x1b[0m"
@@ -39,13 +55,18 @@ else
   bazel run //tools/prettier:fix
 fi
 
-if ((gazelle)); then
+if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
   if which gazelle &>/dev/null; then
     gazelle
   else
     bazel run //:gazelle
   fi
+fi
+
+if ((FIX_GO_DEPS)); then
+  echo "Fixing go.mod, go.sum, and deps.bzl..."
+  GAZELLE_PATH=$(which gazelle || true) ./tools/fix_go_deps.sh
 fi
 
 echo 'All done!'

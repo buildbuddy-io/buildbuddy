@@ -34,7 +34,7 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.17.2",
+    version = "1.17.2",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
