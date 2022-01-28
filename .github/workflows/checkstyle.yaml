@@ -76,7 +76,7 @@ jobs:
           cat buildifier-diff.txt
           echo "===== gazelle diff (fix with ./buildfix.sh --gazelle) ====="
           cat gazelle-diff.txt
-          echo "===== go deps diff (fix with ./buildfix.sh --fix-go-deps) ====="
+          echo "===== go deps diff (fix with ./buildfix.sh --go_deps) ====="
           cat go-deps-diff.txt
           echo "===== clang-format errors (fix with ./buildfix.sh) ====="
           cat clang-format-errors.txt

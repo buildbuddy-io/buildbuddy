@@ -7,18 +7,18 @@ cd "$(dirname "$0")"
 export PATH="$PATH:$HOME/go/bin"
 
 GAZELLE=0
-FIX_GO_DEPS=0
+GO_DEPS=0
 while [[ $# -gt 0 ]]; do
   case $1 in
   -a | --all)
     GAZELLE=1
-    FIX_GO_DEPS=1
+    GO_DEPS=1
     ;;
   -g | --gazelle)
     GAZELLE=1
     ;;
-  -d | --fix-go-deps)
-    FIX_GO_DEPS=1
+  -d | --go_deps)
+    GO_DEPS=1
     ;;
   esac
   shift
@@ -64,7 +64,7 @@ if ((GAZELLE)); then
   fi
 fi
 
-if ((FIX_GO_DEPS)); then
+if ((GO_DEPS)); then
   echo "Fixing go.mod, go.sum, and deps.bzl..."
   GAZELLE_PATH=$(which gazelle || true) ./tools/fix_go_deps.sh
 fi
