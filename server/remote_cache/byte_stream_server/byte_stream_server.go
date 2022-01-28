@@ -180,7 +180,6 @@ type writeState struct {
 	d                  *repb.Digest
 	activeResourceName string
 	offset             int64
-	alreadyExists      bool
 }
 
 func checkInitialPreconditions(req *bspb.WriteRequest) error {
@@ -239,7 +238,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	ws.alreadyExists = exists
+	if exists {
+		return nil, status.AlreadyExistsError("Already exists")
+	}
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
@@ -322,16 +323,12 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				r, err := digest.ParseUploadResourceName(req.ResourceName)
-				if err != nil {
-					return err
-				}
-				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: r.GetDigest().GetSizeBytes(),
-				})
+				return s.handleAlreadyExists(ctx, stream, req)
 			}
-
 			streamState, err = s.initStreamState(ctx, req)
+			if status.IsAlreadyExistsError(err) {
+				return s.handleAlreadyExists(ctx, stream, req)
+			}
 			if err != nil {
 				return err
 			}
@@ -340,11 +337,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					log.Error(err.Error())
 				}
 			}()
-			if streamState.alreadyExists {
-				return stream.SendAndClose(&bspb.WriteResponse{
-					CommittedSize: streamState.d.GetSizeBytes(),
-				})
-			}
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.d)
 			defer uploadTracker.Close()
@@ -400,6 +392,54 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 		CommittedSize: 0,
 		Complete:      false,
 	}, nil
+}
+
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
+	if err != nil {
+		return err
+	}
+	// Bazel 5.0.0 effectively requires that the committed_size match the total
+	// length of the *uploaded* payload. For compressed payloads, the uploaded
+	// payload length is not yet known, because it depends on the compression
+	// parameters used by the client. So we need to read the whole stream from the
+	// client in the compressed case.
+	//
+	// See https://github.com/bazelbuild/bazel/issues/14654 for context.
+	committedSize := r.GetDigest().GetSizeBytes()
+	if r.GetCompressor() != repb.Compressor_IDENTITY {
+		remainingSize := int64(0)
+		if !firstRequest.FinishWrite {
+			// In the case where we read the full stream in order to determine its
+			// size, count it as an upload.
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+			uploadTracker := ht.TrackUpload(r.GetDigest())
+			defer uploadTracker.Close()
+
+			remainingSize, err = s.recvAll(stream)
+			if err != nil {
+				return err
+			}
+		}
+		committedSize = int64(len(firstRequest.Data)) + remainingSize
+	}
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committedSize})
+}
+
+// recvAll receives the remaining write requests from the client, and returns
+// the total (compressed) size of the uploaded bytes.
+func (s *ByteStreamServer) recvAll(stream bspb.ByteStream_WriteServer) (int64, error) {
+	size := int64(0)
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return size, nil
+		}
+		if err != nil {
+			return size, err
+		}
+		size += int64(len(req.Data))
+	}
 }
 
 type Checksum struct {
