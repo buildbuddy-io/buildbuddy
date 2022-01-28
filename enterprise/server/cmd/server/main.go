@@ -53,6 +53,7 @@ import (
 	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
+	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -293,6 +294,22 @@ func main() {
 		}
 		dc.StartListening()
 		realEnv.SetCache(dc)
+	}
+
+	if rcc := configurator.GetRaftCacheConfig(); rcc != nil {
+		rcConfig := &raft_cache.Config{
+			RootDir:       rcc.RootDirectory,
+			ListenAddress: rcc.ListenAddr,
+			Join:          rcc.Join,
+			HTTPPort:      rcc.HTTPPort,
+			GRPCPort:      rcc.GRPCPort,
+		}
+		rc, err := raft_cache.NewRaftCache(realEnv, rcConfig)
+		if err != nil {
+			log.Fatalf("Error enabling raft cache: %s", err.Error())
+		}
+		defer rc.Stop()
+		realEnv.SetCache(rc)
 	}
 
 	if mcTargets := configurator.GetCacheMemcacheTargets(); len(mcTargets) > 0 {
