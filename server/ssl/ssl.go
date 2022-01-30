@@ -183,6 +183,7 @@ func (s *SSLService) populateTLSConfig() error {
 			Prompt:     autocert.AcceptTOS,
 			Cache:      NewCertCache(s.env.GetBlobstore()),
 			HostPolicy: autocert.HostWhitelist(hosts...),
+			Email:      "security@buildbuddy.io",
 		}
 		httpTLSConfig.GetCertificate = getCert
 		grpcTLSConfig.GetCertificate = getCert
