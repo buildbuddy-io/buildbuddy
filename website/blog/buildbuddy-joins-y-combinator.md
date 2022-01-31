@@ -7,13 +7,13 @@ date: 2020-03-16:12:00:00
 author_url: https://www.linkedin.com/in/siggisim/
 author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 tags: [company]
-image: /img/blog/xkcd.png
+image: /img/xkcd.png
 ---
 
 If you've hung out around developers for any extended period --- you've probably heard "my code is compiling" as an excuse from them when they're slacking off and browsing Hacker News.
 
 <figure className="image">
-  <img src="/img/blog/xkcd.png" />
+  <img src="/img/xkcd.png" />
   <figcaption>"Compiling" via <a href="https://xkcd.com/303/">XKCD</a></figcaption>
 </figure>
 
@@ -24,7 +24,7 @@ Slow, flaky builds waste hours of developer time --- leading to slow dev refresh
 We're excited to share that we've been accepted into [Y Combinator](https://www.ycombinator.com/) and have been participating in their Winter 2020 batch. Here's a photo from our first batch dinner where the founders of Airbnb (YC Winter 2009) told us stories about their YC experience:
 
 <figure className="image">
-  <img src="/img/blog/yc-dinner.jpg" />
+  <img src="/img/yc-dinner.jpg" />
   <figcaption>Airbnb founders speak at our first batch dinner via <a href="https://twitter.com/gustaf/status/1215039947356270594">Gustaf Alstromer</a></figcaption>
 </figure>
 
