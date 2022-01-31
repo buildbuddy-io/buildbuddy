@@ -497,7 +497,7 @@ or even expand what is possible to do with them.
 [Aspects][aspects] allow augmenting build dependency graphs with additional information and actions.
 These changes expanded their capabilities:
 
-- [Added the `--experimental_enable_aspect_hints` flag,.](https://github.com/bazelbuild/bazel/commit/60ebb105dbf34f0b267ea7573157246b4c9bfcaf) [which adds the `aspect_hints` attribute to rules.](https://github.com/bazelbuild/bazel/commit/a2856bf66f4b4c519861a994c6e09bd263f2a31e)
+- [Added the `--experimental_enable_aspect_hints` flag,](https://github.com/bazelbuild/bazel/commit/60ebb105dbf34f0b267ea7573157246b4c9bfcaf) [which adds the `aspect_hints` attribute to rules.](https://github.com/bazelbuild/bazel/commit/a2856bf66f4b4c519861a994c6e09bd263f2a31e)
 - [Added the `--experimental_required_aspects` flag, which allows aspects to depend on other aspects.](https://github.com/bazelbuild/bazel/commit/f8c34080de1f9b935e3f6abf23b2a319e62c9052)
 - [Added the `--incompatible_top_level_aspects_dependency` flag, which allows top-level aspect dependencies.](https://github.com/bazelbuild/bazel/commit/ed251187b078c4262bbbc1da72015ce12f9964f4)
 - [When using the `--allow_analysis_failures` flag (for example, via `bazel-skylib`'s `analysistest` with `expect_failure = True`), analysis-time failures in aspect implementation functions will now be propagated and saved in `AnalysisFailureInfo`, just like analysis-time failures in rules.](https://github.com/bazelbuild/bazel/commit/020dd5f1ee9c2c388644dbcd45cda4ebf6b42876)
