@@ -11,13 +11,19 @@ image: /img/bazel_5_0.png
 tags: [bazel]
 ---
 
-[Bazel 5.0][bazel_5_0] includes [nearly 3,000 changes][diff] since 4.2.2.[^1]
+[Bazel 5.0][bazel_5_0] includes [nearly 3,000 changes][diff] since 4.2.2.
 It's the first major release since 4.0 was release in January of last year,
 and it's Bazel's [second LTS release][versioning].
 Since there were so many changes,
 many of them quite impactful,
 I felt I needed to review them all and provide a nice summary for y'all.
 So that's what I did 😄.
+
+[bazel_5_0]: https://blog.bazel.build/2022/01/19/bazel-5.0.html
+[diff]: https://github.com/bazelbuild/bazel/compare/4.2.2...5.0.0
+[versioning]: https://docs.bazel.build/versions/5.0.0/versioning.html
+
+<!-- truncate -->
 
 The end result was quite big though,
 so I've included a table of contents to allow easy navigation to the changes that interest you the most:
@@ -59,14 +65,6 @@ so I've included a table of contents to allow easy navigation to the changes tha
 - [Misc](#misc)
 
 </nav>
-
-[bazel_5_0]: https://blog.bazel.build/2022/01/19/bazel-5.0.html
-[diff]: https://github.com/bazelbuild/bazel/compare/4.2.2...5.0.0
-[versioning]: https://docs.bazel.build/versions/5.0.0/versioning.html
-
-[^1]:
-    The GitHub UI shows some commits that already exist in the 4.x series of releases due to cherry-picking,
-    so the number of unique commits is actually smaller.
 
 ## Command-line flag changes
 

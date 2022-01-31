@@ -14,6 +14,8 @@ We're excited to share that v2.5.0 of BuildBuddy is live on both [Cloud Hosted B
 
 Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. We've made lots of improvements in this release based on your feedback.
 
+<!-- truncate -->
+
 ## New in v2.5.0
 
 - **The new global filter** - BuildBuddy collects lots of build information across CI and local builds. In order to make navigating these builds easier, we've introduced a new global filter. The global filter allows you to filter by status and role on any page - with more options including user, repo, and branch coming soon.

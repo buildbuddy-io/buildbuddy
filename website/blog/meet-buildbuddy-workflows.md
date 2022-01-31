@@ -19,6 +19,8 @@ deploy a new release.
 But because BuildBuddy Workflows were built for Bazel repos and tightly
 integrated with BuildBuddy RBE and Remote Caching, they are **_really fast_**.
 
+<!-- truncate -->
+
 # Why a Bazel-focused CI solution?
 
 Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration), like Jenkins, Travis, CircleCI, and BuildKite, are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin.
