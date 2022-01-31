@@ -3,11 +3,14 @@ package tables
 import (
 	"flag"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
@@ -17,6 +20,10 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
+
+	// MySQL version string consists of major, minor, release and an optional suffix.
+	// e.g. 8.0.18-log
+	mysqlVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[[:alnum:]])?`)
 )
 
 const (
@@ -582,7 +589,11 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Populate invocation_uuid if the column doesn't exist.
-	if m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_uuid") {
+	hasUUIDAsPK, err := hasPrimaryKey(db, &TargetStatus{}, "invocation_uuid")
+	if err != nil {
+		return nil, err
+	}
+	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
 		if db.Dialector.Name() == sqliteDialect {
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
@@ -655,17 +666,29 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 		return err
 	}
 
+	changePKStmt := "ALTER TABLE TargetStatuses "
 	if primaryKeyCount > 0 {
-		if err := db.Exec("ALTER TABLE TargetStatuses DROP PRIMARY KEY, ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
-			return err
-		}
-	} else {
-		// For some reasons there are no primary keys for TargetStatuses; skip DROP PRIMARY KEY
-		if err := db.Exec("ALTER TABLE TargetStatuses ADD PRIMARY KEY(target_id, invocation_uuid), ALGORITHM=INPLACE, LOCK=NONE").Error; err != nil {
-			return err
-		}
+		// Only drop primarky keys when they exist.
+		changePKStmt += "DROP PRIMARY KEY, "
 	}
-	return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
+	changePKStmt += "ADD PRIMARY KEY(target_id, invocation_uuid), "
+
+	version, err := getMySQLVersion(db)
+	if err != nil {
+		return err
+	}
+	if version.major > 5 || (version.major == 5 && version.minor > 6) {
+		changePKStmt += "ALGORITHM=INPLACE, LOCK=NONE"
+	} else {
+		changePKStmt += "ALGORITHM=COPY"
+	}
+	if err := db.Exec(changePKStmt).Error; err != nil {
+		return err
+	}
+	if db.Migrator().HasIndex("TargetStatuses", "target_status_invocation_uuid") {
+		return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
+	}
+	return nil
 }
 
 type invocationIDs struct {
@@ -784,6 +807,56 @@ func PostAutoMigrate(db *gorm.DB) error {
 
 func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
 	return db.Exec("ALTER TABLE " + table.TableName() + " DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
+}
+
+func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
+	count := 0
+	checkPrimaryKeyStmt := ""
+	switch dialect := db.Dialector.Name(); dialect {
+	case sqliteDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
+	case mysqlDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(0) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+	default:
+		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
+	}
+
+	if err := db.Raw(checkPrimaryKeyStmt, table.TableName(), key).Scan(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+type MySQLVersion struct {
+	major int
+	minor int
+}
+
+func getMySQLVersion(db *gorm.DB) (*MySQLVersion, error) {
+	versionStr := ""
+
+	if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
+		return nil, err
+	}
+
+	return parseMySQLVersion(versionStr)
+}
+
+func parseMySQLVersion(input string) (*MySQLVersion, error) {
+	// parses a string like this: "8.0.18-google"
+	match := mysqlVersionRegex.FindStringSubmatch(input)
+	if len(match) != 5 {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	res := &MySQLVersion{}
+	var err error
+	if res.major, err = strconv.Atoi(match[1]); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	if res.minor, err = strconv.Atoi(match[2]); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	return res, nil
 }
 
 func init() {
