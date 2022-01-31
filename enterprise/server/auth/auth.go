@@ -653,15 +653,17 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 }
 
 func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	matches := apiKeyRegex.FindStringSubmatch(input)
-	if len(matches) == 0 {
+	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
+	l := len(matches)
+	if l == 0 {
 		// The api key header is not present
 		return "", nil
 	}
-	if len(matches) != 2 {
+	lastMatch := matches[l-1]
+	if len(lastMatch) != 2 {
 		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
 	}
-	if apiKey := matches[1]; apiKey != "" {
+	if apiKey := lastMatch[1]; apiKey != "" {
 		return apiKey, nil
 	}
 	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
@@ -770,8 +772,10 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 	}
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if keys := md.Get(APIKeyHeader); len(keys) > 0 {
-			return a.claimsFromAPIKey(ctx, keys[0])
+		keys := md.Get(APIKeyHeader)
+		if l := len(keys); l > 0 {
+			// get the last key
+			return a.claimsFromAPIKey(ctx, keys[l-1])
 		}
 
 		if keys := md.Get(basicAuthHeader); len(keys) > 0 {
