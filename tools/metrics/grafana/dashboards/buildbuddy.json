@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1642038390503,
+  "iteration": 1643656378877,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -3267,7 +3267,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 10
       },
       "id": 264,
       "panels": [
@@ -3855,7 +3855,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 13
       },
       "id": 38,
       "panels": [
@@ -4363,7 +4363,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 14
       },
       "id": 458,
       "panels": [
@@ -5003,7 +5003,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 15
       },
       "id": 48,
       "panels": [
@@ -5386,7 +5386,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 16
       },
       "id": 107,
       "panels": [
@@ -5964,7 +5964,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 17
       },
       "id": 83,
       "panels": [
@@ -5984,7 +5984,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 14
           },
           "hiddenSeries": false,
           "id": 85,
@@ -6074,7 +6074,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 16
+            "y": 14
           },
           "hiddenSeries": false,
           "id": 87,
@@ -6162,7 +6162,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 91,
@@ -6249,7 +6249,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 93,
@@ -6333,7 +6333,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 21
       },
       "id": 71,
       "panels": [
@@ -6552,7 +6552,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 22
       },
       "id": 1088,
       "panels": [
@@ -6847,7 +6847,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 24
       },
       "id": 962,
       "panels": [
@@ -7024,7 +7024,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 25
       },
       "id": 8,
       "panels": [
@@ -7382,7 +7382,7 @@
           "type": "prometheus",
           "uid": "prom"
         },
-        "definition": "label_values(up, job)",
+        "definition": "label_values(up{region=\"$region\"}, job)",
         "hide": 0,
         "includeAll": true,
         "label": "Jobs",
@@ -7390,8 +7390,8 @@
         "name": "job",
         "options": [],
         "query": {
-          "query": "label_values(up, job)",
-          "refId": "Prometheus-job-Variable-Query"
+          "query": "label_values(up{region=\"$region\"}, job)",
+          "refId": "StandardVariableQuery"
         },
         "refresh": 1,
         "regex": "buildbuddy-app|executor.*",
@@ -7412,7 +7412,7 @@
           "type": "prometheus",
           "uid": "prom"
         },
-        "definition": "label_values(up, job)",
+        "definition": "label_values(up{region=\"$region\"}, job)",
         "hide": 0,
         "includeAll": true,
         "label": "Executor pool",
@@ -7420,8 +7420,8 @@
         "name": "pool",
         "options": [],
         "query": {
-          "query": "label_values(up, job)",
-          "refId": "Prometheus-pool-Variable-Query"
+          "query": "label_values(up{region=\"$region\"}, job)",
+          "refId": "StandardVariableQuery"
         },
         "refresh": 1,
         "regex": "executor.*",
