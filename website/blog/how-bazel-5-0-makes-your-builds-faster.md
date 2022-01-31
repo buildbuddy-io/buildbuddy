@@ -21,6 +21,8 @@ In this post we highlight the changes that help BuildBuddy users build even fast
 
 [bazel_5_0]: whats-new-in-bazel-5-0.md
 
+<!-- truncate -->
+
 ## Build Event Service (BES) improvements
 
 Bazel 5.0 includes many changes that make uploading BES events and artifacts to the BuildBuddy UI more reliable and performant.

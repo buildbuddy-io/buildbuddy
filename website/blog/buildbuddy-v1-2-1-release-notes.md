@@ -21,6 +21,8 @@ Our focus for this release was on expanding access to BuildBuddy as well as impr
 
 We're also excited to announce that we're expanding the BuildBuddy Cloud free tier. BuildBuddy Cloud is now **free for teams of up to 3 engineers** in addition to being free for individuals open source projects of any size.
 
+<!-- truncate -->
+
 ## New to Open Source BuildBuddy
 
 - **Official BuildBuddy Helm charts** - thanks to a [request](https://github.com/buildbuddy-io/buildbuddy/issues/35) from [Nathan Leung](https://github.com/nathanhleung) we've created official [BuildBuddy Helm Charts](https://github.com/buildbuddy-io/buildbuddy-helm) that are available for both [Open Source](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy) and [Enterprise](https://github.com/buildbuddy-io/buildbuddy-helm/tree/master/charts/buildbuddy-enterprise) deployments. [Helm](https://helm.sh/) enables you to deploy BuildBuddy to a Kubernetes cluster with a single command, and makes configuration a breeze. The charts can optionally take care of provisioning a MySQL instance, an Nginx ingress, and even Memcached.

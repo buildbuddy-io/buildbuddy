@@ -14,6 +14,8 @@ Our mission at BuildBuddy is to make developers more productive. When we release
 
 Today we're excited to announce v2 of BuildBuddy! We've completely revamped our caching and remote build execution infrastructure to give our users and customers the one thing they care about above all else: **speed**.
 
+<!-- truncate -->
+
 ![](../static/img/blog/tensorflow.svg)
 
 When optimizing the performance of a remote build execution system, there are 3 critical bottlenecks: Caching, Sandboxing, and Execution. We've made order of magnitude improvements in each of these areas, bringing clean, uncached build times for [TensorFlow](https://github.com/tensorflow/tensorflow) (7,000+ actions) on BuildBuddy RBE down from 28 minutes last August to just **3.47 minutes** with BuildBuddy v2. This build takes over **4 hours** (250 min) on a 3.3GHz i7 Macbook Pro.

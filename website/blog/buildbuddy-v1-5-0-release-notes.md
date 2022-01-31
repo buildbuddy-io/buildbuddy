@@ -19,6 +19,8 @@ A special thank you to our new open-source contributor:
 
 Our focus for this release was on giving users more visibility into test flakiness, monitoring & scaling improvements, and security hardening.
 
+<!-- truncate -->
+
 ## New in v1.5.0
 
 - **Test flakiness dashboard** - one of the feature requests we get most frequently from BuildBuddy users is the ability to collect target-level data and analyze it across invocations. Today we're taking the first step in the direction with our new test dashboard. The test dashboard allows you to monitor per-target test statuses by commit - so you can quickly identify and fix flaky test targets that slow down developer velocity. It also has a timing view that gives you a heat-map to quickly identify slow targets. This is just the first step we're taking in exposing more target-level data and are excited to build additional features based on your feedback!
