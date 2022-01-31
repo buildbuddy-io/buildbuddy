@@ -136,9 +136,36 @@ svg[aria-hidden="true"] {
     font-weight: 700;
     color: rgba(0, 0, 0, 0.4);
     font-size: 0.8em;
+    border-left: 2px solid transparent;
   }
+}
+
+.table-of-contents li,
+.table-of-contents ul {
+  margin: 0;
+  padding: 0;
+}
+
+ul .table-of-contents__link {
+  padding-left: 8px;
+}
+
+ul ul .table-of-contents__link {
+  padding-left: 20px;
+}
+
+ul ul ul .table-of-contents__link {
+  padding-left: 32px;
+}
+
+.table-of-contents__link {
+  border-left: 2px solid #eee;
+  margin: 0;
+  padding: 2px 8px;
+  display: block;
 }
 
 .table-of-contents__link--active {
   color: #03a9f4;
+  border-left: 2px solid #03a9f4;
 }
