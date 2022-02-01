@@ -23,7 +23,7 @@ var (
 
 	// MySQL version string consists of major, minor, release and an optional suffix.
 	// e.g. 8.0.18-log
-	mysqlVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[[:alnum:]])?`)
+	mysqlVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[[:alnum:]]+)?`)
 )
 
 const (
@@ -810,17 +810,17 @@ func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
 }
 
 func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
-	count := 0
 	checkPrimaryKeyStmt := ""
 	switch dialect := db.Dialector.Name(); dialect {
 	case sqliteDialect:
 		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
 	case mysqlDialect:
-		checkPrimaryKeyStmt = `SELECT COUNT(0) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
 	default:
 		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
 	}
 
+	count := 0
 	if err := db.Raw(checkPrimaryKeyStmt, table.TableName(), key).Scan(&count).Error; err != nil {
 		return false, err
 	}
