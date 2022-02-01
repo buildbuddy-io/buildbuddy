@@ -27,6 +27,8 @@ We're excited to continue growing BuildBuddy and fulfill our mission of making d
 
 Our focus for this release was on reliability, performance, improved documentation, and making BuildBuddy easier to release and monitor.
 
+<!-- truncate -->
+
 ## New in v1.8.0
 
 - **Read-only API keys** - when using Bazel remote caching, teams often need to configure which machines have write access to the cache. While Bazel has some flags to control cache writes, using these can be error prone and insecure. BuildBuddy now makes this easy by introducing the ability to create both read-only and read+write api keys on your organization settings page. You can create as many API keys (and certificates) as you'd like and distribute them to your CI machines, workstations, and other endpoints.

@@ -11,13 +11,19 @@ image: /img/bazel_5_0.png
 tags: [bazel]
 ---
 
-[Bazel 5.0][bazel_5_0] includes [nearly 3,000 changes][diff] since 4.2.2.[^1]
+[Bazel 5.0][bazel_5_0] includes [nearly 3,000 changes][diff] since 4.2.2.
 It's the first major release since 4.0 was release in January of last year,
 and it's Bazel's [second LTS release][versioning].
 Since there were so many changes,
 many of them quite impactful,
 I felt I needed to review them all and provide a nice summary for y'all.
 So that's what I did 😄.
+
+[bazel_5_0]: https://blog.bazel.build/2022/01/19/bazel-5.0.html
+[diff]: https://github.com/bazelbuild/bazel/compare/4.2.2...5.0.0
+[versioning]: https://docs.bazel.build/versions/5.0.0/versioning.html
+
+<!-- truncate -->
 
 The end result was quite big though,
 so I've included a table of contents to allow easy navigation to the changes that interest you the most:
@@ -59,14 +65,6 @@ so I've included a table of contents to allow easy navigation to the changes tha
 - [Misc](#misc)
 
 </nav>
-
-[bazel_5_0]: https://blog.bazel.build/2022/01/19/bazel-5.0.html
-[diff]: https://github.com/bazelbuild/bazel/compare/4.2.2...5.0.0
-[versioning]: https://docs.bazel.build/versions/5.0.0/versioning.html
-
-[^1]:
-    The GitHub UI shows some commits that already exist in the 4.x series of releases due to cherry-picking,
-    so the number of unique commits is actually smaller.
 
 ## Command-line flag changes
 
@@ -497,7 +495,7 @@ or even expand what is possible to do with them.
 [Aspects][aspects] allow augmenting build dependency graphs with additional information and actions.
 These changes expanded their capabilities:
 
-- [Added the `--experimental_enable_aspect_hints` flag,.](https://github.com/bazelbuild/bazel/commit/60ebb105dbf34f0b267ea7573157246b4c9bfcaf) [which adds the `aspect_hints` attribute to rules.](https://github.com/bazelbuild/bazel/commit/a2856bf66f4b4c519861a994c6e09bd263f2a31e)
+- [Added the `--experimental_enable_aspect_hints` flag,](https://github.com/bazelbuild/bazel/commit/60ebb105dbf34f0b267ea7573157246b4c9bfcaf) [which adds the `aspect_hints` attribute to rules.](https://github.com/bazelbuild/bazel/commit/a2856bf66f4b4c519861a994c6e09bd263f2a31e)
 - [Added the `--experimental_required_aspects` flag, which allows aspects to depend on other aspects.](https://github.com/bazelbuild/bazel/commit/f8c34080de1f9b935e3f6abf23b2a319e62c9052)
 - [Added the `--incompatible_top_level_aspects_dependency` flag, which allows top-level aspect dependencies.](https://github.com/bazelbuild/bazel/commit/ed251187b078c4262bbbc1da72015ce12f9964f4)
 - [When using the `--allow_analysis_failures` flag (for example, via `bazel-skylib`'s `analysistest` with `expect_failure = True`), analysis-time failures in aspect implementation functions will now be propagated and saved in `AnalysisFailureInfo`, just like analysis-time failures in rules.](https://github.com/bazelbuild/bazel/commit/020dd5f1ee9c2c388644dbcd45cda4ebf6b42876)

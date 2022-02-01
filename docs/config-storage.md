@@ -32,6 +32,14 @@ One of the following sections is **Required**
 
   - By default, the S3 blobstore will rely on environment variables, shared credentials, or IAM roles. See [AWS Go SDK docs](https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials) for more information.
 
+- `azure:` The Azure section configures Azure Storage.
+
+  - `account_name` The name of the Azure storage account
+
+  - `account_key` The key for the Azure storage account
+
+  - `container_name` The name of the Azure storage container.
+
 **Optional**
 
 - `chunk_file_size_bytes:` How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.
@@ -84,4 +92,14 @@ storage:
     s3_force_path_style: true
     region: "us-east-1"
     bucket: "buildbuddy-storage-bucket"
+```
+
+### Azure
+
+```
+storage:
+  azure:
+    account_name: "mytestblobstore"
+    account_key: "XXXxxxXXXxXXXXxxXXXXXxXXXXXxX"
+    container_name: "my-container"
 ```

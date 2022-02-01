@@ -19,6 +19,8 @@ We've taken all of the feedback we've gotten and made lots of improvements to bo
 
 Our three major focuses for this release were on better build artifact handling, better test support, and enterprise authentication. We hope these changes help you continue to build and debug software faster. Keep the feedback coming!
 
+<!-- truncate -->
+
 ## New to Open Source BuildBuddy
 
 - **Remote cache support** - we've added a built-in Bazel remote cache to BuildBuddy, implementing the gRPC remote caching APIs. This allows BuildBuddy to optionally collect build artifacts, timing profile information, test logs, and more.
