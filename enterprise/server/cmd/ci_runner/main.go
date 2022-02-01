@@ -402,6 +402,10 @@ func main() {
 	if err := ensurePath(); err != nil {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
+	// Write ~/.bazelrc
+	if err := writeHomeBazelrc(); err != nil {
+		fatal(status.WrapError(err, "write ~/.bazelrc"))
+	}
 	// Configure TERM to get prettier output from executed commands.
 	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
 		fatal(status.WrapError(err, "could not setup TERM"))
@@ -1105,14 +1109,38 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
+func writeHomeBazelrc() error {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return status.FailedPreconditionError("HOME dir not set")
+	}
+	f, err := os.OpenFile(filepath.Join(home, ".bazelrc"), os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0664)
+	if err != nil {
+		return status.InternalErrorf("Failed to open ~/.bazelrc for writing: %s", err)
+	}
+	defer f.Close()
+
+	lines := []string{
+		"build --build_metadata=ROLE=CI",
+		"build --bes_backend=" + *besBackend,
+		"build --bes_results_url=" + *besResultsURL,
+	}
+	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
+		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
+	}
+	contents := strings.Join(lines, "\n") + "\n"
+
+	if _, err := io.WriteString(f, contents); err != nil {
+		return status.InternalErrorf("Failed to append to ~/.bazelrc: %s", err)
+	}
+	return nil
+}
+
 func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.GetDefault(
-				*targetBranch, *besBackend, *besResultsURL,
-				os.Getenv(buildbuddyAPIKeyEnvVarName),
-			), nil
+			return config.GetDefault(*targetBranch), nil
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}

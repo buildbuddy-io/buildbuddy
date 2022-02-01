@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -58,7 +57,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 
 // GetDefault returns the default workflow config, which tests all targets
 // when pushing to the given target branch, sending build events to BuildBuddy.
-func GetDefault(targetBranch, besBackend, besResultsURL, apiKey string) *BuildBuddyConfig {
+func GetDefault(targetBranch string) *BuildBuddyConfig {
 	return &BuildBuddyConfig{
 		Actions: []*Action{
 			{
@@ -66,16 +65,8 @@ func GetDefault(targetBranch, besBackend, besResultsURL, apiKey string) *BuildBu
 				Triggers: &Triggers{
 					Push: &PushTrigger{Branches: []string{targetBranch}},
 				},
-				BazelCommands: []string{
-					fmt.Sprintf(
-						"test //... "+
-							"--build_metadata=ROLE=CI "+
-							"--bes_backend=%s --bes_results_url=%s "+
-							"--remote_header=x-buildbuddy-api-key=%s",
-						besBackend, besResultsURL,
-						apiKey,
-					),
-				},
+				// Note: default Bazel flags are written by the runner to ~/.bazelrc
+				BazelCommands: []string{"test //..."},
 			},
 		},
 	}

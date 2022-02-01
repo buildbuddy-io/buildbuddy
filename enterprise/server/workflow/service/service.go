@@ -721,11 +721,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, key *tables.
 	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, webhookData.SHA)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			appConf := ws.env.GetConfigurator()
-			return config.GetDefault(
-				webhookData.TargetBranch, appConf.GetAppEventsAPIURL(),
-				appConf.GetAppBuildBuddyURL()+"/invocation/", key.Value,
-			), nil
+			return config.GetDefault(webhookData.TargetBranch), nil
 		}
 		return nil, err
 	}
