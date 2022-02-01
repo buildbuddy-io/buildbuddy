@@ -186,6 +186,18 @@ You can verify that your BuildBuddy Executor successfully connected to the clust
 tail -f buildbuddy_stdout.log
 ```
 
+## Updating
+
+When updating your BuildBuddy Executors, you should restart one executor at a time, waiting for the previous executor to successfully start up before restarting the next. This will insure that work in flight is successfully rescheduled to another executor.
+
+You can check that an executor has successfully started by checking that its `readyz` endpoint returns the string `OK`:
+
+```bash
+if [ "$(curl -s -X GET http://localhost:8080/readyz?server-type=prod-buildbuddy-executor || true)" == "OK" ]; then
+    echo "Executor is ready"
+fi
+```
+
 ## Optional setup
 
 ### Optional: Enable Autologin
