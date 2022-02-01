@@ -1,17 +1,29 @@
 package tables
 
 import (
+	"flag"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+)
+
+var (
+	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
+
+	// MySQL version string consists of major, minor, release and an optional suffix.
+	// e.g. 8.0.18-log
+	mysqlVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[[:alnum:]]+)?`)
 )
 
 const (
@@ -123,7 +135,6 @@ type Invocation struct {
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
-	InvocationPK                     int64  `gorm:"uniqueIndex:invocation_invocation_pk"`
 	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 }
@@ -394,8 +405,7 @@ func (t *Target) TableName() string {
 type TargetStatus struct {
 	Model
 	TargetID       int64  `gorm:"primaryKey;autoIncrement:false"`
-	InvocationPK   int64  `gorm:"primaryKey;autoIncrement:false;index:target_status_invocation_pk"`
-	InvocationUUID []byte `gorm:"size:16;index:target_status_invocation_uuid"`
+	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16"`
 	TargetType     int32
 	TestSize       int32
 	Status         int32
@@ -579,8 +589,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	// Populate invocation_uuid if the column doesn't exist.
-	if m.HasTable("Invocations") && m.HasColumn(&Invocation{}, "invocation_pk") {
+	hasUUIDAsPK, err := hasPrimaryKey(db, &TargetStatus{}, "invocation_uuid")
+	if err != nil {
+		return nil, err
+	}
+	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
 		if db.Dialector.Name() == sqliteDialect {
+			// Rename the TargetStatuses table with invocation_pk as the primary key,
+			// so that during auto migration, SQLite can create TargetStatuses table with new
+			// primary keys.
+			db.Migrator().RenameTable("TargetStatuses", "TargetStatusesOld")
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForSQLite(db)
 			})
@@ -620,20 +638,75 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 			(SELECT invocation_uuid FROM Invocations i 
 			WHERE i.invocation_pk=ts.invocation_pk)
 		WHERE invocation_uuid IS NULL`
-	return updateInBatches(db, updateTargetStatusStmt, 10000)
+	if err := updateInBatches(db, updateTargetStatusStmt, 10000); err != nil {
+		return err
+	}
+
+	// Delete all the target statuses without invocation uuid. This could happen when
+	// a target status has a invocation_pk that's not in Invocations table. It's OK
+	// to delete these target statuses because these target statuses are not showing
+	// up in the UI right now.
+	deleteTargetStatusStmt := `DELETE FROM TargetStatuses WHERE invocation_uuid IS NULL`
+	if err := updateInBatches(db, deleteTargetStatusStmt, 10000); err != nil {
+		return err
+	}
+
+	// Check whether primary keys exist for TargetStatuses before dropping the primary key;
+	// Otherwise dropping primary keys will fail.
+	var primaryKeyCount int
+	countPrimaryKeyStmt := `
+		SELECT 
+			COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+		WHERE 
+			table_schema = schema() AND 
+			column_key = 'PRI' AND 
+			table_name='TargetStatuses'`
+
+	if err := db.Raw(countPrimaryKeyStmt).Scan(&primaryKeyCount).Error; err != nil {
+		return err
+	}
+
+	changePKStmt := "ALTER TABLE TargetStatuses "
+	if primaryKeyCount > 0 {
+		// Only drop primarky keys when they exist.
+		changePKStmt += "DROP PRIMARY KEY, "
+	}
+	changePKStmt += "ADD PRIMARY KEY(target_id, invocation_uuid), "
+
+	version, err := getMySQLVersion(db)
+	if err != nil {
+		return err
+	}
+	if version.major > 5 || (version.major == 5 && version.minor > 6) {
+		changePKStmt += "ALGORITHM=INPLACE, LOCK=NONE"
+	} else {
+		changePKStmt += "ALGORITHM=COPY"
+	}
+	if err := db.Exec(changePKStmt).Error; err != nil {
+		return err
+	}
+	if db.Migrator().HasIndex("TargetStatuses", "target_status_invocation_uuid") {
+		return db.Migrator().DropIndex("TargetStatuses", "target_status_invocation_uuid")
+	}
+	return nil
+}
+
+type invocationIDs struct {
+	InvocationID string `gorm:"primarykey"`
+	InvocationPK int64
 }
 
 func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 	// SQLite doesn't have UNHEX function; so we need to calculate
 	// invocationUUID in the app.
-	var results []Invocation
+	var results []invocationIDs
 	updateFunc := func(tx *gorm.DB, batch int) error {
 		for _, invocation := range results {
 			invocationUUID, err := uuid.StringToBytes(invocation.InvocationID)
 			if err != nil {
 				return err
 			}
-			if err := db.Exec(`UPDATE TargetStatuses SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
+			if err := db.Exec(`UPDATE TargetStatusesOld SET invocation_uuid = ? WHERE invocation_pk = ? `, invocationUUID, invocation.InvocationPK).Error; err != nil {
 				return err
 			}
 			if err := db.Exec(`UPDATE Invocations SET invocation_uuid = ? WHERE invocation_id = ? `, invocationUUID, invocation.InvocationID).Error; err != nil {
@@ -642,8 +715,26 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 		}
 		return nil
 	}
-	res := db.Select("invocation_id", "invocation_pk").Where("invocation_uuid IS NULL").FindInBatches(&results, 100, updateFunc)
-	return res.Error
+	res := db.Table("Invocations").Select("invocation_id", "invocation_pk").Where("invocation_uuid IS NULL").FindInBatches(&results, 100, updateFunc)
+	if res.Error != nil {
+		return res.Error
+	}
+
+	// Copy data from TargetStatusesOld to the new table
+	insertStmt := `INSERT INTO TargetStatuses
+			(target_id, invocation_uuid, target_type, test_size, status,
+			start_time_usec, duration_usec, created_at_usec, updated_at_usec)
+		SELECT 
+			target_id, invocation_uuid, target_type, test_size, status,
+			start_time_usec, duration_usec, created_at_usec, updated_at_usec 
+		FROM 
+			TargetStatusesOld`
+
+	if err := db.Exec(insertStmt).Error; err != nil {
+		return err
+	}
+	db.Migrator().DropTable("TargetStatusesOld")
+	return nil
 }
 
 // Manual migration called after auto-migration.
@@ -672,22 +763,100 @@ func PostAutoMigrate(db *gorm.DB) error {
 		}
 	}
 
-	// Drop old columns at the very end of the migration.
-	for _, ref := range []struct {
+	type ColRef struct {
 		table  Table
 		column string
-	}{
+	}
+
+	colsToDelete := []ColRef{
 		// Group.api_key has been migrated to a single row in the APIKeys table.
 		{&Group{}, "api_key"},
-	} {
+	}
+
+	// Dropping invocation_pk columns behind a flag. The columns
+	// should be dropped only when all the servers in production
+	// no longer use invocation_pk.
+	// On-prem users could use this flag to control when to drop
+	// the columns.
+	if *dropInvocationPKCol {
+		colsToDelete = append(colsToDelete,
+			// Invocation.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&Invocation{}, "invocation_pk"},
+			// TargetStatus.invocation_pk has been migrated to Invocation.invocation_uuid
+			ColRef{&TargetStatus{}, "invocation_pk"})
+	}
+
+	// Drop old columns at the very end of the migration.
+	for _, ref := range colsToDelete {
 		if !m.HasColumn(ref.table, ref.column) {
 			continue
 		}
-		if err := m.DropColumn(ref.table, ref.column); err != nil {
-			log.Warningf("Failed to drop column %s.%s", ref.table.TableName(), ref.column)
+		var err error
+		if db.Dialector.Name() == mysqlDialect {
+			err = dropColumnInPlaceForMySQL(db, ref.table, ref.column)
+		} else {
+			err = m.DropColumn(ref.table, ref.column)
+		}
+		if err != nil {
+			log.Warningf("Failed to drop column %s.%s: %s", ref.table.TableName(), ref.column, err)
 		}
 	}
+
 	return nil
+}
+
+func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
+	return db.Exec("ALTER TABLE " + table.TableName() + " DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
+}
+
+func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
+	checkPrimaryKeyStmt := ""
+	switch dialect := db.Dialector.Name(); dialect {
+	case sqliteDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
+	case mysqlDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+	default:
+		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
+	}
+
+	count := 0
+	if err := db.Raw(checkPrimaryKeyStmt, table.TableName(), key).Scan(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+type MySQLVersion struct {
+	major int
+	minor int
+}
+
+func getMySQLVersion(db *gorm.DB) (*MySQLVersion, error) {
+	versionStr := ""
+
+	if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
+		return nil, err
+	}
+
+	return parseMySQLVersion(versionStr)
+}
+
+func parseMySQLVersion(input string) (*MySQLVersion, error) {
+	// parses a string like this: "8.0.18-google"
+	match := mysqlVersionRegex.FindStringSubmatch(input)
+	if len(match) != 5 {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	res := &MySQLVersion{}
+	var err error
+	if res.major, err = strconv.Atoi(match[1]); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	if res.minor, err = strconv.Atoi(match[2]); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
+	}
+	return res, nil
 }
 
 func init() {
