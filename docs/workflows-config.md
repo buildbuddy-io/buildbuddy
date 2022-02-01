@@ -29,19 +29,14 @@ actions:
         branches:
           - "main"
     bazel_commands:
-      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+      - "test //..."
 ```
 
 This config is equivalent to the default config that we use if you do
-not have a `buildbuddy.yaml`, with some exceptions:
-
-- This example uses `"main"` for the branch name -- if you copy this config,
-  be sure to replace that with the name of your main branch. By default, we
-  run the above bazel command when any branch is pushed.
-- By default, we also pass `--remote_header=x-buildbuddy-api-key=<YOUR_API_KEY>`,
-  so that workflow builds show up in your BuildBuddy org. For security reasons,
-  we do not pass these flags when running workflows on pull request
-  branches from forked repos.
+not have a `buildbuddy.yaml`, with one exception: this example uses `"main"`
+for the branch name -- if you copy this config, be sure to replace that with
+the name of your main branch. By default, we run the above bazel command
+when any branch is pushed.
 
 Other points to note:
 
@@ -57,6 +52,8 @@ Other points to note:
   always recommend including a `.bazelversion` in your repo to prevent
   problems caused by using conflicting versions of Bazel in different
   build environments.
+
+<!-- TODO(bduffany): Document ~/.bazelrc -->
 
 ## Mac configuration
 
