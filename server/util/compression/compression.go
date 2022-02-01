@@ -152,6 +152,12 @@ func NewZstdChunkingCompressor(reader io.Reader, readBuf []byte, compressBuf []b
 	return pr, nil
 }
 
+// DecoderRef wraps a *zstd.Decoder. Since it does not directly start any
+// goroutines, it can be garbage collected before the wrapped decoder can.
+// When garbage collected, a finalizer automatically closes the wrapped decoder,
+// thus allowing the decoder to be garbage collected as well.
+type DecoderRef struct{ *zstd.Decoder }
+
 // ZstdDecoderPool allows reusing zstd decoders to avoid excessive allocations.
 type ZstdDecoderPool struct {
 	pool sync.Pool
@@ -161,12 +167,15 @@ func NewZstdDecoderPool() *ZstdDecoderPool {
 	return &ZstdDecoderPool{
 		pool: sync.Pool{
 			New: func() interface{} {
-				dc, err := zstd.NewReader(nil)
+				dc, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 				if err != nil {
 					return err
 				}
-				runtime.SetFinalizer(dc, (*zstd.Decoder).Close)
-				return dc
+				ref := &DecoderRef{dc}
+				runtime.SetFinalizer(ref, func(ref *DecoderRef) {
+					ref.Decoder.Close()
+				})
+				return ref
 			},
 		},
 	}
@@ -177,25 +186,25 @@ func NewZstdDecoderPool() *ZstdDecoderPool {
 //
 // If the returned decoder will only be used to decode chunks via DecodeAll, a
 // nil reader can be passed.
-func (p *ZstdDecoderPool) Get(reader io.Reader) (*zstd.Decoder, error) {
+func (p *ZstdDecoderPool) Get(reader io.Reader) (*DecoderRef, error) {
 	val := p.pool.Get()
 	if err, ok := val.(error); ok {
 		return nil, err
 	}
 	// No need to check this type assertion since Put can only accept decoders.
-	decoder := val.(*zstd.Decoder)
+	decoder := val.(*DecoderRef)
 	if err := decoder.Reset(reader); err != nil {
 		return nil, err
 	}
 	return decoder, nil
 }
 
-func (p *ZstdDecoderPool) Put(decoder *zstd.Decoder) error {
+func (p *ZstdDecoderPool) Put(ref *DecoderRef) error {
 	// Release reference to enclosed reader before adding back to the pool.
-	if err := decoder.Reset(nil); err != nil {
+	if err := ref.Reset(nil); err != nil {
 		return err
 	}
-	p.pool.Put(decoder)
+	p.pool.Put(ref)
 	return nil
 }
 
