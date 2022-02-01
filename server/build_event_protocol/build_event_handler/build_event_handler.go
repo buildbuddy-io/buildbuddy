@@ -659,10 +659,14 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					return nil
 				}
 				if err := protofile.DeleteExistingChunks(e.ctx, e.env.GetBlobstore(), iid); err != nil {
-					return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
+					if !status.IsNotFoundError(err) {
+						return status.WrapErrorf(err, "Failed to delete existing build event protos when retrying invocation %s", iid)
+					}
 				}
 				if err := chunkstore.New(e.env.GetBlobstore(), &chunkstore.ChunkstoreOptions{}).DeleteBlob(e.ctx, eventlog.GetEventLogPathFromInvocationId(iid)); err != nil {
-					return status.WrapErrorf(err, "Failed to delete existing event log when retrying invocation %s", iid)
+					if !status.IsNotFoundError(err) {
+						return status.WrapErrorf(err, "Failed to delete existing event log when retrying invocation %s", iid)
+					}
 				}
 			} else if !db.IsRecordNotFound(err) {
 				// RecordNotFound means this invocation has never existed, which is not
