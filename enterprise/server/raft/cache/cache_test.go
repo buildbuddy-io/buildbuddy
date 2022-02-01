@@ -425,7 +425,6 @@ func TestFindMissingBlobs(t *testing.T) {
 	for _, d := range missing {
 		missingHashes = append(missingHashes, d.GetHash())
 	}
-	require.Equal(t, expectedMissingHashes, missingHashes)
-
+	require.ElementsMatch(t, expectedMissingHashes, missingHashes)
 	waitForShutdown(t, rc1, rc2, rc3)
 }

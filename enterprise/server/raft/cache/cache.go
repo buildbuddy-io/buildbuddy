@@ -248,7 +248,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		return status.UnavailableError("node is still initializing")
 	}
 
-	key := constants.InitClusterSetupTimeKey
+	key := constants.ClusterSetupTimeKey
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
 	}).ToProto()
@@ -414,6 +414,10 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		}
 		req := reqs[rangeDescriptor.GetRangeId()]
 		req.FileRecord = append(req.FileRecord, fileRecord)
+	}
+
+	for rangeID, reqs := range reqs {
+		log.Printf("cache.go: FindMissing: rangeID: %d: requests: %d", rangeID, len(reqs.FileRecord))
 	}
 
 	missingDigests := make([]*repb.Digest, 0)

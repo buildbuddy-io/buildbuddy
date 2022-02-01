@@ -410,7 +410,7 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
-		return nil, status.InvalidArgumentError("Increment requires a valid key.")
+		return nil, status.InvalidArgumentError("Scan requires a valid key.")
 	}
 
 	iterOpts := &pebble.IterOptions{}

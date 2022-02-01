@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
@@ -130,6 +131,7 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.
 	serfConfig.UserEventSizeLimit = 9 * 1024
+	serfConfig.BroadcastTimeout = 300 * time.Millisecond
 
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{

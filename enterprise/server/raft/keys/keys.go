@@ -21,6 +21,10 @@ func RangeMetaKey(key Key) Key {
 	return MakeKey([]byte{'\x02'}, key)
 }
 
+func SystemKey(key Key) Key {
+	return MakeKey([]byte{'\x03'}, key)
+}
+
 func IsLocalKey(key Key) bool {
 	if len(key) == 0 {
 		return false
