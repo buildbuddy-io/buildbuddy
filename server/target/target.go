@@ -1,12 +1,9 @@
 package target
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/gob"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -16,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/protobuf/proto"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	tppb "github.com/buildbuddy-io/buildbuddy/proto/target_pagination"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
@@ -53,43 +52,36 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 	}
 }
 
-// PaginationToken is a struct to represent pagination for GetTarget RPC
-// For page 1, we fetch N(=targetPageSize) distinct most recent commits ordered by the latest created_at_usec for the Invocation and commit_sha.
-// For the subsequent pages, we fetch commits older than InvocationEndUsec; or created
-// exactly at InvocationEndUsec, but is ordered after CommitSHA.
-type PaginationToken struct {
-	InvocationEndUsec int64
-	CommitSHA         string
-}
-
-func NewTokenFromRequest(req *trpb.GetTargetRequest) (*PaginationToken, error) {
+func NewTokenFromRequest(req *trpb.GetTargetRequest) (*tppb.PaginationToken, error) {
 	strToken := req.GetPageToken()
 	if strToken == "" {
 		return nil, nil
 	}
 
-	t := &PaginationToken{}
-	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(strToken))
-	if err := gob.NewDecoder(decoder).Decode(t); err != nil {
-		return nil, status.InvalidArgumentErrorf("cannot decode page token %q, %s", strToken, err)
+	data, err := base64.StdEncoding.DecodeString(strToken)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to decode page token %q: %s", strToken, err)
+	}
+	t := &tppb.PaginationToken{}
+	if err := proto.Unmarshal(data, t); err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to unmarshal page token: %s", err)
 	}
 	return t, nil
 }
 
-func (t *PaginationToken) Encode() (string, error) {
-	var buf bytes.Buffer
-	encoder := base64.NewEncoder(base64.StdEncoding, &buf)
-	if err := gob.NewEncoder(encoder).Encode(t); err != nil {
-		return "", status.InternalErrorf("failed to tokenize pagination token: %s", err)
+func EncodePaginationToken(token *tppb.PaginationToken) (string, error) {
+	data, err := proto.Marshal(token)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("failed to marshal page token: %s", err)
 	}
-	encoder.Close()
-	return buf.String(), nil
+	str := base64.StdEncoding.EncodeToString(data)
+	return str, nil
 }
 
-func (t *PaginationToken) ApplyToQuery(q *query_builder.Query) {
+func ApplyToQuery(t *tppb.PaginationToken, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
-	o.AddOr("created_at_usec < ? ", t.InvocationEndUsec)
-	o.AddOr("(created_at_usec = ? AND commit_sha > ?)", t.InvocationEndUsec, t.CommitSHA)
+	o.AddOr("created_at_usec < ? ", t.GetInvocationEndTimeUsec())
+	o.AddOr("(created_at_usec = ? AND commit_sha > ?)", t.GetInvocationEndTimeUsec(), t.GetCommitSha())
 	orQuery, orArgs := o.Build()
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 }
@@ -175,7 +167,7 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.Target, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
-	var nextPageToken *PaginationToken
+	var nextPageToken *tppb.PaginationToken
 
 	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
@@ -224,14 +216,14 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),
 				},
 			})
-			if nextPageToken == nil || nextPageToken.InvocationEndUsec >= row.CreatedAtUsec {
-				nextPageToken = &PaginationToken{
-					InvocationEndUsec: row.CreatedAtUsec,
+			if nextPageToken == nil || nextPageToken.GetInvocationEndTimeUsec() >= row.CreatedAtUsec {
+				nextPageToken = &tppb.PaginationToken{
+					InvocationEndTimeUsec: row.CreatedAtUsec,
 				}
-				if nextPageToken.InvocationEndUsec == row.CreatedAtUsec && nextPageToken.CommitSHA > row.CommitSHA {
+				if nextPageToken.GetInvocationEndTimeUsec() == row.CreatedAtUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
 					continue
 				}
-				nextPageToken.CommitSHA = row.CommitSHA
+				nextPageToken.CommitSha = row.CommitSHA
 			}
 		}
 		return nil
@@ -253,7 +245,7 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 		InvocationTargets: targetHistories,
 	}
 	if nextPageToken != nil {
-		tokenStr, err := nextPageToken.Encode()
+		tokenStr, err := EncodePaginationToken(nextPageToken)
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +282,7 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 		return nil, err
 	}
 	if paginationToken != nil {
-		paginationToken.ApplyToQuery(commitQuery)
+		ApplyToQuery(paginationToken, commitQuery)
 	}
 
 	commitQuery.SetGroupBy("commit_sha")
