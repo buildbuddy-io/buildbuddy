@@ -52,10 +52,34 @@ body {
   flex-direction: column;
 }
 
-.history-trends-button {
-  margin-left: 18px;
-  font-size: 0.5em;
-  color: #aaa;
+.history-title {
+  margin-right: 18px;
+}
+
+.history-button {
+  margin-right: 18px;
+  padding: 6px 12px;
+  color: #444;
+  border: 1px solid rgba(20, 20, 20, 0.1);
+  border-radius: 8px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-button svg {
+  margin-right: 8px;
+  width: 14px;
+  height: 14px;
+}
+
+.history-button:hover {
+  background-color: rgba(20, 20, 20, 0.1);
+}
+
+.history-button:last-of-type {
+  margin-right: 0;
 }
 
 /** Mobile support **/
