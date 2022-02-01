@@ -167,7 +167,7 @@ func NewZstdDecoderPool() *ZstdDecoderPool {
 	return &ZstdDecoderPool{
 		pool: sync.Pool{
 			New: func() interface{} {
-				dc, err := zstd.NewReader(nil)
+				dc, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 				if err != nil {
 					return err
 				}
