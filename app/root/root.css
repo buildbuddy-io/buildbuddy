@@ -660,6 +660,10 @@ code:not(.inline-code) {
   position: relative;
 }
 
+code.wrap {
+  white-space: pre-wrap;
+}
+
 code button {
   position: absolute;
   top: 4px;
@@ -2158,4 +2162,12 @@ code .comment {
 .loading.loading-dark:before,
 .loading.loading-dark-terminal:before {
   background-image: url("/image/loader-white.svg");
+}
+
+.copy-icon {
+  color: #888;
+  cursor: pointer;
+  height: 0.8em;
+  width: 0.8em;
+  margin-left: 0.2em;
 }

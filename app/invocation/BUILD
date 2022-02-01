@@ -8,6 +8,7 @@ ts_library(
     name = "invocation",
     srcs = glob(["**/*.tsx"]),
     deps = [
+        "//app/alert",
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
@@ -29,6 +30,7 @@ ts_library(
         "//app/service",
         "//app/target",
         "//app/terminal",
+        "//app/util:clipboard",
         "//app/util:errors",
         "//proto:acl_ts_proto",
         "//proto:build_event_stream_ts_proto",

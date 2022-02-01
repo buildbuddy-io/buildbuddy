@@ -2,6 +2,9 @@ import React from "react";
 import InvocationModel from "./invocation_model";
 import router from "../router/router";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { Copy } from "lucide-react";
+import { copyToClipboard } from "../util/clipboard";
+import alert_service from "../alert/alert_service";
 
 interface Props {
   model: InvocationModel;
@@ -27,8 +30,14 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
     this.setState({ ...this.state, numPages: this.state.numPages + 1 });
   }
 
-  handleTargetClicked(label: string) {
+  handleTargetClicked(label: string, event: MouseEvent) {
+    event.preventDefault();
     router.navigateToQueryParam("target", label);
+  }
+
+  handleCopyClicked(label: string) {
+    copyToClipboard(label);
+    alert_service.success("Target labels copied to clipboard!");
   }
 
   render() {
@@ -43,14 +52,22 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
         <div className="content">
           <div className="title">
             {events.length}
-            {this.props.filter ? " matching" : ""} {this.props.pastVerb}
+            {this.props.filter ? " matching" : ""} {this.props.pastVerb}{" "}
+            <Copy
+              className="copy-icon"
+              onClick={this.handleCopyClicked.bind(
+                this,
+                events.map((target) => target.id.targetCompleted.label).join(" ")
+              )}
+            />
           </div>
           <div className="details">
             {events
               .slice(0, (this.props.pageSize && this.state.numPages * this.props.pageSize) || undefined)
               .map((target) => (
-                <div
+                <a
                   className="list-grid"
+                  href={`?target=${encodeURIComponent(target.id.targetCompleted.label)}`}
                   onClick={this.handleTargetClicked.bind(this, target.id.targetCompleted.label)}>
                   <div
                     title={`${
@@ -64,7 +81,7 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
                     <span className="target-status-icon">{this.props.icon}</span> {target.id.targetCompleted.label}
                   </div>
                   <div>{this.props.model.getRuntime(target.id.targetCompleted.label)}</div>
-                </div>
+                </a>
               ))}
           </div>
           {this.props.pageSize && events.length > this.props.pageSize * this.state.numPages && !!this.state.numPages && (
