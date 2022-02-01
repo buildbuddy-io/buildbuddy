@@ -14,7 +14,7 @@ import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
-import { CheckCircle, Clock, Hash, Percent, XCircle } from "lucide-react";
+import { BarChart2, CheckCircle, Clock, GitCommit, Github, Hash, Percent, XCircle } from "lucide-react";
 
 interface State {
   /**
@@ -392,50 +392,64 @@ export default class HistoryComponent extends React.Component<Props, State> {
               <div className="title">
                 {this.props.username && (
                   <span>
-                    <span>{this.props.username}'s builds</span>
-                    <a className="history-trends-button" href={`/trends/?user=${this.props.username}`}>
-                      View trends
+                    <span className="history-title">{this.props.username}'s builds</span>
+                    <a className="history-button" href={`/trends/?user=${this.props.username}`}>
+                      <BarChart2 /> Trends
                     </a>
                   </span>
                 )}
                 {this.props.hostname && (
                   <span>
-                    <span>Builds on {this.props.hostname}</span>
-                    <a className="history-trends-button" href={`/trends/?host=${this.props.hostname}`}>
-                      View trends
+                    <span className="history-title">Builds on {this.props.hostname}</span>
+                    <a className="history-button" href={`/trends/?host=${this.props.hostname}`}>
+                      <BarChart2 /> Trends
                     </a>
                   </span>
                 )}
                 {this.props.repo && !this.isFilteredToWorkflows() && (
-                  <a target="_blank" href={this.getRepoUrl()}>
-                    <span>Builds of {format.formatGitUrl(this.props.repo)}</span>
-                    <a className="history-trends-button" href={`/trends/?repo=${this.props.repo}`}>
-                      View trends
+                  <>
+                    <span className="history-title">Builds of {format.formatGitUrl(this.props.repo)}</span>
+                    {this.getRepoUrl() && (
+                      <a className="history-button" target="_blank" href={this.getRepoUrl()}>
+                        <Github /> Repo
+                      </a>
+                    )}
+                    <a className="history-button" href={`/trends/?repo=${this.props.repo}`}>
+                      <BarChart2 /> Trends
                     </a>
-                  </a>
+                  </>
                 )}
                 {this.props.repo && this.isFilteredToWorkflows() && (
-                  <a target="_blank" href={this.getRepoUrl()}>
-                    <span>Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
-                  </a>
+                  <>
+                    <span className="history-title">Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
+                    {this.getRepoUrl() && (
+                      <a className="history-button" target="_blank" href={this.getRepoUrl()}>
+                        <Github /> Repo
+                      </a>
+                    )}
+                  </>
                 )}
                 {this.props.branch && (
-                  <span>
-                    <a target="_blank" href={`${this.getRepoUrl()}/tree/${this.props.branch}`}>
-                      <span>Builds from branch {this.props.branch}</span>
-                      <a className="history-trends-button" href={`/trends/?branch=${this.props.branch}`}>
-                        View trends
-                      </a>
+                  <>
+                    <span className="history-title">Builds from branch {this.props.branch}</span>
+                    <a className="history-button" href={`/trends/?branch=${this.props.branch}`}>
+                      <BarChart2 /> Trends
                     </a>
-                  </span>
+                  </>
                 )}
                 {this.props.commit && (
                   <span>
-                    <a target="_blank" href={`https://github.com/search?q=hash%3A${this.props.commit}`}>
-                      <span>Builds from commit {format.formatCommitHash(this.props.commit)}</span>
-                      <a className="history-trends-button" href={`/trends/?commit=${this.props.commit}`}>
-                        View trends
-                      </a>
+                    <span className="history-title">
+                      Builds from commit {format.formatCommitHash(this.props.commit)}
+                    </span>
+                    <a
+                      className="history-button"
+                      target="_blank"
+                      href={`https://github.com/search?q=hash%3A${this.props.commit}`}>
+                      <GitCommit /> Commit
+                    </a>
+                    <a className="history-button" href={`/trends/?commit=${this.props.commit}`}>
+                      <BarChart2 /> Trends
                     </a>
                   </span>
                 )}

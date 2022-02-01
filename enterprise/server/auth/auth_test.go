@@ -161,6 +161,12 @@ func TestParseAPIKeyFromString(t *testing.T) {
 			want:    "",
 			wantErr: false,
 		},
+		{
+			name:    "multiple API keys",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=abc123' --remote_header='x-buildbuddy-api-key=abc456",
+			want:    "abc456",
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range testCases {

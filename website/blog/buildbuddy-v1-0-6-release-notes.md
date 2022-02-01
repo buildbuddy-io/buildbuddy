@@ -22,6 +22,8 @@ Our three major focuses for this release were on a better test results view, cer
 
 We also laid a lot of groundwork for remote build execution in this release, which will be available in the coming weeks.
 
+<!-- truncate -->
+
 ## New to Open Source BuildBuddy
 
 - **Test results view** - we've added support for parsing test.xml files that are uploaded to a BuildBuddy remote cache. This allows us to show information about individual test cases and quickly surface information on which test cases failed and why.

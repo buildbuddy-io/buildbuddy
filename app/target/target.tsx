@@ -7,9 +7,11 @@ import ActionCardComponent from "./action_card";
 import router from "../router/router";
 import format from "../format/format";
 import { User } from "../auth/auth_service";
-import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock } from "lucide-react";
+import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import { copyToClipboard } from "../util/clipboard";
+import alert_service from "../alert/alert_service";
 
 interface Props {
   invocationId: string;
@@ -159,6 +161,11 @@ export default class TargetComponent extends React.Component {
     return format.formatTimestampMillis(+this.props?.configuredEvent?.eventTime?.seconds * 1000);
   }
 
+  handleCopyClicked(label: string) {
+    copyToClipboard(label);
+    alert_service.success("Label copied to clipboard!");
+  }
+
   render() {
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
@@ -187,7 +194,10 @@ export default class TargetComponent extends React.Component {
               <span>Target {this.props.targetLabel}</span>
             </div>
             <div className="titles">
-              <div className="title">{this.props.targetLabel}</div>
+              <div className="title">
+                {this.props.targetLabel}{" "}
+                <Copy className="copy-icon" onClick={this.handleCopyClicked.bind(this, this.props.targetLabel)} />
+              </div>
               <div className="subtitle">{this.getTime()}</div>
             </div>
             <div className="details">

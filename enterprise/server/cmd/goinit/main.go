@@ -50,6 +50,8 @@ var (
 // die logs the provided error if it is not nil and then terminates the program.
 func die(err error) {
 	if err != nil {
+		// NOTE: do not change this "die: " prefix. We rely on it to parse the fatal
+		// error from the firecracker machine logs and return it back to the user.
 		log.Fatalf("die: %s", err)
 	}
 }

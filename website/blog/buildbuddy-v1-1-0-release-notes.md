@@ -22,6 +22,8 @@ Our focus for this release was on our new Remote Build Execution platform. This 
 
 BuildBuddy's Remote Build Execution platform supports executing your Bazel build and tests in parallel across thousands of machines with automatic scaling, support for custom Docker images, and more. We've been iterating on and testing BuildBuddy RBE for months with companies of different sizes, and are excited to now make it available to everyone.
 
+<!-- truncate -->
+
 While BuildBuddy RBE is not yet fully open source, we're offering Cloud RBE for free to individuals and open source projects to show our appreciation to the open source community.
 
 We'll be adding more documentation on getting started with BuildBuddy RBE in the coming weeks, but in the meantime feel free to email us at <rbe@buildbuddy.io> or ping us in the [BuildBuddy Slack](https://join.slack.com/t/buildbuddy/shared_invite/zt-e0cugoo1-GiHaFuzzOYBPQzl9rkUR_g) and we'll be happy to help you get started.

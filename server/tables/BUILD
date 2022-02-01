@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tables",
@@ -11,7 +11,15 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/role",
+        "//server/util/status",
         "//server/util/uuid",
         "@io_gorm_gorm//:gorm",
     ],
+)
+
+go_test(
+    name = "tables_test",
+    srcs = ["tables_test.go"],
+    embed = [":tables"],
+    deps = ["@com_github_stretchr_testify//assert"],
 )

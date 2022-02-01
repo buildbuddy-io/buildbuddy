@@ -23,6 +23,8 @@ Our focus for this release was on giving users new tools to share, compare, anal
 
 We're also excited to share that over the coming weeks and months, we'll be open sourcing much more of BuildBuddy - including our remote build execution platform. At BuildBuddy we're firmly committed to open source and believe that a transparent and open model is the only way to build truly great developer infrastructure for all.
 
+<!-- truncate -->
+
 ## New to Open Source BuildBuddy
 
 - **Invocation sharing & visibility controls** - while you've always been able to share BuildBuddy links with members of your organization, it's been difficult to share invocations more broadly (in GitHub issues or on StackOverflow). Now that working from home is the new norm, sharing links to your build logs or invocations details and artifacts has become more important than ever. To support this, we've added a **Share** button on the invocation page that allows you to control visibility of your invocations (this can be disabled at the organization level). We've also disabled the expiration of invocations and build logs for everyone on BuildBuddy Cloud - so you can share BuildBuddy links with confidence.

@@ -1,6 +1,8 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
-import { Info } from "lucide-react";
+import { Copy, Info } from "lucide-react";
+import { copyToClipboard } from "../util/clipboard";
+import alert_service from "../alert/alert_service";
 
 interface Props {
   model: InvocationModel;
@@ -25,6 +27,11 @@ export default class ArtifactsCardComponent extends React.Component {
       ...this.state,
       limit: this.state.limit ? undefined : defaultPageSize,
     });
+  }
+
+  handleCopyClicked(label: string) {
+    copyToClipboard(label);
+    alert_service.success("Command line copied to clipboard!");
   }
 
   render() {
@@ -202,6 +209,48 @@ export default class ArtifactsCardComponent extends React.Component {
                 </div>
               </div>
             )}
+
+            <div className="invocation-command-line">
+              <div className="invocation-command-line-title">
+                explicit command line{" "}
+                <Copy
+                  className="copy-icon"
+                  onClick={this.handleCopyClicked.bind(
+                    this,
+                    `bazel ${this.props.model.started?.command} ${
+                      this.props.model.expanded?.id?.pattern?.pattern
+                    } ${this.props.model.optionsParsed?.explicitCmdLine.join(" ")}`
+                  )}
+                />
+              </div>
+              <div className="invocation-section">
+                <code className="wrap">
+                  bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                  {this.props.model.optionsParsed?.explicitCmdLine.join(" ")}
+                </code>
+              </div>
+            </div>
+
+            <div className="invocation-command-line">
+              <div className="invocation-command-line-title">
+                effective command line{" "}
+                <Copy
+                  className="copy-icon"
+                  onClick={this.handleCopyClicked.bind(
+                    this,
+                    `bazel ${this.props.model.started?.command} ${
+                      this.props.model.expanded?.id?.pattern?.pattern
+                    } ${this.props.model.optionsParsed?.cmdLine.join(" ")}`
+                  )}
+                />
+              </div>
+              <div className="invocation-section">
+                <code className="wrap">
+                  bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                  {this.props.model.optionsParsed?.cmdLine.join(" ")}
+                </code>
+              </div>
+            </div>
 
             {this.props.model.structuredCommandLine
               .filter((commandLine) => commandLine.commandLineLabel && commandLine.commandLineLabel.length)

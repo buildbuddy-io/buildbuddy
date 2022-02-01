@@ -51,3 +51,19 @@
   border: 1px solid #eee;
   border-radius: 8px;
 }
+
+.readMore {
+  display: block;
+  width: 100%;
+}
+
+.readMore a {
+  display: block;
+  width: calc(100% - 32px);
+  color: #fff;
+  background-color: #263238;
+  text-align: center;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px;
+}

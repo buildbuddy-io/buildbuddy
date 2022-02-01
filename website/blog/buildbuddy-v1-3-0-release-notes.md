@@ -15,6 +15,8 @@ Thanks to everyone using open source and cloud-hosted BuildBuddy. We’ve made l
 
 Our focus for this release was on giving users new tools to improve build performance, debug cache hits, and a completely redesigned Cloud & Enterprise experience.
 
+<!-- truncate -->
+
 ## New to Open Source BuildBuddy
 
 - **Timing profile explorer **- Bazel's timing profile is the best way to get detailed insights into where to spend your time optimizing your build. Unfortunately, extracting useful information out of the thousands of events can be challenging without using something like Chrome's profiling tools. Now we've built these tools right into the BuildBuddy timing tab so you can explore this info for any build. See which actions dominate your build's critical path or find out how much time is spent downloading outputs - now with a single click.

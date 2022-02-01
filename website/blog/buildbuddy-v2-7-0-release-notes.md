@@ -16,6 +16,8 @@ We've also updated [the list of open source repositories that use BuildBuddy](ht
 
 Thanks to everyone using open source, cloud-hosted, and enterprise BuildBuddy. We've made lots of improvements in this release based on your feedback.
 
+<!-- truncate -->
+
 ## New in v2.7.0
 
 - **M1 Mac support** - we now [publish](https://github.com/buildbuddy-io/buildbuddy/releases/tag/v2.7.0) BuildBuddy executor binaries built for M1 Macs. These can be used with BuildBuddy Cloud's **Bring Your Own Executors** feature, BuildBuddy managed Mac executors, or in a self-hosted RBE cluster.

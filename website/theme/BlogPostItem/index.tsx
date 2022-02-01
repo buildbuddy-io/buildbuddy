@@ -152,7 +152,7 @@ function BlogPostItem(props: Props): JSX.Element {
         </div>
         {(tags.length > 0 || truncated) && (
           <footer className="row margin-vert--lg">
-            {tags.length > 0 && (
+            {tags.length > 0 && !truncated && (
               <div className={styles.tags}>
                 <strong>
                   <Translate id="theme.tags.tagsListLabel" description="The label alongside a tag list">
@@ -167,7 +167,7 @@ function BlogPostItem(props: Props): JSX.Element {
               </div>
             )}
             {truncated && (
-              <div className="col text--right">
+              <div className={styles.readMore}>
                 <Link to={metadata.permalink} aria-label={`Read more about ${title}`}>
                   <strong>
                     <Translate

@@ -15,11 +15,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
+	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -38,6 +39,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -52,7 +54,7 @@ const (
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 3 * time.Second
+	vSocketDialTimeout = 10 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -74,6 +76,12 @@ const (
 	mergeDiffSnapshotConcurrency = 4
 	// Firecracker writes changed blocks in 4Kb blocks.
 	mergeDiffSnapshotBlockSize = 4096
+
+	// Size of machine log tail to retain in memory so that we can parse logs for
+	// errors.
+	vmLogTailBufSize = 1024 * 12 // 12 KB
+	// Log prefix used by goinit when logging fatal errors.
+	fatalInitLogPrefix = "die: "
 
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
@@ -127,6 +135,8 @@ var (
 
 	vmIdx   int
 	vmIdxMu sync.Mutex
+
+	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
 
 func openFile(ctx context.Context, env environment.Env, fileName string) (io.ReadCloser, error) {
@@ -272,11 +282,11 @@ type FirecrackerContainer struct {
 
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
+	vmLog                *VMLog
 	env                  environment.Env
 	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
-	enableDiffSnapshots  bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -306,6 +316,11 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 }
 
 func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+	vmLog, err := NewVMLog(vmLogTailBufSize)
+	if err != nil {
+		return nil, err
+	}
+
 	// WARNING: because of the limitation on the length of unix sock file
 	// paths (103), this directory path needs to be short. Specifically, a
 	// full sock path will look like:
@@ -338,13 +353,13 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			InitDockerd:      opts.InitDockerd,
 			DebugMode:        opts.DebugMode,
 		},
-		jailerRoot:          opts.JailerRoot,
-		containerImage:      opts.ContainerImage,
-		actionWorkingDir:    opts.ActionWorkingDirectory,
-		env:                 env,
-		imageCacheAuth:      imageCacheAuth,
-		allowSnapshotStart:  opts.AllowSnapshotStart,
-		enableDiffSnapshots: env.GetConfigurator().GetExecutorConfig().EnableFirecrackerDiffSnapshots,
+		jailerRoot:         opts.JailerRoot,
+		containerImage:     opts.ContainerImage,
+		actionWorkingDir:   opts.ActionWorkingDirectory,
+		env:                env,
+		vmLog:              vmLog,
+		imageCacheAuth:     imageCacheAuth,
+		allowSnapshotStart: opts.AllowSnapshotStart,
 	}
 
 	if err := c.newID(); err != nil {
@@ -354,33 +369,6 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		c.vmIdx = opts.ForceVMIdx
 	}
 	return c, nil
-}
-
-// isZeroes checks whether the passed byte buffer contains all zero bytes.
-// based on https://stackoverflow.com/questions/45506424/how-to-check-if-byte-is-all-zeros-in-go
-func isZeroes(data []byte) bool {
-	n := len(data)
-
-	// Largest length which could be divided by 8.
-	nlen8 := n & 0xFFFFFFF8
-	i := 0
-
-	// Interpret every 8 raw bytes as an uint64 and compare to zero.
-	for ; i < nlen8; i += 8 {
-		b := *(*uint64)(unsafe.Pointer(uintptr(unsafe.Pointer(&data[0])) + uintptr(i)))
-		if b != 0 {
-			return false
-		}
-	}
-
-	// Check trailing bytes that do not divide evenly into 8.
-	for ; i < n; i++ {
-		if data[i] != 0 {
-			return false
-		}
-	}
-
-	return true
 }
 
 // mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks into the baseSnapshotPath file.
@@ -410,7 +398,15 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 		i := i
 		offset := perThreadBytes * int64(i)
 		regionEnd := perThreadBytes * int64(i+1)
+		if regionEnd > inInfo.Size() {
+			regionEnd = inInfo.Size()
+		}
 		eg.Go(func() error {
+			gin, err := os.Open(diffSnapshotPath)
+			if err != nil {
+				return status.UnavailableErrorf("Could not open diff snapshot file %q: %s", diffSnapshotPath, err)
+			}
+			defer gin.Close()
 			buf := make([]byte, bufSize)
 			for {
 				select {
@@ -419,24 +415,30 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 				default:
 					break
 				}
+				// 3 is the Linux constant for the SEEK_DATA option to lseek.
+				newOffset, err := gin.Seek(offset, 3)
+				if err != nil {
+					return err
+				}
+				offset = newOffset
 				if offset >= regionEnd {
 					break
 				}
-				n, err := in.ReadAt(buf, offset)
+
+				n, err := gin.ReadAt(buf, offset)
 				if err == io.EOF {
 					break
 				}
 				if err != nil {
 					return err
 				}
-				if isZeroes(buf[:n]) {
-					offset += int64(n)
-					continue
-				}
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
 				}
 				offset += int64(n)
+				if offset >= regionEnd {
+					break
+				}
 			}
 			return nil
 		})
@@ -454,7 +456,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	// If a snapshot already exists, get a reference to the memory snapshot so that we can perform a diff snapshot and
 	// merge the modified pages on top of the existing memory snapshot.
 	baseMemSnapshotPath := ""
-	if baseSnapshotDigest != nil && c.enableDiffSnapshots {
+	if baseSnapshotDigest != nil {
 		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, baseSnapshotDigest)
 		if err != nil {
 			return nil, err
@@ -474,10 +476,9 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		return nil, err
 	}
 
-	snapshotType := fullSnapshotType
+	snapshotType := diffSnapshotType
 	memSnapshotFile := fullMemSnapshotName
-	if c.enableDiffSnapshots {
-		snapshotType = diffSnapshotType
+	if baseSnapshotDigest != nil {
 		memSnapshotFile = diffMemSnapshotName
 	}
 	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
@@ -501,7 +502,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	if baseMemSnapshotPath != "" {
 		mergeStart := time.Now()
 		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return nil, err
+			return nil, status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.Debugf("VMM merge diff snapshot took %s", time.Since(mergeStart))
 		// Use the merged memory snapshot.
@@ -655,13 +656,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
-	defer cancel()
-
-	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
+	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return err
+		return status.InternalErrorf("Failed to dial firecracker VM exec port: %s", err)
 	}
 	defer conn.Close()
 
@@ -670,7 +667,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 		ClearArpCache:            true,
 	})
-	return err
+	if err != nil {
+		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
+	}
+	return nil
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
@@ -726,9 +726,14 @@ func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 	if c.constants.EnableNetworking {
 		builder = builder.WithNetNS("/var/run/netns/" + c.id)
 	}
+	var stdout io.Writer = c.vmLog
+	var stderr io.Writer = c.vmLog
 	if c.constants.DebugMode {
-		builder = builder.WithStdin(os.Stdin).WithStdout(os.Stdout).WithStderr(os.Stderr)
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
+		builder = builder.WithStdin(os.Stdin)
 	}
+	builder = builder.WithStdout(stdout).WithStderr(stderr)
 	return builder.Build(ctx)
 }
 
@@ -807,9 +812,11 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 			},
 		}
 	}
+	cfg.JailerCfg.Stdout = c.vmLog
+	cfg.JailerCfg.Stderr = c.vmLog
 	if c.constants.DebugMode {
-		cfg.JailerCfg.Stdout = os.Stdout
-		cfg.JailerCfg.Stderr = os.Stderr
+		cfg.JailerCfg.Stdout = io.MultiWriter(cfg.JailerCfg.Stdout, os.Stdout)
+		cfg.JailerCfg.Stderr = io.MultiWriter(cfg.JailerCfg.Stderr, os.Stderr)
 		cfg.JailerCfg.Stdin = os.Stdin
 	}
 	return cfg, nil
@@ -1070,22 +1077,38 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 }
 
 func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
-	defer cancel()
-
-	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMExecPort)
+	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
 	}
 	defer conn.Close()
 
 	execClient := vmxpb.NewExecClient(conn)
 	rsp, err := execClient.Exec(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "Firecracker exec failed")
 	}
-	return rsp, err
+	return rsp, nil
+}
+
+func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
+	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
+	if err != nil {
+		if err == context.DeadlineExceeded {
+			// If we never connected to the VM exec port, it's likely because of a
+			// fatal error in the init binary. Search for the logged error and return
+			// it if found.
+			if err := c.parseFatalInitError(); err != nil {
+				return nil, err
+			}
+		}
+		return nil, status.InternalErrorf("Failed to connect to firecracker VM exec server: %s", err)
+	}
+	return conn, nil
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
@@ -1287,4 +1310,50 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 
 func (c *FirecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil
+}
+
+// parseFatalInitError looks for a fatal error logged by the init binary, and
+// returns an InternalError with the fatal error message if one is found;
+// otherwise it returns nil.
+func (c *FirecrackerContainer) parseFatalInitError() error {
+	tail := string(c.vmLog.Tail())
+	if !strings.Contains(tail, fatalInitLogPrefix) {
+		return nil
+	}
+	// Logs contain "\r\n"; convert these to universal line endings.
+	tail = strings.ReplaceAll(tail, "\r\n", "\n")
+	lines := strings.Split(tail, "\n")
+	for _, line := range lines {
+		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
+			return status.InternalErrorf("Firecracker VM crashed: %s", m[1])
+		}
+	}
+	return nil
+}
+
+// VMLog retains the tail of the VM log.
+type VMLog struct {
+	buf *circbuf.Buffer
+	mu  sync.RWMutex
+}
+
+func NewVMLog(size int64) (*VMLog, error) {
+	buf, err := circbuf.NewBuffer(size)
+	if err != nil {
+		return nil, err
+	}
+	return &VMLog{buf: buf}, nil
+}
+
+func (log *VMLog) Write(p []byte) (int, error) {
+	log.mu.Lock()
+	defer log.mu.Unlock()
+	return log.buf.Write(p)
+}
+
+// Tail returns the tail of the log.
+func (log *VMLog) Tail() []byte {
+	log.mu.RLock()
+	defer log.mu.RUnlock()
+	return log.buf.Bytes()
 }
