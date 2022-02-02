@@ -7,15 +7,17 @@ actions:
       pull_request:
         branches:
           - "master"
+    # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1140): Re-enable
+    # system bazelrc
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=-performance,-webdriver
+      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver
   - name: Benchmark
     triggers:
       push:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+performance
+      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=+performance
   - name: Browser tests
     triggers:
       push:
@@ -27,4 +29,4 @@ actions:
     bazel_commands:
       # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/958):
       # See if we can remove --remote_download_outputs=toplevel
-      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
+      - bazel --nosystem_rc test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
