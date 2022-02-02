@@ -54,6 +54,13 @@ const (
 	repoUserEnvVarName         = "REPO_USER"
 	repoTokenEnvVarName        = "REPO_TOKEN"
 
+	// systemBazelrcPath is the path where we write the default bazelrc contents.
+	// This bazelrc takes lower precedence than the workspace .bazelrc and can
+	// be opted-out via `--nosystem_rc`.
+	//
+	// See https://docs.bazel.build/versions/main/guide.html#where-are-the-bazelrc-files
+	systemBazelrcPath = "/etc/bazel.bazelrc"
+
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
 	failedExitCodeName = "Failed"
@@ -402,9 +409,9 @@ func main() {
 	if err := ensurePath(); err != nil {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
-	// Write ~/.bazelrc
-	if err := writeHomeBazelrc(); err != nil {
-		fatal(status.WrapError(err, "write ~/.bazelrc"))
+	// Write default bazelrc
+	if err := writeBazelrc(systemBazelrcPath); err != nil {
+		fatal(status.WrapError(err, "write "+systemBazelrcPath))
 	}
 	// Configure TERM to get prettier output from executed commands.
 	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
@@ -541,6 +548,7 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		}
 
 		if err := ar.reporter.Start(startTime); err != nil {
+			log.Errorf("Failed to start reporter: %s", err)
 			if err := ar.reporter.Stop(noExitCode, failedExitCodeName); err != nil {
 				fatal(err)
 			}
@@ -1109,14 +1117,13 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func writeHomeBazelrc() error {
-	home := os.Getenv("HOME")
-	if home == "" {
-		return status.FailedPreconditionError("HOME dir not set")
+func writeBazelrc(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
 	}
-	f, err := os.OpenFile(filepath.Join(home, ".bazelrc"), os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0664)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0664)
 	if err != nil {
-		return status.InternalErrorf("Failed to open ~/.bazelrc for writing: %s", err)
+		return status.InternalErrorf("Failed to open %s for writing: %s", path, err)
 	}
 	defer f.Close()
 
@@ -1131,7 +1138,7 @@ func writeHomeBazelrc() error {
 	contents := strings.Join(lines, "\n") + "\n"
 
 	if _, err := io.WriteString(f, contents); err != nil {
-		return status.InternalErrorf("Failed to append to ~/.bazelrc: %s", err)
+		return status.InternalErrorf("Failed to append to %s: %s", path, err)
 	}
 	return nil
 }
