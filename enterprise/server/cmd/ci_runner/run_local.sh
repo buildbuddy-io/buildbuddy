@@ -87,7 +87,6 @@ docker exec \
   --trigger_event=pull_request \
   --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
-  --debug \
   --workflow_id=WF1234 \
   "$@"
 
