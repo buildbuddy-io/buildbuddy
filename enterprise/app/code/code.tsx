@@ -356,7 +356,6 @@ export default class CodeComponent extends React.Component<Props> {
     this.editor.setModel(this.state.fullPathToModelMap.get(fullPath));
   }
 
-  // TODO(siggisim): Enable users to revert individual changes
   handleCheckboxClicked(fullPath: string) {
     this.state.pathToIncludeChanges.set(fullPath, !this.state.pathToIncludeChanges.get(fullPath));
     this.setState({ pathToIncludeChanges: this.state.pathToIncludeChanges });
@@ -450,6 +449,15 @@ export default class CodeComponent extends React.Component<Props> {
         window.open(this.state.prLink, "_blank");
         this.handleClearPRClicked();
       });
+  }
+
+  handleRevertClicked(path: string, event: MouseEvent) {
+    this.state.changes.delete(path);
+    this.state.fullPathToModelMap.get(path).setValue(this.state.originalFileContents.get(path));
+    this.setState({ changes: this.state.changes, fullPathToModelMap: this.state.fullPathToModelMap }, () => {
+      this.saveState();
+    });
+    event.stopPropagation();
   }
 
   // TODO(siggisim): Make the menu look nice
@@ -577,6 +585,9 @@ export default class CodeComponent extends React.Component<Props> {
                       type="checkbox"
                     />{" "}
                     {fullPath}
+                    <span className="code-revert-button" onClick={this.handleRevertClicked.bind(this, fullPath)}>
+                      Revert
+                    </span>
                   </div>
                 ))}
               </div>

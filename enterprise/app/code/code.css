@@ -236,3 +236,12 @@
   width: var(--spinner-size);
   height: var(--spinner-size);
 }
+
+.code-revert-button {
+  margin-left: 64px;
+  color: #aaa;
+}
+
+.code-revert-button:hover {
+  color: #f44336;
+}
