@@ -26,8 +26,8 @@ const (
 	// Additional resources needed depending on task characteristics
 
 	FirecrackerAdditionalMemEstimateBytes = int64(150 * 1e6) // 150 MB
-	DockerAdditionalMemEstimateBytes      = int64(400 * 1e6) // 400 MB
-	DockerAdditionalDiskEstimateBytes     = int64(3 * 1e9)   // 3 GB
+	DockerAdditionalMemEstimateBytes      = int64(800 * 1e6) // 800 MB
+	DockerAdditionalDiskEstimateBytes     = int64(12 * 1e9)  // 12 GB
 
 	MaxEstimatedFreeDisk = int64(20 * 1e9) // 20GB
 
@@ -82,7 +82,7 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		// Note: props.InitDockerd is only supported for docker-in-firecracker.
 		if props.InitDockerd {
 			freeDiskEstimate += DockerAdditionalDiskEstimateBytes
-			memEstimate += DockerAdditionalDiskEstimateBytes
+			memEstimate += DockerAdditionalMemEstimateBytes
 		}
 	}
 

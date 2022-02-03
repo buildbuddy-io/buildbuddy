@@ -21,6 +21,7 @@ go_test(
     srcs = ["tasksize_test.go"],
     deps = [
         ":tasksize",
+        "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "@com_github_stretchr_testify//assert",
     ],
