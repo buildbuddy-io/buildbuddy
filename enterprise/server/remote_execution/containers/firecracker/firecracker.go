@@ -1197,7 +1197,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 
 		if copyOutputsErr != nil {
-			result.Error = err
+			result.Error = copyOutputsErr
 			return result
 		}
 	}
