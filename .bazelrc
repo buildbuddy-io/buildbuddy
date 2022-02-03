@@ -96,6 +96,9 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
 
+# Don't include Docker tests by default when running `bazel test //...`, to avoid
+# a hard dependency on Docker for development.
+test --test_tag_filters=-docker
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:

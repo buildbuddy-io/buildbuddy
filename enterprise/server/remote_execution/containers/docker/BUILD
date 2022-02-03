@@ -28,7 +28,14 @@ go_library(
 go_test(
     name = "docker_test",
     srcs = ["docker_test.go"],
-    tags = ["manual"],
+    exec_properties = {
+        # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1094): Require less manual configuration here.
+        "workload-isolation-type": "firecracker",
+        "init-dockerd": "true",
+        "EstimatedComputeUnits": "1",
+        "EstimatedFreeDiskBytes": "1000000000",  # 1 GB
+    },
+    tags = ["docker"],
     deps = [
         ":docker",
         "//enterprise/server/remote_execution/container",
