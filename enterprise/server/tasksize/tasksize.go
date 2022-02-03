@@ -23,6 +23,12 @@ const (
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
+	// Additional resources needed depending on task characteristics
+
+	FirecrackerAdditionalMemEstimateBytes = int64(150 * 1e6) // 150 MB
+	DockerAdditionalMemEstimateBytes      = int64(400 * 1e6) // 400 MB
+	DockerAdditionalDiskEstimateBytes     = int64(3 * 1e9)   // 3 GB
+
 	MaxEstimatedFreeDisk = int64(20 * 1e9) // 20GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
@@ -71,6 +77,15 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 			break
 		}
 	}
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		memEstimate += FirecrackerAdditionalMemEstimateBytes
+		// Note: props.InitDockerd is only supported for docker-in-firecracker.
+		if props.InitDockerd {
+			freeDiskEstimate += DockerAdditionalDiskEstimateBytes
+			memEstimate += DockerAdditionalDiskEstimateBytes
+		}
+	}
+
 	if props.EstimatedComputeUnits > 0 {
 		cpuEstimate = props.EstimatedComputeUnits * computeUnitsToMilliCPU
 		memEstimate = props.EstimatedComputeUnits * computeUnitsToRAMBytes
