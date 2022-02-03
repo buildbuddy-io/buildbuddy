@@ -39,5 +39,5 @@ actions:
       pull_request:
         branches:
           - "master"
-      bazel_commands:
-        - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=+docker
+    bazel_commands:
+      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=+docker
