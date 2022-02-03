@@ -40,4 +40,4 @@ actions:
         branches:
           - "master"
       bazel_commands:
-        - bazel --nosystem_rc test //... --test_tag_filters=+docker
+        - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=+docker
