@@ -377,7 +377,7 @@ export default class ExecutionCardComponent extends React.Component {
                           </div>
                           <div>{execution.commandSnippet}</div>
                           <div className="invocation-execution-row-stats">
-                            <div>Worker: {execution?.executedActionMetadata?.worker}</div>
+                            <div>Executor Host ID: {execution?.executedActionMetadata?.worker}</div>
                             <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
                             <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
                             <div>
