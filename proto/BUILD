@@ -113,6 +113,13 @@ proto_library(
 )
 
 proto_library(
+    name = "target_pagination_proto",
+    srcs = [
+        "target_pagination.proto",
+    ],
+)
+
+proto_library(
     name = "usage_proto",
     srcs = [
         "usage.proto",
@@ -430,6 +437,12 @@ go_proto_library(
         ":context_go_proto",
         "//proto/api/v1:common_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "target_pagination_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/target_pagination",
+    proto = ":target_pagination_proto",
 )
 
 go_proto_library(

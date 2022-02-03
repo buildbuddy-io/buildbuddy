@@ -402,10 +402,11 @@ func (t *Target) TableName() string {
 }
 
 // The Status of a target.
+// Do not use "target_status_invocation_uuid" as an index name.
 type TargetStatus struct {
 	Model
 	TargetID       int64  `gorm:"primaryKey;autoIncrement:false"`
-	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16"`
+	InvocationUUID []byte `gorm:"primaryKey;autoIncrement:false;size:16;index:target_status_invocation_uuid_idx"`
 	TargetType     int32
 	TestSize       int32
 	Status         int32
@@ -525,7 +526,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil, err
 		}
 	}
-
 	// Initialize UserGroups.role to Admin if the role column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "role") {
 		postMigrate = append(postMigrate, func() error {
@@ -761,6 +761,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_role_index":        "(`group_id`, `role`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
+		"invocations_test_grid_query_index":   "(`group_id`, `role`, `repo_url`, `created_at_usec` DESC)",
 	}
 	m := db.Migrator()
 	if m.HasTable("Invocations") {

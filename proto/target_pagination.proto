@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package target_pagination;
+
+// This proto is intended to use by backend only.
+// For the first page, we fetch the N distinct most recent commits ordered by
+// the latest created_at_usec of the invocation.
+
+// For the subsequent pages, we fetch commits older than the provided
+// invocation_end_time_usec; or when created_at_usec = invocation_end_time_usec,
+// we fetch commits that have a commit_sha alphabetically after the provided
+// commit_sha.
+message PaginationToken {
+  int64 invocation_end_time_usec = 1;
+  string commit_sha = 2;
+}

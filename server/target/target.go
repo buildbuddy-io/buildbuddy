@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -12,13 +13,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/protobuf/proto"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	tppb "github.com/buildbuddy-io/buildbuddy/proto/target_pagination"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
 	sqlite3Dialect = "sqlite3"
+	ciRole         = "CI"
+
+	// The number of distinct commits returned in GetTargetResponse.
+	targetPageSize = 20
 )
 
 func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
@@ -46,6 +54,40 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 	}
 }
 
+func NewTokenFromRequest(req *trpb.GetTargetRequest) (*tppb.PaginationToken, error) {
+	strToken := req.GetPageToken()
+	if strToken == "" {
+		return nil, nil
+	}
+
+	data, err := base64.StdEncoding.DecodeString(strToken)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to decode page token %q: %s", strToken, err)
+	}
+	t := &tppb.PaginationToken{}
+	if err := proto.Unmarshal(data, t); err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to unmarshal page token: %s", err)
+	}
+	return t, nil
+}
+
+func EncodePaginationToken(token *tppb.PaginationToken) (string, error) {
+	data, err := proto.Marshal(token)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("failed to marshal page token: %s", err)
+	}
+	str := base64.StdEncoding.EncodeToString(data)
+	return str, nil
+}
+
+func ApplyToQuery(t *tppb.PaginationToken, q *query_builder.Query) {
+	o := query_builder.OrClauses{}
+	o.AddOr("created_at_usec < ? ", t.GetInvocationEndTimeUsec())
+	o.AddOr("(created_at_usec = ? AND commit_sha > ?)", t.GetInvocationEndTimeUsec(), t.GetCommitSha())
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+}
+
 func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	auth := env.GetAuthenticator()
 	if auth == nil {
@@ -55,6 +97,12 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	if err != nil {
 		return nil, err
 	}
+
+	if req.GetServerSidePagination() {
+		return readPaginatedTargets(ctx, env, req)
+	}
+
+	// TODO(luluz): delete once we fully migrated to server side pagination.
 	startUsec := int64(0)
 	endUsec := time.Now().UnixMicro()
 	if st := req.GetStartTimeUsec(); st != 0 {
@@ -63,16 +111,10 @@ func GetTarget(ctx context.Context, env environment.Env, req *trpb.GetTargetRequ
 	if et := req.GetEndTimeUsec(); et != 0 {
 		endUsec = et
 	}
-	targetHistory, err := readTargets(ctx, env, req, startUsec, endUsec)
-	if err != nil {
-		return nil, err
-	}
-	return &trpb.GetTargetResponse{
-		InvocationTargets: targetHistory,
-	}, nil
+	return readTargets(ctx, env, req, startUsec, endUsec)
 }
 
-func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest, startUsec, endUsec int64) ([]*trpb.TargetHistory, error) {
+func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest, startUsec, endUsec int64) (*trpb.GetTargetResponse, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
@@ -118,11 +160,16 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 		q.AddWhereClause("i.branch_name = ?", branchName)
 	}
 	q.SetOrderBy("t.label ASC, i.created_at_usec", false /*=ascending*/)
+	return fetchTargetsFromDB(ctx, env, q, tq.GetRepoUrl())
+}
+
+func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_builder.Query, repoURL string) (*trpb.GetTargetResponse, error) {
 	queryStr, args := q.Build()
 
 	seenTargets := make(map[string]struct{}, 0)
 	targets := make([]*trpb.Target, 0)
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
+	var nextPageToken *tppb.PaginationToken
 
 	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
@@ -171,6 +218,15 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),
 				},
 			})
+			if nextPageToken == nil || nextPageToken.GetInvocationEndTimeUsec() >= row.CreatedAtUsec {
+				nextPageToken = &tppb.PaginationToken{
+					InvocationEndTimeUsec: row.CreatedAtUsec,
+				}
+				if nextPageToken.GetInvocationEndTimeUsec() == row.CreatedAtUsec && nextPageToken.GetCommitSha() > row.CommitSHA {
+					continue
+				}
+				nextPageToken.CommitSha = row.CommitSHA
+			}
 		}
 		return nil
 	})
@@ -184,8 +240,80 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
 		targetHistories = append(targetHistories, &trpb.TargetHistory{
 			Target:       target,
 			TargetStatus: statuses[targetID],
-			RepoUrl:      tq.GetRepoUrl(),
+			RepoUrl:      repoURL,
 		})
 	}
-	return targetHistories, nil
+	resp := &trpb.GetTargetResponse{
+		InvocationTargets: targetHistories,
+	}
+	if nextPageToken != nil {
+		tokenStr, err := EncodePaginationToken(nextPageToken)
+		if err != nil {
+			return nil, err
+		}
+		resp.NextPageToken = tokenStr
+	}
+	return resp, nil
+}
+
+func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
+	if env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+
+	repo := req.GetQuery().GetRepoUrl()
+	if repo != "" {
+		if norm, err := gitutil.NormalizeRepoURL(repo); err == nil {
+			repo = norm.String()
+		} else {
+			return nil, status.InvalidArgumentErrorf("Invalid repo_url: %q", repo)
+		}
+	}
+
+	// Build the query to select the distinct commits.
+	commitQuery := query_builder.NewQuery(`
+		SELECT commit_sha, max(created_at_usec) as latest_created_at_usec 
+		FROM Invocations `)
+	commitQuery.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	if repo != "" {
+		commitQuery.AddWhereClause("repo_url = ?", repo)
+	}
+	commitQuery.AddWhereClause("role = ?", ciRole)
+	paginationToken, err := NewTokenFromRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	if paginationToken != nil {
+		ApplyToQuery(paginationToken, commitQuery)
+	}
+
+	commitQuery.SetGroupBy("commit_sha")
+	commitQuery.SetOrderBy("latest_created_at_usec DESC, commit_sha", true /*=ascending*/)
+	commitQuery.SetLimit(targetPageSize)
+
+	// Build the subquery to select columns from Invocations Table
+	joinQuery := query_builder.NewQuery(`
+		SELECT invocation_uuid, invocation_id, inv.commit_sha, branch_name, repo_url, 
+		created_at_usec 
+		FROM Invocations as inv`)
+	joinQuery.AddJoinClause(commitQuery, "commits", "inv.commit_sha=commits.commit_sha")
+	joinQuery.AddWhereClause("inv.group_id = ?", req.GetRequestContext().GetGroupId())
+	joinQuery.AddWhereClause("inv.role = ?", ciRole)
+	if repo != "" {
+		joinQuery.AddWhereClause("inv.repo_url = ?", repo)
+	}
+	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, joinQuery, "inv"); err != nil {
+		return nil, err
+	}
+
+	// Build the full query to get columns from Targets, TargetStatuses and Invocations
+	// Table.
+	q := query_builder.NewQuery(`
+		SELECT t.target_id, t.label, t.rule_type, ts.target_type, ts.test_size, ts.status,
+		ts.start_time_usec, ts.duration_usec, i.invocation_id, i.commit_sha, i.branch_name,
+		i.repo_url, i.created_at_usec
+		FROM Targets as t
+		JOIN TargetStatuses as ts ON ts.target_id = t.target_id`)
+	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
+	return fetchTargetsFromDB(ctx, env, q, repo)
 }

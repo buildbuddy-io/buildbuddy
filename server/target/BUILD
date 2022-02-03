@@ -8,12 +8,15 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:target_go_proto",
+        "//proto:target_pagination_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/environment",
         "//server/util/db",
+        "//server/util/git",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@org_golang_google_protobuf//proto",
     ],
 )
