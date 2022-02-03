@@ -411,7 +411,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := ws.fetchWorkflowConfig(ctx, apiKey, gitProvider, wf, wd)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return nil, err
 	}
@@ -717,15 +717,11 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 
 // fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
 // default BuildBuddyConfig if one is not set up.
-func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, key *tables.APIKey, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
+func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, webhookData.SHA)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			appConf := ws.env.GetConfigurator()
-			return config.GetDefault(
-				webhookData.TargetBranch, appConf.GetAppEventsAPIURL(),
-				appConf.GetAppBuildBuddyURL()+"/invocation/", key.Value,
-			), nil
+			return config.GetDefault(webhookData.TargetBranch), nil
 		}
 		return nil, err
 	}
@@ -758,7 +754,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	// Fetch the workflow config (buildbuddy.yaml) and start a CI runner execution
 	// for each action matching the webhook event.
-	cfg, err := ws.fetchWorkflowConfig(ctx, apiKey, gitProvider, wf, webhookData)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, webhookData)
 	if err != nil {
 		return err
 	}

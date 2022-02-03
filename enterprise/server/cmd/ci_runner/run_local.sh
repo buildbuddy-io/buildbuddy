@@ -47,23 +47,38 @@ TEMPDIR=$(mktemp --dry-run | xargs dirname)
 : "${CI_RUNNER_BAZEL_CACHE_DIR:=$TEMPDIR/buildbuddy_ci_runner_bazel_cache}"
 
 : "${REPO_PATH:=$PWD}"
+: "${PERSISTENT:=true}"
+: "${BUILDBUDDY_API_KEY:=}"
 
 bazel build //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner
 RUNNER_PATH="$PWD/bazel-bin/enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-echo "$RUNNER_PATH"
+RUNNER_DATA_DIR="$TEMPDIR/buildbuddy_ci_runner_data"
+mkdir -p "$RUNNER_DATA_DIR"
+rm -f "$RUNNER_DATA_DIR/ci_runner"
+cp "$RUNNER_PATH" "$RUNNER_DATA_DIR/ci_runner"
+echo "Copied ci_runner to $RUNNER_DATA_DIR/ci_runner"
 
 mkdir -p "$CI_RUNNER_BAZEL_CACHE_DIR"
 
-docker run \
-  --volume "$RUNNER_PATH:/bin/ci_runner" \
-  --volume "$CI_RUNNER_BAZEL_CACHE_DIR:/root/.cache/bazel" \
-  --volume "$(dir_abspath "$REPO_PATH"):/root/mounted_repo" \
-  --net host \
-  --interactive \
-  --tty \
-  --rm \
-  gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8 \
-  ci_runner \
+if ! docker inspect buildbuddy-ci-runner-local &>/dev/null; then
+  # Initialize container
+  docker run \
+    --volume "$RUNNER_DATA_DIR:/runner-data" \
+    --volume "$CI_RUNNER_BAZEL_CACHE_DIR:/root/.cache/bazel" \
+    --volume "$(dir_abspath "$REPO_PATH"):/root/mounted_repo" \
+    --net host \
+    --detach \
+    --rm \
+    --name buildbuddy-ci-runner-local \
+    gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8 \
+    sleep infinity
+fi
+
+docker exec \
+  --interactive --tty \
+  --env BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
+  buildbuddy-ci-runner-local \
+  /runner-data/ci_runner \
   --pushed_repo_url="file:///root/mounted_repo" \
   --target_repo_url="file:///root/mounted_repo" \
   --commit_sha="$(cd "$REPO_PATH" && git rev-parse HEAD)" \
@@ -72,4 +87,9 @@ docker run \
   --trigger_event=pull_request \
   --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
+  --workflow_id=WF1234 \
   "$@"
+
+if [[ "$PERSISTENT" != true ]]; then
+  docker rm -f buildbuddy-ci-runner-local
+fi
