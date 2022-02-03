@@ -10,7 +10,7 @@ actions:
     # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1140): Re-enable
     # system bazelrc
     bazel_commands:
-      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver
+      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
     triggers:
       push:
