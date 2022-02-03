@@ -24,6 +24,8 @@ import (
 const (
 	sqlite3Dialect = "sqlite3"
 	ciRole         = "CI"
+
+	// The number of distinct commits returned in GetTargetResponse.
 	targetPageSize = 20
 )
 
