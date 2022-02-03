@@ -750,13 +750,13 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 
 	// Pass some flags to the init script.
 	if c.constants.DebugMode {
-		bootArgs = "--debug_mode " + bootArgs
+		bootArgs = "-debug_mode " + bootArgs
 	}
 	if c.constants.EnableNetworking {
-		bootArgs = "--set_default_route " + bootArgs
+		bootArgs = "-set_default_route " + bootArgs
 	}
 	if c.constants.InitDockerd {
-		bootArgs = "--init_dockerd " + bootArgs
+		bootArgs = "-init_dockerd " + bootArgs
 	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
