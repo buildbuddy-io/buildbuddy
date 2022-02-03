@@ -53,7 +53,7 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 		{"small", platform.BareContainerType, false /*=initDockerd*/, 20 * 1e6, 600, tasksize.DefaultFreeDiskEstimate},
 		{"enormous", platform.BareContainerType, false /*=initDockerd*/, 800 * 1e6, 1000, tasksize.DefaultFreeDiskEstimate},
 		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 600, tasksize.DefaultFreeDiskEstimate},
-		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerAdditionalDiskEstimateBytes},
+		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes},
 	} {
 		ts := tasksize.Estimate(&repb.ExecutionTask{
 			Command: &repb.Command{
