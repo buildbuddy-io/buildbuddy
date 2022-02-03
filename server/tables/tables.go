@@ -610,7 +610,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
-	if m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_pk") {
+	if db.Dialector.Name() == mysqlDialect && m.HasTable("TargetStatuses") && m.HasIndex("TargetStatuses", "target_status_invocation_pk") {
 		// Drop the invocation_pk index; and set default to invocation_pk column.
 		postMigrate = append(postMigrate, func() error {
 			if err := m.DropIndex("TargetStatuses", "target_status_invocation_pk"); err != nil {
