@@ -23,6 +23,26 @@ const (
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
+	// Additional resources needed depending on task characteristics
+
+	// FirecrackerAdditionalMemEstimateBytes represents the overhead incurred by
+	// the firecracker runtime. It was computed as the minimum memory needed to
+	// execute a trivial task (i.e. pwd) in Firecracker, multiplied by ~1.5x so
+	// that we have some wiggle room.
+	FirecrackerAdditionalMemEstimateBytes = int64(150 * 1e6) // 150 MB
+
+	// DockerInFirecrackerAdditionalMemEstimateBytes is an additional memory
+	// estimate added for docker-in-firecracker actions. It was computed as the
+	// minimum additional memory needed to run a mysql:8.0 container inside
+	// a firecracker VM, multiplied by ~2X.
+	DockerInFirecrackerAdditionalMemEstimateBytes = int64(800 * 1e6) // 800 MB
+
+	// DockerInFirecrackerAdditionalDiskEstimateBytes is an additional memory
+	// estimate added for docker-in-firecracker actions. It was computed as the
+	// minimum additional disk needed to run a mysql:8.0 container inside
+	// a firecracker VM, multiplied by ~3X.
+	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(12 * 1e9) // 12 GB
+
 	MaxEstimatedFreeDisk = int64(20 * 1e9) // 20GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
@@ -71,6 +91,15 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 			break
 		}
 	}
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		memEstimate += FirecrackerAdditionalMemEstimateBytes
+		// Note: props.InitDockerd is only supported for docker-in-firecracker.
+		if props.InitDockerd {
+			freeDiskEstimate += DockerInFirecrackerAdditionalDiskEstimateBytes
+			memEstimate += DockerInFirecrackerAdditionalMemEstimateBytes
+		}
+	}
+
 	if props.EstimatedComputeUnits > 0 {
 		cpuEstimate = props.EstimatedComputeUnits * computeUnitsToMilliCPU
 		memEstimate = props.EstimatedComputeUnits * computeUnitsToRAMBytes
