@@ -131,7 +131,7 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.
 	serfConfig.UserEventSizeLimit = 9 * 1024
-	serfConfig.BroadcastTimeout = 300 * time.Millisecond
+	serfConfig.BroadcastTimeout = time.Second
 
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
