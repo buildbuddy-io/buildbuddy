@@ -11,7 +11,7 @@ import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
 import { Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
-import { OutlinedButton } from "../../../app/components/button/button";
+import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
 
 interface Props {
@@ -35,8 +35,12 @@ interface State {
   prLink: string;
   prNumber: string;
   prBranch: string;
+  prTitle: string;
+  prBody: string;
 
   requestingReview: boolean;
+  updatingPR: boolean;
+  reviewRequestModalVisible: boolean;
   isBuilding: boolean;
 }
 
@@ -66,7 +70,12 @@ export default class CodeComponent extends React.Component<Props> {
     prNumber: "",
 
     requestingReview: false,
+    updatingPR: false,
+    reviewRequestModalVisible: false,
     isBuilding: false,
+
+    prTitle: "",
+    prBody: "",
   };
 
   editor: any;
@@ -303,6 +312,18 @@ export default class CodeComponent extends React.Component<Props> {
     return state;
   }
 
+  handleShowReviewModalClicked() {
+    let filteredEntries = Array.from(this.state.changes.entries()).filter(([key, value]) =>
+      this.state.pathToIncludeChanges.get(key)
+    );
+    let filenames = filteredEntries.map(([key, value]) => key).join(", ");
+    this.setState({
+      prTitle: `Update ${filenames}`,
+      prBody: `Update ${filenames} using BuildBuddy Code`,
+      reviewRequestModalVisible: true,
+    });
+  }
+
   async handleReviewClicked() {
     if (!this.props.user.githubToken) {
       this.handleGitHubClicked();
@@ -315,20 +336,18 @@ export default class CodeComponent extends React.Component<Props> {
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
 
-    let filenames = filteredEntries.map(([key, value]) => key).join(", ");
-
     let response = await createPullRequest(this.octokit, {
       owner: this.state.owner,
       repo: this.state.repo,
-      title: `Quick fix of ${filenames}`,
-      body: `Quick fix of ${filenames} using BuildBuddy Code`,
-      head: `quick-fix-${Math.floor(Math.random() * 10000)}`,
+      title: this.state.prTitle,
+      body: this.state.prBody,
+      head: `change-${Math.floor(Math.random() * 10000)}`,
       changes: [
         {
           files: Object.fromEntries(
             filteredEntries.map(([key, value]) => [key, { content: btoa(value), encoding: "base64" }]) // Convert to base64 for github to support utf-8
           ),
-          commit: `Quick fix of ${filenames} using BuildBuddy Code`,
+          commit: this.state.prBody,
         },
       ],
     });
@@ -336,6 +355,7 @@ export default class CodeComponent extends React.Component<Props> {
     this.setState(
       {
         requestingReview: false,
+        reviewRequestModalVisible: false,
         prLink: response.data.html_url,
         prNumber: response.data.number,
         prBranch: response.data.head.ref,
@@ -404,6 +424,8 @@ export default class CodeComponent extends React.Component<Props> {
       return;
     }
 
+    this.setState({ updatingPR: true });
+
     let filteredEntries = Array.from(this.state.changes.entries()).filter(
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
@@ -423,6 +445,7 @@ export default class CodeComponent extends React.Component<Props> {
         },
       ],
     }).then(() => {
+      this.setState({ updatingPR: false });
       window.open(this.state.prLink, "_blank");
     });
   }
@@ -459,6 +482,15 @@ export default class CodeComponent extends React.Component<Props> {
     });
     event.stopPropagation();
   }
+  onTitleChange(e: React.ChangeEvent) {
+    const input = e.target as HTMLInputElement;
+    this.setState({ prTitle: input.value });
+  }
+
+  onBodyChange(e: React.ChangeEvent) {
+    const input = e.target as HTMLInputElement;
+    this.setState({ prBody: input.value });
+  }
 
   // TODO(siggisim): Make the menu look nice
   // TODO(siggisim): Make sidebar look nice
@@ -486,7 +518,7 @@ export default class CodeComponent extends React.Component<Props> {
               <OutlinedButton
                 disabled={this.state.requestingReview}
                 className="request-review-button"
-                onClick={this.handleReviewClicked.bind(this)}>
+                onClick={this.handleShowReviewModalClicked.bind(this)}>
                 {this.state.requestingReview ? (
                   <>
                     <Spinner className="icon" /> Requesting...
@@ -500,10 +532,10 @@ export default class CodeComponent extends React.Component<Props> {
             )}
             {this.state.changes.size > 0 && this.state.prBranch && (
               <OutlinedButton
-                disabled={this.state.requestingReview}
+                disabled={this.state.updatingPR}
                 className="request-review-button"
                 onClick={this.handleUpdatePR.bind(this)}>
-                {this.state.requestingReview ? (
+                {this.state.updatingPR ? (
                   <>
                     <Spinner className="icon" /> Updating...
                   </>
@@ -594,6 +626,29 @@ export default class CodeComponent extends React.Component<Props> {
             )}
           </div>
         </div>
+        {this.state.reviewRequestModalVisible && (
+          <div className="code-request-review-modal-backdrop">
+            <div className="code-request-review-modal">
+              <div className="code-request-review-title">Request Review</div>
+              <input value={this.state.prTitle} onChange={this.onTitleChange.bind(this)} />
+              <textarea value={this.state.prBody} onChange={this.onBodyChange.bind(this)} />
+              <FilledButton
+                disabled={this.state.requestingReview}
+                className="request-review-button"
+                onClick={this.handleReviewClicked.bind(this)}>
+                {this.state.requestingReview ? (
+                  <>
+                    <Spinner className="icon white" /> Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="icon white" /> Send
+                  </>
+                )}
+              </FilledButton>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
