@@ -67,11 +67,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 	return c.getClient(ctx, peer)
 }
 
-func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, fileRecord *rfpb.FileRecord, offset int64) (io.ReadCloser, error) {
-	req := &rfpb.ReadRequest{
-		FileRecord: fileRecord,
-		Offset:     offset,
-	}
+func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
 	stream, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, err
@@ -106,7 +102,9 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, fi
 	err = <-firstError
 
 	// If we get an EOF, and we're expecting one - don't return an error.
-	if err == io.EOF && fileRecord.GetDigest().GetSizeBytes() == offset {
+	digestSize := req.GetFileRecord().GetDigest().GetSizeBytes()
+	offset := req.GetOffset()
+	if err == io.EOF && digestSize == offset {
 		return reader, nil
 	}
 	return reader, err

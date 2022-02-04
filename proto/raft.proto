@@ -324,8 +324,9 @@ message Operation {
 ////////////////////////////////////////////////////////////////////////////////
 
 message ReadRequest {
-  FileRecord file_record = 1;
-  int64 offset = 2;
+  Header header = 1;
+  FileRecord file_record = 2;
+  int64 offset = 3;
 }
 
 message ReadResponse {

@@ -274,7 +274,7 @@ func TestCacheShutdown(t *testing.T) {
 
 	cacheRPCTimeout := 5 * time.Second
 	digestsWritten := make([]*repb.Digest, 0)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -285,7 +285,7 @@ func TestCacheShutdown(t *testing.T) {
 	// shutdown one node
 	waitForShutdown(t, rc3)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)

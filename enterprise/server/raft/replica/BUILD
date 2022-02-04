@@ -6,12 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
-        "//proto:raft_service_go_proto",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/rangemap",

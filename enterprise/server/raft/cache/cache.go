@@ -311,7 +311,12 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 
 	var readCloser io.ReadCloser
 	err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		r, err := rc.apiClient.RemoteReader(ctx, c, fileRecord, offset)
+		req := &rfpb.ReadRequest{
+			Header:     h,
+			FileRecord: fileRecord,
+			Offset:     offset,
+		}
+		r, err := rc.apiClient.RemoteReader(ctx, c, req)
 		if err != nil {
 			return err
 		}
@@ -414,10 +419,6 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		}
 		req := reqs[rangeDescriptor.GetRangeId()]
 		req.FileRecord = append(req.FileRecord, fileRecord)
-	}
-
-	for rangeID, reqs := range reqs {
-		log.Printf("cache.go: FindMissing: rangeID: %d: requests: %d", rangeID, len(reqs.FileRecord))
 	}
 
 	missingDigests := make([]*repb.Digest, 0)

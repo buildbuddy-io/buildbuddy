@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//proto:raft_service_go_proto",
         "//server/gossip",
         "//server/util/disk",
         "//server/util/log",

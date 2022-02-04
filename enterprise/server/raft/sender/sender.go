@@ -85,6 +85,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 		})
 		if err != nil {
 			if status.IsOutOfRangeError(err) || status.IsUnavailableError(err) {
+				log.Printf("Unable to get rd from replica: %+v: %s", replica, err)
 				continue
 			}
 			return nil, err
@@ -102,7 +103,9 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			}
 			if err := s.rangeCache.UpdateRange(rd); err != nil {
 				log.Errorf("error updating rangecache: %s", err)
+				continue
 			}
+			return rd, nil
 		}
 	}
 	rd := s.rangeCache.Get(key)
@@ -177,6 +180,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
 		if err != nil {
 			lastErr = err
+			log.Printf("sender.Run error getting rd for %q: %s", key, err)
 			continue
 		}
 		//log.Printf("Writing %s to range: %d", key, rangeDescriptor.GetRangeId())
