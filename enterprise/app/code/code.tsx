@@ -319,7 +319,7 @@ export default class CodeComponent extends React.Component<Props> {
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
     this.setState({
       prTitle: `Update ${filenames}`,
-      prBody: `Update ${filenames} using BuildBuddy Code`,
+      prBody: `Update ${filenames}\n\nBuilt with [BuildBuddy Code](https://${window.location.host}/code/)`,
       reviewRequestModalVisible: true,
     });
   }
