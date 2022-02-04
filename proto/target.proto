@@ -46,7 +46,7 @@ message TargetStatus {
   // from invocation_created_at_usec when the target is cached.
   api.v1.Timing timing = 4;
 
-  // When the invocation is created. 
+  // When the invocation is created.
   int64 invocation_created_at_usec = 5;
 }
 
