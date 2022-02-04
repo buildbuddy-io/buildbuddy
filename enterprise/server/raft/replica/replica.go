@@ -9,11 +9,10 @@ import (
 	"io"
 	"path/filepath"
 	"sync"
+	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -22,15 +21,15 @@ import (
 	"github.com/golang/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
 
-type RangeTracker interface {
+type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
+	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
 }
 
 // KVs are stored directly in Pebble by the raft state machine, so the key and
@@ -86,9 +85,7 @@ type Replica struct {
 	clusterID uint64
 	nodeID    uint64
 
-	rangeTracker     RangeTracker
-	sender           *sender.Sender
-	apiClient        *client.APIClient
+	store            IStore
 	lastAppliedIndex uint64
 
 	log             log.Logger
@@ -167,7 +164,7 @@ func (sm *Replica) maybeSetRange(key, val []byte) error {
 			Left:  rangeDescriptor.GetLeft(),
 			Right: rangeDescriptor.GetRight(),
 		}
-		sm.rangeTracker.AddRange(sm.rangeDescriptor, sm)
+		sm.store.AddRange(sm.rangeDescriptor, sm)
 	}
 	sm.rangeMu.Unlock()
 	return nil
@@ -226,7 +223,8 @@ func (sm *Replica) getLastAppliedIndex() (uint64, error) {
 	if len(val) == 0 {
 		return 0, nil
 	}
-	return bytesToUint64(val), nil
+	i := bytesToUint64(val)
+	return i, nil
 }
 
 func (sm *Replica) getDBDir() string {
@@ -280,32 +278,30 @@ func (sm *Replica) checkAndSetRangeDescriptor() {
 }
 
 func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
-	fileKey, err := constants.FileKey(fileRecord)
+	thisReplica := &rfpb.ReplicaDescriptor{
+		ClusterId: sm.clusterID,
+		NodeId:    sm.nodeID,
+	}
+	r, err := sm.store.ReadFileFromPeer(ctx, thisReplica, fileRecord)
 	if err != nil {
 		return err
 	}
-	err = sm.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		r, err := sm.apiClient.RemoteReader(ctx, c, fileRecord, 0 /*=offset*/)
-		if err != nil {
-			return err
-		}
-		file, err := constants.FilePath(sm.fileDir, fileRecord)
-		if err != nil {
-			return err
-		}
-		wc, err := disk.FileWriter(ctx, file)
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(wc, r); err != nil {
-			return err
-		}
-		if err := wc.Close(); err != nil {
-			return err
-		}
-		return nil
-	})
-	return err
+	defer r.Close()
+	file, err := constants.FilePath(sm.fileDir, fileRecord)
+	if err != nil {
+		return err
+	}
+	wc, err := disk.FileWriter(ctx, file)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(wc, r); err != nil {
+		return err
+	}
+	if err := wc.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
@@ -321,13 +317,13 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	if err != nil {
 		return nil, err
 	}
-	ctx := context.Background()
-	if exists, err := disk.FileExists(ctx, f); err == nil && exists {
-		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
-	}
-	if err := sm.readFileFromPeer(ctx, req.GetFileRecord()); err != nil {
-		log.Errorf("ReadFileFromPeer failed: %s", err)
-		return nil, err
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if exists, err := disk.FileExists(ctx, f); err != nil || !exists {
+		if err := sm.readFileFromPeer(ctx, req.GetFileRecord()); err != nil {
+			log.Errorf("Error recovering file %q from peer: %s", f, err)
+			return nil, err
+		}
 	}
 	if exists, err := disk.FileExists(ctx, f); err == nil && exists {
 		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
@@ -410,7 +406,7 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
-		return nil, status.InvalidArgumentError("Increment requires a valid key.")
+		return nil, status.InvalidArgumentError("Scan requires a valid key.")
 	}
 
 	iterOpts := &pebble.IterOptions{}
@@ -859,8 +855,8 @@ func (sm *Replica) Close() error {
 	rangeDescriptor := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
 
-	if sm.rangeTracker != nil && rangeDescriptor != nil {
-		sm.rangeTracker.RemoveRange(rangeDescriptor, sm)
+	if sm.store != nil && rangeDescriptor != nil {
+		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
 	if sm.db != nil {
 		return sm.db.Close()
@@ -869,16 +865,14 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir, fileDir string, clusterID, nodeID uint64, rangeTracker RangeTracker, sender *sender.Sender, apiClient *client.APIClient) dbsm.IOnDiskStateMachine {
+func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
-		closedMu:     &sync.RWMutex{},
-		rootDir:      rootDir,
-		fileDir:      fileDir,
-		clusterID:    clusterID,
-		nodeID:       nodeID,
-		rangeTracker: rangeTracker,
-		sender:       sender,
-		apiClient:    apiClient,
-		log:          log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		closedMu:  &sync.RWMutex{},
+		rootDir:   rootDir,
+		fileDir:   fileDir,
+		clusterID: clusterID,
+		nodeID:    nodeID,
+		store:     store,
+		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 	}
 }

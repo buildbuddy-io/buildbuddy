@@ -248,7 +248,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		return status.UnavailableError("node is still initializing")
 	}
 
-	key := constants.InitClusterSetupTimeKey
+	key := constants.ClusterSetupTimeKey
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
 	}).ToProto()
@@ -311,7 +311,12 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 
 	var readCloser io.ReadCloser
 	err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		r, err := rc.apiClient.RemoteReader(ctx, c, fileRecord, offset)
+		req := &rfpb.ReadRequest{
+			Header:     h,
+			FileRecord: fileRecord,
+			Offset:     offset,
+		}
+		r, err := rc.apiClient.RemoteReader(ctx, c, req)
 		if err != nil {
 			return err
 		}

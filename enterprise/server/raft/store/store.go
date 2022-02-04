@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"io"
 	"sort"
 	"sync"
 	"time"
@@ -26,8 +27,11 @@ import (
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
+
+const readBufSizeBytes = 1000000 // 1MB
 
 type Store struct {
 	rootDir string
@@ -269,7 +273,6 @@ func (s *Store) RangeIsActive(rangeID uint64) bool {
 	s.leaseMu.RUnlock()
 
 	if !ok {
-		log.Debugf("%q did not have rangelease for range: %d", s.nodeHost.ID(), rangeID)
 		return false
 	}
 	valid := rl.Valid()
@@ -277,7 +280,37 @@ func (s *Store) RangeIsActive(rangeID uint64) bool {
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	return replica.New(s.rootDir, s.fileDir, clusterID, nodeID, s, s.sender, s.apiClient)
+	return replica.New(s.rootDir, s.fileDir, clusterID, nodeID, s)
+}
+
+func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+	fileKey, err := constants.FileKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	var rc io.ReadCloser
+	err = s.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		log.Printf("in sender.Run, filekey: %q", fileKey)
+		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
+			h.GetReplica().GetNodeId() == except.GetNodeId() {
+			log.Printf("NOT ATTEMPTING TO READ FROM SELF: +%v", h.GetReplica())
+			return status.OutOfRangeError("except node")
+		}
+		req := &rfpb.ReadRequest{
+			Header:     h,
+			FileRecord: fileRecord,
+			Offset:     0,
+		}
+		r, err := s.apiClient.RemoteReader(ctx, c, req)
+		if err != nil {
+			log.Printf("RemoteReader %+v err: %s", fileRecord, err)
+			return err
+		}
+		log.Printf("in sender.Run, filekey: %q, remoteReader returned r: %+v", fileKey, r)
+		rc = r
+		return nil
+	})
+	return rc, err
 }
 
 // TODO(check cluster has been added / dont care if it's published)
@@ -360,7 +393,6 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
-		log.Debugf("Rangelease(%d) not held on %q, returning err: %s", req.GetHeader().GetRangeId(), s.nodeHost.ID(), err)
 		return nil, err
 	}
 	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
@@ -375,7 +407,6 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
-		log.Debugf("Rangelease(%d) not held on %q, returning err: %s", req.GetHeader().GetRangeId(), s.nodeHost.ID(), err)
 		return nil, err
 	}
 	buf, err := proto.Marshal(req.GetBatch())
@@ -407,7 +438,6 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 	defer s.replicaMu.RUnlock()
 	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
-		log.Errorf("Range not active, returning err: %s", err)
 		return nil, err
 	}
 	r, ok := s.replicas[req.GetHeader().GetRangeId()]
@@ -433,4 +463,46 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 		}
 	}
 	return rsp, nil
+}
+
+type streamWriter struct {
+	stream rfspb.Api_ReadServer
+}
+
+func (w *streamWriter) Write(buf []byte) (int, error) {
+	err := w.stream.Send(&rfpb.ReadResponse{
+		Data: buf,
+	})
+	return len(buf), err
+}
+
+func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
+	s.replicaMu.RLock()
+	defer s.replicaMu.RUnlock()
+	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+		return err
+	}
+	_, ok := s.replicas[req.GetHeader().GetRangeId()]
+	if !ok {
+		return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+	}
+	file, err := constants.FilePath(s.fileDir, req.GetFileRecord())
+	if err != nil {
+		return err
+	}
+	reader, err := disk.FileReader(stream.Context(), file, req.GetOffset(), 0)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	bufSize := int64(readBufSizeBytes)
+	d := req.GetFileRecord().GetDigest()
+	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
+		bufSize = d.GetSizeBytes()
+	}
+	copyBuf := make([]byte, bufSize)
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
+	return err
 }

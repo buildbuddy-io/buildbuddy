@@ -292,19 +292,46 @@ func (cs *ClusterStarter) syncProposeLocal(ctx context.Context, clusterID uint64
 	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }
 
-// This function is called to send RPCs to the other nodes listed in the Join
-// list requesting that they bring up initial cluster(s).
-func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
-	startingRanges := []*rfpb.RangeDescriptor{
+func getStartingRangesSimple() []*rfpb.RangeDescriptor {
+	return []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Left:  keys.Key{constants.MinByte},
-			Right: keys.MakeKey([]byte("l")),
+			Right: keys.MakeKey([]byte("ANON/cas/7")),
 		},
 		&rfpb.RangeDescriptor{
-			Left:  keys.MakeKey([]byte("l")),
+			Left:  keys.MakeKey([]byte("ANON/cas/7")),
 			Right: keys.Key{constants.MaxByte},
 		},
 	}
+}
+
+func getStartingRangesComplex() []*rfpb.RangeDescriptor {
+	ranges := make([]*rfpb.RangeDescriptor, 0)
+
+	left := keys.Key{constants.MinByte}
+	for _, char := range []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"} {
+		endPoint := keys.MakeKey([]byte(fmt.Sprintf("ANON/cas/%s", char)))
+		ranges = append(ranges, &rfpb.RangeDescriptor{
+			Left:  left,
+			Right: endPoint,
+		})
+		left = endPoint
+	}
+	ranges = append(ranges, &rfpb.RangeDescriptor{
+		Left:  left,
+		Right: keys.Key{constants.MaxByte},
+	})
+	for i, r := range ranges {
+		log.Printf("Starting range %d is: %+v", i, r)
+	}
+	return ranges
+}
+
+// This function is called to send RPCs to the other nodes listed in the Join
+// list requesting that they bring up initial cluster(s).
+func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
+	startingRanges := getStartingRangesSimple()
+
 	clusterID := uint64(constants.InitialClusterID)
 	nodeID := uint64(constants.InitialNodeID)
 	rangeID := uint64(constants.InitialRangeID)
@@ -322,6 +349,12 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 			Kv: &rfpb.KV{
 				Key:   constants.LocalRangeKey,
 				Value: rdBuf,
+			},
+		})
+		batch = batch.Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   constants.ClusterSetupTimeKey,
+				Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
 			},
 		})
 
@@ -346,12 +379,6 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 					Value: rdBuf,
 				},
 			})
-			batch = batch.Add(&rfpb.DirectWriteRequest{
-				Kv: &rfpb.KV{
-					Key:   constants.InitClusterSetupTimeKey,
-					Value: []byte(fmt.Sprintf("%d", time.Now().UnixNano())),
-				},
-			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
 		if err := cs.StartCluster(ctx, bootstrapInfo, batch); err != nil {
@@ -360,30 +387,25 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
 
 		// Increment clusterID, nodeID and rangeID before creating the next cluster.
-		batch = rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		metaRangeBatch := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 			Key:   constants.LastClusterIDKey,
 			Delta: 1,
 		})
-		batch = batch.Add(&rfpb.IncrementRequest{
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastNodeIDKey,
 			Delta: uint64(len(bootstrapInfo.Replicas)),
 		})
-		batch = batch.Add(&rfpb.IncrementRequest{
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastRangeIDKey,
 			Delta: 1,
 		})
-		if clusterID != uint64(constants.InitialClusterID) {
-			// if this was not the first cluster, aka the metarange cluster,
-			// then insert the range descriptor of the just created cluster
-			// into the metarange.
-			batch = batch.Add(&rfpb.DirectWriteRequest{
-				Kv: &rfpb.KV{
-					Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
-					Value: rdBuf,
-				},
-			})
-		}
-		rsp, err := cs.syncProposeLocal(ctx, constants.InitialClusterID, batch)
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   keys.RangeMetaKey(rangeDescriptor.GetRight()),
+				Value: rdBuf,
+			},
+		})
+		rsp, err := cs.syncProposeLocal(ctx, constants.InitialClusterID, metaRangeBatch)
 		if err != nil {
 			return err
 		}

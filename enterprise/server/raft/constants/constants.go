@@ -64,16 +64,16 @@ var (
 	SystemPrefix    = keys.Key{systemPrefixByte}
 
 	// The last clusterID that was generated.
-	LastClusterIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_cluster_id"))
+	LastClusterIDKey = keys.MakeKey(SystemPrefix, []byte("last_cluster_id"))
 
 	// The last nodeID that was generated.
-	LastNodeIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_node_id"))
+	LastNodeIDKey = keys.MakeKey(SystemPrefix, []byte("last_node_id"))
 
 	// The last rangeID that was generated.
-	LastRangeIDKey = keys.MakeKey(MetaRangePrefix, []byte("last_range_id"))
+	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))
 
-	// When the first cluster was initially set up.
-	InitClusterSetupTimeKey = keys.MakeKey(MetaRangePrefix, []byte("initial_cluster_initialization_time"))
+	// When the cluster was created.
+	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))
 
 	// The last index that was applied by a statemachine.
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))

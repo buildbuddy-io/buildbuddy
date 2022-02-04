@@ -9,15 +9,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
-
-const readBufSizeBytes = 1000000 // 1MB
 
 type Server struct {
 	fileDir string
@@ -64,37 +61,8 @@ func (s *Server) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*
 	return s.store.RemoveData(ctx, req)
 }
 
-type streamWriter struct {
-	stream rfspb.Api_ReadServer
-}
-
-func (w *streamWriter) Write(buf []byte) (int, error) {
-	err := w.stream.Send(&rfpb.ReadResponse{
-		Data: buf,
-	})
-	return len(buf), err
-}
-
 func (s *Server) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
-	file, err := constants.FilePath(s.fileDir, req.GetFileRecord())
-	if err != nil {
-		return err
-	}
-	reader, err := disk.FileReader(stream.Context(), file, req.GetOffset(), 0)
-	if err != nil {
-		return err
-	}
-	defer reader.Close()
-
-	bufSize := int64(readBufSizeBytes)
-	d := req.GetFileRecord().GetDigest()
-	if d.GetSizeBytes() > 0 && d.GetSizeBytes() < bufSize {
-		bufSize = d.GetSizeBytes()
-	}
-	copyBuf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
-	log.Debugf("Read(%q) succeeded.", file)
-	return err
+	return s.store.Read(req, stream)
 }
 
 func (s *Server) Write(stream rfspb.Api_WriteServer) error {
