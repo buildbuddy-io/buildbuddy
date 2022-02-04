@@ -32,9 +32,8 @@ go_test(
         # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1094): Require less manual configuration here.
         "workload-isolation-type": "firecracker",
         "init-dockerd": "true",
-        "EstimatedComputeUnits": "1",
-        "EstimatedFreeDiskBytes": "1000000000",  # 1 GB
     },
+    shard_count = 2,
     tags = ["docker"],
     deps = [
         ":docker",
