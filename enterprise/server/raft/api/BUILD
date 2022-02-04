@@ -12,7 +12,6 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/util/disk",
         "//server/util/grpc_server",
-        "//server/util/log",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
     ],

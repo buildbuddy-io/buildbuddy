@@ -865,7 +865,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) dbsm.IOnDiskStateMachine {
+func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
 		closedMu:  &sync.RWMutex{},
 		rootDir:   rootDir,

@@ -26,9 +26,14 @@ go_test(
     srcs = ["replica_test.go"],
     deps = [
         ":replica",
+        "//enterprise/server/raft/keys",
+        "//enterprise/server/raft/rbuilder",
+        "//proto:raft_go_proto",
         "//server/testutil/testdigest",
         "//server/util/disk",
+        "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_stretchr_testify//require",
     ],
 )
