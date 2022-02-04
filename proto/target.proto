@@ -42,7 +42,12 @@ message TargetStatus {
   api.v1.Status status = 3;
 
   // When this target started and its duration.
+  // Note: The target's start time is when the test is run and it's different
+  // from invocation_created_at_usec when the target is cached.
   api.v1.Timing timing = 4;
+
+  // When the invocation is created. 
+  int64 invocation_created_at_usec = 5;
 }
 
 message TargetHistory {
