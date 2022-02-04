@@ -245,3 +245,54 @@
 .code-revert-button:hover {
   color: #f44336;
 }
+
+.code-request-review-modal-backdrop {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-request-review-modal {
+  width: 100%;
+  max-width: 600px;
+  background-color: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+}
+
+.code-request-review-title {
+  font-size: 2em;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.code-request-review-modal input,
+.code-request-review-modal textarea {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #888;
+  font: inherit;
+}
+
+.code-request-review-modal textarea {
+  min-height: 200px;
+}
+
+.code-request-review-modal button {
+  background-color: #263238;
+  color: #fff;
+  border: 0;
+  padding: 16px;
+  border-radius: 8px;
+  width: 100%;
+  justify-content: center;
+}
