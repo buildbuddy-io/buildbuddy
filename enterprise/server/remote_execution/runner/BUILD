@@ -51,6 +51,7 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//proto:worker_go_proto",
         "//server/config",
+        "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
