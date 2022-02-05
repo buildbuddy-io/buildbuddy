@@ -371,8 +371,8 @@ export default class ExecutionCardComponent extends React.Component {
                         onClick={this.handleActionDigestClick.bind(this, execution)}>
                         <div className="invocation-execution-row-image">{status.icon}</div>
                         <div>
-                          <div className="invocation-execution-row-digest">
-                            {status.name}&nbsp;&nbsp;
+                          <div className="invocation-execution-row-header">
+                            <span className="invocation-execution-row-header-status">{status.name}</span>
                             <DigestComponent digest={execution?.actionDigest} expanded={true} />
                           </div>
                           <div>{execution.commandSnippet}</div>
