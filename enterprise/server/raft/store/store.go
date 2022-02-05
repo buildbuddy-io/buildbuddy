@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
@@ -86,10 +85,6 @@ func (s *Store) Stop() {
 }
 
 func (s *Store) leaderUpdated(info raftio.LeaderInfo) {
-	if s.nodeHost == nil {
-		// not initialized yet
-		return
-	}
 	clusterID := info.ClusterID
 	leader := s.isLeader(clusterID)
 	if leader {
@@ -97,11 +92,6 @@ func (s *Store) leaderUpdated(info raftio.LeaderInfo) {
 	} else {
 		s.releaseRangeLease(clusterID)
 	}
-}
-
-func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
-	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
 
 func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
@@ -225,7 +215,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 	clusterID := rd.GetReplicas()[0].GetClusterId()
 
-	if containsMetaRange(rd) {
+	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
 		buf, err := proto.Marshal(rd)
@@ -383,8 +373,12 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId())
-	if err != nil {
+	log.Printf("RemoveData req: %+v", req)
+	s.registry.Add(req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID())
+	if err := s.nodeHost.StopNode(req.GetClusterId(), req.GetNodeId()); err != nil {
+		return nil, err
+	}
+	if err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId()); err != nil {
 		return nil, err
 	}
 	return &rfpb.RemoveDataResponse{}, nil
