@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"math/rand"
 	"os"
 	"path"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,6 +190,10 @@ func mustGetNewRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task
 	return r
 }
 
+func sleepRandMicros(max int64) {
+	time.Sleep(time.Duration(rand.Int63n(max) * int64(time.Microsecond)))
+}
+
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
@@ -274,6 +280,73 @@ func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 	assert.Equal(t, 0, pool.ActiveRunnerCount())
+}
+
+func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	t.Logf("Random seed: %d", seed)
+
+	env := newTestEnv(t)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Run 100 trials where we create a pool that runs 50 tasks using runner
+	// recycling, shutting down the pool after roughly half of the tasks have been
+	// started.
+	for i := 0; i < 100; i++ {
+		pool := newRunnerPool(t, env, noLimitsCfg)
+		numTasks := 50
+		tasksStarted := make(chan struct{}, numTasks)
+		errs := make(chan error, numTasks)
+		runTask := func() error {
+			r, err := pool.Get(ctx, newTask())
+			if err != nil {
+				return err
+			}
+			// Random delay to simulate downloading inputs
+			sleepRandMicros(10)
+			tasksStarted <- struct{}{}
+			if result := r.Run(ctx); result.Error != nil {
+				return result.Error
+			}
+			// Random delay to simulate uploading outputs
+			sleepRandMicros(10)
+			if err := pool.Add(ctx, r); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		var wg sync.WaitGroup
+		for i := 0; i < numTasks; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs <- runTask()
+			}()
+			// Random, tiny delay to stagger the tasks a bit more.
+			sleepRandMicros(1)
+		}
+
+		nStarted := 0
+		for range tasksStarted {
+			nStarted++
+			if nStarted == numTasks/2 {
+				err := pool.Shutdown(ctx)
+				require.NoError(t, err)
+				break
+			}
+		}
+
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err == nil || status.IsUnavailableError(err) {
+				continue
+			}
+			require.NoError(t, err, "runner pool shutdown caused non-retriable error")
+		}
+	}
 }
 
 func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T) {
