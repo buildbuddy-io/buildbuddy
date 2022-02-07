@@ -29,11 +29,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	gomysql "github.com/go-sql-driver/mysql"
+	gosqlite "github.com/mattn/go-sqlite3"
 )
 
 const (
-	sqliteDialect = "sqlite3"
-	mysqlDialect  = "mysql"
+	SqliteDialect = "sqlite3"
+	MysqlDialect  = "mysql"
 
 	defaultDbStatsPollInterval       = 5 * time.Second
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
@@ -220,9 +223,9 @@ func instrumentGORM(gdb *gorm.DB) {
 func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch dialect {
-	case sqliteDialect:
+	case SqliteDialect:
 		dialector = sqlite.Open(connString)
-	case mysqlDialect:
+	case MysqlDialect:
 		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
@@ -299,7 +302,7 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) error {
 	}
 
 	// SQLITE Special! To avoid "database is locked errors":
-	if dialect == sqliteDialect {
+	if dialect == SqliteDialect {
 		db.SetMaxOpenConns(1)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
@@ -459,7 +462,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 // Epoch) to a month in UTC time, formatted as "YYYY-MM".
 func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 	timestampExpr := fieldName + `/1000000`
-	if h.dialect == sqliteDialect {
+	if h.dialect == SqliteDialect {
 		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
 	}
 	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
@@ -473,7 +476,7 @@ func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
 	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
 	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
-	if h.dialect == sqliteDialect {
+	if h.dialect == SqliteDialect {
 		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
 	}
 	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
@@ -488,7 +491,7 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 //      (potentially_already_existing_key)
 //      VALUES ("key_value")`
 func (h *DBHandle) InsertIgnoreModifier() string {
-	if h.dialect == sqliteDialect {
+	if h.dialect == SqliteDialect {
 		return "OR IGNORE"
 	}
 	return "IGNORE"
@@ -496,4 +499,16 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
+}
+
+func (h *DBHandle) IsDuplicateKeyError(err error) bool {
+	var mysqlErr *gomysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		return true
+	}
+	var sqliteErr gosqlite.Error
+	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
+		return true
+	}
+	return false
 }

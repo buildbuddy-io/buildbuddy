@@ -18,6 +18,5 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
-        "@io_gorm_gorm//clause",
     ],
 )
