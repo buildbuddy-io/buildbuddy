@@ -15,8 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
-	"gorm.io/gorm/callbacks"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
 	// We support MySQL (preferred) and Sqlite3.
@@ -498,39 +496,4 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
-}
-
-// Returns []Assignment specifying every column for the given model except those
-// specified. Useful for updates that want to preserve only specific columns and
-// update all others, as the other way (specifying each column to be updated) is
-// not future-proof against columns that may be added later.
-func (h *DBHandle) AllAssignmentClausesExcept(model interface{}, exc []string) []clause.Assignment {
-	// stmt := h.Session(&gorm.Session{DryRun: true}).Clauses(clause.OnConflict{UpdateAll: true}).Create(model).Statement
-
-	stmt := h.DB().Model(model).Statement
-	stmt.Parse(model)
-	stmt.AddClauseIfNotExists(clause.Insert{})
-	stmt.AddClauseIfNotExists(clause.OnConflict{UpdateAll: true})
-	stmt.AddClause(callbacks.ConvertToCreateValues(stmt))
-
-	c, ok := stmt.Clauses["ON CONFLICT"]
-	if !ok {
-		return []clause.Assignment{}
-	}
-	onConflict, _ := c.Expression.(clause.OnConflict)
-	if onConflict.DoUpdates == nil {
-		return []clause.Assignment{}
-	}
-	u := onConflict.DoUpdates
-	excMap := make(map[string]bool)
-	for _, v := range exc {
-		excMap[v] = true
-	}
-	for i := 0; i < len(u); i++ {
-		if excMap[u[i].Column.Name] {
-			u[i] = u[len(u)-1]
-			u = u[:len(u)-1]
-		}
-	}
-	return u
 }
