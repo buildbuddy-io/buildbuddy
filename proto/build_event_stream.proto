@@ -567,6 +567,10 @@ enum TestStatus {
   REMOTE_FAILURE = 6;
   FAILED_TO_BUILD = 7;
   TOOL_HALTED_BEFORE_TESTING = 8;
+
+  // Buildbuddy-specific enum
+  // The test is cancelled by the user
+  CANCELLED = 1000;
 }
 
 // Payload on events reporting about individual test action.

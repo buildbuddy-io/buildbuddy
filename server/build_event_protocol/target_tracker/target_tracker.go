@@ -33,6 +33,7 @@ const (
 	targetStateCompleted
 	targetStateResult
 	targetStateSummary
+	targetStateAborted
 )
 
 type result struct {
@@ -68,6 +69,15 @@ func newTarget(label string) *target {
 	}
 }
 
+func getTestStatus(aborted *build_event_stream.Aborted) build_event_stream.TestStatus {
+	switch aborted.GetReason() {
+	case build_event_stream.Aborted_USER_INTERRUPTED:
+		return build_event_stream.TestStatus_CANCELLED
+	default:
+		return build_event_stream.TestStatus_FAILED_TO_BUILD
+	}
+}
+
 func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Configured:
@@ -92,6 +102,10 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		t.lastStopMillis = p.TestSummary.GetLastStopTimeMillis()
 		t.totalDurationMillis = p.TestSummary.GetTotalRunDurationMillis()
 		t.state = targetStateSummary
+	case *build_event_stream.BuildEvent_Aborted:
+		t.buildSuccess = false
+		t.state = targetStateAborted
+		t.overallStatus = getTestStatus(p.Aborted)
 	}
 }
 
@@ -268,8 +282,13 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-	case *build_event_stream.BuildEvent_Finished:
-		t.handleFinishedEvent(ctx, event)
+	case *build_event_stream.BuildEvent_Aborted:
+		t.handleEvent(event)
+	}
+
+	if event.GetLastMessage() {
+		// Handle last message
+		t.handleLastEvent(ctx, event)
 	}
 }
 
@@ -311,7 +330,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
 }
 
-func (t *TargetTracker) handleFinishedEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	if t.buildEventAccumulator.Command() != "test" {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.buildEventAccumulator.InvocationID())
 		return
