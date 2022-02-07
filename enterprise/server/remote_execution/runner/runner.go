@@ -775,7 +775,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.isShuttingDown {
-		return nil, status.UnavailableErrorf("Could not get new task runner since executor is shutting down.")
+		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
