@@ -25,7 +25,7 @@ import (
 
 // If a request is received that will result in a nodehost.Sync{Propose/Read},
 // but not deadline is set, defaultContextTimeout will be applied.
-const defaultContextTimeout = 60 * time.Second
+const DefaultContextTimeout = 60 * time.Second
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
@@ -239,7 +239,7 @@ func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord 
 
 func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 		ctx = c
 	}
@@ -270,7 +270,7 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 
 func SyncReadLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 		ctx = c
 	}

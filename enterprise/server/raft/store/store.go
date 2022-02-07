@@ -407,6 +407,11 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
 	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetHeader().GetReplica().GetClusterId(), buf)
 	if err != nil {
 		return nil, err
