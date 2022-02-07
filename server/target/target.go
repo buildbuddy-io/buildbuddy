@@ -49,6 +49,8 @@ func convertToCommonStatus(in build_event_stream.TestStatus) cmpb.Status {
 		return cmpb.Status_FAILED_TO_BUILD
 	case build_event_stream.TestStatus_TOOL_HALTED_BEFORE_TESTING:
 		return cmpb.Status_INCOMPLETE
+	case build_event_stream.TestStatus_CANCELLED:
+		return cmpb.Status_CANCELLED
 	default:
 		return cmpb.Status_STATUS_UNSPECIFIED
 	}
