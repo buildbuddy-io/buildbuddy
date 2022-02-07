@@ -217,6 +217,7 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 					StartTime: tsPb,
 					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),
 				},
+				InvocationCreatedAtUsec: row.CreatedAtUsec,
 			})
 			if nextPageToken == nil || nextPageToken.GetInvocationEndTimeUsec() >= row.CreatedAtUsec {
 				nextPageToken = &tppb.PaginationToken{

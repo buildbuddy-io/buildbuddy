@@ -227,6 +227,11 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
+	//
+	// TODO(bduffany): Make this access to r.state thread-safe. The pool can be
+	// shutdown while this func is executing, which concurrently sets the runner
+	// state to "removed". This doesn't cause any known issues right now, but is
+	// error prone.
 	switch r.state {
 	case initial:
 		err := container.PullImageIfNecessary(
@@ -243,8 +248,10 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		break
 	case ready:
 		break
+	case removed:
+		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
-		return commandutil.ErrorResult(status.FailedPreconditionErrorf("unexpected runner state %d; this should never happen", r.state))
+		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", r.state))
 	}
 
 	if r.supportsPersistentWorkers(ctx, command) {
@@ -408,13 +415,9 @@ func NewPool(env environment.Env) (*Pool, error) {
 	return p, nil
 }
 
-func (p *Pool) shuttingDown() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.isShuttingDown
-}
-
-// Add pauses the runner so that it may later be returned from Get.
+// Add pauses the runner and makes it available to be returned from the pool
+// via Get.
+//
 // If an error is returned, the runner was not successfully added to the pool,
 // and should be removed.
 func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
@@ -427,20 +430,32 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 	return nil
 }
 
-func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
-	if p.shuttingDown() {
+func (p *Pool) checkAddPreconditions(r *CommandRunner) *labeledError {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if p.isShuttingDown {
 		return &labeledError{
 			status.UnavailableError("pool is shutting down; new runners cannot be added."),
 			"pool_shutting_down",
 		}
 	}
-
+	// Note: shutdown can change the state to removed, so we need the lock to be
+	// held for this check.
 	if r.state != ready {
 		return &labeledError{
 			status.InternalErrorf("unexpected runner state %d; this should never happen", r.state),
 			"unexpected_runner_state",
 		}
 	}
+	return nil
+}
+
+func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
+	if err := p.checkAddPreconditions(r); err != nil {
+		return err
+	}
+
 	if err := r.Container.Pause(ctx); err != nil {
 		return &labeledError{
 			status.WrapError(err, "failed to pause container before adding to the pool"),
@@ -484,6 +499,13 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// The pool might have shut down while we were pausing the container. We don't
+	// hold the lock while pausing since it is relatively slow, so need to re-check
+	// whether the pool shut down here.
+	if p.isShuttingDown {
+		r.RemoveInBackground()
+		return nil
+	}
 
 	if p.maxRunnerCount <= 0 {
 		return &labeledError{
@@ -749,6 +771,11 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		Workspace:          ws,
 		VFS:                fs,
 		VFSServer:          vfsServer,
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.isShuttingDown {
+		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
 	p.runners = append(p.runners, r)
 	return r, nil
