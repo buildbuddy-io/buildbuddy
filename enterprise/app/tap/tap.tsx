@@ -3,14 +3,13 @@ import Long from "long";
 import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
-import { api, target } from "../../../proto/target_ts_proto";
+import { target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import Select, { Option } from "../../../app/components/select/select";
 import { Filter } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
-import { timestampToUnixNanos, durationToNanos } from "../../../app/util/proto";
 
 interface Props {
   user: User;
@@ -140,15 +139,15 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   groupByCommit(targetHistories: target.ITargetHistory[]): Pick<State, "commits" | "commitToTargetIdToStatus"> {
-    const commitToMaxTargetEndTimestamp = new Map<string, number>();
+    const commitToMaxInvocationCreatedAtUsec = new Map<string, number>();
     const commitToTargetIdToStatus = new Map<string, Map<string, target.ITargetStatus>>();
 
     for (const history of targetHistories) {
       for (const targetStatus of history.targetStatus) {
-        const timestamp = endTimestampUnixNanos(targetStatus.timing);
-        const commitMaxTimestamp = commitToMaxTargetEndTimestamp.get(targetStatus.commitSha) || 0;
+        const timestamp = Number(targetStatus.invocationCreatedAtUsec);
+        const commitMaxTimestamp = commitToMaxInvocationCreatedAtUsec.get(targetStatus.commitSha) || 0;
         if (timestamp > commitMaxTimestamp) {
-          commitToMaxTargetEndTimestamp.set(targetStatus.commitSha, timestamp);
+          commitToMaxInvocationCreatedAtUsec.set(targetStatus.commitSha, timestamp);
         }
 
         let targetIdToStatus = commitToTargetIdToStatus.get(targetStatus.commitSha);
@@ -158,18 +157,20 @@ export default class TapComponent extends React.Component<Props, State> {
         }
 
         // For a given commit, the representative target status that
-        // we show in the UI is the one that ended the latest.
+        // we show in the UI is the one whose corresponding invocation
+        // was created latest.
+        //
         // TODO(bduffany): Keep track of per-target count by commit, in
         // case the same target was executed multiple times for a given
         // commit. Otherwise the count stat looks incorrect.
         const existing = targetIdToStatus.get(history.target.id);
-        if (!existing || timestamp > endTimestampUnixNanos(existing.timing)) {
+        if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
           targetIdToStatus.set(history.target.id, targetStatus);
         }
       }
     }
-    const commits = [...commitToMaxTargetEndTimestamp.keys()].sort(
-      (a, b) => commitToMaxTargetEndTimestamp.get(b) - commitToMaxTargetEndTimestamp.get(a)
+    const commits = [...commitToMaxInvocationCreatedAtUsec.keys()].sort(
+      (a, b) => commitToMaxInvocationCreatedAtUsec.get(b) - commitToMaxInvocationCreatedAtUsec.get(a)
     );
 
     return { commits, commitToTargetIdToStatus };
@@ -469,8 +470,4 @@ export default class TapComponent extends React.Component<Props, State> {
       </div>
     );
   }
-}
-
-function endTimestampUnixNanos(timing: api.v1.ITiming): number {
-  return timestampToUnixNanos(timing.startTime) + durationToNanos(timing.duration);
 }

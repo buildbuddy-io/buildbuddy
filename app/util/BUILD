@@ -91,7 +91,6 @@ ts_library(
     name = "proto",
     srcs = ["proto.ts"],
     deps = [
-        "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
     ],
 )

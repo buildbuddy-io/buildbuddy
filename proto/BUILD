@@ -790,11 +790,6 @@ ts_proto_library(
 )
 
 ts_proto_library(
-    name = "duration_ts_proto",
-    proto = "@com_google_protobuf//:duration_proto",
-)
-
-ts_proto_library(
     name = "cache_ts_proto",
     proto = ":cache_proto",
 )
