@@ -53,12 +53,14 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		}
 
 		// Insert failed due to conflict; update the existing row instead.
-		selectSQL := `SELECT attempt FROM Invocations WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ?`
-		selectVars := []interface{}{ti.InvocationID, int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS), time.Now().Add(time.Hour * -4).UnixMicro()}
-		if d.h.DB().Dialector.Name() == db.MysqlDialect {
-			selectSQL += ` FOR UPDATE`
-		}
-		err = tx.Raw(selectSQL, selectVars...).Take(ti).Error
+		err = tx.Raw(`
+				SELECT attempt FROM Invocations
+				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
+				`+d.h.SelectForUpdateModifier(),
+			ti.InvocationID,
+			int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS),
+			time.Now().Add(time.Hour*-4).UnixMicro(),
+		).Take(ti).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// The invocation either succeeded or is more than 4 hours old. It may
