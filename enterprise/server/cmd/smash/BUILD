@@ -14,7 +14,6 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/log",
-        "//server/util/monitoring",
         "@com_github_bojand_ghz//printer",
         "@com_github_bojand_ghz//runner",
         "@com_github_golang_protobuf//proto:go_default_library",

@@ -28,8 +28,7 @@ const (
 	defaultGracePeriod = 4 * time.Second
 )
 
-// TODO(tylerw): Maybe this belongs in keys?
-func containsMetaRange(rd *rfpb.RangeDescriptor) bool {
+func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
 	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
@@ -185,7 +184,7 @@ func (l *Lease) assembleLeaseRequest() (*rfpb.RangeLeaseRecord, error) {
 	// any range that includes the metarange will be leased with a
 	// time-based lease, rather than a node epoch based one.
 	leaseRecord := &rfpb.RangeLeaseRecord{}
-	if containsMetaRange(l.rangeDescriptor) {
+	if ContainsMetaRange(l.rangeDescriptor) {
 		leaseRecord.Value = &rfpb.RangeLeaseRecord_Expiration{
 			Expiration: time.Now().Add(l.leaseDuration).UnixNano(),
 		}

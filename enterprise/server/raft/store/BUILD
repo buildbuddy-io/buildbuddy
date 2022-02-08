@@ -20,7 +20,6 @@ go_library(
         "//server/gossip",
         "//server/util/disk",
         "//server/util/log",
-        "//server/util/rangemap",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//:dragonboat",
