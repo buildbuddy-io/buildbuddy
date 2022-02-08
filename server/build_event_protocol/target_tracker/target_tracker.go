@@ -72,7 +72,7 @@ func newTarget(label string) *target {
 func getTestStatus(aborted *build_event_stream.Aborted) build_event_stream.TestStatus {
 	switch aborted.GetReason() {
 	case build_event_stream.Aborted_USER_INTERRUPTED:
-		return build_event_stream.TestStatus_CANCELLED
+		return build_event_stream.TestStatus_TOOL_HALTED_BEFORE_TESTING
 	default:
 		return build_event_stream.TestStatus_FAILED_TO_BUILD
 	}
