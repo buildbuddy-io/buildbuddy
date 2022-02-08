@@ -51,6 +51,15 @@
   align-items: center;
 }
 
+.code-menu-breadcrumbs {
+  font-size: 0.8em;
+  text-align: center;
+}
+
+.code-menu-breadcrumbs-environment {
+  font-weight: 600;
+}
+
 .code-main {
   display: flex;
   flex-grow: 1;
@@ -295,4 +304,15 @@
   border-radius: 8px;
   width: 100%;
   justify-content: center;
+}
+
+.hidden-viewer {
+  display: none;
+}
+
+.code-update-commit {
+  width: 0.8em;
+  height: 0.8em;
+  cursor: pointer;
+  stroke: #2196f3;
 }
