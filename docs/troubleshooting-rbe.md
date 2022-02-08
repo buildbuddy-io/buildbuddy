@@ -28,12 +28,12 @@ We recommend using the following flag to increase this remote timeout:
 
 ## exec user process caused "exec format error"
 
-This error occurs when your build is configured for darwin (Mac OSX) CPUs. BuildBuddy Cloud currently doesn't run Mac executors, but plan to in the coming months.
+This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors. Mac executors are not included in BuildBuddy Cloud's free-tier offering.
 
-In the meantime, you can configure your toolchains to target k8 - or execute your builds from a linux host using either Docker or a CI system of your choice.
+If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
 
 ## rpc error: code = Unavailable desc = No registered executors.
 
-This error occurs when your build is configured for darwin (Mac OSX) CPUs. BuildBuddy Cloud currently doesn't run Mac executors, but plan to in the coming months.
+This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors. Mac executors are not included in BuildBuddy Cloud's free-tier offering.
 
-In the meantime, you can configure your toolchains to target k8 - or execute your builds from a linux host using either Docker or a CI system of your choice.
+If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
