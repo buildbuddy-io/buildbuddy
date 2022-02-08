@@ -506,3 +506,44 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
 	return err
 }
+
+func (s *Store) Write(stream rfspb.Api_WriteServer) error {
+	var bytesWritten int64
+	var writeCloser io.WriteCloser
+	var file string
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if writeCloser == nil {
+			file, err = constants.FilePath(s.fileDir, req.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			wc, err := disk.FileWriter(stream.Context(), file)
+			if err != nil {
+				return err
+			}
+			writeCloser = wc
+		}
+		n, err := writeCloser.Write(req.Data)
+		if err != nil {
+			return err
+		}
+		bytesWritten += int64(n)
+		if req.FinishWrite {
+			if err := writeCloser.Close(); err != nil {
+				return err
+			}
+			//log.Debugf("Write(%q) succeeded.", file)
+			return stream.SendAndClose(&rfpb.WriteResponse{
+				CommittedSize: bytesWritten,
+			})
+		}
+	}
+	return nil
+}
