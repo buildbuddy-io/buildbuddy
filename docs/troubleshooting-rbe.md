@@ -30,10 +30,10 @@ We recommend using the following flag to increase this remote timeout:
 
 This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors. Mac executors are not included in BuildBuddy Cloud's free-tier offering.
 
-If you'd like to add Mac executors to your BuildBuddy Cloud account, please contact our sales team.
+If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
 
 ## rpc error: code = Unavailable desc = No registered executors.
 
 This error occurs when your build is configured for darwin (Mac OSX) CPUs, but attempting to run on Linux executors. Mac executors are not included in BuildBuddy Cloud's free-tier offering.
 
-If you'd like to add Mac executors to your BuildBuddy Cloud account, please contact our sales team.
+If you'd like to add Mac executors to your BuildBuddy Cloud account, please [contact our sales team](/request-demo/).
