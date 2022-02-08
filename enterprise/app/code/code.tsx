@@ -611,9 +611,7 @@ export default class CodeComponent extends React.Component<Props> {
         this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
 
         this.setState({ currentFilePath: fullPath, fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
-          setTimeout(() => {
-            this.diffEditor.layout();
-          }, 0);
+          this.diffEditor.layout();
         });
       });
   }
