@@ -94,6 +94,10 @@
   opacity: 0.7;
 }
 
+.tap .tap-block.no-status {
+  border: 1px dashed #bdbdbd;
+}
+
 .tap .tap-block.timing {
   background-color: #0d47a1;
 }

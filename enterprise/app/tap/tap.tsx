@@ -9,6 +9,7 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import Select, { Option } from "../../../app/components/select/select";
 import { Filter } from "lucide-react";
+import capabilities from "../../../app/capabilities/capabilities";
 
 interface Props {
   user: User;
@@ -17,7 +18,9 @@ interface Props {
 }
 
 interface State {
-  targetHistory: target.TargetHistory[];
+  targetHistory: target.ITargetHistory[];
+  commits: string[] | null;
+  commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
   loading: boolean;
   coloring: "status" | "timing";
   sort: "target" | "count" | "pass" | "avgDuration" | "maxDuration";
@@ -27,6 +30,11 @@ interface State {
   stats: Map<string, Stat>;
   maxInvocations: number;
   maxDuration: number;
+}
+
+interface CommitStatus {
+  commitSha: string;
+  status: target.ITargetStatus | null;
 }
 
 interface Stat {
@@ -40,11 +48,11 @@ interface Stat {
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
 
-export default class TapComponent extends React.Component<Props> {
-  props: Props;
-
+export default class TapComponent extends React.Component<Props, State> {
   state: State = {
     targetHistory: [],
+    commits: null,
+    commitToTargetIdToStatus: null,
     loading: true,
     sort: "target",
     direction: "asc",
@@ -55,6 +63,8 @@ export default class TapComponent extends React.Component<Props> {
     maxInvocations: 0,
     maxDuration: 1,
   };
+
+  isV2 = capabilities.config.testGridV2Enabled;
 
   subscription: Subscription;
 
@@ -87,6 +97,7 @@ export default class TapComponent extends React.Component<Props> {
 
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
     request.endTimeUsec = Long.fromNumber(moment().utc().valueOf() * 1000);
+    request.serverSidePagination = this.isV2;
 
     this.setState({ loading: true });
     rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
@@ -120,10 +131,49 @@ export default class TapComponent extends React.Component<Props> {
     this.setState({
       loading: false,
       targetHistory: response.invocationTargets,
+      ...(this.isV2 && this.groupByCommit(response.invocationTargets)),
       stats: this.state.stats,
       maxInvocations: maxInvocations,
       maxDuration: maxDuration,
     });
+  }
+
+  groupByCommit(targetHistories: target.ITargetHistory[]): Pick<State, "commits" | "commitToTargetIdToStatus"> {
+    const commitToMaxInvocationCreatedAtUsec = new Map<string, number>();
+    const commitToTargetIdToStatus = new Map<string, Map<string, target.ITargetStatus>>();
+
+    for (const history of targetHistories) {
+      for (const targetStatus of history.targetStatus) {
+        const timestamp = Number(targetStatus.invocationCreatedAtUsec);
+        const commitMaxTimestamp = commitToMaxInvocationCreatedAtUsec.get(targetStatus.commitSha) || 0;
+        if (timestamp > commitMaxTimestamp) {
+          commitToMaxInvocationCreatedAtUsec.set(targetStatus.commitSha, timestamp);
+        }
+
+        let targetIdToStatus = commitToTargetIdToStatus.get(targetStatus.commitSha);
+        if (!targetIdToStatus) {
+          targetIdToStatus = new Map<string, target.ITargetStatus>();
+          commitToTargetIdToStatus.set(targetStatus.commitSha, targetIdToStatus);
+        }
+
+        // For a given commit, the representative target status that
+        // we show in the UI is the one whose corresponding invocation
+        // was created latest.
+        //
+        // TODO(bduffany): Keep track of per-target count by commit, in
+        // case the same target was executed multiple times for a given
+        // commit. Otherwise the count stat looks incorrect.
+        const existing = targetIdToStatus.get(history.target.id);
+        if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
+          targetIdToStatus.set(history.target.id, targetStatus);
+        }
+      }
+    }
+    const commits = [...commitToMaxInvocationCreatedAtUsec.keys()].sort(
+      (a, b) => commitToMaxInvocationCreatedAtUsec.get(b) - commitToMaxInvocationCreatedAtUsec.get(a)
+    );
+
+    return { commits, commitToTargetIdToStatus };
   }
 
   navigateTo(event: any, destination: string) {
@@ -197,7 +247,7 @@ export default class TapComponent extends React.Component<Props> {
     window.location.hash = event?.target?.value;
   }
 
-  sort(a: target.TargetHistory, b: target.TargetHistory) {
+  sort(a: target.ITargetHistory, b: target.ITargetHistory) {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
@@ -216,6 +266,18 @@ export default class TapComponent extends React.Component<Props> {
       case "maxDuration":
         return firstStats.maxDuration - secondStats.maxDuration;
     }
+  }
+
+  getTargetStatuses(history: target.ITargetHistory): CommitStatus[] {
+    if (!this.isV2) {
+      return history.targetStatus.map((status) => ({ commitSha: status.commitSha, status }));
+    }
+    // For test grid V2, ignore the incoming history (for now) and use the indexes we
+    // built to order by commit.
+    return this.state.commits.map((commitSha) => ({
+      commitSha,
+      status: this.state.commitToTargetIdToStatus.get(commitSha)?.get(history.target.id) || null,
+    }));
   }
 
   render() {
@@ -340,22 +402,40 @@ export default class TapComponent extends React.Component<Props> {
                         </span>
                       </div>
                       <div className="tap-row">
-                        {targetHistory.targetStatus
+                        {this.getTargetStatuses(targetHistory)
                           .slice(0, this.state.invocationLimit)
-                          .map((status: target.TargetStatus) => {
+                          .map((commitStatus: CommitStatus) => {
+                            const { commitSha, status } = commitStatus;
+                            if (status === null) {
+                              // For V2, null means the target was not run for this commit.
+                              return (
+                                <div
+                                  className="tap-block no-status"
+                                  title={
+                                    commitSha
+                                      ? `Target status not reported at commit ${commitSha}`
+                                      : "No status reported"
+                                  }
+                                />
+                              );
+                            }
+
                             let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
                               targetHistory.target.label
                             )}`;
+                            let title =
+                              this.state.coloring == "timing"
+                                ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
+                                : this.statusToString(status.status);
+                            if (this.isV2 && commitSha) {
+                              title += ` at commit ${commitSha}`;
+                            }
                             return (
                               <a
                                 key={targetHistory.target.id + status.invocationId}
                                 href={destinationUrl}
                                 onClick={this.navigateTo.bind(this, destinationUrl)}
-                                title={
-                                  this.state.coloring == "timing"
-                                    ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
-                                    : this.statusToString(status.status)
-                                }
+                                title={title}
                                 style={{
                                   opacity:
                                     this.state.coloring == "timing"
