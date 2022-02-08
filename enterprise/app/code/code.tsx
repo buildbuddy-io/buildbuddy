@@ -9,10 +9,11 @@ import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import { ArrowUpCircle, Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
+import alert_service from "../../../app/alert/alert_service";
 
 interface Props {
   user: User;
@@ -23,14 +24,17 @@ interface Props {
 interface State {
   owner: string;
   repo: string;
+  commitSHA: string;
   repoResponse: any;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, any[]>;
   treeShaToPathMap: Map<string, string>;
   fullPathToModelMap: Map<string, any>;
+  fullPathToDiffModelMap: Map<string, any>;
   originalFileContents: Map<string, string>;
   currentFilePath: string;
   changes: Map<string, string>;
+  mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
   prLink: string;
   prNumber: string;
@@ -56,14 +60,17 @@ export default class CodeComponent extends React.Component<Props> {
   state: State = {
     owner: "",
     repo: "",
+    commitSHA: "",
     repoResponse: undefined,
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, any[]>(),
     treeShaToPathMap: new Map<string, string>(),
     fullPathToModelMap: new Map<string, any>(),
+    fullPathToDiffModelMap: new Map<string, any>(),
     originalFileContents: new Map<string, any>(),
     currentFilePath: "",
     changes: new Map<string, string>(),
+    mergeConflicts: new Map<string, string>(),
     pathToIncludeChanges: new Map<string, boolean>(),
     prLink: "",
     prBranch: "",
@@ -79,8 +86,10 @@ export default class CodeComponent extends React.Component<Props> {
   };
 
   editor: any;
+  diffEditor: any;
 
   codeViewer = React.createRef<HTMLDivElement>();
+  diffViewer = React.createRef<HTMLDivElement>();
 
   octokit: any;
 
@@ -105,6 +114,7 @@ export default class CodeComponent extends React.Component<Props> {
 
   handleWindowResize() {
     this.editor?.layout();
+    this.diffEditor?.layout();
   }
 
   componentDidMount() {
@@ -120,7 +130,15 @@ export default class CodeComponent extends React.Component<Props> {
     });
 
     if (this.state.currentFilePath) {
-      this.editor.setModel(this.state.fullPathToModelMap.get(this.state.currentFilePath));
+      if (this.state.mergeConflicts.has(this.state.currentFilePath)) {
+        this.handleViewConflictClicked(
+          this.state.currentFilePath,
+          this.state.mergeConflicts.get(this.state.currentFilePath),
+          undefined
+        );
+      } else {
+        this.editor.setModel(this.state.fullPathToModelMap.get(this.state.currentFilePath));
+      }
     }
 
     this.editor.onDidChangeModelContent(() => {
@@ -194,10 +212,16 @@ export default class CodeComponent extends React.Component<Props> {
       return;
     }
     this.setState({ owner: repo.owner, repo: repo.repo }, () => {
-      this.octokit.request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/master`).then((response: any) => {
-        console.log(response);
-        this.setState({ repoResponse: response });
-      });
+      let commit = this.state.commitSHA || "master";
+
+      this.octokit
+        .request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/${commit}`)
+        .then((response: any) => {
+          console.log(response);
+          this.setState({ repoResponse: response, commitSHA: response.data.sha }, () => {
+            this.saveState();
+          });
+        });
     });
   }
 
@@ -325,6 +349,10 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   async handleReviewClicked() {
+    // todo: make sure commit is up to date
+
+    // todo: make sure make sure there are no merge conflicts left
+
     if (!this.props.user.githubToken) {
       this.handleGitHubClicked();
       return;
@@ -482,6 +510,55 @@ export default class CodeComponent extends React.Component<Props> {
     });
     event.stopPropagation();
   }
+
+  handleUpdateCommitSha() {
+    this.octokit
+      .request(`/repos/${this.state.owner}/${this.state.repo}/compare/${this.state.commitSHA}...master`)
+      .then((response: any) => {
+        console.log(response);
+        let newCommits = response.data.ahead_by;
+        let newSha = response.data.commits.pop()?.sha;
+        if (newCommits == 0) {
+          alert_service.success(`You're already up to date!`);
+          return;
+        }
+
+        let conflictCount = 0;
+        for (let file of response.data.files) {
+          if (this.state.changes.has(file.filename)) {
+            this.state.mergeConflicts.set(file.filename, file.sha);
+            conflictCount++;
+          }
+        }
+
+        this.octokit
+          .request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/${newSha}`)
+          .then((response: any) => {
+            console.log(response);
+            this.setState(
+              { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
+              () => {
+                let message = `You were ${newCommits} commits behind head. You are now up to date!`;
+                if (conflictCount > 0) {
+                  message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
+                  alert_service.error(message);
+                } else {
+                  alert_service.success(message);
+                }
+                this.saveState();
+                if (this.state.mergeConflicts.has(this.state.currentFilePath)) {
+                  this.handleViewConflictClicked(
+                    this.state.currentFilePath,
+                    this.state.mergeConflicts.get(this.state.currentFilePath),
+                    undefined
+                  );
+                }
+              }
+            );
+          });
+      });
+  }
+
   onTitleChange(e: React.ChangeEvent) {
     const input = e.target as HTMLInputElement;
     this.setState({ prTitle: input.value });
@@ -490,6 +567,55 @@ export default class CodeComponent extends React.Component<Props> {
   onBodyChange(e: React.ChangeEvent) {
     const input = e.target as HTMLInputElement;
     this.setState({ prBody: input.value });
+  }
+
+  handleResolveClicked(fullPath: string, sha: string, event: MouseEvent) {
+    event.stopPropagation();
+    this.state.changes.set(fullPath, this.state.fullPathToDiffModelMap.get(fullPath).modified.getValue());
+    this.state.fullPathToDiffModelMap.delete(fullPath);
+    this.state.mergeConflicts.delete(fullPath);
+    this.setState(
+      {
+        changes: this.state.changes,
+        fullPathToDiffModelMap: this.state.fullPathToDiffModelMap,
+        mergeConflicts: this.state.mergeConflicts,
+      },
+      () => {
+        this.saveState();
+      }
+    );
+  }
+
+  handleViewConflictClicked(fullPath: string, sha: string, event: MouseEvent) {
+    event?.stopPropagation();
+    this.octokit.rest.git
+      .getBlob({
+        owner: this.state.owner,
+        repo: this.state.repo,
+        file_sha: sha,
+      })
+      .then((response: any) => {
+        console.log(response);
+        if (!this.diffEditor) {
+          this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current);
+        }
+        let fileContents = atob(response.data.content);
+        let editedModel = this.state.fullPathToModelMap.get(fullPath);
+        let uri = monaco.Uri.file(`${fullPath}-${sha}`);
+        let latestModel = monaco.editor.getModel(uri);
+        if (!latestModel) {
+          latestModel = monaco.editor.createModel(fileContents, undefined, uri);
+        }
+        let diffModel = { original: latestModel, modified: editedModel };
+        this.diffEditor.setModel(diffModel);
+        this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
+
+        this.setState({ currentFilePath: fullPath, fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+          setTimeout(() => {
+            this.diffEditor.layout();
+          }, 0);
+        });
+      });
   }
 
   // TODO(siggisim): Make the menu look nice
@@ -504,6 +630,7 @@ export default class CodeComponent extends React.Component<Props> {
       this.editor?.layout();
     }, 0);
 
+    let showDiffView = this.state.fullPathToDiffModelMap.has(this.state.currentFilePath);
     return (
       <div className="code-editor">
         <div className="code-menu">
@@ -512,6 +639,35 @@ export default class CodeComponent extends React.Component<Props> {
               <img alt="BuildBuddy Code" src="/image/logo_dark.svg" className="logo" /> Code{" "}
               <Code className="icon code-logo" />
             </a>
+          </div>
+          <div className="code-menu-breadcrumbs">
+            <div className="code-menu-breadcrumbs-environment">
+              {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
+              <a target="_blank" href={`http://github.com/${this.state.owner}`}>
+                {this.state.owner}
+              </a>{" "}
+              /{" "}
+              <a target="_blank" href={`http://github.com/${this.state.owner}/${this.state.repo}`}>
+                {this.state.repo}
+              </a>{" "}
+              {/* <a href="#">master</a> / TODO: add branch to breadcrumb  */}@{" "}
+              <a
+                target="_blank"
+                title={this.state.commitSHA}
+                href={`http://github.com/${this.state.owner}/${this.state.repo}/commit/${this.state.commitSHA}`}>
+                {this.state.commitSHA?.slice(0, 7)}
+              </a>{" "}
+              <span onClick={this.handleUpdateCommitSha.bind(this)}>
+                <ArrowUpCircle className="code-update-commit" />
+              </span>{" "}
+            </div>
+            <div className="code-menu-breadcrumbs-filename">
+              {this.state.currentFilePath ? (
+                <>
+                  <a href="#">{this.state.currentFilePath}</a>
+                </>
+              ) : undefined}
+            </div>
           </div>
           <div className="code-menu-actions">
             {this.state.changes.size > 0 && !this.state.prBranch && (
@@ -585,7 +741,8 @@ export default class CodeComponent extends React.Component<Props> {
           </div>
           <div className="code-container">
             <div className="code-viewer-container">
-              <div className="code-viewer" ref={this.codeViewer} />
+              <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
+              <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
             </div>
             {this.state.changes.size > 0 && (
               <div className="code-diff-viewer">
@@ -617,6 +774,28 @@ export default class CodeComponent extends React.Component<Props> {
                       type="checkbox"
                     />{" "}
                     {fullPath}
+                    {this.state.mergeConflicts.has(fullPath) && fullPath != this.state.currentFilePath && (
+                      <span
+                        className="code-revert-button"
+                        onClick={this.handleViewConflictClicked.bind(
+                          this,
+                          fullPath,
+                          this.state.mergeConflicts.get(fullPath)
+                        )}>
+                        View Conflict
+                      </span>
+                    )}
+                    {this.state.mergeConflicts.has(fullPath) && fullPath == this.state.currentFilePath && (
+                      <span
+                        className="code-revert-button"
+                        onClick={this.handleResolveClicked.bind(
+                          this,
+                          fullPath,
+                          this.state.mergeConflicts.get(fullPath)
+                        )}>
+                        Resolve Conflict
+                      </span>
+                    )}
                     <span className="code-revert-button" onClick={this.handleRevertClicked.bind(this, fullPath)}>
                       Revert
                     </span>
@@ -682,6 +861,21 @@ function stateReplacer(key: any, value: any) {
       }),
     };
   }
+  if (key == "fullPathToDiffModelMap") {
+    return {
+      dataType: "DiffModelMap",
+      value: Array.from(value.entries()).map((e: any) => {
+        return {
+          dataType: "Model",
+          key: e[0],
+          original: e[1].original.getValue(),
+          modified: e[1].modified.getValue(),
+          originalUri: e[1].original.uri,
+          modifiedUri: e[1].modified.uri,
+        };
+      }),
+    };
+  }
   if (value instanceof Map) {
     return {
       dataType: "Map",
@@ -698,8 +892,18 @@ function stateReviver(key: any, value: any) {
       return new Map(value.value);
     }
     if (value.dataType === "ModelMap") {
-      console.log(value.value.map((e: any) => e.uri.path));
       return new Map(value.value.map((e: any) => [e.key, monaco.editor.createModel(e.value, undefined, e.uri.path)]));
+    }
+    if (value.dataType === "DiffModelMap") {
+      return new Map(
+        value.value.map((e: any) => [
+          e.key,
+          {
+            original: monaco.editor.createModel(e.original, undefined, e.originalUri.path),
+            modified: monaco.editor.createModel(e.modified, undefined, e.modifiedUri.path),
+          },
+        ])
+      );
     }
   }
   return value;
