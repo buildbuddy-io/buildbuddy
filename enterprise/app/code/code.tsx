@@ -516,6 +516,7 @@ export default class CodeComponent extends React.Component<Props> {
     event.stopPropagation();
   }
 
+  // If a callback is set, alert messages will not be shown.
   handleUpdateCommitSha(callback?: (conflicts: number) => void) {
     this.octokit
       .request(`/repos/${this.state.owner}/${this.state.repo}/compare/${this.state.commitSHA}...master`)
