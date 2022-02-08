@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:telemetry_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/rpc/filters",
         "//server/tables",
         "//server/util/db",

@@ -22,5 +22,6 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/role",
+        "@io_gorm_gorm//:gorm",
     ],
 )

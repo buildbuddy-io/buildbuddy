@@ -89,7 +89,7 @@ func TestCreate(t *testing.T) {
 	assert.True(t, rsp.GetWebhookRegistered())
 
 	var row tables.Workflow
-	err = te.GetDBHandle().First(&row).Error
+	err = te.GetDBHandle().DB().First(&row).Error
 	assert.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
 	assert.Equal(t, "GROUP1", row.UserID, "inserted table workflow user should match auth")
@@ -119,7 +119,7 @@ func TestDelete(t *testing.T) {
 		RepoURL:              "file:///ANY",
 		GitProviderWebhookID: testgit.FakeWebhookID,
 	}
-	err := te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().DB().Create(&row).Error
 	assert.NoError(t, err)
 
 	req := &wfpb.DeleteWorkflowRequest{Id: "WF1"}
@@ -129,7 +129,7 @@ func TestDelete(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, testgit.FakeWebhookID, provider.UnregisteredWebhookID, "should unregister webhook upon deletion")
 
-	err = te.GetDBHandle().First(&row).Error
+	err = te.GetDBHandle().DB().First(&row).Error
 	assert.True(t, db.IsRecordNotFound(err))
 }
 
@@ -149,7 +149,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID1",
 	}
-	err := te.GetDBHandle().Create(&row).Error
+	err := te.GetDBHandle().DB().Create(&row).Error
 	require.NoError(t, err)
 
 	row2 := &tables.Workflow{
@@ -160,7 +160,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID2",
 	}
-	err = te.GetDBHandle().Create(&row2).Error
+	err = te.GetDBHandle().DB().Create(&row2).Error
 	require.NoError(t, err)
 
 	row3 := &tables.Workflow{
@@ -171,7 +171,7 @@ func TestList(t *testing.T) {
 		RepoURL:    "file:///ANY",
 		WebhookID:  "WHID3",
 	}
-	err = te.GetDBHandle().Create(&row3).Error
+	err = te.GetDBHandle().DB().Create(&row3).Error
 	require.NoError(t, err)
 
 	user1Req := &wfpb.GetWorkflowsRequest{

@@ -7,6 +7,7 @@ import (
 	"net"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -26,10 +27,10 @@ var (
 
 type TelemetryServer struct {
 	env environment.Env
-	h   *db.DBHandle
+	h   interfaces.DBHandle
 }
 
-func NewTelemetryServer(env environment.Env, h *db.DBHandle) *TelemetryServer {
+func NewTelemetryServer(env environment.Env, h interfaces.DBHandle) *TelemetryServer {
 	return &TelemetryServer{
 		env: env,
 		h:   h,

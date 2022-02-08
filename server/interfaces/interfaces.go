@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -211,6 +213,33 @@ type Cache interface {
 	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
 }
 
+type TxRunner func(tx *gorm.DB) error
+
+type DBOptions interface {
+	WithStaleReads() DBOptions
+	WithQueryName(queryName string) DBOptions
+	ReadOnly() bool
+	AllowStaleReads() bool
+	QueryName() string
+}
+
+type DBHandle interface {
+	// TODO(zoey): Remove these methods from the interface using new DB method
+	Raw(sql string, values ...interface{}) *gorm.DB
+	Exec(sql string, values ...interface{}) *gorm.DB
+	ScanRows(rows *sql.Rows, dest interface{}) error
+
+	DB() *gorm.DB
+	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
+	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
+	Transaction(ctx context.Context, txn TxRunner) error
+	ReadRow(out interface{}, where ...interface{}) error
+	UTCMonthFromUsecTimestamp(fieldName string) string
+	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
+	InsertIgnoreModifier() string
+	SetNowFunc(now func() time.Time)
+}
+
 type InvocationDB interface {
 	// Invocations API
 	InsertOrUpdateInvocation(ctx context.Context, in *tables.Invocation) (bool, error)
@@ -236,6 +265,7 @@ type AuthDB interface {
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
+	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }
 
 type UserDB interface {

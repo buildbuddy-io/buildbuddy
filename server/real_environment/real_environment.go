@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 
@@ -72,7 +71,7 @@ type RealEnv struct {
 	cacheRedisClient                 *redis.Client
 	defaultRedisClient               *redis.Client
 	remoteExecutionRedisClient       *redis.Client
-	dbHandle                         *db.DBHandle
+	dbHandle                         interfaces.DBHandle
 	remoteExecutionRedisPubSubClient *redis.Client
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
@@ -100,10 +99,10 @@ func (r *RealEnv) GetHealthChecker() interfaces.HealthChecker {
 }
 
 // Optional -- may not be set depending on environment configuration.
-func (r *RealEnv) SetDBHandle(h *db.DBHandle) {
+func (r *RealEnv) SetDBHandle(h interfaces.DBHandle) {
 	r.dbHandle = h
 }
-func (r *RealEnv) GetDBHandle() *db.DBHandle {
+func (r *RealEnv) GetDBHandle() interfaces.DBHandle {
 	return r.dbHandle
 }
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -36,7 +35,7 @@ type Env interface {
 
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
-	GetDBHandle() *db.DBHandle
+	GetDBHandle() interfaces.DBHandle
 	// GetStaticFilesystem returns the FS that is used to serve from the /static
 	// directory.
 	GetStaticFilesystem() fs.FS

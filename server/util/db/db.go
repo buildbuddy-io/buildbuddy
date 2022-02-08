@@ -48,7 +48,7 @@ var (
 )
 
 type DBHandle struct {
-	*gorm.DB
+	db            *gorm.DB
 	readReplicaDB *gorm.DB
 	dialect       string
 }
@@ -59,49 +59,75 @@ type Options struct {
 	queryName       string
 }
 
-func Opts() *Options {
+func Opts() interfaces.DBOptions {
 	return &Options{}
 }
 
-func (o *Options) WithStaleReads() *Options {
+func (o *Options) WithStaleReads() interfaces.DBOptions {
 	o.readOnly = true
 	o.allowStaleReads = true
 	return o
 }
 
 // WithQueryName specifies the query label to use in exported metrics.
-func (o *Options) WithQueryName(queryName string) *Options {
+func (o *Options) WithQueryName(queryName string) interfaces.DBOptions {
 	o.queryName = queryName
 	return o
 }
 
+func (o *Options) ReadOnly() bool {
+	return o.readOnly
+}
+
+func (o *Options) AllowStaleReads() bool {
+	return o.allowStaleReads
+}
+
+func (o *Options) QueryName() string {
+	return o.queryName
+}
+
 type DB = gorm.DB
 
-type txRunner func(tx *DB) error
+func (dbh *DBHandle) Raw(sql string, values ...interface{}) *gorm.DB {
+	return dbh.db.Raw(sql, values...)
+}
 
-func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts *Options) *DB {
-	db := dbh.DB
-	if opts.readOnly && opts.allowStaleReads && dbh.readReplicaDB != nil {
+func (dbh *DBHandle) Exec(sql string, values ...interface{}) *gorm.DB {
+	return dbh.db.Exec(sql, values...)
+}
+
+func (dbh *DBHandle) ScanRows(rows *sql.Rows, dest interface{}) error {
+	return dbh.db.ScanRows(rows, dest)
+}
+
+func (dbh *DBHandle) DB() *DB {
+	return dbh.db
+}
+
+func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {
+	db := dbh.db
+	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
 	}
 
 	db = db.WithContext(ctx)
-	if opts.queryName != "" {
-		db = db.Set(gormQueryNameKey, opts.queryName)
+	if opts.QueryName() != "" {
+		db = db.Set(gormQueryNameKey, opts.QueryName())
 	}
 	return db
 }
 
-func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts *Options, sql string, values ...interface{}) *gorm.DB {
+func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.DBOptions, sql string, values ...interface{}) *gorm.DB {
 	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
-func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts *Options, txn txRunner) error {
+func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces.DBOptions, txn interfaces.TxRunner) error {
 	return dbh.gormHandleForOpts(ctx, opts).Transaction(txn)
 }
 
-func (dbh *DBHandle) Transaction(ctx context.Context, txn txRunner) error {
-	return dbh.DB.WithContext(ctx).Transaction(txn)
+func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
+	return dbh.db.WithContext(ctx).Transaction(txn)
 }
 
 func IsRecordNotFound(err error) bool {
@@ -113,7 +139,7 @@ func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 	if len(where) > 1 {
 		whereArgs = where[1:]
 	}
-	err := dbh.DB.Where(where[0], whereArgs).First(out).Error
+	err := dbh.db.Where(where[0], whereArgs).First(out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return status.NotFoundError("Record not found")
 	}
@@ -335,7 +361,7 @@ func (r *dbStatsRecorder) recordStats() {
 	r.lastRecordedStats = stats
 }
 
-func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) (*DBHandle, error) {
+func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) (interfaces.DBHandle, error) {
 	if c.GetDBDataSource() == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
@@ -385,7 +411,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	}
 
 	dbh := &DBHandle{
-		DB:      primaryDB,
+		db:      primaryDB,
 		dialect: dialect,
 	}
 	hc.AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
@@ -466,4 +492,8 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 		return "OR IGNORE"
 	}
 	return "IGNORE"
+}
+
+func (h *DBHandle) SetNowFunc(now func() time.Time) {
+	h.db.Config.NowFunc = now
 }

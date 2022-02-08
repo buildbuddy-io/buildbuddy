@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -30,7 +29,6 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	oidc "github.com/coreos/go-oidc"
 )
 
@@ -522,63 +520,6 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	return nil
 }
 
-func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string) (*tables.User, error) {
-	dbHandle := env.GetDBHandle()
-	if dbHandle == nil {
-		return nil, status.FailedPreconditionErrorf("No handle to query database")
-	}
-	user := &tables.User{}
-	err := dbHandle.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
-		if err := userRow.Take(user).Error; err != nil {
-			return err
-		}
-		groupRows, err := tx.Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.use_group_owned_executors,
-				g.saml_idp_metadata_url,
-				ug.role
-			FROM `+"`Groups`"+` AS g, UserGroups AS ug
-			WHERE g.group_id = ug.group_group_id
-			AND ug.membership_status = ?
-			AND ug.user_user_id = ?
-			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
-		).Rows()
-		if err != nil {
-			return err
-		}
-		defer groupRows.Close()
-		for groupRows.Next() {
-			gr := &tables.GroupRole{}
-			err := groupRows.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
-				return err
-			}
-			user.Groups = append(user.Groups, gr)
-		}
-		return nil
-	})
-	return user, err
-}
-
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	if apiKey == "" {
 		return nil, status.UnauthenticatedError("missing API key")
@@ -711,7 +652,11 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 }
 
 func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*Claims, error) {
-	u, err := lookupUserFromSubID(env, ctx, subID)
+	authDB := env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.FailedPreconditionError("AuthDB not configured")
+	}
+	u, err := authDB.LookupUserFromSubID(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
