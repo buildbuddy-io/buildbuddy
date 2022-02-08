@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -19,10 +20,10 @@ import (
 
 type InvocationStatService struct {
 	env environment.Env
-	h   *db.DBHandle
+	h   interfaces.DBHandle
 }
 
-func NewInvocationStatService(env environment.Env, h *db.DBHandle) *InvocationStatService {
+func NewInvocationStatService(env environment.Env, h interfaces.DBHandle) *InvocationStatService {
 	return &InvocationStatService{
 		env: env,
 		h:   h,

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -75,10 +76,10 @@ func randomToken(length int) string {
 
 type UserDB struct {
 	env environment.Env
-	h   *db.DBHandle
+	h   interfaces.DBHandle
 }
 
-func NewUserDB(env environment.Env, h *db.DBHandle) (*UserDB, error) {
+func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 	db := &UserDB{
 		env: env,
 		h:   h,
@@ -182,7 +183,7 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
 
-	return createAPIKey(d.h.DB, groupID, newAPIKeyToken(), label, caps)
+	return createAPIKey(d.h.DB(), groupID, newAPIKeyToken(), label, caps)
 }
 
 func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
@@ -803,10 +804,10 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 
 func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 	u := &tables.User{UserID: userID}
-	return d.h.Delete(u).Error
+	return d.h.DB().Delete(u).Error
 }
 
 func (d *UserDB) DeleteGroup(ctx context.Context, groupID string) error {
 	u := &tables.Group{GroupID: groupID}
-	return d.h.Delete(u).Error
+	return d.h.DB().Delete(u).Error
 }

@@ -19,10 +19,10 @@ import (
 
 type InvocationDB struct {
 	env environment.Env
-	h   *db.DBHandle
+	h   interfaces.DBHandle
 }
 
-func NewInvocationDB(env environment.Env, h *db.DBHandle) *InvocationDB {
+func NewInvocationDB(env environment.Env, h interfaces.DBHandle) *InvocationDB {
 	return &InvocationDB{
 		env: env,
 		h:   h,
@@ -193,7 +193,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
 	ti := &tables.Invocation{InvocationID: invocationID}
-	return d.h.Delete(ti).Error
+	return d.h.DB().Delete(ti).Error
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
@@ -217,5 +217,5 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 }
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
-	d.h.DB.Config.NowFunc = now
+	d.h.SetNowFunc(now)
 }

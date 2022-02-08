@@ -12,6 +12,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/environment",
+        "//server/interfaces",
         "//server/tables",
         "//server/util/alert",
         "//server/util/blocklist",
