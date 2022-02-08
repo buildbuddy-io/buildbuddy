@@ -29,7 +29,7 @@ message FailureDetailMetadata {
   uint32 exit_code = 1;
 }
 
-  extend google.protobuf.EnumValueOptions {
+extend google.protobuf.EnumValueOptions {
   FailureDetailMetadata metadata = 1078;
 }
 
@@ -149,23 +149,23 @@ message FailureDetail {
     DiffAwareness diff_awareness = 182;
   }
 
-  reserved 102; // For internal use
-  reserved 105; // For internal use
-  reserved 109; // For internal use
-  reserved 111 to 113; // For internal use
-  reserved 120; // For internal use
-  reserved 128; // For internal use
-  reserved 131; // For internal use
-  reserved 133; // For internal use
-  reserved 138; // For internal use
-  reserved 143; // For internal use
-  reserved 149; // For internal use
-  reserved 155 to 157; // For internal use
-  reserved 165; // For internal use
-  reserved 170 to 171; // For internal use
-  reserved 176; // For internal use
-  reserved 178; // For internal use
-  reserved 180; // For internal use
+  reserved 102;         // For internal use
+  reserved 105;         // For internal use
+  reserved 109;         // For internal use
+  reserved 111 to 113;  // For internal use
+  reserved 120;         // For internal use
+  reserved 128;         // For internal use
+  reserved 131;         // For internal use
+  reserved 133;         // For internal use
+  reserved 138;         // For internal use
+  reserved 143;         // For internal use
+  reserved 149;         // For internal use
+  reserved 155 to 157;  // For internal use
+  reserved 165;         // For internal use
+  reserved 170 to 171;  // For internal use
+  reserved 176;         // For internal use
+  reserved 178;         // For internal use
+  reserved 180;         // For internal use
 }
 
 message Interrupted {
@@ -193,10 +193,10 @@ message Interrupted {
     DEPRECATED_RUN_COMMAND = 23 [(metadata) = { exit_code: 8 }];
     DEPRECATED_OPTIONS_PARSING = 27 [(metadata) = { exit_code: 8 }];
 
-    reserved 1 to 3; // For internal use
-    reserved 11 to 16; // For internal use
-    reserved 19; // For internal use
-    reserved 24 to 26; // For internal use
+    reserved 1 to 3;    // For internal use
+    reserved 11 to 16;  // For internal use
+    reserved 19;        // For internal use
+    reserved 24 to 26;  // For internal use
   }
 
   Code code = 1;
@@ -273,7 +273,7 @@ message BuildProgress {
         [(metadata) = { exit_code: 45 }];
     BES_UPLOAD_RETRY_LIMIT_EXCEEDED_FAILURE = 17
         [(metadata) = { exit_code: 38 }];
-    reserved 1, 2, 18; // For internal use
+    reserved 1, 2, 18;  // For internal use
   }
   Code code = 1;
   // Additional data could include the build progress upload endpoint.
@@ -461,7 +461,7 @@ message Workspaces {
 message CrashOptions {
   enum Code {
     CRASH_OPTIONS_UNKNOWN = 0 [(metadata) = { exit_code: 37 }];
-    reserved 1; // For internal use
+    reserved 1;  // For internal use
   }
 
   Code code = 1;
@@ -478,7 +478,7 @@ message Filesystem {
     DEFAULT_DIGEST_HASH_FUNCTION_INVALID_VALUE = 6
         [(metadata) = { exit_code: 2 }];
 
-    reserved 7; // For internal use
+    reserved 7;  // For internal use
   }
 
   Code code = 1;
@@ -504,7 +504,7 @@ message ExecutionOptions {
     STRATEGY_NOT_FOUND = 9 [(metadata) = { exit_code: 2 }];
     DYNAMIC_STRATEGY_NOT_SANDBOXED = 10 [(metadata) = { exit_code: 2 }];
 
-    reserved 1, 2; // For internal use
+    reserved 1, 2;  // For internal use
   }
 
   Code code = 1;
@@ -545,7 +545,7 @@ message GrpcServer {
     SERVER_BIND_FAILURE = 2 [(metadata) = { exit_code: 1 }];
     BAD_COOKIE = 3 [(metadata) = { exit_code: 36 }];
     NO_CLIENT_DESCRIPTION = 4 [(metadata) = { exit_code: 36 }];
-    reserved 5; // For internal use
+    reserved 5;  // For internal use
   }
 
   Code code = 1;
@@ -666,7 +666,7 @@ message Query {
     // Indicates any usage of flags that must not be combined.
     ILLEGAL_FLAG_COMBINATION = 40 [(metadata) = { exit_code: 2 }];
 
-    reserved 7 to 12; // For internal use
+    reserved 7 to 12;  // For internal use
   }
 
   Code code = 1;
@@ -883,7 +883,7 @@ message DumpCommand {
     COMMAND_LINE_EXPANSION_FAILURE = 3 [(metadata) = { exit_code: 7 }];
     ACTION_GRAPH_DUMP_FAILED = 4 [(metadata) = { exit_code: 7 }];
     STARLARK_HEAP_DUMP_FAILED = 5 [(metadata) = { exit_code: 8 }];
-     reserved 6; // For internal use
+    reserved 6;  // For internal use
   }
 
   Code code = 1;
@@ -1067,7 +1067,7 @@ message FailAction {
     SOURCE_FILES_MISSING = 5 [(metadata) = { exit_code: 1 }];
     INCORRECT_TOOLCHAIN = 6 [(metadata) = { exit_code: 1 }];
     FRAGMENT_CLASS_MISSING = 7 [(metadata) = { exit_code: 1 }];
-    reserved 8, 9; // For internal use
+    reserved 8, 9;  // For internal use
     CANT_BUILD_INCOMPATIBLE_TARGET = 10 [(metadata) = { exit_code: 1 }];
   }
 
