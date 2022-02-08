@@ -336,7 +336,16 @@ export default class CodeComponent extends React.Component<Props> {
     return state;
   }
 
-  handleShowReviewModalClicked() {
+  async handleShowReviewModalClicked() {
+    await new Promise((resolve) => this.handleUpdateCommitSha(resolve));
+
+    if (this.state.mergeConflicts.size > 0) {
+      alert_service.error(
+        `You must resolve the ${this.state.mergeConflicts.size} merge conflicts before requesting a review.`
+      );
+      return;
+    }
+
     let filteredEntries = Array.from(this.state.changes.entries()).filter(([key, value]) =>
       this.state.pathToIncludeChanges.get(key)
     );
@@ -349,10 +358,6 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   async handleReviewClicked() {
-    // todo: make sure commit is up to date
-
-    // todo: make sure make sure there are no merge conflicts left
-
     if (!this.props.user.githubToken) {
       this.handleGitHubClicked();
       return;
@@ -511,7 +516,7 @@ export default class CodeComponent extends React.Component<Props> {
     event.stopPropagation();
   }
 
-  handleUpdateCommitSha() {
+  handleUpdateCommitSha(callback?: (conflicts: number) => void) {
     this.octokit
       .request(`/repos/${this.state.owner}/${this.state.repo}/compare/${this.state.commitSHA}...master`)
       .then((response: any) => {
@@ -519,7 +524,11 @@ export default class CodeComponent extends React.Component<Props> {
         let newCommits = response.data.ahead_by;
         let newSha = response.data.commits.pop()?.sha;
         if (newCommits == 0) {
-          alert_service.success(`You're already up to date!`);
+          if (callback) {
+            callback(0);
+          } else {
+            alert_service.success(`You're already up to date!`);
+          }
           return;
         }
 
@@ -538,12 +547,16 @@ export default class CodeComponent extends React.Component<Props> {
             this.setState(
               { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
               () => {
-                let message = `You were ${newCommits} commits behind head. You are now up to date!`;
-                if (conflictCount > 0) {
-                  message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
-                  alert_service.error(message);
+                if (callback) {
+                  callback(conflictCount);
                 } else {
-                  alert_service.success(message);
+                  let message = `You were ${newCommits} commits behind head. You are now up to date!`;
+                  if (conflictCount > 0) {
+                    message += ` There are ${conflictCount} conflicts you'll need to resolve below`;
+                    alert_service.error(message);
+                  } else {
+                    alert_service.success(message);
+                  }
                 }
                 this.saveState();
                 if (this.state.mergeConflicts.has(this.state.currentFilePath)) {
@@ -655,7 +668,7 @@ export default class CodeComponent extends React.Component<Props> {
                 href={`http://github.com/${this.state.owner}/${this.state.repo}/commit/${this.state.commitSHA}`}>
                 {this.state.commitSHA?.slice(0, 7)}
               </a>{" "}
-              <span onClick={this.handleUpdateCommitSha.bind(this)}>
+              <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
                 <ArrowUpCircle className="code-update-commit" />
               </span>{" "}
             </div>
