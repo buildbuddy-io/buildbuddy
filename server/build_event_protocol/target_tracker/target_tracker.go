@@ -87,6 +87,9 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		t.state = targetStateConfigured
 	case *build_event_stream.BuildEvent_Completed:
 		t.buildSuccess = p.Completed.GetSuccess()
+		if !p.Completed.GetSuccess() {
+			t.overallStatus = build_event_stream.TestStatus_FAILED_TO_BUILD
+		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
 		t.results = append(t.results, &result{
