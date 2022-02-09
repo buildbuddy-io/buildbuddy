@@ -21,6 +21,7 @@ interface State {
   targetHistory: target.ITargetHistory[];
   commits: string[] | null;
   commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
+  nextPageToken: string;
   loading: boolean;
   coloring: "status" | "timing";
   sort: "target" | "count" | "pass" | "avgDuration" | "maxDuration";
@@ -51,6 +52,7 @@ const DAYS_OF_DATA_TO_FETCH = 7;
 export default class TapComponent extends React.Component<Props, State> {
   state: State = {
     targetHistory: [],
+    nextPageToken: "",
     commits: null,
     commitToTargetIdToStatus: null,
     loading: true,
@@ -58,7 +60,9 @@ export default class TapComponent extends React.Component<Props, State> {
     direction: "asc",
     coloring: "status",
     targetLimit: 100,
-    invocationLimit: Math.min(100, Math.max(20, (window.innerWidth - 312) / 34)),
+    invocationLimit: capabilities.config.testGridV2Enabled
+      ? Number.MAX_SAFE_INTEGER
+      : Math.min(100, Math.max(20, (window.innerWidth - 312) / 34)),
     stats: new Map<string, Stat>(),
     maxInvocations: 0,
     maxDuration: 1,
@@ -98,6 +102,7 @@ export default class TapComponent extends React.Component<Props, State> {
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
     request.endTimeUsec = Long.fromNumber(moment().utc().valueOf() * 1000);
     request.serverSidePagination = this.isV2;
+    request.pageToken = this.state.nextPageToken;
 
     this.setState({ loading: true });
     rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
@@ -109,9 +114,14 @@ export default class TapComponent extends React.Component<Props, State> {
   updateState(response: target.GetTargetResponse) {
     this.state.stats.clear();
 
+    let histories = response.invocationTargets;
+    if (this.isV2) {
+      histories = mergeHistories(this.state.targetHistory, response.invocationTargets);
+    }
+
     let maxInvocations = 0;
     let maxDuration = 1;
-    for (let targetHistory of response.invocationTargets) {
+    for (let targetHistory of histories) {
       let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0 };
       for (let status of targetHistory.targetStatus) {
         stats.count += 1;
@@ -130,8 +140,9 @@ export default class TapComponent extends React.Component<Props, State> {
 
     this.setState({
       loading: false,
-      targetHistory: response.invocationTargets,
-      ...(this.isV2 && this.groupByCommit(response.invocationTargets)),
+      targetHistory: histories,
+      nextPageToken: response.nextPageToken,
+      ...(this.isV2 && this.groupByCommit(histories)),
       stats: this.state.stats,
       maxInvocations: maxInvocations,
       maxDuration: maxDuration,
@@ -228,6 +239,11 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   loadMoreInvocations() {
+    if (this.isV2) {
+      this.fetchTargets();
+      return;
+    }
+
     this.setState({ invocationLimit: this.state.invocationLimit + 50 });
   }
 
@@ -281,7 +297,7 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.state.loading) {
+    if (this.state.loading && !this.state.targetHistory?.length) {
       return <div className="loading"></div>;
     }
 
@@ -313,6 +329,10 @@ export default class TapComponent extends React.Component<Props, State> {
     }
 
     let filter = this.props.search.get("filter");
+
+    const hasMoreInvocations = this.isV2
+      ? Boolean(this.state.nextPageToken)
+      : this.state.maxInvocations > this.state.invocationLimit;
 
     return (
       <div className="tap">
@@ -460,8 +480,11 @@ export default class TapComponent extends React.Component<Props, State> {
                 </button>
               )}
             </div>
-            {this.state.maxInvocations > this.state.invocationLimit && (
-              <button className="more-invocations-button" onClick={this.loadMoreInvocations.bind(this)}>
+            {hasMoreInvocations && (
+              <button
+                className="more-invocations-button"
+                onClick={this.loadMoreInvocations.bind(this)}
+                disabled={this.state.loading}>
                 Load more
               </button>
             )}
@@ -470,4 +493,27 @@ export default class TapComponent extends React.Component<Props, State> {
       </div>
     );
   }
+}
+
+/**
+ * Merges two lists of target histories into a single list with the joined target histories.
+ *
+ * This operation may mutate h1, so callers shouldn't rely on the value of h1 after this is
+ * called.
+ */
+function mergeHistories(h1: target.ITargetHistory[], h2: target.ITargetHistory[]): target.ITargetHistory[] {
+  const targetIdToHistory = new Map<string, target.ITargetHistory>();
+  for (const history of h1) {
+    targetIdToHistory.set(history.target.id, history);
+  }
+  for (const history of h2) {
+    const h1History = targetIdToHistory.get(history.target.id);
+    if (!h1History) {
+      targetIdToHistory.set(history.target.id, history);
+      h1.push(history);
+      continue;
+    }
+    h1History.targetStatus = h1History.targetStatus.concat(history.targetStatus);
+  }
+  return h1;
 }
