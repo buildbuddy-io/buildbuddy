@@ -29,6 +29,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	gomysql "github.com/go-sql-driver/mysql"
+	gosqlite "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -494,6 +497,32 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 	return "IGNORE"
 }
 
+// SelectForUpdateModifier returns SQL that can be placed after the
+// SELECT command to lock the rows for update on select.
+//
+// Example:
+//
+//     `SELECT column FROM MyTable
+//      WHERE id=<some id> `+db.SelectForUpdateModifier()
+func (h *DBHandle) SelectForUpdateModifier() string {
+	if h.dialect == sqliteDialect {
+		return ""
+	}
+	return "FOR UPDATE"
+}
+
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
+}
+
+func (h *DBHandle) IsDuplicateKeyError(err error) bool {
+	var mysqlErr *gomysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		return true
+	}
+	var sqliteErr gosqlite.Error
+	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
+		return true
+	}
+	return false
 }
