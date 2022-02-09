@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//:bundle",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:health_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
@@ -50,6 +51,7 @@ go_library(
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/rlimit",
+        "//server/util/status",
         "//server/util/tracing",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

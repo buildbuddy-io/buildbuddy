@@ -18,6 +18,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -598,6 +599,10 @@ type HealthChecker interface {
 	// This is intended to be used by tests as normally shutdown is automatically initiated upon receipt of a SIGTERM
 	// signal.
 	Shutdown()
+
+	// Implements the proto healthcheck interface.
+	Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error)
+	Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error
 }
 
 // Locates all Xcode versions installed on the host system.
