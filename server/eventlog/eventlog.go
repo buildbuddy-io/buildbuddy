@@ -40,8 +40,6 @@ var (
 
 func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
 	if attempt == 0 {
-		// This invocation predates the attempt-tracking functionality, so its logs
-		// are not in a corresponding subdirectory.
 		return invocationId + "/chunks/log/eventlog"
 	}
 	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/eventlog"
