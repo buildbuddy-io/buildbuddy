@@ -31,9 +31,13 @@ export default class InputNodeComponent extends React.Component<Props, State> {
             {this.props.node.type == "file" ? (
               <Download className="icon file-icon" />
             ) : (
-              <span>
-                {expanded ? <FolderMinus className="icon file-icon" /> : <FolderPlus className="icon file-icon" />}
-              </span>
+              <>
+                {expanded ? (
+                  <FolderMinus className="icon file-icon folder-icon" />
+                ) : (
+                  <FolderPlus className="icon file-icon folder-icon" />
+                )}
+              </>
             )}
           </span>{" "}
           <span className="input-tree-node-label">{this.props.node.obj.name}</span>
