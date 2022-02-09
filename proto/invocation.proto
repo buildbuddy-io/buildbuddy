@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 
 package invocation;
 
-// Next tag: 26
+// Next tag: 25
 message Invocation {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -93,9 +93,6 @@ message Invocation {
 
   // The name of the git branch for this invocation, if any
   string branch_name = 23;
-
-  // The number of times this invocation has been attempted
-  uint64 attempt = 25;
 }
 
 message InvocationEvent {

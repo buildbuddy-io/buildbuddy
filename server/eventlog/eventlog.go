@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -33,18 +32,8 @@ const (
 	numReadWorkers = 16
 )
 
-var (
-	//Id of an empty log
-	EmptyId = chunkstore.ChunkIndexAsStringId(chunkstore.EmptyIndex)
-)
-
-func GetEventLogPathFromInvocationIdAndAttempt(invocationId string, attempt uint64) string {
-	if attempt == 0 {
-		// This invocation predates the attempt-tracking functionality, so its logs
-		// are not in a corresponding subdirectory.
-		return invocationId + "/chunks/log/eventlog"
-	}
-	return invocationId + "/" + strconv.FormatUint(attempt, 10) + "/chunks/log/eventlog"
+func GetEventLogPathFromInvocationId(invocationId string) string {
+	return invocationId + "/chunks/log/eventlog"
 }
 
 // Gets the chunk of the event log specified by the request from the blobstore and returns a response containing it
@@ -60,7 +49,7 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 
 	invocationInProgress := inv.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS)
 	c := chunkstore.New(env.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
-	eventLogPath := GetEventLogPathFromInvocationIdAndAttempt(req.InvocationId, inv.Attempt)
+	eventLogPath := GetEventLogPathFromInvocationId(req.InvocationId)
 
 	// Get the id of the last chunk on disk after the last id stored in the db
 	lastChunkId, err := c.GetLastChunkId(ctx, eventLogPath, inv.LastChunkId)
@@ -276,7 +265,8 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, eventLogPath string, numLinesToRetain int) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, invocationId string, numLinesToRetain int) *EventLogWriter {
+	eventLogPath := GetEventLogPathFromInvocationId(invocationId)
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}

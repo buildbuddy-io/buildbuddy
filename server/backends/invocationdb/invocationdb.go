@@ -2,7 +2,6 @@ package invocationdb
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -12,10 +11,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -36,56 +33,7 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 	return perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 }
 
-func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	ti.Attempt = 1
-	created := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
-
-		// First, try inserting the invocation. This will work for first attempts.
-		err := tx.Create(ti).Error
-		if err == nil {
-			// Insert worked; we're done.
-			created = true
-			return nil
-		}
-		if !d.h.IsDuplicateKeyError(err) {
-			return err
-		}
-
-		// Insert failed due to conflict; update the existing row instead.
-		err = tx.Raw(`
-				SELECT attempt FROM Invocations
-				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
-				`+d.h.SelectForUpdateModifier(),
-			ti.InvocationID,
-			int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS),
-			time.Now().Add(time.Hour*-4).UnixMicro(),
-		).Take(ti).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// The invocation either succeeded or is more than 4 hours old. It may
-				// not be re-attempted.
-				return nil
-			}
-			return err
-		}
-
-		// ti had Attempt populated with the previous attempt value, so update it.
-		if ti.Attempt == 0 {
-			// This invocation was attempted before we added Attempt count, this is at
-			// least the second attempt.
-			ti.Attempt = 2
-		} else {
-			ti.Attempt += 1
-		}
-		result := tx.Updates(ti)
-		created = result.RowsAffected > 0
-		return result.Error
-	})
-	return created, err
-}
-
-func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
+func (d *InvocationDB) createInvocation(tx *db.DB, ctx context.Context, ti *tables.Invocation) error {
 	var permissions *perms.UserGroupPerm
 	if auth := d.env.GetAuthenticator(); auth != nil {
 		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
@@ -96,25 +44,36 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	if permissions == nil && d.env.GetConfigurator().GetAnonymousUsageEnabled() {
 		permissions = perms.AnonymousUserPermissions()
 	} else if permissions == nil {
-		return false, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
 	ti.UserID = permissions.UserID
 	ti.GroupID = permissions.GroupID
 	ti.Perms = ti.Perms | permissions.Perms
-	return d.registerInvocationAttempt(ctx, ti)
+	return tx.Create(ti).Error
 }
 
-// UpdateInvocation updates an existing invocation with the given
-// id and attempt number. It returns whether a row was updated.
-func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	updated := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
-		result := tx.Where("`attempt` = ?", ti.Attempt).Updates(ti)
-		updated = result.RowsAffected > 0
-		return result.Error
+// InsertOrUpdateInvocation checks whether an invocation with the same primary
+// key as the given invocation exists. If no such invocation exists, it will
+// create a new row with the given invocation properties. Otherwise, it will
+// update the existing invocation. It returns whether a new row was created.
+func (d *InvocationDB) InsertOrUpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
+	created := false
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
+		var existing tables.Invocation
+		if err := tx.Where("invocation_id = ?", ti.InvocationID).First(&existing).Error; err != nil {
+			if !db.IsRecordNotFound(err) {
+				return err
+			}
+			if err := d.createInvocation(tx, ctx, ti); err != nil {
+				return err
+			}
+			created = true
+			return nil
+		}
+		return tx.Model(&existing).Where("invocation_id = ?", ti.InvocationID).Updates(ti).Error
 	})
-	return updated, err
+	return created, err
 }
 
 func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string, acl *aclpb.ACL) error {
