@@ -64,6 +64,13 @@ proto_library(
 )
 
 proto_library(
+    name = "health_proto",
+    srcs = [
+        "health.proto",
+    ],
+)
+
+proto_library(
     name = "execution_stats_proto",
     srcs = [
         "execution_stats.proto",
@@ -398,6 +405,13 @@ go_proto_library(
     name = "config_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/config",
     proto = ":config_proto",
+)
+
+go_proto_library(
+    name = "health_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/health",
+    proto = ":health_proto",
 )
 
 go_proto_library(

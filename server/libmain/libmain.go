@@ -53,6 +53,7 @@ import (
 	bundle "github.com/buildbuddy-io/buildbuddy"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -331,6 +332,9 @@ func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_ser
 	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
 		apipb.RegisterApiServiceServer(grpcServer, api)
 	}
+
+	// Register health check service.
+	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
 
 	go func() {
 		grpcServer.Serve(lis)
