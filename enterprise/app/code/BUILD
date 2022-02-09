@@ -18,6 +18,8 @@ ts_library(
         "//app/auth",
         "//app/components/button",
         "//app/components/menu",
+        "//app/components/modal",
+        "//app/components/dialog",
         "//app/components/popup",
         "//app/components/spinner",
         "//app/format",
