@@ -83,6 +83,7 @@ export default class TrendsChartComponent extends React.Component {
               yAxisId="primary"
               tickFormatter={this.props.formatTickValue}
               allowDecimals={this.props.allowDecimals}
+              width={84}
             />
             {/* If no secondary axis should be shown, render an invisible one
                 by setting height="0" so that right-padding is consistent across
@@ -93,6 +94,7 @@ export default class TrendsChartComponent extends React.Component {
               height={hasSecondaryAxis ? undefined : 0}
               tickFormatter={this.props.formatSecondaryTickValue}
               allowDecimals={this.props.secondaryAllowDecimals}
+              width={84}
             />
             <Tooltip
               content={
