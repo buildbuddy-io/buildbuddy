@@ -6,5 +6,9 @@ go_library(
     srcs = ["healthcheck.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck",
     visibility = ["//visibility:public"],
-    deps = ["//server/interfaces"],
+    deps = [
+        "//proto:health_go_proto",
+        "//server/interfaces",
+        "//server/util/status",
+    ],
 )
