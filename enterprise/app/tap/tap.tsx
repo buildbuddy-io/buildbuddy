@@ -8,8 +8,9 @@ import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import Select, { Option } from "../../../app/components/select/select";
-import { Filter } from "lucide-react";
+import { ChevronsRight, Filter } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
+import FilledButton from "../../../app/components/button/button";
 
 interface Props {
   user: User;
@@ -336,159 +337,140 @@ export default class TapComponent extends React.Component<Props, State> {
 
     return (
       <div className="tap">
-        <div className="container">
-          <div className="tap-header">
-            <div className="tap-title">Test grid</div>
+        <div className="tap-top-bar">
+          <div className="container">
+            <div className="tap-header">
+              <div className="tap-title">Test grid</div>
 
-            <div className="controls">
-              <div className="tap-sort-controls">
-                <div className="tap-sort-control">
-                  <span className="tap-sort-title">Sort by</span>
-                  <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
-                    <Option value="target">Target name</Option>
-                    <Option value="count">Invocation count</Option>
-                    <Option value="pass">Pass percentage</Option>
-                    <Option value="avgDuration">Average duration</Option>
-                    <Option value="maxDuration">Max duration</Option>
-                  </Select>
-                </div>
-                <div className="tap-sort-control">
-                  <span className="tap-sort-title">Direction</span>
-                  <Select onChange={this.handleDirectionChange.bind(this)} value={this.state.direction}>
-                    <Option value="asc">Asc</Option>
-                    <Option value="desc">Desc</Option>
-                  </Select>
-                </div>
-                <div className="tap-sort-control">
-                  <span className="tap-sort-title">Color</span>
-                  <Select onChange={this.handleColorChange.bind(this)} value={this.state.coloring}>
-                    <Option value="status">Test status</Option>
-                    <Option value="timing">Test duration</Option>
-                  </Select>
+              <div className="controls">
+                <div className="tap-sort-controls">
+                  <div className="tap-sort-control">
+                    <span className="tap-sort-title">Sort by</span>
+                    <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                      <Option value="target">Target name</Option>
+                      <Option value="count">Invocation count</Option>
+                      <Option value="pass">Pass percentage</Option>
+                      <Option value="avgDuration">Average duration</Option>
+                      <Option value="maxDuration">Max duration</Option>
+                    </Select>
+                  </div>
+                  <div className="tap-sort-control">
+                    <span className="tap-sort-title">Direction</span>
+                    <Select onChange={this.handleDirectionChange.bind(this)} value={this.state.direction}>
+                      <Option value="asc">Asc</Option>
+                      <Option value="desc">Desc</Option>
+                    </Select>
+                  </div>
+                  <div className="tap-sort-control">
+                    <span className="tap-sort-title">Color</span>
+                    <Select onChange={this.handleColorChange.bind(this)} value={this.state.coloring}>
+                      <Option value="status">Test status</Option>
+                      <Option value="timing">Test duration</Option>
+                    </Select>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="filter">
-            <Filter className="icon" />
-            <input
-              value={filter}
-              className="filter-input"
-              placeholder="Filter..."
-              onChange={this.handleFilterChange.bind(this)}
-            />
-          </div>
-
-          <div className="tap-grid-container">
-            <div className="tap-grid">
-              {/* 
-            // TODO(siggisim): Figure out the best way to give a consistent x-axis
-            <div className="tap-row">
-              {this.state.targetHistory.length > 0 &&
-                this.state.targetHistory[0].targetStatus.map((status: target.TargetStatus) => {
-                  let destinationUrl = `/history/commit/${status.commitSha}`;
-                  return (
-                    <a
-                      href={destinationUrl}
-                      onClick={this.navigateTo.bind(this, destinationUrl)}
-                      className={`tap-block tap-block-header`}>
-                      {format.compactDurationSec(Date.now() / 1000 - +status.timing.startTime.seconds)} ago
-                      <br />
-                      {status.commitSha}
-                    </a>
-                  );
-                })}
-            </div> */}
-
-              {this.state.targetHistory
-                .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
-                .sort(this.sort.bind(this))
-                .slice(0, this.state.targetLimit)
-                .map((targetHistory) => {
-                  let targetParts = targetHistory.target.label.split(":");
-                  let targetPath = targetParts.length > 0 ? targetParts[0] : "";
-                  let targetName = targetParts.length > 1 ? targetParts[1] : "";
-                  let stats = this.state.stats.get(targetHistory.target.id);
-                  return (
-                    <div key={targetHistory.target.id} className="tap-target">
-                      <div title={targetHistory.target.ruleType} className="tap-target-label">
-                        <span className="tap-target-path">{targetPath}</span>:
-                        <span className="tap-target-name">{targetName}</span>
-                        <span className="tap-target-stats">
-                          ({format.formatWithCommas(stats.count)} invocations,{" "}
-                          {format.percent(stats.pass / stats.count)}% pass, {format.durationSec(stats.avgDuration)} avg,{" "}
-                          {format.durationSec(stats.maxDuration)} max)
-                        </span>
-                      </div>
-                      <div className="tap-row">
-                        {this.getTargetStatuses(targetHistory)
-                          .slice(0, this.state.invocationLimit)
-                          .map((commitStatus: CommitStatus) => {
-                            const { commitSha, status } = commitStatus;
-                            if (status === null) {
-                              // For V2, null means the target was not run for this commit.
-                              return (
-                                <div
-                                  className="tap-block no-status"
-                                  title={
-                                    commitSha
-                                      ? `Target status not reported at commit ${commitSha}`
-                                      : "No status reported"
-                                  }
-                                />
-                              );
-                            }
-
-                            let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
-                              targetHistory.target.label
-                            )}`;
-                            let title =
-                              this.state.coloring == "timing"
-                                ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
-                                : this.statusToString(status.status);
-                            if (this.isV2 && commitSha) {
-                              title += ` at commit ${commitSha}`;
-                            }
-                            return (
-                              <a
-                                key={targetHistory.target.id + status.invocationId}
-                                href={destinationUrl}
-                                onClick={this.navigateTo.bind(this, destinationUrl)}
-                                title={title}
-                                style={{
-                                  opacity:
-                                    this.state.coloring == "timing"
-                                      ? Math.max(
-                                          MIN_OPACITY,
-                                          (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
-                                        )
-                                      : undefined,
-                                }}
-                                className={`tap-block ${
-                                  this.state.coloring == "status" ? `status-${status.status}` : "timing"
-                                } clickable`}></a>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  );
-                })}
-              {this.state.targetHistory.length > this.state.targetLimit && (
-                <button className="more-targets-button" onClick={this.loadMoreTargets.bind(this)}>
-                  Load more targets
-                </button>
+            <div className="target-controls">
+              <div className="filter">
+                <Filter className="icon" />
+                <input
+                  value={filter}
+                  className="filter-input"
+                  placeholder="Filter..."
+                  onChange={this.handleFilterChange.bind(this)}
+                />
+              </div>
+              {hasMoreInvocations && (
+                <FilledButton
+                  className="more-invocations-button"
+                  onClick={this.loadMoreInvocations.bind(this)}
+                  disabled={this.state.loading}>
+                  <span>Load more</span>
+                  <ChevronsRight className="icon white" />
+                </FilledButton>
               )}
             </div>
-            {hasMoreInvocations && (
-              <button
-                className="more-invocations-button"
-                onClick={this.loadMoreInvocations.bind(this)}
-                disabled={this.state.loading}>
-                Load more
-              </button>
-            )}
           </div>
+        </div>
+
+        <div className="container tap-grid-container">
+          {this.state.targetHistory
+            .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
+            .sort(this.sort.bind(this))
+            .slice(0, this.state.targetLimit)
+            .map((targetHistory) => {
+              let targetParts = targetHistory.target.label.split(":");
+              let targetPath = targetParts.length > 0 ? targetParts[0] : "";
+              let targetName = targetParts.length > 1 ? targetParts[1] : "";
+              let stats = this.state.stats.get(targetHistory.target.id);
+              return (
+                <React.Fragment key={targetHistory.target.id}>
+                  <div title={targetHistory.target.ruleType} className="tap-target-label">
+                    <span className="tap-target-path">{targetPath}</span>:
+                    <span className="tap-target-name">{targetName}</span>
+                    <span className="tap-target-stats">
+                      ({format.formatWithCommas(stats.count)} invocations, {format.percent(stats.pass / stats.count)}%
+                      pass, {format.durationSec(stats.avgDuration)} avg, {format.durationSec(stats.maxDuration)} max)
+                    </span>
+                  </div>
+                  <div className="tap-row">
+                    {this.getTargetStatuses(targetHistory)
+                      .slice(0, this.state.invocationLimit)
+                      .map((commitStatus: CommitStatus) => {
+                        const { commitSha, status } = commitStatus;
+                        if (status === null) {
+                          // For V2, null means the target was not run for this commit.
+                          return (
+                            <div
+                              className="tap-block no-status"
+                              title={
+                                commitSha ? `Target status not reported at commit ${commitSha}` : "No status reported"
+                              }
+                            />
+                          );
+                        }
+
+                        let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
+                          targetHistory.target.label
+                        )}`;
+                        let title =
+                          this.state.coloring == "timing"
+                            ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
+                            : this.statusToString(status.status);
+                        if (this.isV2 && commitSha) {
+                          title += ` at commit ${commitSha}`;
+                        }
+                        return (
+                          <a
+                            key={targetHistory.target.id + status.invocationId}
+                            href={destinationUrl}
+                            onClick={this.navigateTo.bind(this, destinationUrl)}
+                            title={title}
+                            style={{
+                              opacity:
+                                this.state.coloring == "timing"
+                                  ? Math.max(
+                                      MIN_OPACITY,
+                                      (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
+                                    )
+                                  : undefined,
+                            }}
+                            className={`tap-block ${
+                              this.state.coloring == "status" ? `status-${status.status}` : "timing"
+                            } clickable`}></a>
+                        );
+                      })}
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          {this.state.targetHistory.length > this.state.targetLimit && (
+            <FilledButton className="more-targets-button" onClick={this.loadMoreTargets.bind(this)}>
+              Load more targets
+            </FilledButton>
+          )}
         </div>
       </div>
     );
