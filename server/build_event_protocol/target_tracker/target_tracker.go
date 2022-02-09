@@ -136,13 +136,13 @@ func targetTypeFromRuleType(ruleType string) cmpb.TargetType {
 
 type TargetTracker struct {
 	env                   environment.Env
-	buildEventAccumulator *accumulator.BEValues
+	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
 	openClosures          map[string]targetClosure
 	errGroup              *errgroup.Group
 }
 
-func NewTargetTracker(env environment.Env, buildEventAccumulator *accumulator.BEValues) *TargetTracker {
+func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Accumulator) *TargetTracker {
 	return &TargetTracker{
 		env:                   env,
 		buildEventAccumulator: buildEventAccumulator,
