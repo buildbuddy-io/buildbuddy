@@ -32,16 +32,6 @@ interface State {
 
 const SECONDS_PER_MICROSECOND = 1e-6;
 
-const countTickFormatter = (value: number) => {
-  // Don't show fractional counts ("1.5 builds", "0.5 users" etc.)
-  // This case will only ever be reached for very small numbers, because
-  // tick values should be large, whole numbers when counts are high.
-  if (Math.floor(Number(value)) !== Number(value)) return "";
-  return format.count(value, /*fractionDigits=*/ 0);
-};
-const bytesTickFormatter = (value: number) => format.bytes(value, /*fractionDigits=*/ 0);
-const bitsPerSecondTickFormatter = (value: number) => format.bitsPerSecond(value, /*=fractionDigits=*/ 0);
-
 export default class TrendsComponent extends React.Component<Props, State> {
   props: Props;
 
@@ -229,11 +219,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   return (+stat?.totalBuildTimeUsec * SECONDS_PER_MICROSECOND) / +stat?.completedInvocationCount;
                 }}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " builds"}
                 formatSecondaryHoverValue={(value) => `${format.durationSec(value)} average`}
-                formatSecondaryTickValue={format.compactDurationSec}
+                formatSecondaryTickValue={format.durationSec}
                 name="builds"
                 secondaryName="average build duration"
                 secondaryLine={true}
@@ -249,7 +240,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 }}
                 extractSecondaryValue={(date) => +this.state.dateToStatMap.get(date)?.maxDurationUsec / 1000000}
                 extractLabel={this.formatShortDate}
-                formatTickValue={format.compactDurationSec}
+                formatTickValue={format.durationSec}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
                 formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
@@ -284,8 +275,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   (+this.state.dateToStatMap.get(date)?.totalDownloadUsec * SECONDS_PER_MICROSECOND)
                 }
                 extractLabel={this.formatShortDate}
-                formatTickValue={bytesTickFormatter}
-                formatSecondaryTickValue={bitsPerSecondTickFormatter}
+                formatTickValue={format.bytes}
+                allowDecimals={false}
+                formatSecondaryTickValue={format.bitsPerSecond}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => `${format.bytes(value || 0)} downloaded`}
                 formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
@@ -304,8 +296,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   (+this.state.dateToStatMap.get(date)?.totalUploadUsec * SECONDS_PER_MICROSECOND)
                 }
                 extractLabel={this.formatShortDate}
-                formatTickValue={bytesTickFormatter}
-                formatSecondaryTickValue={bitsPerSecondTickFormatter}
+                formatTickValue={format.bytes}
+                formatSecondaryTickValue={format.bitsPerSecond}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => `${format.bytes(value || 0)} uploaded`}
                 formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
@@ -320,7 +312,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.userCount}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
@@ -331,7 +324,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.commitCount}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
@@ -342,7 +336,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.branchCount}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " branches"}
                 name="branches with builds"
@@ -352,7 +347,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.hostCount}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
@@ -363,7 +359,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.state.dateToStatMap.get(date)?.repoCount}
                 extractLabel={this.formatShortDate}
-                formatTickValue={countTickFormatter}
+                formatTickValue={format.count}
+                allowDecimals={false}
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"

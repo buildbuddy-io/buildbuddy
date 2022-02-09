@@ -11,6 +11,7 @@ import {
   Legend,
   Tooltip,
   Cell,
+  YAxisProps,
 } from "recharts";
 
 interface Props {
@@ -22,11 +23,13 @@ interface Props {
   formatHoverValue?: (datum: number) => string;
   formatTickValue?: (datum: number, index: number) => string;
   extractValue: (datum: any) => number;
+  allowDecimals?: boolean;
   name: string;
 
   extractSecondaryValue?: (datum: any) => number;
   formatSecondaryHoverValue?: (datum: number) => string;
   formatSecondaryTickValue?: (datum: number, index: number) => string;
+  secondaryAllowDecimals?: boolean;
   secondaryName?: string;
   secondaryLine?: boolean;
   separateAxis?: boolean;
@@ -76,7 +79,11 @@ export default class TrendsChartComponent extends React.Component {
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="primary" tickFormatter={this.props.formatTickValue} />
+            <YAxis
+              yAxisId="primary"
+              tickFormatter={this.props.formatTickValue}
+              allowDecimals={this.props.allowDecimals}
+            />
             {/* If no secondary axis should be shown, render an invisible one
                 by setting height="0" so that right-padding is consistent across
                 all charts. */}
@@ -85,6 +92,7 @@ export default class TrendsChartComponent extends React.Component {
               orientation="right"
               height={hasSecondaryAxis ? undefined : 0}
               tickFormatter={this.props.formatSecondaryTickValue}
+              allowDecimals={this.props.secondaryAllowDecimals}
             />
             <Tooltip
               content={

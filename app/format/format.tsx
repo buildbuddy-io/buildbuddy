@@ -20,27 +20,39 @@ export function durationMillis(duration: number | Long) {
 export function durationSec(duration: number | Long) {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
-    return "0 s";
+    return "0s";
   }
-  if (seconds > 60 * 60 * 24 * 365) {
+
+  if (seconds >= 60 * 60 * 24 * 365) {
     return `${(seconds / (60 * 60 * 24 * 365)).toPrecision(3)} years`;
   }
-  if (seconds > 60 * 60 * 24 * 30) {
+  if (seconds >= 60 * 60 * 24 * 30) {
     return `${(seconds / (60 * 60 * 24 * 30)).toPrecision(3)} months`;
   }
-  if (seconds > 60 * 60 * 24 * 7) {
+  if (seconds >= 60 * 60 * 24 * 7) {
     return `${(seconds / (60 * 60 * 24 * 7)).toPrecision(3)} weeks`;
   }
-  if (seconds > 60 * 60 * 24) {
-    return `${(seconds / (60 * 60 * 24)).toPrecision(3)} d`;
+  if (seconds >= 60 * 60 * 24) {
+    const hours = seconds / (60 * 60);
+    const d = Math.floor(hours / 24);
+    const h = Math.floor(hours - d * 24);
+    return `${d}d ${h}h`;
   }
-  if (seconds > 60 * 60) {
-    return `${(seconds / (60 * 60)).toPrecision(3)} h`;
+  if (seconds >= 60 * 60) {
+    const minutes = seconds / 60;
+    const h = Math.floor(minutes / 60);
+    const m = Math.floor(minutes - h * 60);
+    return `${h}h ${m}m`;
   }
-  if (seconds > 60) {
-    return `${(seconds / 60).toPrecision(3)} m`;
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds - m * 60);
+    return `${m}m ${s}s`;
   }
-  return `${seconds.toPrecision(3)} s`;
+  if (seconds >= 1) {
+    return `${seconds.toPrecision(3)}s`;
+  }
+  return `${(seconds * 1000).toPrecision(3)}ms`;
 }
 
 export function compactDurationSec(duration: number | Long) {
@@ -48,22 +60,22 @@ export function compactDurationSec(duration: number | Long) {
   if (!seconds || seconds < 0) {
     return "0s";
   }
-  if (seconds > 60 * 60 * 24 * 365) {
+  if (seconds >= 60 * 60 * 24 * 365) {
     return `${(seconds / (60 * 60 * 24 * 365)).toFixed(0)}y`;
   }
-  if (seconds > 60 * 60 * 24 * 30) {
+  if (seconds >= 60 * 60 * 24 * 30) {
     return `${(seconds / (60 * 60 * 24 * 30)).toFixed(0)}m`;
   }
-  if (seconds > 60 * 60 * 24 * 7) {
+  if (seconds >= 60 * 60 * 24 * 7) {
     return `${(seconds / (60 * 60 * 24 * 7)).toFixed(0)}w`;
   }
-  if (seconds > 60 * 60 * 24) {
+  if (seconds >= 60 * 60 * 24) {
     return `${(seconds / (60 * 60 * 24)).toFixed(0)}d`;
   }
-  if (seconds > 60 * 60) {
+  if (seconds >= 60 * 60) {
     return `${(seconds / (60 * 60)).toFixed(0)}h`;
   }
-  if (seconds > 60) {
+  if (seconds >= 60) {
     return `${(seconds / 60).toFixed(0)}m`;
   }
   if (seconds >= 1) {
@@ -72,58 +84,67 @@ export function compactDurationSec(duration: number | Long) {
   return `${(seconds * 1000).toFixed(0)}ms`;
 }
 
-export function bytes(bytes: number | Long, fractionDigits = 2) {
+/**
+ * Removes any trailing zeroes after the decimal point,
+ * including the decimal point itself if there are only
+ * trailing zeroes.
+ */
+function truncateDecimalZeroes(numString: string): string {
+  return numString.replace(/\.(.+?)0+$/, ".$1").replace(/\.0+$/, "");
+}
+
+export function bytes(bytes: number | Long) {
   bytes = +bytes;
   if (bytes < 100) {
     return bytes + "B";
   }
   if (bytes < 1e6) {
-    return (bytes / 1e3).toFixed(fractionDigits) + "KB";
+    return truncateDecimalZeroes((bytes / 1e3).toPrecision(4)) + "KB";
   }
   if (bytes < 1e9) {
-    return (bytes / 1e6).toFixed(fractionDigits) + "MB";
+    return truncateDecimalZeroes((bytes / 1e6).toPrecision(4)) + "MB";
   }
   if (bytes < 1e12) {
-    return (bytes / 1e9).toFixed(fractionDigits) + "GB";
+    return truncateDecimalZeroes((bytes / 1e9).toPrecision(4)) + "GB";
   }
   if (bytes < 1e15) {
-    return (bytes / 1e12).toFixed(fractionDigits) + "TB";
+    return truncateDecimalZeroes((bytes / 1e12).toPrecision(4)) + "TB";
   }
-  return (bytes / 1e15).toFixed(fractionDigits) + "PB";
+  return truncateDecimalZeroes((bytes / 1e15).toPrecision(4)) + "PB";
 }
 
-export function bitsPerSecond(bitsPerSecond: number | Long, fractionDigits = 2) {
+export function bitsPerSecond(bitsPerSecond: number | Long) {
   bitsPerSecond = Number(bitsPerSecond);
   if (bitsPerSecond < 1e3) {
     return bitsPerSecond + "bps";
   }
   if (bitsPerSecond < 1e6) {
-    return (bitsPerSecond / 1e3).toFixed(fractionDigits) + "Kbps";
+    return truncateDecimalZeroes((bitsPerSecond / 1e3).toPrecision(4)) + "Kbps";
   }
   if (bitsPerSecond < 1e9) {
-    return (bitsPerSecond / 1e6).toFixed(fractionDigits) + "Mbps";
+    return truncateDecimalZeroes((bitsPerSecond / 1e6).toPrecision(4)) + "Mbps";
   }
   if (bitsPerSecond < 1e12) {
-    return (bitsPerSecond / 1e9).toFixed(fractionDigits) + "Gbps";
+    return truncateDecimalZeroes((bitsPerSecond / 1e9).toPrecision(4)) + "Gbps";
   }
   if (bitsPerSecond < 1e15) {
-    return (bitsPerSecond / 1e12).toFixed(fractionDigits) + "Tbps";
+    return truncateDecimalZeroes((bitsPerSecond / 1e12).toPrecision(4)) + "Tbps";
   }
-  return (bitsPerSecond / 1e15).toFixed(fractionDigits) + "Pbps";
+  return truncateDecimalZeroes((bitsPerSecond / 1e15).toPrecision(4)) + "Pbps";
 }
 
-export function count(value: number | Long, fractionDigits = 2): string {
+export function count(value: number | Long): string {
   value = Number(value);
   if (value < 1e3) {
     return String(value);
   }
   if (value < 1e6) {
-    return (value / 1e3).toFixed(fractionDigits) + "K";
+    return truncateDecimalZeroes((value / 1e3).toPrecision(4)) + "K";
   }
   if (value < 1e9) {
-    return (value / 1e6).toFixed(fractionDigits) + "M";
+    return truncateDecimalZeroes((value / 1e6).toPrecision(4)) + "M";
   }
-  return (value / 1e9).toFixed(fractionDigits) + "B";
+  return truncateDecimalZeroes((value / 1e9).toPrecision(4)) + "B";
 }
 
 export function sentenceCase(string: string) {
