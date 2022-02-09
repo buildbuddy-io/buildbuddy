@@ -497,20 +497,6 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 	return "IGNORE"
 }
 
-// SelectForUpdateModifier returns SQL that can be placed after the
-// SELECT command to lock the rows for update on select.
-//
-// Example:
-//
-//     `SELECT column FROM MyTable
-//      WHERE id=<some id> `+db.SelectForUpdateModifier()
-func (h *DBHandle) SelectForUpdateModifier() string {
-	if h.dialect == SqliteDialect {
-		return ""
-	}
-	return "FOR UPDATE"
-}
-
 func (h *DBHandle) SetNowFunc(now func() time.Time) {
 	h.db.Config.NowFunc = now
 }
