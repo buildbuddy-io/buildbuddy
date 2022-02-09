@@ -238,7 +238,6 @@ type DBHandle interface {
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	InsertIgnoreModifier() string
 	SetNowFunc(now func() time.Time)
-	IsDuplicateKeyError(err error) bool
 }
 
 type InvocationDB interface {

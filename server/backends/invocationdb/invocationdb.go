@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -42,30 +43,41 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
 
 		// First, try inserting the invocation. This will work for first attempts.
-		err := tx.Create(ti).Error
-		if err == nil {
+		result := tx.Clauses(
+			// Use "OnConflict" clause instead of raw SQL to avoid special-casing the
+			// conflicting syntax between MySQL and sqlite ("ON DUPLICATE KEY" vs "ON
+			// CONFLICT").
+			clause.OnConflict{DoNothing: true},
+		).Create(ti)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
 			// Insert worked; we're done.
 			created = true
 			return nil
 		}
-		if !d.h.IsDuplicateKeyError(err) {
-			return err
-		}
 
 		// Insert failed due to conflict; update the existing row instead.
-		selectSQL := `SELECT attempt FROM Invocations WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ?`
-		selectVars := []interface{}{ti.InvocationID, int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS), time.Now().Add(time.Hour * -4).UnixMicro()}
-		if d.h.DB().Dialector.Name() == db.MysqlDialect {
-			selectSQL += ` FOR UPDATE`
-		}
-		err = tx.Raw(selectSQL, selectVars...).Take(ti).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+		result = tx.Clauses(
+			clause.Locking{Strength: "UPDATE"},
+		).Where(
+			"`invocation_id` = ?",
+			ti.InvocationID,
+		).Where(
+			"`invocation_status` <> ?",
+			int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS),
+		).Where(
+			"`updated_at_usec` > ?",
+			time.Now().Add(time.Hour*-4).UnixMicro(),
+		).Select("attempt").Take(ti)
+		if result.Error != nil {
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				// The invocation either succeeded or is more than 4 hours old. It may
 				// not be re-attempted.
 				return nil
 			}
-			return err
+			return result.Error
 		}
 
 		// ti had Attempt populated with the previous attempt value, so update it.
@@ -76,7 +88,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		} else {
 			ti.Attempt += 1
 		}
-		result := tx.Updates(ti)
+		result = tx.Updates(ti)
 		created = result.RowsAffected > 0
 		return result.Error
 	})
