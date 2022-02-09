@@ -517,10 +517,12 @@ func (h *DBHandle) SetNowFunc(now func() time.Time) {
 
 func (h *DBHandle) IsDuplicateKeyError(err error) bool {
 	var mysqlErr *gomysql.MySQLError
+	// Defined at https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_dup_entry
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 		return true
 	}
 	var sqliteErr gosqlite.Error
+	// Defined at https://www.sqlite.org/rescode.html#constraint_unique
 	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
 		return true
 	}
