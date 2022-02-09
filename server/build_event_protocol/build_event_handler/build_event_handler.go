@@ -1049,8 +1049,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 
 func GetStreamIdFromInvocationIdAndAttempt(iid string, attempt uint64) string {
 	if attempt == 0 {
-		// This invocation predates the attempt-tracking functionality, so its
-		// streamId does not contain the attempt number.
 		return iid
 	}
 	return iid + "/" + strconv.FormatUint(attempt, 10)
