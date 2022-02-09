@@ -22,17 +22,13 @@ interface Props {
   search: URLSearchParams;
 }
 interface State {
-  owner: string;
-  repo: string;
   commitSHA: string;
   repoResponse: any;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, any[]>;
-  treeShaToPathMap: Map<string, string>;
   fullPathToModelMap: Map<string, any>;
   fullPathToDiffModelMap: Map<string, any>;
   originalFileContents: Map<string, string>;
-  currentFilePath: string;
   changes: Map<string, string>;
   mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
@@ -52,23 +48,18 @@ const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
 
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
-// TODO(siggisim): Add currently selected file name
 // TODO(siggisim): Add some form of search
 export default class CodeComponent extends React.Component<Props> {
   props: Props;
 
   state: State = {
-    owner: "",
-    repo: "",
     commitSHA: "",
     repoResponse: undefined,
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, any[]>(),
-    treeShaToPathMap: new Map<string, string>(),
     fullPathToModelMap: new Map<string, any>(),
     fullPathToDiffModelMap: new Map<string, any>(),
     originalFileContents: new Map<string, any>(),
-    currentFilePath: "",
     changes: new Map<string, string>(),
     mergeConflicts: new Map<string, string>(),
     pathToIncludeChanges: new Map<string, boolean>(),
@@ -118,26 +109,25 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   componentDidMount() {
-    if (!this.state.repo) {
+    if (!this.currentRepo()) {
       return;
     }
 
     window.addEventListener("resize", () => this.handleWindowResize());
-    // TODO(siggisim): select default file based on url
     this.editor = monaco.editor.create(this.codeViewer.current, {
       value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
       theme: "vs",
     });
 
-    if (this.state.currentFilePath) {
-      if (this.state.mergeConflicts.has(this.state.currentFilePath)) {
+    if (this.currentPath()) {
+      if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
-          this.state.currentFilePath,
-          this.state.mergeConflicts.get(this.state.currentFilePath),
+          this.currentPath(),
+          this.state.mergeConflicts.get(this.currentPath()),
           undefined
         );
       } else {
-        this.editor.setModel(this.state.fullPathToModelMap.get(this.state.currentFilePath));
+        this.editor.setModel(this.state.fullPathToModelMap.get(this.currentPath()));
       }
     }
 
@@ -147,30 +137,25 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   handleContentChanged() {
-    if (this.state.originalFileContents.get(this.state.currentFilePath) === this.editor.getValue()) {
-      this.state.changes.delete(this.state.currentFilePath);
-      this.state.pathToIncludeChanges.delete(this.state.currentFilePath);
-    } else if (this.state.currentFilePath) {
-      if (!this.state.changes.get(this.state.currentFilePath)) {
-        this.state.pathToIncludeChanges.set(this.state.currentFilePath, true);
+    if (this.state.originalFileContents.get(this.currentPath()) === this.editor.getValue()) {
+      this.state.changes.delete(this.currentPath());
+      this.state.pathToIncludeChanges.delete(this.currentPath());
+    } else if (this.currentPath()) {
+      if (!this.state.changes.get(this.currentPath())) {
+        this.state.pathToIncludeChanges.set(this.currentPath(), true);
       }
-      this.state.changes.set(this.state.currentFilePath, this.editor.getValue());
+      this.state.changes.set(this.currentPath(), this.editor.getValue());
     }
-    this.setState({ changes: this.state.changes });
-    console.log(this.state.changes);
-
-    this.saveState();
+    this.updateState({ changes: this.state.changes });
   }
 
   saveState() {
     // TODO(siggisim): store this in cache.
-    // TODO(siggisim): audit all locations where state changes and save it.
     localStorage.setItem(this.getStateCacheKey(), JSON.stringify(this.state, stateReplacer));
   }
 
   getStateCacheKey() {
-    let repo = this.currentRepo();
-    return `${LOCAL_STORAGE_STATE_KEY}/${repo.owner}/${repo.repo}`;
+    return `${LOCAL_STORAGE_STATE_KEY}/${this.currentOwner()}/${this.currentRepo()}`;
   }
 
   componentWillUnmount() {
@@ -180,22 +165,26 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (
-      this.props.hash !== prevProps.hash ||
-      this.props.search != prevProps.search ||
-      this.props.path != this.props.path
-    ) {
-      this.fetchCode();
-    }
-
     if (this.props.user != prevProps.user) {
       this.updateUser();
     }
   }
 
-  currentRepo() {
-    let groups = this.props.path?.match(/\/code\/(?<owner>.*)\/(?<repo>.*)/)?.groups;
+  parsePath() {
+    let groups = this.props.path?.match(/\/code\/(?<owner>[^\/]*)\/(?<repo>[^\/]*)(\/(?<path>.*))?/)?.groups;
     return groups || {};
+  }
+
+  currentOwner() {
+    return this.parsePath().owner;
+  }
+
+  currentRepo() {
+    return this.parsePath().repo;
+  }
+
+  currentPath() {
+    return this.parsePath().path;
   }
 
   fetchCode() {
@@ -204,25 +193,21 @@ export default class CodeComponent extends React.Component<Props> {
       : undefined;
     if (storedState) {
       this.setState(storedState);
+      if (storedState.repoResponse && storedState.commitSHA) {
+        return;
+      }
+    }
+    if (!this.currentOwner() || !this.currentRepo()) {
       return;
     }
 
-    let repo = this.currentRepo();
-    if (!repo.owner || !repo.repo) {
-      return;
-    }
-    this.setState({ owner: repo.owner, repo: repo.repo }, () => {
-      let commit = this.state.commitSHA || "master";
-
-      this.octokit
-        .request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/${commit}`)
-        .then((response: any) => {
-          console.log(response);
-          this.setState({ repoResponse: response, commitSHA: response.data.sha }, () => {
-            this.saveState();
-          });
-        });
-    });
+    let commit = this.state.commitSHA || "master";
+    this.octokit
+      .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`)
+      .then((response: any) => {
+        console.log(response);
+        this.updateState({ repoResponse: response, commitSHA: response.data.sha });
+      });
   }
 
   // TODO(siggisim): Support deleting files
@@ -235,18 +220,17 @@ export default class CodeComponent extends React.Component<Props> {
     if (node.type === "tree") {
       if (this.state.treeShaToExpanded.get(node.sha)) {
         this.state.treeShaToExpanded.set(node.sha, false);
-        this.setState({ treeShaToExpanded: this.state.treeShaToExpanded });
+        this.updateState({ treeShaToExpanded: this.state.treeShaToExpanded });
         return;
       }
 
       this.octokit
-        .request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/${node.sha}`)
+        .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${node.sha}`)
         .then((response: any) => {
           this.state.treeShaToExpanded.set(node.sha, true);
           this.state.treeShaToChildrenMap.set(node.sha, response.data.tree);
-          this.setState({
+          this.updateState({
             treeShaToChildrenMap: this.state.treeShaToChildrenMap,
-            treeShaToPathMap: this.state.treeShaToPathMap,
           });
           console.log(response);
         });
@@ -255,16 +239,15 @@ export default class CodeComponent extends React.Component<Props> {
 
     this.octokit.rest.git
       .getBlob({
-        owner: this.state.owner,
-        repo: this.state.repo,
+        owner: this.currentOwner(),
+        repo: this.currentRepo(),
         file_sha: node.sha,
       })
       .then((response: any) => {
         console.log(response);
         let fileContents = atob(response.data.content);
         this.state.originalFileContents.set(fullPath, fileContents);
-        this.setState({
-          currentFilePath: fullPath,
+        this.updateState({
           originalFileContents: this.state.originalFileContents,
           changes: this.state.changes,
         });
@@ -272,9 +255,15 @@ export default class CodeComponent extends React.Component<Props> {
         if (!model) {
           model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
           this.state.fullPathToModelMap.set(fullPath, model);
+          this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
         }
         this.editor.setModel(model);
+        this.navigateToPath(fullPath);
       });
+  }
+
+  navigateToPath(path: string) {
+    window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}`);
   }
 
   getRemoteEndpoint() {
@@ -302,11 +291,11 @@ export default class CodeComponent extends React.Component<Props> {
   handleBuildClicked(args: string) {
     let request = new runner.RunRequest();
     request.gitRepo = new runner.RunRequest.GitRepo();
-    request.gitRepo.repoUrl = `https://github.com/${this.state.owner}/${this.state.repo}.git`;
+    request.gitRepo.repoUrl = `https://github.com/${this.currentOwner()}/${this.currentRepo()}.git`;
     request.bazelCommand = `${args} ${this.getBazelFlags()}`;
     request.repoState = this.getRepoState();
 
-    this.setState({ isBuilding: true });
+    this.updateState({ isBuilding: true });
     rpcService.service
       .run(request)
       .then((response: runner.RunResponse) => {
@@ -316,13 +305,13 @@ export default class CodeComponent extends React.Component<Props> {
         alert(error);
       })
       .finally(() => {
-        this.setState({ isBuilding: false });
+        this.updateState({ isBuilding: false });
       });
   }
 
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
-    // TODO(siggisim): add commit sha
+    state.commitSha = this.state.commitSHA;
     for (let path of this.state.changes.keys()) {
       state.patch.push(
         diff.createTwoFilesPatch(
@@ -350,7 +339,7 @@ export default class CodeComponent extends React.Component<Props> {
       this.state.pathToIncludeChanges.get(key)
     );
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
-    this.setState({
+    this.updateState({
       prTitle: `Update ${filenames}`,
       prBody: `Update ${filenames}\n\nBuilt with [BuildBuddy Code](https://${window.location.host}/code/)`,
       reviewRequestModalVisible: true,
@@ -363,15 +352,15 @@ export default class CodeComponent extends React.Component<Props> {
       return;
     }
 
-    this.setState({ requestingReview: true });
+    this.updateState({ requestingReview: true });
 
     let filteredEntries = Array.from(this.state.changes.entries()).filter(
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
     );
 
     let response = await createPullRequest(this.octokit, {
-      owner: this.state.owner,
-      repo: this.state.repo,
+      owner: this.currentOwner(),
+      repo: this.currentRepo(),
       title: this.state.prTitle,
       body: this.state.prBody,
       head: `change-${Math.floor(Math.random() * 10000)}`,
@@ -385,19 +374,13 @@ export default class CodeComponent extends React.Component<Props> {
       ],
     });
 
-    this.setState(
-      {
-        requestingReview: false,
-        reviewRequestModalVisible: false,
-        prLink: response.data.html_url,
-        prNumber: response.data.number,
-        prBranch: response.data.head.ref,
-      },
-      () => {
-        console.log(this.state);
-        this.saveState();
-      }
-    );
+    this.updateState({
+      requestingReview: false,
+      reviewRequestModalVisible: false,
+      prLink: response.data.html_url,
+      prNumber: response.data.number,
+      prBranch: response.data.head.ref,
+    });
 
     window.open(response.data.html_url, "_blank");
 
@@ -405,13 +388,13 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   handleChangeClicked(fullPath: string) {
-    this.setState({ currentFilePath: fullPath });
+    this.navigateToPath(fullPath);
     this.editor.setModel(this.state.fullPathToModelMap.get(fullPath));
   }
 
   handleCheckboxClicked(fullPath: string) {
     this.state.pathToIncludeChanges.set(fullPath, !this.state.pathToIncludeChanges.get(fullPath));
-    this.setState({ pathToIncludeChanges: this.state.pathToIncludeChanges });
+    this.updateState({ pathToIncludeChanges: this.state.pathToIncludeChanges });
   }
 
   // TODO(siggisim): Implement delete
@@ -429,9 +412,9 @@ export default class CodeComponent extends React.Component<Props> {
         this.state.fullPathToModelMap.set(fileName, model);
       }
       this.state.originalFileContents.set(fileName, "");
-      this.setState(
+      this.navigateToPath(fileName);
+      this.updateState(
         {
-          currentFilePath: fileName,
           originalFileContents: this.state.originalFileContents,
           changes: this.state.changes,
         },
@@ -457,7 +440,7 @@ export default class CodeComponent extends React.Component<Props> {
       return;
     }
 
-    this.setState({ updatingPR: true });
+    this.updateState({ updatingPR: true });
 
     let filteredEntries = Array.from(this.state.changes.entries()).filter(
       ([key, value]) => this.state.pathToIncludeChanges.get(key) // Only include checked changes
@@ -466,8 +449,8 @@ export default class CodeComponent extends React.Component<Props> {
     let filenames = filteredEntries.map(([key, value]) => key).join(", ");
 
     updatePullRequest(this.octokit, {
-      owner: this.state.owner,
-      repo: this.state.repo,
+      owner: this.currentOwner(),
+      repo: this.currentRepo(),
       head: this.state.prBranch,
       changes: [
         {
@@ -478,27 +461,24 @@ export default class CodeComponent extends React.Component<Props> {
         },
       ],
     }).then(() => {
-      this.setState({ updatingPR: false });
+      this.updateState({ updatingPR: false });
       window.open(this.state.prLink, "_blank");
     });
   }
 
   handleClearPRClicked() {
-    this.setState(
-      {
-        prNumber: "",
-        prLink: "",
-        prBranch: "",
-      },
-      () => this.saveState()
-    );
+    this.updateState({
+      prNumber: "",
+      prLink: "",
+      prBranch: "",
+    });
   }
 
   handleMergePRClicked() {
     this.octokit.rest.pulls
       .merge({
-        owner: this.state.owner,
-        repo: this.state.repo,
+        owner: this.currentOwner(),
+        repo: this.currentRepo(),
         pull_number: this.state.prNumber,
       })
       .then(() => {
@@ -510,16 +490,14 @@ export default class CodeComponent extends React.Component<Props> {
   handleRevertClicked(path: string, event: MouseEvent) {
     this.state.changes.delete(path);
     this.state.fullPathToModelMap.get(path).setValue(this.state.originalFileContents.get(path));
-    this.setState({ changes: this.state.changes, fullPathToModelMap: this.state.fullPathToModelMap }, () => {
-      this.saveState();
-    });
+    this.updateState({ changes: this.state.changes, fullPathToModelMap: this.state.fullPathToModelMap });
     event.stopPropagation();
   }
 
   // If a callback is set, alert messages will not be shown.
   handleUpdateCommitSha(callback?: (conflicts: number) => void) {
     this.octokit
-      .request(`/repos/${this.state.owner}/${this.state.repo}/compare/${this.state.commitSHA}...master`)
+      .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/compare/${this.state.commitSHA}...master`)
       .then((response: any) => {
         console.log(response);
         let newCommits = response.data.ahead_by;
@@ -542,10 +520,10 @@ export default class CodeComponent extends React.Component<Props> {
         }
 
         this.octokit
-          .request(`/repos/${this.state.owner}/${this.state.repo}/git/trees/${newSha}`)
+          .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${newSha}`)
           .then((response: any) => {
             console.log(response);
-            this.setState(
+            this.updateState(
               { repoResponse: response, mergeConflicts: this.state.mergeConflicts, commitSHA: newSha },
               () => {
                 if (callback) {
@@ -559,11 +537,10 @@ export default class CodeComponent extends React.Component<Props> {
                     alert_service.success(message);
                   }
                 }
-                this.saveState();
-                if (this.state.mergeConflicts.has(this.state.currentFilePath)) {
+                if (this.state.mergeConflicts.has(this.currentPath())) {
                   this.handleViewConflictClicked(
-                    this.state.currentFilePath,
-                    this.state.mergeConflicts.get(this.state.currentFilePath),
+                    this.currentPath(),
+                    this.state.mergeConflicts.get(this.currentPath()),
                     undefined
                   );
                 }
@@ -575,12 +552,12 @@ export default class CodeComponent extends React.Component<Props> {
 
   onTitleChange(e: React.ChangeEvent) {
     const input = e.target as HTMLInputElement;
-    this.setState({ prTitle: input.value });
+    this.updateState({ prTitle: input.value });
   }
 
   onBodyChange(e: React.ChangeEvent) {
     const input = e.target as HTMLInputElement;
-    this.setState({ prBody: input.value });
+    this.updateState({ prBody: input.value });
   }
 
   handleResolveClicked(fullPath: string, sha: string, event: MouseEvent) {
@@ -588,24 +565,19 @@ export default class CodeComponent extends React.Component<Props> {
     this.state.changes.set(fullPath, this.state.fullPathToDiffModelMap.get(fullPath).modified.getValue());
     this.state.fullPathToDiffModelMap.delete(fullPath);
     this.state.mergeConflicts.delete(fullPath);
-    this.setState(
-      {
-        changes: this.state.changes,
-        fullPathToDiffModelMap: this.state.fullPathToDiffModelMap,
-        mergeConflicts: this.state.mergeConflicts,
-      },
-      () => {
-        this.saveState();
-      }
-    );
+    this.updateState({
+      changes: this.state.changes,
+      fullPathToDiffModelMap: this.state.fullPathToDiffModelMap,
+      mergeConflicts: this.state.mergeConflicts,
+    });
   }
 
   handleViewConflictClicked(fullPath: string, sha: string, event: MouseEvent) {
     event?.stopPropagation();
     this.octokit.rest.git
       .getBlob({
-        owner: this.state.owner,
-        repo: this.state.repo,
+        owner: this.currentOwner(),
+        repo: this.currentRepo(),
         file_sha: sha,
       })
       .then((response: any) => {
@@ -624,17 +596,31 @@ export default class CodeComponent extends React.Component<Props> {
         this.diffEditor.setModel(diffModel);
         this.state.fullPathToDiffModelMap.set(fullPath, diffModel);
 
-        this.setState({ currentFilePath: fullPath, fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
+        this.navigateToPath(fullPath);
+        this.updateState({ fullPathToDiffModelMap: this.state.fullPathToDiffModelMap }, () => {
           this.diffEditor.layout();
         });
       });
+  }
+
+  handleCloseReviewModal() {
+    this.updateState({ reviewRequestModalVisible: false });
+  }
+
+  updateState(newState: Partial<State>, callback?: VoidFunction) {
+    this.setState(newState, () => {
+      this.saveState();
+      if (callback) {
+        callback();
+      }
+    });
   }
 
   // TODO(siggisim): Make the menu look nice
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
-    if (!this.state.repo) {
+    if (!this.currentRepo()) {
       return <CodeEmptyStateComponent />;
     }
 
@@ -642,7 +628,7 @@ export default class CodeComponent extends React.Component<Props> {
       this.editor?.layout();
     }, 0);
 
-    let showDiffView = this.state.fullPathToDiffModelMap.has(this.state.currentFilePath);
+    let showDiffView = this.state.fullPathToDiffModelMap.has(this.currentPath());
     return (
       <div className="code-editor">
         <div className="code-menu">
@@ -655,18 +641,18 @@ export default class CodeComponent extends React.Component<Props> {
           <div className="code-menu-breadcrumbs">
             <div className="code-menu-breadcrumbs-environment">
               {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
-              <a target="_blank" href={`http://github.com/${this.state.owner}`}>
-                {this.state.owner}
+              <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
+                {this.currentOwner()}
               </a>{" "}
               /{" "}
-              <a target="_blank" href={`http://github.com/${this.state.owner}/${this.state.repo}`}>
-                {this.state.repo}
+              <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
+                {this.currentRepo()}
               </a>{" "}
               {/* <a href="#">master</a> / TODO: add branch to breadcrumb  */}@{" "}
               <a
                 target="_blank"
                 title={this.state.commitSHA}
-                href={`http://github.com/${this.state.owner}/${this.state.repo}/commit/${this.state.commitSHA}`}>
+                href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.state.commitSHA}`}>
                 {this.state.commitSHA?.slice(0, 7)}
               </a>{" "}
               <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
@@ -674,9 +660,9 @@ export default class CodeComponent extends React.Component<Props> {
               </span>{" "}
             </div>
             <div className="code-menu-breadcrumbs-filename">
-              {this.state.currentFilePath ? (
+              {this.currentPath() ? (
                 <>
-                  <a href="#">{this.state.currentFilePath}</a>
+                  <a href="#">{this.currentPath()}</a>
                 </>
               ) : undefined}
             </div>
@@ -717,7 +703,7 @@ export default class CodeComponent extends React.Component<Props> {
             <CodeBuildButton
               onCommandClicked={this.handleBuildClicked.bind(this)}
               isLoading={this.state.isBuilding}
-              project={`${this.state.repo}/${this.state.owner}`}
+              project={`${this.currentOwner()}/${this.currentRepo()}}`}
             />
           </div>
         </div>
@@ -786,7 +772,7 @@ export default class CodeComponent extends React.Component<Props> {
                       type="checkbox"
                     />{" "}
                     {fullPath}
-                    {this.state.mergeConflicts.has(fullPath) && fullPath != this.state.currentFilePath && (
+                    {this.state.mergeConflicts.has(fullPath) && fullPath != this.currentPath() && (
                       <span
                         className="code-revert-button"
                         onClick={this.handleViewConflictClicked.bind(
@@ -797,7 +783,7 @@ export default class CodeComponent extends React.Component<Props> {
                         View Conflict
                       </span>
                     )}
-                    {this.state.mergeConflicts.has(fullPath) && fullPath == this.state.currentFilePath && (
+                    {this.state.mergeConflicts.has(fullPath) && fullPath == this.currentPath() && (
                       <span
                         className="code-revert-button"
                         onClick={this.handleResolveClicked.bind(
@@ -818,7 +804,7 @@ export default class CodeComponent extends React.Component<Props> {
           </div>
         </div>
         {this.state.reviewRequestModalVisible && (
-          <div className="code-request-review-modal-backdrop">
+          <div className="code-request-review-modal-backdrop" onClick={this.handleCloseReviewModal.bind(this)}>
             <div className="code-request-review-modal">
               <div className="code-request-review-title">Request Review</div>
               <input value={this.state.prTitle} onChange={this.onTitleChange.bind(this)} />

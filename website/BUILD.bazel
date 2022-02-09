@@ -1,0 +1,39 @@
+load("//rules/yarn:index.bzl", "yarn")
+
+package(default_visibility = ["//visibility:public"])
+
+SRCS = glob([
+    "src/**",
+    "static/**",
+    "docs/**",
+]) + [
+    "docusaurus.config.js",
+    "yarn.lock",
+    "sidebars.js",
+]
+
+yarn(
+    name = "website",
+    srcs = SRCS,
+    package = "package.json",
+    tags = ["manual"],
+)
+
+yarn(
+    name = "start",
+    srcs = SRCS,
+    command = "start",
+    package = "package.json",
+    tags = ["manual"],
+)
+
+yarn(
+    name = "serve",
+    srcs = SRCS,
+    command = "serve",
+    package = "package.json",
+    tags = ["manual"],
+    deps = [
+        ":website",
+    ],
+)
