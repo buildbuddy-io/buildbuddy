@@ -59,7 +59,7 @@ func NewStreamingEventParser() *StreamingEventParser {
 	return &StreamingEventParser{
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
-		screenWriter:           terminal.NewScreenWriter(),
+		screenWriter:           nil,
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
@@ -73,8 +73,10 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
-			sep.screenWriter.Write([]byte(p.Progress.Stderr))
-			sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			if sep.screenWriter != nil {
+				sep.screenWriter.Write([]byte(p.Progress.Stderr))
+				sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			}
 			// Now that we've updated our screenwriter, zero out
 			// progress output in the event so they don't eat up
 			// memory.
@@ -183,6 +185,12 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	invocation.Success = sep.success
 	invocation.ActionCount = sep.actionCount
 
+	if invocation.HasChunkedEventLogs {
+		sep.screenWriter = nil
+	} else if sep.screenWriter == nil {
+		sep.screenWriter = terminal.NewScreenWriter()
+	}
+
 	// Fill invocation in a deterministic order:
 	// - Environment variables
 	// - Workspace status
@@ -206,8 +214,10 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 		buildDuration = time.Duration((sep.endTimeMillis - sep.startTimeMillis) * int64(time.Millisecond))
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
-	// TODO(siggisim): Do this rendering once on write, rather than on every read.
-	invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
+	if sep.screenWriter != nil {
+		// TODO(siggisim): Do this rendering once on write, rather than on every read.
+		invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
+	}
 }
 
 func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation) {

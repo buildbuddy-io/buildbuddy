@@ -496,9 +496,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	invocation := &inpb.Invocation{
-		InvocationId:     iid,
-		InvocationStatus: invocationStatus,
-		Attempt:          e.attempt,
+		InvocationId:        iid,
+		InvocationStatus:    invocationStatus,
+		Attempt:             e.attempt,
+		HasChunkedEventLogs: e.logWriter != nil,
 	}
 
 	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
@@ -665,7 +666,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 			Attempt:          e.attempt,
-			LastChunkId:      eventlog.EmptyId,
+		}
+		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			ti.LastChunkId = eventlog.EmptyId
 		}
 
 		if isFirstStartedEvent {
@@ -761,9 +764,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		if e.logWriter != nil {
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
-			// For now, write logs to both chunks and the invocation proto
-			// p.Progress.Stderr = ""
-			// p.Progress.Stdout = ""
+			p.Progress.Stderr = ""
+			p.Progress.Stdout = ""
 		}
 	}
 

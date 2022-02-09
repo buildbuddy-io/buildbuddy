@@ -206,7 +206,7 @@ func TestFillInvocation(t *testing.T) {
 
 	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stderr)
 	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stdout)
-	assert.Equal(t, "stderrstdout", invocation.ConsoleBuffer)
+	assert.Equal(t, "", invocation.ConsoleBuffer)
 
 	assert.Equal(t, "test", invocation.Command)
 	assert.Equal(t, "foo", invocation.Event[1].BuildEvent.GetStarted().OptionsDescription)
