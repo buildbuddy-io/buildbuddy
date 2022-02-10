@@ -3,7 +3,7 @@ import Long from "long";
 import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
-import { target } from "../../../proto/target_ts_proto";
+import { api, target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
@@ -46,6 +46,8 @@ interface Stat {
   maxDuration: number;
   avgDuration: number;
 }
+
+const Status = api.v1.Status;
 
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
@@ -129,7 +131,7 @@ export default class TapComponent extends React.Component<Props, State> {
         let duration = this.durationToNum(status.timing.duration);
         stats.totalDuration += duration;
         stats.maxDuration = Math.max(stats.maxDuration, this.durationToNum(status.timing.duration));
-        if (status.status == 5 /*PASSED*/) {
+        if (status.status == Status.PASSED) {
           stats.pass += 1;
         }
       }
@@ -201,36 +203,35 @@ export default class TapComponent extends React.Component<Props, State> {
     return +duration.seconds + +duration.nanos / 1000000000;
   }
 
-  statusToString(s: number) {
-    // TODO(siggisim): Import the right proto here and clean this up.
+  statusToString(s: api.v1.Status) {
     switch (s) {
-      case 0:
+      case Status.STATUS_UNSPECIFIED:
         return "Unknown";
-      case 1:
+      case Status.BUILDING:
         return "Building";
-      case 2:
+      case Status.BUILT:
         return "Built";
-      case 3:
+      case Status.FAILED_TO_BUILD:
         return "Failed to build";
-      case 4:
+      case Status.TESTING:
         return "Testing";
-      case 5:
+      case Status.PASSED:
         return "Passed";
-      case 6:
+      case Status.FAILED:
         return "Failed";
-      case 7:
+      case Status.TIMED_OUT:
         return "Timed out";
-      case 8:
+      case Status.CANCELLED:
         return "Cancelled";
-      case 9:
+      case Status.TOOL_FAILED:
         return "Tool failed";
-      case 10:
+      case Status.INCOMPLETE:
         return "Incomplete";
-      case 11:
+      case Status.FLAKY:
         return "Flaky";
-      case 12:
+      case Status.UNKNOWN:
         return "Unknown";
-      case 13:
+      case Status.SKIPPED:
         return "Skipped";
     }
   }
