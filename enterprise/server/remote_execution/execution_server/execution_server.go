@@ -186,7 +186,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	return s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
+	dbh := s.env.GetDBHandle()
+	return dbh.TransactionWithOptions(ctx, dbh.NewOpts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
 		var existing tables.Execution
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err

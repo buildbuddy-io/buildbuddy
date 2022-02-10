@@ -14,7 +14,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/blocklist",
-        "//server/util/db",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",

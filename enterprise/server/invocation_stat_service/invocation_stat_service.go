@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -143,7 +142,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	rows, err := i.h.RawWithOptions(ctx, i.h.NewOpts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +246,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+	rows, err := i.h.RawWithOptions(ctx, i.h.NewOpts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}

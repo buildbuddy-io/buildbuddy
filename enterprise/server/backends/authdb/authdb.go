@@ -63,7 +63,7 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -82,7 +82,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -102,7 +102,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err

@@ -56,37 +56,33 @@ type DBHandle struct {
 	dialect       string
 }
 
-type Options struct {
+type options struct {
 	readOnly        bool
 	allowStaleReads bool
 	queryName       string
 }
 
-func Opts() interfaces.DBOptions {
-	return &Options{}
-}
-
-func (o *Options) WithStaleReads() interfaces.DBOptions {
+func (o *options) WithStaleReads() interfaces.DBOptions {
 	o.readOnly = true
 	o.allowStaleReads = true
 	return o
 }
 
 // WithQueryName specifies the query label to use in exported metrics.
-func (o *Options) WithQueryName(queryName string) interfaces.DBOptions {
+func (o *options) WithQueryName(queryName string) interfaces.DBOptions {
 	o.queryName = queryName
 	return o
 }
 
-func (o *Options) ReadOnly() bool {
+func (o *options) ReadOnly() bool {
 	return o.readOnly
 }
 
-func (o *Options) AllowStaleReads() bool {
+func (o *options) AllowStaleReads() bool {
 	return o.allowStaleReads
 }
 
-func (o *Options) QueryName() string {
+func (o *options) QueryName() string {
 	return o.queryName
 }
 
@@ -102,6 +98,10 @@ func (dbh *DBHandle) ScanRows(rows *sql.Rows, dest interface{}) error {
 
 func (dbh *DBHandle) DB() *DB {
 	return dbh.db
+}
+
+func (dbh *DBHandle) NewOpts() interfaces.DBOptions {
+	return &options{}
 }
 
 func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {

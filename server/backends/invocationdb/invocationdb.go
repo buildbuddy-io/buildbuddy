@@ -39,7 +39,7 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
 	created := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
 		err := tx.Create(ti).Error
 		if err == nil {
@@ -108,7 +108,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	updated := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("update_invocation"), func(tx *db.DB) error {
 		result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 		updated = result.RowsAffected > 0
 		return result.Error

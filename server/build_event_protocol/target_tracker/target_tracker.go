@@ -448,7 +448,8 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_targets"), func(tx *db.DB) error {
+		dbh := env.GetDBHandle()
+		err := dbh.TransactionWithOptions(ctx, dbh.NewOpts().WithQueryName("target_tracker_insert_targets"), func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO Targets (repo_url, target_id, user_id, group_id, perms, label, rule_type, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
@@ -490,7 +491,8 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 			valueArgs = append(valueArgs, nowUsec)
 			valueArgs = append(valueArgs, nowUsec)
 		}
-		err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
+		dbh := env.GetDBHandle()
+		err := dbh.TransactionWithOptions(ctx, dbh.NewOpts().WithQueryName("target_tracker_insert_target_statuses"), func(tx *db.DB) error {
 			stmt := fmt.Sprintf("INSERT INTO TargetStatuses (target_id, invocation_uuid, target_type, test_size, status, start_time_usec, duration_usec, created_at_usec, updated_at_usec) VALUES %s", strings.Join(valueStrings, ","))
 			return tx.Exec(stmt, valueArgs...).Error
 		})
