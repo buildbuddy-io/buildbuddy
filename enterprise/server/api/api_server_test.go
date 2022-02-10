@@ -126,7 +126,7 @@ func TestGetAction(t *testing.T) {
 
 	env, ctx := getEnvAndCtx(t, "user1")
 	streamBuild(t, env, testInvocationID)
-	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
+	env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
 	s := NewAPIServer(env)
 	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestLog(t *testing.T) {
 
 	env, ctx := getEnvAndCtx(t, "user1")
 	streamBuild(t, env, testInvocationID)
-	env.GetInvocationDB().InsertOrUpdateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
+	env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
 	s := NewAPIServer(env)
 	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)

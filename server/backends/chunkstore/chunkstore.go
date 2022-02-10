@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	mb   = 1 << 20
-	year = time.Hour * 24 * 365
+	mb         = 1 << 20
+	year       = time.Hour * 24 * 365
+	EmptyIndex = math.MaxUint16
 )
 
 // This implements a chunking reader/writer interface on top of an arbitrary
