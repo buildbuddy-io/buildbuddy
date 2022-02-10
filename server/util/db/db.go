@@ -92,10 +92,6 @@ func (o *Options) QueryName() string {
 
 type DB = gorm.DB
 
-func (dbh *DBHandle) ScanRows(rows *sql.Rows, dest interface{}) error {
-	return dbh.db.ScanRows(rows, dest)
-}
-
 func (dbh *DBHandle) DB() *DB {
 	return dbh.db
 }

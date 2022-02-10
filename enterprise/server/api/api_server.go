@@ -81,7 +81,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	invocations := []*apipb.Invocation{}
 	for rows.Next() {
 		var ti tables.Invocation
-		if err := s.env.GetDBHandle().ScanRows(rows, &ti); err != nil {
+		if err := s.env.GetDBHandle().DB().ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
 

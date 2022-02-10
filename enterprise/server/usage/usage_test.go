@@ -69,7 +69,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 
 	for rows.Next() {
 		tu := &tables.Usage{}
-		err := dbh.ScanRows(rows, tu)
+		err := dbh.DB().ScanRows(rows, tu)
 		require.NoError(t, err)
 		// Throw out Model timestamps to simplify assertions.
 		tu.Model = tables.Model{}
