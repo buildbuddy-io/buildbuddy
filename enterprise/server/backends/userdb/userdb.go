@@ -215,7 +215,7 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		return status.InvalidArgumentError("API key ID cannot be empty.")
 	}
 
-	err := d.h.Exec(
+	err := d.h.DB().Exec(
 		`UPDATE APIKeys SET label = ?, capabilities = ? WHERE api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
@@ -232,7 +232,7 @@ func (d *UserDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 		return status.InvalidArgumentError("API key ID cannot be empty.")
 	}
 
-	if err := d.h.Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error; err != nil {
+	if err := d.h.DB().Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error; err != nil {
 		return err
 	}
 	return nil

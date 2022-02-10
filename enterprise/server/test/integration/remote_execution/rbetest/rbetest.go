@@ -182,7 +182,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	require.NoError(t, err)
 	// Update the API key value to match the user ID, since the test authenticator
 	// treats user IDs and API keys the same.
-	err = testEnv.GetDBHandle().Exec(
+	err = testEnv.GetDBHandle().DB().Exec(
 		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
 	require.NoError(t, err)
 	// Create executor group
