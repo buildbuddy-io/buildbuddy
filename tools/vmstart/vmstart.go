@@ -123,7 +123,7 @@ func main() {
 	var c *firecracker.FirecrackerContainer
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	if *snapshotID != "" {
-		c, err = firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(env, nil, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
@@ -131,7 +131,7 @@ func main() {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
-		c, err = firecracker.NewContainer(env, auth, opts)
+		c, err = firecracker.NewContainer(env, nil, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
