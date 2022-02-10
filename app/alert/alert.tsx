@@ -11,8 +11,8 @@ interface State {
 const DISPLAY_DURATION_MS = 4000;
 
 const ICONS: Record<AlertType, JSX.Element> = {
-  error: <XCircle className="red" />,
-  success: <CheckCircle className="green" />,
+  error: <XCircle className="icon red" />,
+  success: <CheckCircle className="icon green" />,
 };
 
 export default class AlertComponent extends React.Component<{}, State> {
