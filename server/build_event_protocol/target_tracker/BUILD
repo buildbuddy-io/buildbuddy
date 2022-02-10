@@ -25,8 +25,8 @@ go_library(
 go_test(
     name = "target_tracker_test",
     srcs = ["target_tracker_test.go"],
-    embed = [":target_tracker"],
     deps = [
+        ":target_tracker",
         "//proto:build_event_stream_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/testutil/testauth",

@@ -1,4 +1,4 @@
-package target_tracker
+package target_tracker_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/google/uuid"
@@ -140,7 +141,7 @@ func TestTrackTargetsForEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	accumulator := newFakeAccumulator(t)
-	tracker := NewTargetTracker(te, accumulator)
+	tracker := target_tracker.NewTargetTracker(te, accumulator)
 
 	events := []*build_event_stream.BuildEvent{
 		&build_event_stream.BuildEvent{
@@ -331,7 +332,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 	require.NoError(t, err)
 
 	accumulator := newFakeAccumulator(t)
-	tracker := NewTargetTracker(te, accumulator)
+	tracker := target_tracker.NewTargetTracker(te, accumulator)
 
 	events := []*build_event_stream.BuildEvent{
 		&build_event_stream.BuildEvent{
