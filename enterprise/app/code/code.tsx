@@ -15,6 +15,15 @@ import { OutlinedButton, FilledButton } from "../../../app/components/button/but
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
 import alert_service from "../../../app/alert/alert_service";
 
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../../../app/components/dialog/dialog";
+import Modal from "../../../app/components/modal/modal";
+
 interface Props {
   user: User;
   hash: string;
@@ -803,29 +812,37 @@ export default class CodeComponent extends React.Component<Props> {
             )}
           </div>
         </div>
-        {this.state.reviewRequestModalVisible && (
-          <div className="code-request-review-modal-backdrop" onClick={this.handleCloseReviewModal.bind(this)}>
-            <div className="code-request-review-modal">
-              <div className="code-request-review-title">Request Review</div>
-              <input value={this.state.prTitle} onChange={this.onTitleChange.bind(this)} />
-              <textarea value={this.state.prBody} onChange={this.onBodyChange.bind(this)} />
-              <FilledButton
-                disabled={this.state.requestingReview}
-                className="request-review-button"
-                onClick={this.handleReviewClicked.bind(this)}>
-                {this.state.requestingReview ? (
-                  <>
-                    <Spinner className="icon white" /> Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="icon white" /> Send
-                  </>
-                )}
-              </FilledButton>
-            </div>
-          </div>
-        )}
+        <Modal isOpen={this.state.reviewRequestModalVisible} onRequestClose={this.handleCloseReviewModal.bind(this)}>
+          <Dialog className="code-request-review-dialog">
+            <DialogHeader>
+              <DialogTitle>Request review</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <div className="code-request-review-dialog-body">
+                <input value={this.state.prTitle} onChange={this.onTitleChange.bind(this)} />
+                <textarea value={this.state.prBody} onChange={this.onBodyChange.bind(this)} />
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <DialogFooterButtons>
+                <FilledButton
+                  disabled={this.state.requestingReview}
+                  className="code-request-review-button"
+                  onClick={this.handleReviewClicked.bind(this)}>
+                  {this.state.requestingReview ? (
+                    <>
+                      <Spinner className="icon white" /> Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="icon white" /> Send
+                    </>
+                  )}
+                </FilledButton>
+              </DialogFooterButtons>
+            </DialogFooter>
+          </Dialog>
+        </Modal>
       </div>
     );
   }
