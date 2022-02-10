@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -100,7 +100,7 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 	query := d.h.DB().Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.NotFoundError("The requested organization was not found.")
 		}
 		return nil, err
@@ -128,7 +128,7 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *gorm.DB, urlId
 	query := tx.Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.NotFoundError("The requested organization was not found.")
 		}
 		return nil, err
@@ -143,7 +143,7 @@ func (d *UserDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	query := d.h.DB().Raw(`SELECT * FROM APIKeys WHERE api_key_id = ?`, apiKeyID)
 	key := &tables.APIKey{}
 	if err := query.Take(key).Error; err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.NotFoundError("The requested API key was not found.")
 		}
 		return nil, err
@@ -254,7 +254,7 @@ func (d *UserDB) GetAuthGroup(ctx context.Context) (*tables.Group, error) {
 	tg := &tables.Group{}
 	existingRow := d.h.DB().Raw(`SELECT * FROM `+"`Groups`"+` as g WHERE g.group_id = ?`, u.GetGroupID())
 	if err := existingRow.Take(tg).Error; err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.UnauthenticatedErrorf("Group not found: %q", u.GetGroupID())
 		}
 		return nil, err
@@ -276,7 +276,7 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *gorm.DB, domain st
 	existingRow := tx.Raw(`SELECT * FROM `+"`Groups`"+` as g
                                WHERE g.owned_domain = ?`, domain)
 	err := existingRow.Take(tg).Error
-	if db.IsRecordNotFound(err) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func getUserGroup(tx *gorm.DB, userID string, groupID string) (*tables.UserGroup
 	query := tx.Raw(`SELECT * FROM UserGroups AS ug
                     WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
 	if err := query.Take(userGroup).Error; err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
@@ -356,7 +356,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
 	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		existing, err := getUserGroup(tx, userID, groupID)
-		if err != nil && !db.IsRecordNotFound(err) {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if existing != nil {
@@ -503,7 +503,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.Group
 		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				if c.apiKeyValue == "" {
 					c.apiKeyValue = newAPIKeyToken()
 				}
@@ -654,7 +654,7 @@ func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
 	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.User
 		if err := tx.Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return d.createUser(ctx, tx, u)
 			}
 			return err

@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -10,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -93,7 +93,7 @@ func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog
 		if err == nil {
 			return nil
 		}
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return tx.Create(telemetryLog).Error
 		}
 		return err

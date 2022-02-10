@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -345,7 +345,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		req.GetWorkflowId(),
 	).Take(wf).Error
 	if err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.NotFoundError("Workflow not found")
 		}
 		return nil, status.InternalError(err.Error())
@@ -486,7 +486,7 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 			if err == nil {
 				return nil
 			}
-			if !db.IsRecordNotFound(err) {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
 		}

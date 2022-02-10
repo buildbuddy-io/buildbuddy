@@ -11,7 +11,6 @@ go_library(
         "//server/interfaces",
         "//server/rpc/filters",
         "//server/tables",
-        "//server/util/db",
         "//server/util/log",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/rpc:status_go_proto",

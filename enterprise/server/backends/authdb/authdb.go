@@ -2,10 +2,10 @@ package authdb
 
 import (
 	"context"
+	"errors"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
 
@@ -43,7 +43,7 @@ func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, toke
 	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.Token
 		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
-			if db.IsRecordNotFound(err) {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return tx.Create(token).Error
 			}
 			return err
@@ -73,7 +73,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key %q", apiKey)
 		}
 		return nil, err
@@ -92,7 +92,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 		return existingRow.Scan(akg).Error
 	})
 	if err != nil {
-		if db.IsRecordNotFound(err) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
 		}
 		return nil, err

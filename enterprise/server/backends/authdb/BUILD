@@ -9,7 +9,6 @@ go_library(
         "//proto:group_go_proto",
         "//server/interfaces",
         "//server/tables",
-        "//server/util/db",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
     ],

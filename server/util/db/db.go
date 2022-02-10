@@ -127,10 +127,6 @@ func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) e
 	return dbh.db.WithContext(ctx).Transaction(txn)
 }
 
-func IsRecordNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
-}
-
 func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
 	whereArgs := make([]interface{}, 0)
 	if len(where) > 1 {
