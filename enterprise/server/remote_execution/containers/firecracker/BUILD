@@ -20,6 +20,7 @@ go_library(
             "//server/environment",
             "//server/interfaces",
             "//server/util/status",
+            "@com_github_docker_docker//client:go_default_library",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/commandutil",

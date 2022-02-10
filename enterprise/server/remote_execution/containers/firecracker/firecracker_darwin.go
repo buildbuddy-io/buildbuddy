@@ -13,11 +13,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	dockerclient "github.com/docker/docker/client"
 )
 
 type FirecrackerContainer struct{}
 
-func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(env environment.Env, dockerClient *dockerclient.Client, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	c := &FirecrackerContainer{}
 	return c, nil
 }
