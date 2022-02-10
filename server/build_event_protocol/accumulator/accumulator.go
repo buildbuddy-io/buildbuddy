@@ -31,6 +31,21 @@ var (
 	}
 )
 
+type Accumulator interface {
+	InvocationID() string
+	StartTime() time.Time
+	RepoURL() string
+	BranchName() string
+	CommitSHA() string
+	Role() string
+	Command() string
+	Pattern() string
+	WorkflowID() string
+	ActionName() string
+	WorkspaceIsLoaded() bool
+	BuildFinished() bool
+}
+
 // BEValues is an in-memory data structure created for each new stream of build
 // events. Every event in the stream is passed through BEValues, which extracts
 // common values that many functions are interested in. By holding a reference
