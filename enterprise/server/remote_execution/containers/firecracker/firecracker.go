@@ -45,6 +45,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
+	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 )
@@ -276,6 +277,11 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	// dockerClient is used to optimize image pulling by reusing cached docker
+	// image layers. It may be nil if this executor is configured for firecracker
+	// only.
+	dockerClient *dockerclient.Client
+
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
@@ -315,7 +321,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	}
 }
 
-func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(env environment.Env, dockerClient *dockerclient.Client, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -354,6 +360,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			DebugMode:        opts.DebugMode,
 		},
 		jailerRoot:         opts.JailerRoot,
+		dockerClient:       dockerClient,
 		containerImage:     opts.ContainerImage,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
@@ -1230,7 +1237,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.jailerRoot, c.containerImage, creds)
+	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}

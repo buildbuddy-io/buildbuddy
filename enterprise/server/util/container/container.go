@@ -11,10 +11,13 @@ import (
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	dockerclient "github.com/docker/docker/client"
 )
 
 const (
@@ -77,13 +80,15 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 	return diskImagePath, nil
 }
 
-// CreateDiskImage pulls the image from the container registry and creates an
-// ext4 disk image from the container image in the user's local cache directory.
-// If the image is already available locally, the image is not re-downloaded
-// from the registry, but the credentials are still authenticated with the
-// remote registry to ensure that the image can be accessed. The path to the
-// disk image is returned.
-func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+// CreateDiskImage pulls the image from the container registry via docker, and
+// exports an ext4 disk image based on the container image to the configured
+// cache directory.
+//
+// If the image is already cached, the image is not re-downloaded from the
+// registry, but the credentials are still authenticated with the remote
+// registry to ensure that the image can be accessed. The path to the disk image
+// is returned.
+func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
 	if err != nil {
 		return "", err
@@ -115,7 +120,7 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
 
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, workspaceDir, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, workspaceDir, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +144,7 @@ func CreateDiskImage(ctx context.Context, workspaceDir, containerImage string, c
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds container.PullCredentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
 	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {
@@ -153,13 +158,43 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 		return "", err
 	}
 
-	// in CLI-form, the commands below do this:
-	// skopeo copy docker://alpine:lotest oci:/tmp/image_unpack:latest
-	// umoci unpack --rootless --image /tmp/image_unpack /tmp/bundle
-	// /tmp/bundle/rootfs/ has the goods
-	dockerImageRef := fmt.Sprintf("docker://%s", containerImage)
+	// In CLI-form, the commands below do this:
+	//
+	// docker pull alpine:latest
+	// docker save alpine:latest --output /tmp/image_unpack/docker_image.tar
+	// skopeo copy docker-archive:/tmp/image_unpack/docker_image.tar oci:/tmp/image_unpack/oci_image:latest
+	// umoci unpack --rootless --image /tmp/image_unpack/oci_image /tmp/image_unpack/bundle
+	//
+	// If docker is not available then we use skopeo to pull the image, like so:
+	//
+	// skopeo copy docker://alpine:latest oci:/tmp/image_unpack/oci_image:latest
+	//
+	// After running these commands, /tmp/image_unpack/bundle/rootfs/ has the
+	// unpacked image contents.
+	//
+	// The reason we use docker pull instead of directly copying with skopeo is
+	// that docker handles de-duping for us, and we can make use of existing
+	// cached image layers.
+	//
+	// Also note that we use an intermediate `docker save` rather than using the
+	// `docker-daemon:` protocol to export the image directly, due to
+	// https://github.com/containers/image/issues/1049
+	srcRef := fmt.Sprintf("docker://%s", containerImage)
+	if dockerClient != nil {
+		log.Debugf("Pulling: %s", containerImage)
+		if err := docker.PullImage(ctx, dockerClient, containerImage, creds); err != nil {
+			return "", err
+		}
+		log.Debugf("Exporting image from docker daemon: %s", containerImage)
+		dockerImgPath := filepath.Join(rootUnpackDir, "docker_image.tar")
+		if err := docker.SaveImage(ctx, dockerClient, containerImage, dockerImgPath); err != nil {
+			return "", err
+		}
+		log.Debugf("Converting to OCI image: %s", containerImage)
+		srcRef = fmt.Sprintf("docker-archive:%s", dockerImgPath)
+	}
 	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
-	skopeoArgs := []string{"copy", dockerImageRef, ociOutputRef}
+	skopeoArgs := []string{"copy", srcRef, ociOutputRef}
 	if srcCreds := creds.String(); srcCreds != "" {
 		skopeoArgs = append(skopeoArgs, "--src-creds", srcCreds)
 	}
@@ -168,6 +203,7 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	}
 
 	// Make a directory to unpack the bundle to.
+	log.Debugf("Unpacking OCI image: %s", containerImage)
 	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
 	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
 		return "", err

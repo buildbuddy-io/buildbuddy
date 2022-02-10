@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	imageWithDockerInstalled = "gcr.io/flame-public/bb-devtools@sha256:16ef96fe7efc61b8b703ee45c4dc2ef53d1df9011e72c362e61b40f3d03780f4"
+	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -126,7 +126,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(env, nil, cacheAuth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	// This should resume the previous snapshot.
-	c, err = firecracker.NewContainer(env, auth, opts)
+	c, err = firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(env, nil, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,13 +525,14 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              200, // small to make snapshotting faster.
+		MemSizeMB:              2500,
 		InitDockerd:            true,
 		EnableNetworking:       true,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              true,
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(env, nil, cacheAuth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
