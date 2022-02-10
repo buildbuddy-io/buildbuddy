@@ -8,12 +8,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
@@ -171,7 +171,7 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 	statuses := make(map[string][]*trpb.TargetStatus, 0)
 	var nextPageToken *tppb.PaginationToken
 
-	err := env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err := env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		rows, err := tx.Raw(queryStr, args...).Rows()
 		if err != nil {
 			return err

@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"gorm.io/gorm"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -176,7 +177,7 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	rsp.WebhookRegistered = (providerWebhookID != "")
 
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		workflowID, err := tables.PrimaryKeyForTable("Workflows")
 		if err != nil {
 			return status.InternalError(err.Error())
@@ -216,7 +217,7 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		return nil, err
 	}
 	var wf tables.Workflow
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, git_provider_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
 			return err
 		}
@@ -275,7 +276,7 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
 	qStr, qArgs := q.Build()
-	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
@@ -366,7 +367,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			return nil, err
 		}
 		wf.InstanceNameSuffix = suffix
-		err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+		err = ws.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 			return tx.Exec(
 				`UPDATE Workflows SET instance_name_suffix = ? WHERE workflow_id = ?`,
 				wf.InstanceNameSuffix, wf.WorkflowID,

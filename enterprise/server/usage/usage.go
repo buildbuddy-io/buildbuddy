@@ -10,12 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
+	"gorm.io/gorm"
 )
 
 const (
@@ -255,7 +255,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, c collection
 		Region:          ut.region,
 	}
 	dbh := ut.env.GetDBHandle()
-	return dbh.Transaction(ctx, func(tx *db.DB) error {
+	return dbh.Transaction(ctx, func(tx *gorm.DB) error {
 		// Create a row for the corresponding usage period if one doesn't already
 		// exist.
 		res := tx.Exec(`

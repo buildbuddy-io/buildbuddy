@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
@@ -39,7 +40,7 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
 	token.SubID = subID
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.Token
 		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
@@ -63,7 +64,7 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -82,7 +83,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 
 func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
-	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *gorm.DB) error {
 		existingRow := tx.Raw(`
 			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
 			FROM `+"`Groups`"+` AS g, APIKeys AS ak
@@ -102,7 +103,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
-	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithStaleReads(), func(tx *gorm.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"gorm.io/gorm"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -109,7 +110,7 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 
 func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error) {
 	var group *tables.Group
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+	err := d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		g, err := d.getGroupByURLIdentifier(ctx, tx, urlIdentifier)
 		if err != nil {
 			return err
@@ -120,7 +121,7 @@ func (d *UserDB) GetGroupByURLIdentifier(ctx context.Context, urlIdentifier stri
 	return group, err
 }
 
-func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *db.DB, urlIdentifier string) (*tables.Group, error) {
+func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *gorm.DB, urlIdentifier string) (*tables.Group, error) {
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
@@ -186,7 +187,7 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 	return createAPIKey(d.h.DB(), groupID, newAPIKeyToken(), label, caps)
 }
 
-func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func createAPIKey(db *gorm.DB, groupID, value, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
 		return nil, err
@@ -270,7 +271,7 @@ func isInOwnedDomainBlocklist(email string) bool {
 	return false
 }
 
-func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *db.DB, domain string) (*tables.Group, error) {
+func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *gorm.DB, domain string) (*tables.Group, error) {
 	tg := &tables.Group{}
 	existingRow := tx.Raw(`SELECT * FROM `+"`Groups`"+` as g
                                WHERE g.owned_domain = ?`, domain)
@@ -283,7 +284,7 @@ func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *db.DB, domain stri
 	return tg, nil
 }
 
-func getUserGroup(tx *db.DB, userID string, groupID string) (*tables.UserGroup, error) {
+func getUserGroup(tx *gorm.DB, userID string, groupID string) (*tables.UserGroup, error) {
 	userGroup := &tables.UserGroup{}
 	query := tx.Raw(`SELECT * FROM UserGroups AS ug
                     WHERE ug.user_user_id = ? AND ug.group_group_id = ?`, userID, groupID)
@@ -307,7 +308,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		return "", status.InvalidArgumentError("Invalid organization URL.")
 	}
 	groupID := ""
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+	err := d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		if g.OwnedDomain != "" {
 			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
 			if err != nil {
@@ -353,7 +354,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 }
 
 func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		existing, err := getUserGroup(tx, userID, groupID)
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err
@@ -387,7 +388,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 	if groupID == "" {
 		return status.InvalidArgumentError("Group ID is required.")
 	}
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		existing, err := getUserGroup(tx, userID, groupID)
 		if err != nil {
 			return err
@@ -454,7 +455,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 }
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
 			case grpb.UpdateGroupUsersRequest_Update_REMOVE:
@@ -499,7 +500,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 	c := d.getDefaultGroupConfig()
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.Group
 		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
@@ -552,7 +553,7 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 	return c
 }
 
-func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
+func (d *UserDB) createUser(ctx context.Context, tx *gorm.DB, u *tables.User) error {
 	groupIDs := make([]string, 0)
 	for _, group := range u.Groups {
 		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
@@ -650,7 +651,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 }
 
 func (d *UserDB) InsertUser(ctx context.Context, u *tables.User) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.User
 		if err := tx.Where("sub_id = ?", u.SubID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
@@ -672,7 +673,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		return nil, err
 	}
 	user := &tables.User{}
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+	err = d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE user_id = ?`, u.GetUserID())
 		if err := userRow.Take(user).Error; err != nil {
 			return err
@@ -737,7 +738,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 		return nil, status.PermissionDeniedError("Authenticated user does not have permissions to impersonate a user.")
 	}
 	user := &tables.User{}
-	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+	err = d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE user_id = ?`, u.GetUserID())
 		if err := userRow.Take(user).Error; err != nil {
 			return err

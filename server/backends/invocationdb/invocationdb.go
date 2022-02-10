@@ -8,7 +8,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,7 +38,7 @@ func getACL(i *tables.Invocation) *aclpb.ACL {
 func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	ti.Attempt = 1
 	created := false
-	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("upsert_invocation"), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("upsert_invocation"), func(tx *gorm.DB) error {
 		// First, try inserting the invocation. This will work for first attempts.
 		err := tx.Create(ti).Error
 		if err == nil {
@@ -108,7 +107,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	updated := false
-	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("update_invocation"), func(tx *db.DB) error {
+	err := d.h.TransactionWithOptions(ctx, d.h.NewOpts().WithQueryName("update_invocation"), func(tx *gorm.DB) error {
 		result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 		updated = result.RowsAffected > 0
 		return result.Error
@@ -121,7 +120,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 	if err != nil {
 		return err
 	}
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err
@@ -237,7 +236,7 @@ func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
-	return d.h.Transaction(ctx, func(tx *db.DB) error {
+	return d.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var in tables.Invocation
 		if err := tx.Raw(`SELECT user_id, group_id, perms FROM Invocations WHERE invocation_id = ?`, invocationID).Take(&in).Error; err != nil {
 			return err

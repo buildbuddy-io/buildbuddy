@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"gorm.io/gorm"
 
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -85,7 +86,7 @@ func (t *TelemetryServer) LogTelemetry(ctx context.Context, req *telpb.LogTeleme
 }
 
 func (t *TelemetryServer) insertLogIfNotExists(ctx context.Context, telemetryLog *tables.TelemetryLog) error {
-	return t.h.Transaction(ctx, func(tx *db.DB) error {
+	return t.h.Transaction(ctx, func(tx *gorm.DB) error {
 		var existing tables.TelemetryLog
 		err := tx.Where("installation_uuid = ? AND instance_uuid = ? AND telemetry_log_uuid = ?",
 			telemetryLog.InstallationUUID, telemetryLog.InstanceUUID, telemetryLog.TelemetryLogUUID).First(&existing).Error

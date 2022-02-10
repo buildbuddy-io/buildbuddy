@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -33,6 +32,7 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"gorm.io/gorm"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -139,7 +139,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	execution.GroupID = permissions.GroupID
 	execution.Perms = execution.Perms | permissions.Perms
 
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+	return s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		return tx.Create(execution).Error
 	})
 }
@@ -187,7 +187,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	}
 
 	dbh := s.env.GetDBHandle()
-	return dbh.TransactionWithOptions(ctx, dbh.NewOpts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
+	return dbh.TransactionWithOptions(ctx, dbh.NewOpts().WithQueryName("upsert_execution"), func(tx *gorm.DB) error {
 		var existing tables.Execution
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err

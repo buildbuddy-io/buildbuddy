@@ -22,7 +22,6 @@ go_library(
         "//server/remote_cache/namespace",
         "//server/tables",
         "//server/util/bazel_request",
-        "//server/util/db",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
@@ -33,6 +32,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+        "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//status",
     ],
 )

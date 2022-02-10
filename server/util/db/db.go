@@ -86,8 +86,6 @@ func (o *options) QueryName() string {
 	return o.queryName
 }
 
-type DB = gorm.DB
-
 func (dbh *DBHandle) Exec(sql string, values ...interface{}) *gorm.DB {
 	return dbh.db.Exec(sql, values...)
 }
@@ -96,7 +94,7 @@ func (dbh *DBHandle) ScanRows(rows *sql.Rows, dest interface{}) error {
 	return dbh.db.ScanRows(rows, dest)
 }
 
-func (dbh *DBHandle) DB() *DB {
+func (dbh *DBHandle) DB() *gorm.DB {
 	return dbh.db
 }
 
@@ -104,7 +102,7 @@ func (dbh *DBHandle) NewOpts() interfaces.DBOptions {
 	return &options{}
 }
 
-func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {
+func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *gorm.DB {
 	db := dbh.db
 	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB

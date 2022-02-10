@@ -15,6 +15,7 @@ go_library(
         "//server/util/log",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//codes",
     ],
