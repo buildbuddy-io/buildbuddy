@@ -53,7 +53,7 @@ func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, toke
 
 func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, error) {
 	ti := &tables.Token{}
-	existingRow := d.h.Raw(`SELECT * FROM Tokens as t
+	existingRow := d.h.DB().Raw(`SELECT * FROM Tokens as t
                                WHERE t.sub_id = ?`, subID)
 	if err := existingRow.Take(ti).Error; err != nil {
 		return nil, err

@@ -339,7 +339,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	// Lookup workflow
 	wf := &tables.Workflow{}
-	err = ws.env.GetDBHandle().Raw(
+	err = ws.env.GetDBHandle().DB().Raw(
 		`SELECT * FROM Workflows WHERE workflow_id = ?`,
 		req.GetWorkflowId(),
 	).Take(wf).Error
@@ -687,7 +687,7 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	q.AddWhereClause("group_id = ?", wf.GroupID)
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
-	if err := ws.env.GetDBHandle().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
+	if err := ws.env.GetDBHandle().DB().Raw(qStr, qArgs...).Take(&k).Error; err != nil {
 		return nil, err
 	}
 	return k, nil

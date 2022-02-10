@@ -39,9 +39,9 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	if groupID == "" {
 		return nil
 	}
-	db := h.env.GetDBHandle()
+	dbh := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
-	err := db.Raw(
+	err := dbh.DB().Raw(
 		"SELECT invocation_webhook_url FROM `Groups` WHERE group_id = ?",
 		groupID,
 	).Take(row).Error
