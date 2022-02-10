@@ -111,6 +111,7 @@ var (
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+	writeSystemBazelrc      = flag.Bool("write_system_bazelrc", true, "Whether to write /etc/bazel.bazelrc.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -410,8 +411,10 @@ func main() {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
 	// Write default bazelrc
-	if err := writeBazelrc(systemBazelrcPath); err != nil {
-		fatal(status.WrapError(err, "write "+systemBazelrcPath))
+	if *writeSystemBazelrc {
+		if err := writeBazelrc(systemBazelrcPath); err != nil {
+			fatal(status.WrapError(err, "write "+systemBazelrcPath))
+		}
 	}
 	// Configure TERM to get prettier output from executed commands.
 	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
