@@ -196,6 +196,8 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 		}
 		log.Debugf("Converting to OCI image: %s", containerImage)
 		srcRef = fmt.Sprintf("docker-archive:%s", dockerImgPath)
+	} else {
+		log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
 	}
 	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
 	skopeoArgs := []string{"copy", srcRef, ociOutputRef}
