@@ -4,7 +4,7 @@ import DagreGraph from "dagre-d3-react";
 import { AlertCircle, List } from "lucide-react";
 
 interface Props {
-  model: InvocationModel;
+  buildLogs: string;
 }
 
 interface State {
@@ -29,12 +29,12 @@ export default class QueryGraphCardComponent extends React.Component<Props, Stat
   }
 
   render() {
-    if (!this.props.model.consoleBuffer.includes("digraph mygraph {")) {
+    if (!this.props.buildLogs.includes("digraph mygraph {")) {
       return <></>;
     }
 
     let width = Math.min(800, window.innerWidth - 128);
-    let output = this.props.model.consoleBuffer.replace(/.*?digraph.*?{(.*)}.*/gs, "$1");
+    let output = this.props.buildLogs.replace(/.*?digraph.*?{(.*)}.*/gs, "$1");
     let lines = output.split("\n").map((line) => line.trim());
     let nodes = new Set<string>();
     let edges = new Array<Edge>();

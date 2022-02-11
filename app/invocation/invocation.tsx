@@ -132,7 +132,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
   getBuildLogs() {
     if (!this.state.model.hasChunkedEventLogs()) {
-      return this.state.model.consoleBuffer;
+      // Use the inlined console buffer if this invocation was created before
+      // log chunking existed.
+      return this.state.model.invocations.find(() => true)?.consoleBuffer;
     }
     return this.logsModel.getLogs();
   }
@@ -265,10 +267,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent model={this.state.model} />}
+          {(activeTab === "all" || activeTab == "log") && <SuggestionCardComponent buildLogs={this.getBuildLogs()} />}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
-            <QueryGraphCardComponent model={this.state.model} />
+            <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && (

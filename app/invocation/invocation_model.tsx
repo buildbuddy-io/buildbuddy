@@ -19,7 +19,6 @@ export default class InvocationModel {
   cacheStats: cache.CacheStats[] = [];
   scoreCard: cache.IScoreCard;
 
-  consoleBuffer: string;
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
   failed: build_event_stream.BuildEvent[] = [];
@@ -72,7 +71,6 @@ export default class InvocationModel {
       .filter((cacheStat) => !!cacheStat) as cache.CacheStats[];
 
     for (let invocation of invocations) {
-      if (invocation.consoleBuffer) model.consoleBuffer = invocation.consoleBuffer;
       if (invocation.scoreCard) model.scoreCard = invocation.scoreCard;
       for (let cl of invocation.structuredCommandLine) {
         model.structuredCommandLine.push(cl as command_line.CommandLine);

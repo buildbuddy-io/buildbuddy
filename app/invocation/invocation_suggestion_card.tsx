@@ -1,24 +1,11 @@
 import React from "react";
-import InvocationModel from "./invocation_model";
 import { Radio } from "lucide-react";
 
 interface Props {
-  model: InvocationModel;
+  buildLogs: string;
 }
 
-interface State {
-  suggestion: React.ReactElement;
-  reason: React.ReactElement;
-}
-
-export default class SuggestionCardComponent extends React.Component {
-  props: Props;
-
-  state: State = {
-    suggestion: undefined,
-    reason: undefined,
-  };
-
+export default class SuggestionCardComponent extends React.Component<Props> {
   // TODO(siggisim): server side suggestion storing, parsing, and fetching.
   suggestionMap = [
     {
@@ -56,43 +43,34 @@ export default class SuggestionCardComponent extends React.Component {
     },
   ];
 
-  componentDidMount() {
-    this.updateSuggestion();
-  }
-
-  componentDidUpdate(prevProps: Props) {
-    if (prevProps.model !== this.props.model) {
-      this.updateSuggestion();
-    }
-  }
-
-  updateSuggestion() {
-    if (!this.props.model.consoleBuffer) return;
+  getSuggestion() {
+    if (!this.props.buildLogs) return null;
 
     for (let potentialSuggestion of this.suggestionMap) {
-      let matches = this.props.model.consoleBuffer.match(potentialSuggestion.regex);
+      let matches = this.props.buildLogs.match(potentialSuggestion.regex);
       if (matches) {
-        this.setState({
-          suggestion: potentialSuggestion.message,
+        return {
+          message: potentialSuggestion.message,
           reason: <>Shown because your build log contains "{matches[0]}"</>,
-        });
-        break;
+        };
       }
     }
+
+    return null;
   }
 
   render() {
-    if (!this.state.suggestion) {
-      return <></>;
-    }
+    const suggestion = this.getSuggestion();
+    if (!suggestion) return null;
+
     return (
       <div className="card card-suggestion">
         <Radio className="icon white" />
         <div className="content">
           <div className="title">Suggestion from the BuildBuddy Team</div>
           <div className="details">
-            <div className="card-suggestion-message">{this.state.suggestion}</div>
-            <div className="card-suggestion-reason">{this.state.reason}</div>
+            <div className="card-suggestion-message">{suggestion.message}</div>
+            <div className="card-suggestion-reason">{suggestion.reason}</div>
           </div>
         </div>
       </div>
