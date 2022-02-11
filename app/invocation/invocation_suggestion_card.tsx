@@ -6,6 +6,10 @@ interface Props {
 }
 
 export default class SuggestionCardComponent extends React.Component<Props> {
+  shouldComponentUpdate(nextProps: Readonly<Props>): boolean {
+    return nextProps.buildLogs !== this.props.buildLogs;
+  }
+
   // TODO(siggisim): server side suggestion storing, parsing, and fetching.
   suggestionMap = [
     {
