@@ -331,6 +331,9 @@ func PullImage(ctx context.Context, client *dockerclient.Client, image string, c
 	return nil
 }
 
+// SaveImage saves an image from the Docker cache to a tarball file at the given
+// path. The image must have already been pulled, otherwise the operation will
+// fail.
 func SaveImage(ctx context.Context, client *dockerclient.Client, imageRef, path string) error {
 	r, err := client.ImageSave(ctx, []string{imageRef})
 	if err != nil {
