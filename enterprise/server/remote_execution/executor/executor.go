@@ -349,9 +349,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	md.WorkerCompletedTimestamp = ptypes.TimestampNow()
 	actionResult.ExecutionMetadata = md
 
-	// If the action failed, upload information about the error via a failed ActionResult under
-	// an invocation-specific digest, which will not ever be seen by bazel but may be viewed
-	// via the Buildbuddy UI.
+	// If the action failed or do_not_cache is set, upload information about the error via a failed
+	// ActionResult under an invocation-specific digest, which will not ever be seen by bazel but
+	// may be viewed via the Buildbuddy UI.
 	if task.GetAction().GetDoNotCache() || cmdResult.Error != nil || cmdResult.ExitCode != 0 {
 		resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), task.GetInvocationId())
 		if err != nil {
