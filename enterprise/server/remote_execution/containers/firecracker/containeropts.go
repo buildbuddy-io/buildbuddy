@@ -9,9 +9,10 @@ type ContainerOpts struct {
 	ContainerImage string
 
 	// DockerClient can optionally be specified to pull container images via
-	// Docker. This is useful for de-duping in-flight image pull operations and making use
-	// of the local Docker cache for images. If not specified, images will be
-	// pulled directly by skopeo and no image pull de-duping will be performed.
+	// Docker. This is useful for de-duping in-flight image pull operations and
+	// making use of the local Docker cache for images. If not specified, images
+	// will be pulled directly by skopeo and no image pull de-duping will be
+	// performed.
 	DockerClient *dockerclient.Client
 
 	// The action directory with inputs / outputs.
