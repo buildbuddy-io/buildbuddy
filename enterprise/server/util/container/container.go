@@ -80,9 +80,13 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 	return diskImagePath, nil
 }
 
-// CreateDiskImage pulls the image from the container registry via docker, and
-// exports an ext4 disk image based on the container image to the configured
-// cache directory.
+// CreateDiskImage pulls the image from the container registry and exports an
+// ext4 disk image based on the container image to the configured cache
+// directory.
+//
+// If dockerClient is non-nil, then Docker will be used to pull and export
+// the image. This ensures that image pulls are de-duped and that image layers
+// which are already in the local Docker cache can be reused.
 //
 // If the image is already cached, the image is not re-downloaded from the
 // registry, but the credentials are still authenticated with the remote
