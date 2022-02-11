@@ -2,7 +2,7 @@
 
 ## Development
 
-To run the marketing website locally, run:
+To run the marketing website locally for development, run:
 
 ```bash
 bazel run website:start
@@ -10,7 +10,7 @@ bazel run website:start
 
 View the marketing site at http://localhost:3000/
 
-This page will live reload as you make and save changes.
+This page will live reload as you make and save changes. Perfect for iterating quickly.
 
 # Production preview
 
@@ -22,7 +22,7 @@ bazel run website:serve
 
 View the marketing site at http://localhost:3000/
 
-You'll need to rebuild this target for it to pick up any changes.
+Instead of using the live reloading dev server, this will serve the website out of the production static bundle. This means you'll get optimized images, minified js/css, and all of the production-ready bells and whistles. You'll need to rebuild this target for it to pick up any changes.
 
 # Bundle
 
