@@ -89,6 +89,8 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	}
 	args = append(args, []string{
 		"--bazel_command=" + bazelPath,
+		// When running locally, /etc/bazel.bazelrc is not writable.
+		"--write_system_bazelrc=false",
 		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
 		"--workflow_id=test-workflow",
 	}...)
