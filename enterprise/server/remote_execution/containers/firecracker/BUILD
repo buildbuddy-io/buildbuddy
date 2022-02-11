@@ -13,14 +13,15 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     visibility = ["//visibility:public"],
-    deps = select({
+    deps = [
+        "@com_github_docker_docker//client:go_default_library",
+    ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
             "//server/environment",
             "//server/interfaces",
             "//server/util/status",
-            "@com_github_docker_docker//client:go_default_library",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/commandutil",
@@ -41,7 +42,6 @@ go_library(
             "//server/util/log",
             "//server/util/status",
             "@com_github_armon_circbuf//:circbuf",
-            "@com_github_docker_docker//client:go_default_library",
             "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
             "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
             "@com_github_firecracker_microvm_firecracker_go_sdk//client/operations",
