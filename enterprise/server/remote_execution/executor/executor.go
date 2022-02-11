@@ -352,7 +352,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	// If the action failed, upload information about the error via a failed ActionResult under
 	// an invocation-specific digest, which will not ever be seen by bazel but may be viewed
 	// via the Buildbuddy UI.
-	if cmdResult.Error != nil || cmdResult.ExitCode != 0 {
+	if task.GetAction().GetDoNotCache() || cmdResult.Error != nil || cmdResult.ExitCode != 0 {
 		resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), task.GetInvocationId())
 		if err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
