@@ -134,7 +134,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (!this.state.model.hasChunkedEventLogs()) {
       // Use the inlined console buffer if this invocation was created before
       // log chunking existed.
-      return this.state.model.invocations.find(() => true)?.consoleBuffer;
+      return this.state.model.invocations[0]?.consoleBuffer;
     }
     return this.logsModel.getLogs();
   }
