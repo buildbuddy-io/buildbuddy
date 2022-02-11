@@ -277,9 +277,8 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
-	// dockerClient is used to optimize image pulling by reusing cached docker
-	// image layers. It may be nil if this executor is configured for firecracker
-	// only.
+	// dockerClient is used to optimize image pulls by reusing image layers from
+	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
 
 	// when VFS is enabled, this contains the layout for the next execution
@@ -321,7 +320,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	}
 }
 
-func NewContainer(env environment.Env, dockerClient *dockerclient.Client, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
+func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
 		return nil, err
@@ -360,7 +359,7 @@ func NewContainer(env environment.Env, dockerClient *dockerclient.Client, imageC
 			DebugMode:        opts.DebugMode,
 		},
 		jailerRoot:         opts.JailerRoot,
-		dockerClient:       dockerClient,
+		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,

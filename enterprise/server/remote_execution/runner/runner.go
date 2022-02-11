@@ -795,6 +795,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
+			DockerClient:           p.dockerClient,
 			ActionWorkingDirectory: p.hostBuildRoot(),
 			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
 			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
@@ -804,7 +805,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
 		}
-		c, err := firecracker.NewContainer(p.env, p.dockerClient, p.imageCacheAuth, opts)
+		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}
