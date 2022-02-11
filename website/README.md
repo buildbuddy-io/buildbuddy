@@ -1,13 +1,37 @@
-# BuildBuddy's docs/blog website
+# buildbuddy.io marketing website
 
-To run the docs/blog website locally, run:
+## Development
+
+To run the marketing website locally, run:
 
 ```bash
-cd website
-yarn install
-yarn start
+bazel run website:start
 ```
 
-View the docs site at http://localhost:3000/docs/introduction
+View the marketing site at http://localhost:3000/
 
-To deploy the docs/blog website, just commit your changes.
+This page will live reload as you make and save changes.
+
+# Production preview
+
+To preview a static production build locally, run:
+
+```bash
+bazel run website:serve
+```
+
+View the marketing site at http://localhost:3000/
+
+You'll need to rebuild this target for it to pick up any changes.
+
+# Bundle
+
+To generate a static `.tar` archive of the marketing website.
+
+```bash
+bazel build website
+```
+
+## Deployment
+
+To deploy the marketing website, just commit your changes.
