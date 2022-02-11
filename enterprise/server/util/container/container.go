@@ -208,8 +208,8 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 		return "", status.InternalErrorf("skopeo copy error: %q: %s", string(out), err)
 	}
 
-	// Make a directory to unpack the bundle to.
 	log.Debugf("Unpacking OCI image: %s", containerImage)
+	// Make a directory to unpack the bundle to.
 	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
 	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
 		return "", err
