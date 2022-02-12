@@ -16,10 +16,9 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/timeutil",
         "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -17,11 +17,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
@@ -72,22 +71,6 @@ func getTestStatus(aborted *build_event_stream.Aborted) build_event_stream.TestS
 	}
 }
 
-// Converts a timestamp proto field to time.Time. When ts is nil, use fallbackMillis.
-func convertTimestamp(ts *timestamppb.Timestamp, fallbackMillis int64) time.Time {
-	if ts != nil {
-		return ts.AsTime()
-	}
-
-	return time.UnixMilli(fallbackMillis)
-}
-
-func convertDuration(duration *durationpb.Duration, fallbackMillis int64) time.Duration {
-	if duration != nil {
-		return duration.AsDuration()
-	}
-	return time.Duration(fallbackMillis) * time.Microsecond
-}
-
 func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Configured:
@@ -106,8 +89,8 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
 		t.overallStatus = ts.GetOverallStatus()
-		t.firstStartTime = convertTimestamp(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
-		t.totalDuration = convertDuration(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
+		t.firstStartTime = timeutil.GetTime(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
+		t.totalDuration = timeutil.GetDuration(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
 		t.state = targetStateSummary
 	case *build_event_stream.BuildEvent_Aborted:
 		t.buildSuccess = false
