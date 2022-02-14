@@ -20,7 +20,10 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/timeutil",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
