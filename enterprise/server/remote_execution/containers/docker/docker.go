@@ -290,6 +290,10 @@ func (r *dockerCommandContainer) IsImageCached(ctx context.Context) (bool, error
 }
 
 func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	return PullImage(ctx, r.client, r.image, creds)
+}
+
+func PullImage(ctx context.Context, client *dockerclient.Client, image string, creds container.PullCredentials) error {
 	if !creds.IsEmpty() {
 		authCfg := dockertypes.AuthConfig{
 			Username: creds.Username,
@@ -299,7 +303,7 @@ func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.
 		if err != nil {
 			return err
 		}
-		rc, err := r.client.ImagePull(ctx, r.image, dockertypes.ImagePullOptions{
+		rc, err := client.ImagePull(ctx, image, dockertypes.ImagePullOptions{
 			RegistryAuth: auth,
 		})
 		if err != nil {
@@ -315,16 +319,34 @@ func (r *dockerCommandContainer) PullImage(ctx context.Context, creds container.
 	// TODO: find a way to implement this without calling the Docker CLI.
 	// Currently it's a bit involved to replicate the exact protocols that the
 	// CLI uses to pull images.
-	cmd := exec.CommandContext(ctx, "docker", "pull", r.image)
+	cmd := exec.CommandContext(ctx, "docker", "pull", image)
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return wrapDockerErr(
 			err,
-			fmt.Sprintf("docker pull %q: %s -- stderr:\n%s", r.image, err, string(stderr.Bytes())),
+			fmt.Sprintf("docker pull %q: %s -- stderr:\n%s", image, err, string(stderr.Bytes())),
 		)
 	}
 	return nil
+}
+
+// SaveImage saves an image from the Docker cache to a tarball file at the given
+// path. The image must have already been pulled, otherwise the operation will
+// fail.
+func SaveImage(ctx context.Context, client *dockerclient.Client, imageRef, path string) error {
+	r, err := client.ImageSave(ctx, []string{imageRef})
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, r)
+	return err
 }
 
 func generateContainerName() (string, error) {
