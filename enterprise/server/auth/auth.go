@@ -51,6 +51,7 @@ const (
 	// The key that the basicAuth object is stored under in the
 	// context.
 	contextBasicAuthKey = "basicauth.user"
+
 	// The key any error is stored under if the user could not be
 	// authenticated.
 	contextBasicAuthErrorKey = "basicauth.error"
@@ -531,8 +532,22 @@ func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string)
 	err := dbHandle.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
-			return err
+			return status.UnauthenticatedError(err.Error())
 		}
+		// Ensure the access token is set. If it's not, return an error
+		// that the frontend can recognize to trigger login again.
+		at := &struct{ AccessToken string }{}
+		err := tx.Raw(`SELECT access_token FROM Tokens WHERE sub_id = ?`, subID).Take(at).Error
+		if err != nil {
+			return status.UnauthenticatedError(err.Error())
+		}
+		// For now, we don't need to validate this token -- it's enough
+		// to ensure it was not cleared. If it was, that would indicate
+		// that the user had logged out (or been logged out by us).
+		if at.AccessToken == "" {
+			return status.PermissionDeniedError("user not logged in")
+		}
+
 		groupRows, err := tx.Raw(`
 			SELECT
 				g.user_id,
@@ -974,13 +989,38 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	clearLoginCookie(w)
-
-	redirURL := r.URL.Query().Get(authRedirectParam)
-	if redirURL == "" {
-		redirURL = "/" // default to redirecting home.
+	redir := func() {
+		redirURL := r.URL.Query().Get(authRedirectParam)
+		if redirURL == "" {
+			redirURL = "/" // default to redirecting home.
+		}
+		http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
 	}
-	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
+	clearLoginCookie(w)
+	defer redir()
+
+	// Attempt to mark the user as logged out in the database by clearing
+	// their access token.
+	jwt := GetCookie(r, jwtCookie)
+	if jwt == "" {
+		return
+	}
+	issuer := GetCookie(r, authIssuerCookie)
+	auth := a.getAuthConfig(issuer)
+	if auth == nil {
+		return
+	}
+	ctx := r.Context()
+	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
+	if err != nil {
+		return
+	}
+
+	if authDB := a.env.GetAuthDB(); authDB != nil {
+		if err := authDB.ClearToken(ctx, ut.GetSubID()); err != nil {
+			log.Errorf("Error clearing user access token on logout: %s", err)
+		}
+	}
 }
 
 func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {

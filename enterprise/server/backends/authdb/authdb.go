@@ -59,6 +59,14 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 	return ti, nil
 }
 
+func (d *AuthDB) ClearToken(ctx context.Context, subID string) error {
+	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+		res := tx.Exec(`UPDATE Tokens SET access_token = "" WHERE t.sub_id = ?`, subID)
+		return res.Error
+	})
+	return err
+}
+
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
