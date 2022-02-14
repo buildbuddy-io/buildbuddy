@@ -14,6 +14,7 @@ go_library(
         "//server/real_environment",
         "//server/rpc/filters",
         "//server/testutil/testfs",
+        "//server/testutil/testmysql",
         "//server/util/db",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
