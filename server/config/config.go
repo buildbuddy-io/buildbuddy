@@ -226,7 +226,7 @@ type authConfig struct {
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
 	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 	AdminGroupID         string          `yaml:"admin_group_id" usage:"ID of a group whose members can perform actions only accessible to server admins."`
-	HttpsOnlyCookies 	 bool			 `yaml:"https_only_cookies" usage:"If true, cookies will only be set over https connections."`
+	HttpsOnlyCookies     bool            `yaml:"https_only_cookies" usage:"If true, cookies will only be set over https connections."`
 }
 
 type OauthProvider struct {
