@@ -39,14 +39,14 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 }
 
 func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
-	db := es.env.GetDBHandle()
+	dbh := es.env.GetDBHandle()
 	q := query_builder.NewQuery(`SELECT * FROM Executions as e`)
 	q = q.AddWhereClause(`e.invocation_id = ?`, invocationID)
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, es.env, q, "e"); err != nil {
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	rows, err := db.Raw(queryStr, args...).Rows()
+	rows, err := dbh.DB().Raw(queryStr, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	executions := make([]tables.Execution, 0)
 	for rows.Next() {
 		var exec tables.Execution
-		if err := db.ScanRows(rows, &exec); err != nil {
+		if err := dbh.ScanRows(rows, &exec); err != nil {
 			return nil, err
 		}
 		executions = append(executions, exec)

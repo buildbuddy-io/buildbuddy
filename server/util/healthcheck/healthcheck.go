@@ -16,6 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"golang.org/x/sync/errgroup"
+
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 )
 
 var (
@@ -213,6 +215,15 @@ func (h *HealthChecker) ReadinessHandler() http.Handler {
 	})
 }
 
+// serverType is derived from either the headers or a query parameter
+func serverType(r *http.Request) string {
+	if r.Header.Get("server-type") != "" {
+		return r.Header.Get("server-type")
+	}
+	// GCP load balancer healthchecks do not allow sending headers.
+	return r.URL.Query().Get("server-type")
+}
+
 func (h *HealthChecker) LivenessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqServerType := serverType(r)
@@ -226,11 +237,31 @@ func (h *HealthChecker) LivenessHandler() http.Handler {
 	})
 }
 
-// serverType is dervied from either the headers or a query parameter
-func serverType(r *http.Request) string {
-	if r.Header.Get("server-type") != "" {
-		return r.Header.Get("server-type")
+func (h *HealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error) {
+	// GRPC does not have indepenent health and readiness checks like HTTP does.
+	// An additional wrinkle is that AWS ALB's do not support sending a service
+	// name to the GRPC health check. To maximize compatibility and usefulness
+	// we ignore the service name for now (sad face), and return:
+	//   - SERVING when the service is ready
+	//   - NOT_SERVING when the service is not ready
+	//   - UNKNOWN when the service is shutting down.
+	h.mu.RLock()
+	ready := h.readyToServe
+	shuttingDown := h.shuttingDown
+	h.mu.RUnlock()
+	rsp := &hlpb.HealthCheckResponse{}
+	if ready {
+		rsp.Status = hlpb.HealthCheckResponse_SERVING
+	} else {
+		rsp.Status = hlpb.HealthCheckResponse_NOT_SERVING
 	}
-	// GCP load balancer healthchecks do not allow sending headers.
-	return r.URL.Query().Get("server-type")
+
+	if shuttingDown {
+		rsp.Status = hlpb.HealthCheckResponse_UNKNOWN
+	}
+	return rsp, nil
+}
+
+func (h *HealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {
+	return status.UnimplementedError("Watch not implemented")
 }

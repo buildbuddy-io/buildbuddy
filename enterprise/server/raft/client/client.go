@@ -25,7 +25,7 @@ import (
 
 // If a request is received that will result in a nodehost.Sync{Propose/Read},
 // but not deadline is set, defaultContextTimeout will be applied.
-const defaultContextTimeout = 60 * time.Second
+const DefaultContextTimeout = 60 * time.Second
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
@@ -112,12 +112,14 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, re
 
 type streamWriteCloser struct {
 	stream        rfspb.Api_WriteClient
+	header        *rfpb.Header
 	fileRecord    *rfpb.FileRecord
 	bytesUploaded int64
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	req := &rfpb.WriteRequest{
+		Header:      wc.header,
 		FileRecord:  wc.fileRecord,
 		Data:        data,
 		FinishWrite: false,
@@ -138,8 +140,8 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *APIClient) RemoteWriter(ctx context.Context, peer string, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	client, err := c.getClient(ctx, peer)
+func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+	client, err := c.getClient(ctx, peerHeader.GRPCAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +150,7 @@ func (c *APIClient) RemoteWriter(ctx context.Context, peer string, fileRecord *r
 		return nil, err
 	}
 	wc := &streamWriteCloser{
+		header:        peerHeader.Header,
 		fileRecord:    fileRecord,
 		bytesUploaded: 0,
 		stream:        stream,
@@ -211,27 +214,37 @@ func (mc *multiWriteCloser) Close() error {
 	return err
 }
 
-func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+type PeerHeader struct {
+	Header   *rfpb.Header
+	GRPCAddr string
+}
+
+func (c *APIClient) MultiWriter(ctx context.Context, peerHeaders []*PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
 	mwc := &multiWriteCloser{
 		ctx:        ctx,
 		log:        c.log,
 		fileRecord: fileRecord,
 		closers:    make(map[string]io.WriteCloser, 0),
 	}
-	for _, peer := range peers {
-		rwc, err := c.RemoteWriter(ctx, peer, fileRecord)
+	for _, peerHeader := range peerHeaders {
+		peer := peerHeader.GRPCAddr
+		rwc, err := c.RemoteWriter(ctx, peerHeader, fileRecord)
 		if err != nil {
 			log.Debugf("Skipping write %q to peer %q because: %s", fileRecordLogString(fileRecord), peer, err)
 			continue
 		}
 		mwc.closers[peer] = rwc
 	}
-	if len(mwc.closers) < int(math.Ceil(float64(len(peers))/2)) {
+	if len(mwc.closers) < int(math.Ceil(float64(len(peerHeaders))/2)) {
 		openPeers := make([]string, len(mwc.closers))
 		for peer := range mwc.closers {
 			openPeers = append(openPeers, peer)
 		}
-		log.Debugf("Could not open enough remoteWriters for fileRecord %s. All peers: %s, opened: %s", fileRecordLogString(fileRecord), peers, openPeers)
+		allPeers := make([]string, len(peerHeaders))
+		for _, peerHeader := range peerHeaders {
+			allPeers = append(allPeers, peerHeader.GRPCAddr)
+		}
+		log.Debugf("Could not open enough remoteWriters for fileRecord %s. All peers: %s, opened: %s", fileRecordLogString(fileRecord), allPeers, openPeers)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available.", len(mwc.closers))
 	}
 	return mwc, nil
@@ -239,7 +252,7 @@ func (c *APIClient) MultiWriter(ctx context.Context, peers []string, fileRecord 
 
 func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 		ctx = c
 	}
@@ -270,7 +283,7 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 
 func SyncReadLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, defaultContextTimeout)
+		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 		ctx = c
 	}

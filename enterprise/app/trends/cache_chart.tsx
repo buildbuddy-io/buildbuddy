@@ -13,8 +13,6 @@ interface Props {
   extractWrites?: (datum: any) => number;
 }
 
-const countTickFormatter = (value: number) => format.count(value, /*fractionDigits=*/ 0);
-
 const CacheChartTooltip = ({ active, payload, labelFormatter, extractHits, extractMisses, extractWrites }: any) => {
   if (active) {
     let data = payload[0].payload;
@@ -52,7 +50,7 @@ export default class CacheChartComponent extends React.Component {
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="hits" tickFormatter={countTickFormatter} />
+            <YAxis yAxisId="hits" tickFormatter={format.count} allowDecimals={false} />
             <YAxis
               domain={[0, 100]}
               yAxisId="percent"

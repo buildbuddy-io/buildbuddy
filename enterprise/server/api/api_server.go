@@ -73,7 +73,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}
 	queryStr, args := q.Build()
 
-	rows, err := s.env.GetDBHandle().Raw(queryStr, args...).Rows()
+	rows, err := s.env.GetDBHandle().DB().Raw(queryStr, args...).Rows()
 	if err != nil {
 		return nil, err
 	}

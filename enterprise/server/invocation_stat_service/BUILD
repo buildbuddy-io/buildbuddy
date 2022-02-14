@@ -12,6 +12,7 @@ go_library(
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/util/blocklist",
         "//server/util/db",
         "//server/util/log",

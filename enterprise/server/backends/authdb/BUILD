@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:group_go_proto",
         "//server/interfaces",
         "//server/tables",
         "//server/util/db",

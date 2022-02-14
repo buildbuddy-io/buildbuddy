@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
@@ -33,27 +34,20 @@ const (
 	targetStateCompleted
 	targetStateResult
 	targetStateSummary
+	targetStateAborted
 )
 
-type result struct {
-	cachedLocally  bool
-	status         build_event_stream.TestStatus
-	startMillis    int64
-	durationMillis int64
-}
 type target struct {
-	label               string
-	ruleType            string
-	results             []*result
-	firstStartMillis    int64
-	totalDurationMillis int64
-	state               targetState
-	id                  int64
-	lastStopMillis      int64
-	overallStatus       build_event_stream.TestStatus
-	targetType          cmpb.TargetType
-	testSize            build_event_stream.TestSize
-	buildSuccess        bool
+	label          string
+	ruleType       string
+	firstStartTime time.Time
+	totalDuration  time.Duration
+	state          targetState
+	id             int64
+	overallStatus  build_event_stream.TestStatus
+	targetType     cmpb.TargetType
+	testSize       build_event_stream.TestSize
+	buildSuccess   bool
 }
 
 func md5Int64(text string) int64 {
@@ -68,6 +62,15 @@ func newTarget(label string) *target {
 	}
 }
 
+func getTestStatus(aborted *build_event_stream.Aborted) build_event_stream.TestStatus {
+	switch aborted.GetReason() {
+	case build_event_stream.Aborted_USER_INTERRUPTED:
+		return build_event_stream.TestStatus_TOOL_HALTED_BEFORE_TESTING
+	default:
+		return build_event_stream.TestStatus_FAILED_TO_BUILD
+	}
+}
+
 func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Configured:
@@ -77,21 +80,22 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		t.state = targetStateConfigured
 	case *build_event_stream.BuildEvent_Completed:
 		t.buildSuccess = p.Completed.GetSuccess()
+		if !p.Completed.GetSuccess() {
+			t.overallStatus = build_event_stream.TestStatus_FAILED_TO_BUILD
+		}
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
-		t.results = append(t.results, &result{
-			cachedLocally:  p.TestResult.GetCachedLocally(),
-			status:         p.TestResult.GetStatus(),
-			startMillis:    p.TestResult.GetTestAttemptStartMillisEpoch(),
-			durationMillis: p.TestResult.GetTestAttemptDurationMillis(),
-		})
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
-		t.overallStatus = p.TestSummary.GetOverallStatus()
-		t.firstStartMillis = p.TestSummary.GetFirstStartTimeMillis()
-		t.lastStopMillis = p.TestSummary.GetLastStopTimeMillis()
-		t.totalDurationMillis = p.TestSummary.GetTotalRunDurationMillis()
+		ts := p.TestSummary
+		t.overallStatus = ts.GetOverallStatus()
+		t.firstStartTime = timeutil.GetTimeWithFallback(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
+		t.totalDuration = timeutil.GetDurationWithFallback(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
 		t.state = targetStateSummary
+	case *build_event_stream.BuildEvent_Aborted:
+		t.buildSuccess = false
+		t.state = targetStateAborted
+		t.overallStatus = getTestStatus(p.Aborted)
 	}
 }
 
@@ -119,13 +123,13 @@ func targetTypeFromRuleType(ruleType string) cmpb.TargetType {
 
 type TargetTracker struct {
 	env                   environment.Env
-	buildEventAccumulator *accumulator.BEValues
+	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
 	openClosures          map[string]targetClosure
 	errGroup              *errgroup.Group
 }
 
-func NewTargetTracker(env environment.Env, buildEventAccumulator *accumulator.BEValues) *TargetTracker {
+func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Accumulator) *TargetTracker {
 	return &TargetTracker{
 		env:                   env,
 		buildEventAccumulator: buildEventAccumulator,
@@ -239,8 +243,8 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
-			StartTimeUsec:  int64(target.firstStartMillis * 1000),
-			DurationUsec:   int64(target.totalDurationMillis * 1000),
+			StartTimeUsec:  target.firstStartTime.UnixMicro(),
+			DurationUsec:   target.totalDuration.Microseconds(),
 		})
 	}
 	if err := insertOrUpdateTargetStatuses(ctx, t.env, newTargetStatuses); err != nil {
@@ -268,8 +272,13 @@ func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_e
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestSummary:
 		t.handleEvent(event)
-	case *build_event_stream.BuildEvent_Finished:
-		t.handleFinishedEvent(ctx, event)
+	case *build_event_stream.BuildEvent_Aborted:
+		t.handleEvent(event)
+	}
+
+	if event.GetLastMessage() {
+		// Handle last message
+		t.handleLastEvent(ctx, event)
 	}
 }
 
@@ -311,7 +320,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 	t.errGroup.Go(func() error { return t.writeTestTargets(gctx, permissions) })
 }
 
-func (t *TargetTracker) handleFinishedEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	if t.buildEventAccumulator.Command() != "test" {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.buildEventAccumulator.InvocationID())
 		return

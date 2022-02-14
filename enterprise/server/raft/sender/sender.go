@@ -133,20 +133,27 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.R
 	return rangeDescriptor, nil
 }
 
-func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]string, error) {
+func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHeader, error) {
 	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 
-	allNodes := make([]string, 0, len(rangeDescriptor.GetReplicas()))
+	allNodes := make([]*client.PeerHeader, 0, len(rangeDescriptor.GetReplicas()))
 	for _, replica := range rangeDescriptor.GetReplicas() {
 		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
 			log.Errorf("registry error resolving %+v: %s", replica, err)
 			continue
 		}
-		allNodes = append(allNodes, addr)
+
+		allNodes = append(allNodes, &client.PeerHeader{
+			Header: &rfpb.Header{
+				Replica: replica,
+				RangeId: rangeDescriptor.GetRangeId(),
+			},
+			GRPCAddr: addr,
+		})
 	}
 	return allNodes, nil
 }
@@ -171,6 +178,34 @@ func (s *Sender) orderReplicas(rd *rfpb.RangeDescriptor) []*rfpb.ReplicaDescript
 		replicas = append(replicas, replica)
 	}
 	return replicas
+}
+
+func (s *Sender) cacheReplica(rangeID uint64, r *rfpb.ReplicaDescriptor) {
+	s.mu.RLock()
+	_, ok := s.cachedReplicas[rangeID]
+	s.mu.RUnlock()
+	if ok {
+		return
+	}
+
+	s.mu.Lock()
+	if _, ok := s.cachedReplicas[rangeID]; !ok {
+		s.cachedReplicas[rangeID] = r
+	}
+	s.mu.Unlock()
+}
+
+func (s *Sender) uncacheReplica(rangeID uint64) {
+	s.mu.RLock()
+	_, ok := s.cachedReplicas[rangeID]
+	s.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	s.mu.Lock()
+	delete(s.cachedReplicas, rangeID)
+	s.mu.Unlock()
 }
 
 func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient, h *rfpb.Header) error) error {
@@ -210,21 +245,12 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 			lastErr = fn(client, header)
 			if lastErr != nil {
 				if status.IsOutOfRangeError(lastErr) || status.IsUnavailableError(lastErr) {
-					// TODO(tylerw): Make this lock free?
-					s.mu.Lock()
-					delete(s.cachedReplicas, rangeDescriptor.GetRangeId())
-					s.mu.Unlock()
-
+					s.uncacheReplica(rangeDescriptor.GetRangeId())
 					log.Debugf("sender.Run got outOfRange or Unavailable on %+v, continuing to next replica", replica)
 					continue
 				}
 			} else {
-				// TODO(tylerw): Make this lock free?
-				s.mu.Lock()
-				if _, ok := s.cachedReplicas[rangeDescriptor.GetRangeId()]; !ok {
-					s.cachedReplicas[rangeDescriptor.GetRangeId()] = replica
-				}
-				s.mu.Unlock()
+				s.cacheReplica(rangeDescriptor.GetRangeId(), replica)
 			}
 			return lastErr
 		}

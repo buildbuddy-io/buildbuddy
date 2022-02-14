@@ -14,9 +14,12 @@ ts_library(
         "*.tsx",
     ]),
     deps = [
+        "//app/alert",
         "//app/auth",
         "//app/components/button",
+        "//app/components/dialog",
         "//app/components/menu",
+        "//app/components/modal",
         "//app/components/popup",
         "//app/components/spinner",
         "//app/format",

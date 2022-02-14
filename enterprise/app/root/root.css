@@ -52,6 +52,14 @@ body {
   flex-direction: column;
 }
 
+.root-tests .content {
+  max-height: 100%;
+}
+
+.root-tests .footer {
+  display: none;
+}
+
 .history-title {
   margin-right: 18px;
 }

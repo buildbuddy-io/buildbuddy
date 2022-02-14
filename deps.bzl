@@ -1363,8 +1363,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_sql_driver_mysql",
         importpath = "github.com/go-sql-driver/mysql",
-        sum = "h1:ozyZYNQW3x3HtqT1jira07DN2PArx2v7/mN66gGcHOs=",
-        version = "v1.5.0",
+        sum = "h1:BCTh4TKNUYmOmMUcQ3IipzF5prigylS7XXjEkfCHuOE=",
+        version = "v1.6.0",
     )
 
     go_repository(
@@ -2232,8 +2232,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_jinzhu_now",
         importpath = "github.com/jinzhu/now",
-        sum = "h1:g39TucaRWyV3dwDO++eEc6qf8TVIQ/Da48WmqjZ3i7E=",
-        version = "v1.1.1",
+        sum = "h1:tHnRBy1i5F2Dh8BAFxqFzxKqqvezXrL2OW1TnX+Mlas=",
+        version = "v1.1.4",
     )
 
     go_repository(
@@ -2690,8 +2690,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_mattn_go_sqlite3",
         importpath = "github.com/mattn/go-sqlite3",
-        sum = "h1:gXHsfypPkaMZrKbD5209QV9jbUTJKjyR5WD3HYQSd+U=",
-        version = "v2.0.3+incompatible",
+        sum = "h1:gt+cp9c0XGqe9S/wAHTL3n/7MqY+siPWgWJgqdsFrzQ=",
+        version = "v1.14.11",
     )
 
     go_repository(
@@ -4156,20 +4156,20 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_driver_mysql",
         importpath = "gorm.io/driver/mysql",
-        sum = "h1:TATTzt+kR+IV0+h3iUB3dHUe8omCvQ0rOkmfCsUBohk=",
-        version = "v1.0.4",
+        sum = "h1:l8+9VwjjyzEkw0PNPBOr2JHhLOGVk7XEnl5hk42bcvs=",
+        version = "v1.2.0",
     )
     go_repository(
         name = "io_gorm_driver_sqlite",
         importpath = "gorm.io/driver/sqlite",
-        sum = "h1:PDzwYE+sI6De2+mxAneV9Xs11+ZyKV6oxD3wDGkaNvM=",
-        version = "v1.1.4",
+        sum = "h1:SStaH/b+280M7C8vXeZLz/zo9cLQmIGwwj3cSj7p6l4=",
+        version = "v1.2.6",
     )
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",
-        sum = "h1:ebZ5KrSHzet+sqOCVdH9mTjW91L298nX3v5lVxAzSUY=",
-        version = "v1.20.12",
+        sum = "h1:/JS6z+GStEQvJNW3t1FTwJwG/gZ+A7crFdRqtvG5ehA=",
+        version = "v1.22.3",
     )
     go_repository(
         name = "io_k8s_api",

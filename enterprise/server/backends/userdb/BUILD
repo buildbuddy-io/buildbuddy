@@ -10,6 +10,7 @@ go_library(
         "//proto:group_go_proto",
         "//proto:telemetry_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/tables",
         "//server/util/capabilities",
         "//server/util/db",

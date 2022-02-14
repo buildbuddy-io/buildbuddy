@@ -177,7 +177,7 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 	client := newGitHubClient(ctx, accessToken)
 	opts := &gh.RepositoryContentGetOptions{Ref: ref}
 	fileContent, _, rsp, err := client.Repositories.GetContents(ctx, owner, repo, filePath, opts)
-	if rsp.StatusCode == http.StatusNotFound {
+	if rsp != nil && rsp.StatusCode == http.StatusNotFound {
 		return nil, status.NotFoundErrorf("%s: not found in %s", filePath, repoURL)
 	}
 	if err != nil {

@@ -92,6 +92,7 @@ func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	//   // {groupID}/{ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
 	//   //   GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   GR123456/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	segments := make([]string, 0, 4)
 	if r.GetGroupId() == "" {
 		return nil, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
@@ -114,18 +115,16 @@ func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	return []byte(filepath.Join(segments...)), nil
 }
 
-// TODO(tylerw): This is obviously not a "constant". Move it to the right place.
-func FilePath(fileDir string, r *rfpb.FileRecord) (string, error) {
+func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
-	// filepaths look like this:
-	//   // {rootDir}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	// Metadata keys look like this:
+	//   // {groupID}/{ac|cas}/{hash}
 	//   // for example:
-	//   //   /bb/files/GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
-	segments := make([]string, 0, 5)
-	segments = append(segments, fileDir)
-
+	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd\xff
+	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd\xff
+	segments := make([]string, 0, 3)
 	if r.GetGroupId() == "" {
-		return "", status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+		return nil, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
 	}
 	segments = append(segments, r.GetGroupId())
 
@@ -134,13 +133,11 @@ func FilePath(fileDir string, r *rfpb.FileRecord) (string, error) {
 	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
 		segments = append(segments, "ac")
 	} else {
-		return "", status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+		return nil, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
 	}
-	if len(r.GetDigest().GetHash()) > 4 {
-		segments = append(segments, r.GetDigest().GetHash()[:4])
-	} else {
-		return "", status.FailedPreconditionError("Malformed digest; too short.")
+	if len(r.GetDigest().GetHash()) <= 4 {
+		return nil, status.FailedPreconditionError("Malformed digest; too short.")
 	}
 	segments = append(segments, r.GetDigest().GetHash())
-	return filepath.Join(segments...), nil
+	return keys.Key([]byte(filepath.Join(segments...))).Next(), nil
 }

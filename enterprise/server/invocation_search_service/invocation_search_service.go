@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
@@ -27,10 +28,10 @@ const (
 
 type InvocationSearchService struct {
 	env environment.Env
-	h   *db.DBHandle
+	h   interfaces.DBHandle
 }
 
-func NewInvocationSearchService(env environment.Env, h *db.DBHandle) *InvocationSearchService {
+func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle) *InvocationSearchService {
 	return &InvocationSearchService{
 		env: env,
 		h:   h,

@@ -61,7 +61,7 @@ func timeStr(t time.Time) string {
 func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	usages := []*tables.Usage{}
 	dbh := te.GetDBHandle()
-	rows, err := dbh.Raw(`
+	rows, err := dbh.DB().Raw(`
 		SELECT * From Usages
 		ORDER BY group_id, period_start_usec, region ASC;
 	`).Rows()
@@ -85,12 +85,12 @@ func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
 	}
 	dbh := te.GetDBHandle()
-	dbh.Callback().Create().Register("fail", fail)
-	dbh.Callback().Query().Register("fail", fail)
-	dbh.Callback().Update().Register("fail", fail)
-	dbh.Callback().Delete().Register("fail", fail)
-	dbh.Callback().Row().Register("fail", fail)
-	dbh.Callback().Raw().Register("fail", fail)
+	dbh.DB().Callback().Create().Register("fail", fail)
+	dbh.DB().Callback().Query().Register("fail", fail)
+	dbh.DB().Callback().Update().Register("fail", fail)
+	dbh.DB().Callback().Delete().Register("fail", fail)
+	dbh.DB().Callback().Row().Register("fail", fail)
+	dbh.DB().Callback().Raw().Register("fail", fail)
 }
 
 type nopDistributedLock struct{}

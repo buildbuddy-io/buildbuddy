@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -30,7 +29,6 @@ import (
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	oidc "github.com/coreos/go-oidc"
 )
 
@@ -164,7 +162,7 @@ func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	return tokenString, err
 }
 
-func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
+func SetCookie(env environment.Env, w http.ResponseWriter, name, value string, expiry time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -172,11 +170,12 @@ func SetCookie(w http.ResponseWriter, name, value string, expiry time.Time) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
+		Secure:   env.GetConfigurator().GetHttpsOnlyCookies(),
 	})
 }
 
-func ClearCookie(w http.ResponseWriter, name string) {
-	SetCookie(w, name, "", time.Now())
+func ClearCookie(env environment.Env, w http.ResponseWriter, name string) {
+	SetCookie(env, w, name, "", time.Now())
 }
 
 func GetCookie(r *http.Request, name string) string {
@@ -186,15 +185,15 @@ func GetCookie(r *http.Request, name string) string {
 	return ""
 }
 
-func setLoginCookie(w http.ResponseWriter, jwt, issuer string) {
+func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer string) {
 	expiry := time.Now().Add(loginCookieDuration)
-	SetCookie(w, jwtCookie, jwt, expiry)
-	SetCookie(w, authIssuerCookie, issuer, expiry)
+	SetCookie(env, w, jwtCookie, jwt, expiry)
+	SetCookie(env, w, authIssuerCookie, issuer, expiry)
 }
 
-func clearLoginCookie(w http.ResponseWriter) {
-	ClearCookie(w, jwtCookie)
-	ClearCookie(w, authIssuerCookie)
+func clearLoginCookie(env environment.Env, w http.ResponseWriter) {
+	ClearCookie(env, w, jwtCookie)
+	ClearCookie(env, w, authIssuerCookie)
 }
 
 type userToken struct {
@@ -523,77 +522,6 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	return nil
 }
 
-func lookupUserFromSubID(env environment.Env, ctx context.Context, subID string) (*tables.User, error) {
-	dbHandle := env.GetDBHandle()
-	if dbHandle == nil {
-		return nil, status.FailedPreconditionErrorf("No handle to query database")
-	}
-	user := &tables.User{}
-	err := dbHandle.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
-		if err := userRow.Take(user).Error; err != nil {
-			return status.UnauthenticatedError(err.Error())
-		}
-		// Ensure the access token is set. If it's not, return an error
-		// that the frontend can recognize to trigger login again.
-		at := &struct{ AccessToken string }{}
-		err := tx.Raw(`SELECT access_token FROM Tokens WHERE sub_id = ?`, subID).Take(at).Error
-		if err != nil {
-			return status.UnauthenticatedError(err.Error())
-		}
-		// For now, we don't need to validate this token -- it's enough
-		// to ensure it was not cleared. If it was, that would indicate
-		// that the user had logged out (or been logged out by us).
-		if at.AccessToken == "" {
-			return status.PermissionDeniedError("user not logged in")
-		}
-
-		groupRows, err := tx.Raw(`
-			SELECT
-				g.user_id,
-				g.group_id,
-				g.url_identifier,
-				g.name,
-				g.owned_domain,
-				g.github_token,
-				g.sharing_enabled,
-				g.use_group_owned_executors,
-				g.saml_idp_metadata_url,
-				ug.role
-			FROM `+"`Groups`"+` AS g, UserGroups AS ug
-			WHERE g.group_id = ug.group_group_id
-			AND ug.membership_status = ?
-			AND ug.user_user_id = ?
-			`, int32(grpb.GroupMembershipStatus_MEMBER), user.UserID,
-		).Rows()
-		if err != nil {
-			return err
-		}
-		defer groupRows.Close()
-		for groupRows.Next() {
-			gr := &tables.GroupRole{}
-			err := groupRows.Scan(
-				&gr.Group.UserID,
-				&gr.Group.GroupID,
-				&gr.Group.URLIdentifier,
-				&gr.Group.Name,
-				&gr.Group.OwnedDomain,
-				&gr.Group.GithubToken,
-				&gr.Group.SharingEnabled,
-				&gr.Group.UseGroupOwnedExecutors,
-				&gr.Group.SamlIdpMetadataUrl,
-				&gr.Role,
-			)
-			if err != nil {
-				return err
-			}
-			user.Groups = append(user.Groups, gr)
-		}
-		return nil
-	})
-	return user, err
-}
-
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	if apiKey == "" {
 		return nil, status.UnauthenticatedError("missing API key")
@@ -726,7 +654,11 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 }
 
 func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*Claims, error) {
-	u, err := lookupUserFromSubID(env, ctx, subID)
+	authDB := env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.FailedPreconditionError("AuthDB not configured")
+	}
+	u, err := authDB.LookupUserFromSubID(ctx, subID)
 	if err != nil {
 		return nil, err
 	}
@@ -884,7 +816,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 			return nil, nil, err
 		}
 		if jwt, ok := newToken.Extra("id_token").(string); ok {
-			setLoginCookie(w, jwt, issuer)
+			setLoginCookie(a.env, w, jwt, issuer)
 			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 			return claims, ut, err
 		}
@@ -967,7 +899,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	// Set the "state" cookie which will be returned to us by tha authentication
 	// provider in the URL. We verify that it matches.
 	state := fmt.Sprintf("%d", random.RandUint64())
-	SetCookie(w, stateCookie, state, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, stateCookie, state, time.Now().Add(tempCookieDuration))
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
@@ -977,11 +909,11 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
-	SetCookie(w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
 
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
-	SetCookie(w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
 	// Redirect to the login provider (and ask for a refresh token).
 	u := auth.authCodeURL(state, authCodeOption...)
@@ -996,7 +928,7 @@ func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
 	}
-	clearLoginCookie(w)
+	clearLoginCookie(a.env, w)
 	defer redir()
 
 	// Attempt to mark the user as logged out in the database by clearing
@@ -1068,7 +1000,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 
 	// OK, the token is valid so we will: store the refresh token in our DB
 	// for later & set the login cookie so we know this user is logged in.
-	setLoginCookie(w, jwt, issuer)
+	setLoginCookie(a.env, w, jwt, issuer)
 
 	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
 	if ok {

@@ -11,7 +11,6 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/config",
         "//server/interfaces",
-        "//server/util/db",
         "@com_github_go_redis_redis_v8//:redis",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
     ],

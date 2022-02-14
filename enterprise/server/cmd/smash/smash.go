@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/golang/protobuf/proto"
 	"github.com/jhump/protoreflect/desc"
 	"google.golang.org/grpc/metadata"
@@ -194,7 +193,6 @@ func dataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 }
 func main() {
 	flag.Parse()
-	monitoring.StartMonitoringHandler("localhost:8888")
 
 	seed := *randomSeed
 	if seed == 0 {

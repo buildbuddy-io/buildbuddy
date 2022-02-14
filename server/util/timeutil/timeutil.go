@@ -3,7 +3,28 @@ package timeutil
 import (
 	"fmt"
 	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// Returns time.Time from a timestamp proto field. When the given ts is nil, uses fallbackMillis
+func GetTimeWithFallback(ts *timestamppb.Timestamp, fallbackMillis int64) time.Time {
+	if ts != nil {
+		return ts.AsTime()
+	}
+
+	return time.UnixMilli(fallbackMillis)
+}
+
+// Returns time.Duration from a duration proto field. When the given duration is nil,
+// uses fallbackMillis
+func GetDurationWithFallback(duration *durationpb.Duration, fallbackMillis int64) time.Duration {
+	if duration != nil {
+		return duration.AsDuration()
+	}
+	return time.Duration(fallbackMillis) * time.Microsecond
+}
 
 // ShortFormatDuration returns a human-readable, short, and approximate
 // representation of the given duration.

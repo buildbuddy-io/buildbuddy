@@ -10,6 +10,7 @@ go_library(
         "//proto:api_key_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
+        "//proto:health_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
@@ -22,5 +23,6 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/role",
+        "@io_gorm_gorm//:gorm",
     ],
 )

@@ -1,9 +1,13 @@
 package healthcheck
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 )
 
 type TestingHealthChecker struct{}
@@ -28,4 +32,14 @@ func (t *TestingHealthChecker) ReadinessHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 	})
+}
+
+func (t *TestingHealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest) (*hlpb.HealthCheckResponse, error) {
+	return &hlpb.HealthCheckResponse{
+		Status: hlpb.HealthCheckResponse_SERVING,
+	}, nil
+}
+
+func (t *TestingHealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {
+	return status.UnimplementedError("Watch not implemented")
 }
