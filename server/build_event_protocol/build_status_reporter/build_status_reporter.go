@@ -201,7 +201,7 @@ func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_
 	finished := event.GetFinished()
 	description := descriptionFromExitCodeName(finished.ExitCode.Name)
 	startTime := r.buildEventAccumulator.StartTime()
-	endTime := timeutil.GetTime(finished.GetFinishTime(), finished.GetFinishTimeMillis())
+	endTime := timeutil.GetTimeWithFallback(finished.GetFinishTime(), finished.GetFinishTimeMillis())
 	if !startTime.IsZero() && endTime.After(startTime) {
 		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
