@@ -45,6 +45,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
+	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 )
@@ -276,6 +277,10 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	// dockerClient is used to optimize image pulls by reusing image layers from
+	// the Docker cache as well as deduping multiple requests for the same image.
+	dockerClient *dockerclient.Client
+
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
@@ -354,6 +359,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 			DebugMode:        opts.DebugMode,
 		},
 		jailerRoot:         opts.JailerRoot,
+		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
@@ -1230,7 +1236,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 	if c.containerFSPath != "" {
 		return nil
 	}
-	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.jailerRoot, c.containerImage, creds)
+	containerFSPath, err := containerutil.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
