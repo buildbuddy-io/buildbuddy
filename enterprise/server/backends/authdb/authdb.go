@@ -115,6 +115,19 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
+                // Ensure the access token is set. If it's not, return an error
+                // that the frontend can recognize to trigger login again.
+                at := &struct{ AccessToken string }{}
+                err := tx.Raw(`SELECT access_token FROM Tokens WHERE sub_id = ?`, subID).Take(at).Error
+                if err != nil {
+                        return status.UnauthenticatedError(err.Error())
+                }
+                // For now, we don't need to validate this token -- it's enough
+                // to ensure it was not cleared. If it was, that would indicate
+                // that the user had logged out (or been logged out by us).
+                if at.AccessToken == "" {
+                        return status.PermissionDeniedError("user not logged in")
+                }
 		groupRows, err := tx.Raw(`
 			SELECT
 				g.user_id,
