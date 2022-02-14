@@ -119,7 +119,7 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 		if status == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
 			logResp, err := bb.GetEventLogChunk(context.Background(), &elpb.GetEventLogChunkRequest{
 				InvocationId: invocationID,
-				MinLines: math.MaxInt32,
+				MinLines:     math.MaxInt32,
 			})
 			require.NoError(t, err)
 			inv.ConsoleBuffer = string(logResp.Buffer)
