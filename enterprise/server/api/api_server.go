@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -21,7 +20,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
@@ -298,12 +299,11 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 			{
 				target := targetMap[event.GetBuildEvent().GetId().GetTestSummary().GetLabel()]
 				target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
-				startTimeProto, _ := ptypes.TimestampProto(time.UnixMilli(p.TestSummary.FirstStartTimeMillis))
-				duration, _ := time.ParseDuration(fmt.Sprintf("%dms", p.TestSummary.TotalRunDurationMillis))
-				durationProto := ptypes.DurationProto(duration)
+				startTime := timeutil.GetTimeWithFallback(p.TestSummary.FirstStartTime, p.TestSummary.FirstStartTimeMillis)
+				duration := timeutil.GetDurationWithFallback(p.TestSummary.TotalRunDuration, p.TestSummary.TotalRunDurationMillis)
 				target.Timing = &cmnpb.Timing{
-					StartTime: startTimeProto,
-					Duration:  durationProto,
+					StartTime: timestamppb.New(startTime),
+					Duration:  durationpb.New(duration),
 				}
 			}
 		}
