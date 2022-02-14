@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -24,6 +24,10 @@ import (
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	peerReadTimeout = 60 * time.Second
 )
 
 type IStore interface {
@@ -233,6 +237,15 @@ func (sm *Replica) getDBDir() string {
 		fmt.Sprintf("node-%d", sm.nodeID))
 }
 
+func (sm *Replica) Iterator() (*pebble.Iterator, error) {
+	sm.closedMu.RLock()
+	defer sm.closedMu.RUnlock()
+	if sm.closed {
+		return nil, status.FailedPreconditionError("db is closed.")
+	}
+	return sm.db.NewIter(nil), nil
+}
+
 func (sm *Replica) DB() (*pebble.DB, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
@@ -277,58 +290,64 @@ func (sm *Replica) checkAndSetRangeDescriptor() {
 	sm.maybeSetRange(constants.LocalRangeKey, buf)
 }
 
-func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord) error {
+func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord, wb *pebble.Batch) (*rfpb.FileMetadata, error) {
 	thisReplica := &rfpb.ReplicaDescriptor{
 		ClusterId: sm.clusterID,
 		NodeId:    sm.nodeID,
 	}
-	r, err := sm.store.ReadFileFromPeer(ctx, thisReplica, fileRecord)
+	rc, err := sm.store.ReadFileFromPeer(ctx, thisReplica, fileRecord)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer r.Close()
-	file, err := constants.FilePath(sm.fileDir, fileRecord)
+	defer rc.Close()
+
+	wc, err := filestore.NewWriter(ctx, sm.fileDir, wb, fileRecord)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	wc, err := disk.FileWriter(ctx, file)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(wc, r); err != nil {
-		return err
+	if _, err := io.Copy(wc, rc); err != nil {
+		return nil, err
 	}
 	if err := wc.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	return &rfpb.FileMetadata{
+		FileRecord:      fileRecord,
+		StorageMetadata: wc.Metadata(),
+	}, nil
 }
 
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
-	f, err := constants.FilePath(sm.fileDir, req.GetFileRecord())
+	// In the common case, this doesn't actually write any data, because
+	// it's already been written it in a separate Write RPC. It simply
+	// validates that the Metadata key exists. If it does not, the data is
+	// read from a peer.
+	iter := wb.NewIter(nil /*default iter options*/)
+	defer iter.Close()
+
+	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
-	protoBytes, err := proto.Marshal(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-	fileKey, err := constants.FileKey(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	if exists, err := disk.FileExists(ctx, f); err != nil || !exists {
-		if err := sm.readFileFromPeer(ctx, req.GetFileRecord()); err != nil {
-			log.Errorf("Error recovering file %q from peer: %s", f, err)
+
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), peerReadTimeout)
+		defer cancel()
+
+		md, err := sm.readFileFromPeer(ctx, req.GetFileRecord(), wb)
+		if err != nil {
+			log.Errorf("Error recovering file %v from peer: %s", md.GetFileRecord(), err)
+			return nil, err
+		}
+		protoBytes, err := proto.Marshal(md)
+		if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
 			return nil, err
 		}
 	}
-	if exists, err := disk.FileExists(ctx, f); err == nil && exists {
-		return &rfpb.FileWriteResponse{}, sm.rangeCheckedSet(wb, fileKey, protoBytes)
-	}
-	return nil, status.FailedPreconditionError("file did not exist")
+	return &rfpb.FileWriteResponse{}, nil
+
 }
 
 func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
@@ -560,9 +579,9 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}
 		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		for _, union := range batchCmdReq.GetUnion() {
-			//sm.log.Debugf("Update: request union: %+v", union)
+			// sm.log.Debugf("Update: request union: %+v", union)
 			rsp := sm.handlePropose(wb, union)
-			//sm.log.Debugf("Update: response union: %+v", rsp)
+			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 
@@ -667,6 +686,7 @@ func (sm *Replica) PrepareSnapshot() (interface{}, error) {
 	if sm.closed {
 		return nil, status.FailedPreconditionError("db is closed.")
 	}
+
 	snap := sm.db.NewSnapshot()
 	return snap, nil
 }
@@ -849,6 +869,7 @@ func (sm *Replica) Close() error {
 	if sm.closed {
 		return nil
 	}
+
 	sm.closed = true
 
 	sm.rangeMu.Lock()

@@ -6,11 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/api",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/store",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//server/util/disk",
         "//server/util/grpc_server",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
