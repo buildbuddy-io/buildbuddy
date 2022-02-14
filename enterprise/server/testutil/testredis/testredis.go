@@ -29,7 +29,7 @@ type Handle struct {
 	Target     string
 	socketPath string
 
-	t      *testing.T
+	t      testing.TB
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -107,6 +107,7 @@ func Start(t testing.TB) *Handle {
 	handle := &Handle{
 		Target:     target,
 		socketPath: socketPath,
+		t:          t,
 	}
 	handle.start()
 	waitUntilHealthy(t, target)
