@@ -32,12 +32,12 @@ var (
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	rdb             *redis.Client
+	rdb             redis.UniversalClient
 	prefix          string
 	cutoffSizeBytes int64
 }
 
-func NewCache(redisClient *redis.Client, maxValueSizeBytes int64) *Cache {
+func NewCache(redisClient redis.UniversalClient, maxValueSizeBytes int64) *Cache {
 	c := &Cache{
 		prefix:          "",
 		rdb:             redisClient,

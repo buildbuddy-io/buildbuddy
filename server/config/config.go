@@ -34,37 +34,38 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL             string   `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL              string   `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL               string   `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL     string   `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	LogLevel                  string   `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
-	GRPCMaxRecvMsgSizeBytes   int      `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
-	GRPCOverHTTPPortEnabled   bool     `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
-	AddUserToDomainGroup      bool     `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
-	DefaultToDenseMode        bool     `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
-	CreateGroupPerUser        bool     `yaml:"create_group_per_user" usage:"Cloud-Only"`
-	EnableTargetTracking      bool     `yaml:"enable_target_tracking" usage:"Cloud-Only"`
-	EnableStructuredLogging   bool     `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
-	LogIncludeShortFileName   bool     `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
-	NoDefaultUserGroup        bool     `yaml:"no_default_user_group" usage:"Cloud-Only"`
-	LogEnableGCPLoggingFormat bool     `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
-	LogErrorStackTraces       bool     `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
-	TraceProjectID            string   `yaml:"trace_project_id" usage:"Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP."`
-	TraceJaegerCollector      string   `yaml:"trace_jaeger_collector" usage:"Address of the Jager collector endpoint where traces will be sent."`
-	TraceServiceName          string   `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
-	TraceFraction             float64  `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
-	TraceFractionOverrides    []string `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
-	IgnoreForcedTracingHeader bool     `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
-	CodeEditorEnabled         bool     `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
-	UserManagementEnabled     bool     `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
-	GlobalFilterEnabled       bool     `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
-	TestGridV2Enabled         bool     `yaml:"test_grid_v2_enabled" usage:"Whether to enable test grid V2"`
-	UsageEnabled              bool     `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
-	UsageStartDate            string   `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
-	UsageTrackingEnabled      bool     `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
-	DefaultRedisTarget        string   `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
-	Region                    string   `yaml:"region" usage:"The region in which the app is running."`
+	BuildBuddyURL             string             `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              string             `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               string             `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     string             `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	LogLevel                  string             `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
+	GRPCMaxRecvMsgSizeBytes   int                `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
+	GRPCOverHTTPPortEnabled   bool               `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
+	AddUserToDomainGroup      bool               `yaml:"add_user_to_domain_group" usage:"Cloud-Only"`
+	DefaultToDenseMode        bool               `yaml:"default_to_dense_mode" usage:"Enables the dense UI mode by default."`
+	CreateGroupPerUser        bool               `yaml:"create_group_per_user" usage:"Cloud-Only"`
+	EnableTargetTracking      bool               `yaml:"enable_target_tracking" usage:"Cloud-Only"`
+	EnableStructuredLogging   bool               `yaml:"enable_structured_logging" usage:"If true, log messages will be json-formatted."`
+	LogIncludeShortFileName   bool               `yaml:"log_include_short_file_name" usage:"If true, log messages will include shortened originating file name."`
+	NoDefaultUserGroup        bool               `yaml:"no_default_user_group" usage:"Cloud-Only"`
+	LogEnableGCPLoggingFormat bool               `yaml:"log_enable_gcp_logging_format" usage:"If true, the output structured logs will be compatible with format expected by GCP Logging."`
+	LogErrorStackTraces       bool               `yaml:"log_error_stack_traces" usage:"If true, stack traces will be printed for errors that have them."`
+	TraceProjectID            string             `yaml:"trace_project_id" usage:"Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP."`
+	TraceJaegerCollector      string             `yaml:"trace_jaeger_collector" usage:"Address of the Jager collector endpoint where traces will be sent."`
+	TraceServiceName          string             `yaml:"trace_service_name" usage:"Name of the service to associate with traces."`
+	TraceFraction             float64            `yaml:"trace_fraction" usage:"Fraction of requests to sample for tracing."`
+	TraceFractionOverrides    []string           `yaml:"trace_fraction_overrides" usage:"Tracing fraction override based on name in format name=fraction."`
+	IgnoreForcedTracingHeader bool               `yaml:"ignore_forced_tracing_header" usage:"If set, we will not honor the forced tracing header."`
+	CodeEditorEnabled         bool               `yaml:"code_editor_enabled" usage:"If set, code editor functionality will be enabled."`
+	UserManagementEnabled     bool               `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
+	GlobalFilterEnabled       bool               `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
+	TestGridV2Enabled         bool               `yaml:"test_grid_v2_enabled" usage:"Whether to enable test grid V2"`
+	UsageEnabled              bool               `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
+	UsageStartDate            string             `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
+	UsageTrackingEnabled      bool               `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
+	DefaultRedisTarget        string             `yaml:"default_redis_target" usage:"A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified."`
+	DefaultShardedRedis       ShardedRedisConfig `yaml:"default_sharded_redis" usage:"Configuration for storing ephemeral state across multiple Redis instances. Mutually exclusive with default_redis_target."`
+	Region                    string             `yaml:"region" usage:"The region in which the app is running."`
 }
 
 type buildEventProxy struct {
@@ -200,8 +201,9 @@ type RaftCacheConfig struct {
 }
 
 type RedisCacheConfig struct {
-	RedisTarget       string `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
-	MaxValueSizeBytes int64  `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
+	RedisTarget       string             `yaml:"redis_target" usage:"A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **"`
+	Sharded           ShardedRedisConfig `yaml:"sharded" usage:"Configuration for storing cache data sharded across multiple Redis instances. Mutually exclusive with redis_target."`
+	MaxValueSizeBytes int64              `yaml:"max_value_size_bytes" usage:"The maximum value size to cache in redis (in bytes)."`
 }
 
 type cacheConfig struct {
@@ -252,21 +254,29 @@ type SSLConfig struct {
 	DefaultHost      string   `yaml:"default_host" usage:"Host name to use for ACME generated cert if TLS request does not contain SNI."`
 }
 
+type ShardedRedisConfig struct {
+	Shards   []string `yaml:"shards" usage:"Ordered list of Redis shard addresses."`
+	Username string   `yaml:"username" usage:"Redis username"`
+	Password string   `yaml:"password" usage:"Redis password"`
+}
+
 type RemoteExecutionConfig struct {
-	DefaultPoolName               string `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
-	EnableWorkflows               bool   `yaml:"enable_workflows" usage:"Whether to enable BuildBuddy workflows."`
-	WorkflowsPoolName             string `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
-	WorkflowsDefaultImage         string `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
-	WorkflowsCIRunnerDebug        bool   `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
-	WorkflowsCIRunnerBazelCommand string `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
-	RedisTarget                   string `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
-	SharedExecutorPoolGroupID     string `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
-	RedisPubSubPoolSize           int    `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
-	EnableRemoteExec              bool   `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	RequireExecutorAuthorization  bool   `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
-	EnableUserOwnedExecutors      bool   `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
-	ForceUserOwnedDarwinExecutors bool   `yaml:"force_user_owned_darwin_executors" usage:"If enabled, darwin actions will always run on user-owned executors."`
-	EnableExecutorKeyCreation     bool   `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	DefaultPoolName                   string             `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	EnableWorkflows                   bool               `yaml:"enable_workflows" usage:"Whether to enable BuildBuddy workflows."`
+	WorkflowsPoolName                 string             `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage             string             `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
+	WorkflowsCIRunnerDebug            bool               `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
+	WorkflowsCIRunnerBazelCommand     string             `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
+	RedisTarget                       string             `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
+	ShardedRedis                      ShardedRedisConfig `yaml:"sharded_redis" usage:"Optional configuration for sharding execution data across multiple Redis instances. Mutually exclusive with the redis_target option."`
+	SharedExecutorPoolGroupID         string             `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
+	RedisPubSubPoolSize               int                `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
+	EnableRemoteExec                  bool               `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	RequireExecutorAuthorization      bool               `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableUserOwnedExecutors          bool               `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	ForceUserOwnedDarwinExecutors     bool               `yaml:"force_user_owned_darwin_executors" usage:"If enabled, darwin actions will always run on user-owned executors."`
+	EnableExecutorKeyCreation         bool               `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	EnableRedisAvailabilityMonitoring bool               `yaml:"enable_redis_availability_monitoring" usage:"If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions."`
 }
 
 type ExecutorConfig struct {
@@ -500,6 +510,18 @@ func NewConfigurator(configFilePath string) (*Configurator, error) {
 	}, nil
 }
 
+type RedisClientConfig struct {
+	SimpleTarget  string
+	ShardedConfig *ShardedRedisConfig
+}
+
+func (cc *RedisClientConfig) String() string {
+	if cc.ShardedConfig != nil {
+		return "sharded across " + strings.Join(cc.ShardedConfig.Shards, ", ")
+	}
+	return cc.SimpleTarget
+}
+
 func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {
 	return c.gc.Storage.EnableChunkedEventLogs
 }
@@ -628,18 +650,22 @@ func (c *Configurator) GetAppRegion() string {
 	return c.gc.App.Region
 }
 
-func (c *Configurator) GetDefaultRedisTarget() string {
-	if c.gc.App.DefaultRedisTarget != "" {
-		return c.gc.App.DefaultRedisTarget
+func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
+	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
+		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
 	}
 
-	if crt := c.GetCacheRedisTarget(); crt != "" {
-		// Fall back to the cache redis target if default redis target is not specified.
-		return crt
+	if c.gc.App.DefaultRedisTarget != "" {
+		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
+	}
+
+	if crcc := c.GetCacheRedisClientConfig(); crcc != nil {
+		// Fall back to the cache redis client config if default redis target is not specified.
+		return crcc
 	}
 
 	// Otherwise, fall back to the remote exec redis target.
-	return c.GetRemoteExecutionRedisTarget()
+	return c.GetRemoteExecutionRedisClientConfig()
 }
 
 func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
@@ -714,12 +740,20 @@ func (c *Configurator) GetCacheMemcacheTargets() []string {
 	return c.gc.Cache.MemcacheTargets
 }
 
-func (c *Configurator) GetCacheRedisTarget() string {
-	// Prefer the target from Redis sub-config, is present.
-	if redisConfig := c.GetCacheRedisConfig(); redisConfig != nil {
-		return redisConfig.RedisTarget
+func (c *Configurator) GetCacheRedisClientConfig() *RedisClientConfig {
+	// Prefer the client configs from Redis sub-config, is present.
+	if len(c.gc.Cache.Redis.Sharded.Shards) > 0 {
+		return &RedisClientConfig{ShardedConfig: &c.gc.Cache.Redis.Sharded}
 	}
-	return c.gc.Cache.RedisTarget
+	if c.gc.Cache.Redis.RedisTarget != "" {
+		return &RedisClientConfig{SimpleTarget: c.gc.Cache.Redis.RedisTarget}
+	}
+
+	if c.gc.Cache.RedisTarget != "" {
+		return &RedisClientConfig{SimpleTarget: c.gc.Cache.RedisTarget}
+	}
+
+	return nil
 }
 
 func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
@@ -794,19 +828,27 @@ func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 	return nil
 }
 
-func (c *Configurator) GetRemoteExecutionRedisTarget() string {
+func (c *Configurator) GetRemoteExecutionRedisClientConfig() *RedisClientConfig {
+	if rec := c.GetRemoteExecutionConfig(); rec != nil && len(rec.ShardedRedis.Shards) > 0 {
+		return &RedisClientConfig{ShardedConfig: &rec.ShardedRedis}
+	}
+
 	if rec := c.GetRemoteExecutionConfig(); rec != nil && rec.RedisTarget != "" {
-		return rec.RedisTarget
+		return &RedisClientConfig{SimpleTarget: rec.RedisTarget}
 	}
 
 	// If no remote execution target is defined, use the default.
 	if c.gc.App.DefaultRedisTarget != "" {
-		return c.gc.App.DefaultRedisTarget
+		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
 	}
 
-	// Fall back to the cache redis target if redis target is not specified in remote execution config or app config.
-	// Historically we did not have a separate redis target for remote execution.
-	return c.GetCacheRedisTarget()
+	if c.GetCacheRedisClientConfig() != nil {
+		// Fall back to the cache redis config if redis config is not specified in remote execution config or app config.
+		// Historically we did not have a separate redis target for remote execution.
+		return c.GetCacheRedisClientConfig()
+	}
+
+	return nil
 }
 
 func (c *Configurator) GetExecutorConfig() *ExecutorConfig {

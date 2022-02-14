@@ -13,10 +13,10 @@ const (
 )
 
 type store struct {
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
-func New(rdb *redis.Client) *store {
+func New(rdb redis.UniversalClient) *store {
 	return &store{rdb}
 }
 

@@ -148,11 +148,11 @@ func (p *ListPubSub) Subscribe(ctx context.Context, channelName string) interfac
 const streamDataField = "data"
 
 type StreamPubSub struct {
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
 // NewStreamPubSub creates a PubSub client based on a Redis-stream.
-func NewStreamPubSub(redisClient *redis.Client) *StreamPubSub {
+func NewStreamPubSub(redisClient redis.UniversalClient) *StreamPubSub {
 	return &StreamPubSub{rdb: redisClient}
 }
 
