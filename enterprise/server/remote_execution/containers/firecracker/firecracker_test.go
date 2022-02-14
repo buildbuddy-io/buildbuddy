@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	imageWithDockerInstalled = "gcr.io/flame-public/bb-devtools@sha256:16ef96fe7efc61b8b703ee45c4dc2ef53d1df9011e72c362e61b40f3d03780f4"
+	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -525,11 +525,12 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              200, // small to make snapshotting faster.
+		MemSizeMB:              2500,
 		InitDockerd:            true,
 		EnableNetworking:       true,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              true,
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	if err != nil {

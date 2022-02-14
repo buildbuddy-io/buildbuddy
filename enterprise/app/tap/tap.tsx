@@ -3,6 +3,7 @@ import Long from "long";
 import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
+import { invocation } from "../../../proto/invocation_ts_proto";
 import { api, target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
@@ -11,6 +12,7 @@ import Select, { Option } from "../../../app/components/select/select";
 import { ChevronsRight, Filter } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
+import errorService from "../../../app/errors/error_service";
 
 interface Props {
   user: User;
@@ -19,6 +21,7 @@ interface Props {
 }
 
 interface State {
+  repos: string[];
   targetHistory: target.ITargetHistory[];
   commits: string[] | null;
   commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
@@ -51,9 +54,11 @@ const Status = api.v1.Status;
 
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
+const LAST_SELECTED_REPO_LOCALSTORAGE_KEY = "tests__last_selected_repo";
 
 export default class TapComponent extends React.Component<Props, State> {
   state: State = {
+    repos: [],
     targetHistory: [],
     nextPageToken: "",
     commits: null,
@@ -78,10 +83,11 @@ export default class TapComponent extends React.Component<Props, State> {
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
     this.updateColoring();
-    this.fetchTargets();
+
+    this.fetchRepos().then(() => this.fetchTargets(/*initial=*/ true));
 
     this.subscription = rpcService.events.subscribe({
-      next: (name) => name == "refresh" && this.fetchTargets(),
+      next: (name) => name == "refresh" && this.fetchTargets(/*initial=*/ true),
     });
   }
 
@@ -93,32 +99,79 @@ export default class TapComponent extends React.Component<Props, State> {
     if (this.props.hash !== prevProps.hash) {
       this.updateColoring();
     }
+    // Repo-changed; re-fetch targets starting from scratch.
+    if (this.props.search !== prevProps.search) {
+      this.fetchTargets(/*initial=*/ true);
+    }
+    localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY] = this.selectedRepo();
   }
 
   updateColoring() {
     this.setState({ coloring: this.props.hash == "#timing" ? "timing" : "status" });
   }
 
-  fetchTargets() {
+  fetchRepos(): Promise<void> {
+    if (!this.isV2) return Promise.resolve();
+
+    // If we've already got a repo selected (from the last time we visited the page),
+    // keep the repo selected and populate the full repo list in the background.
+    const selectedRepo = this.selectedRepo();
+    if (selectedRepo) this.setState({ repos: [selectedRepo] });
+
+    const fetchPromise = rpcService.service
+      .getInvocationStat({
+        aggregationType: invocation.AggType.REPO_URL_AGGREGATION_TYPE,
+      })
+      .then((response) => {
+        const repos = response.invocationStat.filter((stat) => stat.name).map((stat) => stat.name);
+        if (selectedRepo && !repos.includes(selectedRepo)) {
+          repos.push(selectedRepo);
+        }
+        this.setState({ repos: repos.sort() });
+      })
+      .catch((e) => errorService.handleError(e));
+
+    return selectedRepo ? Promise.resolve() : fetchPromise;
+  }
+
+  selectedRepo(): string {
+    const repo = this.props.search.get("repo");
+    if (repo) return repo;
+
+    const lastSelectedRepo = localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY];
+    if (lastSelectedRepo) return lastSelectedRepo;
+
+    return this.state?.repos[0] || "";
+  }
+
+  /**
+   * Fetches targets. If `initial`, clear any existing target history and fetch
+   * from scratch. Otherwise, append the fetched history to the existing
+   * history.
+   */
+  fetchTargets(initial: boolean) {
     let request = new target.GetTargetRequest();
 
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
     request.endTimeUsec = Long.fromNumber(moment().utc().valueOf() * 1000);
     request.serverSidePagination = this.isV2;
-    request.pageToken = this.state.nextPageToken;
+    request.pageToken = initial ? "" : this.state.nextPageToken;
+    if (this.isV2) {
+      request.query = { repoUrl: this.selectedRepo() };
+    }
 
     this.setState({ loading: true });
     rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
       console.log(response);
-      this.updateState(response);
+      this.updateState(response, initial);
     });
   }
 
-  updateState(response: target.GetTargetResponse) {
+  updateState(response: target.GetTargetResponse, initial: boolean) {
     this.state.stats.clear();
 
     let histories = response.invocationTargets;
-    if (this.isV2) {
+    if (this.isV2 && !initial) {
       histories = mergeHistories(this.state.targetHistory, response.invocationTargets);
     }
 
@@ -242,11 +295,16 @@ export default class TapComponent extends React.Component<Props, State> {
 
   loadMoreInvocations() {
     if (this.isV2) {
-      this.fetchTargets();
+      this.fetchTargets(/*initial=*/ false);
       return;
     }
 
     this.setState({ invocationLimit: this.state.invocationLimit + 50 });
+  }
+
+  handleRepoChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const repo = event.target.value;
+    router.replaceParams({ repo });
   }
 
   handleSortChange(event: any) {
@@ -303,13 +361,30 @@ export default class TapComponent extends React.Component<Props, State> {
       return <div className="loading"></div>;
     }
 
+    const headerLeftSection = (
+      <div className="tap-header-left-section">
+        <div className="tap-title">Test grid</div>
+        {this.isV2 && this.state.repos.length && (
+          <Select onChange={this.handleRepoChange.bind(this)} value={this.selectedRepo()}>
+            {this.state.repos.map((repo) => (
+              <Option key={repo} value={repo}>
+                {format.formatGitUrl(repo)}
+              </Option>
+            ))}
+          </Select>
+        )}
+      </div>
+    );
+
     if (!this.state.targetHistory.length) {
       return (
         <div className="tap">
-          <div className="container narrow">
-            <div className="tap-header">
-              <div className="tap-title">Test grid</div>
+          <div className="tap-top-bar">
+            <div className="container narrow">
+              <div className="tap-header">{headerLeftSection}</div>
             </div>
+          </div>
+          <div className="container narrow">
             <div className="empty-state history">
               <h2>No CI tests found in the last week!</h2>
               <p>
@@ -341,7 +416,7 @@ export default class TapComponent extends React.Component<Props, State> {
         <div className="tap-top-bar">
           <div className="container">
             <div className="tap-header">
-              <div className="tap-title">Test grid</div>
+              {headerLeftSection}
 
               <div className="controls">
                 <div className="tap-sort-controls">
@@ -365,8 +440,8 @@ export default class TapComponent extends React.Component<Props, State> {
                   <div className="tap-sort-control">
                     <span className="tap-sort-title">Color</span>
                     <Select onChange={this.handleColorChange.bind(this)} value={this.state.coloring}>
-                      <Option value="status">Test status</Option>
-                      <Option value="timing">Test duration</Option>
+                      <Option value="status">Status</Option>
+                      <Option value="timing">Duration</Option>
                     </Select>
                   </div>
                 </div>

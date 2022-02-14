@@ -1,0 +1,42 @@
+load("//rules/yarn:index.bzl", "yarn")
+
+package(default_visibility = ["//visibility:public"])
+
+SRCS = glob([
+    "src/**",
+    "static/**",
+    "docs/**",
+]) + [
+    "docusaurus.config.js",
+    "yarn.lock",
+    "sidebars.js",
+]
+
+# Builds and bundles static marketing website into a .tar
+yarn(
+    name = "website",
+    srcs = SRCS,
+    package = "package.json",
+    tags = ["manual"],
+)
+
+# Starts marketing website server in development mode
+yarn(
+    name = "start",
+    srcs = SRCS,
+    command = "start",
+    package = "package.json",
+    tags = ["manual"],
+)
+
+# Serves production marketing website bundle
+yarn(
+    name = "serve",
+    srcs = SRCS,
+    command = "serve",
+    package = "package.json",
+    tags = ["manual"],
+    deps = [
+        ":website",
+    ],
+)

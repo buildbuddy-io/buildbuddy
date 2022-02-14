@@ -4,7 +4,6 @@ import { command_line } from "../../proto/command_line_ts_proto";
 export type PreProcessingOptions = {
   sortEvents?: boolean;
   hideTimingData?: boolean;
-  hideConsoleOutput?: boolean;
   hideInvocationIds?: boolean;
   hideUuids?: boolean;
   hideProgress?: boolean;
@@ -12,14 +11,7 @@ export type PreProcessingOptions = {
 
 export function prepareForDiff(
   invocation: invocation_proto.IInvocation,
-  {
-    sortEvents,
-    hideTimingData,
-    hideConsoleOutput,
-    hideInvocationIds,
-    hideUuids,
-    hideProgress,
-  }: PreProcessingOptions = {}
+  { sortEvents, hideTimingData, hideInvocationIds, hideUuids, hideProgress }: PreProcessingOptions = {}
 ): invocation_proto.IInvocation {
   // Clone the invocation to avoid mutating the original object.
   invocation = invocation_proto.Invocation.fromObject((invocation as invocation_proto.Invocation).toJSON());
@@ -30,9 +22,10 @@ export function prepareForDiff(
   if (sortEvents) {
     sortByProperty(invocation.event, (event: any) => JSON.stringify(event?.buildEvent?.id));
   }
-  if (hideConsoleOutput) {
-    delete invocation.consoleBuffer;
-  }
+  // Inlined console buffer is deprecated but some older invocations may still
+  // have this field. Either way, it is not very useful to show build logs
+  // in the diff, so just delete this field unconditionally.
+  delete invocation.consoleBuffer;
   if (hideTimingData) {
     delete invocation.durationUsec;
     delete invocation.createdAtUsec;

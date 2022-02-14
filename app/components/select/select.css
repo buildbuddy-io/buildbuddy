@@ -17,6 +17,8 @@
   -webkit-appearance: none;
   padding-right: 40px;
   cursor: pointer;
+  text-overflow: ellipsis;
+  overflow: clip;
 }
 
 .select:focus {
@@ -34,7 +36,6 @@
 }
 
 .select-wrapper .dropdown-icon-wrapper {
-  display: block;
   position: absolute;
   top: 0;
   right: 0;
@@ -42,6 +43,7 @@
   width: 40px;
   height: 100%;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   z-index: 1;

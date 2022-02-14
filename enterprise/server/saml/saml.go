@@ -63,7 +63,7 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 		a.fallback.Login(w, r)
 		return
 	}
-	auth.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration))
+	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration))
 	session, err := sp.Session.GetSession(r)
 	if session != nil {
 		redirectURL := r.URL.Query().Get(authRedirectParam)
@@ -114,7 +114,7 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 }
 
 func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
-	auth.ClearCookie(w, slugCookie)
+	auth.ClearCookie(a.env, w, slugCookie)
 	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		sp.Session.DeleteSession(w, r)
 	}
@@ -142,7 +142,7 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 	// Store slug as a cookie to enable logins directly from the /acs page.
 	slug := r.URL.Query().Get(slugParam)
-	auth.SetCookie(w, slugCookie, slug, time.Now().Add(cookieDuration))
+	auth.SetCookie(a.env, w, slugCookie, slug, time.Now().Add(cookieDuration))
 
 	sp.ServeHTTP(w, r)
 }

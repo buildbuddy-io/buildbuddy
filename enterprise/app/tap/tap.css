@@ -12,14 +12,26 @@
   top: 0;
 }
 
+.tap .tap-header-left-section {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.tap .tap-header-left-section > * {
+  flex-shrink: 0;
+}
+
 .tap .target-controls {
   display: flex;
   gap: 16px;
   align-items: center;
 }
 
-.tap-header {
+.tap .tap-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
