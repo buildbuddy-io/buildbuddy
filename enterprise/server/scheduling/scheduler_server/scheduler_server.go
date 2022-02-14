@@ -905,7 +905,7 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 }
 
 func redisKeyForTask(taskID string) string {
-	return fmt.Sprintf("task/%s", taskID)
+	return "task/" + taskID
 }
 
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {

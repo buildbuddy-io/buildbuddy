@@ -267,8 +267,8 @@ func main() {
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
-		if redisClient := configurator.GetRemoteExecutionRedisClientConfig(); redisClient != nil {
-			opts, err := redisutil.ConfigToOpts(redisClient)
+		if redisConfig := configurator.GetRemoteExecutionRedisClientConfig(); redisConfig != nil {
+			opts, err := redisutil.ConfigToOpts(redisConfig)
 			if err != nil {
 				log.Fatalf("Invalid Remote Execution Redis config: %s", err)
 			}
