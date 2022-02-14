@@ -82,9 +82,9 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 }
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
-	db := s.env.GetDBHandle()
-	rows, err := db.Raw(`
-		SELECT `+db.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
+	dbh := s.env.GetDBHandle()
+	rows, err := dbh.DB().Raw(`
+		SELECT `+dbh.UTCMonthFromUsecTimestamp("period_start_usec")+` AS period,
 		SUM(invocations) AS invocations,
 		SUM(action_cache_hits) AS action_cache_hits,
 		SUM(cas_cache_hits) AS cas_cache_hits,
@@ -103,7 +103,7 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 	usages := []*usagepb.Usage{}
 	for rows.Next() {
 		usage := &usagepb.Usage{}
-		if err := db.ScanRows(rows, usage); err != nil {
+		if err := dbh.ScanRows(rows, usage); err != nil {
 			return nil, err
 		}
 		usages = append(usages, usage)

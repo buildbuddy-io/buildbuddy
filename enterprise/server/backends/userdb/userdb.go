@@ -96,7 +96,7 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	query := d.h.Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.group_id = ?`, groupID)
+	query := d.h.DB().Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -139,7 +139,7 @@ func (d *UserDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if apiKeyID == "" {
 		return nil, status.InvalidArgumentError("API key cannot be empty.")
 	}
-	query := d.h.Raw(`SELECT * FROM APIKeys WHERE api_key_id = ?`, apiKeyID)
+	query := d.h.DB().Raw(`SELECT * FROM APIKeys WHERE api_key_id = ?`, apiKeyID)
 	key := &tables.APIKey{}
 	if err := query.Take(key).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -155,7 +155,7 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 
-	query := d.h.Raw(`
+	query := d.h.DB().Raw(`
 		SELECT api_key_id, value, label, perms, capabilities
 		FROM APIKeys
 		WHERE group_id = ?
@@ -251,7 +251,7 @@ func (d *UserDB) GetAuthGroup(ctx context.Context) (*tables.Group, error) {
 	}
 
 	tg := &tables.Group{}
-	existingRow := d.h.Raw(`SELECT * FROM `+"`Groups`"+` as g WHERE g.group_id = ?`, u.GetGroupID())
+	existingRow := d.h.DB().Raw(`SELECT * FROM `+"`Groups`"+` as g WHERE g.group_id = ?`, u.GetGroupID())
 	if err := existingRow.Take(tg).Error; err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Group not found: %q", u.GetGroupID())
@@ -428,7 +428,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	q.SetOrderBy(`u.email`, true /*=ascending*/)
 
 	qString, qArgs := q.Build()
-	rows, err := d.h.Raw(qString, qArgs...).Rows()
+	rows, err := d.h.DB().Raw(qString, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +786,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 }
 
 func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
-	counts := d.h.Raw(`
+	counts := d.h.DB().Raw(`
 		SELECT 
 			COUNT(DISTINCT user_id) as registered_user_count
 		FROM Users as u

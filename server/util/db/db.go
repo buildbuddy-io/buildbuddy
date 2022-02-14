@@ -92,10 +92,6 @@ func (o *Options) QueryName() string {
 
 type DB = gorm.DB
 
-func (dbh *DBHandle) Raw(sql string, values ...interface{}) *gorm.DB {
-	return dbh.db.Raw(sql, values...)
-}
-
 func (dbh *DBHandle) Exec(sql string, values ...interface{}) *gorm.DB {
 	return dbh.db.Exec(sql, values...)
 }

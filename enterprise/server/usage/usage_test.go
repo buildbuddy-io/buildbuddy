@@ -61,7 +61,7 @@ func timeStr(t time.Time) string {
 func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	usages := []*tables.Usage{}
 	dbh := te.GetDBHandle()
-	rows, err := dbh.Raw(`
+	rows, err := dbh.DB().Raw(`
 		SELECT * From Usages
 		ORDER BY group_id, period_start_usec, region ASC;
 	`).Rows()
