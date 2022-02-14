@@ -764,6 +764,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		if e.logWriter != nil {
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
+			// Don't store the log in the protostream if we're
+			// writing it separately to blobstore
 			p.Progress.Stderr = ""
 			p.Progress.Stdout = ""
 		}
