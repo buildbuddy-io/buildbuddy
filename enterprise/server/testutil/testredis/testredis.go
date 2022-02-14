@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,9 +25,16 @@ const (
 	startupPingInterval = 5 * time.Millisecond
 )
 
-// Start spawns a Redis server for the given test and returns a Redis target
-// that points to it.
-func Start(t testing.TB) string {
+type Handle struct {
+	Target     string
+	socketPath string
+
+	t      *testing.T
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (h *Handle) start() {
 	var redisBinPath string
 	osArchKey := runtime.GOOS + "_" + runtime.GOARCH
 	switch osArchKey {
@@ -39,22 +45,22 @@ func Start(t testing.TB) string {
 	default:
 		// Skip the test on unsupported platforms until we have binaries in place.
 		log.Warningf("No redis binary found for platform %q. Tests are skipped.", osArchKey)
-		t.SkipNow()
-		return ""
+		h.t.SkipNow()
+		return
 	}
+
 	redisBinPath, err := bazel.Runfile(redisBinPath)
 	if err != nil {
-		assert.FailNow(t, "redis binary not found in runfiles", err.Error())
+		assert.FailNow(h.t, "redis binary not found in runfiles", err.Error())
 	}
 
-	// redis socket must be in /tmp, redis won't read socket files in arbitrary locations
-	socketPath := testfs.MakeSocket(t, "redis.sock")
-	target := fmt.Sprintf("unix://%s", socketPath)
-
 	ctx, cancel := context.WithCancel(context.Background())
+	h.cancel = cancel
+	h.done = make(chan struct{})
+
 	args := []string{
 		"--port", "0",
-		"--unixsocket", socketPath,
+		"--unixsocket", h.socketPath,
 		"--unixsocketperm", "700",
 	}
 	// Disable persistence, not useful for testing.
@@ -64,27 +70,48 @@ func Start(t testing.TB) string {
 	// ... but do break things if we reach the limit.
 	args = append(args, "--maxmemory-policy", "noeviction")
 	cmd := exec.CommandContext(ctx, redisBinPath, args...)
-	log.Printf("Starting redis server: %s", cmd)
+	log.Infof("Starting redis server: %s", cmd)
 	cmd.Stdout = &logWriter{}
 	cmd.Stderr = &logWriter{}
 	err = cmd.Start()
 	if err != nil {
-		assert.FailNowf(t, "redis binary could not be started", err.Error())
+		assert.FailNowf(h.t, "redis binary could not be started", err.Error())
 	}
-	var killed atomic.Value
-	killed.Store(false)
 	go func() {
-		if err := cmd.Wait(); err != nil && killed.Load() != true {
-			log.Warningf("redis server did not exit cleanly: %v", err)
+		if err := cmd.Wait(); err != nil {
+			close(h.done)
+			select {
+			case <-ctx.Done():
+			default:
+				log.Warningf("redis server did not exit cleanly: %v", err)
+			}
 		}
 	}()
-	t.Cleanup(func() {
-		log.Info("Shutting down Redis server.")
-		killed.Store(true)
-		cancel()
-	})
+}
+
+// Restart restarts Redis.
+// Blocks until Redis is reachable.
+func (h *Handle) Restart() {
+	h.cancel()
+	<-h.done
+	h.start()
+	waitUntilHealthy(h.t, h.Target)
+}
+
+// Start spawns a Redis server for the given test and returns a handle to the running process.
+func Start(t testing.TB) *Handle {
+	// redis socket must be in /tmp, redis won't read socket files in arbitrary locations
+	socketPath := testfs.MakeSocket(t, "redis.sock")
+	target := fmt.Sprintf("unix://%s", socketPath)
+
+	handle := &Handle{
+		Target:     target,
+		socketPath: socketPath,
+	}
+	handle.start()
 	waitUntilHealthy(t, target)
-	return target
+
+	return handle
 }
 
 func waitUntilHealthy(t testing.TB, target string) {

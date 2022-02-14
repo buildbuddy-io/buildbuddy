@@ -37,7 +37,7 @@ var (
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 
-	redisTarget := testredis.Start(t)
+	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
 	te.SetDefaultRedisClient(rdb)
 

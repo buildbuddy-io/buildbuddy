@@ -29,7 +29,7 @@ func Run(t *testing.T, args ...string) *app.App {
 }
 
 func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
-	redisTarget := testredis.Start(t)
+	redisTarget := testredis.Start(t).Target
 	commandArgs := []string{
 		fmt.Sprintf("--telemetry_port=%d", app.FreePort(t)),
 		"--app_directory=/enterprise/app",

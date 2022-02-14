@@ -214,7 +214,7 @@ func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {
 func newTestEnv(t *testing.T) environment.Env {
 	rand.Seed(time.Now().UnixNano())
 
-	redisTarget := testredis.Start(t)
+	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
