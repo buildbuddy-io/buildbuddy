@@ -268,6 +268,7 @@ type AuthDB interface {
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
+	ClearToken(ctx context.Context, subID string) error
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }
 
