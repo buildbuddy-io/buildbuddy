@@ -55,7 +55,11 @@ const (
 	firecrackerSocketWaitTimeout = 3 * time.Second
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 10 * time.Second
+	// TODO(bduffany): This timeout is long mostly to allow Docker to be
+	// initialized. Should probably wait for Docker separately and give it its own
+	// timeout, rather than blocking execserver initialization on Docker
+	// initialization.
+	vSocketDialTimeout = 15 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
