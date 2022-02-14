@@ -9,7 +9,7 @@ import (
 )
 
 // Returns time.Time from a timestamp proto field. When the given ts is nil, uses fallbackMillis
-func GetTime(ts *timestamppb.Timestamp, fallbackMillis int64) time.Time {
+func GetTimeWithFallback(ts *timestamppb.Timestamp, fallbackMillis int64) time.Time {
 	if ts != nil {
 		return ts.AsTime()
 	}
@@ -19,7 +19,7 @@ func GetTime(ts *timestamppb.Timestamp, fallbackMillis int64) time.Time {
 
 // Returns time.Duration from a duration proto field. When the given duration is nil,
 // uses fallbackMillis
-func GetDuration(duration *durationpb.Duration, fallbackMillis int64) time.Duration {
+func GetDurationWithFallback(duration *durationpb.Duration, fallbackMillis int64) time.Duration {
 	if duration != nil {
 		return duration.AsDuration()
 	}

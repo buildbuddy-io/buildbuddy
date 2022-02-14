@@ -89,8 +89,8 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
 		t.overallStatus = ts.GetOverallStatus()
-		t.firstStartTime = timeutil.GetTime(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
-		t.totalDuration = timeutil.GetDuration(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
+		t.firstStartTime = timeutil.GetTimeWithFallback(ts.GetFirstStartTime(), ts.GetFirstStartTimeMillis())
+		t.totalDuration = timeutil.GetDurationWithFallback(ts.GetTotalRunDuration(), ts.GetTotalRunDurationMillis())
 		t.state = targetStateSummary
 	case *build_event_stream.BuildEvent_Aborted:
 		t.buildSuccess = false
