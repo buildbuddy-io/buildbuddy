@@ -90,10 +90,11 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
+
 	// User information should still be populated (it's needed for user creation).
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
 
-	// Create matching user, authentication should now succeed.
+	// Create matching user, and token. Authentication should now succeed.
 	user := &tables.User{
 		UserID: userID,
 		SubID:  subID,
@@ -101,6 +102,13 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	}
 	err = env.GetUserDB().InsertUser(context.Background(), user)
 	require.NoError(t, err, "could not insert user")
+	err = env.GetAuthDB().InsertOrUpdateUserToken(context.Background(), subID, &tables.Token{
+		SubID:        subID,
+		AccessToken:  "access",
+		RefreshToken: "refresh",
+	})
+	require.NoError(t, err, "could not insert token")
+
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticated(t, authCtx)
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
@@ -197,6 +205,6 @@ func requireAuthenticationError(t *testing.T, ctx context.Context) {
 }
 
 func requireAuthenticated(t *testing.T, ctx context.Context) {
-	require.Nil(t, ctx.Value(contextUserErrorKey), "context auth error key should not be set")
+	require.Nil(t, ctx.Value(contextUserErrorKey), ctx.Value(contextUserErrorKey))
 	require.NotNil(t, ctx.Value(contextTokenStringKey), "context auth jwt token should be set")
 }
