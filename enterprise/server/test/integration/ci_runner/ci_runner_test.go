@@ -164,7 +164,7 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 	require.Equal(t, 1, len(invResp.Invocation), "couldn't find runner invocation in DB")
 	logResp, err := bbService.GetEventLogChunk(context.Background(), &elpb.GetEventLogChunkRequest{
 		InvocationId: res.InvocationIDs[0],
-		MinLines: math.MaxInt32,
+		MinLines:     math.MaxInt32,
 	})
 	require.NoError(t, err)
 	invResp.Invocation[0].ConsoleBuffer = string(logResp.Buffer)
