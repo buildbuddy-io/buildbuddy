@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -199,13 +198,14 @@ func (r *BuildStatusReporter) githubPayloadFromTestSummaryEvent(event *build_eve
 }
 
 func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
-	description := descriptionFromExitCodeName(event.GetFinished().ExitCode.Name)
+	finished := event.GetFinished()
+	description := descriptionFromExitCodeName(finished.ExitCode.Name)
 	startTime := r.buildEventAccumulator.StartTime()
-	endTime := time.UnixMilli(event.GetFinished().GetFinishTimeMillis())
+	endTime := timeutil.GetTimeWithFallback(finished.GetFinishTime(), finished.GetFinishTimeMillis())
 	if !startTime.IsZero() && endTime.After(startTime) {
 		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
-	if event.GetFinished().OverallSuccess {
+	if finished.OverallSuccess {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 

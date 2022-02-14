@@ -32,6 +32,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -288,6 +289,8 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 	}
 
 	r.FlushProgress()
+	now := time.Now()
+
 	r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		Children: []*bespb.BuildEventId{
@@ -299,7 +302,8 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 				Name: exitCodeName,
 				Code: int32(exitCode),
 			},
-			FinishTimeMillis: time.Now().UnixMilli(),
+			FinishTimeMillis: now.UnixMilli(),
+			FinishTime:       timestamppb.New(now),
 		}},
 	})
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
