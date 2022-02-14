@@ -12,6 +12,7 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
+import { timestampToDateWithFallback } from "../util/proto";
 
 interface Props {
   invocationId: string;
@@ -152,8 +153,10 @@ export default class TargetComponent extends React.Component {
   }
 
   getTime() {
-    if (this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis) {
-      return format.formatTimestampMillis(this.props?.testSummaryEvent?.buildEvent?.testSummary?.lastStopTimeMillis);
+    const testSummary = this.props?.testSummaryEvent?.buildEvent?.testSummary;
+    if (testSummary?.lastStopTime || testSummary?.lastStopTimeMillis) {
+      const lastStopDate = timestampToDateWithFallback(testSummary?.lastStopTime, testSummary?.lastStopTimeMillis);
+      return format.formatDate(lastStopDate);
     }
     if (this.props?.completedEvent?.eventTime?.seconds) {
       return format.formatTimestampMillis(+this.props?.completedEvent?.eventTime.seconds * 1000);
