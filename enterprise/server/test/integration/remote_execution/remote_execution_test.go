@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -566,6 +567,27 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 }
 
 func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutors(5)
+
+	var cmds []*rbetest.Command
+	for i := 0; i < 5; i++ {
+		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
+		cmds = append(cmds, cmd)
+	}
+	for i := range cmds {
+		res := cmds[i].Wait()
+		assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
+		assert.Equal(t, fmt.Sprintf("hello from command %d\n", i), res.Stdout, "stdout should be propagated")
+		assert.Equal(t, "", res.Stderr, "stderr should be empty")
+	}
+}
+
+func TestRedisAvailabilityMonitoring(t *testing.T) {
+	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", "true")
+
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()

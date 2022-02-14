@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -86,13 +87,20 @@ func generateCommandSnippet(command *repb.Command) string {
 }
 
 func redisKeyForTaskStatusStream(taskID string) string {
-	return "taskStatusStream/" + taskID
+	return fmt.Sprintf("taskStatusStream/%s", taskID)
+}
+
+func redisKeyForMonitoredTaskStatusStream(taskID string) string {
+	// We choose taskID as the hash input for Redis sharding so that both the PubSub streams and task information for
+	// a single task is placed on the same shard.
+	return fmt.Sprintf("taskStatusStream/{%s}", taskID)
 }
 
 type ExecutionServer struct {
-	env          environment.Env
-	cache        interfaces.Cache
-	streamPubSub *pubsub.StreamPubSub
+	env                               environment.Env
+	cache                             interfaces.Cache
+	streamPubSub                      *pubsub.StreamPubSub
+	enableRedisAvailabilityMonitoring bool
 }
 
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
@@ -108,7 +116,17 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		cache:        cache,
 		streamPubSub: pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 	}
+	if rec := env.GetConfigurator().GetRemoteExecutionConfig(); rec != nil {
+		es.enableRedisAvailabilityMonitoring = rec.EnableRedisAvailabilityMonitoring
+	}
 	return es, nil
+}
+
+func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsub.Channel {
+	if rbeutil.IsV2ExecutionID(executionID) {
+		return s.streamPubSub.MonitoredChannel(redisKeyForMonitoredTaskStatusStream(executionID))
+	}
+	return s.streamPubSub.UnmonitoredChannel(redisKeyForTaskStatusStream(executionID))
 }
 
 func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invocationID, snippet string, stage repb.ExecutionStage_Value) error {
@@ -266,6 +284,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", err
 	}
 
+	// When availability monitoring is enabled, some Redis resource names change as well. We modify the execution
+	// ID so that the any apps processing related updates know which scheme to use for a given execution.
+	if s.enableRedisAvailabilityMonitoring {
+		executionID = rbeutil.V2ExecutionIDPrefix + executionID
+	}
+
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 
 	invocationID := bazel_request.GetInvocationID(ctx)
@@ -317,6 +341,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
+
+	if s.enableRedisAvailabilityMonitoring {
+		if err := s.streamPubSub.CreateMonitoredChannel(ctx, redisKeyForMonitoredTaskStatusStream(executionID)); err != nil {
+			return "", err
+		}
+	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
 		Os:              props.OS,
@@ -449,18 +479,26 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		return err
 	}
 
+	actionResource, err := digest.ParseUploadResourceName(req.GetName())
+	if err != nil {
+		log.Errorf("Could not extract digest from %q: %s", req.GetName(), err)
+		return err
+	}
+
 	e := InProgressExecution{
 		server:       s,
 		clientStream: stream,
 		opName:       req.GetName(),
 	}
 
-	var subscriber interfaces.Subscriber
+	subChan := s.pubSubChannelForExecutionID(req.GetName())
+
+	var subscriber *pubsub.StreamSubscription
 	if opts.isExecuteRequest {
-		subscriber = s.streamPubSub.SubscribeHead(ctx, redisKeyForTaskStatusStream(req.GetName()))
+		subscriber = s.streamPubSub.SubscribeHead(ctx, subChan)
 	} else {
 		// If this is a WaitExecution RPC, start the subscription from the last published status, inclusive.
-		subscriber = s.streamPubSub.SubscribeTail(ctx, redisKeyForTaskStatusStream(req.GetName()))
+		subscriber = s.streamPubSub.SubscribeTail(ctx, subChan)
 	}
 	defer subscriber.Close()
 	streamPubSubChan := subscriber.Chan()
@@ -469,12 +507,7 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		// Send a best-effort initial "in progress" update to client.
 		// Once Bazel receives the initial update, it will use WaitExecution to handle retry on error instead of
 		// requesting a new execution via Execute.
-		r, err := digest.ParseUploadResourceName(req.GetName())
-		if err != nil {
-			log.Errorf("Could not extract digest from %q: %s", req.GetName(), err)
-			return err
-		}
-		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), r)
+		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource)
 		err = stateChangeFn(repb.ExecutionStage_UNKNOWN, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
 			log.Warningf("Could not send initial update: %s", err)
@@ -486,16 +519,30 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
 	for {
-		for {
-			serializedOp, ok := <-streamPubSubChan
-			if !ok {
-				return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
-			}
-			done, err := e.processSerializedOpUpdate(serializedOp)
-			if done {
-				log.Debugf("WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
+		msg, ok := <-streamPubSubChan
+		if !ok {
+			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
+		}
+		var data string
+		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a failed
+		// operation message to Bazel so that it retries the execution.
+		if msg.Err != nil {
+			op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, msg.Err)
+			if err != nil {
 				return err
 			}
+			failedData, err := proto.Marshal(op)
+			if err != nil {
+				return err
+			}
+			data = base64.StdEncoding.EncodeToString(failedData)
+		} else {
+			data = msg.Data
+		}
+		done, err := e.processSerializedOpUpdate(data)
+		if done {
+			log.Debugf("WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
+			return err
 		}
 	}
 }
@@ -529,7 +576,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 	if err != nil {
 		return err
 	}
-	if err := s.streamPubSub.Publish(ctx, redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+	if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 		log.Warningf("MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
@@ -601,7 +648,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if err != nil {
 			return err
 		}
-		if err := s.streamPubSub.Publish(stream.Context(), redisKeyForTaskStatusStream(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+		if err := s.streamPubSub.Publish(stream.Context(), s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 			log.Warningf("Error publishing task %q on stream pubsub: %s", taskID, err)
 			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}

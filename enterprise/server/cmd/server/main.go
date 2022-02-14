@@ -283,6 +283,15 @@ func main() {
 			opts.IdleTimeout = 1 * time.Minute
 			opts.IdleCheckFrequency = 1 * time.Minute
 			opts.PoolTimeout = 5 * time.Second
+
+			// The retry settings are tuned to play along with the Bazel execution retry settings. If there's an issue
+			// with a Redis shard, we want to at least have a chance to mark it down internally and remove it from the
+			// ring before we ask Bazel to retry to avoid the situation with Bazel retrying very quickly and exhausting
+			// its attempts placing work on a Redis shard that's down.
+			opts.MinRetryBackoff = 128 * time.Millisecond
+			opts.MaxRetryBackoff = 1 * time.Second
+			opts.MaxRetries = 5
+
 			redisClient, err := redisutil.NewClientWithOpts(opts, healthChecker, "remote_execution_redis_pubsub")
 			if err != nil {
 				log.Fatalf("Failed to create Remote Execution PubSub redis client: %s", err)
