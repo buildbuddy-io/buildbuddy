@@ -276,7 +276,7 @@ func TestTargetToOptionsWithConnectionURI(t *testing.T) {
 }
 
 func TestCommandBuffer(t *testing.T) {
-	addr := testredis.Start(t)
+	addr := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
 	ctx := context.Background()
 
@@ -354,7 +354,7 @@ func TestCommandBuffer(t *testing.T) {
 }
 
 func TestCommandBuffer_PostShutdown(t *testing.T) {
-	addr := testredis.Start(t)
+	addr := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
 	ctx := context.Background()
 
