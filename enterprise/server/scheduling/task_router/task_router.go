@@ -40,7 +40,7 @@ const (
 
 type taskRouter struct {
 	env environment.Env
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
 func New(env environment.Env) (interfaces.TaskRouter, error) {

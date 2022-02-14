@@ -207,13 +207,19 @@ func main() {
 		realEnv.SetCache(s3Cache)
 	}
 
-	if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "cache_redis")
+	if redisConfig := configurator.GetCacheRedisClientConfig(); redisConfig != nil {
+		redisClient, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "cache_redis")
+		if err != nil {
+			log.Fatalf("Error configuring cache Redis client: %s", err)
+		}
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
-	if redisTarget := configurator.GetDefaultRedisTarget(); redisTarget != "" {
-		rdb := redisutil.NewClient(redisTarget, healthChecker, "default_redis")
+	if redisConfig := configurator.GetDefaultRedisClientConfig(); redisConfig != nil {
+		rdb, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "default_redis")
+		if err != nil {
+			log.Fatalf("Invalid redis config: %s", err)
+		}
 		realEnv.SetDefaultRedisClient(rdb)
 
 		rbuf := redisutil.NewCommandBuffer(rdb)
@@ -245,8 +251,11 @@ func main() {
 		log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
 	}
 
-	if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "remote_execution_redis")
+	if redisConfig := configurator.GetRemoteExecutionRedisClientConfig(); redisConfig != nil {
+		redisClient, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "remote_execution_redis")
+		if err != nil {
+			log.Fatalf("Failed to create Remote Execution redis client: %s", err)
+		}
 		realEnv.SetRemoteExecutionRedisClient(redisClient)
 
 		// Task router uses the remote execution redis client.
@@ -258,8 +267,11 @@ func main() {
 	}
 
 	if rbeConfig := configurator.GetRemoteExecutionConfig(); rbeConfig != nil {
-		if redisTarget := configurator.GetRemoteExecutionRedisTarget(); redisTarget != "" {
-			opts := redisutil.TargetToOptions(redisTarget)
+		if redisClient := configurator.GetRemoteExecutionRedisClientConfig(); redisClient != nil {
+			opts, err := redisutil.ConfigToOpts(redisClient)
+			if err != nil {
+				log.Fatalf("Invalid Remote Execution Redis config: %s", err)
+			}
 			// This Redis client is used for potentially long running blocking operations.
 			// We ideally would not want to  have an upper bound on the # of connections but the redis client library
 			// does not  provide such an option so we  set the pool size to a high value to prevent this redis client
@@ -271,7 +283,10 @@ func main() {
 			opts.IdleTimeout = 1 * time.Minute
 			opts.IdleCheckFrequency = 1 * time.Minute
 			opts.PoolTimeout = 5 * time.Second
-			redisClient := redisutil.NewClientWithOpts(opts, healthChecker, "remote_execution_redis_pubsub")
+			redisClient, err := redisutil.NewClientWithOpts(opts, healthChecker, "remote_execution_redis_pubsub")
+			if err != nil {
+				log.Fatalf("Failed to create Remote Execution PubSub redis client: %s", err)
+			}
 			realEnv.SetRemoteExecutionRedisPubSubClient(redisClient)
 		}
 	}
@@ -286,7 +301,7 @@ func main() {
 		}
 		log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 		if len(dcConfig.Nodes) == 0 {
-			dcConfig.PubSub = pubsub.NewPubSub(redisutil.NewClient(dcc.RedisTarget, healthChecker, "distributed_cache_redis"))
+			dcConfig.PubSub = pubsub.NewPubSub(redisutil.NewSimpleClient(dcc.RedisTarget, healthChecker, "distributed_cache_redis"))
 		}
 		dc, err := distributed.NewDistributedCache(realEnv, realEnv.GetCache(), dcConfig, healthChecker)
 		if err != nil {
@@ -316,8 +331,8 @@ func main() {
 		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
 		mc := memcache.NewCache(mcTargets...)
 		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
-		log.Infof("Enabling redis layer with targets: %s", redisTarget)
+	} else if redisClientConfig := configurator.GetCacheRedisClientConfig(); redisClientConfig != nil {
+		log.Infof("Enabling redis layer with targets: %s", redisClientConfig)
 		maxValueSizeBytes := int64(0)
 		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
 			maxValueSizeBytes = redisConfig.MaxValueSizeBytes

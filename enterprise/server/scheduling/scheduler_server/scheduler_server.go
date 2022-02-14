@@ -406,7 +406,7 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 
 type nodePool struct {
 	env       environment.Env
-	rdb       *redis.Client
+	rdb       redis.UniversalClient
 	mu        sync.Mutex
 	lastFetch time.Time
 	nodes     []*executionNode
@@ -654,7 +654,7 @@ type Options struct {
 
 type SchedulerServer struct {
 	env                  environment.Env
-	rdb                  *redis.Client
+	rdb                  redis.UniversalClient
 	taskRouter           interfaces.TaskRouter
 	schedulerClientCache *schedulerClientCache
 	shuttingDown         <-chan struct{}
@@ -905,7 +905,7 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 }
 
 func redisKeyForTask(taskID string) string {
-	return "task/" + taskID
+	return fmt.Sprintf("task/%s", taskID)
 }
 
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {

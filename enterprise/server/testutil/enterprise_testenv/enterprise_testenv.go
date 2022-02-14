@@ -21,7 +21,7 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	if opts.RedisTarget != "" {
 		healthChecker := healthcheck.NewTestingHealthChecker()
-		redisClient := redisutil.NewClient(opts.RedisTarget, healthChecker, "cache_redis")
+		redisClient := redisutil.NewSimpleClient(opts.RedisTarget, healthChecker, "cache_redis")
 		env.SetCacheRedisClient(redisClient)
 		env.SetRemoteExecutionRedisClient(redisClient)
 		env.SetRemoteExecutionRedisPubSubClient(redisClient)
