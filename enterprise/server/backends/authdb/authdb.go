@@ -53,8 +53,7 @@ func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, toke
 
 func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, error) {
 	ti := &tables.Token{}
-	existingRow := d.h.DB().Raw(`SELECT * FROM Tokens as t
-                               WHERE t.sub_id = ?`, subID)
+	existingRow := d.h.DB().Raw(`SELECT * FROM Tokens WHERE sub_id = ?`, subID)
 	if err := existingRow.Take(ti).Error; err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, er
 
 func (d *AuthDB) ClearToken(ctx context.Context, subID string) error {
 	err := d.h.Transaction(ctx, func(tx *db.DB) error {
-		res := tx.Exec(`UPDATE Tokens SET access_token = "" WHERE t.sub_id = ?`, subID)
+		res := tx.Exec(`UPDATE Tokens SET access_token = "" WHERE sub_id = ?`, subID)
 		return res.Error
 	})
 	return err
