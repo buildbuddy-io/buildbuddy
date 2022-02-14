@@ -579,9 +579,9 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}
 		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		for _, union := range batchCmdReq.GetUnion() {
-			sm.log.Debugf("Update: request union: %+v", union)
+			// sm.log.Debugf("Update: request union: %+v", union)
 			rsp := sm.handlePropose(wb, union)
-			sm.log.Debugf("Update: response union: %+v", rsp)
+			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 

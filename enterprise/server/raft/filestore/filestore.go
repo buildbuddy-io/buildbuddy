@@ -45,7 +45,7 @@ func NewWriter(ctx context.Context, fileDir string, wb *pebble.Batch, fileRecord
 		return nil, err
 	}
 	return PebbleWriter(wb, fileKey), nil
-	//	return FileWriter(ctx, fileDir, fileRecord)
+	//return FileWriter(ctx, fileDir, fileRecord)
 }
 
 func NewReader(ctx context.Context, fileDir string, iter *pebble.Iterator, md *rfpb.StorageMetadata) (io.ReadCloser, error) {
