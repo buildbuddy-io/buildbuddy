@@ -2,11 +2,13 @@ package event_parser_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -39,8 +41,10 @@ func TestFillInvocation(t *testing.T) {
 		},
 	})
 
+	startTime := time.Now()
 	buildStarted := &build_event_stream.BuildStarted{
-		StartTimeMillis:    0,
+		StartTimeMillis:    startTime.UnixMilli(),
+		StartTime:          timestamppb.New(startTime),
 		Command:            "test",
 		OptionsDescription: "foo",
 	}
@@ -166,8 +170,10 @@ func TestFillInvocation(t *testing.T) {
 		},
 	})
 
+	finishTime := startTime.Add(time.Millisecond)
 	buildFinished := &build_event_stream.BuildFinished{
-		FinishTimeMillis: 1,
+		FinishTimeMillis: finishTime.UnixMilli(),
+		FinishTime:       timestamppb.New(finishTime),
 		ExitCode: &build_event_stream.BuildFinished_ExitCode{
 			Name: "Success",
 			Code: 0,
