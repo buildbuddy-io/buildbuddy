@@ -117,7 +117,7 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 		require.NotEqual(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, status)
 
 		if status == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
-			logResp, err := bb.GetEventLogChunk(context.Background(), &elpb.GetEventLogChunkRequest{
+			logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 				InvocationId: invocationID,
 				MinLines:     math.MaxInt32,
 			})
