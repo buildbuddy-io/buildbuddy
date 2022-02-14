@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -443,21 +445,19 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 	if !ok {
 		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
 	}
-	db, err := r.DB()
+	iter, err := r.Iterator()
 	if err != nil {
 		return nil, err
 	}
-
-	rsp := &rfpb.FindMissingResponse{}
-	iter := db.NewIter(nil)
 	defer iter.Close()
 
+	rsp := &rfpb.FindMissingResponse{}
 	for _, fileRecord := range req.GetFileRecord() {
-		fileKey, err := constants.FileKey(fileRecord)
+		fileMetadaKey, err := constants.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
-		if !iter.SeekGE(fileKey) || bytes.Compare(iter.Key(), fileKey) != 0 {
+		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
 			rsp.FileRecord = append(rsp.FileRecord, fileRecord)
 		}
 	}
@@ -482,19 +482,39 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return err
 	}
-	_, ok := s.replicas[req.GetHeader().GetRangeId()]
+	r, ok := s.replicas[req.GetHeader().GetRangeId()]
 	if !ok {
 		return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
 	}
-	file, err := constants.FilePath(s.fileDir, req.GetFileRecord())
+	iter, err := r.Iterator()
 	if err != nil {
 		return err
 	}
-	reader, err := disk.FileReader(stream.Context(), file, req.GetOffset(), 0)
+	defer iter.Close()
+
+	fileKey, err := constants.FileKey(req.GetFileRecord())
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
+	if err != nil {
+		return err
+	}
+
+	// First, lookup the FileRecord. If it's not found, we don't have the file.
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return status.NotFoundErrorf("file %q not found", fileKey)
+	}
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return status.InternalErrorf("error reading file %q metadata", fileKey)
+	}
+	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, iter, fileMetadata.GetStorageMetadata())
+	if err != nil {
+		return err
+	}
+	defer readCloser.Close()
 
 	bufSize := int64(readBufSizeBytes)
 	d := req.GetFileRecord().GetDigest()
@@ -502,14 +522,15 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		bufSize = d.GetSizeBytes()
 	}
 	copyBuf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf)
+	_, err = io.CopyBuffer(&streamWriter{stream}, readCloser, copyBuf)
 	return err
 }
 
 func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var writeCloser io.WriteCloser
-	var file string
+	var fileMetadataKey []byte
+	var writeCloser filestore.WriteCloserMetadata
+	var batch *pebble.Batch
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -519,15 +540,25 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			file, err = constants.FilePath(s.fileDir, req.GetFileRecord())
+			s.replicaMu.RLock()
+			defer s.replicaMu.RUnlock()
+			r, ok := s.replicas[req.GetHeader().GetRangeId()]
+			if !ok {
+				return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+			}
+			db, err := r.DB()
 			if err != nil {
 				return err
 			}
-			wc, err := disk.FileWriter(stream.Context(), file)
+			batch = db.NewBatch()
+			fileMetadataKey, err = constants.FileMetadataKey(req.GetFileRecord())
 			if err != nil {
 				return err
 			}
-			writeCloser = wc
+			writeCloser, err = filestore.NewWriter(stream.Context(), s.fileDir, batch, req.GetFileRecord())
+			if err != nil {
+				return err
+			}
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
@@ -538,7 +569,20 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
-			//log.Debugf("Write(%q) succeeded.", file)
+			md := &rfpb.FileMetadata{
+				FileRecord:      req.GetFileRecord(),
+				StorageMetadata: writeCloser.Metadata(),
+			}
+			protoBytes, err := proto.Marshal(md)
+			if err != nil {
+				return err
+			}
+			if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
+				return err
+			}
+			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+				return err
+			}
 			return stream.SendAndClose(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})

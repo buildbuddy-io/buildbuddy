@@ -9,7 +9,6 @@ go_library(
         "//enterprise/server/raft/store",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
-        "//server/util/disk",
         "//server/util/grpc_server",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
