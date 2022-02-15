@@ -32,6 +32,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
@@ -250,6 +251,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               r.invocationID,
 			StartTimeMillis:    startTime.UnixMilli(),
+			StartTime:          timestamppb.New(startTime),
 			OptionsDescription: optionsDescription,
 			Command:            cmd,
 		}},
@@ -756,6 +758,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
 				InvocationId: iid,
@@ -763,12 +766,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:        int32(exitCode),
 				StartTimeMillis: cmdStartTime.UnixMilli(),
-				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+				StartTime:       timestamppb.New(cmdStartTime),
+				Duration:        durationpb.New(duration),
+				DurationMillis:  duration.Milliseconds(),
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
 			break
 		}
+		duration = time.Since(cmdStartTime)
 		childCompletedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
 				InvocationId: iid,
@@ -776,7 +782,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
 				ExitCode:        int32(exitCode),
 				StartTimeMillis: cmdStartTime.UnixMilli(),
-				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+				StartTime:       timestamppb.New(cmdStartTime),
+				Duration:        durationpb.New(duration),
+				DurationMillis:  duration.Milliseconds(),
 			}},
 		}
 		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
