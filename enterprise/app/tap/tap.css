@@ -191,11 +191,12 @@
   content: "";
   display: block;
   position: absolute;
-  top: 16px;
-  height: 1px;
+  top: 15px;
+  height: 3px;
   left: 0;
   right: 0;
-  background: #607d8b;
+  background: #cfd8dc;
+  margin-left: 17px; /* = half of effective .commit-link size */
 }
 
 .tap .commit-link {
