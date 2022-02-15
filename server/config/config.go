@@ -261,22 +261,23 @@ type ShardedRedisConfig struct {
 }
 
 type RemoteExecutionConfig struct {
-	DefaultPoolName                   string             `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
-	EnableWorkflows                   bool               `yaml:"enable_workflows" usage:"Whether to enable BuildBuddy workflows."`
-	WorkflowsPoolName                 string             `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
-	WorkflowsDefaultImage             string             `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
-	WorkflowsCIRunnerDebug            bool               `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
-	WorkflowsCIRunnerBazelCommand     string             `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
-	RedisTarget                       string             `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
-	ShardedRedis                      ShardedRedisConfig `yaml:"sharded_redis" usage:"Optional configuration for sharding execution data across multiple Redis instances. Mutually exclusive with the redis_target option."`
-	SharedExecutorPoolGroupID         string             `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
-	RedisPubSubPoolSize               int                `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
-	EnableRemoteExec                  bool               `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
-	RequireExecutorAuthorization      bool               `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
-	EnableUserOwnedExecutors          bool               `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
-	ForceUserOwnedDarwinExecutors     bool               `yaml:"force_user_owned_darwin_executors" usage:"If enabled, darwin actions will always run on user-owned executors."`
-	EnableExecutorKeyCreation         bool               `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
-	EnableRedisAvailabilityMonitoring bool               `yaml:"enable_redis_availability_monitoring" usage:"If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions."`
+	DefaultPoolName                       string             `yaml:"default_pool_name" usage:"The default executor pool to use if one is not specified."`
+	EnableWorkflows                       bool               `yaml:"enable_workflows" usage:"Whether to enable BuildBuddy workflows."`
+	WorkflowsPoolName                     string             `yaml:"workflows_pool_name" usage:"The executor pool to use for workflow actions. Defaults to the default executor pool if not specified."`
+	WorkflowsDefaultImage                 string             `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
+	WorkflowsCIRunnerDebug                bool               `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
+	WorkflowsCIRunnerBazelCommand         string             `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
+	WorkflowsCIRunnerDisableSystemBazelrc bool               `yaml:"workflows_ci_runner_disable_system_bazelrc" usage:"Whether the workflow runner should skip writing the system bazelrc."`
+	RedisTarget                           string             `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
+	ShardedRedis                          ShardedRedisConfig `yaml:"sharded_redis" usage:"Optional configuration for sharding execution data across multiple Redis instances. Mutually exclusive with the redis_target option."`
+	SharedExecutorPoolGroupID             string             `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
+	RedisPubSubPoolSize                   int                `yaml:"redis_pubsub_pool_size" usage:"Maximum number of connections used for waiting for execution updates."`
+	EnableRemoteExec                      bool               `yaml:"enable_remote_exec" usage:"If true, enable remote-exec. ** Enterprise only **"`
+	RequireExecutorAuthorization          bool               `yaml:"require_executor_authorization" usage:"If true, executors connecting to this server must provide a valid executor API key."`
+	EnableUserOwnedExecutors              bool               `yaml:"enable_user_owned_executors" usage:"If enabled, users can register their own executors with the scheduler."`
+	ForceUserOwnedDarwinExecutors         bool               `yaml:"force_user_owned_darwin_executors" usage:"If enabled, darwin actions will always run on user-owned executors."`
+	EnableExecutorKeyCreation             bool               `yaml:"enable_executor_key_creation" usage:"If enabled, UI will allow executor keys to be created."`
+	EnableRedisAvailabilityMonitoring     bool               `yaml:"enable_redis_availability_monitoring" usage:"If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions."`
 }
 
 type ExecutorConfig struct {
