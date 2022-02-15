@@ -1,4 +1,5 @@
 import React from "react";
+import ReactDOM from "react-dom";
 import Long from "long";
 import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
@@ -8,8 +9,9 @@ import { api, target } from "../../../proto/target_ts_proto";
 import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
+import { clamp } from "../../../app/util/math";
 import Select, { Option } from "../../../app/components/select/select";
-import { ChevronsRight, Filter } from "lucide-react";
+import { ChevronsRight, Filter, ArrowLeft } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
@@ -20,11 +22,9 @@ interface Props {
   search: URLSearchParams;
 }
 
-interface State {
+interface State extends CommitGrouping {
   repos: string[];
   targetHistory: target.ITargetHistory[];
-  commits: string[] | null;
-  commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
   nextPageToken: string;
   loading: boolean;
   coloring: "status" | "timing";
@@ -35,6 +35,12 @@ interface State {
   stats: Map<string, Stat>;
   maxInvocations: number;
   maxDuration: number;
+}
+
+interface CommitGrouping {
+  commits: string[] | null;
+  commitToMaxInvocationCreatedAtUsec: Map<string, number> | null;
+  commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
 }
 
 interface CommitStatus {
@@ -63,6 +69,7 @@ export default class TapComponent extends React.Component<Props, State> {
     nextPageToken: "",
     commits: null,
     commitToTargetIdToStatus: null,
+    commitToMaxInvocationCreatedAtUsec: null,
     loading: true,
     sort: "target",
     direction: "asc",
@@ -205,7 +212,7 @@ export default class TapComponent extends React.Component<Props, State> {
     });
   }
 
-  groupByCommit(targetHistories: target.ITargetHistory[]): Pick<State, "commits" | "commitToTargetIdToStatus"> {
+  groupByCommit(targetHistories: target.ITargetHistory[]): CommitGrouping {
     const commitToMaxInvocationCreatedAtUsec = new Map<string, number>();
     const commitToTargetIdToStatus = new Map<string, Map<string, target.ITargetStatus>>();
 
@@ -240,12 +247,12 @@ export default class TapComponent extends React.Component<Props, State> {
       (a, b) => commitToMaxInvocationCreatedAtUsec.get(b) - commitToMaxInvocationCreatedAtUsec.get(a)
     );
 
-    return { commits, commitToTargetIdToStatus };
+    return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetIdToStatus };
   }
 
-  navigateTo(event: any, destination: string) {
+  navigateTo(destination: string, event: React.MouseEvent) {
+    event.preventDefault();
     router.navigateTo(destination);
-    event.stopPropagation();
   }
 
   handleFilterChange(event: any) {
@@ -365,7 +372,7 @@ export default class TapComponent extends React.Component<Props, State> {
       <div className="tap-header-left-section">
         <div className="tap-title">Test grid</div>
         {this.isV2 && this.state.repos.length && (
-          <Select onChange={this.handleRepoChange.bind(this)} value={this.selectedRepo()}>
+          <Select onChange={this.handleRepoChange.bind(this)} value={this.selectedRepo()} className="repo-picker">
             {this.state.repos.map((repo) => (
               <Option key={repo} value={repo}>
                 {format.formatGitUrl(repo)}
@@ -411,8 +418,18 @@ export default class TapComponent extends React.Component<Props, State> {
       ? Boolean(this.state.nextPageToken)
       : this.state.maxInvocations > this.state.invocationLimit;
 
+    const moreInvocationsButton = (
+      <FilledButton
+        className="more-invocations-button"
+        onClick={this.loadMoreInvocations.bind(this)}
+        disabled={this.state.loading}>
+        <span>Load more</span>
+        <ChevronsRight className="icon white" />
+      </FilledButton>
+    );
+
     return (
-      <div className="tap">
+      <div className={`tap ${this.isV2 ? "v2" : ""}`}>
         <div className="tap-top-bar">
           <div className="container">
             <div className="tap-header">
@@ -458,20 +475,19 @@ export default class TapComponent extends React.Component<Props, State> {
                   onChange={this.handleFilterChange.bind(this)}
                 />
               </div>
-              {hasMoreInvocations && (
-                <FilledButton
-                  className="more-invocations-button"
-                  onClick={this.loadMoreInvocations.bind(this)}
-                  disabled={this.state.loading}>
-                  <span>Load more</span>
-                  <ChevronsRight className="icon white" />
-                </FilledButton>
-              )}
+              {hasMoreInvocations && !this.isV2 && moreInvocationsButton}
             </div>
           </div>
         </div>
 
         <div className="container tap-grid-container">
+          {this.isV2 && (
+            <InnerTopBar
+              commits={this.state.commits}
+              commitToMaxInvocationCreatedAtUsec={this.state.commitToMaxInvocationCreatedAtUsec}
+              moreInvocationsButton={moreInvocationsButton}
+            />
+          )}
           {this.state.targetHistory
             .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
             .sort(this.sort.bind(this))
@@ -549,6 +565,133 @@ export default class TapComponent extends React.Component<Props, State> {
           )}
         </div>
       </div>
+    );
+  }
+}
+
+interface InnerTopBarProps {
+  commits: string[];
+  commitToMaxInvocationCreatedAtUsec: Map<string, number>;
+  moreInvocationsButton: JSX.Element;
+}
+
+interface InnerTopBarState {
+  hoveredCommit: CommitTimestamp | null;
+}
+
+interface CommitTimestamp {
+  commitSha: string;
+  timestampUsec: number;
+}
+
+/**
+ * Top bar that sticks to the top of the scrollable area, containing the commit
+ * timeline.
+ */
+class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
+  state: InnerTopBarState = {
+    hoveredCommit: null,
+  };
+
+  private commitTimeline = React.createRef<HTMLDivElement>();
+  private hoveredCommitRow = React.createRef<HTMLDivElement>();
+  private hoveredCommitInfo = React.createRef<HTMLDivElement>();
+  private hoveredCommitPointer = React.createRef<HTMLDivElement>();
+  // TODO(bduffany): Use a generic tooltip component.
+  private tooltipPortal: HTMLDivElement;
+
+  componentWillMount() {
+    const tooltipPortal = document.createElement("div");
+    tooltipPortal.style.position = "fixed";
+    tooltipPortal.style.zIndex = "1";
+    tooltipPortal.style.opacity = "0";
+    document.body.appendChild(tooltipPortal);
+    this.tooltipPortal = tooltipPortal;
+  }
+
+  componentWillUnmount() {
+    this.tooltipPortal.remove();
+  }
+
+  onMouseLeaveCommitTimeline(event: React.MouseEvent) {
+    this.setState({ hoveredCommit: null });
+    this.tooltipPortal.style.opacity = "0";
+  }
+
+  onMouseOverCommit(commitSha: string, event: React.MouseEvent) {
+    this.setState({
+      hoveredCommit: {
+        commitSha,
+        timestampUsec: this.props.commitToMaxInvocationCreatedAtUsec.get(commitSha),
+      },
+    });
+
+    const hoveredElement = event.target as HTMLElement;
+    setTimeout(() => this.centerHoveredCommitWith(hoveredElement));
+  }
+
+  onClickCommitLink(event: React.MouseEvent) {
+    event.preventDefault();
+    const link = event.target as HTMLAnchorElement;
+    router.navigateTo(link.getAttribute("href"));
+  }
+
+  centerHoveredCommitWith(element: HTMLElement) {
+    const hoveredCommit = this.hoveredCommitInfo.current;
+    if (!hoveredCommit) return;
+
+    const hoveredCommitPointer = this.hoveredCommitPointer.current!;
+
+    const screenCenterX = element.getBoundingClientRect().left + element.clientWidth / 2;
+    const maxScreenLeftX = window.innerWidth - hoveredCommit.clientWidth;
+    const screenLeftX = clamp(screenCenterX - hoveredCommit.clientWidth / 2, 0, maxScreenLeftX);
+    const screenTop = this.hoveredCommitRow.current.getBoundingClientRect().top;
+    const screenBottom = screenTop + this.hoveredCommitRow.current.clientHeight;
+
+    hoveredCommit.style.left = `${screenLeftX}px`;
+    hoveredCommit.style.top = `${screenTop}px`;
+    hoveredCommitPointer.style.left = `${screenCenterX}px`;
+    hoveredCommitPointer.style.top = `${screenBottom}px`;
+    this.tooltipPortal.style.opacity = "1";
+  }
+
+  render() {
+    return (
+      <>
+        <div className="inner-top-bar-underlay" />
+        <div className="commit-timeline-label">Commits (most recent first)</div>
+        <div className="inner-top-bar">
+          <div className="hovered-commit-row" ref={this.hoveredCommitRow}>
+            {this.state.hoveredCommit &&
+              ReactDOM.createPortal(
+                <>
+                  <div className="tap-hovered-commit-pointer" ref={this.hoveredCommitPointer} />
+                  <div className="tap-hovered-commit-info" ref={this.hoveredCommitInfo}>
+                    {format.formatTimestampUsec(this.state.hoveredCommit.timestampUsec)}, commit{" "}
+                    {this.state.hoveredCommit.commitSha.substring(0, 6)}
+                  </div>
+                </>,
+                this.tooltipPortal
+              )}
+          </div>
+          <div
+            className="commit-timeline"
+            onMouseLeave={this.onMouseLeaveCommitTimeline.bind(this)}
+            ref={this.commitTimeline}>
+            <div className="commits-list">
+              {this.props.commits.map((commitSha) => (
+                <a
+                  className="commit-link"
+                  href={`/history/commit/${commitSha}`}
+                  onClick={this.onClickCommitLink.bind(this)}
+                  onMouseOver={this.onMouseOverCommit.bind(this, commitSha)}
+                />
+              ))}
+            </div>
+            {this.props.moreInvocationsButton}
+          </div>
+        </div>
+      </>
     );
   }
 }
