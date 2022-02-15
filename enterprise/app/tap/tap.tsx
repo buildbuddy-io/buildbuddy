@@ -597,6 +597,7 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
   private hoveredCommitRow = React.createRef<HTMLDivElement>();
   private hoveredCommitInfo = React.createRef<HTMLDivElement>();
   private hoveredCommitPointer = React.createRef<HTMLDivElement>();
+  // TODO(bduffany): Use a generic tooltip component.
   private tooltipPortal: HTMLDivElement;
 
   componentWillMount() {
