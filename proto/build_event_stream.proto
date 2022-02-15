@@ -1183,16 +1183,27 @@ message WorkflowConfigured {
 
 // Event describing a workflow command that completed.
 // Note: the event ID holds the invocation ID that identifies the command.
+// Next Tag: 6
 message WorkflowCommandCompleted {
   // The overall status of the command. A command was successful if and only if
   // this value is equal to 0.
   int32 exit_code = 1;
 
   // Start time of the workflow command, in milliseconds since epoch.
-  int64 start_time_millis = 2;
+  //
+  // Deprecated. Use start_time instead.
+  int64 start_time_millis = 2 [deprecated = true];
+
+  // Start time of the workflow command
+  google.protobuf.Timestamp start_time = 4;
 
   // How long it took for the workflow to complete, in milliseconds.
-  int64 duration_millis = 3;
+  //
+  // Deprecated. Use duration instead.
+  int64 duration_millis = 3 [deprecated = true];
+
+  // How long it took for the workflow to complete.
+  google.protobuf.Duration duration = 5;
 }
 
 message ChildInvocationsConfigured {
@@ -1214,16 +1225,27 @@ message ChildInvocationsConfigured {
 
 // Event describing completion of a child invocation.
 // Note: the event ID holds the invocation ID that identifies the command.
+// Next Tag: 6
 message ChildInvocationCompleted {
   // The overall status of the command. A command was successful if and only if
   // this value is equal to 0.
   int32 exit_code = 1;
 
   // Start time of the invocation, in milliseconds since epoch.
-  int64 start_time_millis = 2;
+  //
+  // Deprecated. Use start_time instead.
+  int64 start_time_millis = 2 [deprecated = true];
+
+  // Start time of the invocation
+  google.protobuf.Timestamp start_time = 4;
 
   // How long it took for the invocation to complete, in milliseconds.
+  //
+  // Deprecated. Use duration instead.
   int64 duration_millis = 3;
+
+  // How long it took for the invocation to complete.
+  google.protobuf.Duration duration = 5;
 }
 
 // Message describing a build event. Events will have an identifier that
