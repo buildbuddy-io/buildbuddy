@@ -89,6 +89,7 @@ const (
 var (
 	besBackend                  = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	cacheBackend                = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	rbeBackend                  = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
 	besResultsURL               = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
 	remoteInstanceName          = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
 	triggerEvent                = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -1142,6 +1143,22 @@ func writeBazelrc(path string) error {
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
+
+	// Primitive configs pointing to BB endpoints. These are purposely very
+	// fine-grained and do not include any options other than the backend
+	// URLs for now. They are all prefixed with "buildbuddy_" to avoid conflicting
+	// with existing .bazelrc configs in the wild.
+	lines = append(lines, []string{
+		"build:buildbuddy_bes_backend --bes_backend=" + *besBackend,
+		"build:buildbuddy_bes_results_url --bes_results_url=" + *besResultsURL,
+	}...)
+	if *cacheBackend != "" {
+		lines = append(lines, "build:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
+	}
+	if *rbeBackend != "" {
+		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
+	}
+
 	contents := strings.Join(lines, "\n") + "\n"
 
 	if _, err := io.WriteString(f, contents); err != nil {
