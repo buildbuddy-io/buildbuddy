@@ -3,8 +3,6 @@ package tables
 import (
 	"flag"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -20,10 +18,6 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
-
-	// MySQL version string consists of major, minor, release and an optional suffix.
-	// e.g. 8.0.18-log
-	mysqlVersionRegex = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)(-[[:alnum:]]+)?`)
 )
 
 const (
@@ -604,6 +598,11 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 				return postMigrateInvocationUUIDForSQLite(db)
 			})
 		} else if db.Dialector.Name() == mysqlDialect {
+			versionStr := ""
+			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
+				return nil, err
+			}
+			log.Debugf("MySQL Version: %q", versionStr)
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForMySQL(db)
 			})
@@ -686,11 +685,11 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	}
 	changePKStmt += "ADD PRIMARY KEY(target_id, invocation_uuid), "
 
-	version, err := getMySQLVersion(db)
+	isStrictModeEnabled, err := isStrictModeEnabled(db)
 	if err != nil {
 		return err
 	}
-	if version.major > 5 || (version.major == 5 && version.minor > 6) {
+	if isStrictModeEnabled {
 		changePKStmt += "ALGORITHM=INPLACE, LOCK=NONE"
 	} else {
 		changePKStmt += "ALGORITHM=COPY"
@@ -841,36 +840,14 @@ func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
 	return count > 0, nil
 }
 
-type MySQLVersion struct {
-	major int
-	minor int
-}
-
-func getMySQLVersion(db *gorm.DB) (*MySQLVersion, error) {
-	versionStr := ""
-
-	if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
-		return nil, err
+func isStrictModeEnabled(db *gorm.DB) (bool, error) {
+	sqlModes := ""
+	if err := db.Raw("select @@SESSION.sql_mode").Scan(&sqlModes).Error; err != nil {
+		return false, err
 	}
-
-	return parseMySQLVersion(versionStr)
-}
-
-func parseMySQLVersion(input string) (*MySQLVersion, error) {
-	// parses a string like this: "8.0.18-google"
-	match := mysqlVersionRegex.FindStringSubmatch(input)
-	if len(match) != 5 {
-		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
-	}
-	res := &MySQLVersion{}
-	var err error
-	if res.major, err = strconv.Atoi(match[1]); err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
-	}
-	if res.minor, err = strconv.Atoi(match[2]); err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid mysql version string %q", input)
-	}
-	return res, nil
+	log.Debugf("MySQL session sql_mode is %q", sqlModes)
+	isStrictModeEnabled := strings.Contains(sqlModes, "STRICT_ALL_TABLES") || strings.Contains(sqlModes, "STRICT_TRANS_TABLES")
+	return isStrictModeEnabled, nil
 }
 
 func init() {
