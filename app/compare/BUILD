@@ -16,6 +16,7 @@ ts_library(
         "//app/router",
         "//app/service",
         "//app/util:errors",
+        "//proto:build_event_stream_ts_proto",
         "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/diff-match-patch",
