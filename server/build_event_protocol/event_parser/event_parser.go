@@ -7,14 +7,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 const (
-	envVarOptionName   = "client_env"
-	envVarSeparator    = "="
-	undefinedTimestamp = int64(-1)
+	envVarOptionName = "client_env"
+	envVarSeparator  = "="
 )
 
 func parseEnv(commandLine *command_line.CommandLine) map[string]string {
@@ -49,16 +49,16 @@ type StreamingEventParser struct {
 	workspaceStatuses      []*build_event_stream.WorkspaceStatus
 	workflowConfigurations []*build_event_stream.WorkflowConfigured
 	pattern                []string
-	startTimeMillis        int64
-	endTimeMillis          int64
+	startTime              *time.Time
+	endTime                *time.Time
 	actionCount            int64
 	success                bool
 }
 
 func NewStreamingEventParser() *StreamingEventParser {
 	return &StreamingEventParser{
-		startTimeMillis:        undefinedTimestamp,
-		endTimeMillis:          undefinedTimestamp,
+		startTime:              nil,
+		endTime:                nil,
 		screenWriter:           terminal.NewScreenWriter(),
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
@@ -86,7 +86,8 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_Started:
 		{
-			sep.startTimeMillis = p.Started.StartTimeMillis
+			startTime := timeutil.GetTimeWithFallback(p.Started.StartTime, p.Started.StartTimeMillis)
+			sep.startTime = &startTime
 			sep.command = p.Started.Command
 			for _, child := range event.BuildEvent.Children {
 				// Here we are then. Knee-deep.
@@ -141,7 +142,8 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_Finished:
 		{
-			sep.endTimeMillis = p.Finished.FinishTimeMillis
+			endTime := timeutil.GetTimeWithFallback(p.Finished.FinishTime, p.Finished.FinishTimeMillis)
+			sep.endTime = &endTime
 			sep.success = p.Finished.ExitCode.Code == 0
 		}
 	case *build_event_stream.BuildEvent_BuildToolLogs:
@@ -202,8 +204,8 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	}
 
 	buildDuration := time.Duration(int64(0))
-	if sep.endTimeMillis != undefinedTimestamp && sep.startTimeMillis != undefinedTimestamp {
-		buildDuration = time.Duration((sep.endTimeMillis - sep.startTimeMillis) * int64(time.Millisecond))
+	if sep.endTime != nil && sep.startTime != nil {
+		buildDuration = sep.endTime.Sub(*sep.startTime)
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
 	// TODO(siggisim): Do this rendering once on write, rather than on every read.
