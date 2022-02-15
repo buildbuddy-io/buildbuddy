@@ -55,11 +55,11 @@ type StreamingEventParser struct {
 	success                bool
 }
 
-func NewStreamingEventParser() *StreamingEventParser {
+func NewStreamingEventParser(screenWriter *terminal.ScreenWriter) *StreamingEventParser {
 	return &StreamingEventParser{
 		startTimeMillis:        undefinedTimestamp,
 		endTimeMillis:          undefinedTimestamp,
-		screenWriter:           nil,
+		screenWriter:           screenWriter,
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
@@ -184,12 +184,6 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 	invocation.Event = sep.events
 	invocation.Success = sep.success
 	invocation.ActionCount = sep.actionCount
-
-	if invocation.HasChunkedEventLogs {
-		sep.screenWriter = nil
-	} else if sep.screenWriter == nil {
-		sep.screenWriter = terminal.NewScreenWriter()
-	}
 
 	// Fill invocation in a deterministic order:
 	// - Environment variables

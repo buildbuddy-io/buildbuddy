@@ -195,7 +195,7 @@ func TestFillInvocation(t *testing.T) {
 		InvocationId:     "test-invocation",
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	parser := event_parser.NewStreamingEventParser()
+	parser := event_parser.NewStreamingEventParser(nil)
 	for _, event := range events {
 		parser.ParseEvent(event)
 	}

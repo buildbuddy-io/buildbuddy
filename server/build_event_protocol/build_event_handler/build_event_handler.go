@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -451,7 +452,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	parser := event_parser.NewStreamingEventParser()
+	var screenWriter *terminal.ScreenWriter
+	if !invocation.HasChunkedEventLogs {
+		screenWriter = terminal.NewScreenWriter()
+	}
+	parser := event_parser.NewStreamingEventParser(screenWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -934,7 +939,11 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 
 	eg.Go(func() error {
 		redactor := redact.NewStreamingRedactor(env)
-		parser := event_parser.NewStreamingEventParser()
+		var screenWriter *terminal.ScreenWriter
+		if !invocation.HasChunkedEventLogs {
+			screenWriter = terminal.NewScreenWriter()
+		}
+		parser := event_parser.NewStreamingEventParser(screenWriter)
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
 		for {
 			event := &inpb.InvocationEvent{}
