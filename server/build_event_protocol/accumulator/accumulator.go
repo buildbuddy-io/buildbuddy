@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
 
 const (
@@ -157,7 +158,7 @@ func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
 	v.setStringValue(commandFieldName, event.GetStarted().Command)
 	v.setStringValue(patternFieldName, patternFromEvent(event))
-	v.buildStartTime = time.UnixMilli(event.GetStarted().GetStartTimeMillis())
+	v.buildStartTime = timeutil.GetTimeWithFallback(event.GetStarted().GetStartTime(), event.GetStarted().GetStartTimeMillis())
 }
 
 func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *command_line.CommandLine) {

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -95,10 +96,12 @@ func newUUID(t *testing.T) string {
 }
 
 func publishStarted(t *testing.T, bep *build_event_publisher.Publisher) {
+	startTime := time.Now()
 	err := bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				StartTimeMillis: time.Now().UnixMilli(),
+				StartTimeMillis: startTime.UnixMilli(),
+				StartTime:       timestamppb.New(startTime),
 			},
 		},
 	})
@@ -118,11 +121,13 @@ func publishProgress(t *testing.T, bep *build_event_publisher.Publisher, stdout,
 }
 
 func publishFinished(t *testing.T, bep *build_event_publisher.Publisher) {
+	finishTime := time.Now()
 	err := bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Finished{
 			Finished: &bespb.BuildFinished{
 				ExitCode:         &bespb.BuildFinished_ExitCode{Name: "OK", Code: 0},
-				FinishTimeMillis: time.Now().UnixMilli(),
+				FinishTimeMillis: finishTime.UnixMilli(),
+				FinishTime:       timestamppb.New(finishTime),
 			},
 		},
 	})

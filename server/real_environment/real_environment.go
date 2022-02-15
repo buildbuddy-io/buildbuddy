@@ -68,11 +68,11 @@ type RealEnv struct {
 	remoteExecutionService           interfaces.RemoteExecutionService
 	configurator                     *config.Configurator
 	executionClients                 map[string]*executionClientConfig
-	cacheRedisClient                 *redis.Client
-	defaultRedisClient               *redis.Client
-	remoteExecutionRedisClient       *redis.Client
+	cacheRedisClient                 redis.UniversalClient
+	defaultRedisClient               redis.UniversalClient
+	remoteExecutionRedisClient       redis.UniversalClient
 	dbHandle                         interfaces.DBHandle
-	remoteExecutionRedisPubSubClient *redis.Client
+	remoteExecutionRedisPubSubClient redis.UniversalClient
 	buildEventProxyClients           []pepb.PublishBuildEventClient
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
@@ -332,35 +332,35 @@ func (r *RealEnv) SetXcodeLocator(xl interfaces.XcodeLocator) {
 	r.xcodeLocator = xl
 }
 
-func (r *RealEnv) SetCacheRedisClient(redisClient *redis.Client) {
+func (r *RealEnv) SetCacheRedisClient(redisClient redis.UniversalClient) {
 	r.cacheRedisClient = redisClient
 }
 
-func (r *RealEnv) GetCacheRedisClient() *redis.Client {
+func (r *RealEnv) GetCacheRedisClient() redis.UniversalClient {
 	return r.cacheRedisClient
 }
 
-func (r *RealEnv) SetDefaultRedisClient(redisClient *redis.Client) {
+func (r *RealEnv) SetDefaultRedisClient(redisClient redis.UniversalClient) {
 	r.defaultRedisClient = redisClient
 }
 
-func (r *RealEnv) GetDefaultRedisClient() *redis.Client {
+func (r *RealEnv) GetDefaultRedisClient() redis.UniversalClient {
 	return r.defaultRedisClient
 }
 
-func (r *RealEnv) SetRemoteExecutionRedisClient(redisClient *redis.Client) {
+func (r *RealEnv) SetRemoteExecutionRedisClient(redisClient redis.UniversalClient) {
 	r.remoteExecutionRedisClient = redisClient
 }
 
-func (r *RealEnv) GetRemoteExecutionRedisClient() *redis.Client {
+func (r *RealEnv) GetRemoteExecutionRedisClient() redis.UniversalClient {
 	return r.remoteExecutionRedisClient
 }
 
-func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client *redis.Client) {
+func (r *RealEnv) SetRemoteExecutionRedisPubSubClient(client redis.UniversalClient) {
 	r.remoteExecutionRedisPubSubClient = client
 }
 
-func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() *redis.Client {
+func (r *RealEnv) GetRemoteExecutionRedisPubSubClient() redis.UniversalClient {
 	return r.remoteExecutionRedisPubSubClient
 }
 

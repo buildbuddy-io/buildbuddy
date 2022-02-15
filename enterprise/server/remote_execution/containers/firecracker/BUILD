@@ -13,7 +13,9 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     visibility = ["//visibility:public"],
-    deps = select({
+    deps = [
+        "@com_github_docker_docker//client:go_default_library",
+    ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",

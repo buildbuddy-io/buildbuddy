@@ -158,7 +158,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rand.Seed(seed)
 	log.Infof("Test seed: %d", seed)
 
-	redisTarget := testredis.Start(t)
+	redisTarget := testredis.Start(t).Target
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	// Create a user and group in the DB for use in tests (this will also create

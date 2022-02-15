@@ -226,7 +226,6 @@ type DBOptions interface {
 
 type DBHandle interface {
 	// TODO(zoey): Remove these methods from the interface using new DB method
-	Raw(sql string, values ...interface{}) *gorm.DB
 	Exec(sql string, values ...interface{}) *gorm.DB
 	ScanRows(rows *sql.Rows, dest interface{}) error
 
@@ -269,6 +268,7 @@ type AuthDB interface {
 	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
+	ClearToken(ctx context.Context, subID string) error
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }
 

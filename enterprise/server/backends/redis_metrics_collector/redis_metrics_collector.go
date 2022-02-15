@@ -15,11 +15,11 @@ const (
 )
 
 type collector struct {
-	rdb  *redis.Client
+	rdb  redis.UniversalClient
 	rbuf *redisutil.CommandBuffer
 }
 
-func New(rdb *redis.Client, rbuf *redisutil.CommandBuffer) *collector {
+func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
 	return &collector{
 		rdb:  rdb,
 		rbuf: rbuf,

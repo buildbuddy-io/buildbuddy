@@ -133,20 +133,27 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.R
 	return rangeDescriptor, nil
 }
 
-func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]string, error) {
+func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHeader, error) {
 	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 
-	allNodes := make([]string, 0, len(rangeDescriptor.GetReplicas()))
+	allNodes := make([]*client.PeerHeader, 0, len(rangeDescriptor.GetReplicas()))
 	for _, replica := range rangeDescriptor.GetReplicas() {
 		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
 			log.Errorf("registry error resolving %+v: %s", replica, err)
 			continue
 		}
-		allNodes = append(allNodes, addr)
+
+		allNodes = append(allNodes, &client.PeerHeader{
+			Header: &rfpb.Header{
+				Replica: replica,
+				RangeId: rangeDescriptor.GetRangeId(),
+			},
+			GRPCAddr: addr,
+		})
 	}
 	return allNodes, nil
 }

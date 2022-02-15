@@ -178,6 +178,10 @@ export function formatTimestamp(timestamp: { seconds?: number | Long; nanos?: nu
     .padStart(3, "0")} ${moment(+timestamp.seconds * 1000).format("A")}`;
 }
 
+export function formatDate(date: Date): string {
+  return formatTimestampMillis(date.getTime());
+}
+
 const DATE_RANGE_SEPARATOR = "\u2013";
 
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
@@ -264,6 +268,7 @@ export default {
   bitsPerSecond,
   count,
   truncateList,
+  formatDate,
   formatTimestampUsec,
   formatTimestampMillis,
   formatTimestamp,

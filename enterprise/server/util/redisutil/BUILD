@@ -9,6 +9,7 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//server/config",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",

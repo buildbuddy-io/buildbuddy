@@ -7,10 +7,9 @@ actions:
       pull_request:
         branches:
           - "master"
-    # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1140): Re-enable
-    # system bazelrc
+    # TODO(http://go/b/1140): Re-enable system bazelrc
     bazel_commands:
-      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver
+      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
     triggers:
       push:
@@ -27,6 +26,17 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/958):
-      # See if we can remove --remote_download_outputs=toplevel
+      # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
       - bazel --nosystem_rc test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
+  # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
+  # TODO(http://go/b/1151): Switch from dev -> prod and re-enable
+  # - name: Docker tests
+  #   triggers:
+  #     push:
+  #       branches:
+  #         - "master"
+  #     pull_request:
+  #       branches:
+  #         - "master"
+  #   bazel_commands:
+  #     - bazel --nosystem_rc test //... --config=workflows --config=remote-dev --test_tag_filters=+docker --build_tag_filters=+docker

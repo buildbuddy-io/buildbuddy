@@ -109,6 +109,12 @@ func TestDockerLifecycleControl(t *testing.T) {
 		}
 	})
 
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{},
+		"docker.io/library/busybox",
+	)
+	require.NoError(t, err)
+
 	err = c.Create(ctx, workDir)
 
 	require.NoError(t, err)
