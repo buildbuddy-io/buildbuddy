@@ -111,11 +111,7 @@ export default class ArtifactsCardComponent extends React.Component {
                   <div>
                     {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
                     {!!this.props.model.buildMetrics?.targetMetrics.targetsConfigured && (
-                      <span>
-                        {" "}
-                        ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured /{" "}
-                        {this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded)
-                      </span>
+                      <span> ({this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured)</span>
                     )}
                   </div>
                 </div>
