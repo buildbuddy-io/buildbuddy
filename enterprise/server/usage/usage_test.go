@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -351,7 +352,14 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 				&usage.TrackerOpts{Region: "us-west1"},
 			)
 			require.NoError(t, err)
-			return ut.FlushToDB(ctx)
+			err = ut.FlushToDB(ctx)
+			// With MySQL, it's very likely that the queries issued for the flush
+			// transaction might cause a deadlock. It's OK if a deadlock causes a
+			// flush operation to fail, as long as at least one app succeeds.
+			if isDeadlockError(err) {
+				return nil
+			}
+			return err
 		})
 	}
 
@@ -375,6 +383,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Redis instances should be different.
 	te1 := setupEnv(t)
 	te2 := setupEnv(t)
+	te2.GetConfigurator().GetDatabaseConfig().DataSource = te1.GetConfigurator().GetDatabaseConfig().DataSource
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
@@ -476,4 +485,14 @@ func addCounts(c1, c2 *tables.UsageCounts) *tables.UsageCounts {
 		countsValue.Field(i).Set(reflect.ValueOf(v1 + v2))
 	}
 	return counts
+}
+
+func isDeadlockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if err, ok := err.(*mysql.MySQLError); ok {
+		return err.Number == 1213
+	}
+	return false
 }
