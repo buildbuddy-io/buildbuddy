@@ -601,6 +601,14 @@ svg.icon.orange {
   user-select: none;
 }
 
+.card .all {
+  margin-top: 16px;
+  font-weight: 600;
+  color: #263238;
+  cursor: pointer;
+  user-select: none;
+}
+
 .card-suggestion-message {
   word-break: normal;
   max-width: 800px;
