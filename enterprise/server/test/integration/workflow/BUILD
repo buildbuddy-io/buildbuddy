@@ -17,6 +17,7 @@ go_test(
         "//enterprise/server/workflow/service",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
+        "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",

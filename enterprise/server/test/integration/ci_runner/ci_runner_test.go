@@ -2,6 +2,7 @@ package ci_runner_test
 
 import (
 	"context"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
@@ -153,14 +155,20 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 	if !assert.Equal(t, 1, len(res.InvocationIDs)) {
 		require.FailNowf(t, "Runner did not output invocation IDs", "output: %s", res.Output)
 	}
-	resp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
 			InvocationId: res.InvocationIDs[0],
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, 1, len(resp.Invocation), "couldn't find runner invocation in DB")
-	return resp.Invocation[0]
+	require.Equal(t, 1, len(invResp.Invocation), "couldn't find runner invocation in DB")
+	logResp, err := bbService.GetEventLogChunk(context.Background(), &elpb.GetEventLogChunkRequest{
+		InvocationId: res.InvocationIDs[0],
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	invResp.Invocation[0].ConsoleBuffer = string(logResp.Buffer)
+	return invResp.Invocation[0]
 }
 
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {

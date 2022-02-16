@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -451,7 +452,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	parser := event_parser.NewStreamingEventParser()
+	var screenWriter *terminal.ScreenWriter
+	if !invocation.HasChunkedEventLogs {
+		screenWriter = terminal.NewScreenWriter()
+	}
+	parser := event_parser.NewStreamingEventParser(screenWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -496,9 +501,10 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	invocation := &inpb.Invocation{
-		InvocationId:     iid,
-		InvocationStatus: invocationStatus,
-		Attempt:          e.attempt,
+		InvocationId:        iid,
+		InvocationStatus:    invocationStatus,
+		Attempt:             e.attempt,
+		HasChunkedEventLogs: e.logWriter != nil,
 	}
 
 	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
@@ -665,7 +671,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 			Attempt:          e.attempt,
-			LastChunkId:      eventlog.EmptyId,
+		}
+		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			ti.LastChunkId = eventlog.EmptyId
 		}
 
 		if isFirstStartedEvent {
@@ -761,9 +769,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		if e.logWriter != nil {
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
 			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
-			// For now, write logs to both chunks and the invocation proto
-			// p.Progress.Stderr = ""
-			// p.Progress.Stdout = ""
+			// Don't store the log in the protostream if we're
+			// writing it separately to blobstore
+			p.Progress.Stderr = ""
+			p.Progress.Stdout = ""
 		}
 	}
 
@@ -930,7 +939,11 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 
 	eg.Go(func() error {
 		redactor := redact.NewStreamingRedactor(env)
-		parser := event_parser.NewStreamingEventParser()
+		var screenWriter *terminal.ScreenWriter
+		if !invocation.HasChunkedEventLogs {
+			screenWriter = terminal.NewScreenWriter()
+		}
+		parser := event_parser.NewStreamingEventParser(screenWriter)
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
 		for {
 			event := &inpb.InvocationEvent{}

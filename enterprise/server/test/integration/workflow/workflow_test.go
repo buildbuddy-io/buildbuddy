@@ -3,6 +3,7 @@ package workflows_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -118,6 +120,12 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 		require.NotEqual(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, status)
 
 		if status == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
+			logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+				InvocationId: invocationID,
+				MinLines:     math.MaxInt32,
+			})
+			require.NoError(t, err)
+			inv.ConsoleBuffer = string(logResp.Buffer)
 			return inv
 		}
 
