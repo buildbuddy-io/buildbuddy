@@ -97,12 +97,11 @@ func (dbh *DBHandle) DB(ctx context.Context) *DB {
 }
 
 func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {
-	db := dbh.db
+	db := dbh.DB(ctx)
 	if opts.ReadOnly() && opts.AllowStaleReads() && dbh.readReplicaDB != nil {
 		db = dbh.readReplicaDB
 	}
 
-	db = db.WithContext(ctx)
 	if opts.QueryName() != "" {
 		db = db.Set(gormQueryNameKey, opts.QueryName())
 	}
@@ -118,19 +117,19 @@ func (dbh *DBHandle) TransactionWithOptions(ctx context.Context, opts interfaces
 }
 
 func (dbh *DBHandle) Transaction(ctx context.Context, txn interfaces.TxRunner) error {
-	return dbh.db.WithContext(ctx).Transaction(txn)
+	return dbh.DB(ctx).Transaction(txn)
 }
 
 func IsRecordNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
-func (dbh *DBHandle) ReadRow(out interface{}, where ...interface{}) error {
+func (dbh *DBHandle) ReadRow(ctx context.Context, out interface{}, where ...interface{}) error {
 	whereArgs := make([]interface{}, 0)
 	if len(where) > 1 {
 		whereArgs = where[1:]
 	}
-	err := dbh.db.Where(where[0], whereArgs).First(out).Error
+	err := dbh.DB(ctx).Where(where[0], whereArgs).First(out).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return status.NotFoundError("Record not found")
 	}

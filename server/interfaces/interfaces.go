@@ -228,7 +228,7 @@ type DBHandle interface {
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
 	Transaction(ctx context.Context, txn TxRunner) error
-	ReadRow(out interface{}, where ...interface{}) error
+	ReadRow(ctx context.Context, out interface{}, where ...interface{}) error
 	UTCMonthFromUsecTimestamp(fieldName string) string
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	InsertIgnoreModifier() string
