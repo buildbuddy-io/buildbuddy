@@ -1107,18 +1107,14 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
-	if err := c.startMachine(ctx, vmCtx, m); err != nil {
+	startVM := tracing.Wrap("StartMachine", func(_ context.Context) error {
+		return m.Start(vmCtx)
+	})
+	if err := startVM(ctx); err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
 	c.machine = m
 	return nil
-}
-
-func (c *FirecrackerContainer) startMachine(ctx context.Context, startCtx context.Context, m *fcclient.Machine) error {
-	_, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	return m.Start(startCtx)
 }
 
 func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {

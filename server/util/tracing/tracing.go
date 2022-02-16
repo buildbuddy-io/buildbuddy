@@ -266,6 +266,22 @@ func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Cont
 	return ctx, span
 }
 
+// Wrap returns a traced version of the given function.
+//
+// In most cases, creating a separate function and calling StartSpan at the
+// beginning of the function is preferable to using this function. This function
+// is mainly useful in cases where it is not ergonomic to create a separate
+// function just for tracing purposes.
+func Wrap(name string, fn func(context.Context) error, opts ...trace.SpanStartOption) func(context.Context) error {
+	return func(ctx context.Context) error {
+		// TODO(bduffany): Prepend the calling function's name to the span, like
+		// package.CallingFunc#name
+		ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, name, opts...)
+		defer span.End()
+		return fn(ctx)
+	}
+}
+
 func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 	span := trace.SpanFromContext(ctx)
 	if !span.IsRecording() {
