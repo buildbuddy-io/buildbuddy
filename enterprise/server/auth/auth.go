@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
+    burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	oidc "github.com/coreos/go-oidc"
 )
@@ -94,6 +95,15 @@ var (
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 	return jwtKey, nil
+}
+
+func sameHostname(urlStringA, urlStringB string) bool {
+	if urlA, err := url.Parse(urlStringA); err == nil {
+		if urlB, err := url.Parse(urlStringB); err == nil {
+			return urlA.Hostname() == urlB.Hostname()
+		}
+	}
+	return false
 }
 
 type Claims struct {
@@ -484,24 +494,8 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfig
 	return a, err
 }
 
-func sameHostname(urlStringA, urlStringB string) bool {
-	if urlA, err := url.Parse(urlStringA); err == nil {
-		if urlB, err := url.Parse(urlStringB); err == nil {
-			return urlA.Hostname() == urlB.Hostname()
-		}
-	}
-	return false
-}
-
 func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
-	if a.myURL.Host == "" {
-		return status.FailedPreconditionError("You must specify a build_buddy_url in your config to enable authentication. For more information, see: https://www.buildbuddy.io/docs/config-app")
-	}
-
-	if !sameHostname(redirectURL, a.myURL.String()) {
-		return status.FailedPreconditionErrorf("Redirect url %q was not on this domain %q!", redirectURL, a.myURL.Host)
-	}
-	return nil
+	return burl.ValidateRedirect(a.env, redirectURL)
 }
 
 func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {

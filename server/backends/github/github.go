@@ -19,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
 const (
@@ -103,6 +105,12 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Verify "state" cookie matches
 	if r.FormValue("state") != getCookie(r, stateCookieName) {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName)))
+		return
+	}
+
+    redirectURL := r.FormValue("redirect_uri")
+    if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName)))
 		return
 	}
