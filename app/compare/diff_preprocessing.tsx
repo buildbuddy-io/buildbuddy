@@ -114,7 +114,7 @@ function removeTimingData(commandLine: command_line.ICommandLine) {
 }
 
 function removeTimingDataInActionSummary(actionSummary: build_event_stream.BuildMetrics.IActionSummary) {
-  for (const actionData of actionSummary.actionData) {
+  for (const actionData of actionSummary?.actionData || []) {
     delete actionData.firstStartedMs;
     delete actionData.lastEndedMs;
   }
