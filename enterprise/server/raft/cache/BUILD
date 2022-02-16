@@ -38,6 +38,7 @@ go_library(
 go_test(
     name = "cache_test",
     srcs = ["cache_test.go"],
+    tags = ["manual"],
     deps = [
         ":cache",
         "//proto:remote_execution_go_proto",
