@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -205,6 +206,9 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 // waitUntilExists waits, up to maxWait, for localPath to exist. If the provided
 // context is cancelled, this method returns immediately.
 func waitUntilExists(ctx context.Context, maxWait time.Duration, localPath string) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	ctx, cancel := context.WithTimeout(ctx, maxWait)
 	defer cancel()
 
@@ -379,6 +383,9 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 
 // mergeDiffSnapshot reads from diffSnapshotPath and writes all non-zero blocks into the baseSnapshotPath file.
 func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapshotPath string, concurrency int, bufSize int) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	out, err := os.OpenFile(baseSnapshotPath, os.O_WRONLY, 0644)
 	if err != nil {
 		return status.UnavailableErrorf("Could not open base snapshot file %q: %s", baseSnapshotPath, err)
@@ -454,6 +461,9 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 }
 
 func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest, baseSnapshotDigest *repb.Digest) (*repb.Digest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("SaveSnapshot took %s", time.Since(start))
@@ -547,6 +557,9 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 }
 
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride, instanceName string, snapshotDigest *repb.Digest) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
@@ -612,7 +625,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
 
 	// Wait until jailer directory exists because the host vsock socket is created in that directory.
-	if err := c.setupVFSServer(); err != nil {
+	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
@@ -829,6 +842,9 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 }
 
 func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	locateBinariesOnce.Do(func() {
 		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
@@ -853,6 +869,9 @@ func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string
 // data has already been synced to the workspace filesystem and the VM has
 // been paused before calling this.
 func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("copyOutputsToWorkspace took %s", time.Since(start))
@@ -898,6 +917,8 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	// Setup masquerading on the host if it isn't already.
 	var masqueradingErr error
@@ -928,10 +949,12 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupVFSServer() error {
+func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if c.vfsServer != nil {
 		return nil
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	vsockServerPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVFSServerPort)
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
@@ -952,6 +975,9 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	// These cleanup functions should not depend on each other, so try cleaning
 	// up everything and return the last error if there is one.
 	var lastErr error
@@ -979,6 +1005,9 @@ func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileS
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
 func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds container.PullCredentials) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Run took %s", time.Since(start))
@@ -1028,6 +1057,9 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 // Create creates a new VM and starts a top-level process inside it listening
 // for commands to execute.
 func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Create took %s", time.Since(start))
@@ -1060,7 +1092,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	if err := c.setupVFSServer(); err != nil {
+	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
@@ -1075,29 +1107,38 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
-	if err := m.Start(vmCtx); err != nil {
+	if err := c.startMachine(ctx, vmCtx, m); err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
 	c.machine = m
 	return nil
 }
 
+func (c *FirecrackerContainer) startMachine(ctx context.Context, startCtx context.Context, m *fcclient.Machine) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	return m.Start(startCtx)
+}
+
 func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
 	}
 	defer conn.Close()
 
-	execClient := vmxpb.NewExecClient(conn)
-	rsp, err := execClient.Exec(ctx, req)
-	if err != nil {
-		return nil, status.WrapError(err, "Firecracker exec failed")
-	}
-	return rsp, nil
+	client := vmxpb.NewExecClient(conn)
+	return c.vmExec(ctx, client, req)
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
 
@@ -1117,7 +1158,21 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	return conn, nil
 }
 
+func (c *FirecrackerContainer) vmExec(ctx context.Context, client vmxpb.ExecClient, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	rsp, err := client.Exec(ctx, req)
+	if err != nil {
+		return nil, status.WrapError(err, "Firecracker exec failed")
+	}
+	return rsp, nil
+}
+
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	p, err := vfs_server.NewCASLazyFileProvider(c.env, ctx, c.fsLayout.RemoteInstanceName, c.fsLayout.Inputs)
 	if err != nil {
 		return nil, err
@@ -1149,6 +1204,9 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Exec took %s", time.Since(start))
@@ -1215,6 +1273,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 }
 
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	diskImagePath, err := containerutil.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
 	if err != nil {
 		return false, err
@@ -1229,6 +1290,9 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 // re-authenticates the request, but may serve the image from a local cache
 // in order to avoid re-downloading the image.
 func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("PullImage took %s", time.Since(start))
@@ -1249,6 +1313,9 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds container.Pu
 // Remove kills any processes currently running inside the container and
 // removes any resources associated with the container itself.
 func (c *FirecrackerContainer) Remove(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Remove took %s", time.Since(start))
@@ -1278,6 +1345,9 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 
 // Pause freezes a container so that it no longer consumes CPU resources.
 func (c *FirecrackerContainer) Pause(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Pause took %s", time.Since(start))
@@ -1297,6 +1367,9 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 // Unpause un-freezes a container so that it can be used to execute commands.
 func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Unpause took %s", time.Since(start))
@@ -1308,6 +1381,9 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 // Wait waits until the underlying VM exits. It returns an error if one is
 // encountered while waiting.
 func (c *FirecrackerContainer) Wait(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if c.externalJailerCmd != nil {
 		return c.externalJailerCmd.Wait()
 	}

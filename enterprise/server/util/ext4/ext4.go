@@ -11,11 +11,15 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
 func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	args := []string{
 		"/sbin/mke2fs",
 		"-L", "''",

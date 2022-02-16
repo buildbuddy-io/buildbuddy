@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -117,6 +118,9 @@ func isTemporary(err error) bool {
 // dialHostToGuest connects to the specified VSock socketPath and port and returns a
 // new net.Conn or error if unable to connect.
 func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.Conn, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	var d net.Dialer
 	raddr := net.UnixAddr{Name: socketPath, Net: "unix"}
 	conn, err := d.DialContext(ctx, "unix", raddr.String())
