@@ -72,9 +72,7 @@ export default class ArtifactsCardComponent extends React.Component {
             </div>
             <div className="invocation-section">
               <div className="invocation-section-title">Run date</div>
-              <div>
-                {this.props.model.getStartDate()} at {this.props.model.getStartTime()}
-              </div>
+              <div>{this.props.model.getFormattedStartedDate()}</div>
             </div>
             <div className="invocation-section">
               <div className="invocation-section-title">Elapsed time</div>
