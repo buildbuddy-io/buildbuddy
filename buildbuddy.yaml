@@ -7,7 +7,6 @@ actions:
       pull_request:
         branches:
           - "master"
-    # TODO(http://go/b/1140): Re-enable system bazelrc
     bazel_commands:
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
