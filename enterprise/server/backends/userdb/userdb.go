@@ -170,7 +170,7 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	keys := make([]*tables.APIKey, 0)
 	for rows.Next() {
 		k := &tables.APIKey{}
-		if err := d.h.ScanRows(rows, k); err != nil {
+		if err := d.h.DB().ScanRows(rows, k); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

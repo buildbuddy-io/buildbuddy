@@ -2,7 +2,6 @@ package interfaces
 
 import (
 	"context"
-	"database/sql"
 	"io"
 	"net/http"
 	"net/url"
@@ -225,9 +224,6 @@ type DBOptions interface {
 }
 
 type DBHandle interface {
-	// TODO(zoey): Remove these methods from the interface using new DB method
-	ScanRows(rows *sql.Rows, dest interface{}) error
-
 	DB() *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error

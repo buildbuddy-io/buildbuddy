@@ -203,7 +203,7 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 	invocations := make([]*tables.Invocation, 0)
 	var ti tables.Invocation
 	for rows.Next() {
-		if err := d.h.ScanRows(rows, &ti); err != nil {
+		if err := d.h.DB().ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
 		i := ti

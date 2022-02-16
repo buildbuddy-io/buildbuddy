@@ -103,7 +103,7 @@ func (s *usageService) scanUsages(ctx context.Context, groupID string, start, en
 	usages := []*usagepb.Usage{}
 	for rows.Next() {
 		usage := &usagepb.Usage{}
-		if err := dbh.ScanRows(rows, usage); err != nil {
+		if err := dbh.DB().ScanRows(rows, usage); err != nil {
 			return nil, err
 		}
 		usages = append(usages, usage)
