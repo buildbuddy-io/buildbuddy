@@ -700,10 +700,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
 				if numLinesToRetain != 0 {
-					// the number of lines curses can overwrite is 2 + the ui_actions shown:
-					// 1 for the progress tracker, 1 for each action, and 1 blank line.
+					// the number of lines curses can overwrite is 3 + the ui_actions shown:
+					// 1 for the progress tracker, 1 for each action, and 2 blank lines.
 					// 0 indicates that curses is not being used.
-					numLinesToRetain += 2
+					numLinesToRetain += 3
 				}
 				e.logWriter = eventlog.NewEventLogWriter(
 					e.ctx,
