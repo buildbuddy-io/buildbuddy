@@ -602,6 +602,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--action_name=" + workflowAction.Name,
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+			"--cache_backend=" + conf.GetAppCacheAPIURL(),
+			"--rbe_backend=" + conf.GetAppRemoteExecutionAPIURL(),
 			"--commit_sha=" + wd.SHA,
 			"--pushed_repo_url=" + wd.PushedRepoURL,
 			"--pushed_branch=" + wd.PushedBranch,
@@ -610,6 +612,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
+			"--write_system_bazelrc=" + fmt.Sprintf("%v", !conf.GetRemoteExecutionConfig().WorkflowsCIRunnerDisableSystemBazelrc),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{

@@ -406,7 +406,7 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 
 type nodePool struct {
 	env       environment.Env
-	rdb       *redis.Client
+	rdb       redis.UniversalClient
 	mu        sync.Mutex
 	lastFetch time.Time
 	nodes     []*executionNode
@@ -654,7 +654,7 @@ type Options struct {
 
 type SchedulerServer struct {
 	env                  environment.Env
-	rdb                  *redis.Client
+	rdb                  redis.UniversalClient
 	taskRouter           interfaces.TaskRouter
 	schedulerClientCache *schedulerClientCache
 	shuttingDown         <-chan struct{}

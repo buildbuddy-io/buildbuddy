@@ -42,7 +42,6 @@ const INITIAL_STATE: State = {
 const DEFAULT_PREPROCESSING_OPTIONS: PreProcessingOptions = {
   sortEvents: true,
   hideTimingData: true,
-  hideConsoleOutput: true,
   hideInvocationIds: true,
   hideUuids: true,
   hideProgress: true,
@@ -191,7 +190,6 @@ export default class CompareInvocationsComponent extends React.Component<Compare
               {this.renderPreProcessingOption("hideTimingData", "Hide timing data")}
               {this.renderPreProcessingOption("hideProgress", "Hide progress")}
               {this.renderPreProcessingOption("hideInvocationIds", "Hide invocation IDs")}
-              {this.renderPreProcessingOption("hideConsoleOutput", "Hide console output")}
               {this.renderPreProcessingOption("hideUuids", "Hide Bazel-generated UUIDs")}
             </div>
           </div>

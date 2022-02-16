@@ -7,9 +7,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
-        "//server/util/disk",
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",

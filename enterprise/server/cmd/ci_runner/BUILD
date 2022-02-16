@@ -34,6 +34,8 @@ go_library(
         "@in_gopkg_yaml_v2//:yaml_v2",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

@@ -32,6 +32,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -88,6 +90,7 @@ const (
 var (
 	besBackend                  = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	cacheBackend                = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	rbeBackend                  = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
 	besResultsURL               = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
 	remoteInstanceName          = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
 	triggerEvent                = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -111,6 +114,7 @@ var (
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
+	writeSystemBazelrc      = flag.Bool("write_system_bazelrc", true, "Whether to write /etc/bazel.bazelrc.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -247,6 +251,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               r.invocationID,
 			StartTimeMillis:    startTime.UnixMilli(),
+			StartTime:          timestamppb.New(startTime),
 			OptionsDescription: optionsDescription,
 			Command:            cmd,
 		}},
@@ -287,6 +292,8 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 	}
 
 	r.FlushProgress()
+	now := time.Now()
+
 	r.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
 		Children: []*bespb.BuildEventId{
@@ -298,7 +305,8 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 				Name: exitCodeName,
 				Code: int32(exitCode),
 			},
-			FinishTimeMillis: time.Now().UnixMilli(),
+			FinishTimeMillis: now.UnixMilli(),
+			FinishTime:       timestamppb.New(now),
 		}},
 	})
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
@@ -410,8 +418,10 @@ func main() {
 		fatal(status.WrapError(err, "ensure PATH"))
 	}
 	// Write default bazelrc
-	if err := writeBazelrc(systemBazelrcPath); err != nil {
-		fatal(status.WrapError(err, "write "+systemBazelrcPath))
+	if *writeSystemBazelrc {
+		if err := writeBazelrc(systemBazelrcPath); err != nil {
+			fatal(status.WrapError(err, "write "+systemBazelrcPath))
+		}
 	}
 	// Configure TERM to get prettier output from executed commands.
 	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
@@ -748,6 +758,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
 				InvocationId: iid,
@@ -755,12 +766,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:        int32(exitCode),
 				StartTimeMillis: cmdStartTime.UnixMilli(),
-				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+				StartTime:       timestamppb.New(cmdStartTime),
+				Duration:        durationpb.New(duration),
+				DurationMillis:  duration.Milliseconds(),
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
 			break
 		}
+		duration = time.Since(cmdStartTime)
 		childCompletedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
 				InvocationId: iid,
@@ -768,7 +782,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
 				ExitCode:        int32(exitCode),
 				StartTimeMillis: cmdStartTime.UnixMilli(),
-				DurationMillis:  int64(float64(time.Since(cmdStartTime)) / float64(time.Millisecond)),
+				StartTime:       timestamppb.New(cmdStartTime),
+				Duration:        durationpb.New(duration),
+				DurationMillis:  duration.Milliseconds(),
 			}},
 		}
 		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
@@ -1135,6 +1151,22 @@ func writeBazelrc(path string) error {
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
+
+	// Primitive configs pointing to BB endpoints. These are purposely very
+	// fine-grained and do not include any options other than the backend
+	// URLs for now. They are all prefixed with "buildbuddy_" to avoid conflicting
+	// with existing .bazelrc configs in the wild.
+	lines = append(lines, []string{
+		"build:buildbuddy_bes_backend --bes_backend=" + *besBackend,
+		"build:buildbuddy_bes_results_url --bes_results_url=" + *besResultsURL,
+	}...)
+	if *cacheBackend != "" {
+		lines = append(lines, "build:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
+	}
+	if *rbeBackend != "" {
+		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
+	}
+
 	contents := strings.Join(lines, "\n") + "\n"
 
 	if _, err := io.WriteString(f, contents); err != nil {

@@ -34,6 +34,34 @@ message FileRecord {
   build.bazel.remote.execution.v2.Digest digest = 3;
 }
 
+message StorageMetadata {
+  message FileMetadata {
+    string filename = 1;
+  }
+  FileMetadata file_metadata = 1;
+
+  message PebbleMetadata {
+    // The root key for all stored chunks.
+    bytes key = 1;
+
+    // The number of chunks stored in pebble
+    // for this file. Chunks are 1-indexed.
+    // Ex. If chunks == 2, a reader would expect to
+    // read: [chunk-1, chunk-2].
+    int64 chunks = 2;
+  }
+  PebbleMetadata pebble_metadata = 2;
+
+  // Insert other storage types (gcs, etc) here.
+  // Upon read, the server will first read this record and then serve the
+  // contents of the the specified location.
+}
+
+message FileMetadata {
+  FileRecord file_record = 1;
+  StorageMetadata storage_metadata = 2;
+}
+
 message FileWriteRequest {
   FileRecord file_record = 1;
 }
@@ -334,9 +362,10 @@ message ReadResponse {
 }
 
 message WriteRequest {
-  FileRecord file_record = 1;
-  bool finish_write = 2;
-  bytes data = 3;
+  Header header = 1;
+  FileRecord file_record = 2;
+  bool finish_write = 3;
+  bytes data = 4;
 }
 
 message WriteResponse {

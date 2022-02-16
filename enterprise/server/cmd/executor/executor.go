@@ -172,10 +172,13 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
 		mc := memcache.NewCache(mcTargets...)
 		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisTarget := configurator.GetCacheRedisTarget(); redisTarget != "" {
-		log.Infof("Enabling redis layer with targets: %s", redisTarget)
+	} else if redisClientConfig := configurator.GetCacheRedisClientConfig(); redisClientConfig != nil {
+		log.Infof("Enabling redis layer with targets: %s", redisClientConfig)
 
-		redisClient := redisutil.NewClient(redisTarget, healthChecker, "cache_redis")
+		redisClient, err := redisutil.NewClientFromConfig(redisClientConfig, healthChecker, "cache_redis")
+		if err != nil {
+			log.Fatalf("Error configuring cache Redis client: %s", err)
+		}
 
 		maxValueSizeBytes := int64(0)
 		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {

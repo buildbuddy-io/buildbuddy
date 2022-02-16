@@ -92,7 +92,7 @@ type TrackerOpts struct {
 
 type tracker struct {
 	env    environment.Env
-	rdb    *redis.Client
+	rdb    redis.UniversalClient
 	rbuf   *redisutil.CommandBuffer
 	clock  timeutil.Clock
 	region string

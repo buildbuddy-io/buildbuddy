@@ -3,6 +3,7 @@ package testenv
 import (
 	"bytes"
 	"context"
+	"flag"
 	"io/ioutil"
 	"net"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -23,6 +25,10 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+)
+
+var (
+	useMySQL = flag.Bool("testenv.use_mysql", false, "Whether to use MySQL instead of sqlite for tests.")
 )
 
 func init() {
@@ -154,6 +160,10 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		t.Fatal(err)
 	}
 	te.SetCache(c)
+
+	if *useMySQL {
+		currentConfigurator.GetDatabaseConfig().DataSource = testmysql.GetOrStart(t)
+	}
 	dbHandle, err := db.GetConfiguredDatabase(currentConfigurator, healthChecker)
 	if err != nil {
 		t.Fatal(err)

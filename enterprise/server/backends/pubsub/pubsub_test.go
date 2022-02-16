@@ -21,7 +21,7 @@ const (
 )
 
 func TestPubSub(t *testing.T) {
-	target := testredis.Start(t)
+	target := testredis.Start(t).Target
 	pubSub := NewStreamPubSub(redis.NewClient(redisutil.TargetToOptions(target)))
 
 	ctx := context.Background()

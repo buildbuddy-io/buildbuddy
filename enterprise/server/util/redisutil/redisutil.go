@@ -2,10 +2,13 @@ package redisutil
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -48,19 +51,139 @@ func TargetToOptions(redisTarget string) *redis.Options {
 }
 
 type HealthChecker struct {
-	Rdb *redis.Client
+	Rdb redis.UniversalClient
 }
 
 func (c *HealthChecker) Check(ctx context.Context) error {
 	return c.Rdb.Ping(ctx).Err()
 }
 
-func NewClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
-	return NewClientWithOpts(TargetToOptions(redisTarget), checker, healthCheckName)
+// Opts holds configuration options that can be converted to redis.Options used by the "simple" Redis client or to
+// redis.RingOptions used by the Ring client. The go-redis library has a "universal" option type which unfortunately
+// does not cover the Ring client.
+// Refer to the redis.Options struct for documentation of individual options.
+type Opts struct {
+	// Addrs contains zero or more addresses of Redis instances.
+	// When used to create a simple client, this must contain either 0 or 1 addresses.
+	// May contain more than 1 address if creating a Ring client.
+	Addrs []string
+	// Only used when creating a simple client. Ring client does not support non-tcp network types.
+	Network string
+
+	Username string
+	Password string
+	DB       int
+
+	MaxRetries      int
+	MinRetryBackoff time.Duration
+	MaxRetryBackoff time.Duration
+
+	PoolSize           int
+	PoolTimeout        time.Duration
+	IdleTimeout        time.Duration
+	IdleCheckFrequency time.Duration
+
+	TLSConfig *tls.Config
 }
 
-func NewClientWithOpts(opts *redis.Options, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
-	redisClient := redis.NewClient(opts)
+func (o *Opts) toSimpleOpts() (*redis.Options, error) {
+	if len(o.Addrs) > 1 {
+		return nil, status.FailedPreconditionErrorf("simple Redis client only supports a single address")
+	}
+	opts := &redis.Options{
+		Network:            o.Network,
+		Username:           o.Username,
+		Password:           o.Password,
+		DB:                 o.DB,
+		MaxRetries:         o.MaxRetries,
+		MinRetryBackoff:    o.MinRetryBackoff,
+		MaxRetryBackoff:    o.MaxRetryBackoff,
+		PoolSize:           o.PoolSize,
+		PoolTimeout:        o.PoolTimeout,
+		IdleTimeout:        o.IdleTimeout,
+		IdleCheckFrequency: o.IdleCheckFrequency,
+		TLSConfig:          o.TLSConfig,
+	}
+	if len(o.Addrs) > 0 {
+		opts.Addr = o.Addrs[0]
+	}
+	return opts, nil
+}
+
+func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
+	opts := &redis.RingOptions{
+		Addrs:              map[string]string{},
+		Username:           o.Username,
+		Password:           o.Password,
+		DB:                 o.DB,
+		MaxRetries:         o.MaxRetries,
+		MinRetryBackoff:    o.MinRetryBackoff,
+		MaxRetryBackoff:    o.MaxRetryBackoff,
+		PoolSize:           o.PoolSize,
+		PoolTimeout:        o.PoolTimeout,
+		IdleTimeout:        o.IdleTimeout,
+		IdleCheckFrequency: o.IdleCheckFrequency,
+		TLSConfig:          o.TLSConfig,
+	}
+	for i, addr := range o.Addrs {
+		opts.Addrs[fmt.Sprintf("shard%d", i)] = addr
+	}
+	return opts, nil
+}
+
+func ConfigToOpts(redisConfig *config.RedisClientConfig) (*Opts, error) {
+	if redisConfig.SimpleTarget != "" {
+		libOpts := TargetToOptions(redisConfig.SimpleTarget)
+		return &Opts{
+			Addrs:    []string{libOpts.Addr},
+			Network:  libOpts.Network,
+			Username: libOpts.Username,
+			Password: libOpts.Password,
+			DB:       libOpts.DB,
+		}, nil
+	}
+
+	if sc := redisConfig.ShardedConfig; sc != nil {
+		return &Opts{
+			Addrs:    sc.Shards,
+			Username: sc.Username,
+			Password: sc.Password,
+		}, nil
+	}
+
+	return nil, status.FailedPreconditionErrorf("config should have either a single target or a sharded config")
+}
+
+func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheckName string) (redis.UniversalClient, error) {
+	var redisClient redis.UniversalClient
+	if len(opts.Addrs) <= 1 {
+		simpleOpts, err := opts.toSimpleOpts()
+		if err != nil {
+			return nil, err
+		}
+		redisClient = redis.NewClient(simpleOpts)
+	} else {
+		ringOpts, err := opts.toRingOpts()
+		if err != nil {
+			return nil, err
+		}
+		redisClient = redis.NewRing(ringOpts)
+	}
+	redisClient.AddHook(redisotel.NewTracingHook())
+	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
+	return redisClient, nil
+}
+
+func NewClientFromConfig(redisConfig *config.RedisClientConfig, checker interfaces.HealthChecker, healthCheckName string) (redis.UniversalClient, error) {
+	opts, err := ConfigToOpts(redisConfig)
+	if err != nil {
+		return nil, err
+	}
+	return NewClientWithOpts(opts, checker, healthCheckName)
+}
+
+func NewSimpleClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {
+	redisClient := redis.NewClient(TargetToOptions(redisTarget))
 	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient
@@ -79,7 +202,7 @@ type redlock struct {
 // (b) It does not retry failed locking attempts.
 //
 // See https://redis.io/topics/distlock
-func NewWeakLock(rdb *redis.Client, key string, expiry time.Duration) *redlock {
+func NewWeakLock(rdb redis.UniversalClient, key string, expiry time.Duration) *redlock {
 	pool := redsync_goredis.NewPool(rdb)
 	rs := redsync.New(pool)
 	rmu := rs.NewMutex(key, redsync.WithTries(1), redsync.WithExpiry(expiry))
@@ -126,7 +249,7 @@ func (r *redlock) Unlock(ctx context.Context) error {
 // not much new data should be written to the buffer during shutdown since we
 // don't accept new RPCs while shutting down.
 type CommandBuffer struct {
-	rdb       *redis.Client
+	rdb       redis.UniversalClient
 	stopFlush chan struct{}
 
 	mu sync.Mutex // protects all fields below
@@ -143,7 +266,7 @@ type CommandBuffer struct {
 }
 
 // NewCommandBuffer creates a buffer.
-func NewCommandBuffer(rdb *redis.Client) *CommandBuffer {
+func NewCommandBuffer(rdb redis.UniversalClient) *CommandBuffer {
 	c := &CommandBuffer{rdb: rdb}
 	c.init()
 	return c
