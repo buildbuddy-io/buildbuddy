@@ -63,12 +63,17 @@ build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
 
 # Configuration used for BuildBuddy workflows
-build:workflows --config=remote
+build:workflows --config=remote-shared
 build:workflows --build_metadata=ROLE=CI
 build:workflows --build_metadata=VISIBILITY=PUBLIC
 build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 build:workflows --color=yes
 build:workflows --disk_cache=
+# Use BuildBuddy endpoints from the CI runner systemrc.
+build:workflows --config=buildbuddy_bes_backend
+build:workflows --config=buildbuddy_bes_results_url
+build:workflows --config=buildbuddy_remote_cache
+build:workflows --config=buildbuddy_remote_executor
 
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote
