@@ -92,8 +92,8 @@ func (o *Options) QueryName() string {
 
 type DB = gorm.DB
 
-func (dbh *DBHandle) DB() *DB {
-	return dbh.db
+func (dbh *DBHandle) DB(ctx context.Context) *DB {
+	return dbh.db.WithContext(ctx)
 }
 
 func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.DBOptions) *DB {

@@ -149,7 +149,7 @@ func (d *InvocationDB) UpdateInvocationACL(ctx context.Context, authenticatedUse
 
 func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string) (*tables.Invocation, error) {
 	ti := &tables.Invocation{}
-	if err := d.h.DB().Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
+	if err := d.h.DB(ctx).Raw(`SELECT * FROM Invocations WHERE invocation_id = ?`, invocationID).Take(ti).Error; err != nil {
 		return nil, err
 	}
 	if ti.Perms&perms.OTHERS_READ == 0 {
@@ -172,7 +172,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	existingRow := d.h.DB().Raw(queryStr, args...)
+	existingRow := d.h.DB(ctx).Raw(queryStr, args...)
 	if err := existingRow.Take(ti).Error; err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocation
 
 func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error) {
 	in := &tables.Invocation{}
-	err := d.h.DB().Raw(
+	err := d.h.DB(ctx).Raw(
 		`SELECT group_id FROM Invocations WHERE invocation_id = ?`, invocationID,
 	).Take(in).Error
 	if err != nil {
@@ -192,7 +192,7 @@ func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocati
 
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
-	rows, err := d.h.DB().Raw(`SELECT * FROM Invocations as i
+	rows, err := d.h.DB(ctx).Raw(`SELECT * FROM Invocations as i
                                    WHERE i.created_at_usec < ?
                                    LIMIT ?`, cutoffUsec, limit).Rows()
 	if err != nil {
@@ -203,7 +203,7 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 	invocations := make([]*tables.Invocation, 0)
 	var ti tables.Invocation
 	for rows.Next() {
-		if err := d.h.DB().ScanRows(rows, &ti); err != nil {
+		if err := d.h.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
 		i := ti
@@ -213,7 +213,7 @@ func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime 
 }
 
 func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) error {
-	counts := d.h.DB().Raw(`
+	counts := d.h.DB(ctx).Raw(`
 		SELECT 
 			COUNT(DISTINCT invocation_id) as invocation_count,
 			COUNT(DISTINCT host) as bazel_host_count,
@@ -233,7 +233,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
 	ti := &tables.Invocation{InvocationID: invocationID}
-	return d.h.DB().Delete(ti).Error
+	return d.h.DB(ctx).Delete(ti).Error
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {

@@ -54,7 +54,7 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, sql s
 	invocations := make([]*tables.Invocation, 0)
 	for rows.Next() {
 		var ti tables.Invocation
-		if err := s.h.DB().ScanRows(rows, &ti); err != nil {
+		if err := s.h.DB(ctx).ScanRows(rows, &ti); err != nil {
 			return nil, err
 		}
 		invocations = append(invocations, &ti)

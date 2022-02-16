@@ -46,7 +46,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 		return nil, err
 	}
 	queryStr, args := q.Build()
-	rows, err := dbh.DB().Raw(queryStr, args...).Rows()
+	rows, err := dbh.DB(ctx).Raw(queryStr, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	executions := make([]tables.Execution, 0)
 	for rows.Next() {
 		var exec tables.Execution
-		if err := dbh.DB().ScanRows(rows, &exec); err != nil {
+		if err := dbh.DB(ctx).ScanRows(rows, &exec); err != nil {
 			return nil, err
 		}
 		executions = append(executions, exec)
