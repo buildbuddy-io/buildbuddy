@@ -1107,10 +1107,13 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
-	startVM := tracing.Wrap("StartMachine", func(_ context.Context) error {
+	err = (func() error {
+		_, span := tracing.StartSpan(ctx)
+		defer span.End()
+		span.SetName("StartMachine")
 		return m.Start(vmCtx)
-	})
-	if err := startVM(ctx); err != nil {
+	})()
+	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
 	c.machine = m
