@@ -226,7 +226,6 @@ type DBOptions interface {
 
 type DBHandle interface {
 	// TODO(zoey): Remove these methods from the interface using new DB method
-	Exec(sql string, values ...interface{}) *gorm.DB
 	ScanRows(rows *sql.Rows, dest interface{}) error
 
 	DB() *gorm.DB

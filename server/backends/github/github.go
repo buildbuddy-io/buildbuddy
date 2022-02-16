@@ -159,7 +159,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 			redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
 			return
 		}
-		err = dbHandle.Exec(
+		err = dbHandle.DB().Exec(
 			`UPDATE `+"`Groups`"+` SET github_token = ? WHERE group_id = ?`,
 			accessTokenResponse.AccessToken, groupID).Error
 		if err != nil {
@@ -174,7 +174,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		if userID != u.GetUserID() {
 			redirectWithError(w, r, status.PermissionDeniedErrorf("Invalid user: %v", userID))
 		}
-		err = dbHandle.Exec(
+		err = dbHandle.DB().Exec(
 			`UPDATE `+"`Users`"+` SET github_token = ? WHERE user_id = ?`,
 			accessTokenResponse.AccessToken, userID).Error
 		if err != nil {
