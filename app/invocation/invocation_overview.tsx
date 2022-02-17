@@ -113,9 +113,7 @@ export default class InvocationOverviewComponent extends React.Component {
             <div className="title">{this.props.model.workflowConfigured.actionName}</div>
           )}
           {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
-          <div className="subtitle">
-            {this.props.model.getStartDate()} at {this.props.model.getStartTime()}
-          </div>
+          <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
         <div className="details">
           <div className="detail">

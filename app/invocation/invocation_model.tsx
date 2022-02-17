@@ -8,6 +8,8 @@ import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
+import { formatDate } from "../format/format";
+import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -389,22 +391,16 @@ export default class InvocationModel {
     return patterns.join(", ");
   }
 
-  getStartTimeNumber() {
-    return typeof this.started?.startTimeMillis == "number"
-      ? this.started?.startTimeMillis
-      : this.started?.startTimeMillis.toNumber();
+  getStartTimeDate() {
+    return timestampToDateWithFallback(this.started?.startTime, this.started?.startTimeMillis);
   }
 
-  getStartDate() {
-    return moment(this.getStartTimeNumber()).format("MMMM Do, YYYY");
-  }
-
-  getStartTime() {
-    return moment(this.getStartTimeNumber()).format("h:mm:ss a");
+  getFormattedStartedDate() {
+    return formatDate(this.getStartTimeDate());
   }
 
   timeSinceStart() {
-    return moment(this.getStartTimeNumber()).fromNow(true);
+    return moment(this.getStartTimeDate()).fromNow(true);
   }
 
   getHumanReadableDuration() {
@@ -512,7 +508,8 @@ export default class InvocationModel {
   getRuntime(label: string) {
     let testResult = this.testSummaryMap.get(label)?.buildEvent.testSummary;
     if (testResult) {
-      return +testResult.totalRunDurationMillis / 1000 + " seconds";
+      let durationMillis = durationToMillisWithFallback(testResult.totalRunDuration, testResult.totalRunDurationMillis);
+      return durationMillis / 1000 + " seconds";
     }
     return (
       this.getDuration(this.completedMap.get(label)?.eventTime, this.configuredMap.get(label)?.eventTime) + " seconds"
