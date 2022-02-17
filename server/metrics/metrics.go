@@ -110,9 +110,9 @@ const (
 )
 
 var (
-	/// ## Build event handler metrics
+	/// ## Invocation build event metrics
 	///
-	/// All metrics are recorded at the _end_ of each invocation.
+	/// All invocation metrics are recorded at the _end_ of each invocation.
 
 	InvocationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
