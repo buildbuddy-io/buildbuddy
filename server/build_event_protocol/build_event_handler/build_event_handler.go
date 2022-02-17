@@ -198,7 +198,9 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 	case r.tasks <- req:
 		break
 	default:
-		log.Error("Failed to write cache stats: stats recorder task buffer is full")
+		alert.UnexpectedEvent(
+			"stats_recorder_workers_overloaded",
+			"Failed to write cache stats: stats recorder task buffer is full")
 	}
 }
 
@@ -259,7 +261,10 @@ func (r *statsRecorder) Start() {
 				// for any other purpose).
 				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
 				if !updated {
-					return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+					log.Debugf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+					// Don't notify the webhook; the more recent attempt should trigger
+					// the notification when it is finalized.
+					continue
 				}
 
 				// Once cache stats are populated, notify the onStatsRecorded channel in
@@ -268,7 +273,9 @@ func (r *statsRecorder) Start() {
 				case r.onStatsRecorded <- task.invocationJWT:
 					break
 				default:
-					log.Warningf("Failed to notify stats recorder listeners: channel buffer is full")
+					alert.UnexpectedEvent(
+						"webhook_workers_overloaded",
+						"Failed to notify webhook: channel buffer is full")
 				}
 			}
 			return nil
