@@ -22,6 +22,7 @@ go_library(
         "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/url",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_dgrijalva_jwt_go//:jwt-go",
         "@org_golang_google_grpc//credentials",

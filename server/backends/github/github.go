@@ -109,9 +109,9 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    redirectURL := r.FormValue("redirect_uri")
-    if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName)))
+	redirectURL := r.FormValue("redirect_uri")
+	if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
+		redirectWithError(w, r, err)
 		return
 	}
 

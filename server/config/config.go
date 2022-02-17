@@ -460,24 +460,7 @@ func init() {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(&sharedGeneralConfig).Elem())
 }
 
-func readConfig(fullConfigPath string) (*generalConfig, error) {
-	if fullConfigPath == "" {
-		return &sharedGeneralConfig, nil
-	}
-	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
-
-	_, err := os.Stat(fullConfigPath)
-
-	// If the file does not exist then we are SOL.
-	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
-	}
-
-	fileBytes, err := os.ReadFile(fullConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading config file: %s", err)
-	}
-
+func parseConfig(fileBytes []byte) (*generalConfig, error) {
 	// expand environment variables
 	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
 
@@ -497,12 +480,43 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	return &sharedGeneralConfig, nil
 }
 
+func readConfig(fullConfigPath string) (*generalConfig, error) {
+	if fullConfigPath == "" {
+		return &sharedGeneralConfig, nil
+	}
+	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
+
+	_, err := os.Stat(fullConfigPath)
+
+	// If the file does not exist then we are SOL.
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
+	}
+
+	fileBytes, err := os.ReadFile(fullConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading config file: %s", err)
+	}
+
+	return parseConfig(fileBytes)
+}
+
 type Configurator struct {
 	gc *generalConfig
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
 	conf, err := readConfig(configFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return &Configurator{
+		gc: conf,
+	}, nil
+}
+
+func NewConfiguratorFromData(data []byte) (*Configurator, error) {
+	conf, err := parseConfig(data)
 	if err != nil {
 		return nil, err
 	}

@@ -28,8 +28,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
-    burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	oidc "github.com/coreos/go-oidc"
 )
 
@@ -95,15 +95,6 @@ var (
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 	return jwtKey, nil
-}
-
-func sameHostname(urlStringA, urlStringB string) bool {
-	if urlA, err := url.Parse(urlStringA); err == nil {
-		if urlB, err := url.Parse(urlStringB); err == nil {
-			return urlA.Hostname() == urlB.Hostname()
-		}
-	}
-	return false
 }
 
 type Claims struct {
@@ -500,7 +491,7 @@ func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
 
 func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	for _, a := range a.authenticators {
-		if sameHostname(a.getIssuer(), issuer) {
+		if burl.SameHostname(a.getIssuer(), issuer) {
 			return a
 		}
 	}
