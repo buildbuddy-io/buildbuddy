@@ -1320,26 +1320,33 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 		log.Debugf("Remove took %s", time.Since(start))
 	}()
 
+	var lastErr error
+
 	if err := c.machine.Shutdown(ctx); err != nil {
 		log.Errorf("Error shutting down machine: %s", err)
+		lastErr = err
 	}
 	if err := c.machine.StopVMM(); err != nil {
 		log.Errorf("Error stopping VM: %s", err)
+		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.Errorf("Error cleaning up networking: %s", err)
+		lastErr = err
 	}
 	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
 		log.Errorf("Error removing workspace fs: %s", err)
+		lastErr = err
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
+		lastErr = err
 	}
 	if c.vfsServer != nil {
 		c.vfsServer.Stop()
 		c.vfsServer = nil
 	}
-	return nil
+	return lastErr
 }
 
 // Pause freezes a container so that it no longer consumes CPU resources.
@@ -1360,6 +1367,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	if err := c.Remove(ctx); err != nil {
 		log.Errorf("Error cleaning up after pause: %s", err)
+		return err
 	}
 	return nil
 }
