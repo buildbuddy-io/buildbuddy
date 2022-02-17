@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "executor",
@@ -31,23 +31,6 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_bazel_rules_go//proto/wkt:duration_go_proto",
         "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
-    name = "executor_test",
-    size = "small",
-    srcs = ["executor_test.go"],
-    embed = [":executor"],
-    tags = ["manual"],
-    deps = [
-        "//proto:remote_execution_go_proto",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/util/testing/flags",
-        "@com_github_stretchr_testify//assert",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
