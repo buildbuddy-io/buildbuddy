@@ -249,8 +249,6 @@ func (r *statsRecorder) Start() {
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
-	log.Infof("Recording stats")
-
 	start := time.Now()
 	defer func() {
 		metrics.StatsRecorderDuration.Observe(float64(time.Since(start).Microseconds()))
