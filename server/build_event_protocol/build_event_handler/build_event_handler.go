@@ -199,7 +199,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 		break
 	default:
 		alert.UnexpectedEvent(
-			"stats_recorder_workers_overloaded",
+			"stats_recorder_channel_buffer_full",
 			"Failed to write cache stats: stats recorder task buffer is full")
 	}
 }
@@ -274,7 +274,7 @@ func (r *statsRecorder) Start() {
 					break
 				default:
 					alert.UnexpectedEvent(
-						"webhook_workers_overloaded",
+						"webhook_channel_buffer_full",
 						"Failed to notify webhook: channel buffer is full")
 				}
 			}
