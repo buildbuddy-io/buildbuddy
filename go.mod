@@ -23,8 +23,7 @@ require (
 	github.com/cockroachdb/pebble v0.0.0-20210406181039-e3809b89b488
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/creack/pty v1.1.17
-	github.com/crewjam/saml v0.4.5
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/crewjam/saml v0.4.6
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-units v0.4.0
@@ -112,7 +111,6 @@ require (
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containernetworking/cni v0.8.1 // indirect
 	github.com/containernetworking/plugins v0.9.1 // indirect
-	github.com/crewjam/httperr v0.0.0-20190612203328-a946449404da // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.0-20210816181553-5444fa50b93d // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
@@ -135,6 +133,7 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/goccy/go-json v0.7.10 // indirect
 	github.com/gofrs/uuid v3.3.0+incompatible // indirect
+	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.4-0.20210502035320-33fc3d5d8d99 // indirect
 	github.com/google/btree v1.0.0 // indirect
@@ -152,12 +151,10 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.4 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/jonboulle/clockwork v0.2.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/josharian/native v0.0.0-20200817173448-b6b71def0850 // indirect
 	github.com/juju/ratelimit v1.0.2-0.20191002062651-f60b32039441 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd // indirect
-	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.0 // indirect
@@ -168,7 +165,6 @@ require (
 	github.com/lni/vfs v0.2.0 // indirect
 	github.com/magefile/mage v1.10.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
-	github.com/mattermost/xml-roundtrip-validator v0.0.0-20201213122252-bcd7e1b9601e // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mdlayher/netlink v1.4.1 // indirect
@@ -186,7 +182,6 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.10.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
-	github.com/russellhaering/goxmldsig v1.1.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/valyala/fastrand v1.0.0 // indirect

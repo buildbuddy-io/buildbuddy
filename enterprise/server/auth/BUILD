@@ -23,7 +23,7 @@ go_library(
         "//server/util/role",
         "//server/util/status",
         "@com_github_coreos_go_oidc//:go-oidc",
-        "@com_github_dgrijalva_jwt_go//:jwt-go",
+        "@com_github_golang_jwt_jwt//:jwt",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
