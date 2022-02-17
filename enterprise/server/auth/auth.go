@@ -486,6 +486,9 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfig
 }
 
 func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
+	if a.myURL.Host == "" {
+		return status.FailedPreconditionError("You must specify a build_buddy_url in your config to enable authentication. For more information, see: https://www.buildbuddy.io/docs/config-app")
+	}
 	return burl.ValidateRedirect(a.env, redirectURL)
 }
 
