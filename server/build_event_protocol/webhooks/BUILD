@@ -9,6 +9,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/db",
         "//server/util/log",
         "//server/util/status",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
