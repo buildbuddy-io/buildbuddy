@@ -46,6 +46,11 @@ func TestValidateRedirect(t *testing.T) {
 			RedirURL: "http://evil.com/foo",
 			WantErr:  true,
 		},
+		{
+			AppURL:   "http://localhost:8080",
+			RedirURL: "http://localhost:8080/auth",
+			WantErr:  false,
+		},
 	}
 
 	for _, tc := range testCases {
