@@ -7,16 +7,15 @@ actions:
       pull_request:
         branches:
           - "master"
-    # TODO(http://go/b/1140): Re-enable system bazelrc
     bazel_commands:
-      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+      - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
     triggers:
       push:
         branches:
           - "master"
     bazel_commands:
-      - bazel --nosystem_rc test //... --config=workflows --test_tag_filters=+performance
+      - test //... --config=workflows --test_tag_filters=+performance
   - name: Browser tests
     triggers:
       push:
@@ -27,7 +26,7 @@ actions:
           - "master"
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      - bazel --nosystem_rc test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
+      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   # TODO(http://go/b/1151): Switch from dev -> prod and re-enable
   # - name: Docker tests
@@ -39,4 +38,4 @@ actions:
   #       branches:
   #         - "master"
   #   bazel_commands:
-  #     - bazel --nosystem_rc test //... --config=workflows --config=remote-dev --test_tag_filters=+docker --build_tag_filters=+docker
+  #     - test //... --config=workflows --config=remote-dev --test_tag_filters=+docker --build_tag_filters=+docker
