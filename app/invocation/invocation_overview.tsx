@@ -145,7 +145,7 @@ export default class InvocationOverviewComponent extends React.Component {
           {isBazelInvocation && (
             <div
               className="detail"
-              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
+              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured`}>
               <Target className="icon" />
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>
