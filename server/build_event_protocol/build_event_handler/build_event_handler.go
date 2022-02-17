@@ -261,7 +261,7 @@ func (r *statsRecorder) Start() {
 				// for any other purpose).
 				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
 				if !updated {
-					log.Debugf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+					log.Warningf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
 					// Don't notify the webhook; the more recent attempt should trigger
 					// the notification when it is finalized.
 					continue
