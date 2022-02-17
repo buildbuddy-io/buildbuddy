@@ -62,9 +62,9 @@ const (
 
 	// How many workers to spin up for looking up invocations before webhooks are
 	// notified.
-	numWebhookNotifierLookupWorkers = 8
+	numWebhookInvocationLookupWorkers = 8
 	// How many workers to spin up for notifying webhooks.
-	numWebhookNotifierNotifyWorkers = 16
+	numWebhookNotifyWorkers = 16
 
 	// How long to wait before giving up on webhook requests.
 	webhookNotifyTimeout = 1 * time.Minute
@@ -366,7 +366,7 @@ func (w *webhookNotifier) Start() {
 	w.eg = errgroup.Group{}
 	ctx := context.Background()
 
-	for i := 0; i < numWebhookNotifierLookupWorkers; i++ {
+	for i := 0; i < numWebhookInvocationLookupWorkers; i++ {
 		metrics.WebhookInvocationLookupWorkers.Inc()
 		go func() {
 			defer metrics.WebhookInvocationLookupWorkers.Dec()
@@ -381,7 +381,7 @@ func (w *webhookNotifier) Start() {
 		}()
 	}
 
-	for i := 0; i < numWebhookNotifierNotifyWorkers; i++ {
+	for i := 0; i < numWebhookNotifyWorkers; i++ {
 		metrics.WebhookNotifyWorkers.Inc()
 		go func() {
 			defer metrics.WebhookNotifyWorkers.Dec()
