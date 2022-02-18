@@ -304,7 +304,7 @@ type FirecrackerContainer struct {
 	// to finish, rather than calling "Wait()" on the sdk machine object.
 	externalJailerCmd *exec.Cmd
 
-	cleanupVethPair func() error
+	cleanupVethPair func(context.Context) error
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
@@ -982,7 +982,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	// up everything and return the last error if there is one.
 	var lastErr error
 	if c.cleanupVethPair != nil {
-		if err := c.cleanupVethPair(); err != nil {
+		if err := c.cleanupVethPair(ctx); err != nil {
 			lastErr = err
 		}
 	}
