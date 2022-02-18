@@ -328,10 +328,16 @@ func main() {
 	}
 
 	if mcTargets := configurator.GetCacheMemcacheTargets(); len(mcTargets) > 0 {
+		if realEnv.GetCache() == nil {
+			log.Fatalf("Memcache layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+		}
 		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
 		mc := memcache.NewCache(mcTargets...)
 		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
 	} else if redisClientConfig := configurator.GetCacheRedisClientConfig(); redisClientConfig != nil {
+		if realEnv.GetCache() == nil {
+			log.Fatalf("Redis layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+		}
 		log.Infof("Enabling redis layer with targets: %s", redisClientConfig)
 		maxValueSizeBytes := int64(0)
 		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
