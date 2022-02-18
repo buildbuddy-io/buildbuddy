@@ -133,13 +133,12 @@ func parseRequestContext(r *http.Request) (*ctxpb.RequestContext, error) {
 		return nil, nil
 	}
 	val := q.Get("request_context")
-	reqCtx := &ctxpb.RequestContext{}
 	b, err := base64.StdEncoding.DecodeString(val)
 	if err != nil {
 		return nil, err
 	}
-	err = proto.Unmarshal(b, reqCtx)
-	if err != nil {
+	reqCtx := &ctxpb.RequestContext{}
+	if err := proto.Unmarshal(b, reqCtx); err != nil {
 		return nil, err
 	}
 	return reqCtx, nil
