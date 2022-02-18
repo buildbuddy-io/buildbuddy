@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -431,11 +430,11 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					break
 				}
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
-				newOffset, err := gin.Seek(offset, 3)
+				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)
 				if err != nil {
 					// ENXIO is expected when the offset is within a hole at the end of
 					// the file.
-					if err := errors.Unwrap(err); err == syscall.ENXIO {
+					if err == syscall.ENXIO {
 						break
 					}
 					return err
