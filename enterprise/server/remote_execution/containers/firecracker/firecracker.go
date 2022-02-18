@@ -439,14 +439,15 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 				}
 
 				n, err := gin.ReadAt(buf, offset)
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
+				eof := err == io.EOF
+				if err != nil && !eof {
 					return err
 				}
 				if _, err := out.WriteAt(buf[:n], offset); err != nil {
 					return err
+				}
+				if eof {
+					break
 				}
 				offset += int64(n)
 				if offset >= regionEnd {
