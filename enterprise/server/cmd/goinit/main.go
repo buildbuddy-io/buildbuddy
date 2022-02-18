@@ -291,8 +291,8 @@ func main() {
 	die(mkdirp("/sys/fs/cgroup/cpuset", 0555))
 	die(mount("cgroup", "/sys/fs/cgroup/cpuset", "cgroup", cgroupMountFlags, "cpuset"))
 
-	if err := rlimit.MaxRLimit(); err != nil {
-		log.Errorf("Unable to increase rlimit: %s", err)
+	if err := rlimit.SetOpenFileDescriptorLimit(16384); err != nil {
+		log.Errorf("Unable to increase file open descriptor limit: %s", err)
 	}
 
 	die(mkdirp("/etc", 0755))

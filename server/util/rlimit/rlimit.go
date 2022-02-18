@@ -28,3 +28,11 @@ func MaxRLimit() error {
 	}
 	return nil
 }
+
+func SetOpenFileDescriptorLimit(n uint64) error {
+	log.Infof("Increasing open file descriptor limit to %d", n)
+	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: n, Max: n}); err != nil {
+		return err
+	}
+	return nil
+}

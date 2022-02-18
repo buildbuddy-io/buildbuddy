@@ -11,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt"
 	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
