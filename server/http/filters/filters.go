@@ -148,7 +148,7 @@ func RequestContextFromURL(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqCtx, err := parseRequestContext(r)
 		if err != nil {
-			log.Errorf("Failed to parse request_context param: %s", err)
+			log.Warningf("Failed to parse request_context param: %s", err)
 		} else if reqCtx != nil {
 			ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
 			r = r.WithContext(ctx)
