@@ -178,7 +178,7 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 //
 //  # add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //  $ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func() error, error) {
+func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
 	defaultDevice, err := findDefaultDevice(ctx)
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	return func() error {
+	return func(ctx context.Context) error {
 		return removeForwardAcceptRule(ctx, veth1, defaultDevice)
 	}, nil
 }
