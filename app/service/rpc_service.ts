@@ -35,16 +35,19 @@ class RpcService {
     (window as any)._rpcService = this;
   }
 
-  getBytestreamFileUrl(filename: string, bytestreamURL: string, invocationId: string): string {
-    return `/file/download?${new URLSearchParams({
-      filename,
+  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "" } = {}): string {
+    const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
+    const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
       invocation_id: invocationId,
-    })}`;
+      request_context: encodedRequestContext,
+    };
+    if (filename) params.filename = filename;
+    return `/file/download?${new URLSearchParams(params)}`;
   }
 
   downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
-    window.open(this.getBytestreamFileUrl(filename, bytestreamURL, invocationId));
+    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }));
   }
 
   fetchBytestreamFile(
@@ -52,13 +55,7 @@ class RpcService {
     invocationId: string,
     responseType?: "arraybuffer" | "json" | "text" | undefined
   ) {
-    return this.fetchFile(
-      `/file/download?${new URLSearchParams({
-        bytestream_url: bytestreamURL,
-        invocation_id: invocationId,
-      })}`,
-      responseType || ""
-    );
+    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId), responseType || "");
   }
 
   fetchFile(fileURL: string, responseType: "arraybuffer" | "json" | "text" | "") {
@@ -121,6 +118,11 @@ class RpcService {
     }
     return extendedService;
   }
+}
+
+function uint8ArrayToBase64(array: Uint8Array): string {
+  const str = array.reduce((str, b) => str + String.fromCharCode(b), "");
+  return btoa(str);
 }
 
 function getRpcMethodNames(serviceClass: Function) {

@@ -2,6 +2,7 @@ package filters
 
 import (
 	"compress/gzip"
+	"encoding/base64"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -19,8 +20,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 var (
@@ -119,6 +124,37 @@ func RequestID(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func parseRequestContext(r *http.Request) (*ctxpb.RequestContext, error) {
+	q := r.URL.Query()
+	if !q.Has("request_context") {
+		return nil, nil
+	}
+	val := q.Get("request_context")
+	reqCtx := &ctxpb.RequestContext{}
+	b, err := base64.StdEncoding.DecodeString(val)
+	if err != nil {
+		return nil, err
+	}
+	err = proto.Unmarshal(b, reqCtx)
+	if err != nil {
+		return nil, err
+	}
+	return reqCtx, nil
+}
+
+func RequestContextFromURL(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCtx, err := parseRequestContext(r)
+		if err != nil {
+			log.Errorf("Failed to parse request_context param: %s", err)
+		} else if reqCtx != nil {
+			ctx := requestcontext.ContextWithProtoRequestContext(r.Context(), reqCtx)
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -254,6 +290,7 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 	return wrapHandler(env, next, &[]wrapFn{
 		Gzip,
 		func(h http.Handler) http.Handler { return Authenticate(env, h) },
+		RequestContextFromURL,
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
