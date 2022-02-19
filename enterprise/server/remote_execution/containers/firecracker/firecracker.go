@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/armon/circbuf"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -296,6 +298,7 @@ type FirecrackerContainer struct {
 	imageCacheAuth       *container.ImageCacheAuthenticator
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
+	mountWorkspaceFile   bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -370,6 +373,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
+		mountWorkspaceFile: env.GetConfigurator().GetExecutorConfig().FirecrackerMountWorkspaceFile,
 	}
 
 	if err := c.newID(); err != nil {
@@ -437,7 +441,6 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 				if offset >= regionEnd {
 					break
 				}
-
 				n, err := gin.ReadAt(buf, offset)
 				if err == io.EOF {
 					break
@@ -863,6 +866,86 @@ func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string
 	return locateBinariesError
 }
 
+type loopMount struct {
+	loopControlFD *os.File
+	imageFD       *os.File
+	loopDevIdx    int
+	loopFD        *os.File
+	mountDir      string
+}
+
+func (m *loopMount) Unmount() {
+	if m.mountDir != "" {
+		if err := syscall.Unmount(m.mountDir, 0); err != nil {
+			alert.UnexpectedEvent("firecracker_could_not_unmount_loop_device", err.Error())
+		}
+		m.mountDir = ""
+	}
+	if m.loopDevIdx >= 0 && m.loopControlFD != nil {
+		err := unix.IoctlSetInt(int(m.loopControlFD.Fd()), unix.LOOP_CTL_REMOVE, m.loopDevIdx)
+		if err != nil {
+			alert.UnexpectedEvent("firecracker_could_not_release_loop_device", err.Error())
+		}
+		m.loopDevIdx = -1
+	}
+	if m.loopFD != nil {
+		m.loopFD.Close()
+		m.loopFD = nil
+	}
+	if m.imageFD != nil {
+		m.imageFD.Close()
+		m.imageFD = nil
+	}
+	if m.loopControlFD != nil {
+		m.loopControlFD.Close()
+		m.loopControlFD = nil
+	}
+}
+
+func mountExt4ImageUsingLoopDevice(imagePath string, mountTarget string) (lm *loopMount, retErr error) {
+	loopControlFD, err := os.Open("/dev/loop-control")
+	if err != nil {
+		return nil, err
+	}
+	defer loopControlFD.Close()
+
+	m := &loopMount{loopDevIdx: -1}
+	defer func() {
+		if retErr != nil {
+			m.Unmount()
+		}
+	}()
+
+	imageFD, err := os.Open(imagePath)
+	if err != nil {
+		return nil, err
+	}
+	m.imageFD = imageFD
+
+	loopDevIdx, err := unix.IoctlRetInt(int(loopControlFD.Fd()), unix.LOOP_CTL_GET_FREE)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not allocate loop device: %s", err)
+	}
+	m.loopDevIdx = loopDevIdx
+
+	loopDevicePath := fmt.Sprintf("/dev/loop%d", loopDevIdx)
+	loopFD, err := os.OpenFile(loopDevicePath, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	m.loopFD = loopFD
+
+	if err := unix.IoctlSetInt(int(loopFD.Fd()), unix.LOOP_SET_FD, int(imageFD.Fd())); err != nil {
+		return nil, status.UnknownErrorf("could not set loop device FD: %s", err)
+	}
+
+	if err := syscall.Mount(loopDevicePath, mountTarget, "ext4", unix.MS_RDONLY, "norecovery"); err != nil {
+		return nil, err
+	}
+	m.mountDir = mountTarget
+	return m, nil
+}
+
 // copyOutputsToWorkspace copies output files from the workspace filesystem
 // image to the local filesystem workdir. It will not overwrite existing files
 // and it will skip copying rootfs-overlay files. Callers should ensure that
@@ -883,16 +966,26 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
 	}
 
-	unpackDir, err := os.MkdirTemp(c.jailerRoot, "unpacked-workspacefs-*")
+	wsDir, err := os.MkdirTemp(c.jailerRoot, "workspacefs-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(unpackDir) // clean up
+	defer os.RemoveAll(wsDir) // clean up
 
-	if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath, unpackDir); err != nil {
-		return err
+	if c.mountWorkspaceFile {
+		m, err := mountExt4ImageUsingLoopDevice(c.workspaceFSPath, wsDir)
+		if err != nil {
+			log.Warningf("could not mount ext4 image: %s", err)
+			return err
+		}
+		defer m.Unmount()
+	} else {
+		if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath, wsDir); err != nil {
+			return err
+		}
 	}
-	walkErr := fs.WalkDir(os.DirFS(unpackDir), ".", func(path string, d fs.DirEntry, err error) error {
+
+	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
 		// Skip filesystem layerfs write-layer files.
 		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
 			return nil
@@ -906,7 +999,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 			if d.IsDir() {
 				return disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, path))
 			}
-			return os.Rename(filepath.Join(unpackDir, path), targetLocation)
+			return os.Rename(filepath.Join(wsDir, path), targetLocation)
 		}
 		return nil
 	})
