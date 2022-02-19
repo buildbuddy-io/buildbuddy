@@ -37,10 +37,6 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 	return g.UseGroupOwnedExecutors
 }
 
-//InsertOrUpdateUserSession(ctx context.Context, sessionID string, token *tables.Session) error
-//ReadSession(ctx context.Context, sessionID string) (*tables.Token, error)
-//ClearSession(ctx context.Context, sessionID string) error
-
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
 	session.SessionID = sessionID
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
