@@ -37,32 +37,36 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 	return g.UseGroupOwnedExecutors
 }
 
-func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
-	token.SubID = subID
+//InsertOrUpdateUserSession(ctx context.Context, sessionID string, token *tables.Session) error
+//ReadSession(ctx context.Context, sessionID string) (*tables.Token, error)
+//ClearSession(ctx context.Context, sessionID string) error
+
+func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
+	session.SessionID = sessionID
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		var existing tables.Token
-		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
+		var existing tables.Session
+		if err := tx.Where("session_id = ?", sessionID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				return tx.Create(token).Error
+				return tx.Create(session).Error
 			}
 			return err
 		}
-		return tx.Model(&existing).Where("sub_id = ?", subID).Updates(token).Error
+		return tx.Model(&existing).Where("session_id = ?", sessionID).Updates(session).Error
 	})
 }
 
-func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, error) {
-	ti := &tables.Token{}
-	existingRow := d.h.DB().Raw(`SELECT * FROM Tokens WHERE sub_id = ?`, subID)
-	if err := existingRow.Take(ti).Error; err != nil {
+func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
+	s := &tables.Session{}
+	existingRow := d.h.DB().Raw(`SELECT * FROM Sessions WHERE session_id = ?`, sessionID)
+	if err := existingRow.Take(s).Error; err != nil {
 		return nil, err
 	}
-	return ti, nil
+	return s, nil
 }
 
-func (d *AuthDB) ClearToken(ctx context.Context, subID string) error {
+func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	err := d.h.Transaction(ctx, func(tx *db.DB) error {
-		res := tx.Exec(`UPDATE Tokens SET access_token = "" WHERE sub_id = ?`, subID)
+		res := tx.Exec(`DELETE FROM Sessions WHERE session_id = ?`, sessionID)
 		return res.Error
 	})
 	return err

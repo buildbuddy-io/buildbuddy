@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
+	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -70,6 +71,7 @@ const (
 	// The name of the auth cookies used to authenticate the
 	// client.
 	jwtCookie        = "Authorization"
+	sessionIDCookie  = "Session-ID"
 	authIssuerCookie = "Authorization-Issuer"
 	stateCookie      = "State-Token"
 	redirCookie      = "Redirect-Url"
@@ -186,15 +188,17 @@ func GetCookie(r *http.Request, name string) string {
 	return ""
 }
 
-func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer string) {
+func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer, sessionID string) {
 	expiry := time.Now().Add(loginCookieDuration)
 	SetCookie(env, w, jwtCookie, jwt, expiry)
 	SetCookie(env, w, authIssuerCookie, issuer, expiry)
+	SetCookie(env, w, sessionIDCookie, sessionID, expiry)
 }
 
 func clearLoginCookie(env environment.Env, w http.ResponseWriter) {
 	ClearCookie(env, w, jwtCookie)
 	ClearCookie(env, w, authIssuerCookie)
+	ClearCookie(env, w, sessionIDCookie)
 }
 
 type userToken struct {
@@ -786,6 +790,8 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return nil, nil, status.PermissionDeniedErrorf("No jwt set")
 	}
 	issuer := GetCookie(r, authIssuerCookie)
+	sessionID := GetCookie(r, sessionIDCookie)
+
 	auth := a.getAuthConfig(issuer)
 	if auth == nil {
 		return nil, nil, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
@@ -796,13 +802,20 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return nil, nil, status.FailedPreconditionError("AuthDB not configured")
 	}
 
+	// If the token is corrupt for some reason (not just out of date); then
+	// bail.
 	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, false /*checkExpiry*/)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tt, err := authDB.ReadToken(ctx, ut.GetSubID())
+	// If the session is not found, bail.
+	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
+		return nil, ut, err
+	}
+
+	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
 		return nil, ut, err
 	}
 
@@ -810,30 +823,28 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
-		// At this point, we validate the access token in the database
-		// against the JWT (which contains a hash of the access token).
-		// If they do not match, then this JWT is invalid because the
-		// user has been logged out.
-		if err := auth.checkAccessToken(ctx, jwt, tt.AccessToken); err == nil {
-			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
-			return claims, ut, err
-		}
+		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		return claims, ut, err
 	}
 
+	// WE only refresh the token if:
+	//   - there is a valid session
+	//   - at_hash matches (so no other update has happened in the mean time)
+	//   - token is just out of date.
 	// Still here? Token needs a refresh. Do that now.
-	newToken, err := auth.renewToken(ctx, tt.RefreshToken)
+	newToken, err := auth.renewToken(ctx, sesh.RefreshToken)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tt.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
-	tt.AccessToken = newToken.AccessToken
+	sesh.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
+	sesh.AccessToken = newToken.AccessToken
 
-	if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
+	if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
 		return nil, nil, err
 	}
 	if jwt, ok := newToken.Extra("id_token").(string); ok {
-		setLoginCookie(a.env, w, jwt, issuer)
+		setLoginCookie(a.env, w, jwt, issuer, sessionID)
 		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 		return claims, ut, err
 	}
@@ -953,26 +964,26 @@ func (a *OpenIDAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 	if jwt == "" {
 		return
 	}
-	issuer := GetCookie(r, authIssuerCookie)
-	auth := a.getAuthConfig(issuer)
-	if auth == nil {
-		return
-	}
-	ctx := r.Context()
-	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
-	if err != nil {
+	sessionID := GetCookie(r, sessionIDCookie)
+	if sessionID == "" {
 		return
 	}
 
 	if authDB := a.env.GetAuthDB(); authDB != nil {
-		if err := authDB.ClearToken(ctx, ut.GetSubID()); err != nil {
-			log.Errorf("Error clearing user access token on logout: %s", err)
+		if err := authDB.ClearSession(r.Context(), sessionID); err != nil {
+			log.Errorf("Error clearing user session on logout: %s", err)
 		}
 	}
 }
 
 func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	authDB := a.env.GetAuthDB()
+	if authDB == nil {
+		redirectWithError(w, r, status.FailedPreconditionError("AuthDB not configured"))
+		return
+	}
 
 	// Verify "state" cookie match.
 	if r.FormValue("state") != GetCookie(r, stateCookie) {
@@ -1014,25 +1025,30 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	guid, err := uuid.NewRandom()
+	if err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+	sessionID := guid.String()
+
 	// OK, the token is valid so we will: store the refresh token in our DB
 	// for later & set the login cookie so we know this user is logged in.
-	setLoginCookie(a.env, w, jwt, issuer)
+	setLoginCookie(a.env, w, jwt, issuer, sessionID)
 
 	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
 	if ok {
 		expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
-		tt := &tables.Token{
+		sesh := &tables.Session{
+			SessionID:    sessionID,
 			SubID:        ut.GetSubID(),
 			AccessToken:  oauth2Token.AccessToken,
 			RefreshToken: refreshToken,
 			ExpiryUsec:   expireTime.UnixMicro(),
 		}
-		if authDB := a.env.GetAuthDB(); authDB != nil {
-			if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
-				// If this write fails then we are unable to silently refresh
-				// the user's token and they will need to login again in an hour.
-				log.Printf("Failed to save refresh token: %s", err)
-			}
+		if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
+			redirectWithError(w, r, err)
+			return
 		}
 	}
 
