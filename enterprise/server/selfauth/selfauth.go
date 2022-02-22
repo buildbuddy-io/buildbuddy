@@ -222,13 +222,6 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 	token.Set("family_name", "Buddy")
 	token.Set("picture", pictureUrl.String())
 
-	// This value is a hash of the access token, so must match. It can be
-	// computed with the following python snippet:
-	//
-	// base64.b64encode(hashlib.sha256("AccessToken").digest()[:16]).rstrip("=")
-	//
-	token.Set("at_hash", "LkjhI6Ijpj638f0mirBH2g")
-
 	signed, err := jwt.Sign(token, jwa.RS256, o.rsaPrivateKey)
 	if err != nil {
 		log.Errorf("Error signing token: %v", err)
