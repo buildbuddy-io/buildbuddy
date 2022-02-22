@@ -110,9 +110,14 @@ type HitTracker struct {
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
+	var usage interfaces.UsageTracker
+	if val, ok := ctx.Value("endpoint").(*string); !ok || val == nil || *val != "file/download" {
+		usage = env.GetUsageTracker()
+	}
+
 	return &HitTracker{
 		c:               env.GetMetricsCollector(),
-		usage:           env.GetUsageTracker(),
+		usage:           usage,
 		ctx:             ctx,
 		iid:             bazel_request.GetInvocationID(ctx),
 		actionCache:     actionCache,

@@ -2,6 +2,7 @@ package filters
 
 import (
 	"compress/gzip"
+	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -257,6 +258,12 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+	})
+}
+
+func SetContextValue(h http.Handler, key interface{}, val interface{}) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), key, val)))
 	})
 }
 
