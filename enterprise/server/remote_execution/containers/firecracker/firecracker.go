@@ -455,9 +455,6 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					return err
 				}
 				offset += int64(n)
-				if offset >= regionEnd {
-					break
-				}
 			}
 			return nil
 		})
