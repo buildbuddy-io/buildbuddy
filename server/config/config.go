@@ -229,6 +229,7 @@ type authConfig struct {
 	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 	AdminGroupID         string          `yaml:"admin_group_id" usage:"ID of a group whose members can perform actions only accessible to server admins."`
 	HttpsOnlyCookies     bool            `yaml:"https_only_cookies" usage:"If true, cookies will only be set over https connections."`
+	DisableRefreshToken  bool            `yaml:"disable_refresh_token" usage:"If true, the offline_access scope which requests refresh tokens will not be requested."`
 }
 
 type OauthProvider struct {
@@ -827,6 +828,10 @@ func (c *Configurator) GetSelfAuthEnabled() bool {
 
 func (c *Configurator) GetHttpsOnlyCookies() bool {
 	return c.gc.Auth.HttpsOnlyCookies
+}
+
+func (c *Configurator) GetDisableRefreshToken() bool {
+	return c.gc.Auth.DisableRefreshToken
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

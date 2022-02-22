@@ -367,7 +367,7 @@ type OpenIDAuthenticator struct {
 	authenticators   []authenticator
 }
 
-func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
+func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
 	var authenticators []authenticator
 	for _, authConfig := range authConfigs {
 		// declare local var that shadows loop var for closure capture
@@ -396,7 +396,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, authConfigs []config.Oa
 					// Google reject the offline_access scope in favor of access_type=offline url param which already gets
 					// set in our auth flow thanks to the oauth2.AccessTypeOffline authCodeOption at the top of this file.
 					// https://github.com/coreos/go-oidc/blob/v2.2.1/oidc.go#L30
-					if authConfig.IssuerURL != "https://accounts.google.com" {
+					if authConfig.IssuerURL != "https://accounts.google.com" && !env.GetConfigurator().GetDisableRefreshToken() {
 						scopes = append(scopes, oidc.ScopeOfflineAccess)
 					}
 					// Configure an OpenID Connect aware OAuth2 client.
@@ -444,7 +444,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 	oia.myURL = myURL
-	oia.authenticators, err = createAuthenticatorsFromConfig(ctx, oauthProviders, authURL)
+	oia.authenticators, err = createAuthenticatorsFromConfig(ctx, env, oauthProviders, authURL)
 	if err != nil {
 		return nil, err
 	}
