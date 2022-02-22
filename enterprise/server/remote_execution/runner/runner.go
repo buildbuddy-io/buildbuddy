@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -791,6 +792,8 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,
 		)
+	case platform.PodmanContainerType:
+		ctr = podman.NewPodmanCommandContainer(props.ContainerImage, p.hostBuildRoot())
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{

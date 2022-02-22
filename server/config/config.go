@@ -298,6 +298,7 @@ type ExecutorConfig struct {
 	DockerInheritUserIDs     bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXcodeVersion      string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
 	EnableBareRunner         bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnablePodman             bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
 	EnableFirecracker        bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	ContainerRegistries      []ContainerRegistryConfig `yaml:"container_registries"`
 	EnableVFS                bool                      `yaml:"enable_vfs" usage:"Whether FUSE based filesystem is enabled."`
