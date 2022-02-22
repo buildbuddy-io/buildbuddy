@@ -87,6 +87,10 @@ const (
 	defaultAPIKeyGroupCacheTTL = 5 * time.Minute
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10000
+
+	// WARNING: app/auth/auth_service.ts depends on these messages matching.
+	userNotFoundMsg = "User not found"
+	loggedOutMsg    = "User logged out"
 )
 
 var (
@@ -812,11 +816,11 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If the session is not found, bail.
 	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
-		return nil, ut, err
+		return nil, ut, status.PermissionDeniedError(loggedOutMsg)
 	}
 
 	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
-		return nil, ut, err
+		return nil, ut, status.PermissionDeniedError(loggedOutMsg)
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
@@ -861,12 +865,25 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 		}
 		return claims, nil
 	}
-	msg := "User not found"
-	if err, ok := ctx.Value(contextUserErrorKey).(error); ok && err != nil {
-		msg += ": " + err.Error()
+
+	// If there's no error or we have an assertion failure; just return a
+	// user not found error.
+	err, ok := ctx.Value(contextUserErrorKey).(error)
+	if !ok || err == nil {
+		return nil, status.UnauthenticatedError(userNotFoundMsg)
 	}
+
+	// if there was an error set on the context, and it was an
+	// Unauthenticated or PermissionDeniedError, then the FE can handle it,
+	// so pass it through.
+	if status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) {
+		return nil, err
+	}
+
+	// All other types of errors will be converted into Unauthenticated
+	// errors.
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedError(msg)
+	return nil, status.UnauthenticatedErrorf("%s: %s", userNotFoundMsg, err.Error())
 }
 
 func (a *OpenIDAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
@@ -1073,7 +1090,7 @@ func UserFromTrustedJWT(ctx context.Context) (interfaces.UserInfo, error) {
 		return claims, nil
 	}
 	// WARNING: app/auth/auth_service.ts depends on this status being UNAUTHENTICATED.
-	return nil, status.UnauthenticatedError("User not found")
+	return nil, status.UnauthenticatedError(userNotFoundMsg)
 }
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
