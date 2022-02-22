@@ -87,10 +87,17 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	// If we don't have a state yet parameter, start oauth flow.
 	if r.FormValue("state") == "" {
 		state := fmt.Sprintf("%d", random.RandUint64())
+		userID := r.FormValue("user_id")
+		groupID := r.FormValue("group_id")
+		redirectURL := r.FormValue("redirect_url")
+		if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
+			redirectWithError(w, r, err)
+			return
+		}
 		setCookie(w, stateCookieName, state)
-		setCookie(w, userIDCookieName, r.FormValue("user_id"))
-		setCookie(w, groupIDCookieName, r.FormValue("group_id"))
-		setCookie(w, redirectCookieName, r.FormValue("redirect_url"))
+		setCookie(w, userIDCookieName, userID)
+		setCookie(w, groupIDCookieName, groupID)
+		setCookie(w, redirectCookieName, redirectURL)
 
 		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
 		url := fmt.Sprintf(
