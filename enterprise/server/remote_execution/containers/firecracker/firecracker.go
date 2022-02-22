@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/armon/circbuf"
@@ -429,8 +430,13 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					break
 				}
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
-				newOffset, err := gin.Seek(offset, 3)
+				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)
 				if err != nil {
+					// ENXIO is expected when the offset is within a hole at the end of
+					// the file.
+					if err == syscall.ENXIO {
+						break
+					}
 					return err
 				}
 				offset = newOffset
@@ -449,9 +455,6 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					return err
 				}
 				offset += int64(n)
-				if offset >= regionEnd {
-					break
-				}
 			}
 			return nil
 		})
