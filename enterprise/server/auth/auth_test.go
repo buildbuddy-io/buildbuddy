@@ -64,10 +64,6 @@ func (f fakeOidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jw
 	return nil, status.PermissionDeniedError("invalid JWT")
 }
 
-func (f fakeOidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessToken string) error {
-	return nil
-}
-
 func (f fakeOidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
 	if refreshToken == validRefreshToken {
 		t := (&oauth2.Token{}).WithExtra(map[string]interface{}{"id_token": refreshedJWT})

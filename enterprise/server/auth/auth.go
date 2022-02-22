@@ -226,7 +226,6 @@ type authenticator interface {
 	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
-	checkAccessToken(ctx context.Context, jwt, accessToken string) error
 	renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
 }
 
@@ -287,19 +286,6 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 		return nil, err
 	}
 	return extractToken(a.issuer, a.slug, validToken)
-}
-
-func (a *oidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessToken string) error {
-	provider, err := a.provider()
-	if err != nil {
-		return err
-	}
-	conf := a.oidcConfig
-	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
-	if err != nil {
-		return err
-	}
-	return validToken.VerifyAccessToken(accessToken)
 }
 
 func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
@@ -791,51 +777,37 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return nil, nil, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
-	authDB := a.env.GetAuthDB()
-	if authDB == nil {
-		return nil, nil, status.FailedPreconditionError("AuthDB not configured")
-	}
-
-	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, false /*checkExpiry*/)
+	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	tt, err := authDB.ReadToken(ctx, ut.GetSubID())
-	if err != nil {
-		return nil, ut, err
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
-	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
-		// At this point, we validate the access token in the database
-		// against the JWT (which contains a hash of the access token).
-		// If they do not match, then this JWT is invalid because the
-		// user has been logged out.
-		if err := auth.checkAccessToken(ctx, jwt, tt.AccessToken); err == nil {
+	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
+		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		return claims, ut, err
+	}
+
+	// Now attempt to refresh the token.
+	if authDB := a.env.GetAuthDB(); authDB != nil {
+		tt, err := authDB.ReadToken(ctx, ut.GetSubID())
+		if err != nil {
+			return nil, nil, err
+		}
+		newToken, err := auth.renewToken(ctx, tt.RefreshToken)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
+			return nil, nil, err
+		}
+		if jwt, ok := newToken.Extra("id_token").(string); ok {
+			setLoginCookie(a.env, w, jwt, issuer)
 			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 			return claims, ut, err
 		}
-	}
-
-	// Still here? Token needs a refresh. Do that now.
-	newToken, err := auth.renewToken(ctx, tt.RefreshToken)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tt.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
-	tt.AccessToken = newToken.AccessToken
-
-	if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
-		return nil, nil, err
-	}
-	if jwt, ok := newToken.Extra("id_token").(string); ok {
-		setLoginCookie(a.env, w, jwt, issuer)
-		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
-		return claims, ut, err
 	}
 	return nil, nil, status.PermissionDeniedError("could not refresh token")
 }
