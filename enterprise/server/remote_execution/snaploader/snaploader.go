@@ -155,7 +155,7 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 	}
 	for filename, dk := range l.manifest.CachedFiles {
 		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
-			return status.FailedPreconditionErrorf("Snapshotted file %q (digest %s/%d) is missing from filecache (possibly expired?)", filename, dk.Hash, dk.SizeBytes)
+			return status.FailedPreconditionErrorf("Snapshot file %q (digest %s/%d) is missing from filecache (possibly evicted)", filename, dk.Hash, dk.SizeBytes)
 		}
 	}
 	return nil
