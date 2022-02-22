@@ -796,14 +796,9 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return nil, nil, status.FailedPreconditionError("AuthDB not configured")
 	}
 
-	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, false /*checkExpiry*/)
+	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	tt, err := authDB.ReadToken(ctx, ut.GetSubID())
-	if err != nil {
-		return nil, ut, err
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
@@ -814,21 +809,26 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		// against the JWT (which contains a hash of the access token).
 		// If they do not match, then this JWT is invalid because the
 		// user has been logged out.
-		if err := auth.checkAccessToken(ctx, jwt, tt.AccessToken); err == nil {
-			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
-			return claims, ut, err
+		tt, err := authDB.ReadToken(ctx, ut.GetSubID())
+		if err != nil {
+			return nil, ut, err
 		}
+		if err := auth.checkAccessToken(ctx, jwt, tt.AccessToken); err != nil {
+			return nil, ut, err
+		}
+		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		return claims, ut, err
 	}
 
-	// Still here? Token needs a refresh. Do that now.
+	// Now attempt to refresh the token.
+	tt, err := authDB.ReadToken(ctx, ut.GetSubID())
+	if err != nil {
+		return nil, nil, err
+	}
 	newToken, err := auth.renewToken(ctx, tt.RefreshToken)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	tt.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
-	tt.AccessToken = newToken.AccessToken
-
 	if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
 		return nil, nil, err
 	}
