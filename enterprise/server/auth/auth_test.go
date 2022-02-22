@@ -89,9 +89,11 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	authCtx := auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
+	sessionID := "e34ff952-6ef0-4a35-ae3d-fe6166fe277e"
 	// Valid JWT cookie, but user does not exist.
 	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: validJWT})
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
+	request.AddCookie(&http.Cookie{Name: sessionIDCookie, Value: sessionID})
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
@@ -106,13 +108,13 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	}
 	err = env.GetUserDB().InsertUser(context.Background(), user)
 	require.NoError(t, err, "could not insert user")
-	err = env.GetAuthDB().InsertOrUpdateUserToken(context.Background(), subID, &tables.Token{
+	err = env.GetAuthDB().InsertOrUpdateUserSession(context.Background(), sessionID, &tables.Session{
+		SessionID:    sessionID,
 		SubID:        subID,
 		AccessToken:  "access",
 		RefreshToken: "refresh",
 	})
 	require.NoError(t, err, "could not insert token")
-
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticated(t, authCtx)
 	require.Equal(t, validUserToken, authCtx.Value(contextUserKey), "context user details should match details returned by provider")
@@ -123,12 +125,13 @@ func TestAuthenticateHTTPRequest(t *testing.T) {
 	require.NoErrorf(t, err, "could not create HTTP request")
 	request.AddCookie(&http.Cookie{Name: jwtCookie, Value: expiredJWT})
 	request.AddCookie(&http.Cookie{Name: authIssuerCookie, Value: testIssuer})
+	request.AddCookie(&http.Cookie{Name: sessionIDCookie, Value: sessionID})
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
 	requireAuthenticationError(t, authCtx)
 
 	// Insert a refresh token into the DB & auth should succeed.
-	token := &tables.Token{RefreshToken: validRefreshToken}
-	err = env.GetAuthDB().InsertOrUpdateUserToken(context.Background(), subID, token)
+	session := &tables.Session{RefreshToken: validRefreshToken}
+	err = env.GetAuthDB().InsertOrUpdateUserSession(context.Background(), sessionID, session)
 	require.NoError(t, err, "could not insert token")
 	response = httptest.NewRecorder()
 	authCtx = auth.AuthenticatedHTTPContext(response, request)
