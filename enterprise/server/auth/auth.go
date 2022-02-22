@@ -22,13 +22,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	oidc "github.com/coreos/go-oidc"
 )
 
@@ -225,6 +226,7 @@ type authenticator interface {
 	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
+	checkAccessToken(ctx context.Context, jwt, accessToken string) error
 	renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
 }
 
@@ -285,6 +287,19 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 		return nil, err
 	}
 	return extractToken(a.issuer, a.slug, validToken)
+}
+
+func (a *oidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessToken string) error {
+	provider, err := a.provider()
+	if err != nil {
+		return err
+	}
+	conf := a.oidcConfig
+	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
+	if err != nil {
+		return err
+	}
+	return validToken.VerifyAccessToken(accessToken)
 }
 
 func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
@@ -484,29 +499,16 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfig
 	return a, err
 }
 
-func sameHostname(urlStringA, urlStringB string) bool {
-	if urlA, err := url.Parse(urlStringA); err == nil {
-		if urlB, err := url.Parse(urlStringB); err == nil {
-			return urlA.Hostname() == urlB.Hostname()
-		}
-	}
-	return false
-}
-
 func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
 	if a.myURL.Host == "" {
 		return status.FailedPreconditionError("You must specify a build_buddy_url in your config to enable authentication. For more information, see: https://www.buildbuddy.io/docs/config-app")
 	}
-
-	if !sameHostname(redirectURL, a.myURL.String()) {
-		return status.FailedPreconditionErrorf("Redirect url %q was not on this domain %q!", redirectURL, a.myURL.Host)
-	}
-	return nil
+	return burl.ValidateRedirect(a.env, redirectURL)
 }
 
 func (a *OpenIDAuthenticator) getAuthConfig(issuer string) authenticator {
 	for _, a := range a.authenticators {
-		if sameHostname(a.getIssuer(), issuer) {
+		if burl.SameHostname(a.getIssuer(), issuer) {
 			return a
 		}
 	}
@@ -789,37 +791,51 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		return nil, nil, status.PermissionDeniedErrorf("No config found for issuer: %s", issuer)
 	}
 
-	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, false)
+	authDB := a.env.GetAuthDB()
+	if authDB == nil {
+		return nil, nil, status.FailedPreconditionError("AuthDB not configured")
+	}
+
+	ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, false /*checkExpiry*/)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	tt, err := authDB.ReadToken(ctx, ut.GetSubID())
+	if err != nil {
+		return nil, ut, err
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
-	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt /*checkExpiry=*/, true); err == nil {
-		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
-		return claims, ut, err
-	}
-
-	// Now attempt to refresh the token.
-	if authDB := a.env.GetAuthDB(); authDB != nil {
-		tt, err := authDB.ReadToken(ctx, ut.GetSubID())
-		if err != nil {
-			return nil, nil, err
-		}
-		newToken, err := auth.renewToken(ctx, tt.RefreshToken)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
-			return nil, nil, err
-		}
-		if jwt, ok := newToken.Extra("id_token").(string); ok {
-			setLoginCookie(a.env, w, jwt, issuer)
+	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
+		// At this point, we validate the access token in the database
+		// against the JWT (which contains a hash of the access token).
+		// If they do not match, then this JWT is invalid because the
+		// user has been logged out.
+		if err := auth.checkAccessToken(ctx, jwt, tt.AccessToken); err == nil {
 			claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 			return claims, ut, err
 		}
+	}
+
+	// Still here? Token needs a refresh. Do that now.
+	newToken, err := auth.renewToken(ctx, tt.RefreshToken)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tt.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
+	tt.AccessToken = newToken.AccessToken
+
+	if err := authDB.InsertOrUpdateUserToken(ctx, ut.GetSubID(), tt); err != nil {
+		return nil, nil, err
+	}
+	if jwt, ok := newToken.Extra("id_token").(string); ok {
+		setLoginCookie(a.env, w, jwt, issuer)
+		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		return claims, ut, err
 	}
 	return nil, nil, status.PermissionDeniedError("could not refresh token")
 }

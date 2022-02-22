@@ -804,6 +804,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
+			DebugMode:              *commandutil.DebugStreamCommandOutputs,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {

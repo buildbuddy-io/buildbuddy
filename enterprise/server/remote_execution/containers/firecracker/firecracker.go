@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/armon/circbuf"
@@ -304,7 +305,7 @@ type FirecrackerContainer struct {
 	// to finish, rather than calling "Wait()" on the sdk machine object.
 	externalJailerCmd *exec.Cmd
 
-	cleanupVethPair func() error
+	cleanupVethPair func(context.Context) error
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
@@ -429,8 +430,13 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					break
 				}
 				// 3 is the Linux constant for the SEEK_DATA option to lseek.
-				newOffset, err := gin.Seek(offset, 3)
+				newOffset, err := syscall.Seek(int(gin.Fd()), offset, 3)
 				if err != nil {
+					// ENXIO is expected when the offset is within a hole at the end of
+					// the file.
+					if err == syscall.ENXIO {
+						break
+					}
 					return err
 				}
 				offset = newOffset
@@ -449,9 +455,6 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 					return err
 				}
 				offset += int64(n)
-				if offset >= regionEnd {
-					break
-				}
 			}
 			return nil
 		})
@@ -982,7 +985,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	// up everything and return the last error if there is one.
 	var lastErr error
 	if c.cleanupVethPair != nil {
-		if err := c.cleanupVethPair(); err != nil {
+		if err := c.cleanupVethPair(ctx); err != nil {
 			lastErr = err
 		}
 	}
@@ -1320,26 +1323,33 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 		log.Debugf("Remove took %s", time.Since(start))
 	}()
 
+	var lastErr error
+
 	if err := c.machine.Shutdown(ctx); err != nil {
 		log.Errorf("Error shutting down machine: %s", err)
+		lastErr = err
 	}
 	if err := c.machine.StopVMM(); err != nil {
 		log.Errorf("Error stopping VM: %s", err)
+		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
 		log.Errorf("Error cleaning up networking: %s", err)
+		lastErr = err
 	}
 	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
 		log.Errorf("Error removing workspace fs: %s", err)
+		lastErr = err
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
+		lastErr = err
 	}
 	if c.vfsServer != nil {
 		c.vfsServer.Stop()
 		c.vfsServer = nil
 	}
-	return nil
+	return lastErr
 }
 
 // Pause freezes a container so that it no longer consumes CPU resources.
@@ -1360,6 +1370,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 
 	if err := c.Remove(ctx); err != nil {
 		log.Errorf("Error cleaning up after pause: %s", err)
+		return err
 	}
 	return nil
 }
