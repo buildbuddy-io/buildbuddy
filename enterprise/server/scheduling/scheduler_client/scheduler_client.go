@@ -3,6 +3,7 @@ package scheduler_client
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,7 +59,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		AssignableMilliCpu:    resources.GetAllocatedCPUMillis(),
 		Os:                    resources.GetOS(),
 		Arch:                  resources.GetArch(),
-		Pool:                  pool,
+		Pool:                  strings.ToLower(pool),
 		Version:               version.AppVersion(),
 		ExecutorId:            executorID,
 		ExecutorHostId:        executorHostID,
