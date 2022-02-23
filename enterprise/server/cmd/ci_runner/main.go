@@ -964,7 +964,7 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 		return err
 	}
 	_ = f.Close()
-	if err := git(ctx, ws.log, "apply", "-v", patchFile); err != nil {
+	if err := git(ctx, ws.log, "apply", "--verbose", patchFile); err != nil {
 		return err
 	}
 	return nil
@@ -1001,7 +1001,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// Create the branch if it doesn't already exist, then update it to point to
 	// the pushed branch tip.
 	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, ws.log, "checkout", "-f", "-B", *pushedBranch, remotePushedBranchRef); err != nil {
+	if err := git(ctx, ws.log, "checkout", "--force", "-B", *pushedBranch, remotePushedBranchRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
