@@ -239,12 +239,13 @@ func (r *statsRecorder) Start() {
 	ctx := context.Background()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
 		metrics.StatsRecorderWorkers.Inc()
-		go func() {
+		r.eg.Go(func() error {
 			defer metrics.StatsRecorderWorkers.Dec()
 			for task := range r.tasks {
 				r.handleTask(ctx, task)
 			}
-		}()
+			return nil
+		})
 	}
 }
 
@@ -296,8 +297,12 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 }
 
 func (r *statsRecorder) Stop() {
-	// Wait for all EventHandler channels to be closed to ensure there will be
-	// no more calls to Enqueue.
+	// Wait for all EventHandler channels to be closed to ensure there will be no
+	// more calls to Enqueue.
+	// TODO(bduffany): This has a race condition where the server can be shutdown
+	// just after the stream request is accepted by the server but before calling
+	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
+	// shutdown to finish, which ensures all streaming requests have terminated.
 	r.openChannels.Wait()
 
 	r.mu.Lock()
@@ -344,31 +349,27 @@ type webhookNotifier struct {
 	// invocations is a channel of finalized invocations. On each invocation
 	// sent to this channel, we notify all configured webhooks.
 	invocations <-chan *invocationJWT
-	// doneSendingTasks receives a signal after the invocations channel is closed
-	// and all buffered invocations in the channel have been processed, meaning
-	// no more tasks will be sent on the tasks channel.
-	doneSendingTasks chan struct{}
 
-	tasks chan *notifyWebhookTask
-	eg    errgroup.Group
+	tasks       chan *notifyWebhookTask
+	lookupGroup errgroup.Group
+	notifyGroup errgroup.Group
 }
 
 func newWebhookNotifier(env environment.Env, invocations <-chan *invocationJWT) *webhookNotifier {
 	return &webhookNotifier{
-		env:              env,
-		invocations:      invocations,
-		doneSendingTasks: make(chan struct{}),
-		tasks:            make(chan *notifyWebhookTask, 4096),
+		env:         env,
+		invocations: invocations,
+		tasks:       make(chan *notifyWebhookTask, 4096),
 	}
 }
 
 func (w *webhookNotifier) Start() {
-	w.eg = errgroup.Group{}
 	ctx := context.Background()
 
+	w.lookupGroup = errgroup.Group{}
 	for i := 0; i < numWebhookInvocationLookupWorkers; i++ {
 		metrics.WebhookInvocationLookupWorkers.Inc()
-		go func() {
+		w.lookupGroup.Go(func() error {
 			defer metrics.WebhookInvocationLookupWorkers.Dec()
 			// Listen for invocations that have been finalized and start a notify
 			// webhook task for each webhook.
@@ -377,20 +378,22 @@ func (w *webhookNotifier) Start() {
 					log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				}
 			}
-			w.doneSendingTasks <- struct{}{}
-		}()
+			return nil
+		})
 	}
 
+	w.notifyGroup = errgroup.Group{}
 	for i := 0; i < numWebhookNotifyWorkers; i++ {
 		metrics.WebhookNotifyWorkers.Inc()
-		go func() {
+		w.notifyGroup.Go(func() error {
 			defer metrics.WebhookNotifyWorkers.Dec()
 			for task := range w.tasks {
 				if err := notifyWithTimeout(ctx, w.env, task); err != nil {
 					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
 				}
 			}
-		}()
+			return nil
+		})
 	}
 }
 
@@ -423,10 +426,12 @@ func (w *webhookNotifier) lookupAndCreateTask(ctx context.Context, ij *invocatio
 
 func (w *webhookNotifier) Stop() {
 	// Make sure we are done sending tasks on the task channel before we close it.
-	<-w.doneSendingTasks
+	if err := w.lookupGroup.Wait(); err != nil {
+		log.Error(err.Error())
+	}
 	close(w.tasks)
 
-	if err := w.eg.Wait(); err != nil {
+	if err := w.notifyGroup.Wait(); err != nil {
 		log.Error(err.Error())
 	}
 }
