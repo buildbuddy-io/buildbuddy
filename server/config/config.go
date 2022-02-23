@@ -319,7 +319,7 @@ type ContainerRegistryConfig struct {
 
 func (c *ExecutorConfig) GetAppTarget() string {
 	if c.AppTarget == "" {
-		return "grpcs://cloud.buildbuddy.io"
+		return "grpcs://remote.buildbuddy.io"
 	}
 	return c.AppTarget
 }

@@ -108,7 +108,7 @@ actions:
         branches:
           - "main"
     bazel_commands:
-      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
 ```
 
 That's it! Whenever any of the configured triggers are matched, one of

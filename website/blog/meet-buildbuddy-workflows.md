@@ -97,7 +97,7 @@ We added dependency graph visualizations for `bazel query` commands that use the
 Here's an example of a command you can run to generate a graph:
 
 ```shell
-bazel query '//...' --output graph --bes_backend=cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
+bazel query '//...' --output graph --bes_backend=remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 ```
 
 And the resulting output:

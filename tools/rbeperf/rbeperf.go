@@ -2,7 +2,7 @@
 //
 // Example usage:
 // $ blaze run //tools/rbeperf -- \
-//   --server=grpcs://cloud.buildbuddy.dev \
+//   --server=grpcs://remote.buildbuddy.dev \
 //   --api_key=XXX \
 //   --workload basic_sequential
 package main
