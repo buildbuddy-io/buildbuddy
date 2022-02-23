@@ -1055,10 +1055,10 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 
 	expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
 	sesh := &tables.Session{
-		SessionID:    sessionID,
-		SubID:        ut.GetSubID(),
-		AccessToken:  oauth2Token.AccessToken,
-		ExpiryUsec:   expireTime.UnixMicro(),
+		SessionID:   sessionID,
+		SubID:       ut.GetSubID(),
+		AccessToken: oauth2Token.AccessToken,
+		ExpiryUsec:  expireTime.UnixMicro(),
 	}
 	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
 	if ok {
