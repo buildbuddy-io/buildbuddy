@@ -18,6 +18,7 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -139,6 +140,17 @@ func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClien
 		conn.Close()
 	})
 	return bbspb.NewBuildBuddyServiceClient(conn)
+}
+
+func (a *App) ByteStreamClient(t *testing.T) bspb.ByteStreamClient {
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		conn.Close()
+	})
+	return bspb.NewByteStreamClient(conn)
 }
 
 func runfile(t *testing.T, path string) string {
