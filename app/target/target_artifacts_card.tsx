@@ -33,7 +33,7 @@ export default class TargetArtifactsCardComponent extends React.Component {
           <div className="details">
             {this.props.files.map((file) => (
               <a
-                href={rpcService.getBytestreamFileUrl(file.name, file.uri, this.props.invocationId)}
+                href={rpcService.getBytestreamUrl(file.uri, this.props.invocationId, { filename: file.name })}
                 className="artifact-name"
                 onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}>
                 {file.name}
