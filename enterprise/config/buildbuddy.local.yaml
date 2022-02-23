@@ -19,12 +19,12 @@ cache:
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache
 auth:
-#  enable_anonymous_usage: true
-#  enable_self_auth: true
-   oauth_providers:
-     - issuer_url: "https://tryflamenow.okta.com"
-       client_id: "0oah48zw1O4k2B4Sf696"
-       client_secret: "YD7MbWn2VrKhMmngrw5o6ORtw-RV0OGK3Lig3kOK"
+  enable_anonymous_usage: true
+  enable_self_auth: true
+  # oauth_providers:
+  #   - issuer_url: "https://accounts.google.com"
+  #     client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
+  #     client_secret: "${BB_DEV_OAUTH_CLIENT_SECRET}"
 api:
   enable_api: true
 github:
