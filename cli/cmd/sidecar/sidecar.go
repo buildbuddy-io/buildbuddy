@@ -34,7 +34,7 @@ var (
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
 	listenAddr  = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
-	besBackend  = flag.String("bes_backend", "grpcs://cloud.buildbuddy.io:443", "Server address to proxy build events to.")
+	besBackend  = flag.String("bes_backend", "grpcs://remote.buildbuddy.io:443", "Server address to proxy build events to.")
 	remoteCache = flag.String("remote_cache", "", "Server address to cache events to.")
 
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")

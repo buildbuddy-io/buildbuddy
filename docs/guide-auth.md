@@ -4,33 +4,32 @@ title: Authentication Guide
 sidebar_label: Authentication Guide
 ---
 
-You have two choices for authenticating your BuildBuddy requests:
+BuildBuddy uses API keys to authenticate Bazel invocations. In order to authenticate an invocation, you must first [create a BuildBuddy account](https://app.buildbuddy.io/).
 
-- API key
-- certificate based mTLS auth
+## Setup
 
-Both of these choices require you to [create a BuildBuddy account](https://app.buildbuddy.io/).
+An API key should be passed along with all gRPCs requests that you'd like to be associated with your BuildBuddy organization. This key can be used by anyone in your organization, as it ties builds to your org - not your individual user.
 
-## API key
+You can find your API key on your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in. You can also create multiple API keys for use in different contexts.
 
-This the simpler of the two methods. It passes an API key along with all grpcs requests that is associated with your BuildBuddy organization. This key can be used by anyone in your organization, as it ties builds to your org - not your individual user.
+Your API key can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
 
-You can find API key authenticated URLs on your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in.
+```
+build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+```
 
-These URLs can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
+If people outside of your organization have access to your source code (open source projects, etc) - you'll want to pull your credentials into a separate file that is only accessible by members of your organization and/or your CI machines.
 
-If people outside of your organization have access to your source code (open source projects, etc) - you'll want to pull your credentials into a separate file that is only accessible by members of your organization and/or your CI machines. Alternatively, you can store your API key in an environment variable / secret and pass these flags in manually or with a wrapper script.
+Alternatively, you can store your API key in an environment variable / secret and pass these flags in manually or with a wrapper script.
 
-### Separate auth file
+## Separate auth file
 
 Using the `try-import` directive in your `.bazelrc` - you can direct bazel to pull in additional bazel configuration flags from a different file if the file exists (if the file does not exist, this directive will be ignored).
 
 You can then place a second `auth.bazelrc` file in a location that's only accessible to members of your organization:
 
 ```
-build --bes_backend=grpcs://YOUR_API_KEY@cloud.buildbuddy.io
-build --remote_cache=grpcs://YOUR_API_KEY@cloud.buildbuddy.io
-build --remote_executor=grpcs://YOUR_API_KEY@cloud.buildbuddy.io
+build --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 ```
 
 And add a `try-import` to your main `.bazelrc` file at the root of your `WORKSPACE`:
@@ -39,34 +38,26 @@ And add a `try-import` to your main `.bazelrc` file at the root of your `WORKSPA
 try-import /path/to/your/auth.bazelrc
 ```
 
-### Command line
+## Command line
 
 The command line method allows you to store your API key in an environment variable or Github secret, and then pass authenticated flags in either manually or with a wrapper script.
 
-If using Github secrets - you can create a secret called `BUILDBUDDY_API_KEY` containing your API key, then use that in your workflows:
+If using Github secrets - you can create a secret called `BUILDBUDDY_API_KEY` containing your API key, then use that in your actions:
 
 ```
-bazel build --config=remote --bes_backend=${BUILDBUDDY_API_KEY}@cloud.buildbuddy.io --remote_cache=${BUILDBUDDY_API_KEY}@cloud.buildbuddy.io --remote_executor=${BUILDBUDDY_API_KEY}@cloud.buildbuddy.io
+bazel build --config=remote --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
 ```
 
-## Certificate
+## Managing keys
 
-The other option for authenticating your BuildBuddy requests is with certificates. Your BuildBuddy certificates can be used by anyone in your organization, as it ties builds to your org - not your individual user.
+You can create multiple API keys on your [organization settings page](https://app.buildbuddy.dev/settings/org/api-keys). These keys can be used in different contexts (i.e. one for CI, one for developers) and cycled independently. Here you can also edit and delete existing API keys.
 
-You can download these certificates in your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](http://app.buildbuddy.io/) and logged in. You'll first need to select `Certificate` as your auth option, then click `Download buildbuddy-cert.pem` and `Download buildbuddy-key.pem`.
+When creating multiple keys, we recommending labeling your API keys with descriptive names to describe how they will be used.
 
-Once you've downloaded your cert and key files - you can place them in a location that's only accessible to members of your organization and/or your CI machines.
+## Read only keys
 
-You can then add the following lines to your `.bazelrc`:
+When creating new API keys, you can check the box that says **Read-only key (disable remote cache uploads)**. This will allow users of these keys to download from the remote cache, but not upload artifacts into the cache.
 
-```
-build --tls_client_certificate=/path/to/your/buildbuddy-cert.pem
-build --tls_client_key=/path/to/your/buildbuddy-key.pem
-```
+## Executor keys
 
-Make sure to update the paths to point to the location in which you've placed the files. If placing them in your workspace root, you can simply do:
-
-```
-build --tls_client_certificate=buildbuddy-cert.pem
-build --tls_client_key=buildbuddy-key.pem
-```
+When creating API keys to link your self-hosted executors to your organization (if using **Bring Your Own Runners**), you'll need to check the box that says **Executor key (for self-hosted executors)**.
