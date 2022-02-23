@@ -234,6 +234,7 @@ type authenticator interface {
 	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
+	checkAccessToken(ctx context.Context, jwt, accessToken string) error
 	renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
 }
 
@@ -294,6 +295,19 @@ func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt s
 		return nil, err
 	}
 	return extractToken(a.issuer, a.slug, validToken)
+}
+
+func (a *oidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessToken string) error {
+	provider, err := a.provider()
+	if err != nil {
+		return err
+	}
+	conf := a.oidcConfig
+	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
+	if err != nil {
+		return err
+	}
+	return validToken.VerifyAccessToken(accessToken)
 }
 
 func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
@@ -1035,26 +1049,25 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := guid.String()
 
-	// OK, the token is valid so we will: store the refresh token in our DB
-	// for later & set the login cookie so we know this user is logged in.
+	// OK, the token is valid so we will: store the token in our DB for
+	// later & set the login cookie so we know this user is logged in.
 	setLoginCookie(a.env, w, jwt, issuer, sessionID)
 
+	expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
+	sesh := &tables.Session{
+		SessionID:    sessionID,
+		SubID:        ut.GetSubID(),
+		AccessToken:  oauth2Token.AccessToken,
+		ExpiryUsec:   expireTime.UnixMicro(),
+	}
 	refreshToken, ok := oauth2Token.Extra("refresh_token").(string)
 	if ok {
-		expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
-		sesh := &tables.Session{
-			SessionID:    sessionID,
-			SubID:        ut.GetSubID(),
-			AccessToken:  oauth2Token.AccessToken,
-			RefreshToken: refreshToken,
-			ExpiryUsec:   expireTime.UnixMicro(),
-		}
-		if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
-			redirectWithError(w, r, err)
-			return
-		}
+		sesh.RefreshToken = refreshToken
 	}
-
+	if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
 	redirURL := GetCookie(r, redirCookie)
 	if redirURL == "" {
 		redirURL = "/" // default to redirecting home.
