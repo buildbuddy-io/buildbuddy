@@ -51,7 +51,7 @@ type Store struct {
 	nodeHost      *dragonboat.NodeHost
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
-	registry      *registry.DynamicNodeRegistry
+	registry      registry.NodeRegistry
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 
@@ -65,7 +65,7 @@ type Store struct {
 	replicas  map[uint64]*replica.Replica
 }
 
-func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry *registry.DynamicNodeRegistry, apiClient *client.APIClient) *Store {
+func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
 	s := &Store{
 		rootDir:       rootDir,
 		fileDir:       fileDir,
@@ -221,7 +221,6 @@ func (s *Store) gossipUsage() {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Printf("AddRange: %+v", rd)
 	if len(rd.GetReplicas()) == 0 {
 		log.Error("range descriptor had no replicas; this should not happen")
 		return
@@ -257,7 +256,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Printf("RemoveRange: %+v", rd)
 	clusterID := rd.GetReplicas()[0].GetClusterId()
 
 	s.replicaMu.Lock()
@@ -293,10 +291,8 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 	}
 	var rc io.ReadCloser
 	err = s.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		log.Printf("in sender.Run, filekey: %q", fileKey)
 		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
 			h.GetReplica().GetNodeId() == except.GetNodeId() {
-			log.Printf("NOT ATTEMPTING TO READ FROM SELF: +%v", h.GetReplica())
 			return status.OutOfRangeError("except node")
 		}
 		req := &rfpb.ReadRequest{
@@ -309,7 +305,6 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 			log.Printf("RemoteReader %+v err: %s", fileRecord, err)
 			return err
 		}
-		log.Printf("in sender.Run, filekey: %q, remoteReader returned r: %+v", fileKey, r)
 		rc = r
 		return nil
 	})
@@ -386,7 +381,6 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	log.Printf("RemoveData req: %+v", req)
 	s.registry.Add(req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID())
 	if err := s.nodeHost.StopNode(req.GetClusterId(), req.GetNodeId()); err != nil {
 		return nil, err
@@ -650,12 +644,20 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 		return
 	}
 
-	nodeBuf, err := proto.Marshal(s.sender.MyNodeDescriptor())
+	nodeBuf, err := proto.Marshal(s.MyNodeDescriptor())
 	if err != nil {
 		return
 	}
 	if err := query.Respond(nodeBuf); err != nil {
 		log.Warningf("Error responding to gossip query: %s", err)
+	}
+}
+
+func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
+	return &rfpb.NodeDescriptor{
+		Nhid:        s.nodeHost.ID(),
+		//		RaftAddress: dnr.raftAddress,
+		//		GrpcAddress: dnr.grpcAddress,
 	}
 }
 

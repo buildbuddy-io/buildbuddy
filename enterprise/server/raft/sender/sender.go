@@ -24,7 +24,7 @@ type Sender struct {
 	rangeCache *rangecache.RangeCache
 
 	// Keeps track of which raft nodes live on which machines.
-	nodeRegistry *registry.DynamicNodeRegistry
+	nodeRegistry registry.NodeRegistry
 
 	// Keeps track of connections to other machines.
 	apiClient *client.APIClient
@@ -34,17 +34,13 @@ type Sender struct {
 	cachedReplicas map[uint64]*rfpb.ReplicaDescriptor
 }
 
-func New(rangeCache *rangecache.RangeCache, nodeRegistry *registry.DynamicNodeRegistry, apiClient *client.APIClient) *Sender {
+func New(rangeCache *rangecache.RangeCache, nodeRegistry registry.NodeRegistry, apiClient *client.APIClient) *Sender {
 	return &Sender{
 		rangeCache:     rangeCache,
 		nodeRegistry:   nodeRegistry,
 		apiClient:      apiClient,
 		cachedReplicas: make(map[uint64]*rfpb.ReplicaDescriptor),
 	}
-}
-
-func (s *Sender) MyNodeDescriptor() *rfpb.NodeDescriptor {
-	return s.nodeRegistry.MyNodeDescriptor()
 }
 
 func (s *Sender) ConnectionForReplicaDesciptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {

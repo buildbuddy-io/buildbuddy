@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "store",
@@ -31,5 +31,27 @@ go_library(
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_lni_dragonboat_v3//statemachine",
+    ],
+)
+
+go_test(
+    name = "store_test",
+    srcs = ["store_test.go"],
+    deps = [
+        ":store",
+        "//enterprise/server/raft/client",
+        "//enterprise/server/raft/rangecache",
+        "//enterprise/server/raft/registry",
+        "//enterprise/server/raft/replica",
+        "//enterprise/server/raft/sender",
+        "//proto:raft_go_proto",
+        "//server/gossip",
+        "//server/testutil/app",
+        "//server/testutil/testenv",
+        "//server/util/disk",
+        "@com_github_lni_dragonboat_v3//:dragonboat",
+        "@com_github_lni_dragonboat_v3//config",
+        "@com_github_lni_dragonboat_v3//raftio",
+        "@com_github_stretchr_testify//require",
     ],
 )
