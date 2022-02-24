@@ -36,7 +36,7 @@ export class AuthService {
         this.emitUser(this.userFromResponse(response));
       })
       .catch((error: any) => {
-        if (BuildBuddyError.parse(error).code == "PermissionDenied" || String(error).includes("logged out")) {
+        if (BuildBuddyError.parse(error).code == "PermissionDenied" && String(error).includes("logged out")) {
           this.emitUser(null);
         } else if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("not found")) {
           this.createUser();

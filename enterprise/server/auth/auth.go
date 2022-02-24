@@ -791,7 +791,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 	jwt := GetCookie(r, jwtCookie)
 	if jwt == "" {
-		return nil, nil, status.PermissionDeniedErrorf("No jwt set")
+		return nil, nil, status.PermissionDeniedErrorf("%s: no jwt set", loggedOutMsg)
 	}
 	issuer := GetCookie(r, authIssuerCookie)
 	sessionID := GetCookie(r, sessionIDCookie)
@@ -852,7 +852,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
 		return claims, ut, err
 	}
-	return nil, nil, status.PermissionDeniedError("could not refresh token")
+	return nil, nil, status.PermissionDeniedErrorf("%s: could not refresh token", loggedOutMsg)
 }
 
 func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, error) {
