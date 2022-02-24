@@ -12,6 +12,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/components/select",
+        "//app/components/spinner",
         "//app/errors",
         "//app/format",
         "//app/router",
