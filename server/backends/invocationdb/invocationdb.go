@@ -193,8 +193,8 @@ func (d *InvocationDB) LookupGroupIDFromInvocation(ctx context.Context, invocati
 func (d *InvocationDB) LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error) {
 	cutoffUsec := cutoffTime.UnixMicro()
 	rows, err := d.h.DB(ctx).Raw(`SELECT * FROM Invocations as i
-                                   WHERE i.created_at_usec < ?
-                                   LIMIT ?`, cutoffUsec, limit).Rows()
+                                      WHERE i.created_at_usec < ?
+                                      LIMIT ?`, cutoffUsec, limit).Rows()
 	if err != nil {
 		return nil, err
 	}
