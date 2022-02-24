@@ -299,7 +299,7 @@ type ExecutorConfig struct {
 	DockerInheritUserIDs          bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXcodeVersion           string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
 	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
-	EnablePodman             bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
+	EnablePodman                  bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
 	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	FirecrackerMountWorkspaceFile bool                      `yaml:"firecracker_mount_workspace_file" usage:"Enables mounting workspace filesystem to improve performance of copying action outputs."`
 	ContainerRegistries           []ContainerRegistryConfig `yaml:"container_registries"`
@@ -310,7 +310,6 @@ type ExecutorConfig struct {
 	ExclusiveTaskScheduling       bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
 	MemoryBytes                   int64                     `yaml:"memory_bytes" usage:"Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var."`
 	MilliCPU                      int64                     `yaml:"millicpu" usage:"Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var."`
->>>>>>> 6cab79610c2285899278b04f4f3f1cfa6d73b1ad
 }
 
 type ContainerRegistryConfig struct {
