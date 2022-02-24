@@ -400,49 +400,34 @@ export default class TapComponent extends React.Component<Props, State> {
                   To see a CI test grid, make sure your CI tests are configured as follows:
                   <ul>
                     <li>
-                      Add <code className="inline-code">--build_metadata=ROLE=CI</code> to your CI bazel test command
+                      Add <code className="inline-code">--build_metadata=ROLE=CI</code> to your CI bazel test command.
                     </li>
                     <li>
-                      Add a file called <code className="inline-code">workspace_status.sh</code> to the root of your
-                      repo and make it executable with <code className="inline-code">chmod +x workspace_status.sh</code>
-                    </li>
-                    <li>
-                      Paste the contents of our{" "}
-                      <a
-                        target="_blank"
-                        href="https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh">
-                        recommended workspace status script
+                      Provide a{" "}
+                      <a target="_blank" href="https://www.buildbuddy.io/docs/guide-metadata/#commit-sha">
+                        commit SHA
                       </a>{" "}
-                      into <code className="inline-code">workspace_status.sh</code>
-                    </li>
-                    <li>
-                      Add <code className="inline-code">--workspace_status_command=$(pwd)/workspace_status.sh</code> to
-                      your CI tests command
+                      and{" "}
+                      <a target="_blank" href="https://www.buildbuddy.io/docs/guide-metadata/#repository-url">
+                        repository URL
+                      </a>
+                      .
                     </li>
                   </ul>
-                  <p>
-                    To learn more about build metadata, see our{" "}
-                    <a target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
-                      Build Metadata Guide
-                    </a>
-                    .
-                  </p>
                 </p>
               ) : (
-                <>
-                  <p>
-                    Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your
-                    builds to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git
-                    repo url.
-                  </p>
-                  <p>Check out the Build Metadata Guide below for more information on configuring these.</p>
-                  <p>
-                    <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
-                      View the Build Metadata Guide
-                    </a>
-                  </p>
-                </>
+                <p>
+                  Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your
+                  builds to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git
+                  repo url.
+                </p>
               )}
+              <p>Check out the Build Metadata Guide below for more information on configuring these.</p>
+              <p>
+                <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
+                  View the Build Metadata Guide
+                </a>
+              </p>
             </div>
           </div>
         </div>
