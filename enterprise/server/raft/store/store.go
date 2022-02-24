@@ -655,7 +655,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 
 func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
 	return &rfpb.NodeDescriptor{
-		Nhid:        s.nodeHost.ID(),
+		Nhid: s.nodeHost.ID(),
 		//		RaftAddress: dnr.raftAddress,
 		//		GrpcAddress: dnr.grpcAddress,
 	}

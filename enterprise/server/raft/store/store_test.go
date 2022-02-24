@@ -154,4 +154,3 @@ func TestAddGetRemoveRange(t *testing.T) {
 	gotRd = s1.GetRange(1)
 	require.Nil(t, gotRd)
 }
-

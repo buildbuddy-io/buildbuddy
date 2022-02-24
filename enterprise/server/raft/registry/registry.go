@@ -20,14 +20,14 @@ import (
 var TargetAddressUnknownError = status.NotFoundError("target address unknown")
 
 type NodeRegistry interface {
-       raftio.INodeRegistry
+	raftio.INodeRegistry
 
-       // Used by store.go and sender.go.
-       ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error)
+	// Used by store.go and sender.go.
+	ResolveGRPC(clusterID uint64, nodeID uint64) (string, string, error)
 
-       // Used by store.go only.
-       AddWithAddr(clusterID, nodeID uint64, target, raftAddress, grpcAddress string)
-       ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error)
+	// Used by store.go only.
+	AddWithAddr(clusterID, nodeID uint64, target, raftAddress, grpcAddress string)
+	ResolveNHID(clusterID uint64, nodeID uint64) (string, string, error)
 }
 
 // DynamicNodeRegistry is a node registry backed by gossip. It is capable of
