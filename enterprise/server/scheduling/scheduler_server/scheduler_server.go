@@ -340,13 +340,6 @@ type executionNode struct {
 	handle *executorHandle
 }
 
-func (en *executionNode) GetSchedulerURI() string {
-	if en.schedulerHostPort == "" {
-		return ""
-	}
-	return "grpc://" + en.schedulerHostPort
-}
-
 func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.executorID)
@@ -595,18 +588,37 @@ type persistedTask struct {
 }
 
 type schedulerClient struct {
-	scpb.SchedulerClient
-	conn       *grpc.ClientConn
+	// either localServer or rpc* fields will be populated depending on whether the destination is local or remote.
+
+	localServer *SchedulerServer
+	rpcClient   scpb.SchedulerClient
+	rpcConn     *grpc.ClientConn
+
 	lastAccess time.Time
+}
+
+func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	if c.localServer != nil {
+		return c.localServer.EnqueueTaskReservation(ctx, request)
+	}
+	return c.rpcClient.EnqueueTaskReservation(ctx, request)
 }
 
 type schedulerClientCache struct {
 	mu      sync.Mutex
 	clients map[string]schedulerClient
+	// Address of this app instance. If the destination address matches the address of this instance, we call into
+	// the local scheduler server instance directly instead of using RPCs.
+	localServerHostPort string
+	localServer         *SchedulerServer
 }
 
-func newSchedulerClientCache() *schedulerClientCache {
-	cache := &schedulerClientCache{clients: make(map[string]schedulerClient)}
+func newSchedulerClientCache(localServerHostPort string, localServer *SchedulerServer) *schedulerClientCache {
+	cache := &schedulerClientCache{
+		clients:             make(map[string]schedulerClient),
+		localServerHostPort: localServerHostPort,
+		localServer:         localServer,
+	}
 	cache.startExpirer()
 	return cache
 }
@@ -618,7 +630,9 @@ func (c *schedulerClientCache) startExpirer() {
 			for addr, client := range c.clients {
 				if time.Now().Sub(client.lastAccess) > unusedSchedulerClientExpiration {
 					log.Infof("Expiring idle scheduler client for %q", addr)
-					client.conn.Close()
+					if client.rpcConn != nil {
+						_ = client.rpcConn.Close()
+					}
 					delete(c.clients, addr)
 				}
 			}
@@ -628,19 +642,23 @@ func (c *schedulerClientCache) startExpirer() {
 	}()
 }
 
-func (c *schedulerClientCache) get(schedulerAddr string) (schedulerClient, error) {
+func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	client, ok := c.clients[schedulerAddr]
+	client, ok := c.clients[hostPort]
 	if !ok {
-		log.Infof("Creating new scheduler client for %q", schedulerAddr)
-		// This is non-blocking so it's OK to hold the lock.
-		conn, err := grpc_client.DialTarget(schedulerAddr)
-		if err != nil {
-			return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
+		log.Infof("Creating new scheduler client for %q", hostPort)
+		if hostPort == c.localServerHostPort {
+			client = schedulerClient{localServer: c.localServer}
+		} else {
+			// This is non-blocking so it's OK to hold the lock.
+			conn, err := grpc_client.DialTarget("grpc://" + hostPort)
+			if err != nil {
+				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
+			}
+			client = schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
 		}
-		client = schedulerClient{SchedulerClient: scpb.NewSchedulerClient(conn), conn: conn}
-		c.clients[schedulerAddr] = client
+		c.clients[hostPort] = client
 	}
 	client.lastAccess = time.Now()
 	return client, nil
@@ -723,13 +741,13 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		pools:                         make(map[nodePoolKey]*nodePool),
 		rdb:                           env.GetRemoteExecutionRedisClient(),
 		taskRouter:                    taskRouter,
-		schedulerClientCache:          newSchedulerClientCache(),
 		shuttingDown:                  shuttingDown,
 		enableUserOwnedExecutors:      enableUserOwnedExecutors,
 		forceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
 		requireExecutorAuthorization:  requireExecutorAuthorization,
 		ownHostPort:                   fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
+	s.schedulerClientCache = newSchedulerClientCache(s.ownHostPort, s)
 	return s, nil
 }
 
@@ -1351,21 +1369,21 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				continue
 			}
 		} else {
-			if node.GetSchedulerURI() == "" {
-				log.Errorf("node %q has no scheduler URI", node.GetExecutorID())
+			if node.schedulerHostPort == "" {
+				log.Errorf("node %q has no scheduler host:port set", node.GetExecutorID())
 				continue
 			}
 
-			schedulerClient, err := s.schedulerClientCache.get(node.GetSchedulerURI())
+			schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
 			if err != nil {
-				log.Warningf("Could not get SchedulerClient for %q: %s", node.GetSchedulerURI(), err)
+				log.Warningf("Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
 				continue
 			}
 			rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
 			_, err = schedulerClient.EnqueueTaskReservation(rpcCtx, enqueueRequest)
 			cancel()
 			if err != nil {
-				log.Warningf("EnqueueTaskReservation to %q failed: %s", node.GetSchedulerURI(), err)
+				log.Warningf("EnqueueTaskReservation to %q failed: %s", node.schedulerHostPort, err)
 				time.Sleep(schedulerEnqueueTaskReservationFailureSleep)
 				continue
 			}
