@@ -25,6 +25,7 @@ go_library(
         "//server/util/url",
         "@com_github_coreos_go_oidc//:go-oidc",
         "@com_github_golang_jwt_jwt//:jwt",
+        "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
