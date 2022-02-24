@@ -243,3 +243,58 @@ func TestUserEvents(t *testing.T) {
 		break
 	}
 }
+
+func TestBidirectionalDiscovery(t *testing.T) {
+	node1Addr := localAddr(t)
+	node2Addr := localAddr(t)
+
+	sawNode2 := make(chan struct{})
+	doneChecking2 := false
+	waitForNode2 := func(eventType serf.EventType, event serf.Event) {
+		if memberEvent, ok := event.(serf.MemberEvent); ok {
+			for _, member := range memberEvent.Members {
+				if !doneChecking2 {
+					if fmt.Sprintf("%s:%d", member.Addr, member.Port) == node2Addr {
+						doneChecking2 = true
+						close(sawNode2)
+					}
+				}
+			}
+		}
+	}
+
+	node1 := newGossipManager(t, node1Addr, []string{node2Addr}, &testBroker{onEvent: waitForNode2})
+	defer node1.Shutdown()
+
+	sawNode1 := make(chan struct{})
+	doneChecking1 := false
+	waitForNode1 := func(eventType serf.EventType, event serf.Event) {
+		if memberEvent, ok := event.(serf.MemberEvent); ok {
+			for _, member := range memberEvent.Members {
+				if !doneChecking1 {
+					if fmt.Sprintf("%s:%d", member.Addr, member.Port) == node1Addr {
+						doneChecking1 = true
+						close(sawNode1)
+					}
+				}
+			}
+		}
+	}
+
+	node2 := newGossipManager(t, node2Addr, []string{node1Addr}, &testBroker{onEvent: waitForNode1})
+	defer node2.Shutdown()
+
+	select {
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Timed out waiting for node2 to discover node1")
+	case <-sawNode1:
+		break
+	}
+
+	select {
+	case <-time.After(10 * time.Second):
+		t.Fatalf("Timed out waiting for node1 to discover node2")
+	case <-sawNode2:
+		break
+	}
+}
