@@ -8,6 +8,20 @@
   flex-shrink: 0;
 }
 
+.tap .empty-state a {
+  text-decoration: underline;
+}
+
+.tap ul {
+  list-style: initial;
+  margin: 16px 0;
+  padding-left: 24px;
+}
+
+.tap ul li {
+  margin-bottom: 16px;
+}
+
 .tap .tap-top-bar {
   padding: 32px 0;
   border-bottom: 1px solid #eee;
@@ -111,8 +125,6 @@
   left: 0;
   height: 0;
   z-index: 1;
-  /* Add top padding without affecting dimensions of the element */
-  transform: translateY(4px);
 }
 
 .tap .hovered-commit-row {
@@ -170,6 +182,8 @@
 
 .tap .commits-list {
   display: inline-flex;
+  align-items: center;
+  margin: 4px 0; /* to match "Load more" button height */
   position: relative;
 }
 

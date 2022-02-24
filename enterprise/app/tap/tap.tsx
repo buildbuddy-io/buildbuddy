@@ -11,10 +11,12 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import { clamp } from "../../../app/util/math";
 import Select, { Option } from "../../../app/components/select/select";
+import Spinner from "../../../app/components/spinner/spinner";
 import { ChevronsRight, Filter, ArrowLeft } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
+import { getProtoFilterParams } from "../filter/filter_util";
 
 interface Props {
   user: User;
@@ -394,18 +396,54 @@ export default class TapComponent extends React.Component<Props, State> {
           <div className="container narrow">
             <div className="empty-state history">
               <h2>No CI tests found in the last week!</h2>
-              <p>
-                Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your builds
-                to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git repo url.
-                <br />
-                <br />
-                Check out the Build Metadata Guide below for more information on configuring these.
-                <br />
-                <br />
-                <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
-                  View the Build Metadata Guide
-                </a>
-              </p>
+              {this.isV2 ? (
+                <p>
+                  To see a CI test grid, make sure your CI tests are configured as follows:
+                  <ul>
+                    <li>
+                      Add <code className="inline-code">--build_metadata=ROLE=CI</code> to your CI bazel test command
+                    </li>
+                    <li>
+                      Add a file called <code className="inline-code">workspace_status.sh</code> to the root of your
+                      repo and make it executable with <code className="inline-code">chmod +x workspace_status.sh</code>
+                    </li>
+                    <li>
+                      Paste the contents of our{" "}
+                      <a
+                        target="_blank"
+                        href="https://github.com/buildbuddy-io/buildbuddy/blob/master/workspace_status.sh">
+                        recommended workspace status script
+                      </a>{" "}
+                      into <code className="inline-code">workspace_status.sh</code>
+                    </li>
+                    <li>
+                      Add <code className="inline-code">--workspace_status_command=$(pwd)/workspace_status.sh</code> to
+                      your CI tests command
+                    </li>
+                  </ul>
+                  <p>
+                    To learn more about build metadata, see our{" "}
+                    <a target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
+                      Build Metadata Guide
+                    </a>
+                    .
+                  </p>
+                </p>
+              ) : (
+                <>
+                  <p>
+                    Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your
+                    builds to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git
+                    repo url.
+                  </p>
+                  <p>Check out the Build Metadata Guide below for more information on configuring these.</p>
+                  <p>
+                    <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
+                      View the Build Metadata Guide
+                    </a>
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -414,18 +452,21 @@ export default class TapComponent extends React.Component<Props, State> {
 
     let filter = this.props.search.get("filter");
 
-    const hasMoreInvocations = this.isV2
-      ? Boolean(this.state.nextPageToken)
+    const showMoreInvocationsButton = this.isV2
+      ? this.state.nextPageToken
       : this.state.maxInvocations > this.state.invocationLimit;
-
     const moreInvocationsButton = (
-      <FilledButton
-        className="more-invocations-button"
-        onClick={this.loadMoreInvocations.bind(this)}
-        disabled={this.state.loading}>
-        <span>Load more</span>
-        <ChevronsRight className="icon white" />
-      </FilledButton>
+      <>
+        {showMoreInvocationsButton && (
+          <FilledButton
+            className="more-invocations-button"
+            onClick={this.loadMoreInvocations.bind(this)}
+            disabled={this.state.loading}>
+            <span>Load more</span>
+            {this.state.loading ? <Spinner className="white" /> : <ChevronsRight className="icon white" />}
+          </FilledButton>
+        )}
+      </>
     );
 
     return (
@@ -475,7 +516,7 @@ export default class TapComponent extends React.Component<Props, State> {
                   onChange={this.handleFilterChange.bind(this)}
                 />
               </div>
-              {hasMoreInvocations && !this.isV2 && moreInvocationsButton}
+              {!this.isV2 && moreInvocationsButton}
             </div>
           </div>
         </div>
