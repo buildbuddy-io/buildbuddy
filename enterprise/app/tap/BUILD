@@ -18,7 +18,6 @@ ts_library(
         "//app/router",
         "//app/service",
         "//app/util:math",
-        "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",
         "@npm//@types/long",

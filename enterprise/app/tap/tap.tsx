@@ -16,7 +16,6 @@ import { ChevronsRight, Filter, ArrowLeft } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
-import { getProtoFilterParams } from "../filter/filter_util";
 
 interface Props {
   user: User;
