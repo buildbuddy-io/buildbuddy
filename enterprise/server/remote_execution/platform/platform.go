@@ -77,6 +77,7 @@ const (
 	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
 
 	BareContainerType        ContainerType = "none"
+	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
 )
@@ -224,6 +225,14 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, FirecrackerContainerType)
+		}
+	}
+
+	if executorConfig.EnablePodman {
+		if runtime.GOOS == "darwin" {
+			log.Warning("Podman was enabled, but is unsupported on darwin. Ignoring.")
+		} else {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, PodmanContainerType)
 		}
 	}
 
