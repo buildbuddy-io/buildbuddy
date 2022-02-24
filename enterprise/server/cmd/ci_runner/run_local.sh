@@ -21,7 +21,7 @@ Examples:
   $0 --target_repo_url=https://github.com/foo/bar --target_branch=master --pushed_repo_url=https://github.com/FORK/bar --pushed_branch=feature
 
   # Override arbitrary CI runner args
-  $0 --bes_backend=grpcs://cloud.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
+  $0 --bes_backend=grpcs://remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/
 "
 if [[ "${1:-}" =~ ^(-h|--help)$ ]]; then
   echo "$USAGE"

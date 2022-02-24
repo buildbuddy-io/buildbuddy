@@ -11,6 +11,7 @@ import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import { clamp } from "../../../app/util/math";
 import Select, { Option } from "../../../app/components/select/select";
+import Spinner from "../../../app/components/spinner/spinner";
 import { ChevronsRight, Filter, ArrowLeft } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
@@ -394,14 +395,35 @@ export default class TapComponent extends React.Component<Props, State> {
           <div className="container narrow">
             <div className="empty-state history">
               <h2>No CI tests found in the last week!</h2>
+              {this.isV2 ? (
+                <p>
+                  To see a CI test grid, make sure your CI tests are configured as follows:
+                  <ul>
+                    <li>
+                      Add <code className="inline-code">--build_metadata=ROLE=CI</code> to your CI bazel test command.
+                    </li>
+                    <li>
+                      Provide a{" "}
+                      <a target="_blank" href="https://www.buildbuddy.io/docs/guide-metadata/#commit-sha">
+                        commit SHA
+                      </a>{" "}
+                      and{" "}
+                      <a target="_blank" href="https://www.buildbuddy.io/docs/guide-metadata/#repository-url">
+                        repository URL
+                      </a>
+                      .
+                    </li>
+                  </ul>
+                </p>
+              ) : (
+                <p>
+                  Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your
+                  builds to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git
+                  repo url.
+                </p>
+              )}
+              <p>Check out the Build Metadata Guide below for more information on configuring these.</p>
               <p>
-                Seems like you haven't done any builds marked as CI. Add <b>--build_metadata=ROLE=CI</b> to your builds
-                to see a CI test grid. You'll likely also want to provide a commit SHA and optionally a git repo url.
-                <br />
-                <br />
-                Check out the Build Metadata Guide below for more information on configuring these.
-                <br />
-                <br />
                 <a className="button" target="_blank" href="https://buildbuddy.io/docs/guide-metadata">
                   View the Build Metadata Guide
                 </a>
@@ -414,18 +436,21 @@ export default class TapComponent extends React.Component<Props, State> {
 
     let filter = this.props.search.get("filter");
 
-    const hasMoreInvocations = this.isV2
-      ? Boolean(this.state.nextPageToken)
+    const showMoreInvocationsButton = this.isV2
+      ? this.state.nextPageToken
       : this.state.maxInvocations > this.state.invocationLimit;
-
     const moreInvocationsButton = (
-      <FilledButton
-        className="more-invocations-button"
-        onClick={this.loadMoreInvocations.bind(this)}
-        disabled={this.state.loading}>
-        <span>Load more</span>
-        <ChevronsRight className="icon white" />
-      </FilledButton>
+      <>
+        {showMoreInvocationsButton && (
+          <FilledButton
+            className="more-invocations-button"
+            onClick={this.loadMoreInvocations.bind(this)}
+            disabled={this.state.loading}>
+            <span>Load more</span>
+            {this.state.loading ? <Spinner className="white" /> : <ChevronsRight className="icon white" />}
+          </FilledButton>
+        )}
+      </>
     );
 
     return (
@@ -475,7 +500,7 @@ export default class TapComponent extends React.Component<Props, State> {
                   onChange={this.handleFilterChange.bind(this)}
                 />
               </div>
-              {hasMoreInvocations && !this.isV2 && moreInvocationsButton}
+              {!this.isV2 && moreInvocationsButton}
             </div>
           </div>
         </div>

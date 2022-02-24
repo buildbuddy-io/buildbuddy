@@ -1,7 +1,9 @@
 package ci_runner_test
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -94,7 +97,6 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 		// When running locally, /etc/bazel.bazelrc is not writable.
 		"--write_system_bazelrc=false",
 		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
-		"--workflow_id=test-workflow",
 	}...)
 
 	cmd := exec.Command(binPath, args...)
@@ -175,6 +177,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -201,6 +204,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
 
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -238,6 +242,7 @@ func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -275,6 +280,7 @@ func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -326,6 +332,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
@@ -381,6 +388,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
@@ -420,6 +428,7 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	commitSHA := strings.TrimSpace(testshell.Run(t, pushedRepoPath, `git rev-parse HEAD`))
 
 	runnerFlags := []string{
+		"--workflow_id=test-workflow",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
@@ -455,4 +464,78 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	}
 
 	run()
+}
+
+func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
+
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+
+	patch := `
+--- a/pass.sh
++++ b/pass.sh
+@@ -1 +1 @@
+-exit 0
+\ No newline at end of file
++echo "EDIT" && exit 0
+\ No newline at end of file
+`
+
+	ctx := context.Background()
+	bsClient := app.ByteStreamClient(t)
+	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", bytes.NewReader([]byte(patch)))
+	require.NoError(t, err)
+
+	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.
+	{
+		runnerFlags := []string{
+			"--pushed_repo_url=file://" + targetRepoPath,
+			"--pushed_branch=master",
+			"--target_repo_url=file://" + targetRepoPath,
+			"--target_branch=master",
+			"--cache_backend=" + app.GRPCAddress(),
+			"--patch_digest=" + fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
+			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
+			// Disable clean checkout fallback for this test since we expect to sync
+			// without errors.
+			"--fallback_to_clean_checkout=false",
+		}
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		runnerInvocation := singleInvocation(t, app, result)
+		assert.Contains(t, runnerInvocation.ConsoleBuffer, "EDIT")
+
+		if t.Failed() {
+			t.Log(runnerInvocation.ConsoleBuffer)
+		}
+	}
+
+	// Re-run Bazel without a patched `pass.sh` which should revert the previous change.
+	{
+		runnerFlags := []string{
+			"--pushed_repo_url=file://" + targetRepoPath,
+			"--pushed_branch=master",
+			"--target_repo_url=file://" + targetRepoPath,
+			"--target_branch=master",
+			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
+			// Disable clean checkout fallback for this test since we expect to sync
+			// without errors.
+			"--fallback_to_clean_checkout=false",
+		}
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+		runnerInvocation := singleInvocation(t, app, result)
+		assert.NotContains(t, runnerInvocation.ConsoleBuffer, "EDIT")
+
+		if t.Failed() {
+			t.Log(runnerInvocation.ConsoleBuffer)
+		}
+	}
 }

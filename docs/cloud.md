@@ -14,7 +14,7 @@ To use BuildBuddy's Results UI, you just need to configure Bazel to send build e
 
 ```bash
 build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://cloud.buildbuddy.io
+build --bes_backend=grpcs://remote.buildbuddy.io
 ```
 
 That's it, 2 lines and you're up and running. For more advanced configurations, see the [Authentication](#authentication) and [More features](#more-features) sections below.

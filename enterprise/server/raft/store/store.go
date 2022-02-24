@@ -11,18 +11,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
+	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
@@ -32,7 +36,13 @@ import (
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
-const readBufSizeBytes = 1000000 // 1MB
+const (
+	readBufSizeBytes = 1000000 // 1MB
+
+	// If a node's disk is fuller than this (by percentage), it is not
+	// eligible to receive ranges moved from other nodes.
+	maximumDiskCapacity = .95
+)
 
 type Store struct {
 	rootDir string
@@ -41,7 +51,7 @@ type Store struct {
 	nodeHost      *dragonboat.NodeHost
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
-	registry      *registry.DynamicNodeRegistry
+	registry      registry.NodeRegistry
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 
@@ -55,7 +65,7 @@ type Store struct {
 	replicas  map[uint64]*replica.Replica
 }
 
-func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry *registry.DynamicNodeRegistry, apiClient *client.APIClient) *Store {
+func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
 	s := &Store{
 		rootDir:       rootDir,
 		fileDir:       fileDir,
@@ -198,6 +208,7 @@ func (s *Store) gossipUsage() {
 	du, err := disk.GetDirUsage(s.fileDir)
 	if err != nil {
 		log.Errorf("error getting fs usage: %s", err)
+
 		return
 	}
 	usage.DiskBytesTotal = int64(du.TotalBytes)
@@ -210,7 +221,6 @@ func (s *Store) gossipUsage() {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Printf("AddRange: %+v", rd)
 	if len(rd.GetReplicas()) == 0 {
 		log.Error("range descriptor had no replicas; this should not happen")
 		return
@@ -246,7 +256,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Printf("RemoveRange: %+v", rd)
 	clusterID := rd.GetReplicas()[0].GetClusterId()
 
 	s.replicaMu.Lock()
@@ -282,10 +291,8 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 	}
 	var rc io.ReadCloser
 	err = s.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		log.Printf("in sender.Run, filekey: %q", fileKey)
 		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
 			h.GetReplica().GetNodeId() == except.GetNodeId() {
-			log.Printf("NOT ATTEMPTING TO READ FROM SELF: +%v", h.GetReplica())
 			return status.OutOfRangeError("except node")
 		}
 		req := &rfpb.ReadRequest{
@@ -298,7 +305,6 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 			log.Printf("RemoteReader %+v err: %s", fileRecord, err)
 			return err
 		}
-		log.Printf("in sender.Run, filekey: %q, remoteReader returned r: %+v", fileKey, r)
 		rc = r
 		return nil
 	})
@@ -375,7 +381,6 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	log.Printf("RemoveData req: %+v", req)
 	s.registry.Add(req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID())
 	if err := s.nodeHost.StopNode(req.GetClusterId(), req.GetNodeId()); err != nil {
 		return nil, err
@@ -589,4 +594,339 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
+	if updateType != serf.EventQuery {
+		return
+	}
+
+	query, ok := event.(*serf.Query)
+	if !ok || query.Payload == nil {
+		return
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), query.Deadline())
+	defer cancel()
+
+	switch query.Name {
+	case constants.PlacementDriverQueryEvent:
+		s.handlePlacementQuery(ctx, query)
+	}
+}
+
+func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
+	pq := &rfpb.PlacementQuery{}
+	if err := proto.Unmarshal(query.Payload, pq); err != nil {
+		return
+	}
+	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
+	if nodeHostInfo != nil {
+		for _, logInfo := range nodeHostInfo.LogInfo {
+			if pq.GetTargetClusterId() == logInfo.ClusterID {
+				return
+			}
+		}
+	}
+
+	// Do not respond if this node is over 95% full.
+	member := s.gossipManager.LocalMember()
+	usageBuf, ok := member.Tags[constants.NodeUsageTag]
+	if !ok {
+		return
+	}
+	usage := &rfpb.NodeUsage{}
+	if err := proto.UnmarshalText(usageBuf, usage); err != nil {
+		return
+	}
+	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
+	if myDiskUsage > maximumDiskCapacity {
+		return
+	}
+
+	nodeBuf, err := proto.Marshal(s.MyNodeDescriptor())
+	if err != nil {
+		return
+	}
+	if err := query.Respond(nodeBuf); err != nil {
+		log.Warningf("Error responding to gossip query: %s", err)
+	}
+}
+
+func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
+	return &rfpb.NodeDescriptor{
+		Nhid: s.nodeHost.ID(),
+		//		RaftAddress: dnr.raftAddress,
+		//		GrpcAddress: dnr.grpcAddress,
+	}
+}
+
+func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+	membership, err := s.nodeHost.GetClusterMembership(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
+	for nodeID, _ := range membership.Nodes {
+		replicas = append(replicas, &rfpb.ReplicaDescriptor{
+			ClusterId: clusterID,
+			NodeId:    nodeID,
+		})
+	}
+	return replicas, nil
+}
+
+func (s *Store) GetNodeUsage(ctx context.Context, replica *rfpb.ReplicaDescriptor) (*rfpb.NodeUsage, error) {
+	targetNHID, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
+	if err != nil {
+		return nil, err
+	}
+	for _, member := range s.membersInState(serf.StatusAlive) {
+		if member.Tags[constants.NodeHostIDTag] != targetNHID {
+			continue
+		}
+		if buf, ok := member.Tags[constants.NodeUsageTag]; ok {
+			usage := &rfpb.NodeUsage{}
+			if err := proto.UnmarshalText(buf, usage); err != nil {
+				return nil, err
+			}
+			return usage, nil
+		}
+	}
+	return nil, status.NotFoundErrorf("Usage not found for c%dn%d", replica.GetClusterId(), replica.GetNodeId())
+}
+
+func (s *Store) FindNodes(ctx context.Context, query *rfpb.PlacementQuery) ([]*rfpb.NodeDescriptor, error) {
+	buf, err := proto.Marshal(query)
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.gossipManager.Query(constants.PlacementDriverQueryEvent, buf, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	foundNodes := make([]*rfpb.NodeDescriptor, 0)
+	for nodeRsp := range rsp.ResponseCh() {
+		if nodeRsp.Payload == nil {
+			continue
+		}
+		node := &rfpb.NodeDescriptor{}
+		if err := proto.Unmarshal(nodeRsp.Payload, node); err == nil {
+			foundNodes = append(foundNodes, node)
+		}
+	}
+	return foundNodes, nil
+}
+
+func (s *Store) membersInState(memberStatus serf.MemberStatus) []serf.Member {
+	members := make([]serf.Member, 0)
+	for _, member := range s.gossipManager.Members() {
+		if member.Status == memberStatus {
+			members = append(members, member)
+		}
+	}
+	return members
+}
+
+func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
+	// TODO(tylerw): implement
+	return nil
+}
+
+func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error {
+	if len(rangeDescriptor.GetReplicas()) == 0 {
+		return status.FailedPreconditionErrorf("No replicas in range: %+v", rangeDescriptor)
+	}
+	clusterID := rangeDescriptor.GetReplicas()[0].GetClusterId()
+
+	// Reserve a new node ID for the node about to be added.
+	nodeIDs, err := s.reserveNodeIDs(ctx, 1)
+	if err != nil {
+		return err
+	}
+	nodeID := nodeIDs[0]
+
+	// Get the config change index for this cluster.
+	membership, err := s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	configChangeID := membership.ConfigChangeID
+
+	// Gossip the address of the node that is about to be added.
+	s.registry.AddWithAddr(clusterID, nodeID, node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
+
+	// Propose the config change (this adds the node to the raft cluster).
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		err := s.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
+			}
+			return err
+		}
+		break
+	}
+
+	// Start the cluster on the newly added node.
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return err
+	}
+	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
+		ClusterId: clusterID,
+		NodeId:    nodeID,
+		Join:      true,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Finally, update the range descriptor information to reflect the
+	// membership of this new node in the range.
+	return s.addReplicaToRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
+}
+
+func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, targetNodeID uint64) error {
+	var clusterID, nodeID uint64
+	for _, replica := range rangeDescriptor.GetReplicas() {
+		if replica.GetNodeId() == targetNodeID {
+			clusterID = replica.GetClusterId()
+			nodeID = replica.GetNodeId()
+			break
+		}
+	}
+	if clusterID == 0 && nodeID == 0 {
+		return status.FailedPreconditionErrorf("No node with id %d found in range: %+v", targetNodeID, rangeDescriptor)
+	}
+
+	grpcAddr, _, err := s.registry.ResolveGRPC(clusterID, nodeID)
+	if err != nil {
+		return err
+	}
+
+	// Get the config change index for this cluster.
+	membership, err := s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	configChangeID := membership.ConfigChangeID
+
+	// Propose the config change (this removes the node from the raft cluster).
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		err := s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
+			}
+			return err
+		}
+		break
+	}
+
+	// Remove the data from the now stopped node.
+	c, err := s.apiClient.Get(ctx, grpcAddr)
+	if err != nil {
+		return err
+	}
+	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		ClusterId: clusterID,
+		NodeId:    nodeID,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Finally, update the range descriptor information to reflect the
+	// new membership of this range without the removed node.
+	return s.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
+}
+
+func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
+	newVal, err := s.sender.Increment(ctx, constants.LastNodeIDKey, uint64(n))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint64, 0, n)
+	for i := 0; i < n; i++ {
+		ids = append(ids, newVal-uint64(i))
+	}
+	return ids, nil
+}
+
+func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old, new *rfpb.RangeDescriptor) error {
+	oldBuf, err := proto.Marshal(old)
+	if err != nil {
+		return err
+	}
+	newBuf, err := proto.Marshal(new)
+	if err != nil {
+		return err
+	}
+	rangeLocalBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: newBuf,
+		},
+		ExpectedValue: oldBuf,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+
+	metaRangeDescriptorKey := keys.RangeMetaKey(new.GetRight())
+	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   metaRangeDescriptorKey,
+			Value: newBuf,
+		},
+		ExpectedValue: oldBuf,
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+
+	// first update the range descriptor in the range itself
+	rangeLocalRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, rangeLocalBatch)
+	if err != nil {
+		return err
+	}
+	_, err = rbuilder.NewBatchResponseFromProto(rangeLocalRsp).CASResponse(0)
+	if err != nil {
+		return err
+	}
+
+	// then update the metarange
+	metaRangeRsp, err := s.sender.SyncPropose(ctx, metaRangeDescriptorKey, metaRangeBatch)
+	if err != nil {
+		return err
+	}
+	_, err = rbuilder.NewBatchResponseFromProto(metaRangeRsp).CASResponse(0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	newDescriptor.Replicas = append(newDescriptor.Replicas, &rfpb.ReplicaDescriptor{
+		ClusterId: clusterID,
+		NodeId:    nodeID,
+	})
+	return s.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
+}
+
+func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, clusterID, nodeID uint64, oldDescriptor *rfpb.RangeDescriptor) error {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	for i, replica := range newDescriptor.Replicas {
+		if replica.GetNodeId() == nodeID {
+			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
+			break
+		}
+	}
+	return s.updateRangeDescriptor(ctx, clusterID, oldDescriptor, newDescriptor)
 }

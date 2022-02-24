@@ -37,6 +37,7 @@ go_library(
             "//proto:vmvfs_go_proto",
             "//server/environment",
             "//server/interfaces",
+            "//server/util/alert",
             "//server/util/disk",
             "//server/util/hash",
             "//server/util/log",

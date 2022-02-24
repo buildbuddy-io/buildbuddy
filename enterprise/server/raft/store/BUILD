@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "store",
@@ -10,9 +10,11 @@ go_library(
         "//enterprise/server/raft/config",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rangelease",
+        "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
@@ -21,11 +23,35 @@ go_library(
         "//server/gossip",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_golang_protobuf//proto:go_default_library",
+        "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_lni_dragonboat_v3//statemachine",
+    ],
+)
+
+go_test(
+    name = "store_test",
+    srcs = ["store_test.go"],
+    deps = [
+        ":store",
+        "//enterprise/server/raft/client",
+        "//enterprise/server/raft/rangecache",
+        "//enterprise/server/raft/registry",
+        "//enterprise/server/raft/replica",
+        "//enterprise/server/raft/sender",
+        "//proto:raft_go_proto",
+        "//server/gossip",
+        "//server/testutil/app",
+        "//server/testutil/testenv",
+        "//server/util/disk",
+        "@com_github_lni_dragonboat_v3//:dragonboat",
+        "@com_github_lni_dragonboat_v3//config",
+        "@com_github_lni_dragonboat_v3//raftio",
+        "@com_github_stretchr_testify//require",
     ],
 )
