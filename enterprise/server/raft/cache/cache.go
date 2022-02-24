@@ -61,7 +61,7 @@ type RaftCache struct {
 	raftAddress string
 	grpcAddress string
 
-	registry      *registry.DynamicNodeRegistry
+	registry      registry.NodeRegistry
 	gossipManager *gossip.GossipManager
 
 	nodeHost       *dragonboat.NodeHost
