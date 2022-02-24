@@ -60,6 +60,7 @@ type appConfig struct {
 	UserManagementEnabled     bool               `yaml:"user_management_enabled" usage:"If set, the user management page will be enabled in the UI."`
 	GlobalFilterEnabled       bool               `yaml:"global_filter_enabled" usage:"If set, the global filter will be enabled in the UI."`
 	TestGridV2Enabled         bool               `yaml:"test_grid_v2_enabled" usage:"Whether to enable test grid V2"`
+	DisableCertConfig         bool               `yaml:"disable_cert_config" usage:"If true, the certificate based auth option will not be shown in the config widget."`
 	UsageEnabled              bool               `yaml:"usage_enabled" usage:"If set, the usage page will be enabled in the UI."`
 	UsageStartDate            string             `yaml:"usage_start_date" usage:"If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z"`
 	UsageTrackingEnabled      bool               `yaml:"usage_tracking_enabled" usage:"If set, enable usage data collection."`
@@ -229,6 +230,7 @@ type authConfig struct {
 	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
 	AdminGroupID         string          `yaml:"admin_group_id" usage:"ID of a group whose members can perform actions only accessible to server admins."`
 	HttpsOnlyCookies     bool            `yaml:"https_only_cookies" usage:"If true, cookies will only be set over https connections."`
+	DisableRefreshToken  bool            `yaml:"disable_refresh_token" usage:"If true, the offline_access scope which requests refresh tokens will not be requested."`
 }
 
 type OauthProvider struct {
@@ -281,31 +283,32 @@ type RemoteExecutionConfig struct {
 }
 
 type ExecutorConfig struct {
-	AppTarget                string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
-	Pool                     string                    `yaml:"pool" usage:"Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified."`
-	RootDirectory            string                    `yaml:"root_directory" usage:"The root directory to use for build files."`
-	HostRootDirectory        string                    `yaml:"host_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
-	LocalCacheDirectory      string                    `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
-	LocalCacheSizeBytes      int64                     `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
-	DisableLocalCache        bool                      `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
-	DockerSocket             string                    `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
-	APIKey                   string                    `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
-	DockerMountMode          string                    `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
-	RunnerPool               RunnerPoolConfig          `yaml:"runner_pool"`
-	DockerNetHost            bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
-	DockerSiblingContainers  bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
-	DockerInheritUserIDs     bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
-	DefaultXcodeVersion      string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
-	EnableBareRunner         bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
-	EnableFirecracker        bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
-	ContainerRegistries      []ContainerRegistryConfig `yaml:"container_registries"`
-	EnableVFS                bool                      `yaml:"enable_vfs" usage:"Whether FUSE based filesystem is enabled."`
-	DefaultImage             string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
-	WarmupTimeoutSecs        int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
-	StartupWarmupMaxWaitSecs int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
-	ExclusiveTaskScheduling  bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
-	MemoryBytes              int64                     `yaml:"memory_bytes" usage:"Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var."`
-	MilliCPU                 int64                     `yaml:"millicpu" usage:"Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var."`
+	AppTarget                     string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
+	Pool                          string                    `yaml:"pool" usage:"Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified."`
+	RootDirectory                 string                    `yaml:"root_directory" usage:"The root directory to use for build files."`
+	HostRootDirectory             string                    `yaml:"host_root_directory" usage:"Path on the host where the executor container root directory is mounted."`
+	LocalCacheDirectory           string                    `yaml:"local_cache_directory" usage:"A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result."`
+	LocalCacheSizeBytes           int64                     `yaml:"local_cache_size_bytes" usage:"The maximum size, in bytes, to use for the local on-disk cache"`
+	DisableLocalCache             bool                      `yaml:"disable_local_cache" usage:"If true, a local file cache will not be used."`
+	DockerSocket                  string                    `yaml:"docker_socket" usage:"If set, run execution commands in docker using the provided socket."`
+	APIKey                        string                    `yaml:"api_key" usage:"API Key used to authorize the executor with the BuildBuddy app server."`
+	DockerMountMode               string                    `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
+	RunnerPool                    RunnerPoolConfig          `yaml:"runner_pool"`
+	DockerNetHost                 bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	DockerSiblingContainers       bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
+	DockerInheritUserIDs          bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
+	DefaultXcodeVersion           string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
+	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
+	FirecrackerMountWorkspaceFile bool                      `yaml:"firecracker_mount_workspace_file" usage:"Enables mounting workspace filesystem to improve performance of copying action outputs."`
+	ContainerRegistries           []ContainerRegistryConfig `yaml:"container_registries"`
+	EnableVFS                     bool                      `yaml:"enable_vfs" usage:"Whether FUSE based filesystem is enabled."`
+	DefaultImage                  string                    `yaml:"default_image" usage:"The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4"`
+	WarmupTimeoutSecs             int64                     `yaml:"warmup_timeout_secs" usage:"The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s"`
+	StartupWarmupMaxWaitSecs      int64                     `yaml:"startup_warmup_max_wait_secs" usage:"Maximum time to block startup while waiting for default image to be pulled. Default is no wait."`
+	ExclusiveTaskScheduling       bool                      `yaml:"exclusive_task_scheduling" usage:"If true, only one task will be scheduled at a time. Default is false"`
+	MemoryBytes                   int64                     `yaml:"memory_bytes" usage:"Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var."`
+	MilliCPU                      int64                     `yaml:"millicpu" usage:"Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var."`
 }
 
 type ContainerRegistryConfig struct {
@@ -316,7 +319,7 @@ type ContainerRegistryConfig struct {
 
 func (c *ExecutorConfig) GetAppTarget() string {
 	if c.AppTarget == "" {
-		return "grpcs://cloud.buildbuddy.io"
+		return "grpcs://remote.buildbuddy.io"
 	}
 	return c.AppTarget
 }
@@ -460,24 +463,7 @@ func init() {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(&sharedGeneralConfig).Elem())
 }
 
-func readConfig(fullConfigPath string) (*generalConfig, error) {
-	if fullConfigPath == "" {
-		return &sharedGeneralConfig, nil
-	}
-	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
-
-	_, err := os.Stat(fullConfigPath)
-
-	// If the file does not exist then we are SOL.
-	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
-	}
-
-	fileBytes, err := os.ReadFile(fullConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("Error reading config file: %s", err)
-	}
-
+func parseConfig(fileBytes []byte) (*generalConfig, error) {
 	// expand environment variables
 	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
 
@@ -497,12 +483,43 @@ func readConfig(fullConfigPath string) (*generalConfig, error) {
 	return &sharedGeneralConfig, nil
 }
 
+func readConfig(fullConfigPath string) (*generalConfig, error) {
+	if fullConfigPath == "" {
+		return &sharedGeneralConfig, nil
+	}
+	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
+
+	_, err := os.Stat(fullConfigPath)
+
+	// If the file does not exist then we are SOL.
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
+	}
+
+	fileBytes, err := os.ReadFile(fullConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("Error reading config file: %s", err)
+	}
+
+	return parseConfig(fileBytes)
+}
+
 type Configurator struct {
 	gc *generalConfig
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
 	conf, err := readConfig(configFilePath)
+	if err != nil {
+		return nil, err
+	}
+	return &Configurator{
+		gc: conf,
+	}, nil
+}
+
+func NewConfiguratorFromData(data []byte) (*Configurator, error) {
+	conf, err := parseConfig(data)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +654,10 @@ func (c *Configurator) GetAppUsageEnabled() bool {
 
 func (c *Configurator) GetAppTestGridV2Enabled() bool {
 	return c.gc.App.TestGridV2Enabled
+}
+
+func (c *Configurator) GetDisableCertConfig() bool {
+	return c.gc.App.DisableCertConfig
 }
 
 func (c *Configurator) GetAppUsageStartDate() string {
@@ -813,6 +834,10 @@ func (c *Configurator) GetSelfAuthEnabled() bool {
 
 func (c *Configurator) GetHttpsOnlyCookies() bool {
 	return c.gc.Auth.HttpsOnlyCookies
+}
+
+func (c *Configurator) GetDisableRefreshToken() bool {
+	return c.gc.Auth.DisableRefreshToken
 }
 
 func (c *Configurator) GetSSLConfig() *SSLConfig {

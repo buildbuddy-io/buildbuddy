@@ -259,11 +259,11 @@ type APIKeyGroup interface {
 }
 
 type AuthDB interface {
-	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
-	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
+	InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error
+	ReadSession(ctx context.Context, sessionID string) (*tables.Session, error)
+	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
-	ClearToken(ctx context.Context, subID string) error
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }
 

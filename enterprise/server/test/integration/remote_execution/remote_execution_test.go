@@ -378,11 +378,11 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "foo"})
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "FOO"})
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: "Pool", Value: "foo"},
+			{Name: "Pool", Value: "Foo"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
 		},

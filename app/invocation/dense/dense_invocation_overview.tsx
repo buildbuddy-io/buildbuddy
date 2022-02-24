@@ -31,7 +31,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
               {isBazelInvocation ? <>Invocation</> : <>Workflow invocation</>}
             </div>
             <div className="dense-invocation-invocation-id">
-              {this.props.invocationId} ({this.props.model.getStartDate()}, {this.props.model.getStartTime()})
+              {this.props.invocationId} ({this.props.model.getFormattedStartedDate()})
             </div>
           </div>
           <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
@@ -46,7 +46,7 @@ export default class DenseInvocationOverviewComponent extends React.Component {
               ) : (
                 <>1 action</>
               )}{" "}
-              on {this.props.model.getStartDate()} at {this.props.model.getStartTime()} for{" "}
+              on {this.props.model.getFormattedStartedDate()} for{" "}
               <span title={this.props.model.getDurationSeconds()}>{this.props.model.getTiming()}</span>
             </div>
           </div>

@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/jsonpb"
@@ -41,7 +42,8 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	}
 	dbh := h.env.GetDBHandle()
 	row := &struct{ InvocationWebhookURL string }{}
-	err := dbh.DB(ctx).Raw(
+	err := dbh.RawWithOptions(
+		ctx, db.Opts().WithStaleReads(),
 		"SELECT invocation_webhook_url FROM `Groups` WHERE group_id = ?",
 		groupID,
 	).Take(row).Error

@@ -60,8 +60,11 @@ const (
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
 
+	// How many workers to spin up for looking up invocations before webhooks are
+	// notified.
+	numWebhookInvocationLookupWorkers = 8
 	// How many workers to spin up for notifying webhooks.
-	numWebhookNotifierWorkers = 16
+	numWebhookNotifyWorkers = 16
 
 	// How long to wait before giving up on webhook requests.
 	webhookNotifyTimeout = 1 * time.Minute
@@ -198,7 +201,9 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 	case r.tasks <- req:
 		break
 	default:
-		log.Error("Failed to write cache stats: stats recorder task buffer is full")
+		alert.UnexpectedEvent(
+			"stats_recorder_channel_buffer_full",
+			"Failed to write cache stats: stats recorder task buffer is full")
 	}
 }
 
@@ -231,54 +236,73 @@ func readScoreCard(ctx context.Context, env environment.Env, invocationID string
 }
 
 func (r *statsRecorder) Start() {
-	r.eg = errgroup.Group{}
 	ctx := context.Background()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
+		metrics.StatsRecorderWorkers.Inc()
 		r.eg.Go(func() error {
+			defer metrics.StatsRecorderWorkers.Dec()
 			for task := range r.tasks {
-				// Apply the finalization delay relative to when the invocation was marked
-				// finalized, rather than relative to now. Otherwise each worker would be
-				// unnecessarily throttled.
-				time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
-				ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
-				if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
-					fillInvocationFromCacheStats(stats, ti)
-				}
-				if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
-					if err := writeScoreCard(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
-						log.Errorf("Error writing scorecard blob: %s", err)
-					}
-				}
-
-				updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
-				if err != nil {
-					log.Errorf("Failed to write cache stats for invocation: %s", err)
-				}
-				// Cleanup regardless of whether the stats are flushed successfully to
-				// the DB (since we won't retry the flush and we don't need these stats
-				// for any other purpose).
-				hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
-				if !updated {
-					return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
-				}
-
-				// Once cache stats are populated, notify the onStatsRecorded channel in
-				// a non-blocking fashion.
-				select {
-				case r.onStatsRecorded <- task.invocationJWT:
-					break
-				default:
-					log.Warningf("Failed to notify stats recorder listeners: channel buffer is full")
-				}
+				r.handleTask(ctx, task)
 			}
 			return nil
 		})
 	}
 }
 
+func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
+	start := time.Now()
+	defer func() {
+		metrics.StatsRecorderDuration.Observe(float64(time.Since(start).Microseconds()))
+	}()
+
+	// Apply the finalization delay relative to when the invocation was marked
+	// finalized, rather than relative to now. Otherwise each worker would be
+	// unnecessarily throttled.
+	time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
+	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
+	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
+		fillInvocationFromCacheStats(stats, ti)
+	}
+	if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
+		if err := writeScoreCard(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
+			log.Errorf("Error writing scorecard blob: %s", err)
+		}
+	}
+
+	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
+	if err != nil {
+		log.Errorf("Failed to write cache stats for invocation: %s", err)
+	}
+	// Cleanup regardless of whether the stats are flushed successfully to
+	// the DB (since we won't retry the flush and we don't need these stats
+	// for any other purpose).
+	hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
+	if !updated {
+		log.Warningf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+		// Don't notify the webhook; the more recent attempt should trigger
+		// the notification when it is finalized.
+		return
+	}
+
+	// Once cache stats are populated, notify the onStatsRecorded channel in
+	// a non-blocking fashion.
+	select {
+	case r.onStatsRecorded <- task.invocationJWT:
+		break
+	default:
+		alert.UnexpectedEvent(
+			"webhook_channel_buffer_full",
+			"Failed to notify webhook: channel buffer is full")
+	}
+}
+
 func (r *statsRecorder) Stop() {
-	// Wait for all EventHandler channels to be closed to ensure there will be
-	// no more calls to Enqueue.
+	// Wait for all EventHandler channels to be closed to ensure there will be no
+	// more calls to Enqueue.
+	// TODO(bduffany): This has a race condition where the server can be shutdown
+	// just after the stream request is accepted by the server but before calling
+	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
+	// shutdown to finish, which ensures all streaming requests have terminated.
 	r.openChannels.Wait()
 
 	r.mu.Lock()
@@ -303,6 +327,11 @@ type notifyWebhookTask struct {
 }
 
 func notifyWithTimeout(ctx context.Context, env environment.Env, t *notifyWebhookTask) error {
+	start := time.Now()
+	defer func() {
+		metrics.WebhookNotifyDuration.Observe(float64(time.Since(start).Microseconds()))
+	}()
+
 	ctx, cancel := context.WithTimeout(ctx, webhookNotifyTimeout)
 	defer cancel()
 	// Run the webhook using the authenticated user from the build event stream.
@@ -320,57 +349,44 @@ type webhookNotifier struct {
 	// invocations is a channel of finalized invocations. On each invocation
 	// sent to this channel, we notify all configured webhooks.
 	invocations <-chan *invocationJWT
-	// doneSendingTasks receives a signal after the invocations channel is closed
-	// and all buffered invocations in the channel have been processed, meaning
-	// no more tasks will be sent on the tasks channel.
-	doneSendingTasks chan struct{}
 
-	tasks chan *notifyWebhookTask
-	eg    errgroup.Group
+	tasks       chan *notifyWebhookTask
+	lookupGroup errgroup.Group
+	notifyGroup errgroup.Group
 }
 
 func newWebhookNotifier(env environment.Env, invocations <-chan *invocationJWT) *webhookNotifier {
 	return &webhookNotifier{
-		env:              env,
-		invocations:      invocations,
-		doneSendingTasks: make(chan struct{}),
-		tasks:            make(chan *notifyWebhookTask, 4096),
+		env:         env,
+		invocations: invocations,
+		tasks:       make(chan *notifyWebhookTask, 4096),
 	}
 }
 
 func (w *webhookNotifier) Start() {
-	w.eg = errgroup.Group{}
 	ctx := context.Background()
 
-	w.eg.Go(func() error {
-		// Listen for invocations that have been finalized and start a notify
-		// webhook task for each webhook.
-		for ij := range w.invocations {
-			invocation, err := w.lookupInvocation(ctx, ij)
-			if err != nil {
-				log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
-				continue
-			}
-
-			// Don't call webhooks for disconnected invocations.
-			if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
-				continue
-			}
-
-			for _, hook := range w.env.GetWebhooks() {
-				w.tasks <- &notifyWebhookTask{
-					hook:          hook,
-					invocationJWT: ij,
-					invocation:    invocation,
+	w.lookupGroup = errgroup.Group{}
+	for i := 0; i < numWebhookInvocationLookupWorkers; i++ {
+		metrics.WebhookInvocationLookupWorkers.Inc()
+		w.lookupGroup.Go(func() error {
+			defer metrics.WebhookInvocationLookupWorkers.Dec()
+			// Listen for invocations that have been finalized and start a notify
+			// webhook task for each webhook.
+			for ij := range w.invocations {
+				if err := w.lookupAndCreateTask(ctx, ij); err != nil {
+					log.Warningf("Failed to lookup invocation before notifying webhook: %s", err)
 				}
 			}
-		}
-		w.doneSendingTasks <- struct{}{}
-		return nil
-	})
+			return nil
+		})
+	}
 
-	for i := 0; i < numWebhookNotifierWorkers; i++ {
-		w.eg.Go(func() error {
+	w.notifyGroup = errgroup.Group{}
+	for i := 0; i < numWebhookNotifyWorkers; i++ {
+		metrics.WebhookNotifyWorkers.Inc()
+		w.notifyGroup.Go(func() error {
+			defer metrics.WebhookNotifyWorkers.Dec()
 			for task := range w.tasks {
 				if err := notifyWithTimeout(ctx, w.env, task); err != nil {
 					log.Warningf("Failed to notify webhook for invocation %s: %s", task.invocation.GetInvocationId(), err)
@@ -381,12 +397,41 @@ func (w *webhookNotifier) Start() {
 	}
 }
 
+func (w *webhookNotifier) lookupAndCreateTask(ctx context.Context, ij *invocationJWT) error {
+	start := time.Now()
+	defer func() {
+		metrics.WebhookInvocationLookupDuration.Observe(float64(time.Since(start).Microseconds()))
+	}()
+
+	invocation, err := w.lookupInvocation(ctx, ij)
+	if err != nil {
+		return err
+	}
+
+	// Don't call webhooks for disconnected invocations.
+	if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+		return nil
+	}
+
+	for _, hook := range w.env.GetWebhooks() {
+		w.tasks <- &notifyWebhookTask{
+			hook:          hook,
+			invocationJWT: ij,
+			invocation:    invocation,
+		}
+	}
+
+	return nil
+}
+
 func (w *webhookNotifier) Stop() {
 	// Make sure we are done sending tasks on the task channel before we close it.
-	<-w.doneSendingTasks
+	if err := w.lookupGroup.Wait(); err != nil {
+		log.Error(err.Error())
+	}
 	close(w.tasks)
 
-	if err := w.eg.Wait(); err != nil {
+	if err := w.notifyGroup.Wait(); err != nil {
 		log.Error(err.Error())
 	}
 }
@@ -700,10 +745,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
 				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
 				if numLinesToRetain != 0 {
-					// the number of lines curses can overwrite is 2 + the ui_actions shown:
-					// 1 for the progress tracker, 1 for each action, and 1 blank line.
+					// the number of lines curses can overwrite is 3 + the ui_actions shown:
+					// 1 for the progress tracker, 1 for each action, and 2 blank lines.
 					// 0 indicates that curses is not being used.
-					numLinesToRetain += 2
+					numLinesToRetain += 3
 				}
 				e.logWriter = eventlog.NewEventLogWriter(
 					e.ctx,

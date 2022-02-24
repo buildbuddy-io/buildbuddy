@@ -113,9 +113,7 @@ export default class InvocationOverviewComponent extends React.Component {
             <div className="title">{this.props.model.workflowConfigured.actionName}</div>
           )}
           {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
-          <div className="subtitle">
-            {this.props.model.getStartDate()} at {this.props.model.getStartTime()}
-          </div>
+          <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
         <div className="details">
           <div className="detail">
@@ -147,7 +145,7 @@ export default class InvocationOverviewComponent extends React.Component {
           {isBazelInvocation && (
             <div
               className="detail"
-              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured / ${this.props.model.buildMetrics?.targetMetrics.targetsLoaded} loaded`}>
+              title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured`}>
               <Target className="icon" />
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>

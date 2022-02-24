@@ -13,7 +13,7 @@ This guide assumes you're using [BuildBuddy Cloud](cloud.md) or [BuildBuddy Ente
 The very simplest Bazel command needed to enable RBE is the following:
 
 ```bash
-bazel build //... --remote_executor=grpcs://cloud.buildbuddy.io
+bazel build //... --remote_executor=grpcs://remote.buildbuddy.io
 ```
 
 This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that has no C/C++/CGO or Java dependencies will build just fine like this. Most interesting repos have some dependencies on C/C++/CGO or Java - so we'll need to tell our remote executors where to find tools like gcc or the JRE. We do this with [platforms](https://docs.bazel.build/versions/master/platforms.html) and [toolchains](https://docs.bazel.build/versions/master/toolchains.html).
@@ -108,7 +108,7 @@ Some tools like Bazel's zipper (@bazel_tools//tools/zip:zipper) use an attribute
 This can be a lot of flags to tack onto each bazel build, so instead you can move these to your `.bazelrc` file under the `remote` config block:
 
 ```bash
-build:remote --remote_executor=grpcs://cloud.buildbuddy.io
+build:remote --remote_executor=grpcs://remote.buildbuddy.io
 build:remote --host_platform=@buildbuddy_toolchain//:platform
 build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform
@@ -323,7 +323,7 @@ build:remote --platforms=@rbe_default//config:platform
 build:remote --define=EXECUTOR=remote
 
 # Enable remote execution so actions are performed on the remote systems.
-build:remote --remote_executor=grpcs://cloud.buildbuddy.io
+build:remote --remote_executor=grpcs://remote.buildbuddy.io
 
 # Enforce stricter environment rules, which eliminates some non-hermetic
 # behavior and therefore improves both the remote cache hit rate and the
