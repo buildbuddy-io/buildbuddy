@@ -55,11 +55,11 @@ type StreamingEventParser struct {
 	success                bool
 }
 
-func NewStreamingEventParser() *StreamingEventParser {
+func NewStreamingEventParser(screenWriter *terminal.ScreenWriter) *StreamingEventParser {
 	return &StreamingEventParser{
 		startTime:              nil,
 		endTime:                nil,
-		screenWriter:           terminal.NewScreenWriter(),
+		screenWriter:           screenWriter,
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
@@ -73,8 +73,10 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
-			sep.screenWriter.Write([]byte(p.Progress.Stderr))
-			sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			if sep.screenWriter != nil {
+				sep.screenWriter.Write([]byte(p.Progress.Stderr))
+				sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			}
 			// Now that we've updated our screenwriter, zero out
 			// progress output in the event so they don't eat up
 			// memory.
@@ -208,8 +210,10 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 		buildDuration = sep.endTime.Sub(*sep.startTime)
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
-	// TODO(siggisim): Do this rendering once on write, rather than on every read.
-	invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
+	if sep.screenWriter != nil {
+		// TODO(siggisim): Do this rendering once on write, rather than on every read.
+		invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
+	}
 }
 
 func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation) {

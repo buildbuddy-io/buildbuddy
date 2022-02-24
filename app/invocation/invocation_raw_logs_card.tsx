@@ -29,7 +29,11 @@ export default class RawLogsCardComponent extends React.Component {
   }
 
   handleMoreClicked() {
-    this.setState({ ...this.state, numPages: this.state.numPages + 1 });
+    this.setState({ numPages: this.state.numPages + 1 });
+  }
+
+  handleAllClicked() {
+    this.setState({ numPages: Number.MAX_SAFE_INTEGER });
   }
 
   handleFilterChange(event: any) {
@@ -88,9 +92,14 @@ export default class RawLogsCardComponent extends React.Component {
             {this.props.pageSize &&
               filteredEvents.length > this.props.pageSize * this.state.numPages &&
               !!this.state.numPages && (
-                <div className="more" onClick={this.handleMoreClicked.bind(this)}>
-                  See more events
-                </div>
+                <>
+                  <div className="more" onClick={this.handleMoreClicked.bind(this)}>
+                    See more events
+                  </div>
+                  <div className="more" onClick={this.handleAllClicked.bind(this)}>
+                    See all events
+                  </div>
+                </>
               )}
           </div>
         </div>

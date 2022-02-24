@@ -32,6 +32,7 @@ ts_library(
         "//app/terminal",
         "//app/util:clipboard",
         "//app/util:errors",
+        "//app/util:proto",
         "//proto:acl_ts_proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:cache_ts_proto",

@@ -37,32 +37,32 @@ func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 	return g.UseGroupOwnedExecutors
 }
 
-func (d *AuthDB) InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error {
-	token.SubID = subID
+func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
+	session.SessionID = sessionID
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		var existing tables.Token
-		if err := tx.Where("sub_id = ?", subID).First(&existing).Error; err != nil {
+		var existing tables.Session
+		if err := tx.Where("session_id = ?", sessionID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				return tx.Create(token).Error
+				return tx.Create(session).Error
 			}
 			return err
 		}
-		return tx.Model(&existing).Where("sub_id = ?", subID).Updates(token).Error
+		return tx.Model(&existing).Where("session_id = ?", sessionID).Updates(session).Error
 	})
 }
 
-func (d *AuthDB) ReadToken(ctx context.Context, subID string) (*tables.Token, error) {
-	ti := &tables.Token{}
-	existingRow := d.h.DB().Raw(`SELECT * FROM Tokens WHERE sub_id = ?`, subID)
-	if err := existingRow.Take(ti).Error; err != nil {
+func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
+	s := &tables.Session{}
+	existingRow := d.h.DB().Raw(`SELECT * FROM Sessions WHERE session_id = ?`, sessionID)
+	if err := existingRow.Take(s).Error; err != nil {
 		return nil, err
 	}
-	return ti, nil
+	return s, nil
 }
 
-func (d *AuthDB) ClearToken(ctx context.Context, subID string) error {
+func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	err := d.h.Transaction(ctx, func(tx *db.DB) error {
-		res := tx.Exec(`UPDATE Tokens SET access_token = "" WHERE sub_id = ?`, subID)
+		res := tx.Exec(`DELETE FROM Sessions WHERE session_id = ?`, sessionID)
 		return res.Error
 	})
 	return err
@@ -113,19 +113,6 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err
-		}
-		// Ensure the access token is set. If it's not, return an error
-		// that the frontend can recognize to trigger login again.
-		at := &struct{ AccessToken string }{}
-		err := tx.Raw(`SELECT access_token FROM Tokens WHERE sub_id = ?`, subID).Take(at).Error
-		if err != nil {
-			return status.UnauthenticatedError(err.Error())
-		}
-		// For now, we don't need to validate this token -- it's enough
-		// to ensure it was not cleared. If it was, that would indicate
-		// that the user had logged out (or been logged out by us).
-		if at.AccessToken == "" {
-			return status.PermissionDeniedError("user not logged in")
 		}
 		groupRows, err := tx.Raw(`
 			SELECT

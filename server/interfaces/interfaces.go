@@ -2,7 +2,6 @@ package interfaces
 
 import (
 	"context"
-	"database/sql"
 	"io"
 	"net/http"
 	"net/url"
@@ -225,10 +224,6 @@ type DBOptions interface {
 }
 
 type DBHandle interface {
-	// TODO(zoey): Remove these methods from the interface using new DB method
-	Exec(sql string, values ...interface{}) *gorm.DB
-	ScanRows(rows *sql.Rows, dest interface{}) error
-
 	DB() *gorm.DB
 	RawWithOptions(ctx context.Context, opts DBOptions, sql string, values ...interface{}) *gorm.DB
 	TransactionWithOptions(ctx context.Context, opts DBOptions, txn TxRunner) error
@@ -264,11 +259,11 @@ type APIKeyGroup interface {
 }
 
 type AuthDB interface {
-	InsertOrUpdateUserToken(ctx context.Context, subID string, token *tables.Token) error
-	ReadToken(ctx context.Context, subID string) (*tables.Token, error)
+	InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error
+	ReadSession(ctx context.Context, sessionID string) (*tables.Session, error)
+	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
-	ClearToken(ctx context.Context, subID string) error
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }
 

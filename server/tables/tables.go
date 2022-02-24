@@ -275,6 +275,21 @@ func (t *Token) TableName() string {
 	return "Tokens"
 }
 
+type Session struct {
+	// The subscriber ID, a concatenated string of the
+	// auth Issuer ID and the subcriber ID string.
+	SessionID    string `gorm:"primaryKey"`
+	SubID        string `gorm:"index:session_sub_id_index"`
+	AccessToken  string `gorm:"size:4096"`
+	RefreshToken string `gorm:"size:4096"`
+	Model
+	ExpiryUsec int64
+}
+
+func (s *Session) TableName() string {
+	return "Sessions"
+}
+
 type APIKey struct {
 	// The user-specified description of the API key that helps them
 	// remember what it's for.
@@ -858,6 +873,7 @@ func init() {
 	registerTable("UG", &UserGroup{})
 	registerTable("AK", &APIKey{})
 	registerTable("TO", &Token{})
+	registerTable("SE", &Session{})
 	registerTable("EX", &Execution{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("CL", &CacheLog{})

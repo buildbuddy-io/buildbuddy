@@ -154,7 +154,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
-		if err := i.h.ScanRows(rows, &stat); err != nil {
+		if err := i.h.DB().ScanRows(rows, &stat); err != nil {
 			return nil, err
 		}
 		rsp.TrendStat = append(rsp.TrendStat, stat)
@@ -258,7 +258,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	for rows.Next() {
 		stat := &inpb.InvocationStat{}
-		if err := i.h.ScanRows(rows, &stat); err != nil {
+		if err := i.h.DB().ScanRows(rows, &stat); err != nil {
 			return nil, err
 		}
 		rsp.InvocationStat = append(rsp.InvocationStat, stat)

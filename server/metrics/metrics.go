@@ -110,7 +110,7 @@ const (
 )
 
 var (
-	/// ## Invocation log uploads
+	/// ## Invocation build event metrics
 	///
 	/// All invocation metrics are recorded at the _end_ of each invocation.
 
@@ -177,6 +177,51 @@ var (
 	///   /
 	/// sum(rate(buildbuddy_invocation_build_event_count[5m]))
 	/// ```
+
+	StatsRecorderWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "stats_recorder_workers",
+		Help:      "Number of invocation stats recorder workers currently running.",
+	})
+
+	StatsRecorderDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "stats_recorder_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "How long it took to finalize an invocation's stats. This includes the time required to wait for all BuildBuddy apps to flush their local metrics to Redis (if applicable) and then record the metrics to the DB.",
+	})
+
+	WebhookInvocationLookupWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_invocation_lookup_workers",
+		Help:      "Number of webhook invocation lookup workers currently running.",
+	})
+
+	WebhookInvocationLookupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_invocation_lookup_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "How long it took to lookup an invocation before posting to the webhook.",
+	})
+
+	WebhookNotifyWorkers = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_notify_workers",
+		Help:      "Number of webhook notify workers currently running.",
+	})
+
+	WebhookNotifyDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "webhook_notify_duration_usec",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "How long it took to post an invocation proto to the webhook.",
+	})
 
 	/// ## Remote cache metrics
 	///

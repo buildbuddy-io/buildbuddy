@@ -54,7 +54,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	executions := make([]tables.Execution, 0)
 	for rows.Next() {
 		var exec tables.Execution
-		if err := dbh.ScanRows(rows, &exec); err != nil {
+		if err := dbh.DB().ScanRows(rows, &exec); err != nil {
 			return nil, err
 		}
 		executions = append(executions, exec)

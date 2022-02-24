@@ -1,5 +1,6 @@
 import { invocation as invocation_proto } from "../../proto/invocation_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
 export type PreProcessingOptions = {
   sortEvents?: boolean;
@@ -83,10 +84,13 @@ export function prepareForDiff(
         removeTimingData(buildEvent.structuredCommandLine);
       } else if (id?.buildMetrics) {
         delete buildEvent.buildMetrics.timingMetrics;
+        removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
       } else if (id?.started) {
         delete buildEvent.started.startTimeMillis;
+        delete buildEvent.started.startTime;
       } else if (id?.buildFinished) {
         delete buildEvent.finished.finishTimeMillis;
+        delete buildEvent.finished.finishTime;
       }
     }
 
@@ -106,6 +110,13 @@ function removeTimingData(commandLine: command_line.ICommandLine) {
   for (const section of commandLine.sections) {
     if (!section?.optionList?.option) continue;
     section.optionList.option = section.optionList.option.filter((option) => option.optionName !== "startup_time");
+  }
+}
+
+function removeTimingDataInActionSummary(actionSummary: build_event_stream.BuildMetrics.IActionSummary) {
+  for (const actionData of actionSummary?.actionData || []) {
+    delete actionData.firstStartedMs;
+    delete actionData.lastEndedMs;
   }
 }
 
