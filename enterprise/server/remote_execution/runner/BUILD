@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/remote_execution/containers/firecracker",
+        "//enterprise/server/remote_execution/containers/podman",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/remote_execution/workspace",
