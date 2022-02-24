@@ -20,6 +20,7 @@ import (
 )
 
 var (
+	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
 )
 
@@ -81,7 +82,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		err = killContainerIfRunning(ctx, containerName)
 	}
 	if err != nil {
-		log.Printf("WARNING: Failed to shut down docker container: %s\n", err.Error())
+		log.Warningf("Failed to shut down docker container: %s\n", err.Error())
 	}
 	return result
 }
@@ -95,8 +96,25 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	return runPodman(ctx, "run" /*workDir=*/, "", stdin, stdout, cmd.Arguments...)
 }
 
-func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
+func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+	// Try to avoid the `pull` command which results in a network roundtrip.
+	listResult := runPodman(ctx, "images", "", nil, nil, "--filter=reference="+c.image, "--format={{.ID}}")
+	if listResult.Error != nil {
+		return false, listResult.Error
+	}
+	if strings.TrimSpace(string(listResult.Stdout)) != "" {
+		// Found at least one image matching the ref; `docker run` should succeed
+		// without pulling the image.
+		return true, nil
+	}
+	return false, nil
+}
+
 func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	pullResult := runPodman(ctx, "pull", "", nil, nil, c.image)
+	if pullResult.Error != nil {
+		return pullResult.Error
+	}
 	return nil
 }
 func (c *podmanCommandContainer) Start(ctx context.Context) error   { return nil }
@@ -124,22 +142,17 @@ func generateContainerName() (string, error) {
 	return "buildbuddy_exec_" + suffix, nil
 }
 
+// TODO(luluz): replace this function with container.PullImageIfNecessary
 func (r *podmanCommandContainer) PullImageIfNecessary(ctx context.Context) error {
-	// Try to avoid the `pull` command which results in a network roundtrip.
-	listResult := runPodman(ctx, "images", "", nil, nil, "--filter=reference="+r.image, "--format={{.ID}}")
-	if listResult.Error != nil {
-		return listResult.Error
+	isCached, err := r.IsImageCached(ctx)
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(string(listResult.Stdout)) != "" {
-		// Found at least one image matching the ref; `docker run` should succeed
-		// without pulling the image.
+	if isCached {
 		return nil
 	}
-	pullResult := runPodman(ctx, "pull", "", nil, nil, r.image)
-	if pullResult.Error != nil {
-		return pullResult.Error
-	}
-	return nil
+
+	return r.PullImage(ctx, container.PullCredentials{})
 }
 
 func killContainerIfRunning(ctx context.Context, containerName string) error {
