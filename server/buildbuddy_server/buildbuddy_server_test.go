@@ -188,7 +188,7 @@ func TestDeleteInvocation(t *testing.T) {
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
 		&inpb.DeleteInvocationRequest{
 			RequestContext: testauth.RequestContext(user1, group1),
-			InvocationId: iid},
+			InvocationId:   iid},
 	)
 	assert.NoError(t, err)
 
