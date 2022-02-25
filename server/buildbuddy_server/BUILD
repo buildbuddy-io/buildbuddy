@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "buildbuddy_server",
@@ -34,5 +34,27 @@ go_library(
         "//server/util/status",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "buildbuddy_server_test",
+    srcs = ["buildbuddy_server_test.go"],
+    deps = [
+        ":buildbuddy_server",
+        "//proto:acl_go_proto",
+        "//proto:build_event_stream_go_proto",
+        "//proto:build_events_go_proto",
+        "//proto:invocation_go_proto",
+        "//proto:publish_build_event_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/build_event_protocol/build_event_handler",
+        "//server/environment",
+        "//server/tables",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_stretchr_testify//assert",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )
