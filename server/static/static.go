@@ -80,7 +80,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version string, jsPath string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
-			if strings.HasPrefix(r.URL.Path, rootPath) {
+			if strings.HasPrefix(r.URL.Path, strings.TrimSuffix(rootPath, "/")) {
 				r.URL.Path = "/"
 			}
 		}
