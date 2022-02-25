@@ -398,6 +398,7 @@ func StartAndRunServices(env environment.Env) {
 	// Register all of our HTTP handlers on the default mux.
 	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
 	for _, appRoute := range(appRoutes) {
+		// this causes the muxer to handle redirects from e. g. /path -> /path/
 		mux.Handle(appRoute, httpfilters.WrapExternalHandler(env, staticFileServer))
 	}
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
