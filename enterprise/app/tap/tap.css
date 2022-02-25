@@ -104,6 +104,7 @@
   /* Workaround to disable repaint-on-scroll for scrollable flex child,
      which causes bad scroll performance. */
   backface-visibility: hidden;
+  flex-grow: 1;
 }
 
 /* Workaround to add bottom padding to a scrollable flex child. */
