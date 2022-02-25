@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -923,7 +924,13 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 }
 
 func redisKeyForTask(taskID string) string {
-	return "task/" + taskID
+	if rbeutil.IsV2ExecutionID(taskID) {
+		// Use the taskID as the input to the Redis consistent hash function so that task information and pubsub
+		// channels end up on the same Redis shard.
+		return fmt.Sprintf("task/{%s}", taskID)
+	} else {
+		return fmt.Sprintf("task/%s", taskID)
+	}
 }
 
 func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {

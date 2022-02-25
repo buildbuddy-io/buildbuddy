@@ -10,7 +10,9 @@ go_library(
     ],
     deps = [
         "//server/interfaces",
+        "//server/util/alert",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )
@@ -22,7 +24,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
-        "//server/interfaces",
+        "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
