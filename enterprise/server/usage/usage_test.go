@@ -61,8 +61,9 @@ func timeStr(t time.Time) string {
 
 func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 	usages := []*tables.Usage{}
+	ctx := context.Background()
 	dbh := te.GetDBHandle()
-	rows, err := dbh.DB().Raw(`
+	rows, err := dbh.DB(ctx).Raw(`
 		SELECT * From Usages
 		ORDER BY group_id, period_start_usec, region ASC;
 	`).Rows()
@@ -70,7 +71,7 @@ func queryAllUsages(t *testing.T, te *testenv.TestEnv) []*tables.Usage {
 
 	for rows.Next() {
 		tu := &tables.Usage{}
-		err := dbh.DB().ScanRows(rows, tu)
+		err := dbh.DB(ctx).ScanRows(rows, tu)
 		require.NoError(t, err)
 		// Throw out Model timestamps to simplify assertions.
 		tu.Model = tables.Model{}
@@ -85,13 +86,14 @@ func requireNoFurtherDBAccess(t *testing.T, te *testenv.TestEnv) {
 	fail := func(db *gorm.DB) {
 		require.FailNowf(t, "unexpected query", "SQL: %s", db.Statement.SQL.String())
 	}
+	ctx := context.Background()
 	dbh := te.GetDBHandle()
-	dbh.DB().Callback().Create().Register("fail", fail)
-	dbh.DB().Callback().Query().Register("fail", fail)
-	dbh.DB().Callback().Update().Register("fail", fail)
-	dbh.DB().Callback().Delete().Register("fail", fail)
-	dbh.DB().Callback().Row().Register("fail", fail)
-	dbh.DB().Callback().Raw().Register("fail", fail)
+	dbh.DB(ctx).Callback().Create().Register("fail", fail)
+	dbh.DB(ctx).Callback().Query().Register("fail", fail)
+	dbh.DB(ctx).Callback().Update().Register("fail", fail)
+	dbh.DB(ctx).Callback().Delete().Register("fail", fail)
+	dbh.DB(ctx).Callback().Row().Register("fail", fail)
+	dbh.DB(ctx).Callback().Raw().Register("fail", fail)
 }
 
 type nopDistributedLock struct{}

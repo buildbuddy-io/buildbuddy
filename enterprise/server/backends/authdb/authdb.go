@@ -53,7 +53,7 @@ func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string
 
 func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
 	s := &tables.Session{}
-	existingRow := d.h.DB().Raw(`SELECT * FROM Sessions WHERE session_id = ?`, sessionID)
+	existingRow := d.h.DB(ctx).Raw(`SELECT * FROM Sessions WHERE session_id = ?`, sessionID)
 	if err := existingRow.Take(s).Error; err != nil {
 		return nil, err
 	}
