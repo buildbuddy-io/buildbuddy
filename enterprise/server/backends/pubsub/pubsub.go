@@ -154,7 +154,9 @@ const (
 	monitoredKeyPrefix = "monitoredPubSub/"
 	// For "monitored" channels, we publish a dummy message at channel creation time so we have a means to verify
 	// whether the object still exists in Redis.
-	dummyExistenceVerificationMessage = "this is a dummy message to verify existence of stream"
+	streamStartMarkerMessage = "this is a dummy message to verify existence of stream"
+	// Frequency at which we check whether the PubSub stream still exists in Redis.
+	monitoredChannelExistenceCheckInterval = 1 * time.Second
 )
 
 type StreamPubSub struct {
@@ -177,7 +179,7 @@ func (c *Channel) String() string {
 func (p *StreamPubSub) CreateMonitoredChannel(ctx context.Context, name string) error {
 	channelName := monitoredKeyPrefix + name
 	channel := &Channel{name: channelName}
-	if err := p.Publish(ctx, channel, dummyExistenceVerificationMessage); err != nil {
+	if err := p.Publish(ctx, channel, streamStartMarkerMessage); err != nil {
 		return err
 	}
 	return nil
@@ -229,7 +231,7 @@ func (p *StreamPubSub) deliverMsg(ctx context.Context, psChannel *Channel, outCh
 		alert.UnexpectedEvent("could not extract PubSub message contents", "error: %s", err)
 		return false
 	}
-	if data == dummyExistenceVerificationMessage {
+	if data == streamStartMarkerMessage {
 		return true
 	}
 
@@ -263,7 +265,7 @@ func (p *StreamPubSub) checkMonitoredChannelExists(ctx context.Context, channel 
 	if err != nil {
 		return status.UnavailableErrorf("unable to check existence of PubSub channel %q", channel.name)
 	}
-	if data != dummyExistenceVerificationMessage {
+	if data != streamStartMarkerMessage {
 		return status.UnavailableErrorf("PubSub channel %q does not start with verification message", channel.name)
 	}
 	return nil
@@ -284,7 +286,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 					return
 				}
 				select {
-				case <-time.After(1 * time.Second):
+				case <-time.After(monitoredChannelExistenceCheckInterval):
 				case <-ctx.Done():
 					return
 				}
