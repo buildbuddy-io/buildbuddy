@@ -7,6 +7,7 @@ ts_library(
     srcs = ["auth_service.ts"],
     deps = [
         ":user",
+        "//app/alert",
         "//app/capabilities",
         "//app/errors",
         "//app/router",
