@@ -47,21 +47,20 @@ export class AuthService {
         }
       });
 
-      setInterval(() => { 
-        if (this.user) this.refreshToken()
-      }, TOKEN_REFRESH_INTERVAL_SEC * 1000)
+    setInterval(() => {
+      if (this.user) this.refreshToken();
+    }, TOKEN_REFRESH_INTERVAL_SEC * 1000);
   }
 
   refreshToken() {
-    return this.getUser(new user.GetUserRequest())
-      .catch((error: any) => {
-        let parsedError = BuildBuddyError.parse(error);
-        console.warn(parsedError);
-        if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
-          alert_service.warning("Logged out");
-          this.emitUser(null);
-        }
-      });
+    return this.getUser(new user.GetUserRequest()).catch((error: any) => {
+      let parsedError = BuildBuddyError.parse(error);
+      console.warn(parsedError);
+      if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
+        alert_service.warning("Logged out");
+        this.emitUser(null);
+      }
+    });
   }
 
   refreshUser() {
