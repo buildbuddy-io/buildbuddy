@@ -43,6 +43,13 @@ import (
 )
 
 const (
+	// buildbuddyBazelrcPath is the path where we write a bazelrc file to be
+	// applied to all bazel commands. The path is relative to the runner workspace
+	// root, which notably is not the same as the bazel workspace / git repo root.
+	//
+	// This bazelrc takes lower precedence than the workspace .bazelrc.
+	buildbuddyBazelrcPath = "buildbuddy.bazelrc"
+
 	// Name of the dir into which the repo is cloned.
 	repoDirName = "repo-root"
 
@@ -55,13 +62,6 @@ const (
 	buildbuddyAPIKeyEnvVarName = "BUILDBUDDY_API_KEY"
 	repoUserEnvVarName         = "REPO_USER"
 	repoTokenEnvVarName        = "REPO_TOKEN"
-
-	// systemBazelrcPath is the path where we write the default bazelrc contents.
-	// This bazelrc takes lower precedence than the workspace .bazelrc and can
-	// be opted-out via `--nosystem_rc`.
-	//
-	// See https://docs.bazel.build/versions/main/guide.html#where-are-the-bazelrc-files
-	systemBazelrcPath = "/etc/bazel.bazelrc"
 
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
@@ -114,7 +114,6 @@ var (
 
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
-	writeSystemBazelrc      = flag.Bool("write_system_bazelrc", true, "Whether to write /etc/bazel.bazelrc.")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
@@ -171,7 +170,11 @@ type buildEventReporter struct {
 func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
-		iid = newUUID()
+		var err error
+		iid, err = newUUID()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	bep, err := build_event_publisher.New(besBackend, apiKey, iid)
@@ -391,6 +394,13 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 }
 
 func main() {
+	if err := run(); err != nil {
+		log.Errorf("%s", err)
+		os.Exit(int(gstatus.Code(err)))
+	}
+}
+
+func run() error {
 	flag.Parse()
 
 	ws := &workspace{
@@ -411,32 +421,42 @@ func main() {
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
-		fatal(status.WrapError(err, "ensure HOME"))
+		return status.WrapError(err, "ensure HOME")
 	}
 	// Make sure PATH is set.
 	if err := ensurePath(); err != nil {
-		fatal(status.WrapError(err, "ensure PATH"))
+		return status.WrapError(err, "ensure PATH")
 	}
 	// Write default bazelrc
-	if *writeSystemBazelrc {
-		if err := writeBazelrc(systemBazelrcPath); err != nil {
-			fatal(status.WrapError(err, "write "+systemBazelrcPath))
-		}
+	if err := writeBazelrc(buildbuddyBazelrcPath); err != nil {
+		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
+	// Delete bazelrc before exiting. Use abs path since we might cd after this
+	// point.
+	absBazelrcPath, err := filepath.Abs(buildbuddyBazelrcPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := os.Remove(absBazelrcPath); err != nil {
+			log.Error(err.Error())
+		}
+	}()
+
 	// Configure TERM to get prettier output from executed commands.
 	if err := os.Setenv("TERM", "xterm-256color"); err != nil {
-		fatal(status.WrapError(err, "could not setup TERM"))
+		return status.WrapError(err, "could not setup TERM")
 	}
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			fatal(err)
+			return err
 		}
 		bazeliskPath := filepath.Join(wd, bazeliskBinaryName)
 		if err := extractBazelisk(bazeliskPath); err != nil {
-			fatal(status.WrapError(err, "failed to extract bazelisk"))
+			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
 	}
@@ -445,42 +465,42 @@ func main() {
 		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
 		if _, err := os.Stat(repoDirName); err != nil {
 			log.Info("Workspace does not exist; exiting.")
-			return
+			return nil
 		}
 		if err := os.Chdir(repoDirName); err != nil {
-			fatal(err)
+			return err
 		}
 		printCommandLine(os.Stderr, *bazelCommand, "shutdown")
 		if err := runCommand(ctx, *bazelCommand, []string{"shutdown"}, nil, os.Stderr); err != nil {
-			fatal(err)
+			return err
 		}
 		log.Info("Shutdown complete.")
-		return
+		return nil
 	}
 
 	var buildEventReporter *buildEventReporter
 	if *reportLiveRepoSetupProgress {
 		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 		if err != nil {
-			fatal(err)
+			return err
 		}
 		buildEventReporter = ber
 		if err := buildEventReporter.Start(ws.startTime); err != nil {
-			fatal(status.WrapError(err, "could not publish started event"))
+			return status.WrapError(err, "could not publish started event")
 		}
 	}
 	if err := ws.setup(ctx, buildEventReporter); err != nil {
 		if buildEventReporter != nil {
 			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
 		}
-		fatal(status.WrapError(err, "failed to set up git repo"))
+		return status.WrapError(err, "failed to set up git repo")
 	}
 	cfg, err := readConfig()
 	if err != nil {
 		if buildEventReporter != nil {
 			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
 		}
-		fatal(status.WrapError(err, "failed to read BuildBuddy config"))
+		return status.WrapError(err, "failed to read BuildBuddy config")
 	}
 
 	var actions []*config.Action
@@ -509,22 +529,22 @@ func main() {
 		})
 	}
 	if *invocationID != "" && len(actions) > 1 {
-		fatal(status.InvalidArgumentError("Cannot specify --invocationID when running multiple actions"))
+		return status.InvalidArgumentError("Cannot specify --invocationID when running multiple actions")
 	}
 
-	ws.RunAllActions(ctx, actions, buildEventReporter)
+	return ws.RunAllActions(ctx, actions, buildEventReporter)
 }
 
 // RunAllActions runs the specified actions in serial, creating a synthetic
 // invocation for each one.
-func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action, buildEventReporter *buildEventReporter) {
+func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action, buildEventReporter *buildEventReporter) error {
 	for _, action := range actions {
 		startTime := time.Now()
 
 		if buildEventReporter == nil {
 			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 			if err != nil {
-				fatal(err)
+				return err
 			}
 			buildEventReporter = ber
 		}
@@ -560,9 +580,9 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		if err := ar.reporter.Start(startTime); err != nil {
 			log.Errorf("Failed to start reporter: %s", err)
 			if err := ar.reporter.Stop(noExitCode, failedExitCodeName); err != nil {
-				fatal(err)
+				return err
 			}
-			return
+			return err
 		}
 
 		if err := ar.Run(ctx, ws, startTime); err != nil {
@@ -574,9 +594,11 @@ func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action
 		}
 
 		if err := ar.reporter.Stop(exitCode, exitCodeName); err != nil {
-			fatal(err)
+			return err
 		}
 	}
+
+	return nil
 }
 
 func (r *buildEventReporter) Write(b []byte) (int, error) {
@@ -660,7 +682,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 	// invocation streams for them.
 	if ws.setupError == nil {
 		for _, bazelCmd := range ar.action.BazelCommands {
-			iid := newUUID()
+			iid, err := newUUID()
+			if err != nil {
+				return err
+			}
 			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
 				InvocationId: iid,
 				BazelCommand: bazelCmd,
@@ -827,6 +852,18 @@ func bazelArgs(cmd string) ([]string, error) {
 	startupFlags, err := shlex.Split(*bazelStartupFlags)
 	if err != nil {
 		return nil, err
+	}
+	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join("..", buildbuddyBazelrcPath))
+	// Bazel will treat the user's workspace .bazelrc file with lower precedence
+	// than our --bazelrc, which is undesired. So instead, explicitly add the
+	// workspace rc as a --bazelrc flag after ours, and also set --noworkspace_rc
+	// to prevent the workspace rc from getting loaded twice.
+	_, err = os.Stat(".bazelrc")
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if exists := (err == nil); exists {
+		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc=.bazelrc")
 	}
 	return append(startupFlags, tokens...), nil
 }
@@ -1235,12 +1272,12 @@ func actionDebugString(action *config.Action) string {
 	return string(yamlBytes)
 }
 
-func newUUID() string {
+func newUUID() (string, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
-		fatal(status.UnavailableError("failed to generate UUID"))
+		return "", status.UnavailableError("failed to generate UUID")
 	}
-	return id.String()
+	return id.String(), nil
 }
 
 func toShellToken(s string) string {
@@ -1248,9 +1285,4 @@ func toShellToken(s string) string {
 		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 	}
 	return s
-}
-
-func fatal(err error) {
-	log.Errorf("%s", err)
-	os.Exit(int(gstatus.Code(err)))
 }

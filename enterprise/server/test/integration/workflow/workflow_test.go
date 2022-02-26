@@ -74,9 +74,6 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// Use a pre-built bazel instead of invoking bazelisk, which significantly
 	// slows down the test.
 	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
-	// Don't write /etc/bazel.bazelrc in tests; it is not writable when running
-	// locally.
-	flags.Set(t, "remote_execution.workflows_ci_runner_disable_system_bazelrc", "true")
 	// Set events_api_url to point to the test BB app server (this gets
 	// propagated to the CI runner so it knows where to publish build events).
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
