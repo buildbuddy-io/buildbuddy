@@ -40,6 +40,7 @@ go_test(
     deps = [
         ":store",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/listener",
         "//enterprise/server/raft/rangecache",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",

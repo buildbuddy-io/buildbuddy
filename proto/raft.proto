@@ -167,36 +167,32 @@ message BatchCmdResponse {
 // Gossip API, data that is broadcast / consumed via the gossip network.
 //
 ////////////////////////////////////////////////////////////////////////////////
-message RegistryUpdate {
-  message Add {
-    uint64 cluster_id = 1;
-    uint64 node_id = 2;
-    string target = 3;
-  }
-  repeated Add adds = 1;
-
-  message Remove {
-    uint64 cluster_id = 1;
-    uint64 node_id = 2;
-    string target = 3;
-  }
-  repeated Remove removes = 2;
-
-  message RemoveCluster {
-    uint64 cluster_id = 1;
-  }
-  repeated RemoveCluster cluster_removes = 3;
-
-  string nhid = 4;
-  string grpc_address = 5;
-  string raft_address = 6;
-}
-
-// A RegistryQuery can be sent to gossip to resolve a node, the response
-// will be a RegistryUpdate with only Adds.
-message RegistryQuery {
+// A RegistryQuery can be sent via gossip to resolve a node. And other node
+// which has knowledge of the queried node may respond with a
+// RegistryQueryResponse.
+message RegistryQueryRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
+}
+
+message RegistryQueryResponse {
+  // Required.
+  string nhid = 1;
+
+  // Optional.
+  string grpc_address = 2;
+  string raft_address = 3;
+}
+
+message RegistryPushRequest {
+  // Required.
+  string nhid = 1;
+
+  // Optional.
+  string grpc_address = 2;
+  string raft_address = 3;
+
+  repeated ReplicaDescriptor replicas = 4;
 }
 
 // The auto-bringup protocol is very simple: if no previous data is found on

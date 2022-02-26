@@ -755,7 +755,8 @@ func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.Rang
 	configChangeID := membership.ConfigChangeID
 
 	// Gossip the address of the node that is about to be added.
-	s.registry.AddWithAddr(clusterID, nodeID, node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
+	s.registry.Add(clusterID, nodeID, node.GetNhid())
+	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
 	// Propose the config change (this adds the node to the raft cluster).
 	retrier := retry.DefaultWithContext(ctx)

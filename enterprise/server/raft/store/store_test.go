@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -50,7 +52,6 @@ func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.Gos
 	node, err := gossip.NewGossipManager(nodeAddr, seeds)
 	require.Nil(t, err)
 	t.Cleanup(func() {
-		node.Leave()
 		node.Shutdown()
 	})
 	return node
@@ -60,6 +61,7 @@ type storeFactory struct {
 	rootDir     string
 	fileDir     string
 	gossipAddrs []string
+	reg         registry.NodeRegistry
 }
 
 func newStoreFactory(t *testing.T) *storeFactory {
@@ -71,6 +73,7 @@ func newStoreFactory(t *testing.T) *storeFactory {
 	return &storeFactory{
 		rootDir: rootDir,
 		fileDir: fileDir,
+		reg:     registry.NewStaticNodeRegistry(1, nil),
 	}
 }
 
@@ -88,16 +91,15 @@ func (sf *storeFactory) NewStore(t *testing.T) (*store.Store, string) {
 	raftAddr := localAddr(t)
 	grpcAddr := localAddr(t)
 
-	var err error
-	var reg registry.NodeRegistry
+	reg := sf.reg
 	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
-		reg, err = registry.NewDynamicNodeRegistry(nhid, raftAddr, grpcAddr, gm, streamConnections, v)
-		return reg, err
+		return reg, nil
 	})
 
 	rootDir := filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs)))
 	fileDir := filepath.Join(sf.fileDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs)))
 
+	raftListener := listener.DefaultListener()
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
@@ -107,6 +109,8 @@ func (sf *storeFactory) NewStore(t *testing.T) (*store.Store, string) {
 			NodeRegistryFactory: nrf,
 		},
 		AddressByNodeHostID: false,
+		RaftEventListener:   raftListener,
+		SystemEventListener: raftListener,
 	}
 	nodeHost, err := dragonboat.NewNodeHost(nhc)
 	if err != nil {
@@ -117,7 +121,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*store.Store, string) {
 	apiClient := client.NewAPIClient(te, nodeHost.ID())
 	rc := rangecache.New()
 	send := sender.New(rc, reg, apiClient)
-
+	reg.AddNode(nodeHost.ID(), raftAddr, grpcAddr)
 	s := store.New(rootDir, fileDir, nodeHost, gm, send, reg, apiClient)
 	require.NotNil(t, s)
 	return s, nodeHost.ID()
@@ -153,4 +157,28 @@ func TestAddGetRemoveRange(t *testing.T) {
 	s1.RemoveRange(rd, r1)
 	gotRd = s1.GetRange(1)
 	require.Nil(t, gotRd)
+}
+
+func TestStartCluster(t *testing.T) {
+	sf := newStoreFactory(t)
+	s1, nhid1 := sf.NewStore(t)
+	s2, nhid2 := sf.NewStore(t)
+	s3, nhid3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*store.Store{s1, s2, s3}
+	initialMembers := map[uint64]string{
+		1: nhid1,
+		2: nhid2,
+		3: nhid3,
+	}
+	for i, s := range stores {
+		req := &rfpb.StartClusterRequest{
+			ClusterId:     uint64(1),
+			NodeId:        uint64(i + 1),
+			InitialMember: initialMembers,
+		}
+		_, err := s.StartCluster(ctx, req)
+		require.Nil(t, err)
+	}
 }
