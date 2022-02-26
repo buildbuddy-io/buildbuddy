@@ -129,6 +129,14 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 	return filtered
 }
 
+func splitCombinedForm(cf string) (string, string) {
+	i := strings.Index(cf, "=")
+	if i < 0 {
+		return cf, ""
+	}
+	return cf[:i], cf[i+1:]
+}
+
 func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
 	for _, section := range commandLine.Sections {
 		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
@@ -142,7 +150,9 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			// regex-based stripping.
 			stripRepoURLCredentialsFromCommandLineOption(option)
 			option.OptionValue = stripURLSecrets(option.OptionValue)
-			option.CombinedForm = stripURLSecrets(option.CombinedForm)
+			ck, cv := splitCombinedForm(option.CombinedForm)
+			cv = stripURLSecrets(cv)
+			option.CombinedForm = ck + "=" + cv
 
 			// Redact remote header values
 			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" || option.OptionName == "bes_header" || option.OptionName == "remote_downloader_header" {
