@@ -161,6 +161,7 @@ func TestLog(t *testing.T) {
 	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+	require.Equal(t, "hello world", resp.GetLog().GetContents())
 }
 
 func TestGetLogAuth(t *testing.T) {
@@ -200,16 +201,19 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/target:foo", "java_binary rule", "tag-a"), iid, 2))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/target:foo"), iid, 3))
+	err = channel.HandleEvent(streamRequest(progressEvent("hello world"), iid, 3))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/other/target:foo", "go_binary rule", "tag-b"), iid, 4))
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/target:foo"), iid, 4))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 5))
+	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/other/target:foo", "go_binary rule", "tag-b"), iid, 5))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 4))
+	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 6))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 7))
 	assert.NoError(t, err)
 
 	err = channel.FinalizeInvocation(iid)
@@ -285,6 +289,18 @@ func targetCompletedEvent(label string) *anypb.Any {
 						},
 					},
 				},
+			},
+		},
+	})
+	return progressAny
+}
+
+func progressEvent(stdout string) *anypb.Any {
+	progressAny := &anypb.Any{}
+	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Progress{
+			Progress: &build_event_stream.Progress{
+				Stdout: stdout,
 			},
 		},
 	})
