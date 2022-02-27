@@ -14,7 +14,7 @@ export { User };
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
-const TOKEN_REFRESH_INTERVAL_SEC = 30 * 60; // 30 minutes
+const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export class AuthService {
   user: User = null;
@@ -49,7 +49,7 @@ export class AuthService {
 
     setInterval(() => {
       if (this.user) this.refreshToken();
-    }, TOKEN_REFRESH_INTERVAL_SEC * 1000);
+    }, TOKEN_REFRESH_INTERVAL_MS);
   }
 
   refreshToken() {
