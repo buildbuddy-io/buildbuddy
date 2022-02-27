@@ -8,11 +8,13 @@ import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
 import router from "../router/router";
 import { User } from "./user";
+import alert_service from "../alert/alert_service";
 
 export { User };
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
+const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export class AuthService {
   user: User = null;
@@ -44,6 +46,21 @@ export class AuthService {
           this.onUserRpcError(error);
         }
       });
+
+    setInterval(() => {
+      if (this.user) this.refreshToken();
+    }, TOKEN_REFRESH_INTERVAL_MS);
+  }
+
+  refreshToken() {
+    return this.getUser(new user.GetUserRequest()).catch((error: any) => {
+      let parsedError = BuildBuddyError.parse(error);
+      console.warn(parsedError);
+      if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
+        alert_service.warning("Logged out");
+        this.emitUser(null);
+      }
+    });
   }
 
   refreshUser() {
