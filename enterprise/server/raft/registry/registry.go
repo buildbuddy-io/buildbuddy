@@ -76,8 +76,10 @@ func (n *StaticRegistry) Add(clusterID uint64, nodeID uint64, target string) {
 	}
 	key := raftio.GetNodeInfo(clusterID, nodeID)
 	existingTarget, ok := n.nodeTargets.LoadOrStore(key, target)
-	if ok && existingTarget != target {
-		log.Errorf("inconsistent target for %d %d, %s:%s", clusterID, nodeID, existingTarget, target)
+	if ok {
+		if existingTarget != target {
+			log.Errorf("inconsistent target for %d %d, %s:%s", clusterID, nodeID, existingTarget, target)
+		}
 	}
 }
 
@@ -149,16 +151,19 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 		log.Errorf("invalid target %s", target)
 		return
 	}
-	r, ok := n.targetRafts.LoadOrStore(target, raftAddress)
-	if ok && r.(string) != raftAddress {
-		log.Errorf("inconsistent raft for %s:%s", r, target)
-		return
+	if raftAddress != "" {
+		r, ok := n.targetRafts.LoadOrStore(target, raftAddress)
+		if ok && r.(string) != raftAddress {
+			log.Errorf("inconsistent raft for %s:%s", r, target)
+			return
+		}
 	}
-
-	g, ok := n.targetGrpcs.LoadOrStore(target, grpcAddress)
-	if ok && g.(string) != grpcAddress {
-		log.Errorf("inconsistent grpc for %s:%s", g, target)
-		return
+	if grpcAddress != "" {
+		g, ok := n.targetGrpcs.LoadOrStore(target, grpcAddress)
+		if ok && g.(string) != grpcAddress {
+			log.Errorf("inconsistent grpc for %s:%s", g, target)
+			return
+		}
 	}
 }
 
@@ -255,18 +260,22 @@ func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 		log.Warningf("Ignoring malformed registry query: %+v", req)
 		return
 	}
-	rsp := &rfpb.RegistryQueryResponse{}
-	nhid, _, err := d.ResolveNHID(req.GetClusterId(), req.GetNodeId())
+	n, _, err := d.sReg.ResolveNHID(req.GetClusterId(), req.GetNodeId())
 	if err != nil {
-		// If this registry doesn't contain this target; bail.
 		return
 	}
-	rsp.Nhid = nhid
-	if r, _, err := d.ResolveRaft(req.GetClusterId(), req.GetNodeId()); err == nil {
-		rsp.RaftAddress = r
+	r, _, err := d.sReg.ResolveRaft(req.GetClusterId(), req.GetNodeId())
+	if err != nil {
+		return
 	}
-	if g, _, err := d.ResolveGRPC(req.GetClusterId(), req.GetNodeId()); err == nil {
-		rsp.GrpcAddress = g
+	g, _, err := d.sReg.ResolveGRPC(req.GetClusterId(), req.GetNodeId())
+	if err != nil {
+		return
+	}
+	rsp := &rfpb.RegistryQueryResponse{
+		Nhid:        n,
+		RaftAddress: r,
+		GrpcAddress: g,
 	}
 	buf, err := proto.Marshal(rsp)
 	if err != nil {
@@ -327,9 +336,8 @@ func (d *DynamicNodeRegistry) queryPeers(clusterID uint64, nodeID uint64) {
 			continue
 		}
 		d.sReg.Add(clusterID, nodeID, rsp.GetNhid())
-		if rsp.GetGrpcAddress() != "" || rsp.GetRaftAddress() != "" {
-			d.sReg.AddNode(rsp.GetNhid(), rsp.GetRaftAddress(), rsp.GetGrpcAddress())
-		}
+		d.sReg.AddNode(rsp.GetNhid(), rsp.GetRaftAddress(), rsp.GetGrpcAddress())
+		stream.Close()
 		return
 	}
 }
@@ -337,15 +345,11 @@ func (d *DynamicNodeRegistry) queryPeers(clusterID uint64, nodeID uint64) {
 // Add adds the specified node and its target info to the registry.
 func (d *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string) {
 	d.sReg.Add(clusterID, nodeID, target)
-	d.pushUpdate(&rfpb.RegistryPushRequest{
-		Nhid: target,
-		Replicas: []*rfpb.ReplicaDescriptor{
-			&rfpb.ReplicaDescriptor{
-				ClusterId: clusterID,
-				NodeId:    nodeID,
-			},
-		},
-	})
+
+	// Raft library calls this method very often (bug?), so don't gossip
+	// these adds for now. Another option would be to track which ones have
+	// been gossipped and only gossip new ones, but for simplicity's sake
+	// we'll just skip it for now.
 }
 
 // Remove removes a remote from the node registry.
