@@ -127,7 +127,12 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, e
 }
 
 func runPodman(ctx context.Context, subCommand string, workDir string, stdin io.Reader, stdout io.Writer, args ...string) *interfaces.CommandResult {
-	command := []string{"podman", subCommand}
+	command := []string{
+		"podman",
+		"--events-backend=file",
+		"--cgroup-manager=cgroupfs",
+		subCommand,
+	}
 
 	command = append(command, args...)
 	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, workDir, stdin, stdout)
