@@ -47,8 +47,8 @@ func (f fakeOidcAuthenticator) getSlug() string {
 	return testSlug
 }
 
-func (f fakeOidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
-	return "https://auth.test"
+func (f fakeOidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) (string, error) {
+	return "https://auth.test", nil
 }
 
 func (f fakeOidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
