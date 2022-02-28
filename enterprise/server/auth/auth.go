@@ -91,10 +91,10 @@ const (
 	// WARNING: app/auth/auth_service.ts depends on these messages matching.
 	userNotFoundMsg = "User not found"
 	loggedOutMsg    = "User logged out"
+	ExpiredSessionMsg = "User session expired"
 )
 
 var (
-	authCodeOption []oauth2.AuthCodeOption = []oauth2.AuthCodeOption{oauth2.AccessTypeOffline, oauth2.ApprovalForce}
 	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 	jwtKey                                 = []byte("set_the_jwt_in_config") // set via config.
 )
@@ -231,7 +231,7 @@ func (t *userToken) GetSubID() string {
 type authenticator interface {
 	getSlug() string
 	getIssuer() string
-	authCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+	authCodeURL(state string, opts ...oauth2.AuthCodeOption) (string, error)
 	exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error)
 	checkAccessToken(ctx context.Context, jwt, accessToken string) error
@@ -267,12 +267,12 @@ func (a *oidcAuthenticator) getSlug() string {
 	return a.slug
 }
 
-func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+func (a *oidcAuthenticator) authCodeURL(state string, opts ...oauth2.AuthCodeOption) (string, error) {
 	oauth2Config, err := a.oauth2Config()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return oauth2Config.AuthCodeURL(state, opts...)
+	return oauth2Config.AuthCodeURL(state, opts...), nil
 }
 
 func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
@@ -316,7 +316,11 @@ func (a *oidcAuthenticator) renewToken(ctx context.Context, refreshToken string)
 		return nil, err
 	}
 	src := oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken})
-	return src.Token() // this actually renews the token
+	t, err := src.Token() // this actually renews the token
+	if err != nil {
+		return nil, status.PermissionDeniedErrorf("%s: %s", ExpiredSessionMsg, err.Error())
+	}
+	return t, nil
 }
 
 type apiKeyGroupCacheEntry struct {
@@ -532,6 +536,19 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 	return nil
 }
 
+func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthCodeOption {
+	options := []oauth2.AuthCodeOption{}
+	if !a.env.GetConfigurator().GetDisableRefreshToken() {
+		options = append(options, oauth2.AccessTypeOffline)
+	}
+	sessionID := GetCookie(r, sessionIDCookie)
+	// If a session doesn't already exist, force a consent screen.
+	if (sessionID == "") {
+		options = append(options, oauth2.ApprovalForce)
+	}
+	return options
+}
+
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	if apiKey == "" {
 		return nil, status.UnauthenticatedError("missing API key")
@@ -584,17 +601,17 @@ func groupClaims(akg interfaces.APIKeyGroup) *Claims {
 	}
 }
 
-func authContextWithError(ctx context.Context, err error) context.Context {
+func AuthContextWithError(ctx context.Context, err error) context.Context {
 	return context.WithValue(ctx, contextUserErrorKey, err)
 }
 
 func authContextFromClaims(ctx context.Context, claims *Claims, err error) context.Context {
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return AuthContextWithError(ctx, err)
 	}
 	tokenString, err := assembleJWT(ctx, claims)
 	if err != nil {
-		return authContextWithError(ctx, err)
+		return AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, contextTokenStringKey, tokenString)
 	// Note: we clear the error here in case it was set initially by the
@@ -777,8 +794,8 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 		ctx = context.WithValue(ctx, contextUserKey, userToken)
 	}
 	if err != nil {
-		return authContextWithError(ctx, err)
-	}
+		return AuthContextWithError(ctx, err)
+}
 	return authContextFromClaims(ctx, claims, err)
 }
 
@@ -923,7 +940,10 @@ func (a *OpenIDAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 }
 
 func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	issuer := r.URL.Query().Get(authIssuerParam)
+	issuer := GetCookie(r, authIssuerCookie)
+	if issuerParam := r.URL.Query().Get(authIssuerParam); issuerParam != "" {
+		issuer = issuerParam
+	}
 	auth := a.getAuthConfig(issuer)
 
 	if slug := r.URL.Query().Get(slugParam); slug != "" {
@@ -933,6 +953,11 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		issuer = auth.getIssuer()
+	}
+
+	if issuer == "" {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("No auth issuer set"))
+		return
 	}
 
 	if auth == nil {
@@ -951,6 +976,13 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Redirect to the login provider (and ask for a refresh token).
+	u, err:= auth.authCodeURL(state, a.getAuthCodeOptions(r)...)
+	if err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
 	SetCookie(a.env, w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
@@ -959,8 +991,6 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	// a token later in our /auth callback.
 	SetCookie(a.env, w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
 
-	// Redirect to the login provider (and ask for a refresh token).
-	u := auth.authCodeURL(state, authCodeOption...)
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
 
@@ -1023,7 +1053,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	code := r.URL.Query().Get("code")
-	oauth2Token, err := auth.exchange(ctx, code, authCodeOption...)
+	oauth2Token, err := auth.exchange(ctx, code, a.getAuthCodeOptions(r)...)
 	if err != nil {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code))
 		return

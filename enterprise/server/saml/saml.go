@@ -53,7 +53,7 @@ func NewSAMLAuthenticator(env environment.Env, fallback interfaces.Authenticator
 }
 
 func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
-	slug := r.URL.Query().Get(slugParam)
+	slug := a.getSlugFromRequest(r)
 	if slug == "" {
 		a.fallback.Login(w, r)
 		return
@@ -78,8 +78,12 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	ctx := r.Context()
-	if sp, err := a.serviceProviderFromRequest(r); err == nil {
-		session, _ := sp.Session.GetSession(r)
+	sp, err := a.serviceProviderFromRequest(r)
+	if err == nil {
+		session, err := sp.Session.GetSession(r) 
+		if err != nil {
+			return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("%s: %s", auth.ExpiredSessionMsg, err.Error()))
+		}
 		sa, ok := session.(samlsp.SessionWithAttributes)
 		if ok {
 			ctx = context.WithValue(ctx, contextSamlSessionKey, sa)
@@ -88,6 +92,11 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			return ctx
 		}
 	}
+
+	if slug := auth.GetCookie(r, slugCookie); err != nil && slug != "" {
+		return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
+	}
+
 	return a.fallback.AuthenticatedHTTPContext(w, r)
 }
 
@@ -137,7 +146,8 @@ func (a *SAMLAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	sp, err := a.serviceProviderFromRequest(r)
 	if err != nil {
 		log.Warningf("SAML Auth Failed: %s", err)
-		a.fallback.Auth(w, r)
+		auth.ClearCookie(a.env, w, slugCookie)
+		http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
 		return
 	}
 	// Store slug as a cookie to enable logins directly from the /acs page.
