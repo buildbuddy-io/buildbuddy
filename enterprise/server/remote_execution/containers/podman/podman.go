@@ -27,16 +27,16 @@ var (
 // podmanCommandContainer containerizes a command's execution using a Podman container.
 // between containers.
 type podmanCommandContainer struct {
-	image       string
-	hostRootDir string
+	image     string
+	buildRoot string
 	// workDir is the path to the workspace directory mounted to the container.
 	workDir string
 }
 
-func NewPodmanCommandContainer(image, hostRootDir string) container.CommandContainer {
+func NewPodmanCommandContainer(image, buildRoot string) container.CommandContainer {
 	return &podmanCommandContainer{
-		image:       image,
-		hostRootDir: hostRootDir,
+		image:     image,
+		buildRoot: buildRoot,
 	}
 }
 
@@ -67,7 +67,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		"--volume",
 		fmt.Sprintf(
 			"%s:%s",
-			filepath.Join(c.hostRootDir, filepath.Base(workDir)),
+			filepath.Join(c.buildRoot, filepath.Base(workDir)),
 			workDir,
 		),
 	}
