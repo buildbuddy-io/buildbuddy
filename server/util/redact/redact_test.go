@@ -108,7 +108,7 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"some_url", "https://token@foo.com", "https://foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
-		{"host_platform", "@buildbuddy_toolchain//:platform", "host_platform=@buildbuddy_toolchain//:platform"},
+		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
