@@ -568,16 +568,15 @@ func (p *Pool) hostBuildRoot() string {
 	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
 	}
-
-	if p.dockerClient != nil && p.podID != "" {
-		// Running on k8s -- return the path to the build root on the *host* node.
-		// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
-		// People might have conventions other than executor-data for the volume name + remotebuilds
-		// for the build root dir.
-		return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
+	if p.podID == "" {
+		// Probably running on bare metal -- return the build root directly.
+		return p.buildRoot
 	}
-
-	return p.buildRoot
+	// Running on k8s -- return the path to the build root on the *host* node.
+	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
+	// People might have conventions other than executor-data for the volume name + remotebuilds
+	// for the build root dir.
+	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
 func (p *Pool) dockerOptions() *docker.DockerOptions {
@@ -794,7 +793,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.hostBuildRoot(), opts,
 		)
 	case platform.PodmanContainerType:
-		ctr = podman.NewPodmanCommandContainer(props.ContainerImage, p.hostBuildRoot())
+		ctr = podman.NewPodmanCommandContainer(props.ContainerImage, p.buildRoot)
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
