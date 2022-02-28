@@ -141,16 +141,16 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
-		CmdLine:         []string{"213wZJyTUyhXkj381312@foo"},
-		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit"},
+		CmdLine:         []string{"213wZJyTUyhXkj381312@foo", "--flag=@repo//package"},
+		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit", "--flag=@repo//package"},
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
 
-	assert.Equal(t, []string{"foo"}, optionsParsed.CmdLine)
-	assert.Equal(t, []string{"explicit"}, optionsParsed.ExplicitCmdLine)
+	assert.Equal(t, []string{"foo", "--flag=@repo//package"}, optionsParsed.CmdLine)
+	assert.Equal(t, []string{"explicit", "--flag=@repo//package"}, optionsParsed.ExplicitCmdLine)
 }
 
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {

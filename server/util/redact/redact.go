@@ -53,11 +53,21 @@ func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "")
 }
 
-func stripURLSecretsFromList(inputs []string) []string {
-	for index, input := range inputs {
-		inputs[index] = stripURLSecrets(input)
+func stripURLSecretsFromCmdLine(tokens []string) []string {
+	for i, token := range tokens {
+		// Prevent flag name from being included in redaction pattern.
+		if strings.HasPrefix(token, "--") {
+			ck, cv := splitCombinedForm(token)
+			if cv == "" {
+				// No flag value to redact; keep flag name as-is.
+				continue
+			}
+			tokens[i] = ck + "=" + stripURLSecrets(cv)
+			continue
+		}
+		tokens[i] = stripURLSecrets(token)
 	}
-	return inputs
+	return tokens
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -270,8 +280,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
-			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
+			p.OptionsParsed.CmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.CmdLine)
+			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
