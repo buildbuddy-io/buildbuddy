@@ -54,7 +54,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "@com_github_google_uuid//:uuid",
-        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

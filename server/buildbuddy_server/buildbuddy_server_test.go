@@ -11,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/acl"
@@ -72,10 +72,10 @@ func TestGetInvocation(t *testing.T) {
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rsp, err := server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -83,15 +83,15 @@ func TestGetInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user1, group1),
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(rsp.Invocation))
-	assert.Equal(t, rsp.Invocation[0].InvocationId, iid)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.Invocation))
+	require.Equal(t, rsp.Invocation[0].InvocationId, iid)
 
 	rsp, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
 		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: ""}},
 	)
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	rsp, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user2),
@@ -99,7 +99,7 @@ func TestGetInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user2, group2),
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestSearchInvocation(t *testing.T) {
@@ -111,10 +111,10 @@ func TestSearchInvocation(t *testing.T) {
 	te.SetInvocationSearchService(nil)
 
 	_, err := createInvocationForTesting(te, user1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	_, err = server.SearchInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -122,7 +122,7 @@ func TestSearchInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user1, group1),
 			Query:          &inpb.InvocationQuery{User: user1}},
 	)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestUpdateInvocation(t *testing.T) {
@@ -132,10 +132,10 @@ func TestUpdateInvocation(t *testing.T) {
 	te.GetDBHandle().DB(context.Background()).Create(&tables.Group{GroupID: group1, SharingEnabled: true})
 
 	iid, err := createInvocationForTesting(te, user1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	_, err = server.UpdateInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -150,7 +150,7 @@ func TestUpdateInvocation(t *testing.T) {
 				OthersPermissions: &acl.ACL_Permissions{Read: true, Write: false},
 			}},
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rsp, err := server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user2),
@@ -158,9 +158,9 @@ func TestUpdateInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user2, group2),
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(rsp.Invocation))
-	assert.Equal(t, rsp.Invocation[0].InvocationId, iid)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.Invocation))
+	require.Equal(t, rsp.Invocation[0].InvocationId, iid)
 }
 
 func TestDeleteInvocation(t *testing.T) {
@@ -169,10 +169,10 @@ func TestDeleteInvocation(t *testing.T) {
 	te.SetAuthenticator(auth)
 
 	iid, err := createInvocationForTesting(te, user1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rsp, err := server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -180,9 +180,9 @@ func TestDeleteInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user1, group1),
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(rsp.Invocation))
-	assert.Equal(t, rsp.Invocation[0].InvocationId, iid)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.Invocation))
+	require.Equal(t, rsp.Invocation[0].InvocationId, iid)
 
 	_, err = server.DeleteInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -190,7 +190,7 @@ func TestDeleteInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user1, group1),
 			InvocationId:   iid},
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	rsp, err = server.GetInvocation(
 		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
@@ -198,5 +198,5 @@ func TestDeleteInvocation(t *testing.T) {
 			RequestContext: testauth.RequestContext(user1, group1),
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
