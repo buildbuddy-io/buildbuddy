@@ -80,7 +80,7 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	ctx := r.Context()
 	sp, err := a.serviceProviderFromRequest(r)
 	if err == nil {
-		session, err := sp.Session.GetSession(r) 
+		session, err := sp.Session.GetSession(r)
 		if err != nil {
 			return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("%s: %s", auth.ExpiredSessionMsg, err.Error()))
 		}

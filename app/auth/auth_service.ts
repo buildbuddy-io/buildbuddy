@@ -40,7 +40,10 @@ export class AuthService {
       .catch((error: any) => {
         if (BuildBuddyError.parse(error).code == "PermissionDenied" && String(error).includes("logged out")) {
           this.emitUser(null);
-        } else if (BuildBuddyError.parse(error).code == "PermissionDenied" && String(error).includes("session expired")) {
+        } else if (
+          BuildBuddyError.parse(error).code == "PermissionDenied" &&
+          String(error).includes("session expired")
+        ) {
           this.refreshToken();
         } else if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("not found")) {
           this.createUser();
@@ -59,7 +62,7 @@ export class AuthService {
       let parsedError = BuildBuddyError.parse(error);
       console.warn(parsedError);
       if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
-        this.handleTokenRefreshError()
+        this.handleTokenRefreshError();
       }
     });
   }
@@ -78,8 +81,8 @@ export class AuthService {
     // If we haven't tried to auto-relogin already, try it.
     localStorage.setItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY, "true");
     window.location.href = `/login/?${new URLSearchParams({
-      redirect_url: window.location.href
-    })}`;  
+      redirect_url: window.location.href,
+    })}`;
   }
 
   refreshUser() {

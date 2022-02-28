@@ -89,14 +89,14 @@ const (
 	apiKeyGroupCacheSize = 10000
 
 	// WARNING: app/auth/auth_service.ts depends on these messages matching.
-	userNotFoundMsg = "User not found"
-	loggedOutMsg    = "User logged out"
+	userNotFoundMsg   = "User not found"
+	loggedOutMsg      = "User logged out"
 	ExpiredSessionMsg = "User session expired"
 )
 
 var (
-	apiKeyRegex                            = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
-	jwtKey                                 = []byte("set_the_jwt_in_config") // set via config.
+	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
+	jwtKey      = []byte("set_the_jwt_in_config") // set via config.
 )
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
@@ -543,7 +543,7 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 	}
 	sessionID := GetCookie(r, sessionIDCookie)
 	// If a session doesn't already exist, force a consent screen.
-	if (sessionID == "") {
+	if sessionID == "" {
 		options = append(options, oauth2.ApprovalForce)
 	}
 	return options
@@ -795,7 +795,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	}
 	if err != nil {
 		return AuthContextWithError(ctx, err)
-}
+	}
 	return authContextFromClaims(ctx, claims, err)
 }
 
@@ -977,7 +977,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect to the login provider (and ask for a refresh token).
-	u, err:= auth.authCodeURL(state, a.getAuthCodeOptions(r)...)
+	u, err := auth.authCodeURL(state, a.getAuthCodeOptions(r)...)
 	if err != nil {
 		redirectWithError(w, r, err)
 		return
