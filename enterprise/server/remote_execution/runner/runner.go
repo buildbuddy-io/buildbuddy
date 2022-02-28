@@ -568,15 +568,16 @@ func (p *Pool) hostBuildRoot() string {
 	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
 	}
-	if p.podID == "" {
-		// Probably running on bare metal -- return the build root directly.
-		return p.buildRoot
+
+	if p.dockerClient != nil && p.podID != "" {
+		// Running on k8s -- return the path to the build root on the *host* node.
+		// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
+		// People might have conventions other than executor-data for the volume name + remotebuilds
+		// for the build root dir.
+		return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 	}
-	// Running on k8s -- return the path to the build root on the *host* node.
-	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
-	// People might have conventions other than executor-data for the volume name + remotebuilds
-	// for the build root dir.
-	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
+
+	return p.buildRoot
 }
 
 func (p *Pool) dockerOptions() *docker.DockerOptions {
