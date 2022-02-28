@@ -129,6 +129,12 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 	return filtered
 }
 
+// splitCombinedForm splits a combined form like `--flag_name=value` around
+// the first "=", returning "--flag_name", "value".
+//
+// Note that the value may be empty, and the equal sign may be omitted. In both
+// cases, "--flag_name", "" would be returned. Note also that the value can
+// itself contain "=".
 func splitCombinedForm(cf string) (string, string) {
 	i := strings.Index(cf, "=")
 	if i < 0 {
@@ -150,9 +156,9 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			// regex-based stripping.
 			stripRepoURLCredentialsFromCommandLineOption(option)
 			option.OptionValue = stripURLSecrets(option.OptionValue)
-			ck, cv := splitCombinedForm(option.CombinedForm)
-			cv = stripURLSecrets(cv)
-			option.CombinedForm = ck + "=" + cv
+			if name, value := splitCombinedForm(option.CombinedForm); value != "" {
+				option.CombinedForm = name + "=" + stripURLSecrets(value)
+			}
 
 			// Redact remote header values
 			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" || option.OptionName == "bes_header" || option.OptionName == "remote_downloader_header" {
