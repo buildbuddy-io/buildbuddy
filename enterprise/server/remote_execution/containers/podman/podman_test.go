@@ -9,6 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -42,7 +44,11 @@ func TestHelloWorld(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	podman := podman.NewPodmanCommandContainer("docker.io/library/busybox", rootDir)
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir)
 	result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
 
 	if result.Error != nil {
