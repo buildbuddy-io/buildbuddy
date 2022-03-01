@@ -78,8 +78,7 @@ func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	ctx := r.Context()
-	sp, err := a.serviceProviderFromRequest(r)
-	if err == nil {
+	if sp, err := a.serviceProviderFromRequest(r); err == nil {
 		session, err := sp.Session.GetSession(r)
 		if err != nil {
 			return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("%s: %s", auth.ExpiredSessionMsg, err.Error()))
