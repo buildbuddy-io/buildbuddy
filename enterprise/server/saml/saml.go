@@ -94,7 +94,6 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	} else if slug := auth.GetCookie(r, slugCookie); slug != "" {
 		return auth.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))
 	}
-
 	return a.fallback.AuthenticatedHTTPContext(w, r)
 }
 
