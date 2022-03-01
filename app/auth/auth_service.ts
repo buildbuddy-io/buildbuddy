@@ -8,12 +8,12 @@ import errorService from "../errors/error_service";
 import { BuildBuddyError } from "../../app/util/errors";
 import router from "../router/router";
 import { User } from "./user";
-import alert_service from "../alert/alert_service";
 
 export { User };
 
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
+const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
 const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export class AuthService {
@@ -35,11 +35,16 @@ export class AuthService {
     let request = new user.GetUserRequest();
     this.getUser(request)
       .then((response: user.GetUserResponse) => {
-        this.emitUser(this.userFromResponse(response));
+        this.handleLoggedIn(response);
       })
       .catch((error: any) => {
         if (BuildBuddyError.parse(error).code == "PermissionDenied" && String(error).includes("logged out")) {
           this.emitUser(null);
+        } else if (
+          BuildBuddyError.parse(error).code == "PermissionDenied" &&
+          String(error).includes("session expired")
+        ) {
+          this.refreshToken();
         } else if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("not found")) {
           this.createUser();
         } else {
@@ -57,16 +62,33 @@ export class AuthService {
       let parsedError = BuildBuddyError.parse(error);
       console.warn(parsedError);
       if (parsedError?.code == "Unauthenticated" || parsedError?.code == "PermissionDenied") {
-        alert_service.warning("Logged out");
-        this.emitUser(null);
+        this.handleTokenRefreshError();
       }
     });
+  }
+
+  handleLoggedIn(response: user.GetUserResponse) {
+    localStorage.removeItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY);
+    this.emitUser(this.userFromResponse(response));
+  }
+
+  handleTokenRefreshError() {
+    // If we've already tried to auto-relogin and it didn't work, just log the user out.
+    if (localStorage.getItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY)) {
+      this.emitUser(null);
+      return;
+    }
+    // If we haven't tried to auto-relogin already, try it.
+    localStorage.setItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY, "true");
+    window.location.href = `/login/?${new URLSearchParams({
+      redirect_url: window.location.href,
+    })}`;
   }
 
   refreshUser() {
     return this.getUser(new user.GetUserRequest())
       .then((response: user.GetUserResponse) => {
-        this.emitUser(this.userFromResponse(response));
+        this.handleLoggedIn(response);
       })
       .catch((error: any) => {
         this.onUserRpcError(error);
