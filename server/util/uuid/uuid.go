@@ -67,8 +67,12 @@ func configDir() (string, error) {
 
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
-		// Home dir is not defined
-		return "", err
+		// If $HOME dir is not defined, fall back to "./".
+		if cwd, err := os.Getwd(); err == nil {
+			userConfigDir = cwd
+		} else {
+			return "", err
+		}
 	}
 	configDirPath := path.Join(userConfigDir, configDirName)
 	err = os.MkdirAll(configDirPath, 0755)
