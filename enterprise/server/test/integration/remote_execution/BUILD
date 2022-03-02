@@ -16,6 +16,7 @@ go_test(
         "//server/remote_cache/cachetools",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",

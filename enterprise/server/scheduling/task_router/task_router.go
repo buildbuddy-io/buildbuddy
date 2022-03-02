@@ -89,6 +89,8 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 	preferredSet := map[string]struct{}{}
 	ranked := make([]interfaces.ExecutionNode, 0, len(nodes))
 
+	log.Debugf("Preferred executor IDs for %q: %v", key, preferredNodeIDs)
+
 	// Place all preferred nodes first (in the order that they appear in the Redis
 	// list), then the remaining ones in shuffled order.
 	for _, id := range preferredNodeIDs[:minInt(preferredNodeLimit, len(preferredNodeIDs))] {
@@ -135,6 +137,8 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
 		return
 	}
+
+	log.Debugf("Preferred executor %q added to %q", executorID, key)
 }
 
 // getPreferredNodeLimit returns the max number of nodes that should be stored
