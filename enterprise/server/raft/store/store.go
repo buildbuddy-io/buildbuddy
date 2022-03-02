@@ -334,12 +334,6 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 	return rc, err
 }
 
-// TODO(check cluster has been added / dont care if it's published)
-func (s *Store) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	rsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, batch)
-	return rsp, err
-}
-
 func (s *Store) isLeader(clusterID uint64) bool {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
