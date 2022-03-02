@@ -53,11 +53,21 @@ func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "")
 }
 
-func stripURLSecretsFromList(inputs []string) []string {
-	for index, input := range inputs {
-		inputs[index] = stripURLSecrets(input)
+func stripURLSecretsFromCmdLine(tokens []string) []string {
+	for i, token := range tokens {
+		// Prevent flag name from being included in redaction pattern.
+		if strings.HasPrefix(token, "--") {
+			ck, cv := splitCombinedForm(token)
+			if cv == "" {
+				// No flag value to redact; keep flag name as-is.
+				continue
+			}
+			tokens[i] = ck + "=" + stripURLSecrets(cv)
+			continue
+		}
+		tokens[i] = stripURLSecrets(token)
 	}
-	return inputs
+	return tokens
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -129,6 +139,20 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 	return filtered
 }
 
+// splitCombinedForm splits a combined form like `--flag_name=value` around
+// the first "=", returning "--flag_name", "value".
+//
+// Note that the value may be empty, and the equal sign may be omitted. In both
+// cases, "--flag_name", "" would be returned. Note also that the value can
+// itself contain "=".
+func splitCombinedForm(cf string) (string, string) {
+	i := strings.Index(cf, "=")
+	if i < 0 {
+		return cf, ""
+	}
+	return cf[:i], cf[i+1:]
+}
+
 func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars []string) {
 	for _, section := range commandLine.Sections {
 		p, ok := section.SectionType.(*clpb.CommandLineSection_OptionList)
@@ -142,7 +166,9 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			// regex-based stripping.
 			stripRepoURLCredentialsFromCommandLineOption(option)
 			option.OptionValue = stripURLSecrets(option.OptionValue)
-			option.CombinedForm = stripURLSecrets(option.CombinedForm)
+			if name, value := splitCombinedForm(option.CombinedForm); value != "" {
+				option.CombinedForm = name + "=" + stripURLSecrets(value)
+			}
 
 			// Redact remote header values
 			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" || option.OptionName == "bes_header" || option.OptionName == "remote_downloader_header" {
@@ -254,8 +280,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			p.OptionsParsed.CmdLine = stripURLSecretsFromList(p.OptionsParsed.CmdLine)
-			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromList(p.OptionsParsed.ExplicitCmdLine)
+			p.OptionsParsed.CmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.CmdLine)
+			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{

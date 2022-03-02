@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -26,6 +27,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
 // A prefix specifying which ID encoding scheme we're using.
@@ -187,13 +189,21 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 		return nil, status.InvalidArgumentErrorf("LogSelector must contain a valid invocation_id")
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	chunkReq := &elpb.GetEventLogChunkRequest{
+		InvocationId: req.GetSelector().GetInvocationId(),
+		ChunkId:      req.GetPageToken(),
+	}
+
+	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
 	if err != nil {
 		return nil, err
 	}
 
 	return &apipb.GetLogResponse{
-		Log: &apipb.Log{Contents: inv.ConsoleBuffer},
+		Log: &apipb.Log{
+			Contents: string(resp.GetBuffer()),
+		},
+		NextPageToken: resp.GetNextChunkId(),
 	}, nil
 }
 

@@ -5,7 +5,7 @@ export type Alert = {
   type: AlertType;
 };
 
-export type AlertType = "error" | "success";
+export type AlertType = "error" | "success" | "warning";
 
 export class AlertService {
   alerts = new Subject<Alert>();
@@ -18,6 +18,10 @@ export class AlertService {
 
   success(message: string) {
     this.show({ message, type: "success" });
+  }
+
+  warning(message: string) {
+    this.show({ message, type: "warning" });
   }
 
   error(message: string) {

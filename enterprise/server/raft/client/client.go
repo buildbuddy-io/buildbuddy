@@ -250,29 +250,39 @@ func (c *APIClient) MultiWriter(ctx context.Context, peerHeaders []*PeerHeader, 
 	return mwc, nil
 }
 
-func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
 	if _, ok := ctx.Deadline(); !ok {
 		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 		ctx = c
 	}
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		err := nhf(ctx)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
+			}
+			return err
+		}
+		break
+	}
+	return nil
+}
 
+func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	sesh := nodehost.GetNoOPSession(clusterID)
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 	var raftResponse dbsm.Result
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
+	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return nil, err
-		}
-		break
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	batchResponse := &rfpb.BatchCmdResponse{}
 	if err := proto.Unmarshal(raftResponse.Data, batchResponse); err != nil {
@@ -282,28 +292,18 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 }
 
 func SyncReadLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, DefaultContextTimeout)
-		defer cancel()
-		ctx = c
-	}
-
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
 	}
 
 	var raftResponseIface interface{}
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
+	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		raftResponseIface, err = nodehost.SyncRead(ctx, clusterID, buf)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return nil, err
-		}
-		break
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 	buf, ok := raftResponseIface.([]byte)
 	if !ok {

@@ -59,7 +59,7 @@ fi
 # Note that all indirect imports are in the second block if and only if
 # we see two consecutive "require (" lines as the first 2 lines. So we just
 # check for that here.
-first_two_lines=$( (grep -E '(^require \(|// indirect)' go.mod || true) | head -n 2)
+first_two_lines=$( (grep -E '(^require \(|// indirect)' go.mod 2>/dev/null || true) | head -n 2)
 if [[ $(echo "$first_two_lines" | uniq) != 'require (' ]]; then
   echo "ERROR: Found direct and indirect imports mixed within the same require() block in go.mod" >&2
   echo "Please fix by manually merging all require() blocks into a single block, then running tools/fix_go_deps.sh" >&2

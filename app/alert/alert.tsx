@@ -1,7 +1,7 @@
 import React from "react";
 import { Subscription } from "rxjs";
 import alertService, { Alert, AlertType } from "./alert_service";
-import { XCircle, CheckCircle } from "lucide-react";
+import { XCircle, CheckCircle, AlertCircle } from "lucide-react";
 
 interface State {
   alert?: Alert;
@@ -13,6 +13,7 @@ const DISPLAY_DURATION_MS = 4000;
 const ICONS: Record<AlertType, JSX.Element> = {
   error: <XCircle className="icon red" />,
   success: <CheckCircle className="icon green" />,
+  warning: <AlertCircle className="icon orange" />,
 };
 
 export default class AlertComponent extends React.Component<{}, State> {

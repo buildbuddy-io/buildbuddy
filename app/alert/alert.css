@@ -21,6 +21,10 @@
   background: #c8e6c9;
 }
 
+.alert-banner.alert-type-warning {
+  background: #fffde7;
+}
+
 .alert-banner.hidden {
   pointer-events: none;
   opacity: 0;

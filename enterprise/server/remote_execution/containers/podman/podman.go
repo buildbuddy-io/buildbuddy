@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -27,16 +28,21 @@ var (
 // podmanCommandContainer containerizes a command's execution using a Podman container.
 // between containers.
 type podmanCommandContainer struct {
-	image       string
-	hostRootDir string
+	env            environment.Env
+	imageCacheAuth *container.ImageCacheAuthenticator
+
+	image     string
+	buildRoot string
 	// workDir is the path to the workspace directory mounted to the container.
 	workDir string
 }
 
-func NewPodmanCommandContainer(image, hostRootDir string) container.CommandContainer {
+func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string) container.CommandContainer {
 	return &podmanCommandContainer{
-		image:       image,
-		hostRootDir: hostRootDir,
+		env:            env,
+		imageCacheAuth: imageCacheAuth,
+		image:          image,
+		buildRoot:      buildRoot,
 	}
 }
 
@@ -50,7 +56,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
 		return result
 	}
-	if err := c.PullImageIfNecessary(ctx); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
@@ -67,7 +73,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		"--volume",
 		fmt.Sprintf(
 			"%s:%s",
-			filepath.Join(c.hostRootDir, filepath.Base(workDir)),
+			filepath.Join(c.buildRoot, filepath.Base(workDir)),
 			workDir,
 		),
 	}
@@ -127,7 +133,12 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, e
 }
 
 func runPodman(ctx context.Context, subCommand string, workDir string, stdin io.Reader, stdout io.Writer, args ...string) *interfaces.CommandResult {
-	command := []string{"podman", subCommand}
+	command := []string{
+		"podman",
+		"--events-backend=file",
+		"--cgroup-manager=cgroupfs",
+		subCommand,
+	}
 
 	command = append(command, args...)
 	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, workDir, stdin, stdout)
@@ -140,19 +151,6 @@ func generateContainerName() (string, error) {
 		return "", err
 	}
 	return "buildbuddy_exec_" + suffix, nil
-}
-
-// TODO(luluz): replace this function with container.PullImageIfNecessary
-func (r *podmanCommandContainer) PullImageIfNecessary(ctx context.Context) error {
-	isCached, err := r.IsImageCached(ctx)
-	if err != nil {
-		return err
-	}
-	if isCached {
-		return nil
-	}
-
-	return r.PullImage(ctx, container.PullCredentials{})
 }
 
 func killContainerIfRunning(ctx context.Context, containerName string) error {
