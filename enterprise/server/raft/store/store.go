@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
@@ -395,7 +394,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 	if req.GetNodeId() == nodeIDs[len(nodeIDs)-1] {
 		time.Sleep(100 * time.Millisecond)
-		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
+		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetClusterId(), req.GetBatch())
 		if err != nil {
 			return nil, err
 		}
@@ -405,7 +404,10 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	if err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId()); err != nil {
+	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId())
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &rfpb.RemoveDataResponse{}, nil
@@ -416,7 +418,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return nil, err
 	}
-	batchResponse, err := s.syncProposeLocal(ctx, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
+	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
 		return nil, err
 	}
@@ -430,27 +432,8 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return nil, err
 	}
-	buf, err := proto.Marshal(req.GetBatch())
+	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
-		return nil, err
-	}
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
-		defer cancel()
-		ctx = c
-	}
-	raftResponseIface, err := s.nodeHost.SyncRead(ctx, req.GetHeader().GetReplica().GetClusterId(), buf)
-	if err != nil {
-		return nil, err
-	}
-
-	buf, ok := raftResponseIface.([]byte)
-	if !ok {
-		return nil, status.FailedPreconditionError("SyncRead returned a non-[]byte response.")
-	}
-
-	batchResponse := &rfpb.BatchCmdResponse{}
-	if err := proto.Unmarshal(buf, batchResponse); err != nil {
 		return nil, err
 	}
 
@@ -685,23 +668,14 @@ func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
 }
 
 func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*rfpb.ReplicaDescriptor, error) {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
-		defer cancel()
-		ctx = c
-	}
 	var membership *dragonboat.Membership
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		m, err := s.nodeHost.GetClusterMembership(ctx, clusterID)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return nil, err
-		}
-		membership = m
-		break
+	var err error
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		membership, err = s.nodeHost.GetClusterMembership(ctx, clusterID)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
@@ -772,12 +746,21 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 	return nil
 }
 
-func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
-		defer cancel()
-		ctx = c
+func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64, error) {
+	var membership *dragonboat.Membership
+	var err error
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		// Get the config change index for this cluster.
+		membership, err = s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+		return err
+	})
+	if err != nil {
+		return 0, err
 	}
+	return membership.ConfigChangeID, nil
+}
+
+func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error {
 	if len(rangeDescriptor.GetReplicas()) == 0 {
 		return status.FailedPreconditionErrorf("No replicas in range: %+v", rangeDescriptor)
 	}
@@ -791,27 +774,21 @@ func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.Rang
 	nodeID := nodeIDs[0]
 
 	// Get the config change index for this cluster.
-	membership, err := s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
 	if err != nil {
 		return err
 	}
-	configChangeID := membership.ConfigChangeID
 
 	// Gossip the address of the node that is about to be added.
 	s.registry.Add(clusterID, nodeID, node.GetNhid())
 	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
 	// Propose the config change (this adds the node to the raft cluster).
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		err := s.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				continue
-			}
-			return err
-		}
-		break
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return s.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
+	})
+	if err != nil {
+		return err
 	}
 
 	// Start the cluster on the newly added node.
@@ -834,11 +811,6 @@ func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.Rang
 }
 
 func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, targetNodeID uint64) error {
-	if _, ok := ctx.Deadline(); !ok {
-		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
-		defer cancel()
-		ctx = c
-	}
 	var clusterID, nodeID uint64
 	for _, replica := range rangeDescriptor.GetReplicas() {
 		if replica.GetNodeId() == targetNodeID {
@@ -857,27 +829,17 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 		return err
 	}
 
-	// Get the config change index for this cluster.
-	membership, err := s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
+	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
 	if err != nil {
-		log.Errorf("error getting clsuter membership: %s", err)
 		return err
 	}
-	configChangeID := membership.ConfigChangeID
 
 	// Propose the config change (this removes the node from the raft cluster).
-	retrier := retry.DefaultWithContext(ctx)
-	for retrier.Next() {
-		err := s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
-		if err != nil {
-			if dragonboat.IsTempError(err) {
-				log.Printf("Got temp err: %s", err)
-				continue
-			}
-			log.Errorf("dragonboat non-temp delete node err: %s", err)
-			return err
-		}
-		break
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
+	})
+	if err != nil {
+		return err
 	}
 
 	// Remove the data from the now stopped node.

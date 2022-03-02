@@ -24,7 +24,6 @@ go_library(
         "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",
-        "//server/util/retry",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_golang_protobuf//proto:go_default_library",
