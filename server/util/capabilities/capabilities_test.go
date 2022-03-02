@@ -63,6 +63,7 @@ func TestIsGranted_AnonymousUsageDisabled_AnonymousUser_False(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	flags.Set(t, "auth.enable_anonymous_usage", "false")
 	anonCtx := context.Background()
+	te.GetConfigurator().ReconcileFlagsAndConfig()
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
@@ -74,6 +75,7 @@ func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	anonCtx := context.Background()
+	te.GetConfigurator().ReconcileFlagsAndConfig()
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 

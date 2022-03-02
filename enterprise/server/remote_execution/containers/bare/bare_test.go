@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -37,6 +38,7 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 
 func TestHelloWorldOnBareMetal(t *testing.T) {
 	ctx := context.Background()
+	config.RegisterAndParseFlags()
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
