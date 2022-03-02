@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -32,11 +31,11 @@ import (
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
+	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dbConfig "github.com/lni/dragonboat/v3/config"
-	dbLogger "github.com/lni/dragonboat/v3/logger"
 )
 
 type Config struct {
@@ -66,7 +65,6 @@ type RaftCache struct {
 
 	nodeHost       *dragonboat.NodeHost
 	store          *store.Store
-	apiServer      *api.Server
 	apiClient      *client.APIClient
 	rangeCache     *rangecache.RangeCache
 	sender         *sender.Sender
@@ -86,40 +84,6 @@ func (rc *RaftCache) Create(nhid string, streamConnections uint64, v dbConfig.Ta
 	rc.registry = r
 	r.AddNode(nhid, rc.raftAddress, rc.grpcAddress)
 	return r, nil
-}
-
-type nullLogger struct{}
-
-func (nullLogger) SetLevel(dbLogger.LogLevel)                  {}
-func (nullLogger) Debugf(format string, args ...interface{})   {}
-func (nullLogger) Infof(format string, args ...interface{})    {}
-func (nullLogger) Warningf(format string, args ...interface{}) {}
-func (nullLogger) Errorf(format string, args ...interface{})   {}
-func (nullLogger) Panicf(format string, args ...interface{})   {}
-
-type dbCompatibleLogger struct {
-	log.Logger
-}
-
-// Don't panic in server code.
-func (l *dbCompatibleLogger) Panicf(format string, args ...interface{}) {
-	l.Errorf(format, args...)
-}
-
-// Ignore SetLevel commands.
-func (l *dbCompatibleLogger) SetLevel(level dbLogger.LogLevel) {}
-
-func init() {
-	dbLogger.SetLoggerFactory(func(pkgName string) dbLogger.ILogger {
-		switch pkgName {
-		case "raft", "rsm", "transport", "dragonboat", "raftpb", "logdb":
-			// Make the raft library be quieter.
-			return &nullLogger{}
-		default:
-			l := log.NamedSubLogger(pkgName)
-			return &dbCompatibleLogger{l}
-		}
-	})
 }
 
 func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
@@ -203,13 +167,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
-
-	apiServer, err := api.NewServer(fileDir, rc.store)
-	if err != nil {
-		return nil, err
-	}
-	rc.apiServer = apiServer
-	if err := rc.apiServer.Start(rc.grpcAddress); err != nil {
+	if err := rc.store.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}
 
@@ -379,9 +337,8 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
-		rc.apiServer.Shutdown(context.Background())
 		close(rc.shutdown)
-		rc.store.Stop()
+		rc.store.Stop(context.Background())
 		rc.nodeHost.Stop()
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
