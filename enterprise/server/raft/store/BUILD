@@ -22,6 +22,7 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/gossip",
         "//server/util/disk",
+        "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
@@ -31,6 +32,8 @@ go_library(
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_lni_dragonboat_v3//statemachine",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//reflection",
     ],
 )
 
@@ -40,8 +43,12 @@ go_test(
     deps = [
         ":store",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/listener",
+        "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rangecache",
+        "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/sender",
@@ -50,6 +57,7 @@ go_test(
         "//server/testutil/app",
         "//server/testutil/testenv",
         "//server/util/disk",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",

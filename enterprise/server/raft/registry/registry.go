@@ -92,22 +92,12 @@ func (n *StaticRegistry) getConnectionKey(addr string, clusterID uint64) string 
 
 // Remove removes a remote from the node registry.
 func (n *StaticRegistry) Remove(clusterID uint64, nodeID uint64) {
-	n.nodeTargets.Delete(raftio.GetNodeInfo(clusterID, nodeID))
+	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (n *StaticRegistry) RemoveCluster(clusterID uint64) {
-	var toRemove []raftio.NodeInfo
-	n.nodeTargets.Range(func(k, v interface{}) bool {
-		ni := k.(raftio.NodeInfo)
-		if ni.ClusterID == clusterID {
-			toRemove = append(toRemove, ni)
-		}
-		return true
-	})
-	for _, v := range toRemove {
-		n.nodeTargets.Delete(v)
-	}
+	return
 }
 
 func (n *StaticRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {
@@ -354,12 +344,12 @@ func (d *DynamicNodeRegistry) Add(clusterID uint64, nodeID uint64, target string
 
 // Remove removes a remote from the node registry.
 func (d *DynamicNodeRegistry) Remove(clusterID uint64, nodeID uint64) {
-	d.sReg.Remove(clusterID, nodeID)
+	return
 }
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveCluster(clusterID uint64) {
-	d.sReg.RemoveCluster(clusterID)
+	return
 }
 
 func (d *DynamicNodeRegistry) Resolve(clusterID uint64, nodeID uint64) (string, string, error) {

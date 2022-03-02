@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -29,6 +31,8 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -45,13 +49,15 @@ const (
 )
 
 type Store struct {
-	rootDir string
-	fileDir string
+	rootDir  string
+	fileDir  string
+	grpcAddr string
 
 	nodeHost      *dragonboat.NodeHost
 	gossipManager *gossip.GossipManager
 	sender        *sender.Sender
 	registry      registry.NodeRegistry
+	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 
@@ -85,15 +91,34 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicaMu: sync.RWMutex{},
 		replicas:  make(map[uint64]*replica.Replica),
 	}
-
+	gossipManager.AddListener(s)
 	cb := listener.LeaderCB(s.leaderUpdated)
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
 	s.gossipUsage()
 	return s
 }
 
-func (s *Store) Stop() {
-	log.Debugf("Stop")
+func (s *Store) Start(grpcAddress string) error {
+	// A grpcServer is run which is responsible for presenting a meta API
+	// to manage raft nodes on each host, as well as an API to shuffle data
+	// around between nodes, outside of raft.
+	s.grpcServer = grpc.NewServer()
+	reflection.Register(s.grpcServer)
+	rfspb.RegisterApiServer(s.grpcServer, s)
+
+	lis, err := net.Listen("tcp", grpcAddress)
+	if err != nil {
+		return err
+	}
+	go func() {
+		s.grpcServer.Serve(lis)
+	}()
+	s.grpcAddr = grpcAddress
+	return nil
+}
+
+func (s *Store) Stop(ctx context.Context) error {
+	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
 func (s *Store) leaderUpdated(info raftio.LeaderInfo) {
@@ -207,8 +232,7 @@ func (s *Store) gossipUsage() {
 
 	du, err := disk.GetDirUsage(s.fileDir)
 	if err != nil {
-		log.Errorf("error getting fs usage: %s", err)
-
+		log.Errorf("error getting fs usage for %q: %s", s.fileDir, err)
 		return
 	}
 	usage.DiskBytesTotal = int64(du.TotalBytes)
@@ -363,13 +387,13 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		return rsp, nil
 	}
 
-	// If we are the first member in the cluster, we'll do the syncPropose.
+	// If we are the last member in the cluster, we'll do the syncPropose.
 	nodeIDs := make([]uint64, 0, len(req.GetInitialMember()))
 	for nodeID, _ := range req.GetInitialMember() {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
-	if req.GetNodeId() == nodeIDs[0] {
+	if req.GetNodeId() == nodeIDs[len(nodeIDs)-1] {
 		time.Sleep(100 * time.Millisecond)
 		batchResponse, err := s.syncProposeLocal(ctx, req.GetClusterId(), req.GetBatch())
 		if err != nil {
@@ -381,10 +405,6 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 }
 
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	s.registry.Add(req.GetClusterId(), req.GetNodeId(), s.nodeHost.ID())
-	if err := s.nodeHost.StopNode(req.GetClusterId(), req.GetNodeId()); err != nil {
-		return nil, err
-	}
 	if err := s.nodeHost.SyncRemoveData(ctx, req.GetClusterId(), req.GetNodeId()); err != nil {
 		return nil, err
 	}
@@ -624,6 +644,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	if nodeHostInfo != nil {
 		for _, logInfo := range nodeHostInfo.LogInfo {
 			if pq.GetTargetClusterId() == logInfo.ClusterID {
+				log.Printf("Skipping %q because it already had cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
 				return
 			}
 		}
@@ -633,6 +654,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	member := s.gossipManager.LocalMember()
 	usageBuf, ok := member.Tags[constants.NodeUsageTag]
 	if !ok {
+		log.Errorf("Ignoring placement query: couldn't determine node usage")
 		return
 	}
 	usage := &rfpb.NodeUsage{}
@@ -641,6 +663,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	}
 	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
 	if myDiskUsage > maximumDiskCapacity {
+		log.Debugf("Ignoring placement queryy: node is over capacity")
 		return
 	}
 
@@ -655,13 +678,18 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 
 func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
 	return &rfpb.NodeDescriptor{
-		Nhid: s.nodeHost.ID(),
-		//		RaftAddress: dnr.raftAddress,
-		//		GrpcAddress: dnr.grpcAddress,
+		Nhid:        s.nodeHost.ID(),
+		RaftAddress: s.nodeHost.RaftAddress(),
+		GrpcAddress: s.grpcAddr,
 	}
 }
 
 func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*rfpb.ReplicaDescriptor, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
 	membership, err := s.nodeHost.GetClusterMembership(ctx, clusterID)
 	if err != nil {
 		return nil, err
@@ -735,6 +763,11 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 }
 
 func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error {
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
 	if len(rangeDescriptor.GetReplicas()) == 0 {
 		return status.FailedPreconditionErrorf("No replicas in range: %+v", rangeDescriptor)
 	}
@@ -791,6 +824,11 @@ func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.Rang
 }
 
 func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, targetNodeID uint64) error {
+	if _, ok := ctx.Deadline(); !ok {
+		c, cancel := context.WithTimeout(ctx, client.DefaultContextTimeout)
+		defer cancel()
+		ctx = c
+	}
 	var clusterID, nodeID uint64
 	for _, replica := range rangeDescriptor.GetReplicas() {
 		if replica.GetNodeId() == targetNodeID {
@@ -805,12 +843,14 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 
 	grpcAddr, _, err := s.registry.ResolveGRPC(clusterID, nodeID)
 	if err != nil {
+		log.Errorf("error resolving grpc addr: %s", err)
 		return err
 	}
 
 	// Get the config change index for this cluster.
 	membership, err := s.nodeHost.SyncGetClusterMembership(ctx, clusterID)
 	if err != nil {
+		log.Errorf("error getting clsuter membership: %s", err)
 		return err
 	}
 	configChangeID := membership.ConfigChangeID
@@ -821,8 +861,10 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 		err := s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
 		if err != nil {
 			if dragonboat.IsTempError(err) {
+				log.Printf("Got temp err: %s", err)
 				continue
 			}
+			log.Errorf("dragonboat non-temp delete node err: %s", err)
 			return err
 		}
 		break
@@ -831,6 +873,7 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 	// Remove the data from the now stopped node.
 	c, err := s.apiClient.Get(ctx, grpcAddr)
 	if err != nil {
+		log.Errorf("err getting api client: %s", err)
 		return err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
@@ -838,6 +881,7 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 		NodeId:    nodeID,
 	})
 	if err != nil {
+		log.Errorf("remove data err: %s", err)
 		return err
 	}
 

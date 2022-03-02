@@ -242,7 +242,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient,
 			if lastErr != nil {
 				if status.IsOutOfRangeError(lastErr) || status.IsUnavailableError(lastErr) {
 					s.uncacheReplica(rangeDescriptor.GetRangeId())
-					log.Debugf("sender.Run got outOfRange or Unavailable on %+v, continuing to next replica", replica)
+					log.Debugf("sender.Run got outOfRange or Unavailable on %+v, continuing to next replica: %s", replica, lastErr)
 					continue
 				}
 			} else {
