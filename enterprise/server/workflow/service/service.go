@@ -612,7 +612,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
-			"--write_system_bazelrc=" + fmt.Sprintf("%v", !conf.GetRemoteExecutionConfig().WorkflowsCIRunnerDisableSystemBazelrc),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
 		}, extraArgs...),
 		Platform: &repb.Platform{

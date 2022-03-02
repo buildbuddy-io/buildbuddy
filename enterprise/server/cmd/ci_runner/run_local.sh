@@ -85,8 +85,10 @@ docker exec \
   --pushed_branch="$(cd "$REPO_PATH" && git branch --show-current)" \
   --target_branch="master" \
   --trigger_event=pull_request \
-  --bes_backend=grpc://localhost:1985 \
   --bes_results_url=http://localhost:8080/invocation/ \
+  --bes_backend=grpc://localhost:1985 \
+  --cache_backend=grpc://localhost:1985 \
+  --rbe_backend=grpc://localhost:1985 \
   --workflow_id=WF1234 \
   "$@"
 
