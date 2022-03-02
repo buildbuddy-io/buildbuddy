@@ -179,11 +179,14 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 }
 
 func main() {
-	flag.Parse()
-	configurator, err := config.NewConfigurator("")
+	// Can remove all this configurator stuff once all flags the sidecar uses are
+	// defined outside the configurator.
+	config.RegisterAndParseFlags()
+	configurator, err := config.NewConfiguratorFromData([]byte{})
 	if err != nil {
 		log.Fatalf("Error initializing Configurator: %s", err.Error())
 	}
+	configurator.ReconcileFlagsAndConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
