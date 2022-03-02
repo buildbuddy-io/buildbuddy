@@ -690,10 +690,20 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 		defer cancel()
 		ctx = c
 	}
-	membership, err := s.nodeHost.GetClusterMembership(ctx, clusterID)
-	if err != nil {
-		return nil, err
+	var membership *dragonboat.Membership
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
+		m, err := s.nodeHost.GetClusterMembership(ctx, clusterID)
+		if err != nil {
+			if dragonboat.IsTempError(err) {
+				continue
+			}
+			return nil, err
+		}
+		membership = m
+		break
 	}
+
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
 	for nodeID, _ := range membership.Nodes {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
