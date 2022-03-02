@@ -204,47 +204,51 @@ export default class ArtifactsCardComponent extends React.Component {
               </div>
             )}
 
-            <div className="invocation-command-line">
-              <div className="invocation-command-line-title">
-                explicit command line{" "}
-                <Copy
-                  className="copy-icon"
-                  onClick={this.handleCopyClicked.bind(
-                    this,
-                    `bazel ${this.props.model.started?.command} ${
-                      this.props.model.expanded?.id?.pattern?.pattern
-                    } ${this.props.model.optionsParsed?.explicitCmdLine.join(" ")}`
-                  )}
-                />
-              </div>
-              <div className="invocation-section">
-                <code className="wrap">
-                  bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
-                  {this.props.model.optionsParsed?.explicitCmdLine.join(" ")}
-                </code>
-              </div>
-            </div>
+            {this.props.model.isBazelInvocation() && (
+              <>
+                <div className="invocation-command-line">
+                  <div className="invocation-command-line-title">
+                    explicit command line{" "}
+                    <Copy
+                      className="copy-icon"
+                      onClick={this.handleCopyClicked.bind(
+                        this,
+                        `bazel ${this.props.model.started?.command} ${
+                          this.props.model.expanded?.id?.pattern?.pattern
+                        } ${this.props.model.optionsParsed?.explicitCmdLine.join(" ")}`
+                      )}
+                    />
+                  </div>
+                  <div className="invocation-section">
+                    <code className="wrap">
+                      bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                      {this.props.model.optionsParsed?.explicitCmdLine.join(" ")}
+                    </code>
+                  </div>
+                </div>
 
-            <div className="invocation-command-line">
-              <div className="invocation-command-line-title">
-                effective command line{" "}
-                <Copy
-                  className="copy-icon"
-                  onClick={this.handleCopyClicked.bind(
-                    this,
-                    `bazel ${this.props.model.started?.command} ${
-                      this.props.model.expanded?.id?.pattern?.pattern
-                    } ${this.props.model.optionsParsed?.cmdLine.join(" ")}`
-                  )}
-                />
-              </div>
-              <div className="invocation-section">
-                <code className="wrap">
-                  bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
-                  {this.props.model.optionsParsed?.cmdLine.join(" ")}
-                </code>
-              </div>
-            </div>
+                <div className="invocation-command-line">
+                  <div className="invocation-command-line-title">
+                    effective command line{" "}
+                    <Copy
+                      className="copy-icon"
+                      onClick={this.handleCopyClicked.bind(
+                        this,
+                        `bazel ${this.props.model.started?.command} ${
+                          this.props.model.expanded?.id?.pattern?.pattern
+                        } ${this.props.model.optionsParsed?.cmdLine.join(" ")}`
+                      )}
+                    />
+                  </div>
+                  <div className="invocation-section">
+                    <code className="wrap">
+                      bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                      {this.props.model.optionsParsed?.cmdLine.join(" ")}
+                    </code>
+                  </div>
+                </div>
+              </>
+            )}
 
             {this.props.model.structuredCommandLine
               .filter((commandLine) => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
