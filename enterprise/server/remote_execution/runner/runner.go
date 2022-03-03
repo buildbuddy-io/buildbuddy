@@ -246,7 +246,11 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
-		break
+	case paused:
+		if err := r.Container.Unpause(ctx); err != nil {
+			return commandutil.ErrorResult(err)
+		}
+		r.state = ready
 	case ready:
 		break
 	case removed:
@@ -515,9 +519,9 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount ||
-		p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
-		// Evict the oldest (first) paused runner to make room for the new one.
+	for p.idleRunnerCount() >= p.maxRunnerCount ||
+		p.idleRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+		// Evict the oldest (first) idle runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
 			if r.state == paused {
@@ -559,6 +563,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 
 	// Officially mark this runner paused and ready for reuse.
 	r.state = paused
+	r.task = nil
 
 	return nil
 }
@@ -700,7 +705,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		NonrootWritable: props.NonrootWorkspace,
 	}
 	if props.RecycleRunner {
-		r, err := p.take(ctx, &query{
+		r, err := p.assignIdleRunner(ctx, task, props, &query{
 			User:                   user,
 			ContainerImage:         props.ContainerImage,
 			WorkflowID:             props.WorkflowID,
@@ -716,8 +721,6 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		}
 		if r != nil {
 			log.Info("Reusing workspace for task.")
-			r.task = task
-			r.PlatformProperties = props
 			return r, nil
 		}
 	}
@@ -762,6 +765,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	}
 	r := &CommandRunner{
 		env:                p.env,
+		state:              initial,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		task:               task,
@@ -854,15 +858,15 @@ type query struct {
 	WorkspaceOptions *workspace.Opts
 }
 
-// take finds the most recently used runner in the pool that matches the given
-// query. If one is found, it is unpaused and returned.
-func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
+// assignIdleRunner finds the most recently used idle runner that matches the
+// given query. If one is found, it is assigned to the given task.
+func (p *Pool) assignIdleRunner(ctx context.Context, task *repb.ExecutionTask, props *platform.Properties, q *query) (*CommandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if r.state != paused ||
+		if r.task != nil ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
 			r.PlatformProperties.InitDockerd != q.InitDockerd ||
@@ -877,11 +881,6 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			continue
 		}
 
-		if err := r.Container.Unpause(ctx); err != nil {
-			return nil, err
-		}
-		r.state = ready
-
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
@@ -889,6 +888,8 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			metrics.RecycleRunnerRequestStatusLabel: hitStatusLabel,
 		}).Inc()
 
+		r.task = task
+		r.PlatformProperties = props
 		return r, nil
 	}
 
@@ -906,34 +907,36 @@ func (p *Pool) RunnerCount() int {
 	return len(p.runners)
 }
 
-// PausedRunnerCount returns the current number of paused runners in the pool.
-func (p *Pool) PausedRunnerCount() int {
+// IdleRunnerCount returns the current number of runners which are not assigned
+// a task. These runners may be reused or evicted from the pool.
+func (p *Pool) IdleRunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.pausedRunnerCount()
+	return p.idleRunnerCount()
 }
 
-// ActiveRunnerCount returns the number of non-paused runners in the pool.
+// ActiveRunnerCount returns the number of runners that are assigned to a
+// task.
 func (p *Pool) ActiveRunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return len(p.runners) - p.pausedRunnerCount()
+	return len(p.runners) - p.idleRunnerCount()
 }
 
-func (p *Pool) pausedRunnerCount() int {
+func (p *Pool) idleRunnerCount() int {
 	n := 0
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.task == nil {
 			n++
 		}
 	}
 	return n
 }
 
-func (p *Pool) pausedRunnerMemoryUsageBytes() int64 {
+func (p *Pool) idleRunnerMemoryUsageBytes() int64 {
 	b := int64(0)
 	for _, r := range p.runners {
-		if r.state == paused {
+		if r.task == nil {
 			b += r.memoryUsageBytes
 		}
 	}

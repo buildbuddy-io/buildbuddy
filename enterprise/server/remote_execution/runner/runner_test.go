@@ -141,13 +141,13 @@ func mustAdd(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.Com
 }
 
 func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
-	initialPausedCount := pool.PausedRunnerCount()
+	initialPausedCount := pool.IdleRunnerCount()
 	initialCount := pool.RunnerCount()
 
 	mustAdd(t, ctx, pool, r)
 
 	require.Equal(
-		t, initialPausedCount+1, pool.PausedRunnerCount(),
+		t, initialPausedCount+1, pool.IdleRunnerCount(),
 		"pooled runner count should increase by 1 after adding without eviction",
 	)
 	require.Equal(
@@ -157,13 +157,13 @@ func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool
 }
 
 func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
-	initialPausedCount := pool.PausedRunnerCount()
+	initialPausedCount := pool.IdleRunnerCount()
 	initialCount := pool.RunnerCount()
 
 	mustAdd(t, ctx, pool, r)
 
 	require.Equal(
-		t, initialPausedCount, pool.PausedRunnerCount(),
+		t, initialPausedCount, pool.IdleRunnerCount(),
 		"pooled runner count should stay the same after adding with eviction",
 	)
 	require.Equal(
@@ -173,19 +173,19 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r
 }
 
 func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
-	initialPausedCount := pool.PausedRunnerCount()
+	initialPooledCount := pool.IdleRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
-	require.Equal(t, initialPausedCount-1, pool.PausedRunnerCount())
+	require.Equal(t, initialPooledCount-1, pool.IdleRunnerCount())
 	require.Equal(t, initialCount, pool.RunnerCount())
 	return r
 }
 
 func mustGetNewRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
-	initialPausedCount := pool.PausedRunnerCount()
+	initialPausedCount := pool.IdleRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
-	require.Equal(t, initialPausedCount, pool.PausedRunnerCount())
+	require.Equal(t, initialPausedCount, pool.IdleRunnerCount())
 	require.Equal(t, initialCount+1, pool.RunnerCount())
 	return r
 }
@@ -206,7 +206,7 @@ func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	r2 := mustGetPausedRunner(t, ctx, pool, newTask())
 
 	assert.Same(t, r1, r2)
-	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.IdleRunnerCount())
 }
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
@@ -278,7 +278,7 @@ func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
 	err := pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.IdleRunnerCount())
 	assert.Equal(t, 0, pool.ActiveRunnerCount())
 }
 
@@ -363,7 +363,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	err = pool.Add(context.Background(), r)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, pool.PausedRunnerCount())
+	assert.Equal(t, 1, pool.IdleRunnerCount())
 }
 
 func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
@@ -411,7 +411,7 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	err := pool.Add(context.Background(), r)
 
 	assert.True(t, status.IsResourceExhaustedError(err), "should exceed disk limit")
-	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.IdleRunnerCount())
 }
 
 func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
@@ -490,7 +490,7 @@ func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
 	r2 := mustGetPausedRunner(t, ctx, pool, newTaskWithAffinityKey("key1"))
 
 	assert.Same(t, r1, r2)
-	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.IdleRunnerCount())
 }
 
 func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
@@ -570,7 +570,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
 		pool.TryRecycle(r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		assert.Equal(t, 1, pool.IdleRunnerCount())
 
 		// Reuse the persistent worker
 		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
@@ -580,7 +580,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
 		pool.TryRecycle(r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		assert.Equal(t, 1, pool.IdleRunnerCount())
 
 		// Try a persistent worker with a new key
 		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
@@ -590,7 +590,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
 		pool.TryRecycle(r, true)
-		assert.Equal(t, 2, pool.PausedRunnerCount())
+		assert.Equal(t, 2, pool.IdleRunnerCount())
 	}
 }
 
@@ -623,5 +623,5 @@ func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
 
 	// Make sure that after trying to recycle doesn't put the worker back in the pool.
 	pool.TryRecycle(r, true)
-	assert.Equal(t, 0, pool.PausedRunnerCount())
+	assert.Equal(t, 0, pool.IdleRunnerCount())
 }
