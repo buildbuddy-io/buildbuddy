@@ -162,6 +162,7 @@ func openFile(ctx context.Context, env environment.Env, fileName string) (io.Rea
 
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
 // in the bundle. It then puts that file into destdir (via hardlink or copying)
+// and returns a path to the file in the new location. Files are written in
 // a content-addressable-storage-based location, so when files are updated they
 // will be put into new paths.
 func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir string, mode fs.FileMode) (string, error) {

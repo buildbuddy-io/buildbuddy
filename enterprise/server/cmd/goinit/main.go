@@ -199,15 +199,16 @@ func main() {
 
 	// The following devices are provided by our firecracker implementation:
 	//
-	// - /dev/vda: The container disk image generated from the docker/OCI image
-	// - /dev/vdb: A "scratch" disk image which is initially empty, and persists
+	// - /dev/vda: The read-only container disk image generated from the docker/OCI image
+	// - /dev/vdb: A read-write "scratch" disk image which is initially empty, and persists
 	//   for the lifetime of the container.
-	// - /dev/vdc: The workspace disk image, which is replaced by the host when
+	// - /dev/vdc: A read-write workspace disk image, which is replaced by the host when
 	//   each action is run.
 	//
 	// We mount the scratch disk as an overlay on top of the container disk, so
 	// that if actions want to write files outside of the workspace directory,
-	// they can do so without modifying the container image.
+	// they can do so, and the container disk image will remain untouched (and
+	// safe for re-use across multiple VMs).
 	//
 	// We additionally mount the action working directory to /workspace within the
 	// chroot.
