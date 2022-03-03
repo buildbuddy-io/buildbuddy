@@ -46,9 +46,18 @@ message InitializeResponse {
   // This page intentionally left empty.
 }
 
+message UnmountWorkspaceRequest {}
+message UnmountWorkspaceResponse {}
+
+message MountWorkspaceRequest {}
+message MountWorkspaceResponse {}
+
 // This service is run inside of a VM. It executes commands sent to it over
 // gRPC in the local environment and returns the results.
 service Exec {
   rpc Exec(ExecRequest) returns (ExecResponse);
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  rpc UnmountWorkspace(UnmountWorkspaceRequest)
+      returns (UnmountWorkspaceResponse);
+  rpc MountWorkspace(MountWorkspaceRequest) returns (MountWorkspaceResponse);
 }

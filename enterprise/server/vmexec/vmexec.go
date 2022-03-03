@@ -76,6 +76,20 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 	return &vmxpb.InitializeResponse{}, nil
 }
 
+func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+	if err := syscall.Unmount("/workspace", 0); err != nil {
+		return nil, status.InternalErrorf("unmount failed: %s", err)
+	}
+	return &vmxpb.UnmountWorkspaceResponse{}, nil
+}
+
+func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	if err := syscall.Mount("/dev/vdc", "/workspace", "ext4", syscall.MS_RELATIME, ""); err != nil {
+		return nil, err
+	}
+	return &vmxpb.MountWorkspaceResponse{}, nil
+}
+
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
 	if len(req.GetArguments()) < 1 {
 		return nil, status.InvalidArgumentError("Arguments not specified")
