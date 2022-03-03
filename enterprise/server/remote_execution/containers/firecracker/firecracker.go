@@ -655,13 +655,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	wsImgRelPath := ""
-	if workspaceDirOverride != "" {
-		if wsImgRelPath, err = c.createWorkspaceImage(ctx, workspaceDirOverride); err != nil {
-			return err
-		}
-	}
-
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
@@ -702,6 +695,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if workspaceDirOverride != "" {
 		// If the snapshot is being loaded with a different workspaceFS
 		// then handle that now.
+		wsImgRelPath, err := c.createWorkspaceImage(ctx, workspaceDirOverride)
+		if err != nil {
+			return err
+		}
 		if err := c.hotSwapWorkspace(ctx, execClient, wsImgRelPath); err != nil {
 			return err
 		}

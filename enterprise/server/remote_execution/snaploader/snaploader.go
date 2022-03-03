@@ -32,7 +32,7 @@ type LoadSnapshotOptions struct {
 	ContainerFSPath     string
 
 	// This field is optional -- a snapshot may have a scratch filesystem
-	// attached or it may have on attached at runtime.
+	// attached or it may have one attached at runtime.
 	ScratchFSPath string
 
 	// This field is optional -- a snapshot may have a filesystem
