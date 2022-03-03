@@ -10,6 +10,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/util/hash",
+        "//server/util/log",
         "//server/util/status",
     ],
 )

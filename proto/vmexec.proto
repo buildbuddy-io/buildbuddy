@@ -40,15 +40,46 @@ message InitializeRequest {
 
   // If true, the arp cache will be cleared.
   bool clear_arp_cache = 2;
+
+  // If true, the /workspace dir will be unmounted.
+  bool unmount_workspace = 3;
 }
 
 message InitializeResponse {
   // This page intentionally left empty.
 }
 
+message RemountWorkspaceRequest {}
+message RemountWorkspaceResponse {}
+
+message SyncWorkspaceRequest {
+  message FileChunk {
+    // Path where this chunk should be written.
+    string path = 1;
+    // Executable bits. Required on the first write for each path (offset == 0).
+    bool executable = 2;
+    // Byte offset of this chunk.
+    int64 offset = 3;
+    // Byte content of the chunk.
+    bytes content = 4;
+  }
+
+  // Directories to create.
+  repeated string directories = 1;
+
+  // File chunks to synchronize to the workspace.
+  repeated FileChunk chunks = 2;
+}
+
+message SyncWorkspaceResponse {}
+
 // This service is run inside of a VM. It executes commands sent to it over
 // gRPC in the local environment and returns the results.
 service Exec {
   rpc Exec(ExecRequest) returns (ExecResponse);
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  rpc SyncWorkspace(stream SyncWorkspaceRequest)
+      returns (SyncWorkspaceResponse);
+  rpc RemountWorkspace(RemountWorkspaceRequest)
+      returns (RemountWorkspaceResponse);
 }

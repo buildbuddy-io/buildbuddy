@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	// "github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -30,6 +32,10 @@ type LoadSnapshotOptions struct {
 	KernelImagePath     string
 	InitrdImagePath     string
 	ContainerFSPath     string
+
+	// This field is optional -- a snapshot may have a scratch filesystem
+	// attached or it may have on attached at runtime.
+	ScratchFSPath string
 
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
@@ -81,6 +87,9 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 		snapOpts.KernelImagePath,
 		snapOpts.InitrdImagePath,
 		snapOpts.ContainerFSPath,
+	}
+	if snapOpts.ScratchFSPath != "" {
+		files = append(files, snapOpts.ScratchFSPath)
 	}
 	if snapOpts.WorkspaceFSPath != "" {
 		files = append(files, snapOpts.WorkspaceFSPath)
@@ -153,9 +162,10 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 			return err
 		}
 	}
+	// log.Errorf("UnpackSnapshot manifest=%s\n", l.manifest.String())
 	for filename, dk := range l.manifest.CachedFiles {
 		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
-			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
+			return status.FailedPreconditionErrorf("Snapshotted file %q (digest %s/%d) is missing from filecache (possibly expired?)", filename, dk.Hash, dk.SizeBytes)
 		}
 	}
 	return nil
@@ -164,6 +174,14 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 type manifestData struct {
 	ConfigurationData []byte
 	CachedFiles       map[string]digest.Key
+}
+
+func (m *manifestData) String() string {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "(!MARSHAL_FAILED)manifestData"
+	}
+	return string(b)
 }
 
 // CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
@@ -186,14 +204,20 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 	// Put the files from the snapshot into the filecache and record their
 	// names and digests in the manifest so they can be unpacked later.
 	for _, f := range extractFiles(snapOpts) {
-		info, err := os.Stat(f)
+		var stat syscall.Stat_t
+		err := syscall.Stat(f, &stat)
 		if err != nil {
 			return nil, err
 		}
+		// Writable disks can be very large, sparse files, so use physical size when
+		// storing in filecache to avoid unnecessary evictions
+		const blockSize = 512
+		physicalSizeBytes := stat.Blocks * blockSize
+		// log.Infof("Size: %.2fM, Physical: %.2fM", float64(stat.Size)/1e6, float64(physicalSizeBytes)/1e6)
 		filename := filepath.Base(f)
 		fileNameDigest := &repb.Digest{
 			Hash:      hash.String(ad.GetHash() + filename),
-			SizeBytes: int64(info.Size()),
+			SizeBytes: physicalSizeBytes,
 		}
 		env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
 		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
@@ -213,6 +237,9 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 		SizeBytes: int64(101),
 	}
 	env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
+
+	// log.Errorf("CacheSnapshot manifest=%s\n", manifest.String())
+
 	return ad, nil
 }
 

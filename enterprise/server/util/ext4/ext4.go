@@ -22,10 +22,35 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 
 	args := []string{
 		"/sbin/mke2fs",
-		"-L", "''",
+		"-L", "",
 		"-N", "0",
 		"-O", "^64bit",
 		"-d", inputDir,
+		"-m", "5",
+		"-r", "1",
+		"-t", "ext4",
+		outputFile,
+		fmt.Sprintf("%dK", sizeBytes/1e3),
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
+		return status.InternalErrorf("%s: %s", err, out)
+	}
+	return nil
+}
+
+// MakeEmptyImage creates a new empty ext4 disk image of the specified size
+// and writes it to outputFile.
+func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	args := []string{
+		"/sbin/mke2fs",
+		"-L", "",
+		"-N", "0",
+		"-O", "^64bit",
 		"-m", "5",
 		"-r", "1",
 		"-t", "ext4",

@@ -246,7 +246,11 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
-		break
+	case paused:
+		if err := r.Container.Unpause(ctx); err != nil {
+			return commandutil.ErrorResult(err)
+		}
+		r.state = ready
 	case ready:
 		break
 	case removed:
@@ -682,9 +686,9 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
-	if props.RecycleRunner && props.EnableVFS {
-		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
-	}
+	// if props.RecycleRunner && props.EnableVFS {
+	// 	return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
+	// }
 
 	instanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -855,7 +859,7 @@ type query struct {
 }
 
 // take finds the most recently used runner in the pool that matches the given
-// query. If one is found, it is unpaused and returned.
+// query. If one is found, it is returned.
 func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -876,11 +880,6 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {
 			continue
 		}
-
-		if err := r.Container.Unpause(ctx); err != nil {
-			return nil, err
-		}
-		r.state = ready
 
 		metrics.RunnerPoolCount.Dec()
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))

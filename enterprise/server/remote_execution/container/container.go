@@ -282,7 +282,12 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 }
 
 func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	executable := ""
+	if len(command.Arguments) > 0 {
+		executable = command.Arguments[0]
+	}
+	execAttr := attribute.KeyValue{Key: "executable", Value: attribute.StringValue(executable)}
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr, execAttr))
 	defer span.End()
 	return t.Delegate.Exec(ctx, command, stdin, stdout)
 }

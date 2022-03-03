@@ -5,4 +5,4 @@ executor:
   enable_firecracker: true
   app_target: "grpc://localhost:1985"
   local_cache_directory: "/tmp/filecache"
-  local_cache_size_bytes: 10000000000 # 10GB
+  local_cache_size_bytes: 40_000_000_000

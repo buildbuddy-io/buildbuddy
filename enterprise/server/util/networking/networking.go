@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
@@ -25,7 +24,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
 	}
-	log.Debugf("Succesfully ran: %q", cmd.String())
+	// log.Debugf("Succesfully ran: %q", cmd.String())
 	return out, nil
 }
 

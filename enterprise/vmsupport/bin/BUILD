@@ -3,7 +3,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 exports_files([
     "vmlinux",
-    "initrd.cpio",
+    # "initrd.cpio",
 ])
 
 configure_make(
@@ -20,7 +20,7 @@ genrule(
         "//enterprise/server/cmd/goinit",
         "//enterprise/server/vmvfs",
     ],
-    outs = ["initrd-latest.cpio"],
+    outs = ["initrd.cpio"],
     cmd_bash = """
         ./$(location mkinitrd.sh) \
             $(location //enterprise/server/cmd/goinit:goinit) \

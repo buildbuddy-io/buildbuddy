@@ -194,27 +194,38 @@ func main() {
 	flag.Parse()
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
-	// Quick note about devices: This script is passed to the kernel via
-	// initrd, which is nice because it's small / read-only. 2 additional
-	// devices are attached to the VM, a containerfs (RO) which is generated
-	// from the container image, and a workspacefs (RW) which is mounted,
-	// with the containerfs using overlayfs. That way all writes done inside
-	// the container are written to the workspacefs and the containerfs is
-	// untouched (and safe for re-use across multiple VMs).
 	die(mkdirp("/dev", 0755))
 	die(mount("devtmpfs", "/dev", "devtmpfs", syscall.MS_NOSUID, "mode=0620,gid=5,ptmxmode=666"))
+
+	// The following devices are provided by our firecracker implementation:
+	//
+	// - /dev/vda: The container disk image generated from the docker/OCI image
+	// - /dev/vdb: A "scratch" disk image which is initially empty, and persists
+	//   for the lifetime of the container.
+	// - /dev/vdc: The workspace disk image, which is replaced by the host when
+	//   each action is run.
+	//
+	// We mount the scratch disk as an overlay on top of the container disk, so
+	// that if actions want to write files outside of the workspace directory,
+	// they can do so without modifying the container image.
+	//
+	// We additionally mount the action working directory to /workspace within the
+	// chroot.
 
 	die(mkdirp("/container", 0755))
 	die(mount("/dev/vda", "/container", "ext4", syscall.MS_RDONLY, ""))
 
-	die(mkdirp("/overlay", 0755))
-	die(mount("/dev/vdb", "/overlay", "ext4", syscall.MS_RELATIME, ""))
+	die(mkdirp("/scratch", 0755))
+	die(mount("/dev/vdb", "/scratch", "ext4", syscall.MS_RELATIME, ""))
 
-	die(mkdirp("/overlay/bbvmroot", 0755))
-	die(mkdirp("/overlay/bbvmwork", 0755))
+	die(mkdirp("/scratch/bbvmroot", 0755))
+	die(mkdirp("/scratch/bbvmwork", 0755))
 
 	die(mkdirp("/mnt", 0755))
-	die(mount("overlayfs:/overlay/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/overlay/bbvmroot,workdir=/overlay/bbvmwork"))
+	die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
+
+	die(mkdirp("/mnt/workspace", 0755))
+	die(mount("/dev/vdc", "/mnt/workspace", "ext4", syscall.MS_RELATIME, ""))
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
@@ -226,9 +237,6 @@ func main() {
 	die(mount(".", "/", "", syscall.MS_MOVE, ""))
 	die(chroot("."))
 	die(chdir("/"))
-
-	die(mkdirp("/workspace", 0755))
-	die(mount("/dev/vdb", "/workspace", "ext4", syscall.MS_RELATIME, ""))
 
 	die(mkdirp("/dev/pts", 0755))
 	die(mount("devpts", "/dev/pts", "devpts", syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NOATIME, "mode=0620,gid=5,ptmxmode=666"))

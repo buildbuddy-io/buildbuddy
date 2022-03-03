@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -59,6 +63,14 @@ func clearARPCache() error {
 	return nil
 }
 
+func unmountWorkspace() error {
+	if err := syscall.Unmount("/workspace", 0); err != nil {
+		return err
+	}
+	unix.Sync()
+	return nil
+}
+
 func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeRequest) (*vmxpb.InitializeResponse, error) {
 	if req.GetClearArpCache() {
 		if err := clearARPCache(); err != nil {
@@ -73,7 +85,74 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		}
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
+	if req.GetUnmountWorkspace() {
+		if err := unmountWorkspace(); err != nil {
+			return nil, status.InternalErrorf("unmount failed: %s", err)
+		}
+	}
 	return &vmxpb.InitializeResponse{}, nil
+}
+
+func (x *execServer) SyncWorkspace(stream vmxpb.Exec_SyncWorkspaceServer) error {
+	const wsPath = "/workspace"
+	entries, err := os.ReadDir(wsPath)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(wsPath, entry.Name())); err != nil {
+			return err
+		}
+	}
+	for {
+		req, err := stream.Recv()
+		eof := err == io.EOF
+		if err != nil && !eof {
+			return nil
+		}
+		for _, dirPath := range req.GetDirectories() {
+			if err := os.Mkdir(filepath.Join(wsPath, dirPath), 0755); err != nil {
+				return err
+			}
+		}
+		for _, chunk := range req.GetChunks() {
+			var f *os.File
+			var err error
+			if chunk.Offset == 0 {
+				mode := os.FileMode(0666)
+				if chunk.Executable {
+					mode |= 0111
+				}
+				f, err = os.OpenFile(filepath.Join(wsPath, chunk.Path), os.O_CREATE|os.O_WRONLY|os.O_APPEND, mode)
+				if err != nil {
+					return err
+				}
+			} else {
+				f, err = os.OpenFile(filepath.Join(wsPath, chunk.Path), os.O_WRONLY|os.O_APPEND, 0)
+				if err != nil {
+					return err
+				}
+			}
+			if _, err := f.Write(chunk.Content); err != nil {
+				return err
+			}
+		}
+		if eof {
+			if err := stream.SendAndClose(&vmxpb.SyncWorkspaceResponse{}); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+}
+
+func (x *execServer) RemountWorkspace(ctx context.Context, req *vmxpb.RemountWorkspaceRequest) (*vmxpb.RemountWorkspaceResponse, error) {
+	log.Infof("execServer: Handling /RemountWorkspace")
+	time.Sleep(100 * time.Millisecond)
+	if err := syscall.Mount("/dev/vdc", "/workspace", "ext4", syscall.MS_RELATIME, ""); err != nil {
+		return nil, err
+	}
+	return &vmxpb.RemountWorkspaceResponse{}, nil
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {

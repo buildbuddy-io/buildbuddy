@@ -389,6 +389,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			return
 		}
 		retry, err := q.runTask(ctx, execTask)
+		retry = false
 		if err != nil {
 			q.log.Errorf("Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}

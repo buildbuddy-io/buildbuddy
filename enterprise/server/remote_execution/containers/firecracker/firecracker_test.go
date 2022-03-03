@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -513,6 +514,157 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 }
 
+func TestFirecrackerExecWithRecycledWorkspaceWithDifferentContents(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test1.sh": "echo Hello; echo world > /root/should_be_persisted.txt",
+	})
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		DiskSlackSpaceMB:       2000,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "Hello\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// While we're paused, write new workspace contents.
+	// Then unpause and execute a command that requires the new contents.
+	err = os.Remove(filepath.Join(workDir, "test1.sh"))
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test2.sh": "cat /root/should_be_persisted.txt",
+	})
+
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "world\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	err = c.Remove(ctx)
+	require.NoError(t, err)
+}
+
+func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test1.sh": "echo Hello; echo world > /root/should_be_persisted.txt",
+	})
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		DiskSlackSpaceMB:       12000, // 12 GB
+		JailerRoot:             tempJailerRoot(t),
+		EnableNetworking:       true,
+		InitDockerd:            true,
+		DebugMode:              true,
+	}
+	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker pull ubuntu:20.04 &>/dev/null
+
+			# Try running a few commands
+			docker run --rm ubuntu:20.04 echo Hello
+			docker run --rm ubuntu:20.04 echo world
+
+			# Write some output to the workspace to be preserved
+			touch preserves.txt
+		`},
+		OutputFiles: []string{"preserves.txt"},
+	}
+	res := c.Exec(ctx, cmd, nil, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "Hello\nworld\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// Check that we copied the output file to the host workspace.
+	_, err = os.Stat(filepath.Join(workDir, "preserves.txt"))
+	require.NoError(t, err)
+
+	// While we're paused, write new workspace contents.
+	// Then unpause and execute a command that requires the new contents.
+	err = os.Remove(filepath.Join(workDir, "test1.sh"))
+	require.NoError(t, err)
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test2.sh": `
+		set -e
+
+		# Make sure we can read the output from the previous command
+		stat preserves.txt >/dev/null
+
+		# Make sure we can run docker images from cache
+		docker run --rm ubuntu:20.04 echo world
+		`,
+	})
+
+	start := time.Now()
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+
+	log.Debugf("Resumed VM and executed docker-in-firecracker command in %s", time.Since(start))
+
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "world\n", string(res.Stdout))
+	require.Equal(t, 0, res.ExitCode)
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+	err = c.Remove(ctx)
+	require.NoError(t, err)
+}
+
 func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
@@ -584,4 +736,27 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	if err := c.Remove(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// setupCache runs CAS and bytestream services, and provisions the env with
+// corresponding clients pointing to those services.
+func setupCache(t *testing.T, ctx context.Context, env *testenv.TestEnv) {
+	bs, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	require.NoError(t, err)
+
+	grpcServer, runFunc := env.LocalGRPCServer()
+	bspb.RegisterByteStreamServer(grpcServer, bs)
+	repb.RegisterContentAddressableStorageServer(grpcServer, cas)
+
+	go runFunc()
+
+	cc, err := env.LocalGRPCConn(ctx)
+	require.NoError(t, err)
+
+	bsc := bspb.NewByteStreamClient(cc)
+	env.SetByteStreamClient(bsc)
+	casc := repb.NewContentAddressableStorageClient(cc)
+	env.SetContentAddressableStorageClient(casc)
 }

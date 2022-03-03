@@ -60,7 +60,7 @@ executor:
   root_directory: "{{.TestRootDir}}/remote_execution/builds"
   app_target: "grpc://localhost:1985"
   local_cache_directory: "{{.TestRootDir}}/remote_execution/cache"
-  local_cache_size_bytes: 1000000000  # 1GB
+  local_cache_size_bytes: 10_000_000_000  # 10GB
   # Guarantee that we can fit at least one workflow task.
   # If we don't actually have the memory, we'll OOM, which is OK
   # for testing purposes.

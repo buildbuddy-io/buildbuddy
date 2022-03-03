@@ -44,7 +44,7 @@ const (
 	// work on tasks "as they fit" into available RAM, and this gives
 	// us a slightly higher chance of a task being completed at the
 	// cost of slightly more network traffic / queueing latency.
-	probesPerTask = 3
+	probesPerTask = 1
 
 	// How stale to allow the set of execution backends to be. If a new
 	// request to enqueue work is recieved and the set of execution nodes
@@ -52,10 +52,10 @@ const (
 	maxAllowedExecutionNodesStaleness = 10 * time.Second
 
 	// The maximum number of times a task may be re-enqueued.
-	maxTaskAttemptCount = 5
+	maxTaskAttemptCount = 1
 
 	// Number of unclaimed tasks to try to assign to a node that newly joined.
-	tasksToEnqueueOnJoin = 20
+	tasksToEnqueueOnJoin = 0
 
 	// Maximum task TTL in Redis.
 	taskTTL = 24 * time.Hour

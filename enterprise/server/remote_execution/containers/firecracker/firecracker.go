@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -90,6 +91,12 @@ const (
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
 	workspaceDriveID = "workspacefs"
+	// TODO(bduffany): Make this configurable
+	workspaceSlackSizeBytes = 1e9
+
+	// The scratchfs image name and drive ID.
+	scratchFSName  = "scratchfs.ext4"
+	scratchDriveID = "scratchfs"
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -154,8 +161,7 @@ func openFile(ctx context.Context, env environment.Env, fileName string) (io.Rea
 	return env.GetFileResolver().Open(fileName)
 }
 
-// putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
-// in the bundle. It then puts that file into destdir (via hardlink or copying)
+// putFileIntoDir puts "fileName" into file into destdir (via hardlink or copying)
 // and returns a path to the file in the new location. Files are written in
 // a content-addressable-storage-based location, so when files are updated they
 // will be put into new paths.
@@ -281,6 +287,7 @@ type FirecrackerContainer struct {
 	containerImage   string // the OCI container image. ex "alpine:latest"
 	actionWorkingDir string // the action directory with inputs / outputs
 	workspaceFSPath  string // the path to the workspace ext4 image
+	scratchFSPath    string // the path fo the scratch ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
 	// dockerClient is used to optimize image pulls by reusing image layers from
@@ -299,6 +306,7 @@ type FirecrackerContainer struct {
 	pausedSnapshotDigest *repb.Digest
 	allowSnapshotStart   bool
 	mountWorkspaceFile   bool
+	removed              bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -541,6 +549,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
+		ScratchFSPath:       filepath.Join(c.getChroot(), scratchFSName),
 		WorkspaceFSPath:     filepath.Join(c.getChroot(), workspaceFSName),
 		ForceSnapshotDigest: d,
 	}
@@ -564,6 +573,10 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride, instanceName string, snapshotDigest *repb.Digest) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	defer func() {
+		c.removed = false
+	}()
 
 	start := time.Now()
 	defer func() {
@@ -638,14 +651,19 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	workspaceFileInChroot := filepath.Join(c.getChroot(), workspaceFSName)
+	suffix := fmt.Sprintf("%d", rand.Int63())
+	workspaceFileInChroot := filepath.Join(c.getChroot(), workspaceFSName+suffix)
 	if workspaceDirOverride != "" {
+		log.Infof("Creating new workspace image with contents:")
+		b, _ := exec.Command("tree", "-s", "--si", workspaceDirOverride).CombinedOutput()
+		fmt.Println(string(b))
+
 		// Put the filesystem in place
 		workspaceSizeBytes, err := disk.DirSize(workspaceDirOverride)
 		if err != nil {
 			return err
 		}
-		if err := ext4.DirectoryToImage(ctx, workspaceDirOverride, workspaceFileInChroot, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
+		if err := ext4.DirectoryToImage(ctx, workspaceDirOverride, workspaceFileInChroot, workspaceSizeBytes+workspaceSlackSizeBytes); err != nil {
 			return err
 		}
 	}
@@ -669,13 +687,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, vmStateSnapshotName, enableDiffSnapshotsOpt); err != nil {
 		return status.InternalErrorf("error loading snapshot: %s", err)
 	}
-	if workspaceDirOverride != "" {
-		// If the snapshot is being loaded with a different workspaceFS
-		// then handle that now.
-		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, workspaceFSName); err != nil {
-			return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
-		}
-	}
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
@@ -690,10 +701,30 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
 		UnixTimestampNanoseconds: time.Now().UnixNano(),
 		ClearArpCache:            true,
+		UnmountWorkspace:         workspaceDirOverride != "",
 	})
 	if err != nil {
 		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
 	}
+
+	if workspaceDirOverride != "" {
+		// If the snapshot is being loaded with a different workspaceFS
+		// then handle that now.
+		log.Infof("Updating guest workspace drive")
+
+		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, workspaceFSName+suffix); err != nil {
+			return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+		}
+
+		if _, err := execClient.RemountWorkspace(ctx, &vmxpb.RemountWorkspaceRequest{}); err != nil {
+			return status.WrapError(err, "Failed to remount workspace after update")
+		}
+	}
+
+	// if err := c.syncWorkspace(ctx, execClient); err != nil {
+	// 	return err
+	// }
+
 	return nil
 }
 
@@ -703,6 +734,86 @@ func nonCmdExit(err error) *interfaces.CommandResult {
 		Error:    err,
 		ExitCode: -2,
 	}
+}
+
+func (c *FirecrackerContainer) syncWorkspace(ctx context.Context, execClient vmxpb.ExecClient) error {
+	stream, err := execClient.SyncWorkspace(ctx)
+	if err != nil {
+		return err
+	}
+
+	req := &vmxpb.SyncWorkspaceRequest{}
+	reqSize := int64(0)
+	const maxReqSize = int64(4_000_000 * 0.8) // gRPC max size with some wiggle room.
+	buf := make([]byte, maxReqSize)
+
+	err = filepath.WalkDir(c.actionWorkingDir, func(path string, entry fs.DirEntry, err error) error {
+		// Skip root dir
+		if path == c.actionWorkingDir {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		relPath := strings.TrimPrefix(path, c.actionWorkingDir)
+		if entry.IsDir() {
+			req.Directories = append(req.Directories, relPath)
+		} else if entry.Type().IsRegular() {
+			s, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			offset := int64(0)
+			for offset < s.Size() {
+				chunkSize := s.Size() - offset
+				if reqSize+chunkSize < maxReqSize {
+					chunkSize = maxReqSize - reqSize
+				}
+				n, err := f.Read(buf[:chunkSize])
+				if err != nil && err != io.EOF {
+					return err
+				}
+				req.Chunks = append(req.Chunks, &vmxpb.SyncWorkspaceRequest_FileChunk{
+					Path:       relPath,
+					Executable: (s.Mode() & 0111) > 0,
+					Offset:     offset,
+					Content:    buf[:n],
+				})
+				offset += int64(n)
+				reqSize += int64(n)
+
+				// Flush current request
+				if reqSize == maxReqSize {
+					if err := stream.Send(req); err != nil {
+						return err
+					}
+					req = &vmxpb.SyncWorkspaceRequest{}
+					reqSize = 0
+				}
+			}
+		} else {
+			return status.UnimplementedError("symlinks not implemented") // TODO: Implement
+		}
+		return nil
+	})
+	// Flush remaining chunks
+	if len(req.Directories) > 0 || len(req.Chunks) > 0 {
+		if err := stream.Send(req); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		stream.CloseSend()
+		return err
+	}
+
+	_, err = stream.CloseAndRecv()
+	return err
 }
 
 func (c *FirecrackerContainer) startedFromSnapshot() bool {
@@ -761,7 +872,7 @@ func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 	return builder.Build(ctx)
 }
 
-func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, workspaceFS string) (*fcclient.Config, error) {
+func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
 	if c.constants.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
@@ -789,12 +900,20 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 		InitrdPath:      initrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
+		// Note: ordering in this list determines the device lettering
+		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
 		Drives: []fcmodels.Drive{
 			fcmodels.Drive{
 				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
+			},
+			fcmodels.Drive{
+				DriveID:      fcclient.String(scratchDriveID),
+				PathOnHost:   &scratchFS,
+				IsRootDevice: fcclient.Bool(false),
+				IsReadOnly:   fcclient.Bool(false),
 			},
 			fcmodels.Drive{
 				DriveID:      fcclient.String(workspaceDriveID),
@@ -825,6 +944,25 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 			TrackDirtyPages: true,
 		},
 	}
+
+	// Reserve drive IDs to hot-swap workspace drive.
+	// See https://github.com/firecracker-microvm/firecracker-containerd/blob/main/docs/design-approaches.md#block-devices-1
+	// TODO: measure overhead -- if expensive, disable this for non-recycled containers
+	// for i := 1; i <= 1; i++ {
+	// 	driveID := fmt.Sprintf("%s_%d", workspaceDriveID, i)
+	// 	placeholderPath := filepath.Join(filepath.Dir(workspaceFS), driveID+".placeholder.ext4")
+	// 	f, err := os.OpenFile(placeholderPath, os.O_CREATE, 0666)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	f.Close()
+	// 	cfg.Drives = append(cfg.Drives, fcmodels.Drive{
+	// 		DriveID:      &driveID,
+	// 		PathOnHost:   &placeholderPath,
+	// 		IsRootDevice: fcclient.Bool(false),
+	// 		IsReadOnly:   fcclient.Bool(false),
+	// 	})
+	// }
 
 	if c.constants.EnableNetworking {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
@@ -1169,16 +1307,22 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return err
 	}
+	scratchPath := filepath.Join(containerHome, scratchFSName)
+	if err := ext4.MakeEmptyImage(ctx, scratchPath, c.constants.DiskSlackSpaceMB*1e6); err != nil {
+		return err
+	}
+	c.scratchFSPath = scratchPath
 	wsPath := filepath.Join(containerHome, workspaceFSName)
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
+	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+workspaceSlackSizeBytes); err != nil {
 		return err
 	}
 	c.workspaceFSPath = wsPath
 
 	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
+	log.Debugf("c.scratchFSPath: %q", c.scratchFSPath)
 	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
 	log.Debugf("getChroot() is %q", c.getChroot())
-	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.workspaceFSPath)
+	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.scratchFSPath, c.workspaceFSPath)
 	if err != nil {
 		return err
 	}
@@ -1410,6 +1554,14 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	// Make sure Remove() can only be called once. It can be called twice if
+	// Pause() fails, since the runner pool calls Remove() if Pause() fails, and
+	// Pause() itself calls Remove() as an implementation detail.
+	if c.removed {
+		return nil
+	}
+	c.removed = true
+
 	start := time.Now()
 	defer func() {
 		log.Debugf("Remove took %s", time.Since(start))
@@ -1477,7 +1629,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.Debugf("Unpause took %s", time.Since(start))
 	}()
 
-	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
+	return c.LoadSnapshot(ctx, "", "" /*=instanceName*/, c.pausedSnapshotDigest)
 }
 
 // Wait waits until the underlying VM exits. It returns an error if one is

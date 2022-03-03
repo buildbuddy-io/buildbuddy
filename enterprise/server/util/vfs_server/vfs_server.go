@@ -390,6 +390,8 @@ func (h *fileHandle) read(req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
 }
 
 func (h *fileHandle) write(req *vfspb.WriteRequest) (*vfspb.WriteResponse, error) {
+	// log.Debugf("VFS: write %s", req.)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
