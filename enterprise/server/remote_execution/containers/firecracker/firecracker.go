@@ -573,10 +573,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		log.Debugf("LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
 	}()
 
-	defer func() {
-		c.rmOnce = &sync.Once{}
-		c.rmErr = nil
-	}()
+	c.rmOnce = &sync.Once{}
+	c.rmErr = nil
 
 	if err := c.newID(); err != nil {
 		return err
