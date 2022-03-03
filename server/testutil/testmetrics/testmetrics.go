@@ -9,6 +9,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+// GaugeValue returns the current value of a gauge metric.
 func GaugeValue(t testing.TB, metric prometheus.Gauge) float64 {
 	m := &dto.Metric{}
 	err := metric.Write(m)

@@ -18,8 +18,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testmetrics",
-        "//server/util/log",
-        "//server/util/retry",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
