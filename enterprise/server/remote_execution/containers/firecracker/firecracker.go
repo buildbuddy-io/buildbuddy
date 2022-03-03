@@ -283,6 +283,9 @@ type FirecrackerContainer struct {
 	workspaceFSPath  string // the path to the workspace ext4 image
 	containerFSPath  string // the path to the container ext4 image
 
+	rmOnce *sync.Once
+	rmErr  error
+
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
@@ -568,6 +571,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	start := time.Now()
 	defer func() {
 		log.Debugf("LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
+	}()
+
+	defer func() {
+		c.rmOnce = &sync.Once{}
+		c.rmErr = nil
 	}()
 
 	if err := c.newID(); err != nil {
@@ -1159,6 +1167,10 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	defer func() {
 		log.Debugf("Create took %s", time.Since(start))
 	}()
+
+	c.rmOnce = &sync.Once{}
+	c.rmErr = nil
+
 	c.actionWorkingDir = actionWorkingDir
 	workspaceSizeBytes, err := disk.DirSize(c.actionWorkingDir)
 	if err != nil {
@@ -1415,6 +1427,16 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 		log.Debugf("Remove took %s", time.Since(start))
 	}()
 
+	if c.rmOnce == nil {
+		return status.FailedPreconditionError("Attempted to remove a container that is not created")
+	}
+	c.rmOnce.Do(func() {
+		c.rmErr = c.remove(ctx)
+	})
+	return c.rmErr
+}
+
+func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	var lastErr error
 
 	if err := c.machine.Shutdown(ctx); err != nil {

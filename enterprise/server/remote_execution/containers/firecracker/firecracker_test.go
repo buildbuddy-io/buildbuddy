@@ -176,11 +176,6 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := c.Remove(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}()
 
 	cached, err := c.IsImageCached(ctx)
 	if err != nil {
@@ -194,6 +189,11 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 	res := c.Exec(ctx, cmd, nil, nil)
 	if res.Error != nil {
 		t.Fatal(res.Error)
@@ -234,6 +234,11 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatalf("unable to Create container: %s", err)
 	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	if err := c.Pause(ctx); err != nil {
 		t.Fatalf("unable to pause container: %s", err)
@@ -260,10 +265,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatalf("error: %s", res.Error)
 	}
 	assert.Equal(t, expectedResult, res)
-
-	if err := c.Remove(ctx); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestFirecrackerFileMapping(t *testing.T) {
@@ -492,7 +493,6 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		MemSizeMB:              2500,
 		EnableNetworking:       true,
 		InitDockerd:            true,
-		DebugMode:              true,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
 	}
@@ -530,7 +530,6 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		EnableNetworking:       true,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
-		DebugMode:              true,
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	if err != nil {
@@ -544,6 +543,11 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
 		t.Fatalf("unable to Create container: %s", err)
 	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
 
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-c", `
@@ -580,8 +584,4 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
-
-	if err := c.Remove(ctx); err != nil {
-		t.Fatal(err)
-	}
 }
