@@ -9,15 +9,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -291,6 +291,8 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 }
 
 func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor(t *testing.T) {
+	ctx := context.Background()
+
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
@@ -314,12 +316,15 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, 0, res.ExitCode)
 
+	rbetest.WaitForAnyPooledRunner(t, ctx)
+
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"stat", "foo.txt"},
 		Platform:  platform,
 	}, opts)
 	res = cmd.Wait()
 
+	require.Equal(t, "", res.Stderr)
 	require.Equal(t, 0, res.ExitCode)
 }
 
@@ -348,9 +353,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			"x-buildbuddy-platform.pool": "foo",
 		},
 	}
-	// Run a command that writes "foo.txt". The runner and workspace files should
-	// persist and be made available for future tasks to reuse (as long as those
-	// tasks have platform properties similar to this one).
+
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"touch", "foo.txt"},
 		Platform:  platform,
@@ -359,37 +362,16 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 
 	require.Equal(t, 0, res.ExitCode)
 
-	// Run another command that tries to read "foo.txt" written by a previous
-	// runner.
-	//
-	// The executor recycles the runner in the background, and it might take some
-	// time to recycle the runner. So, if we don't hit the same runner on the
-	// first attempt, retry a few times.
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-	r := retry.DefaultWithContext(ctx)
-	for r.Next() {
-		cmd = rbe.Execute(&repb.Command{
-			// If this stat task does not hit a recycled runner, then this task itself
-			// will result in a new runner being created and recycled. Subsequent
-			// retries might hit that runner, which is expected behavior. So make sure
-			// to leave a foo.txt behind for subsequent attempts to read. Exit with
-			// status code 1 in this attempt, though, to indicate that we haven't yet
-			// successfully hit a recycled runner.
-			Arguments: []string{"sh", "-c", "stat foo.txt || (touch foo.txt ; exit 1)"},
-			Platform:  platform,
-		}, opts)
-		res = cmd.Wait()
+	rbetest.WaitForAnyPooledRunner(t, ctx)
 
-		if res.ExitCode != 0 {
-			continue
-		}
+	cmd = rbe.Execute(&repb.Command{
+		Arguments: []string{"stat", "foo.txt"},
+		Platform:  platform,
+	}, opts)
+	res = cmd.Wait()
 
-		require.Equal(t, "", res.Stderr)
-		return
-	}
-
-	require.FailNow(t, "Failed to execute task on recycled runner")
+	require.Equal(t, "", res.Stderr)
+	require.Equal(t, 0, res.ExitCode)
 }
 
 func TestSimpleCommandWithMultipleExecutors(t *testing.T) {
