@@ -63,6 +63,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 			env.SetInvocationSearchService(iss)
 		},
 	})
+
 	// Configure executors so that we can run at least one workflow task.
 	// Workflow tasks require 8Gi to schedule, but all of our workflow test cases
 	// typically use far less RAM. To enable this test to run on machines smaller
@@ -80,6 +81,8 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// Set events_api_url to point to the test BB app server (this gets
 	// propagated to the CI runner so it knows where to publish build events).
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
+
+	env.GetConfigurator().ReconcileFlagsAndConfig()
 
 	env.AddExecutors(10)
 	return env, workflowService
