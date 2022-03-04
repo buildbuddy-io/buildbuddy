@@ -137,8 +137,6 @@ func runPodman(ctx context.Context, subCommand string, workDir string, stdin io.
 		"podman",
 		"--events-backend=file",
 		"--cgroup-manager=cgroupfs",
-		"--storage-driver=overlay",
-		"--storage-opt=overlay.mount_program=/usr/bin/fuse-overlayfs",
 		subCommand,
 	}
 
