@@ -1022,13 +1022,14 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 }
 
 // WaitForAnyPooledRunner waits for the runner pool count across all executors
-// to be at least 0.
+// to be at least 1. This can be called after a command is complete,
+// to ensure that the runner has been made available for recycling.
 func WaitForAnyPooledRunner(t *testing.T, ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	r := retry.DefaultWithContext(ctx)
 	for r.Next() {
-		if testmetrics.GaugeValue(t, metrics.RunnerPoolCount) > 1 {
+		if testmetrics.GaugeValue(t, metrics.RunnerPoolCount) > 0 {
 			break
 		}
 	}
