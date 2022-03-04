@@ -386,7 +386,7 @@ var (
 	sharedGeneralConfig  = &generalConfig{}
 	originalStringSlices = make(map[string][]string)
 	defineFlagsOnce      sync.Once
-	originalSetFlags     = make(map[string]bool)
+	originalSetFlags     = make(map[string]struct{})
 )
 
 func RegisterAndParseFlags() {
@@ -394,13 +394,13 @@ func RegisterAndParseFlags() {
 		defineFlagsForMembers([]string{}, reflect.ValueOf(&generalConfig{}).Elem(), nil)
 		flag.Parse()
 		flag.Visit(func(flg *flag.Flag) {
-			originalSetFlags[flg.Name] = true
+			originalSetFlags[flg.Name] = struct{}{}
 		})
 	})
 }
 
 // FOR TESTING PURPOSES ONLY!!!
-func GetOriginalSetFlags() map[string]bool {
+func GetOriginalSetFlags() map[string]struct{} {
 	return originalSetFlags
 }
 
@@ -518,7 +518,7 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, configSe
 	}
 }
 
-func populateYamlPresenceMap(yamlMap map[interface{}]interface{}, presenceMap map[string]bool) {
+func populateYamlPresenceMap(yamlMap map[interface{}]interface{}, presenceMap map[string]struct{}) {
 	var check func(key []string, value interface{})
 	check = func(key []string, value interface{}) {
 		if m, ok := value.(map[interface{}]interface{}); ok {
@@ -531,12 +531,12 @@ func populateYamlPresenceMap(yamlMap map[interface{}]interface{}, presenceMap ma
 			}
 			return
 		}
-		presenceMap[strings.Join(key, ".")] = true
+		presenceMap[strings.Join(key, ".")] = struct{}{}
 	}
 	check([]string{}, yamlMap)
 }
 
-func parseConfig(fileBytes []byte, presenceMap map[string]bool) (*generalConfig, error) {
+func parseConfig(fileBytes []byte, presenceMap map[string]struct{}) (*generalConfig, error) {
 	// expand environment variables
 	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
 
@@ -563,7 +563,7 @@ func parseConfig(fileBytes []byte, presenceMap map[string]bool) (*generalConfig,
 	return gc, nil
 }
 
-func readConfig(fullConfigPath string, presenceMap map[string]bool) (*generalConfig, error) {
+func readConfig(fullConfigPath string, presenceMap map[string]struct{}) (*generalConfig, error) {
 	if fullConfigPath == "" {
 		return sharedGeneralConfig, nil
 	}
@@ -586,14 +586,14 @@ func readConfig(fullConfigPath string, presenceMap map[string]bool) (*generalCon
 
 type Configurator struct {
 	gc          *generalConfig
-	presenceMap map[string]bool
+	presenceMap map[string]struct{}
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
 	if configFilePath == "" {
 		configFilePath = *configFile
 	}
-	presenceMap := make(map[string]bool)
+	presenceMap := make(map[string]struct{})
 	conf, err := readConfig(configFilePath, presenceMap)
 	if err != nil {
 		return nil, err
@@ -605,7 +605,7 @@ func NewConfigurator(configFilePath string) (*Configurator, error) {
 }
 
 func NewConfiguratorFromData(data []byte) (*Configurator, error) {
-	presenceMap := make(map[string]bool)
+	presenceMap := make(map[string]struct{})
 	conf, err := parseConfig(data, presenceMap)
 	if err != nil {
 		return nil, err
@@ -660,7 +660,9 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 			}
 			log.Warningf("yaml defines %s as []string, but flags do not.", flg.Name)
 		}
-		if originalSetFlags[flg.Name] || !c.presenceMap[flg.Name] {
+		_, setInFlags := originalSetFlags[flg.Name]
+		_, presentInYaml := c.presenceMap[flg.Name]
+		if setInFlags || !presentInYaml {
 			flg.Value.Set(flag.Lookup(flg.Name).Value.String())
 			return
 		}

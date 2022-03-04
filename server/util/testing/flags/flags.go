@@ -17,11 +17,13 @@ func Set(t testing.TB, name, value string) {
 	}
 	original := f.Value.String()
 	originalSetMap := config.GetOriginalSetFlags()
-	originalSet := originalSetMap[name]
-	originalSetMap[name] = true
+	_, inOriginalSet := originalSetMap[name]
+	originalSetMap[name] = struct{}{}
 	flag.Set(name, value)
 	t.Cleanup(func() {
 		flag.Set(name, original)
-		originalSetMap[name] = originalSet
+		if !inOriginalSet {
+			delete(originalSetMap, name)
+		}
 	})
 }
