@@ -44,6 +44,9 @@ func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (fs *fakeStore) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
 	return nil, nil
 }
+func (fs *fakeStore) GetDB(clusterID uint64) (*pebble.DB, error) {
+	return nil, nil
+}
 
 func TestSnapshotAndRestore(t *testing.T) {
 	baseDir := getTmpDir(t)

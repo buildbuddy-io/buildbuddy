@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -134,8 +135,11 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
 
-	for rangeClusterID, rangeDescriptor := range s.clusterRanges {
-		if clusterID == rangeClusterID {
+	for _, rangeDescriptor := range s.clusterRanges {
+		if len(rangeDescriptor.GetReplicas()) == 0 {
+			continue
+		}
+		if clusterID == rangeDescriptor.GetReplicas()[0].GetClusterId() {
 			return rangeDescriptor
 		}
 	}
@@ -266,7 +270,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.replicaMu.Unlock()
 
 	s.rangeMu.Lock()
-	s.clusterRanges[clusterID] = rd
+	s.clusterRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
 
 	leader := s.isLeader(clusterID)
@@ -279,26 +283,33 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	clusterID := rd.GetReplicas()[0].GetClusterId()
-
 	s.replicaMu.Lock()
 	delete(s.replicas, rd.GetRangeId())
 	s.replicaMu.Unlock()
 
 	s.rangeMu.Lock()
-	delete(s.clusterRanges, clusterID)
+	delete(s.clusterRanges, rd.GetRangeId())
 	s.rangeMu.Unlock()
 	s.gossipUsage()
 }
 
-func (s *Store) RangeIsActive(rangeID uint64) bool {
+func (s *Store) RangeIsActive(header *rfpb.Header) bool {
 	s.leaseMu.RLock()
-	rl, ok := s.leases[rangeID]
+	rl, leaseOK := s.leases[header.GetRangeId()]
+	rd, rangeOK := s.clusterRanges[header.GetRangeId()]
 	s.leaseMu.RUnlock()
 
-	if !ok {
+	if !leaseOK || !rangeOK {
 		return false
 	}
+
+	// Ensure the header generation matches what we have locally -- if not,
+	// force client to go back and re-pull the rangeDescriptor from the meta
+	// range.
+	if rd.GetGeneration() != header.GetGeneration() {
+		return false
+	}
+
 	valid := rl.Valid()
 	return valid
 }
@@ -332,6 +343,18 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 		return nil
 	})
 	return rc, err
+}
+
+func (s *Store) GetDB(rangeID uint64) (*pebble.DB, error) {
+	s.replicaMu.RLock()
+	defer s.replicaMu.RUnlock()
+	// This code will be called by all replicas in a range when
+	// doing a split, so we do not check for range leases here.
+	r, ok := s.replicas[rangeID]
+	if !ok {
+		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+	}
+	return r.DB()
 }
 
 func (s *Store) isLeader(clusterID uint64) bool {
@@ -408,7 +431,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+	if !s.RangeIsActive(req.GetHeader()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return nil, err
 	}
@@ -422,7 +445,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+	if !s.RangeIsActive(req.GetHeader()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return nil, err
 	}
@@ -439,7 +462,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
 	s.replicaMu.RLock()
 	defer s.replicaMu.RUnlock()
-	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+	if !s.RangeIsActive(req.GetHeader()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return nil, err
 	}
@@ -480,7 +503,7 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	s.replicaMu.RLock()
 	defer s.replicaMu.RUnlock()
-	if !s.RangeIsActive(req.GetHeader().GetRangeId()) {
+	if !s.RangeIsActive(req.GetHeader()) {
 		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
 		return err
 	}
@@ -736,7 +759,68 @@ func (s *Store) membersInState(memberStatus serf.MemberStatus) []serf.Member {
 }
 
 func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
-	// TODO(tylerw): implement
+	sourceRange := s.GetRange(clusterID)
+	if sourceRange == nil {
+		return status.FailedPreconditionErrorf("No range found for cluster: %d", clusterID)
+	}
+	// start a new cluster in parallel to the existing cluster
+	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	newIDs, err := s.reserveIDsForNewCluster(ctx, len(existingMembers))
+	if err != nil {
+		return err
+	}
+	nodeGrpcAddrs := make(map[string]string)
+	for _, replica := range existingMembers {
+		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
+		if err != nil {
+			return err
+		}
+		grpcAddr, _, err := s.registry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
+		if err != nil {
+			return err
+		}
+		nodeGrpcAddrs[nhid] = grpcAddr
+	}
+	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, newIDs.maxNodeID, nodeGrpcAddrs)
+	err = bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, rbuilder.NewBatchBuilder())
+	if err != nil {
+		return err
+	}
+
+	newMembers, err := s.GetClusterMembership(ctx, newIDs.clusterID)
+	if err != nil {
+		return err
+	}
+	// Send a SplitRequest through the cluster that is to be split.
+	splitBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.SplitRequest{
+		SourceRange: sourceRange,
+		ProposedRange: &rfpb.RangeDescriptor{
+			Replicas: newMembers,
+		},
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+	batchRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, splitBatch)
+	if err != nil {
+		return err
+	}
+	splitRsp, err := rbuilder.NewBatchResponseFromProto(batchRsp).SplitResponse(0)
+	if err != nil {
+		return err
+	}
+	log.Printf("SplitResponse was: %s", proto.CompactTextString(splitRsp))
+	// The split request will contain the new nodes that will own
+	// the second half of the split range.
+	//  - first range will determine a split point
+	//  - first range will copy the data to a file
+	//  - first range will ask store to load the file on the new node
+	//  - first range will
+	//  - first range will delete the copied data
+	// update the range descriptor
 	return nil
 }
 
@@ -864,6 +948,50 @@ func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {
 	ids := make([]uint64, 0, n)
 	for i := 0; i < n; i++ {
 		ids = append(ids, newVal-uint64(i))
+	}
+	return ids, nil
+}
+
+type newClusterIDs struct {
+	clusterID uint64
+	rangeID   uint64
+	maxNodeID uint64
+}
+
+func (s *Store) reserveIDsForNewCluster(ctx context.Context, numNodes int) (*newClusterIDs, error) {
+	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		Key:   constants.LastClusterIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastNodeIDKey,
+		Delta: uint64(numNodes),
+	}).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	metaRangeRsp, err := s.sender.SyncPropose(ctx, constants.MetaRangePrefix, metaRangeBatch)
+	if err != nil {
+		return nil, err
+	}
+	clusterIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
+	if err != nil {
+		return nil, err
+	}
+	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(1)
+	if err != nil {
+		return nil, err
+	}
+	nodeIDsIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(2)
+	if err != nil {
+		return nil, err
+	}
+	ids := &newClusterIDs{
+		clusterID: clusterIncrRsp.GetValue(),
+		rangeID:   rangeIDIncrRsp.GetValue(),
+		maxNodeID: nodeIDsIncrRsp.GetValue(),
 	}
 	return ids, nil
 }

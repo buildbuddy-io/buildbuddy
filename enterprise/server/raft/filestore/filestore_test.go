@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func getTmpDir(t *testing.T) string {
@@ -40,7 +41,17 @@ func TestPebbleWriteCloser(t *testing.T) {
 	defer db.Close()
 	wb := db.NewIndexedBatch()
 
-	wc := filestore.PebbleWriter(wb, []byte("major/key/alert"))
+	wc, err := filestore.PebbleWriter(wb, &rfpb.FileRecord{
+		GroupId: "major",
+		Isolation: &rfpb.Isolation{
+			CacheType: rfpb.Isolation_CAS_CACHE,
+		},
+		Digest: &repb.Digest{
+			Hash:      "key/alert",
+			SizeBytes: 3,
+		},
+	})
+	require.Nil(t, err, err)
 	buf := make([]byte, 10)
 
 	// Write a buf smaller than the flush size of 3M.
@@ -64,14 +75,14 @@ func TestPebbleWriteCloser(t *testing.T) {
 	require.Nil(t, wc.Close())
 	require.Nil(t, wb.Commit(&pebble.WriteOptions{Sync: true}))
 
-	first, closer, err := db.Get([]byte("major/key/alert-1"))
+	first, closer, err := db.Get([]byte("major/cas/key/alert-1"))
 	require.Nil(t, err)
 	require.Equal(t, 3000000, len(first))
 	require.Equal(t, byte('a'), first[0])
 	require.Equal(t, byte('b'), first[len(first)-1])
 	require.Nil(t, closer.Close())
 
-	second, closer, err := db.Get([]byte("major/key/alert-2"))
+	second, closer, err := db.Get([]byte("major/cas/key/alert-2"))
 	require.Nil(t, err)
 	require.Equal(t, 1000010, len(second))
 	require.Equal(t, byte('b'), second[0])
@@ -108,7 +119,7 @@ func TestPebbleReadCloser(t *testing.T) {
 	iter := db.NewIter(nil)
 	defer iter.Close()
 	rc := filestore.PebbleReader(iter, &rfpb.StorageMetadata_PebbleMetadata{
-		Key:    []byte("major/key/alert"),
+		Key:    []byte("major/key/alert-"),
 		Chunks: 2,
 	})
 
@@ -145,7 +156,7 @@ func TestMissingChunks(t *testing.T) {
 	require.Nil(t, wb.Close())
 
 	md := &rfpb.StorageMetadata_PebbleMetadata{
-		Key:    []byte("major/key/alert"),
+		Key:    []byte("major/key/alert-"),
 		Chunks: 3,
 	}
 

@@ -38,13 +38,12 @@ func NewWriter(ctx context.Context, fileDir string, wb *pebble.Batch, fileRecord
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
-	// Uncommenting the following stanza would cause files to be stored in
-	// chunks directly in the pebble DB rather than as files on disk.
-	fileKey, err := constants.FileKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	return PebbleWriter(wb, fileKey), nil
+	//
+	// Uncommenting one of the following stanzas will cause newly written
+	// files to be written either to pebble or to disk. Already written
+	// files will be read from wherever they stored, regardless of this
+	// setting.
+	return PebbleWriter(wb, fileRecord)
 	//return FileWriter(ctx, fileDir, fileRecord)
 }
 
@@ -92,7 +91,7 @@ func FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord
 }
 
 func chunkName(key []byte, idx int64) []byte {
-	return append(key, []byte("-"+strconv.FormatInt(idx, 10))...)
+	return append(key, []byte(strconv.FormatInt(idx, 10))...)
 }
 
 type pebbleChunker struct {
@@ -109,7 +108,11 @@ type pebbleChunker struct {
 // equal to key + "-%d" where %d is the chunk number. StreamChunker implements
 // the WriteCloser interface, but additionally implements a Metadata call,
 // which returns a bit of metedata in proto form describing the data written.
-func PebbleWriter(wb *pebble.Batch, key []byte) WriteCloserMetadata {
+func PebbleWriter(wb *pebble.Batch, fr *rfpb.FileRecord) (WriteCloserMetadata, error) {
+	key, err := constants.FileDataKey(fr)
+	if err != nil {
+		return nil, err
+	}
 	return &pebbleChunker{
 		wb:       wb,
 		key:      key,
@@ -117,7 +120,7 @@ func PebbleWriter(wb *pebble.Batch, key []byte) WriteCloserMetadata {
 		chunkNum: initialChunkNum,
 		buf:      make([]byte, maxPebbleValueSize),
 		closed:   false,
-	}
+	}, nil
 }
 
 func (c *pebbleChunker) Write(data []byte) (int, error) {

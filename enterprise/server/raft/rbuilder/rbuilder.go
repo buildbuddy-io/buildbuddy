@@ -65,6 +65,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Cas{
 			Cas: value,
 		}
+	case *rfpb.SplitRequest:
+		req.Value = &rfpb.RequestUnion_Split{
+			Split: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -174,4 +178,13 @@ func (br *BatchResponse) CASResponse(n int) (*rfpb.CASResponse, error) {
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetCas(), br.unionError(u)
+}
+
+func (br *BatchResponse) SplitResponse(n int) (*rfpb.SplitResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetSplit(), br.unionError(u)
 }

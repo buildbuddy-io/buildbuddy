@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
+	GetDB(clusterID uint64) (*pebble.DB, error)
 }
 
 // KVs are stored directly in Pebble by the raft state machine, so the key and
@@ -423,6 +425,122 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
+type splitPoint struct {
+	left      []byte
+	right     []byte
+	leftSize  int64
+	rightSize int64
+}
+
+func findSplitPoint(db *pebble.DB) *splitPoint {
+	iterOpts := &pebble.IterOptions{
+		LowerBound: keys.Key([]byte{constants.MinByte}),
+		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	}
+
+	iter := db.NewIter(iterOpts)
+	defer iter.Close()
+	var t bool = iter.First()
+
+	totalSize := int64(0)
+	for ; t; t = iter.Next() {
+		if t {
+			totalSize += int64(len(iter.Value()))
+		}
+	}
+
+	leftSplitSize := int64(0)
+	t = iter.First()
+	var lastKey []byte
+	for ; t; t = iter.Next() {
+		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
+			sp := splitPoint{
+				left:      make([]byte, len(lastKey)),
+				leftSize:  leftSplitSize,
+				right:     make([]byte, len(iter.Key())),
+				rightSize: totalSize - leftSplitSize,
+			}
+			copy(sp.left, lastKey)
+			copy(sp.right, iter.Key())
+			return &sp
+		}
+		if t {
+			leftSplitSize += int64(len(iter.Value()))
+			if len(lastKey) != len(iter.Key()) {
+				lastKey = make([]byte, len(iter.Key()))
+			}
+			copy(lastKey, iter.Key())
+		}
+	}
+	return nil
+}
+
+func canSplitKeys(leftKey, rightKey []byte) bool {
+	splitStart := []byte{constants.UnsplittableMaxByte}
+	// Disallow splitting the metarange, or any range before '\x04'.
+	if bytes.Compare(rightKey, splitStart) <= 0 {
+		return false
+	}
+
+	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
+		return false
+	}
+
+	// Disallow splitting pebble file-metadata from stored-file-data.
+	// File mdata will have a key like /foo/bar/baz
+	// File data will have a key like /foo/bar/baz-{1..n}
+	if bytes.HasPrefix(rightKey, leftKey) {
+		return false
+	}
+
+	return true
+}
+
+func (sm *Replica) split(req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
+	sm.closedMu.RLock()
+	defer sm.closedMu.RUnlock()
+
+	//  - first range will determine a split point
+	sp := findSplitPoint(sm.db)
+	if sp == nil {
+		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
+	}
+
+	f, err := os.CreateTemp(sm.fileDir, "replica-*.snap")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+
+	preparedSnap, err := sm.PrepareSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	snap, ok := preparedSnap.(*pebble.Snapshot)
+	if !ok {
+		return nil, status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
+	}
+	defer snap.Close()
+	if err := SaveSnapshotToWriter(f, snap); err != nil {
+		return nil, err
+	}
+	rightDB, err := sm.store.GetDB(req.GetSourceRange().GetRangeId())
+	if err != nil {
+		return nil, err
+	}
+	f.Seek(0, 0)
+	if err := ApplySnapshotFromReader(f, rightDB); err != nil {
+		return nil, err
+	}
+	if err := rightDB.DeleteRange(keys.Key{constants.MinByte}, sp.left, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	if err := sm.db.DeleteRange(sp.right, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	return &rfpb.SplitResponse{}, nil
+}
+
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
@@ -491,6 +609,12 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 		r, err := sm.cas(wb, value.Cas)
 		rsp.Value = &rfpb.ResponseUnion_Cas{
 			Cas: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_Split:
+		r, err := sm.split(value.Split)
+		rsp.Value = &rfpb.ResponseUnion_Split{
+			Split: r,
 		}
 		rsp.Status = statusProto(err)
 
