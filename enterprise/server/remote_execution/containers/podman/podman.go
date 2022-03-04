@@ -69,7 +69,6 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		"--name",
 		containerName,
 		"--rm",
-		"--network=none",
 		"--volume",
 		fmt.Sprintf(
 			"%s:%s",
