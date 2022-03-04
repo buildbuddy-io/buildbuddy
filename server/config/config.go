@@ -382,10 +382,12 @@ type OrgConfig struct {
 	Domain string `yaml:"domain" usage:"Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account."`
 }
 
-var sharedGeneralConfig = &generalConfig{}
-var originalStringSlices = make(map[string][]string)
-var defineFlagsOnce sync.Once
-var originalSetFlags = make(map[string]bool)
+var (
+	sharedGeneralConfig = &generalConfig{}
+	originalStringSlices = make(map[string][]string)
+	defineFlagsOnce sync.Once
+	originalSetFlags = make(map[string]bool)
+)
 
 func RegisterAndParseFlags() {
 	defineFlagsOnce.Do(func() {
