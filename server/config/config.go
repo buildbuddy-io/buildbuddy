@@ -550,6 +550,8 @@ func parseConfig(fileBytes []byte, presenceMap map[string]bool) (*generalConfig,
 	if err := yaml.Unmarshal([]byte(expandedFileBytes), gc); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
+	// The shared config caches the last config parsed from a file so that a call to
+	// `readConfig` with an empty `configFile` can return the cached config.
 	sharedGeneralConfig = gc
 
 	generalConfigMap := make(map[interface{}]interface{})
