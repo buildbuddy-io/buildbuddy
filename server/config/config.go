@@ -383,10 +383,10 @@ type OrgConfig struct {
 }
 
 var (
-	sharedGeneralConfig = &generalConfig{}
+	sharedGeneralConfig  = &generalConfig{}
 	originalStringSlices = make(map[string][]string)
-	defineFlagsOnce sync.Once
-	originalSetFlags = make(map[string]bool)
+	defineFlagsOnce      sync.Once
+	originalSetFlags     = make(map[string]bool)
 )
 
 func RegisterAndParseFlags() {
