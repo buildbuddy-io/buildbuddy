@@ -54,7 +54,6 @@ require (
 	github.com/klauspost/compress v1.14.1
 	github.com/lestrrat-go/jwx v1.2.11
 	github.com/lni/dragonboat/v3 v3.3.4
-	github.com/lni/goutils v1.3.1-0.20210517080819-7f56813dc438
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v1.14.11
@@ -166,6 +165,7 @@ require (
 	github.com/lestrrat-go/httpcc v1.0.0 // indirect
 	github.com/lestrrat-go/iter v1.0.1 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
+	github.com/lni/goutils v1.3.1-0.20210517080819-7f56813dc438 // indirect
 	github.com/lni/vfs v0.2.0 // indirect
 	github.com/magefile/mage v1.10.0 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
