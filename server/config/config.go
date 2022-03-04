@@ -623,7 +623,6 @@ func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, erro
 		return nil, err
 	}
 	configurator.ReconcileFlagsAndConfig()
-	log.Infof("log_queries: %v", configurator.gc.Database.LogQueries)
 	return configurator, nil
 }
 
