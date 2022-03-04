@@ -289,6 +289,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 }
 
 func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor(t *testing.T) {
+	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
@@ -312,16 +313,20 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 
 	require.Equal(t, 0, res.ExitCode)
 
+	rbetest.WaitForAnyPooledRunner(t, ctx)
+
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"stat", "foo.txt"},
 		Platform:  platform,
 	}, opts)
 	res = cmd.Wait()
 
+	require.Equal(t, "", res.Stderr)
 	require.Equal(t, 0, res.ExitCode)
 }
 
 func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExecutor(t *testing.T) {
+	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
@@ -344,6 +349,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 			"x-buildbuddy-platform.pool": "foo",
 		},
 	}
+
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"touch", "foo.txt"},
 		Platform:  platform,
@@ -352,12 +358,15 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 
 	require.Equal(t, 0, res.ExitCode)
 
+	rbetest.WaitForAnyPooledRunner(t, ctx)
+
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"stat", "foo.txt"},
 		Platform:  platform,
 	}, opts)
 	res = cmd.Wait()
 
+	require.Equal(t, "", res.Stderr)
 	require.Equal(t, 0, res.ExitCode)
 }
 

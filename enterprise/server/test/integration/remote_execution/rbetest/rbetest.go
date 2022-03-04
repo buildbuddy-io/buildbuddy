@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -47,11 +48,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
@@ -1016,6 +1019,21 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
 	return &Command{r, cmd, r.rbeClient, opts.UserID}
+}
+
+// WaitForAnyPooledRunner waits for the runner pool count across all executors
+// to be at least 1. This can be called after a command is complete,
+// to ensure that the runner has been made available for recycling.
+func WaitForAnyPooledRunner(t *testing.T, ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	r := retry.DefaultWithContext(ctx)
+	for r.Next() {
+		if testmetrics.GaugeValue(t, metrics.RunnerPoolCount) > 0 {
+			break
+		}
+	}
+	require.NoError(t, ctx.Err(), "timed out waiting for runner to be pooled")
 }
 
 func minimalCommand(args ...string) *repb.Command {
