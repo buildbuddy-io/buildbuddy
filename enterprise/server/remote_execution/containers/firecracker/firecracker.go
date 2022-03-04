@@ -736,13 +736,13 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 	defer span.End()
 
 	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
-		return status.WrapError(err, "Failed to unmount workspace")
+		return status.WrapError(err, "failed to unmount workspace")
 	}
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 	if _, err := execClient.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
-		return status.WrapError(err, "Failed to remount workspace after update")
+		return status.WrapError(err, "failed to remount workspace after update")
 	}
 	return nil
 }
