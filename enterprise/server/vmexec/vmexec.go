@@ -18,8 +18,11 @@ import (
 )
 
 const (
+	// NOTE: These must match the values in enterprise/server/cmd/goinit/main.go
+
 	// workspaceDevice is the path to the hot-swappable workspace block device.
 	workspaceDevice = "/dev/vdc"
+
 	// workspaceMountPath is the path where the hot-swappable workspace block
 	// device is mounted.
 	workspaceMountPath = "/workspace"
