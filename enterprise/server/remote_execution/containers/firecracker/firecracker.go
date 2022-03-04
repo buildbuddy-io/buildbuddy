@@ -711,6 +711,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 // createWorkspaceImage creates a new ext4 image from the action working dir
 // and returns the chroot-relative path to the created image.
 func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspacePath string) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	c.workspaceGeneration++
 	relativePath := fmt.Sprintf("%s.gen_%d.ext4", workspaceFSName, c.workspaceGeneration)
 	hostPath := filepath.Join(c.getChroot(), relativePath)
@@ -729,7 +732,9 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 // container, updates the workspace block device to an ext4 image pointed to
 // by chrootRelativeImagePath, and re-mounts the drive.
 func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient, chrootRelativeImagePath string) error {
-	log.Infof("Hot-swapping guest workspace drive")
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
 		return status.WrapError(err, "Failed to unmount workspace")
 	}
