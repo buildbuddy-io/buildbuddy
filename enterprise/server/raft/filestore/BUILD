@@ -21,6 +21,7 @@ go_test(
     deps = [
         ":filestore",
         "//proto:raft_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/util/disk",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",

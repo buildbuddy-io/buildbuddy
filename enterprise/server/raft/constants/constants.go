@@ -86,6 +86,29 @@ var (
 	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))
 )
 
+func fileRecordSegments(r *rfpb.FileRecord) ([4]string, error) {
+	var segments [4]string
+	if r.GetGroupId() == "" {
+		return segments, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+	}
+	segments[0] = r.GetGroupId()
+
+	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
+		segments[1] = "cas"
+	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+		segments[1] = "ac"
+	} else {
+		return segments, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+	}
+	if len(r.GetDigest().GetHash()) > 4 {
+		segments[2] = r.GetDigest().GetHash()[:4]
+	} else {
+		return segments, status.FailedPreconditionError("Malformed digest; too short.")
+	}
+	segments[3] = r.GetDigest().GetHash()
+	return segments, nil
+}
+
 func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
@@ -93,26 +116,25 @@ func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	//   // for example:
 	//   //   GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
 	//   //   GR123456/cas/abcd/abcd12345asdasdasd123123123asdasdasd
-	segments := make([]string, 0, 4)
-	if r.GetGroupId() == "" {
-		return nil, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+	s, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
 	}
-	segments = append(segments, r.GetGroupId())
+	return []byte(filepath.Join(s[0], s[1], s[2], s[3])), nil
+}
 
-	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
-		segments = append(segments, "cas")
-	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
-		segments = append(segments, "ac")
-	} else {
-		return nil, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+func FileDataKey(r *rfpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// File Data keys look like this:
+	//   // {groupID}/{ac|cas}/{hash}-
+	//   // for example:
+	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd-
+	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd-
+	s, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
 	}
-	if len(r.GetDigest().GetHash()) > 4 {
-		segments = append(segments, r.GetDigest().GetHash()[:4])
-	} else {
-		return nil, status.FailedPreconditionError("Malformed digest; too short.")
-	}
-	segments = append(segments, r.GetDigest().GetHash())
-	return []byte(filepath.Join(segments...)), nil
+	return []byte(filepath.Join(s[0], s[1], s[3]) + "-"), nil
 }
 
 func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
@@ -120,24 +142,11 @@ func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// Metadata keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}
 	//   // for example:
-	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd\xff
-	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd\xff
-	segments := make([]string, 0, 3)
-	if r.GetGroupId() == "" {
-		return nil, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd
+	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd
+	s, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
 	}
-	segments = append(segments, r.GetGroupId())
-
-	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
-		segments = append(segments, "cas")
-	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
-		segments = append(segments, "ac")
-	} else {
-		return nil, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
-	}
-	if len(r.GetDigest().GetHash()) <= 4 {
-		return nil, status.FailedPreconditionError("Malformed digest; too short.")
-	}
-	segments = append(segments, r.GetDigest().GetHash())
-	return keys.Key([]byte(filepath.Join(segments...))).Next(), nil
+	return []byte(filepath.Join(s[0], s[1], s[3])), nil
 }

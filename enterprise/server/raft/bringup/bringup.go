@@ -206,7 +206,6 @@ func (cs *ClusterStarter) OnEvent(updateType serf.EventType, event serf.Event) {
 
 type bootstrapNode struct {
 	grpcAddress string
-	nodeHostID  string
 	index       uint64
 }
 
@@ -229,7 +228,6 @@ func MakeBootstrapInfo(clusterID, firstNodeID uint64, nodeGrpcAddrs map[string]s
 		nodeID := i - 1 + firstNodeID
 		bi.nodes = append(bi.nodes, bootstrapNode{
 			grpcAddress: grpcAddress,
-			nodeHostID:  nhid,
 			index:       nodeID,
 		})
 		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
@@ -242,7 +240,7 @@ func MakeBootstrapInfo(clusterID, firstNodeID uint64, nodeGrpcAddrs map[string]s
 	return bi
 }
 
-func (cs *ClusterStarter) StartCluster(ctx context.Context, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
+func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInfo *ClusterBootstrapInfo, batch *rbuilder.BatchBuilder) error {
 	log.Debugf("StartCluster called with bootstrapInfo: %+v", bootstrapInfo)
 	rangeSetupTime := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -260,7 +258,7 @@ func (cs *ClusterStarter) StartCluster(ctx context.Context, bootstrapInfo *Clust
 	for _, node := range bootstrapInfo.nodes {
 		node := node
 		eg.Go(func() error {
-			apiClient, err := cs.apiClient.Get(ctx, node.grpcAddress)
+			apiClient, err := apiClient.Get(ctx, node.grpcAddress)
 			if err != nil {
 				return err
 			}
@@ -381,7 +379,7 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 			})
 		}
 		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
-		if err := cs.StartCluster(ctx, bootstrapInfo, batch); err != nil {
+		if err := StartCluster(ctx, cs.apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
 		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)

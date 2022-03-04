@@ -140,11 +140,7 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	client, err := c.getClient(ctx, peerHeader.GRPCAddr)
-	if err != nil {
-		return nil, err
-	}
+func RemoteWriter(ctx context.Context, client rfspb.ApiClient, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
 	stream, err := client.Write(ctx)
 	if err != nil {
 		return nil, err
@@ -156,6 +152,14 @@ func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fi
 		stream:        stream,
 	}
 	return wc, nil
+}
+
+func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+	client, err := c.getClient(ctx, peerHeader.GRPCAddr)
+	if err != nil {
+		return nil, err
+	}
+	return RemoteWriter(ctx, client, peerHeader, fileRecord)
 }
 
 type multiWriteCloser struct {

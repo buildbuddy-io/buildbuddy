@@ -102,6 +102,36 @@ func (rc *RangeCache) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return rc.updateRange(rangeDescriptor)
 }
 
+func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb.RangeDescriptor) {
+	rc.rangeMu.RLock()
+	defer rc.rangeMu.RUnlock()
+
+	r := rc.rangeMap.Get(rng.GetLeft(), rng.GetRight())
+	if r == nil {
+		log.Errorf("SetPreferredReplica called but range %+v not in cache", rng)
+		return
+	}
+
+	rd, ok := r.Val.(*rfpb.RangeDescriptor)
+	if !ok {
+		return
+	}
+
+	leadReplicaIndex := -1
+	for i, replica := range rd.GetReplicas() {
+		if replica.GetClusterId() == rep.GetClusterId() &&
+			replica.GetNodeId() == rep.GetNodeId() {
+			leadReplicaIndex = i
+			break
+		}
+	}
+	if leadReplicaIndex == -1 {
+		log.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
+		return
+	}
+	rd.Replicas[0], rd.Replicas[leadReplicaIndex] = rd.Replicas[leadReplicaIndex], rd.Replicas[0]
+}
+
 func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	rc.rangeMu.RLock()
 	defer rc.rangeMu.RUnlock()
