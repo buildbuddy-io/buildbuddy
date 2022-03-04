@@ -17,6 +17,17 @@ import (
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
+const (
+	// NOTE: These must match the values in enterprise/server/cmd/goinit/main.go
+
+	// workspaceDevice is the path to the hot-swappable workspace block device.
+	workspaceDevice = "/dev/vdc"
+
+	// workspaceMountPath is the path where the hot-swappable workspace block
+	// device is mounted.
+	workspaceMountPath = "/workspace"
+)
+
 type execServer struct {
 	reapMutex *sync.RWMutex
 }
@@ -74,6 +85,20 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 		log.Debugf("Set time of day to %d", req.GetUnixTimestampNanoseconds())
 	}
 	return &vmxpb.InitializeResponse{}, nil
+}
+
+func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
+	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
+		return nil, status.InternalErrorf("unmount failed: %s", err)
+	}
+	return &vmxpb.UnmountWorkspaceResponse{}, nil
+}
+
+func (x *execServer) MountWorkspace(ctx context.Context, req *vmxpb.MountWorkspaceRequest) (*vmxpb.MountWorkspaceResponse, error) {
+	if err := syscall.Mount(workspaceDevice, workspaceMountPath, "ext4", syscall.MS_RELATIME, ""); err != nil {
+		return nil, err
+	}
+	return &vmxpb.MountWorkspaceResponse{}, nil
 }
 
 func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {

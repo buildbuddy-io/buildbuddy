@@ -2,6 +2,25 @@ syntax = "proto3";
 
 package vmexec;
 
+// The exec service is run from inside a VM. The host uses this service to
+// execute commands as well as prepare the VM for command execution.
+service Exec {
+  // Executes a command in the VM and returns the result of execution.
+  rpc Exec(ExecRequest) returns (ExecResponse);
+
+  // Prepares the VM for command execution after a fresh start or a resume.
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+
+  // Unmounts the currently mounted workspace drive so that the backing disk
+  // image can safely be hot-swapped with another image. The workspace must
+  // be re-mounted via MountWorkspace before it can be used.
+  rpc UnmountWorkspace(UnmountWorkspaceRequest)
+      returns (UnmountWorkspaceResponse);
+
+  // Mounts the workspace drive.
+  rpc MountWorkspace(MountWorkspaceRequest) returns (MountWorkspaceResponse);
+}
+
 message ExecRequest {
   string working_directory = 1;
 
@@ -46,9 +65,8 @@ message InitializeResponse {
   // This page intentionally left empty.
 }
 
-// This service is run inside of a VM. It executes commands sent to it over
-// gRPC in the local environment and returns the results.
-service Exec {
-  rpc Exec(ExecRequest) returns (ExecResponse);
-  rpc Initialize(InitializeRequest) returns (InitializeResponse);
-}
+message UnmountWorkspaceRequest {}
+message UnmountWorkspaceResponse {}
+
+message MountWorkspaceRequest {}
+message MountWorkspaceResponse {}
