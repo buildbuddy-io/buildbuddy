@@ -83,6 +83,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/fileresolver",
+        "//server/util/log",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -35,6 +36,9 @@ import (
 
 const (
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+
+	diskCacheSize = 10_000_000_000  // 10GB
+	fileCacheSize = 100_000_000_000 // 100GB
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -44,9 +48,8 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	env.SetFileResolver(fileresolver.New(b, "enterprise"))
 
-	diskCacheSize := 10_000_000_000 // 10GB
 	testRootDir := testfs.MakeTempDir(t)
-	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, int64(diskCacheSize))
+	dc, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: testRootDir}, diskCacheSize)
 	if err != nil {
 		t.Error(err)
 	}
@@ -78,7 +81,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env.SetActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-	fc, err := filecache.NewFileCache(testRootDir, int64(diskCacheSize))
+	fc, err := filecache.NewFileCache(testRootDir, fileCacheSize)
 	require.NoError(t, err)
 	env.SetFileCache(fc)
 	return env
@@ -511,6 +514,165 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "Hello\nworld\n", string(res.Stdout), "stdout should contain pwd output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test1.sh": "echo Hello; echo world > /root/should_be_persisted.txt",
+	})
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         "docker.io/library/busybox",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		DiskSlackSpaceMB:       2000,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		assert.NoError(t, err)
+	})
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "Hello\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// While we're paused, write new workspace contents.
+	// Then unpause and execute a command that requires the new contents.
+	err = os.Remove(filepath.Join(workDir, "test1.sh"))
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test2.sh": "cat /root/should_be_persisted.txt",
+	})
+
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	err = c.SyncWorkspace(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "world\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+}
+
+func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test1.sh": "echo Hello; echo world > /root/should_be_persisted.txt",
+	})
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		DiskSlackSpaceMB:       4000, // 4 GB
+		JailerRoot:             tempJailerRoot(t),
+		EnableNetworking:       true,
+		InitDockerd:            true,
+	}
+	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(ctx)
+		assert.NoError(t, err)
+	})
+
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			set -e
+			# Discard pull output to make the output deterministic
+			docker pull ubuntu:20.04 &>/dev/null
+
+			# Try running a few commands
+			docker run --rm ubuntu:20.04 echo Hello
+			docker run --rm ubuntu:20.04 echo world
+
+			# Write some output to the workspace to be preserved
+			touch preserves.txt
+		`},
+		OutputFiles: []string{"preserves.txt"},
+	}
+	res := c.Exec(ctx, cmd, nil, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "Hello\nworld\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// Check that we copied the output file to the host workspace.
+	_, err = os.Stat(filepath.Join(workDir, "preserves.txt"))
+	require.NoError(t, err)
+
+	// While we're paused, write new workspace contents.
+	// Then unpause and execute a command that requires the new contents.
+	err = os.Remove(filepath.Join(workDir, "test1.sh"))
+	require.NoError(t, err)
+
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test2.sh": `
+		set -e
+
+		# Make sure we can read the output from the previous command
+		stat preserves.txt >/dev/null
+
+		# Make sure we can run docker images from cache
+		docker run --rm ubuntu:20.04 echo world
+		`,
+	})
+
+	start := time.Now()
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	err = c.SyncWorkspace(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+
+	log.Debugf("Resumed VM and executed docker-in-firecracker command in %s", time.Since(start))
+
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "world\n", string(res.Stdout))
+	require.Equal(t, 0, res.ExitCode)
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
 }
 
 func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {

@@ -91,6 +91,12 @@ const (
 	workspaceFSName  = "workspacefs.ext4"
 	workspaceDriveID = "workspacefs"
 
+	// The scratchfs image name and drive ID.
+	scratchFSName  = "scratchfs.ext4"
+	scratchDriveID = "scratchfs"
+	// TODO(bduffany): Make this configurable
+	scratchDiskSizeBytes = 2e9
+
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
 	containerDriveID = "containerfs"
@@ -277,11 +283,13 @@ type FirecrackerContainer struct {
 	id    string // a random GUID, unique per-run of firecracker
 	vmIdx int    // the index of this vm on the host machine
 
-	constants        Constants
-	containerImage   string // the OCI container image. ex "alpine:latest"
-	actionWorkingDir string // the action directory with inputs / outputs
-	workspaceFSPath  string // the path to the workspace ext4 image
-	containerFSPath  string // the path to the container ext4 image
+	constants           Constants
+	containerImage      string // the OCI container image. ex "alpine:latest"
+	actionWorkingDir    string // the action directory with inputs / outputs
+	workspaceFSPath     string // the path to the workspace ext4 image
+	workspaceGeneration int    // the number of times the workspace has been re-mounted into the guest VM
+	scratchFSPath       string // the path fo the scratch ext4 image
+	containerFSPath     string // the path to the container ext4 image
 
 	rmOnce *sync.Once
 	rmErr  error
@@ -544,7 +552,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		KernelImagePath:     kernelImagePath,
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
-		WorkspaceFSPath:     filepath.Join(c.getChroot(), workspaceFSName),
+		ScratchFSPath:       filepath.Join(c.getChroot(), scratchFSName),
+		WorkspaceFSPath:     c.workspaceFSPath,
 		ForceSnapshotDigest: d,
 	}
 
@@ -564,7 +573,10 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	return snapshotDigest, nil
 }
 
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride, instanceName string, snapshotDigest *repb.Digest) error {
+// LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
+// the VM. If workspaceDirOverride is set, it will also hot-swap the workspace
+// drive; otherwise, the workspace will be loaded as-is from the snapshot.
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string, instanceName string, snapshotDigest *repb.Digest) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -644,19 +656,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	workspaceFileInChroot := filepath.Join(c.getChroot(), workspaceFSName)
-	if workspaceDirOverride != "" {
-		// Put the filesystem in place
-		workspaceSizeBytes, err := disk.DirSize(workspaceDirOverride)
-		if err != nil {
-			return err
-		}
-		if err := ext4.DirectoryToImage(ctx, workspaceDirOverride, workspaceFileInChroot, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
-			return err
-		}
-	}
-	c.workspaceFSPath = workspaceFileInChroot
-
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
@@ -675,13 +674,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, vmStateSnapshotName, enableDiffSnapshotsOpt); err != nil {
 		return status.InternalErrorf("error loading snapshot: %s", err)
 	}
-	if workspaceDirOverride != "" {
-		// If the snapshot is being loaded with a different workspaceFS
-		// then handle that now.
-		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, workspaceFSName); err != nil {
-			return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
-		}
-	}
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
@@ -699,6 +691,58 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	})
 	if err != nil {
 		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
+	}
+
+	if workspaceDirOverride != "" {
+		// If the snapshot is being loaded with a different workspaceFS
+		// then handle that now.
+		wsImgRelPath, err := c.createWorkspaceImage(ctx, workspaceDirOverride)
+		if err != nil {
+			return err
+		}
+		if err := c.hotSwapWorkspace(ctx, execClient, wsImgRelPath); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// createWorkspaceImage creates a new ext4 image from the action working dir
+// and returns the chroot-relative path to the created image.
+func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspacePath string) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	c.workspaceGeneration++
+	relativePath := fmt.Sprintf("%s.gen_%d.ext4", workspaceFSName, c.workspaceGeneration)
+	hostPath := filepath.Join(c.getChroot(), relativePath)
+	sizeBytes, err := disk.DirSize(workspacePath)
+	if err != nil {
+		return "", err
+	}
+	if err := ext4.DirectoryToImage(ctx, workspacePath, hostPath, sizeBytes+c.constants.DiskSlackSpaceMB*1e6); err != nil {
+		return "", err
+	}
+	c.workspaceFSPath = hostPath
+	return relativePath, nil
+}
+
+// hotSwapWorkspace unmounts the workspace drive from a running firecracker
+// container, updates the workspace block device to an ext4 image pointed to
+// by chrootRelativeImagePath, and re-mounts the drive.
+func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient, chrootRelativeImagePath string) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
+		return status.WrapError(err, "failed to unmount workspace")
+	}
+	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
+		return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
+	}
+	if _, err := execClient.MountWorkspace(ctx, &vmxpb.MountWorkspaceRequest{}); err != nil {
+		return status.WrapError(err, "failed to remount workspace after update")
 	}
 	return nil
 }
@@ -767,7 +811,7 @@ func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 	return builder.Build(ctx)
 }
 
-func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, workspaceFS string) (*fcclient.Config, error) {
+func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
 	if c.constants.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
@@ -795,12 +839,20 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, works
 		InitrdPath:      initrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
+		// Note: ordering in this list determines the device lettering
+		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
 		Drives: []fcmodels.Drive{
 			fcmodels.Drive{
 				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
+			},
+			fcmodels.Drive{
+				DriveID:      fcclient.String(scratchDriveID),
+				PathOnHost:   &scratchFS,
+				IsRootDevice: fcclient.Bool(false),
+				IsReadOnly:   fcclient.Bool(false),
 			},
 			fcmodels.Drive{
 				DriveID:      fcclient.String(workspaceDriveID),
@@ -1179,6 +1231,11 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err != nil {
 		return err
 	}
+	scratchPath := filepath.Join(containerHome, scratchFSName)
+	if err := ext4.MakeEmptyImage(ctx, scratchPath, scratchDiskSizeBytes); err != nil {
+		return err
+	}
+	c.scratchFSPath = scratchPath
 	wsPath := filepath.Join(containerHome, workspaceFSName)
 	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
 		return err
@@ -1186,9 +1243,10 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.workspaceFSPath = wsPath
 
 	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
+	log.Debugf("c.scratchFSPath: %q", c.scratchFSPath)
 	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
 	log.Debugf("getChroot() is %q", c.getChroot())
-	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.workspaceFSPath)
+	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.scratchFSPath, c.workspaceFSPath)
 	if err != nil {
 		return err
 	}
@@ -1229,6 +1287,7 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	// TODO(bduffany): Reuse connection from Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
 		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
@@ -1497,7 +1556,29 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 		log.Debugf("Unpause took %s", time.Since(start))
 	}()
 
+	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
+}
+
+// SyncWorkspace creates a new disk image from the given working directory
+// and hot-swaps the currently mounted workspace drive in the guest.
+//
+// This is intended to be called just before Exec, so that the inputs to
+// the executed action will be made available to the VM.
+func (c *FirecrackerContainer) SyncWorkspace(ctx context.Context) error {
+	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
+	conn, err := c.dialVMExecServer(ctx)
+	if err != nil {
+		return err
+	}
+	execClient := vmxpb.NewExecClient(conn)
+
+	chrootRelativeImagePath, err := c.createWorkspaceImage(ctx, c.actionWorkingDir)
+	if err != nil {
+		return err
+	}
+
+	return c.hotSwapWorkspace(ctx, execClient, chrootRelativeImagePath)
 }
 
 // Wait waits until the underlying VM exits. It returns an error if one is

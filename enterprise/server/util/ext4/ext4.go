@@ -40,6 +40,31 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	return nil
 }
 
+// MakeEmptyImage creates a new empty ext4 disk image of the specified size
+// and writes it to outputFile.
+func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	args := []string{
+		"/sbin/mke2fs",
+		"-L", "",
+		"-N", "0",
+		"-O", "^64bit",
+		"-m", "5",
+		"-r", "1",
+		"-t", "ext4",
+		outputFile,
+		fmt.Sprintf("%dK", sizeBytes/1e3),
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
+		return status.InternalErrorf("%s: %s", err, out)
+	}
+	return nil
+}
+
 // DiskSizeBytes returns the size in bytes of a directory according to "du -sk".
 // It can be used when creating ext4 images -- to ensure they are large enough.
 func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {

@@ -31,6 +31,10 @@ type LoadSnapshotOptions struct {
 	InitrdImagePath     string
 	ContainerFSPath     string
 
+	// This field is optional -- a snapshot may have a scratch filesystem
+	// attached or it may have one attached at runtime.
+	ScratchFSPath string
+
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
@@ -81,6 +85,9 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 		snapOpts.KernelImagePath,
 		snapOpts.InitrdImagePath,
 		snapOpts.ContainerFSPath,
+	}
+	if snapOpts.ScratchFSPath != "" {
+		files = append(files, snapOpts.ScratchFSPath)
 	}
 	if snapOpts.WorkspaceFSPath != "" {
 		files = append(files, snapOpts.WorkspaceFSPath)
