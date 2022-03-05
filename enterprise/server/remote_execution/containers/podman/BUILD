@@ -33,5 +33,6 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
