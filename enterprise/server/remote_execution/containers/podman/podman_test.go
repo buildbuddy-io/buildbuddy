@@ -98,3 +98,49 @@ func TestHelloWorldExec(t *testing.T) {
 	err = podman.Remove(ctx)
 	assert.NoError(t, err)
 }
+
+func TestIsImageCached(t *testing.T) {
+	rootDir := makeTempDirWithWorldTxt(t)
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	tests := []struct {
+		desc    string
+		image   string
+		want    bool
+		wantErr bool
+	}{
+		{
+			desc:    "image cached",
+			image:   "docker.io/library/busybox",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			desc:    "image not cached",
+			image:   "test.image",
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		podman := podman.NewPodmanCommandContainer(env, cacheAuth, tc.image, rootDir)
+		if tc.want {
+			err := podman.PullImage(ctx, container.PullCredentials{})
+			require.NoError(t, err)
+		}
+		actual, err := podman.IsImageCached(ctx)
+		assert.Equal(t, actual, tc.want)
+		if tc.wantErr {
+			assert.Error(t, err)
+		} else {
+			assert.NoError(t, err)
+		}
+	}
+
+}
