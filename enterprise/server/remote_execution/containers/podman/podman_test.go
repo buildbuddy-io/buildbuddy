@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -31,7 +32,7 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 	return dir
 }
 
-func TestHelloWorld(t *testing.T) {
+func TestRunHelloWorld(t *testing.T) {
 	ctx := context.Background()
 	rootDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
@@ -51,9 +52,7 @@ func TestHelloWorld(t *testing.T) {
 	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir)
 	result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
 
-	if result.Error != nil {
-		t.Fatal(result.Error)
-	}
+	require.NoError(t, result.Error)
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
 	assert.Equal(t, "Hello world!", string(result.Stdout),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
@@ -61,4 +60,87 @@ func TestHelloWorld(t *testing.T) {
 	)
 	assert.Empty(t, string(result.Stderr), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
+}
+
+func TestHelloWorldExec(t *testing.T) {
+	ctx := context.Background()
+	rootDir := makeTempDirWithWorldTxt(t)
+	cmd := &repb.Command{
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
+		},
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)!"`},
+	}
+	// Need to give enough time to download the Docker image.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir)
+
+	err := podman.Create(ctx, "/work")
+	require.NoError(t, err)
+
+	result := podman.Exec(ctx, cmd, nil, nil)
+	assert.NoError(t, result.Error)
+
+	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
+	assert.Equal(t, "Hello world!", string(result.Stdout),
+		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
+			"tempfile containing 'world' should be readable.)",
+	)
+	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Equal(t, 0, result.ExitCode, "should exit with success")
+
+	err = podman.Remove(ctx)
+	assert.NoError(t, err)
+}
+
+func TestIsImageCached(t *testing.T) {
+	rootDir := makeTempDirWithWorldTxt(t)
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	tests := []struct {
+		desc    string
+		image   string
+		want    bool
+		wantErr bool
+	}{
+		{
+			desc:    "image cached",
+			image:   "docker.io/library/busybox",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			desc:    "image not cached",
+			image:   "test.image",
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		podman := podman.NewPodmanCommandContainer(env, cacheAuth, tc.image, rootDir)
+		if tc.want {
+			err := podman.PullImage(ctx, container.PullCredentials{})
+			require.NoError(t, err)
+		}
+		actual, err := podman.IsImageCached(ctx)
+		assert.Equal(t, actual, tc.want)
+		if tc.wantErr {
+			assert.Error(t, err)
+		} else {
+			assert.NoError(t, err)
+		}
+	}
+
 }

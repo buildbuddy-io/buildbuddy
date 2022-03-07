@@ -25,6 +25,10 @@ var (
 	containerFinalizationTimeout = 10 * time.Second
 )
 
+const (
+	podmanInternalExitCode = 125
+)
+
 // podmanCommandContainer containerizes a command's execution using a Podman container.
 // between containers.
 type podmanCommandContainer struct {
@@ -33,8 +37,9 @@ type podmanCommandContainer struct {
 
 	image     string
 	buildRoot string
-	// workDir is the path to the workspace directory mounted to the container.
-	workDir string
+
+	// name is the container name.
+	name string
 }
 
 func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string) container.CommandContainer {
@@ -46,12 +51,32 @@ func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.Im
 	}
 }
 
+func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
+	args := []string{
+		"--hostname",
+		"localhost",
+		"--workdir",
+		workDir,
+		"--name",
+		c.name,
+		"--rm",
+		"--volume",
+		fmt.Sprintf(
+			"%s:%s",
+			filepath.Join(c.buildRoot, filepath.Base(workDir)),
+			workDir,
+		),
+	}
+	return args
+}
+
 func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
 	}
 	containerName, err := generateContainerName()
+	c.name = containerName
 	if err != nil {
 		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
 		return result
@@ -61,28 +86,14 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	podmanRunArgs := []string{
-		"--hostname",
-		"localhost",
-		"--workdir",
-		workDir,
-		"--name",
-		containerName,
-		"--rm",
-		"--volume",
-		fmt.Sprintf(
-			"%s:%s",
-			filepath.Join(c.buildRoot, filepath.Base(workDir)),
-			workDir,
-		),
-	}
+	podmanRunArgs := c.getPodmanRunArgs(workDir)
 
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
-	result = runPodman(ctx, "run", "", nil, nil, podmanRunArgs...)
+	result = runPodman(ctx, "run", nil, nil, podmanRunArgs...)
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
 		err = killContainerIfRunning(ctx, containerName)
 	}
@@ -93,20 +104,43 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 }
 
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
-	c.workDir = workDir
-	return nil
+	containerName, err := generateContainerName()
+	if err != nil {
+		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
+	}
+	c.name = containerName
+
+	podmanRunArgs := c.getPodmanRunArgs(workDir)
+	podmanRunArgs = append(podmanRunArgs, c.image)
+	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
+	createResult := runPodman(ctx, "create", nil, nil, podmanRunArgs...)
+	if err = createResult.Error; err != nil {
+		return status.UnavailableErrorf("failed to create container: %s", err)
+	}
+
+	startResult := runPodman(ctx, "start", nil, nil, c.name)
+	return startResult.Error
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	return runPodman(ctx, "run" /*workDir=*/, "", stdin, stdout, cmd.Arguments...)
+	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
+	for _, envVar := range cmd.GetEnvironmentVariables() {
+		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
+	}
+	podmanRunArgs = append(podmanRunArgs, c.name)
+	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
+	return runPodman(ctx, "exec", stdin, stdout, podmanRunArgs...)
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
 	// Try to avoid the `pull` command which results in a network roundtrip.
-	listResult := runPodman(ctx, "images", "", nil, nil, "--filter=reference="+c.image, "--format={{.ID}}")
-	if listResult.Error != nil {
+	listResult := runPodman(ctx, "image", nil /*=stdin*/, nil /*=stdout*/, "inspect", "--format={{.ID}}", c.image)
+	if listResult.ExitCode == podmanInternalExitCode {
+		return false, nil
+	} else if listResult.Error != nil {
 		return false, listResult.Error
 	}
+
 	if strings.TrimSpace(string(listResult.Stdout)) != "" {
 		// Found at least one image matching the ref; `docker run` should succeed
 		// without pulling the image.
@@ -116,31 +150,40 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 }
 
 func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
-	pullResult := runPodman(ctx, "pull", "", nil, nil, c.image)
+	pullResult := runPodman(ctx, "pull", nil /*=stdin*/, nil /*=stdout*/, c.image)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
 	return nil
 }
-func (c *podmanCommandContainer) Start(ctx context.Context) error   { return nil }
-func (c *podmanCommandContainer) Remove(ctx context.Context) error  { return nil }
-func (c *podmanCommandContainer) Pause(ctx context.Context) error   { return nil }
-func (c *podmanCommandContainer) Unpause(ctx context.Context) error { return nil }
+
+func (c *podmanCommandContainer) Remove(ctx context.Context) error {
+	res := runPodman(ctx, "rm", nil /*=stdin*/, nil /*=stdout*/, "--force", c.name)
+	return res.Error
+}
+
+func (c *podmanCommandContainer) Pause(ctx context.Context) error {
+	res := runPodman(ctx, "pause", nil /*=stdin*/, nil /*=stdout*/, c.name)
+	return res.Error
+}
+
+func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
+	res := runPodman(ctx, "unpause", nil /*=stdin*/, nil /*=stdout*/, c.name)
+	return res.Error
+}
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
 	return &container.Stats{}, nil
 }
 
-func runPodman(ctx context.Context, subCommand string, workDir string, stdin io.Reader, stdout io.Writer, args ...string) *interfaces.CommandResult {
+func runPodman(ctx context.Context, subCommand string, stdin io.Reader, stdout io.Writer, args ...string) *interfaces.CommandResult {
 	command := []string{
 		"podman",
-		"--events-backend=file",
-		"--cgroup-manager=cgroupfs",
 		subCommand,
 	}
 
 	command = append(command, args...)
-	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, workDir, stdin, stdout)
+	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, stdin, stdout)
 	return result
 }
 
@@ -156,7 +199,7 @@ func killContainerIfRunning(ctx context.Context, containerName string) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
 	defer cancel()
 
-	result := runPodman(ctx, "kill", "", nil, nil, containerName)
+	result := runPodman(ctx, "kill", nil, nil, containerName)
 	if result.Error != nil {
 		return result.Error
 	}
