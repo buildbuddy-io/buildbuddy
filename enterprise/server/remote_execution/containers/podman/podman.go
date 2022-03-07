@@ -123,7 +123,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	podmanRunArgs := make([]string, 0, len(2*cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
+	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
