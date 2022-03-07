@@ -592,6 +592,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		containerImage = ws.workflowsImage()
 	}
+	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
+		return nil, status.PermissionDeniedError("untrusted workflows are not supported on macOS")
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
