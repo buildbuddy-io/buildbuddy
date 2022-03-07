@@ -797,18 +797,22 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
+		totalDiskSizeMB := int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6)
+		scratchDiskSizeMB := int64(float64(totalDiskSizeMB) * props.VMScratchDiskAllocation)
+		workspaceDiskSlackSpaceMB := totalDiskSizeMB - scratchDiskSizeMB
 		opts := firecracker.ContainerOpts{
-			ContainerImage:         props.ContainerImage,
-			DockerClient:           p.dockerClient,
-			ActionWorkingDirectory: p.hostBuildRoot(),
-			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
-			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			DiskSlackSpaceMB:       int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-			EnableNetworking:       true,
-			InitDockerd:            props.InitDockerd,
-			JailerRoot:             p.buildRoot,
-			AllowSnapshotStart:     false,
-			DebugMode:              *commandutil.DebugStreamCommandOutputs,
+			ContainerImage:            props.ContainerImage,
+			DockerClient:              p.dockerClient,
+			ActionWorkingDirectory:    p.hostBuildRoot(),
+			NumCPUs:                   int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
+			MemSizeMB:                 int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+			ScratchDiskSizeMB:         scratchDiskSizeMB,
+			WorkspaceDiskSlackSpaceMB: workspaceDiskSlackSpaceMB,
+			EnableNetworking:          true,
+			InitDockerd:               props.InitDockerd,
+			JailerRoot:                p.buildRoot,
+			AllowSnapshotStart:        false,
+			DebugMode:                 *commandutil.DebugStreamCommandOutputs,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {

@@ -135,13 +135,14 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		EnableNetworking:          false,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -181,13 +182,14 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		EnableNetworking:          false,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -232,13 +234,14 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB, // small to make snapshotting faster.
-		EnableNetworking:       false,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 minMemSizeMB, // small to make snapshotting faster.
+		EnableNetworking:          false,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	if err != nil {
@@ -321,13 +324,14 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		CommandDebugString: `(firecracker) [sh -c find -name '*.txt' -exec cp {} {}.out \;]`,
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: rootDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB,
-		EnableNetworking:       false,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    rootDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 minMemSizeMB,
+		EnableNetworking:          false,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -378,15 +382,16 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB,
-		EnableNetworking:       false,
-		AllowSnapshotStart:     true,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
-		DebugMode:              true,
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 minMemSizeMB,
+		EnableNetworking:          false,
+		AllowSnapshotStart:        true,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
+		DebugMode:                 true,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -462,13 +467,14 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"ping", "-c1", defaultRouteIP}}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       true,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		EnableNetworking:          true,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -484,6 +490,37 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
+}
+
+func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{Arguments: []string{"pwd"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+		JailerRoot:             tempJailerRoot(t),
+		// Request 0 disk; implementation should ensure the disk is at least as big
+		// as is required to run a NOP command. Otherwise, users might have to
+		// keep on top of our min disk requirements which is not really feasible.
+		ScratchDiskSizeMB:         0,
+		WorkspaceDiskSlackSpaceMB: 0,
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	require.NoError(t, err)
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "", string(res.Stderr))
+	assert.Equal(t, "/workspace\n", string(res.Stdout))
 }
 
 func TestFirecrackerRunWithDocker(t *testing.T) {
@@ -513,14 +550,15 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       true,
-		InitDockerd:            true,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            imageWithDockerInstalled,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		EnableNetworking:          true,
+		InitDockerd:               true,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -553,12 +591,13 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	})
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         busyboxImage,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		DiskSlackSpaceMB:       2000,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            busyboxImage,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		ScratchDiskSizeMB:         2000,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	require.NoError(t, err)
@@ -641,14 +680,15 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	})
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		DiskSlackSpaceMB:       4000, // 4 GB
-		JailerRoot:             tempJailerRoot(t),
-		EnableNetworking:       true,
-		InitDockerd:            true,
+		ContainerImage:            imageWithDockerInstalled,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		ScratchDiskSizeMB:         4000, // 4 GB
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
+		EnableNetworking:          true,
+		InitDockerd:               true,
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	require.NoError(t, err)
@@ -737,14 +777,15 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		InitDockerd:            true,
-		EnableNetworking:       true,
-		DiskSlackSpaceMB:       100,
-		JailerRoot:             tempJailerRoot(t),
+		ContainerImage:            imageWithDockerInstalled,
+		ActionWorkingDirectory:    workDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		InitDockerd:               true,
+		EnableNetworking:          true,
+		ScratchDiskSizeMB:         1000,
+		WorkspaceDiskSlackSpaceMB: 100,
+		JailerRoot:                tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(env, cacheAuth, opts)
 	if err != nil {

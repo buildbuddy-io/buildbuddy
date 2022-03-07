@@ -109,15 +109,16 @@ func main() {
 		vmIdx = *forceVMIdx
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         *image,
-		ActionWorkingDirectory: emptyActionDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		DiskSlackSpaceMB:       100,
-		EnableNetworking:       true,
-		DebugMode:              true,
-		ForceVMIdx:             vmIdx,
-		JailerRoot:             "/tmp/remote_build/",
+		ContainerImage:            *image,
+		ActionWorkingDirectory:    emptyActionDir,
+		NumCPUs:                   1,
+		MemSizeMB:                 2500,
+		ScratchDiskSizeMB:         100,
+		WorkspaceDiskSlackSpaceMB: 100,
+		EnableNetworking:          true,
+		DebugMode:                 true,
+		ForceVMIdx:                vmIdx,
+		JailerRoot:                "/tmp/remote_build/",
 	}
 
 	var c *firecracker.FirecrackerContainer

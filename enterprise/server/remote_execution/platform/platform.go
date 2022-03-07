@@ -69,12 +69,26 @@ const (
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
 
-	// EstimatedFreeDiskPropertyName specifies how much "scratch space" beyond the
-	// input files a task requires to be able to function. This is useful for
-	// managed Bazel + Firecracker because for Firecracker we need to decide ahead
-	// of time how big the workspace filesystem is going to be, and managed Bazel
-	// requires a relatively large amount of free space compared to typical actions.
+	// EstimatedFreeDiskPropertyName specifies how much space beyond the input
+	// files a task requires to be able to function.
+	//
+	// This is required for Firecracker VMs since disks need to be allocated
+	// ahead of time.
 	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
+
+	// VMScratchDiskAllocationPropertyName specifies how much of the estimated
+	// free disk should be allocated to the "scratch" (root) FS within a
+	// firecracker VM. It is specified as a decimal number between 0 and 1,
+	// ex: "0.5".
+	//
+	// For firecracker VMs, there are 2 disks mounted: the "scratch" disk mounted
+	// at "/", and the "workspace" disk mounted at "/workspace", in which the
+	// action inputs are available and outputs are written. This platform property
+	// specifies how much is allocated to the scratch disk.
+	VMScratchDiskAllocationPropertyName = "VMScratchDiskAllocation"
+	// DefaultVMScratchDiskAllocation is the default fraction of estimated
+	// free disk that is allocated to the scratch disk.
+	DefaultVMScratchDiskAllocation = 0.2
 
 	BareContainerType        ContainerType = "none"
 	PodmanContainerType      ContainerType = "podman"
@@ -89,6 +103,7 @@ type Properties struct {
 	Pool                      string
 	EstimatedComputeUnits     int64
 	EstimatedFreeDiskBytes    int64
+	VMScratchDiskAllocation   float64
 	ContainerImage            string
 	ContainerRegistryUsername string
 	ContainerRegistryPassword string
@@ -151,12 +166,20 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		pool = ""
 	}
 
+	vmScratchDiskAllocation := float64Prop(m, VMScratchDiskAllocationPropertyName, DefaultVMScratchDiskAllocation)
+	if vmScratchDiskAllocation < 0 {
+		vmScratchDiskAllocation = 0
+	} else if vmScratchDiskAllocation > 1 {
+		vmScratchDiskAllocation = 1
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
 		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedFreeDiskBytes:    int64Prop(m, EstimatedFreeDiskPropertyName, 0),
+		VMScratchDiskAllocation:   vmScratchDiskAllocation,
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
@@ -358,6 +381,19 @@ func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return i
+}
+
+func float64Prop(props map[string]string, name string, defaultValue float64) float64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		log.Warningf("Could not parse platform property %q as float64: %s", name, err)
+		return f
+	}
+	return f
 }
 
 func stringListProp(props map[string]string, name string) []string {
