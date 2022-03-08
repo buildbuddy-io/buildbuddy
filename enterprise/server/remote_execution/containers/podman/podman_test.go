@@ -165,14 +165,17 @@ func TestForceRoot(t *testing.T) {
 	tests := []struct {
 		desc      string
 		forceRoot bool
+		wantUID   int
 	}{
 		{
 			desc:      "forceRoot",
 			forceRoot: true,
+			wantUID:   0,
 		},
 		{
 			desc:      "not forceRoot",
 			forceRoot: false,
+			wantUID:   1000,
 		},
 	}
 	for _, tc := range tests {
@@ -180,11 +183,7 @@ func TestForceRoot(t *testing.T) {
 		result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
 		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
 		assert.NoError(t, err)
-		if tc.forceRoot {
-			assert.Equal(t, 0, uid)
-		} else {
-			assert.NotEqual(t, "0", uid)
-		}
+		assert.Equal(t, tc.wantUID, uid)
 		assert.Empty(t, string(result.Stderr), "stderr should be empty")
 		assert.Equal(t, 0, result.ExitCode, "should exit with success")
 	}
