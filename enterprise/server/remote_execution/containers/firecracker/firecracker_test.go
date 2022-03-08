@@ -2,9 +2,12 @@ package firecracker_test
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -35,10 +38,22 @@ import (
 )
 
 const (
+	busyboxImage = "docker.io/library/busybox:latest"
+	// Alternate image to use if getting rate-limited by docker hub
+	// busyboxImage = "gcr.io/google-containers/busybox:latest"
+
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+
+	// Minimum memory needed for a firecracker VM. This may need to be increased
+	// if the size of initrd.cpio increases.
+	minMemSizeMB = 200
 
 	diskCacheSize = 10_000_000_000  // 10GB
 	fileCacheSize = 100_000_000_000 // 100GB
+)
+
+var (
+	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
@@ -120,7 +135,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
@@ -166,7 +181,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
@@ -217,10 +232,10 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              200, // small to make snapshotting faster.
+		MemSizeMB:              minMemSizeMB, // small to make snapshotting faster.
 		EnableNetworking:       false,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
@@ -306,10 +321,10 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		CommandDebugString: `(firecracker) [sh -c find -name '*.txt' -exec cp {} {}.out \;]`,
 	}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: rootDir,
 		NumCPUs:                1,
-		MemSizeMB:              200,
+		MemSizeMB:              minMemSizeMB,
 		EnableNetworking:       false,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
@@ -337,6 +352,9 @@ func TestFirecrackerFileMapping(t *testing.T) {
 }
 
 func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
+	// TODO: Re-enable after fixing TODOs in Run()
+	t.Skip()
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
@@ -360,14 +378,15 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
-		MemSizeMB:              200,
+		MemSizeMB:              minMemSizeMB,
 		EnableNetworking:       false,
 		AllowSnapshotStart:     true,
 		DiskSlackSpaceMB:       100,
 		JailerRoot:             tempJailerRoot(t),
+		DebugMode:              true,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -443,7 +462,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"ping", "-c1", defaultRouteIP}}
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
@@ -468,6 +487,10 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDocker(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
@@ -481,11 +504,11 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker pull busybox &>/dev/null
+			docker pull ` + busyboxImage + ` &>/dev/null
 
 			# Try running a few commands
-			docker run --rm busybox echo Hello
-			docker run --rm busybox echo world
+			docker run --rm ` + busyboxImage + ` echo Hello
+			docker run --rm ` + busyboxImage + ` echo world
 		`},
 	}
 
@@ -530,7 +553,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	})
 
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         "docker.io/library/busybox",
+		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
@@ -576,9 +599,35 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 
 	err = c.Pause(ctx)
 	require.NoError(t, err)
+
+	// Try resuming again, to test resuming from a snapshot of a VM which was
+	// itself loaded from snapshot.
+	err = os.Remove(filepath.Join(workDir, "test2.sh"))
+	require.NoError(t, err)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"test3.sh": "echo world",
+	})
+
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+	err = c.SyncWorkspace(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil, nil)
+
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "world\n", string(res.Stdout))
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
 }
 
 func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -676,6 +725,10 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 }
 
 func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -715,16 +768,17 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		Arguments: []string{"bash", "-c", `
 			set -e
 			# Discard pull output to make the output deterministic
-			docker pull busybox &>/dev/null
+			docker pull ` + busyboxImage + ` &>/dev/null
 
-			docker run --rm busybox echo Hello
+			docker run --rm ` + busyboxImage + ` echo Hello
 		`},
 	}
 
 	res := c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
 
+	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "Hello\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "Hello\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
 
 	if err := c.Pause(ctx); err != nil {
@@ -737,13 +791,23 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	cmd = &repb.Command{
 		Arguments: []string{"bash", "-c", `
 		  # Note: Image should be cached from previous command.
-			docker run --rm busybox echo world
+			docker run --rm ` + busyboxImage + ` echo world
 		`},
 	}
 
 	res = c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
 
+	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain pwd output")
+	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+func tree(label string) {
+	fmt.Println("jailer root", label, ":")
+	b, err := exec.Command("tree", "-A", "-C", "--inodes", "/tmp/buildbuddy-test-jailer-root", "-I", "executor").CombinedOutput()
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	fmt.Println(string(b))
 }

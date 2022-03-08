@@ -173,6 +173,14 @@ type manifestData struct {
 	CachedFiles       map[string]digest.Key
 }
 
+func (m *manifestData) String() string {
+	s, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("manifestData(!MarshalError: %q)", err)
+	}
+	return string(s)
+}
+
 // CacheSnapshot stores a snapshot (described by snapOpts), in the filecache.
 // Each file is individually stored in the filecache under a digest made from
 // the snapshot ID and the file name. A manifest file that

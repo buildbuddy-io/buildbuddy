@@ -286,10 +286,9 @@ type FirecrackerContainer struct {
 	constants           Constants
 	containerImage      string // the OCI container image. ex "alpine:latest"
 	actionWorkingDir    string // the action directory with inputs / outputs
-	workspaceFSPath     string // the path to the workspace ext4 image
 	workspaceGeneration int    // the number of times the workspace has been re-mounted into the guest VM
-	scratchFSPath       string // the path fo the scratch ext4 image
 	containerFSPath     string // the path to the container ext4 image
+	tempDir             string // path for writing disk images before the chroot is created
 
 	rmOnce *sync.Once
 	rmErr  error
@@ -553,7 +552,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		InitrdImagePath:     initrdImagePath,
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
 		ScratchFSPath:       filepath.Join(c.getChroot(), scratchFSName),
-		WorkspaceFSPath:     c.workspaceFSPath,
+		WorkspaceFSPath:     c.workspaceFSPath(),
 		ForceSnapshotDigest: d,
 	}
 
@@ -696,11 +695,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	if workspaceDirOverride != "" {
 		// If the snapshot is being loaded with a different workspaceFS
 		// then handle that now.
-		wsImgRelPath, err := c.createWorkspaceImage(ctx, workspaceDirOverride)
-		if err != nil {
+		if err := c.createWorkspaceImage(ctx, workspaceDirOverride); err != nil {
 			return err
 		}
-		if err := c.hotSwapWorkspace(ctx, execClient, wsImgRelPath); err != nil {
+		if err := c.hotSwapWorkspace(ctx, execClient); err != nil {
 			return err
 		}
 	}
@@ -708,36 +706,33 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	return nil
 }
 
-// createWorkspaceImage creates a new ext4 image from the action working dir
-// and returns the chroot-relative path to the created image.
-func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspacePath string) (string, error) {
+// createWorkspaceImage creates a new ext4 image from the action working dir.
+func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspacePath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	c.workspaceGeneration++
-	relativePath := fmt.Sprintf("%s.gen_%d.ext4", workspaceFSName, c.workspaceGeneration)
-	hostPath := filepath.Join(c.getChroot(), relativePath)
 	sizeBytes, err := disk.DirSize(workspacePath)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if err := ext4.DirectoryToImage(ctx, workspacePath, hostPath, sizeBytes+c.constants.DiskSlackSpaceMB*1e6); err != nil {
-		return "", err
+	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), sizeBytes+c.constants.DiskSlackSpaceMB*1e6); err != nil {
+		return err
 	}
-	c.workspaceFSPath = hostPath
-	return relativePath, nil
+	return nil
 }
 
 // hotSwapWorkspace unmounts the workspace drive from a running firecracker
 // container, updates the workspace block device to an ext4 image pointed to
 // by chrootRelativeImagePath, and re-mounts the drive.
-func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient, chrootRelativeImagePath string) error {
+func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	if _, err := execClient.UnmountWorkspace(ctx, &vmxpb.UnmountWorkspaceRequest{}); err != nil {
 		return status.WrapError(err, "failed to unmount workspace")
 	}
+	chrootRelativeImagePath := filepath.Base(c.workspaceFSPath())
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.InternalErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
@@ -778,6 +773,14 @@ func (c *FirecrackerContainer) newID() error {
 	return nil
 }
 
+// workspaceFSPath returns the path to the workspace image in the chroot.
+func (c *FirecrackerContainer) workspaceFSPath() string {
+	if c.workspaceGeneration == 0 {
+		return filepath.Join(c.getChroot(), workspaceFSName)
+	}
+	return filepath.Join(c.getChroot(), fmt.Sprintf("%s.gen_%d.ext4", workspaceFSName, c.workspaceGeneration))
+}
+
 func (c *FirecrackerContainer) getChroot() string {
 	// This path matches the path the jailer will use when jailing
 	// firecracker. Because we need to copy some (snapshot) files into
@@ -811,6 +814,10 @@ func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
 	return builder.Build(ctx)
 }
 
+// getConfig returns the firecracker config for the current container and given
+// filesystem image paths. The image paths are not expected to be in the chroot;
+// they will be hardlinked to the chroot when starting the machine (see
+// NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
 	if c.constants.EnableNetworking {
@@ -1019,8 +1026,8 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer func() {
 		log.Debugf("copyOutputsToWorkspace took %s", time.Since(start))
 	}()
-	if exists, err := disk.FileExists(ctx, c.workspaceFSPath); err != nil || !exists {
-		return status.FailedPreconditionErrorf("workspacefs path %q not found", c.workspaceFSPath)
+	if exists, err := disk.FileExists(ctx, c.workspaceFSPath()); err != nil || !exists {
+		return status.FailedPreconditionErrorf("workspacefs path %q not found", c.workspaceFSPath())
 	}
 	if exists, err := disk.FileExists(ctx, c.actionWorkingDir); err != nil || !exists {
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
@@ -1033,14 +1040,14 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer os.RemoveAll(wsDir) // clean up
 
 	if c.mountWorkspaceFile {
-		m, err := mountExt4ImageUsingLoopDevice(c.workspaceFSPath, wsDir)
+		m, err := mountExt4ImageUsingLoopDevice(c.workspaceFSPath(), wsDir)
 		if err != nil {
 			log.Warningf("could not mount ext4 image: %s", err)
 			return err
 		}
 		defer m.Unmount()
 	} else {
-		if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath, wsDir); err != nil {
+		if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath(), wsDir); err != nil {
 			return err
 		}
 	}
@@ -1171,7 +1178,11 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
-		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err == nil {
+		// TODO: When loading the snapshot here, need to copy from filecache, not
+		// hard link. Otherwise, this is not safe for concurrent use.
+		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err != nil {
+			log.Debugf("LoadSnapshot failed; will start a VM from scratch: %s", err)
+		} else {
 			log.Debugf("Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -1189,14 +1200,15 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 
 		if c.allowSnapshotStart && !c.startedFromSnapshot() {
-			// save the workspaceFSPath in a local variable and null it out
-			// before saving the snapshot so it's not uploaded.
-			wsPath := c.workspaceFSPath
-			c.workspaceFSPath = ""
+			// TODO: When saving the initial snapshot, store a *copy* of the disk
+			// images into filecache, not a hard link. Otherwise the action we're
+			// about to run will mutate the disk image that has already been stored in
+			// cache.
+			// TODO: Wait until the VM exec server is ready before saving the initial
+			// snapshot, so the init binary can skip the startup sequence
 			if _, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, snapDigest, nil /*=baseSnapshotDigest*/); err != nil {
 				return nonCmdExit(err)
 			}
-			c.workspaceFSPath = wsPath
 			log.Debugf("Saved snapshot %s/%d for next run", snapDigest.GetHash(), snapDigest.GetSizeBytes())
 		}
 	}
@@ -1227,26 +1239,22 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	containerHome, err := os.MkdirTemp(c.jailerRoot, "fc-container-*")
+	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
 	}
-	scratchPath := filepath.Join(containerHome, scratchFSName)
-	if err := ext4.MakeEmptyImage(ctx, scratchPath, scratchDiskSizeBytes); err != nil {
+	scratchFSPath := filepath.Join(c.tempDir, scratchFSName)
+	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
 		return err
 	}
-	c.scratchFSPath = scratchPath
-	wsPath := filepath.Join(containerHome, workspaceFSName)
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, wsPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
+	workspaceFSPath := filepath.Join(c.tempDir, workspaceFSName)
+	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, workspaceFSPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
 		return err
 	}
-	c.workspaceFSPath = wsPath
-
-	log.Debugf("c.containerFSPath: %q", c.containerFSPath)
-	log.Debugf("c.scratchFSPath: %q", c.scratchFSPath)
-	log.Debugf("c.workspaceFSPath: %q", c.workspaceFSPath)
+	log.Debugf("Scratch and workspace disk images written to %q", c.tempDir)
+	log.Debugf("Using container image at %q", c.containerFSPath)
 	log.Debugf("getChroot() is %q", c.getChroot())
-	fcCfg, err := c.getConfig(ctx, c.containerFSPath, c.scratchFSPath, c.workspaceFSPath)
+	fcCfg, err := c.getConfig(ctx, c.containerFSPath, scratchFSPath, workspaceFSPath)
 	if err != nil {
 		return err
 	}
@@ -1424,7 +1432,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 
 		if copyOutputsErr != nil {
-			result.Error = copyOutputsErr
+			result.Error = status.WrapError(copyOutputsErr, "failed to copy action outputs from VM workspace")
 			return result
 		}
 	}
@@ -1508,9 +1516,11 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		log.Errorf("Error cleaning up networking: %s", err)
 		lastErr = err
 	}
-	if err := os.RemoveAll(filepath.Dir(c.workspaceFSPath)); err != nil {
-		log.Errorf("Error removing workspace fs: %s", err)
-		lastErr = err
+	if c.tempDir != "" {
+		if err := os.RemoveAll(c.tempDir); err != nil {
+			log.Errorf("Error removing workspace fs: %s", err)
+			lastErr = err
+		}
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
@@ -1571,14 +1581,13 @@ func (c *FirecrackerContainer) SyncWorkspace(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 	execClient := vmxpb.NewExecClient(conn)
 
-	chrootRelativeImagePath, err := c.createWorkspaceImage(ctx, c.actionWorkingDir)
-	if err != nil {
+	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir); err != nil {
 		return err
 	}
-
-	return c.hotSwapWorkspace(ctx, execClient, chrootRelativeImagePath)
+	return c.hotSwapWorkspace(ctx, execClient)
 }
 
 // Wait waits until the underlying VM exits. It returns an error if one is
