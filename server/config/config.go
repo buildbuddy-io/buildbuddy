@@ -383,9 +383,13 @@ type OrgConfig struct {
 }
 
 var (
-	sharedGeneralConfig  = &generalConfig{}
+	sharedConfigurator = &Configurator{}
+
+	// Contains the string slices originally defined by the flags
 	originalStringSlices = make(map[string][]string)
 	defineFlagsOnce      sync.Once
+
+	// Set of the flags that were explicitly set on the command line
 	originalSetFlags     = make(map[string]struct{})
 )
 
@@ -491,8 +495,9 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 	}
 }
 
-func populateYamlPresenceMap(yamlMap map[interface{}]interface{}, presenceMap map[string]struct{}) {
+func populateYamlPresenceMap(yamlMap map[interface{}]interface{}) map[string]struct{} {
 	var check func(key []string, value interface{})
+	presenceMap := make(map[string]struct{})
 	check = func(key []string, value interface{}) {
 		if m, ok := value.(map[interface{}]interface{}); ok {
 			for k, v := range m {
@@ -507,38 +512,44 @@ func populateYamlPresenceMap(yamlMap map[interface{}]interface{}, presenceMap ma
 		presenceMap[strings.Join(key, ".")] = struct{}{}
 	}
 	check([]string{}, yamlMap)
+	return presenceMap
 }
 
-func parseConfig(fileBytes []byte, presenceMap map[string]struct{}) (*generalConfig, error) {
+type Configurator struct {
+	gc          *generalConfig
+	presenceMap map[string]struct{}
+}
+
+func NewConfiguratorFromData(data []byte) (*Configurator, error) {
 	// expand environment variables
-	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
+	expandedData := []byte(os.ExpandEnv(string(data)))
 
 	// Unmarshal in strict mode once and warn about invalid fields.
 	var syntaxValidationConfig generalConfig
-	if err := yaml.UnmarshalStrict([]byte(expandedFileBytes), &syntaxValidationConfig); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(expandedData), &syntaxValidationConfig); err != nil {
 		log.Warningf("Unknown fields in config: %s", err)
 	}
 
 	gc := &generalConfig{}
-	if err := yaml.Unmarshal([]byte(expandedFileBytes), gc); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedData), gc); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
-	// The shared config caches the last config parsed from a file so that a call to
-	// `readConfig` with an empty `configFile` can return the cached config.
-	sharedGeneralConfig = gc
 
 	generalConfigMap := make(map[interface{}]interface{})
-	if err := yaml.Unmarshal([]byte(expandedFileBytes), &generalConfigMap); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedData), &generalConfigMap); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
-	populateYamlPresenceMap(generalConfigMap, presenceMap)
 
-	return gc, nil
+	// The shared config caches the last config parsed from a file so that a call to
+	// `readConfig` with an empty `configFile` can return the cached config.
+	sharedConfigurator = &Configurator{gc, populateYamlPresenceMap(generalConfigMap)}
+
+	return sharedConfigurator, nil
 }
 
-func readConfig(fullConfigPath string, presenceMap map[string]struct{}) (*generalConfig, error) {
+func readConfig(fullConfigPath string) (*Configurator, error) {
 	if fullConfigPath == "" {
-		return sharedGeneralConfig, nil
+		return sharedConfigurator, nil
 	}
 	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
 
@@ -554,39 +565,14 @@ func readConfig(fullConfigPath string, presenceMap map[string]struct{}) (*genera
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	return parseConfig(fileBytes, presenceMap)
-}
-
-type Configurator struct {
-	gc          *generalConfig
-	presenceMap map[string]struct{}
+	return NewConfiguratorFromData(fileBytes)
 }
 
 func NewConfigurator(configFilePath string) (*Configurator, error) {
 	if configFilePath == "" {
 		configFilePath = *configFile
 	}
-	presenceMap := make(map[string]struct{})
-	conf, err := readConfig(configFilePath, presenceMap)
-	if err != nil {
-		return nil, err
-	}
-	return &Configurator{
-		gc:          conf,
-		presenceMap: presenceMap,
-	}, nil
-}
-
-func NewConfiguratorFromData(data []byte) (*Configurator, error) {
-	presenceMap := make(map[string]struct{})
-	conf, err := parseConfig(data, presenceMap)
-	if err != nil {
-		return nil, err
-	}
-	return &Configurator{
-		gc:          conf,
-		presenceMap: presenceMap,
-	}, nil
+	return readConfig(configFilePath)
 }
 
 func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, error) {
@@ -635,6 +621,10 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 		}
 		_, setInFlags := originalSetFlags[flg.Name]
 		_, presentInYaml := c.presenceMap[flg.Name]
+		// If the flag was set on the command line or there is no value specified in
+		// the config, we use the value defined by the flags. Otherwise (which is to
+		// say, if there was no flag explicitly set on the command line and there is
+		// a value present in the config), use the config value.
 		if setInFlags || !presentInYaml {
 			flg.Value.Set(flag.Lookup(flg.Name).Value.String())
 			return
