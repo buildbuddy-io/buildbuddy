@@ -1516,9 +1516,11 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		log.Errorf("Error cleaning up networking: %s", err)
 		lastErr = err
 	}
-	if err := os.RemoveAll(c.tempDir); err != nil {
-		log.Errorf("Error removing workspace fs: %s", err)
-		lastErr = err
+	if c.tempDir != "" {
+		if err := os.RemoveAll(c.tempDir); err != nil {
+			log.Errorf("Error removing workspace fs: %s", err)
+			lastErr = err
+		}
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
 		log.Errorf("Error removing chroot: %s", err)
