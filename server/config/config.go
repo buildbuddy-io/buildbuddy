@@ -390,7 +390,7 @@ var (
 	defineFlagsOnce      sync.Once
 
 	// Set of the flags that were explicitly set on the command line
-	originalSetFlags     = make(map[string]struct{})
+	originalSetFlags = make(map[string]struct{})
 )
 
 func RegisterAndParseFlags() {
