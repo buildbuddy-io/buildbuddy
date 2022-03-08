@@ -793,7 +793,8 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.hostBuildRoot(), opts,
 		)
 	case platform.PodmanContainerType:
-		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot)
+		opts := &podman.PodmanOptions{ForceRoot: props.DockerForceRoot}
+		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
