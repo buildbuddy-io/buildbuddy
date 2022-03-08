@@ -391,7 +391,7 @@ var (
 
 func RegisterAndParseFlags() {
 	defineFlagsOnce.Do(func() {
-		defineFlagsForMembers([]string{}, reflect.ValueOf(&generalConfig{}).Elem(), nil)
+		defineFlagsForMembers([]string{}, reflect.ValueOf(&generalConfig{}).Elem(), flag.CommandLine)
 		flag.Parse()
 		flag.Visit(func(flg *flag.Flag) {
 			originalSetFlags[flg.Name] = struct{}{}
@@ -438,7 +438,7 @@ func (f *structSliceFlag) Set(value string) error {
 // If configSet is nil, defines all global flags present in the config that have
 // not been elsewhere defined. If configSet isn't nil, defines flags in the
 // provided FlagSet for the config.
-func defineFlagsForMembers(parentStructNames []string, T reflect.Value, configSet *flag.FlagSet) {
+func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet *flag.FlagSet) {
 	typeOfT := T.Type()
 	for i := 0; i < T.NumField(); i++ {
 		f := T.Field(i)
@@ -446,74 +446,47 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, configSe
 		fqFieldName := strings.ToLower(strings.Join(append(parentStructNames, fieldName), "."))
 		docString := typeOfT.Field(i).Tag.Get("usage")
 
-		switch f.Type().Kind() {
-		case reflect.Ptr:
-			log.Fatal("The config should not contain pointers!")
-		case reflect.Struct:
-			defineFlagsForMembers(append(parentStructNames, fieldName), f, configSet)
-			continue
-		case reflect.Bool:
-			if configSet != nil {
-				configSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
-			} else if flag.Lookup(fqFieldName) == nil {
-				flag.Bool(fqFieldName, false, docString)
-			}
-		case reflect.String:
-			if configSet != nil {
-				configSet.StringVar(f.Addr().Interface().(*string), fqFieldName, f.String(), docString)
-			} else if flag.Lookup(fqFieldName) == nil {
-				flag.String(fqFieldName, "", docString)
-			}
-		case reflect.Int:
-			if configSet != nil {
-				configSet.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
-			} else if flag.Lookup(fqFieldName) == nil {
-				flag.Int(fqFieldName, 0, docString)
-			}
-		case reflect.Int64:
-			if configSet != nil {
-				configSet.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
-			} else if flag.Lookup(fqFieldName) == nil {
-				flag.Int64(fqFieldName, 0, docString)
-			}
-		case reflect.Float64:
-			if configSet != nil {
-				configSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
-			} else if flag.Lookup(fqFieldName) == nil {
-				flag.Float64(fqFieldName, 0, docString)
-			}
-		case reflect.Slice:
-			if f.Type().Elem().Kind() == reflect.String {
-				if configSet != nil {
+		// Only define missing flags
+		if flagSet.Lookup(fqFieldName) == nil {
+			switch f.Type().Kind() {
+			case reflect.Ptr:
+				log.Fatal("The config should not contain pointers!")
+			case reflect.Struct:
+				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
+				continue
+			case reflect.Bool:
+				flagSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
+			case reflect.String:
+				flagSet.StringVar(f.Addr().Interface().(*string), fqFieldName, f.String(), docString)
+			case reflect.Int:
+				flagSet.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
+			case reflect.Int64:
+				flagSet.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+			case reflect.Float64:
+				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
+			case reflect.Slice:
+				if f.Type().Elem().Kind() == reflect.String {
 					// NOTE: string slice flags are *appended* to the values in the YAML,
 					// instead of overriding them completely.
 					if slice, ok := f.Interface().([]string); ok {
 						sf := flagutil.StringSliceFlag(slice)
-						configSet.Var(&sf, fqFieldName, docString)
+						flagSet.Var(&sf, fqFieldName, docString)
 					}
-				} else if flag.Lookup(fqFieldName) == nil {
-					var sf flagutil.StringSliceFlag
-					flag.Var(&sf, fqFieldName, docString)
-				}
-				continue
-			} else if f.Type().Elem().Kind() == reflect.Struct {
-				if configSet != nil {
+					continue
+				} else if f.Type().Elem().Kind() == reflect.Struct {
 					sf := structSliceFlag{f, f.Type().Elem()}
-					configSet.Var(&sf, fqFieldName, docString)
-				} else if flag.Lookup(fqFieldName) == nil {
-					sf := structSliceFlag{reflect.New(f.Type()).Elem(), f.Type().Elem()}
-					flag.Var(&sf, fqFieldName, docString)
+					flagSet.Var(&sf, fqFieldName, docString)
+					continue
 				}
-				continue
+				fallthrough
+			default:
+				// We know this is not flag compatible and it's here for
+				// long-term support reasons, so don't warn about it.
+				if fqFieldName == "auth.oauth_providers" {
+					continue
+				}
+				log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 			}
-			fallthrough
-		default:
-			// We know this is not flag compatible and it's here for
-			// long-term support reasons, so don't warn about it.
-			if fqFieldName == "auth.oauth_providers" {
-				continue
-			}
-			log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 		}
 	}
 }
