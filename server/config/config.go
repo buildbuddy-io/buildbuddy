@@ -547,20 +547,20 @@ func NewConfiguratorFromData(data []byte) (*Configurator, error) {
 	return sharedConfigurator, nil
 }
 
-func readConfig(fullConfigPath string) (*Configurator, error) {
-	if fullConfigPath == "" {
+func NewConfigurator(configFilePath string) (*Configurator, error) {
+	if configFilePath == "" {
 		return sharedConfigurator, nil
 	}
-	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
+	log.Infof("Reading buildbuddy config from '%s'", configFilePath)
 
-	_, err := os.Stat(fullConfigPath)
+	_, err := os.Stat(configFilePath)
 
 	// If the file does not exist then we are SOL.
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
+		return nil, fmt.Errorf("Config file %s not found", configFilePath)
 	}
 
-	fileBytes, err := os.ReadFile(fullConfigPath)
+	fileBytes, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
@@ -568,15 +568,11 @@ func readConfig(fullConfigPath string) (*Configurator, error) {
 	return NewConfiguratorFromData(fileBytes)
 }
 
-func NewConfigurator(configFilePath string) (*Configurator, error) {
+func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, error) {
+	RegisterAndParseFlags()
 	if configFilePath == "" {
 		configFilePath = *configFile
 	}
-	return readConfig(configFilePath)
-}
-
-func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, error) {
-	RegisterAndParseFlags()
 	configurator, err := NewConfigurator(configFilePath)
 	if err != nil {
 		return nil, err
