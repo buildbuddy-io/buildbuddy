@@ -4,6 +4,8 @@ import (
 	"context"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,7 +51,7 @@ func TestRunHelloWorld(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
-	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir)
+	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 	result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
 
 	require.NoError(t, result.Error)
@@ -79,7 +81,7 @@ func TestHelloWorldExec(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 
-	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir)
+	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
 
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
@@ -100,7 +102,8 @@ func TestHelloWorldExec(t *testing.T) {
 }
 
 func TestIsImageCached(t *testing.T) {
-	rootDir := makeTempDirWithWorldTxt(t)
+	rootDir := testfs.MakeTempDir(t)
+	testfs.MakeDirAll(t, rootDir, "work")
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
@@ -129,7 +132,7 @@ func TestIsImageCached(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		podman := podman.NewPodmanCommandContainer(env, cacheAuth, tc.image, rootDir)
+		podman := podman.NewPodmanCommandContainer(env, cacheAuth, tc.image, rootDir, &podman.PodmanOptions{})
 		if tc.want {
 			err := podman.PullImage(ctx, container.PullCredentials{})
 			require.NoError(t, err)
@@ -142,5 +145,46 @@ func TestIsImageCached(t *testing.T) {
 			assert.NoError(t, err)
 		}
 	}
+}
 
+func TestForceRoot(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	image := "gcr.io/flame-public/test-nonroot:test-enterprise-v1.5.4"
+
+	cmd := &repb.Command{
+		Arguments: []string{"id", "-u"},
+	}
+
+	tests := []struct {
+		desc      string
+		forceRoot bool
+		wantUID   int
+	}{
+		{
+			desc:      "forceRoot",
+			forceRoot: true,
+			wantUID:   0,
+		},
+		{
+			desc:      "not forceRoot",
+			forceRoot: false,
+			wantUID:   1000,
+		},
+	}
+	for _, tc := range tests {
+		podman := podman.NewPodmanCommandContainer(env, cacheAuth, image, rootDir, &podman.PodmanOptions{ForceRoot: tc.forceRoot})
+		result := podman.Run(ctx, cmd, "/work", container.PullCredentials{})
+		uid, err := strconv.Atoi(strings.TrimSpace(string(result.Stdout)))
+		assert.NoError(t, err)
+		assert.Equal(t, tc.wantUID, uid)
+		assert.Empty(t, string(result.Stderr), "stderr should be empty")
+		assert.Equal(t, 0, result.ExitCode, "should exit with success")
+	}
 }

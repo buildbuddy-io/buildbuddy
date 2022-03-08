@@ -29,6 +29,10 @@ const (
 	podmanInternalExitCode = 125
 )
 
+type PodmanOptions struct {
+	ForceRoot bool
+}
+
 // podmanCommandContainer containerizes a command's execution using a Podman container.
 // between containers.
 type podmanCommandContainer struct {
@@ -38,16 +42,19 @@ type podmanCommandContainer struct {
 	image     string
 	buildRoot string
 
+	options *PodmanOptions
+
 	// name is the container name.
 	name string
 }
 
-func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string) container.CommandContainer {
+func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
 	return &podmanCommandContainer{
 		env:            env,
 		imageCacheAuth: imageCacheAuth,
 		image:          image,
 		buildRoot:      buildRoot,
+		options:        options,
 	}
 }
 
@@ -66,6 +73,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			filepath.Join(c.buildRoot, filepath.Base(workDir)),
 			workDir,
 		),
+	}
+	if c.options.ForceRoot {
+		args = append(args, "--user=0:0")
 	}
 	return args
 }
@@ -126,6 +136,9 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
+	}
+	if c.options.ForceRoot {
+		podmanRunArgs = append(podmanRunArgs, "--user=0:0")
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
