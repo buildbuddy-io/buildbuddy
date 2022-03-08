@@ -560,7 +560,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_cache_last_eviction_age_usec",
-		Help:      "Age of the last entry evicted from the executor's local file cache, in **microseconds**.",
+		Help:      "Age of the last entry evicted from the executor's local file cache (relative to when it was added to the cache), in **microseconds**.",
 	})
 
 	/// ## Blobstore metrics
