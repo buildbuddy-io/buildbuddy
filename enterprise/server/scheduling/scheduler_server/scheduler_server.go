@@ -630,7 +630,6 @@ func (c *schedulerClientCache) startExpirer() {
 			c.mu.Lock()
 			for addr, client := range c.clients {
 				if time.Now().Sub(client.lastAccess) > unusedSchedulerClientExpiration {
-					log.Infof("Expiring idle scheduler client for %q", addr)
 					if client.rpcConn != nil {
 						_ = client.rpcConn.Close()
 					}
