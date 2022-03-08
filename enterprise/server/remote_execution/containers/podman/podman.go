@@ -163,7 +163,16 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 }
 
 func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
-	pullResult := runPodman(ctx, "pull", nil /*=stdin*/, nil /*=stdout*/, c.image)
+	podmanArgs := make([]string, 0, 2)
+	if !creds.IsEmpty() {
+		podmanArgs = append(podmanArgs, fmt.Sprintf(
+			"--creds=%s:%s",
+			creds.Username,
+			creds.Password,
+		))
+	}
+	podmanArgs = append(podmanArgs, c.image)
+	pullResult := runPodman(ctx, "pull", nil /*=stdin*/, nil /*=stdout*/, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
