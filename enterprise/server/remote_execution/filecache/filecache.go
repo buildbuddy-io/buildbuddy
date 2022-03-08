@@ -18,8 +18,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	// executableSuffix is a suffix appended to files in filecache which
+	// have the executable bit set. This allows distinguishing between executable
+	// and non-executable files which have the same content digests.
+	executableSuffix = "executable"
+
+	// hitMetricLabel is the prometheus metric label applied to filecache hits.
+	hitMetricLabel = "hit"
+	// missMetricLabel is the prometheus metric label applied to filecache misses.
+	missMetricLabel = "miss"
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -43,9 +56,6 @@ import (
 // which will, if the file is present in fileCache, create a hardlink at
 // outputPath and return true. If no file is found in the cache, fileCache
 // will return false.
-
-const executableSuffix = "executable"
-
 type fileCache struct {
 	rootDir     string
 	lock        sync.RWMutex
@@ -166,9 +176,20 @@ func key(node *repb.FileNode) string {
 	return node.GetDigest().GetHash() + suffix
 }
 
-func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) bool {
+func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	defer func() {
+		label := missMetricLabel
+		if hit {
+			label = hitMetricLabel
+		}
+		metrics.FileCacheRequests.
+			With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: label}).
+			Inc()
+	}()
+
 	e, ok := c.l.Get(key(node))
 	if !ok {
 		return false
