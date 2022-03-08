@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -54,8 +55,14 @@ type fileCache struct {
 
 // entry is used to hold a value in the evictList
 type entry struct {
+	// addedAtUsec is the time that the file was added to the file cache, in
+	// microseconds since the Unix epoch.
+	addedAtUsec int64
+	// sizeBytes is the file size as reported by the original FileNode metadata
+	// when the file was added to the file cache.
 	sizeBytes int64
-	value     string
+	// value is the absolute path to the file.
+	value string
 }
 
 func sizeFn(value interface{}) int64 {
@@ -68,6 +75,8 @@ func sizeFn(value interface{}) int64 {
 func evictFn(value interface{}) {
 	if v, ok := value.(*entry); ok {
 		syscall.Unlink(v.value)
+		age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
+		metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
 	}
 }
 
@@ -183,7 +192,12 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 		log.Warningf("Error adding file to filecache: %s", err.Error())
 		return
 	}
-	c.l.Add(key(node), &entry{sizeBytes: node.GetDigest().GetSizeBytes(), value: fp})
+	e := &entry{
+		addedAtUsec: time.Now().UnixMicro(),
+		sizeBytes:   node.GetDigest().GetSizeBytes(),
+		value:       fp,
+	}
+	c.l.Add(key(node), e)
 }
 
 func (c *fileCache) WaitForDirectoryScanToComplete() {
