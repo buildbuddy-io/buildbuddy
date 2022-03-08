@@ -556,6 +556,13 @@ var (
 		Help:      "Total disk usage of pooled command runners, in **bytes**.",
 	})
 
+	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "file_cache_last_eviction_age_usec",
+		Help:      "Age of the last entry evicted from the executor's local file cache (relative to when it was added to the cache), in **microseconds**.",
+	})
+
 	/// ## Blobstore metrics
 	///
 	/// "Blobstore" refers to the backing storage that BuildBuddy uses to
