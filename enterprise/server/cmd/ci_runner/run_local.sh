@@ -40,15 +40,18 @@ done
 
 dir_abspath() (cd "$1" && pwd)
 
+IS_DARWIN=$([[ "$OSTYPE" =~ ^darwin* ]] && echo true || echo false)
+
 # CI runner bazel cache is set to a fixed directory in order
 # to speed up builds, but note that in production we don't yet
 # have persistent local caching.
-TEMPDIR=$(mktemp --dry-run | xargs dirname)
+TEMPDIR=$(mktemp -u | xargs dirname)
 : "${CI_RUNNER_BAZEL_CACHE_DIR:=$TEMPDIR/buildbuddy_ci_runner_bazel_cache}"
 
 : "${REPO_PATH:=$PWD}"
 : "${PERSISTENT:=true}"
 : "${BUILDBUDDY_API_KEY:=}"
+: "${BARE:=$IS_DARWIN}"
 
 bazel build //enterprise/server/cmd/ci_runner:buildbuddy_ci_runner
 RUNNER_PATH="$PWD/bazel-bin/enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
@@ -59,6 +62,29 @@ cp "$RUNNER_PATH" "$RUNNER_DATA_DIR/ci_runner"
 echo "Copied ci_runner to $RUNNER_DATA_DIR/ci_runner"
 
 mkdir -p "$CI_RUNNER_BAZEL_CACHE_DIR"
+
+RUNNER_ARGS=(
+  --commit_sha="$(cd "$REPO_PATH" && git rev-parse HEAD)"
+  --pushed_branch="$(cd "$REPO_PATH" && git branch --show-current)"
+  --target_branch="master"
+  --trigger_event=pull_request
+  --bes_results_url=http://localhost:8080/invocation/
+  --bes_backend=grpc://localhost:1985
+  --cache_backend=grpc://localhost:1985
+  --rbe_backend=grpc://localhost:1985
+  --workflow_id=WF1234
+)
+
+if [[ "$BARE" == true ]]; then
+  cd "$RUNNER_DATA_DIR"
+  BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
+    ./ci_runner \
+    "${RUNNER_ARGS[@]}" \
+    --pushed_repo_url="file://$REPO_PATH" \
+    --target_repo_url="file://$REPO_PATH" \
+    "$@"
+  exit
+fi
 
 if ! docker inspect buildbuddy-ci-runner-local &>/dev/null; then
   # Initialize container
@@ -79,17 +105,9 @@ docker exec \
   --env BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
   buildbuddy-ci-runner-local \
   /runner-data/ci_runner \
+  "${RUNNER_ARGS[@]}" \
   --pushed_repo_url="file:///root/mounted_repo" \
   --target_repo_url="file:///root/mounted_repo" \
-  --commit_sha="$(cd "$REPO_PATH" && git rev-parse HEAD)" \
-  --pushed_branch="$(cd "$REPO_PATH" && git branch --show-current)" \
-  --target_branch="master" \
-  --trigger_event=pull_request \
-  --bes_results_url=http://localhost:8080/invocation/ \
-  --bes_backend=grpc://localhost:1985 \
-  --cache_backend=grpc://localhost:1985 \
-  --rbe_backend=grpc://localhost:1985 \
-  --workflow_id=WF1234 \
   "$@"
 
 if [[ "$PERSISTENT" != true ]]; then
