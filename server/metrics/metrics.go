@@ -575,10 +575,10 @@ var (
 		Help:      "Age of the last entry evicted from the executor's local file cache (relative to when it was added to the cache), in **microseconds**.",
 	})
 
-	FileCacheFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+	FileCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "file_cache_file_size_bytes",
+		Name:      "file_cache_added_file_size_bytes",
 		Help:      "Size of artifacts added to the file cache, in **bytes**.",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
 	})
