@@ -61,7 +61,6 @@ import (
 )
 
 var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
@@ -169,11 +168,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 }
 
 func main() {
-	flag.Parse()
 	rootContext := context.Background()
 	version.Print()
 
-	configurator, err := config.NewConfigurator(*configFile)
+	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

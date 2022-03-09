@@ -142,7 +142,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		t.Fatal(err)
 	}
 	if currentConfigurator == nil {
-		configurator, err := config.NewConfigurator(tmpConfigFile)
+		configurator, err := config.ParseAndReconcileFlagsAndConfig(tmpConfigFile)
 		if err != nil {
 			t.Fatal(err)
 		}

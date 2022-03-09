@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sync"
+
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -13,6 +15,10 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+)
+
+var (
+	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -375,7 +381,37 @@ type OrgConfig struct {
 	Domain string `yaml:"domain" usage:"Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account."`
 }
 
-var sharedGeneralConfig generalConfig
+var (
+	sharedConfigurator = &Configurator{}
+
+	// Contains the string slices originally defined by the flags
+	originalStringSlices = make(map[string][]string)
+	defineFlagsOnce      sync.Once
+
+	// Set of the flags that were explicitly set on the command line
+	originalSetFlags = make(map[string]struct{})
+)
+
+func RegisterAndParseFlags() {
+	defineFlagsOnce.Do(func() {
+		defineFlagsForMembers([]string{}, reflect.ValueOf(&generalConfig{}).Elem(), flag.CommandLine)
+		flag.Parse()
+		flag.Visit(func(flg *flag.Flag) {
+			originalSetFlags[flg.Name] = struct{}{}
+		})
+	})
+}
+
+// FOR TESTING PURPOSES ONLY!!!
+func TestOnlySetFlag(flagName string, set bool) bool {
+	_, wasSet := originalSetFlags[flagName]
+	if set {
+		originalSetFlags[flagName] = struct{}{}
+	} else {
+		delete(originalSetFlags, flagName)
+	}
+	return wasSet
+}
 
 type structSliceFlag struct {
 	dstSlice   reflect.Value
@@ -408,124 +444,146 @@ func (f *structSliceFlag) Set(value string) error {
 	return nil
 }
 
-func defineFlagsForMembers(parentStructNames []string, T reflect.Value) {
+// If configSet is nil, defines all global flags present in the config that have
+// not been elsewhere defined. If configSet isn't nil, defines flags in the
+// provided FlagSet for the config.
+func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet *flag.FlagSet) {
 	typeOfT := T.Type()
 	for i := 0; i < T.NumField(); i++ {
 		f := T.Field(i)
 		fieldName := typeOfT.Field(i).Tag.Get("yaml")
-		docString := typeOfT.Field(i).Tag.Get("usage")
 		fqFieldName := strings.ToLower(strings.Join(append(parentStructNames, fieldName), "."))
+		docString := typeOfT.Field(i).Tag.Get("usage")
 
-		switch f.Type().Kind() {
-		case reflect.Ptr:
-			log.Fatal("The config should not contain pointers!")
-		case reflect.Struct:
-			defineFlagsForMembers(append(parentStructNames, fieldName), f)
-			continue
-		case reflect.Bool:
-			flag.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
-		case reflect.String:
-			flag.StringVar(f.Addr().Interface().(*string), fqFieldName, f.String(), docString)
-		case reflect.Int:
-			flag.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
-		case reflect.Int64:
-			flag.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
-		case reflect.Float64:
-			flag.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
-		case reflect.Slice:
-			if f.Type().Elem().Kind() == reflect.String {
-				// NOTE: string slice flags are *appended* to the values in the YAML,
-				// instead of overriding them completely.
-				if slice, ok := f.Interface().([]string); ok {
-					sf := flagutil.StringSliceFlag(slice)
-					flag.Var(&sf, fqFieldName, docString)
+		// Only define missing flags
+		if flagSet.Lookup(fqFieldName) == nil {
+			switch f.Type().Kind() {
+			case reflect.Ptr:
+				log.Fatal("The config should not contain pointers!")
+			case reflect.Struct:
+				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
+				continue
+			case reflect.Bool:
+				flagSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
+			case reflect.String:
+				flagSet.StringVar(f.Addr().Interface().(*string), fqFieldName, f.String(), docString)
+			case reflect.Int:
+				flagSet.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
+			case reflect.Int64:
+				flagSet.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+			case reflect.Float64:
+				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
+			case reflect.Slice:
+				if f.Type().Elem().Kind() == reflect.String {
+					// NOTE: string slice flags are *appended* to the values in the YAML,
+					// instead of overriding them completely.
+					if slice, ok := f.Interface().([]string); ok {
+						sf := flagutil.StringSliceFlag(slice)
+						flagSet.Var(&sf, fqFieldName, docString)
+					}
+					continue
+				} else if f.Type().Elem().Kind() == reflect.Struct {
+					sf := structSliceFlag{f, f.Type().Elem()}
+					flagSet.Var(&sf, fqFieldName, docString)
+					continue
 				}
-				continue
-			} else if f.Type().Elem().Kind() == reflect.Struct {
-				sf := structSliceFlag{f, f.Type().Elem()}
-				flag.Var(&sf, fqFieldName, docString)
-				continue
+				fallthrough
+			default:
+				// We know this is not flag compatible and it's here for
+				// long-term support reasons, so don't warn about it.
+				if fqFieldName == "auth.oauth_providers" {
+					continue
+				}
+				log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 			}
-			fallthrough
-		default:
-			// We know this is not flag compatible and it's here for
-			// long-term support reasons, so don't warn about it.
-			if fqFieldName == "auth.oauth_providers" {
-				continue
-			}
-			log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 		}
 	}
 }
 
-// Register flags too.
-func init() {
-	defineFlagsForMembers([]string{}, reflect.ValueOf(&sharedGeneralConfig).Elem())
+func populateYamlPresenceMap(yamlMap map[interface{}]interface{}) map[string]struct{} {
+	var check func(key []string, value interface{})
+	presenceMap := make(map[string]struct{})
+	check = func(key []string, value interface{}) {
+		if m, ok := value.(map[interface{}]interface{}); ok {
+			for k, v := range m {
+				if newKey, ok := k.(string); ok {
+					check(append(key, strings.ToLower(newKey)), v)
+					continue
+				}
+				log.Warningf("Non-string key encountered in yaml map in field: %s", key)
+			}
+			return
+		}
+		presenceMap[strings.Join(key, ".")] = struct{}{}
+	}
+	check([]string{}, yamlMap)
+	return presenceMap
 }
 
-func parseConfig(fileBytes []byte) (*generalConfig, error) {
+type Configurator struct {
+	gc          *generalConfig
+	presenceMap map[string]struct{}
+}
+
+func NewConfiguratorFromData(data []byte) (*Configurator, error) {
 	// expand environment variables
-	expandedFileBytes := []byte(os.ExpandEnv(string(fileBytes)))
+	expandedData := []byte(os.ExpandEnv(string(data)))
 
 	// Unmarshal in strict mode once and warn about invalid fields.
 	var syntaxValidationConfig generalConfig
-	if err := yaml.UnmarshalStrict([]byte(expandedFileBytes), &syntaxValidationConfig); err != nil {
+	if err := yaml.UnmarshalStrict([]byte(expandedData), &syntaxValidationConfig); err != nil {
 		log.Warningf("Unknown fields in config: %s", err)
 	}
 
-	if err := yaml.Unmarshal([]byte(expandedFileBytes), &sharedGeneralConfig); err != nil {
+	gc := &generalConfig{}
+	if err := yaml.Unmarshal([]byte(expandedData), gc); err != nil {
 		return nil, fmt.Errorf("Error parsing config file: %s", err)
 	}
 
-	// Re-parse flags so that they override the YAML config values.
-	flag.Parse()
+	generalConfigMap := make(map[interface{}]interface{})
+	if err := yaml.Unmarshal([]byte(expandedData), &generalConfigMap); err != nil {
+		return nil, fmt.Errorf("Error parsing config file: %s", err)
+	}
 
-	return &sharedGeneralConfig, nil
+	// The shared config caches the last config parsed from a file so that a call to
+	// `readConfig` with an empty `configFile` can return the cached config.
+	sharedConfigurator = &Configurator{gc, populateYamlPresenceMap(generalConfigMap)}
+
+	return sharedConfigurator, nil
 }
 
-func readConfig(fullConfigPath string) (*generalConfig, error) {
-	if fullConfigPath == "" {
-		return &sharedGeneralConfig, nil
+func NewConfigurator(configFilePath string) (*Configurator, error) {
+	if configFilePath == "" {
+		return sharedConfigurator, nil
 	}
-	log.Infof("Reading buildbuddy config from '%s'", fullConfigPath)
+	log.Infof("Reading buildbuddy config from '%s'", configFilePath)
 
-	_, err := os.Stat(fullConfigPath)
+	_, err := os.Stat(configFilePath)
 
 	// If the file does not exist then we are SOL.
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Config file %s not found", fullConfigPath)
+		return nil, fmt.Errorf("Config file %s not found", configFilePath)
 	}
 
-	fileBytes, err := os.ReadFile(fullConfigPath)
+	fileBytes, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	return parseConfig(fileBytes)
+	return NewConfiguratorFromData(fileBytes)
 }
 
-type Configurator struct {
-	gc *generalConfig
-}
-
-func NewConfigurator(configFilePath string) (*Configurator, error) {
-	conf, err := readConfig(configFilePath)
+func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, error) {
+	RegisterAndParseFlags()
+	if configFilePath == "" {
+		configFilePath = *configFile
+	}
+	configurator, err := NewConfigurator(configFilePath)
 	if err != nil {
 		return nil, err
 	}
-	return &Configurator{
-		gc: conf,
-	}, nil
-}
-
-func NewConfiguratorFromData(data []byte) (*Configurator, error) {
-	conf, err := parseConfig(data)
-	if err != nil {
-		return nil, err
-	}
-	return &Configurator{
-		gc: conf,
-	}, nil
+	configurator.ReconcileFlagsAndConfig()
+	return configurator, nil
 }
 
 type RedisClientConfig struct {
@@ -538,6 +596,46 @@ func (cc *RedisClientConfig) String() string {
 		return "sharded across " + strings.Join(cc.ShardedConfig.Shards, ", ")
 	}
 	return cc.SimpleTarget
+}
+
+// After calling this function, the generalConfig in the Configurator and the
+// flags in the default flag set (flag.Commandline) with a corresponding config
+// value will be consistent.
+func (c *Configurator) ReconcileFlagsAndConfig() {
+	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
+	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
+
+	flagSet.VisitAll(func(flg *flag.Flag) {
+		if configSlice, ok := flg.Value.(*flagutil.StringSliceFlag); ok {
+			if flagSlice, ok := flag.Lookup(flg.Name).Value.(*flagutil.StringSliceFlag); ok {
+				originalSlice, ok := originalStringSlices[flg.Name]
+				if !ok {
+					originalStringSlices[flg.Name] = (*flagSlice)[:]
+					originalSlice = originalStringSlices[flg.Name]
+				}
+				// string slices from flags are appended to the values in the config, as
+				// opposed to either overriding the other, so no conflict check is
+				// necessary. Note that Set for StringSliceFlag is performing the
+				// aforementioned append operation, as opposed to setting anything.
+				flg.Value.Set(strings.Join(originalSlice, ","))
+				*flagSlice = *configSlice
+				return
+			}
+			log.Warningf("yaml defines %s as []string, but flags do not.", flg.Name)
+		}
+		_, setInFlags := originalSetFlags[flg.Name]
+		_, presentInYaml := c.presenceMap[flg.Name]
+		// If the flag was set on the command line or there is no value specified in
+		// the config, we use the value defined by the flags and update the config
+		// with that value. Otherwise (which is to say, if there was no flag
+		// explicitly set on the command line and there is a value present in the
+		// config), use the config value and update the flags with that value.
+		if setInFlags || !presentInYaml {
+			flg.Value.Set(flag.Lookup(flg.Name).Value.String())
+			return
+		}
+		flag.Set(flg.Name, flg.Value.String())
+	})
 }
 
 func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {

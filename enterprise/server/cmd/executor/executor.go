@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -58,7 +57,6 @@ var (
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 	gRPCPort       = flag.Int("grpc_port", 1987, "The port to listen for gRPC traffic on")
-	configFile     = flag.String("config_file", "", "The path to a buildbuddy config file")
 	serverType     = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 )
 
@@ -239,21 +237,9 @@ func main() {
 	// here to allow group-write and others-write permissions.
 	syscall.Umask(0)
 
-	// Parse all flags, once and for all.
-	flag.Parse()
 	rootContext := context.Background()
 
-	configFilePath := *configFile
-	if configFilePath == "" {
-		_, err := os.Stat("/config.yaml")
-		if err == nil {
-			configFilePath = "/config.yaml"
-		} else if !errors.Is(err, os.ErrNotExist) {
-			log.Fatalf("Error loading config file from file: %s", err)
-		}
-	}
-
-	configurator, err := config.NewConfigurator(configFilePath)
+	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

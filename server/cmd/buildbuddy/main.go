@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
@@ -23,9 +22,8 @@ var (
 // which import from libmain.go.
 
 func main() {
-	flag.Parse()
 	version.Print()
-	configurator, err := config.NewConfigurator(*configFile)
+	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
 	if err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}

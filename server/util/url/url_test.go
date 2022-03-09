@@ -12,10 +12,12 @@ import (
 )
 
 func envWithAppURL(t *testing.T, appUrl string) environment.Env {
+	config.RegisterAndParseFlags()
 	c, err := config.NewConfiguratorFromData([]byte(fmt.Sprintf("app:\n  build_buddy_url: %s\n", appUrl)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.ReconcileFlagsAndConfig()
 	healthChecker := healthcheck.NewHealthChecker("test")
 	return real_environment.NewRealEnv(c, healthChecker)
 }
