@@ -404,8 +404,14 @@ func RegisterAndParseFlags() {
 }
 
 // FOR TESTING PURPOSES ONLY!!!
-func GetOriginalSetFlags() map[string]struct{} {
-	return originalSetFlags
+func TestOnlySetFlag(flagName string, set bool) bool {
+	_, wasSet := originalSetFlags[flagName]
+	if set {
+		originalSetFlags[flagName] = struct{}{}
+	} else {
+		delete(originalSetFlags, flagName)
+	}
+	return wasSet
 }
 
 type structSliceFlag struct {
@@ -593,6 +599,9 @@ func (cc *RedisClientConfig) String() string {
 	return cc.SimpleTarget
 }
 
+// After calling this function, the generalConfig in the Configurator and the
+// flags in the default flag set (flag.Commandline) with a corresponding config
+// value will be consistent.
 func (c *Configurator) ReconcileFlagsAndConfig() {
 	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
 	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
@@ -618,9 +627,10 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 		_, setInFlags := originalSetFlags[flg.Name]
 		_, presentInYaml := c.presenceMap[flg.Name]
 		// If the flag was set on the command line or there is no value specified in
-		// the config, we use the value defined by the flags. Otherwise (which is to
-		// say, if there was no flag explicitly set on the command line and there is
-		// a value present in the config), use the config value.
+		// the config, we use the value defined by the flags and update the config
+		// with that value. Otherwise (which is to say, if there was no flag
+		// explicitly set on the command line and there is a value present in the
+		// config), use the config value and update the flags with that value.
 		if setInFlags || !presentInYaml {
 			flg.Value.Set(flag.Lookup(flg.Name).Value.String())
 			return

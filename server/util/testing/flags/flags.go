@@ -16,14 +16,10 @@ func Set(t testing.TB, name, value string) {
 		t.Fatalf("Undefined flag: %s", name)
 	}
 	original := f.Value.String()
-	originalSetMap := config.GetOriginalSetFlags()
-	_, inOriginalSet := originalSetMap[name]
-	originalSetMap[name] = struct{}{}
 	flag.Set(name, value)
+	wasSet := config.TestOnlySetFlag(name, true)
 	t.Cleanup(func() {
 		flag.Set(name, original)
-		if !inOriginalSet {
-			delete(originalSetMap, name)
-		}
+		config.TestOnlySetFlag(name, wasSet)
 	})
 }
