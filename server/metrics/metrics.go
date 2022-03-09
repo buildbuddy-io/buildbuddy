@@ -103,6 +103,9 @@ const (
 
 	/// PartitionID is the ID of the disk cache partition this event applied to.
 	PartitionID = "partition_id"
+
+	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
+	FileCacheRequestStatusLabel = "status"
 )
 
 const (
@@ -554,6 +557,15 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "runner_pool_disk_usage_bytes",
 		Help:      "Total disk usage of pooled command runners, in **bytes**.",
+	})
+
+	FileCacheRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "file_cache_requests",
+		Help:      "Number of local executor file cache requests.",
+	}, []string{
+		FileCacheRequestStatusLabel,
 	})
 
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{

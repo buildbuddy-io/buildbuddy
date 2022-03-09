@@ -15,6 +15,7 @@ go_library(
         "//server/util/lru",
         "//server/util/status",
         "//server/util/uuid",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
