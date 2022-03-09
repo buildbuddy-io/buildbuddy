@@ -32,7 +32,11 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var (
+const (
+	// killedExitCode is the exit code returned when a docker exec process exits
+	// due to receiving SIGKILL.
+	killedExitCode = 137
+
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
 	defaultDockerUlimit          = int64(65535)
@@ -401,6 +405,15 @@ func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command
 		res = r.exec(ctx, command, stdin, stdout)
 		return res.Error
 	})
+	// Translate killedExitCode and populate the error field to match the
+	// commandutil.Run semantics.
+	// TODO(bduffany): Find a way to detect whether the exec process was killed
+	// without relying on exit codes. A command can run "exit 137" which doesn't
+	// mean it was killed, although this is probably rare.
+	if res.ExitCode == killedExitCode {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = status.UnavailableError("docker exec process was killed, likely due to executor shutdown or OOM")
+	}
 	return res
 }
 
