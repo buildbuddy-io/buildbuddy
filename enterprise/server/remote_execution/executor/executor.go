@@ -329,7 +329,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	// Exit codes < 0 mean that the command either never started or was killed.
 	// Make sure we return an error in this case.
 	if cmdResult.ExitCode < 0 {
-		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
+		return finishWithErrFn(incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error))
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
