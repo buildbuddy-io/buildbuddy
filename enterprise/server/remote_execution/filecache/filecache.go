@@ -218,6 +218,7 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 		sizeBytes:   node.GetDigest().GetSizeBytes(),
 		value:       fp,
 	}
+	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
 	c.l.Add(key(node), e)
 }
 
