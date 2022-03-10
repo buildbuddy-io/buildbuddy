@@ -246,12 +246,9 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 			return commandutil.ErrorResult(err)
 		}
 		r.state = ready
+		break
 	case ready:
-		// When re-using a container, need to synchronize workspace contents before
-		// executing.
-		if err := r.syncWorkspace(ctx); err != nil {
-			return commandutil.ErrorResult(err)
-		}
+		break
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
@@ -263,26 +260,6 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	}
 
 	return r.Container.Exec(ctx, command, nil, nil)
-}
-
-// syncWorkspace synchronizes the action workspace directory to the container.
-// It should be called after downloading inputs and before executing the action.
-//
-// This should only be called when using runner recycling, since the Run() API
-// is responsible for making the workspace available to the container, and
-// inputs have already been downloaded by the time Run() is called.
-//
-// This is also an NOP for configurations in which the runner shares the same
-// view of the workspace as the host, such as the workspace is mounted to a
-// container or made directly accessible to a bare runner.
-func (r *CommandRunner) syncWorkspace(ctx context.Context) error {
-	if r.VFS != nil {
-		return nil
-	}
-	if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-		return fc.SyncWorkspace(ctx)
-	}
-	return nil
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
