@@ -90,6 +90,10 @@ const (
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
 	workspaceDriveID = "workspacefs"
+	// workspaceDiskSlackSpaceMB is the amount of additional storage allocated to
+	// the workspace disk for writing action outputs, test tempfiles, etc.
+	// TODO(bduffany): Consider making this configurable
+	workspaceDiskSlackSpaceMB = 2_000 // 2 GB
 
 	// The scratchfs image name and drive ID.
 	scratchFSName  = "scratchfs.ext4"
@@ -271,13 +275,12 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 // changing this algorithm will invalidate all existing cached snapshots. Be
 // careful!
 type Constants struct {
-	NumCPUs                   int64
-	MemSizeMB                 int64
-	ScratchDiskSizeMB         int64
-	WorkspaceDiskSlackSpaceMB int64
-	EnableNetworking          bool
-	InitDockerd               bool
-	DebugMode                 bool
+	NumCPUs           int64
+	MemSizeMB         int64
+	ScratchDiskSizeMB int64
+	EnableNetworking  bool
+	InitDockerd       bool
+	DebugMode         bool
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -328,6 +331,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
+		fmt.Sprintf("scratch=%d", c.constants.ScratchDiskSizeMB),
 		fmt.Sprintf("net=%t", c.constants.EnableNetworking),
 		fmt.Sprintf("dockerd=%t", c.constants.InitDockerd),
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
@@ -370,13 +374,12 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 
 	c := &FirecrackerContainer{
 		constants: Constants{
-			NumCPUs:                   opts.NumCPUs,
-			MemSizeMB:                 opts.MemSizeMB,
-			ScratchDiskSizeMB:         opts.ScratchDiskSizeMB,
-			WorkspaceDiskSlackSpaceMB: opts.WorkspaceDiskSlackSpaceMB,
-			EnableNetworking:          opts.EnableNetworking,
-			InitDockerd:               opts.InitDockerd,
-			DebugMode:                 opts.DebugMode,
+			NumCPUs:           opts.NumCPUs,
+			MemSizeMB:         opts.MemSizeMB,
+			ScratchDiskSizeMB: opts.ScratchDiskSizeMB,
+			EnableNetworking:  opts.EnableNetworking,
+			InitDockerd:       opts.InitDockerd,
+			DebugMode:         opts.DebugMode,
 		},
 		jailerRoot:         opts.JailerRoot,
 		dockerClient:       opts.DockerClient,
@@ -719,7 +722,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err != nil {
 		return err
 	}
-	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + c.constants.WorkspaceDiskSlackSpaceMB*1e6
+	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
 	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), workspaceDiskSizeBytes); err != nil {
 		return err
 	}
@@ -1253,7 +1256,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 	workspaceFSPath := filepath.Join(c.tempDir, workspaceFSName)
-	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + c.constants.WorkspaceDiskSlackSpaceMB*1e6
+	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
 	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, workspaceFSPath, workspaceDiskSizeBytes); err != nil {
 		return err
 	}

@@ -24,10 +24,6 @@ type ContainerOpts struct {
 	// The amount of RAM, in MB, to allocate to this VM.
 	MemSizeMB int64
 
-	// The amount of slack space to allocate to the workspace drive (for writing
-	// action outputs, test temp files, etc.)
-	WorkspaceDiskSlackSpaceMB int64
-
 	// The size of the scratch disk to allocate (for writing files anywhere
 	// outside of the workspace directory, such as /tmp or ~/.cache).
 	ScratchDiskSizeMB int64
