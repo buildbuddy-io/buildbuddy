@@ -307,6 +307,11 @@ func (a *oidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessTok
 	if err != nil {
 		return err
 	}
+	// at_hash is optional:
+	// https://github.com/coreos/go-oidc/blob/d42db69c79f2fa664fd4156e939bf27bba0d2f68/oidc/oidc.go#L373
+	if validToken.AccessTokenHash == "" {
+		return nil
+	}
 	return validToken.VerifyAccessToken(accessToken)
 }
 
@@ -833,11 +838,11 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If the session is not found, bail.
 	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
-		return nil, ut, status.PermissionDeniedError(loggedOutMsg)
+		return nil, ut, status.PermissionDeniedErrorf("%s: session not found: %s", loggedOutMsg, err.Error())
 	}
 
 	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
-		return nil, ut, status.PermissionDeniedError(loggedOutMsg)
+		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token: %s", loggedOutMsg, err.Error())
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
