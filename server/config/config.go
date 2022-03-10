@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -80,13 +81,13 @@ type buildEventProxy struct {
 }
 
 type DatabaseConfig struct {
-	DataSource             string `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
-	ReadReplica            string `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
-	StatsPollInterval      string `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: '5s')."`
-	MaxOpenConns           int    `yaml:"max_open_conns" usage:"The maximum number of open connections to maintain to the db"`
-	MaxIdleConns           int    `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
-	ConnMaxLifetimeSeconds int    `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
-	LogQueries             bool   `yaml:"log_queries" usage:"If true, log all queries"`
+	DataSource             string        `yaml:"data_source" usage:"The SQL database to connect to, specified as a connection string."`
+	ReadReplica            string        `yaml:"read_replica" usage:"A secondary, read-only SQL database to connect to, specified as a connection string."`
+	StatsPollInterval      time.Duration `yaml:"stats_poll_interval" usage:"How often to poll the DB client for connection stats (default: '5s')."`
+	MaxOpenConns           int           `yaml:"max_open_conns" usage:"The maximum number of open connections to maintain to the db"`
+	MaxIdleConns           int           `yaml:"max_idle_conns" usage:"The maximum number of idle connections to maintain to the db"`
+	ConnMaxLifetimeSeconds int           `yaml:"conn_max_lifetime_seconds" usage:"The maximum lifetime of a connection to the db"`
+	LogQueries             bool          `yaml:"log_queries" usage:"If true, log all queries"`
 }
 
 type storageConfig struct {
@@ -439,6 +440,10 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 			case reflect.Int:
 				flagSet.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
 			case reflect.Int64:
+				if f.Addr().Type() == reflect.TypeOf((*time.Duration)(nil)) {
+					flagSet.DurationVar(f.Addr().Interface().(*time.Duration), fqFieldName, time.Duration(f.Int()), docString)
+					continue
+				}
 				flagSet.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
 			case reflect.Float64:
 				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
