@@ -619,8 +619,6 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
-	err = c.SyncWorkspace(ctx)
-	require.NoError(t, err)
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
 
@@ -640,8 +638,6 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	})
 
 	err = c.Unpause(ctx)
-	require.NoError(t, err)
-	err = c.SyncWorkspace(ctx)
 	require.NoError(t, err)
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil, nil)
@@ -738,8 +734,6 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 
 	start := time.Now()
 	err = c.Unpause(ctx)
-	require.NoError(t, err)
-	err = c.SyncWorkspace(ctx)
 	require.NoError(t, err)
 
 	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)

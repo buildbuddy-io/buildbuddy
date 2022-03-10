@@ -1241,11 +1241,8 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.rmErr = nil
 
 	c.actionWorkingDir = actionWorkingDir
-	workspaceSizeBytes, err := disk.DirSize(c.actionWorkingDir)
-	if err != nil {
-		return err
-	}
 
+	var err error
 	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
@@ -1255,9 +1252,11 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
 		return err
 	}
+	// Create an empty workspace image initially; the real workspace will be
+	// hot-swapped just before running each command in order to ensure that the
+	// workspace contents are up to date.
 	workspaceFSPath := filepath.Join(c.tempDir, workspaceFSName)
-	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, workspaceFSPath, workspaceDiskSizeBytes); err != nil {
+	if err := ext4.MakeEmptyImage(ctx, workspaceFSPath, ext4.MinDiskImageSizeBytes); err != nil {
 		return err
 	}
 	log.Debugf("Scratch and workspace disk images written to %q", c.tempDir)
@@ -1397,7 +1396,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	if c.fsLayout != nil {
+	if c.fsLayout == nil {
+		if err := c.syncWorkspace(ctx); err != nil {
+			result.Error = err
+			return result
+		}
+	} else {
 		req := &vmfspb.PrepareRequest{}
 		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
 		if err != nil {
@@ -1579,12 +1583,12 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
 }
 
-// SyncWorkspace creates a new disk image from the given working directory
+// syncWorkspace creates a new disk image from the given working directory
 // and hot-swaps the currently mounted workspace drive in the guest.
 //
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
-func (c *FirecrackerContainer) SyncWorkspace(ctx context.Context) error {
+func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
