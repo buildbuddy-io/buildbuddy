@@ -838,12 +838,12 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If the session is not found, bail.
 	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
-		log.Debugf("Session not found: %s", err.Error())
+		log.Debugf("Session not found: %s", err)
 		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", loggedOutMsg)
 	}
 
 	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
-		log.Debugf("Invalid token: %s", err.Error())
+		log.Debugf("Invalid token: %s", err)
 		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token", loggedOutMsg)
 	}
 
