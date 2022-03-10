@@ -46,6 +46,14 @@ const (
 )
 
 var (
+	dataSource             = flag.String("database.data_source", "", "The SQL database to connect to, specified as a connection string.")
+	readReplica            = flag.String("database.read_replica", "", "A secondary, read-only SQL database to connect to, specified as a connection string.")
+	statsPollInterval      = flag.String("database.stats_poll_interval", "", "How often to poll the DB client for connection stats (default: '5s').")
+	maxOpenConns           = flag.Int("database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
+	maxIdleConns           = flag.Int("database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
+	connMaxLifetimeSeconds = flag.Int("database.conn_max_lifetime_seconds", 0, "The maximum lifetime of a connection to the db")
+	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
+
 	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
