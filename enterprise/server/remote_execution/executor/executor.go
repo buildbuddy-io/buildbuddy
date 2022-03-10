@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
@@ -330,6 +331,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	// Make sure we return an error in this case.
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
+	}
+	// If we know that the command terminated due to receiving SIGKILL, make sure
+	// to retry, since this is not considered a clean termination.
+	//
+	// Other termination signals such as SIGABRT are treated as clean exits for
+	// now, since some tools intentionally raise SIGABRT to cause a fatal exit:
+	// https://github.com/bazelbuild/bazel/pull/14399
+	if cmdResult.Error == commandutil.ErrSIGKILL {
+		return finishWithErrFn(cmdResult.Error)
 	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)

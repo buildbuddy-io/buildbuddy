@@ -29,6 +29,10 @@ const (
 )
 
 var (
+	// ErrSIGKILL is a special error used to indicate that a command was terminated
+	// by SIGKILL and may be retried.
+	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
+
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
@@ -140,6 +144,11 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	}
 
 	exitCode := processState.ExitCode()
+
+	// TODO(bduffany): Extract syscall.WaitStatus from exitErr.Sys(), and set
+	// ErrSIGKILL if waitStatus.Signal() == syscall.SIGKILL, so that the command
+	// can be retried if it was OOM killed. Note that KilledExitCode does not
+	// imply that SIGKILL was received.
 
 	if exitCode == KilledExitCode {
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
