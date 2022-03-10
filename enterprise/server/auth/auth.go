@@ -838,11 +838,13 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If the session is not found, bail.
 	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
-		return nil, ut, status.PermissionDeniedErrorf("%s: session not found: %s", loggedOutMsg, err.Error())
+		log.Debugf("Session not found: %s", err.Error())
+		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", loggedOutMsg)
 	}
 
 	if err := auth.checkAccessToken(ctx, jwt, sesh.AccessToken); err != nil {
-		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token: %s", loggedOutMsg, err.Error())
+		log.Debugf("Invalid token: %s", err.Error())
+		return nil, ut, status.PermissionDeniedErrorf("%s: invalid token", loggedOutMsg)
 	}
 
 	// Now try to verify the token again -- this time we check for expiry.
