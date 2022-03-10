@@ -1397,7 +1397,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	if c.fsLayout == nil {
-		if err := c.SyncWorkspace(ctx); err != nil {
+		if err := c.syncWorkspace(ctx); err != nil {
 			result.Error = err
 			return result
 		}
@@ -1583,12 +1583,12 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
 }
 
-// SyncWorkspace creates a new disk image from the given working directory
+// syncWorkspace creates a new disk image from the given working directory
 // and hot-swaps the currently mounted workspace drive in the guest.
 //
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
-func (c *FirecrackerContainer) SyncWorkspace(ctx context.Context) error {
+func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
