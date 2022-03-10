@@ -65,6 +65,16 @@ import (
 )
 
 var (
+	// Log flags
+	logLevel                  = flag.String("app.log_level", "", "The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}")
+	enableStructuredLogging   = flag.Bool("app.enable_structured_logging", false, "If true, log messages will be json-formatted.")
+	logIncludeShortFileName   = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
+	logEnableGCPLoggingFormat = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
+	logErrorStackTraces       = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
+
+	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
+	enableTargetTracking    = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
+
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")

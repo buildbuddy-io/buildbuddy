@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -61,6 +62,12 @@ import (
 )
 
 var (
+	usageTrackingEnabled        = flag.Bool("app.usage_tracking_enabled", false, "If set, enable usage data collection.")
+	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
+	defaultRedisShards          = flagutil.StringSlice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
+	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
+	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")
+
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 

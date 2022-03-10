@@ -2,6 +2,7 @@ package usage_service
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"time"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
+)
+
+var (
+	usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
 )
 
 const (

@@ -2,6 +2,7 @@ package userdb
 
 import (
 	"context"
+	"flag"
 	"regexp"
 	"strings"
 	"time"
@@ -32,6 +33,10 @@ const (
 )
 
 var (
+	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
+	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
+	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+
 	// Don't change this ever. It's the default group that users
 	// are added to when the server is running on-prem and group
 	// management is not really an issue. If you change it, you'll

@@ -18,6 +18,8 @@ import (
 )
 
 var (
+	//TODO: Deprecate or use this flag; it is currently unreferenced.
+	region     = flag.String("app.region", "", "The region in which the app is running.")
 	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
 )
 

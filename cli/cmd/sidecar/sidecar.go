@@ -31,6 +31,8 @@ import (
 )
 
 var (
+	enableTargetTracking = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
+
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
 	listenAddr  = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
