@@ -113,7 +113,7 @@ func main() {
 		ActionWorkingDirectory: emptyActionDir,
 		NumCPUs:                1,
 		MemSizeMB:              2500,
-		DiskSlackSpaceMB:       100,
+		ScratchDiskSizeMB:      100,
 		EnableNetworking:       true,
 		DebugMode:              true,
 		ForceVMIdx:             vmIdx,

@@ -803,7 +803,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			ActionWorkingDirectory: p.hostBuildRoot(),
 			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
 			MemSizeMB:              int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-			DiskSlackSpaceMB:       int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+			ScratchDiskSizeMB:      int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 			EnableNetworking:       true,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
