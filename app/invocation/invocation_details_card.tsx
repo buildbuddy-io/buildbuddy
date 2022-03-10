@@ -162,7 +162,10 @@ export default class ArtifactsCardComponent extends React.Component {
               <div className="invocation-section">
                 <div className="invocation-section-title">GitHub commit</div>
                 <div>
-                  <a href={`${this.props.model.getGithubRepo()}/commit/${this.props.model.getGithubSHA()}`}>
+                  <a
+                    href={`${this.props.model
+                      .getGithubRepo()
+                      .replace(/\.git$/, "")}/commit/${this.props.model.getGithubSHA()}`}>
                     {this.props.model.getGithubSHA()}
                   </a>
                 </div>
