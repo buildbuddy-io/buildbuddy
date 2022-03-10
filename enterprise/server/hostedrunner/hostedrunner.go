@@ -151,6 +151,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
 			{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 			{Name: "REPO_TOKEN", Value: req.GetGitRepo().GetAccessToken()},
+			// Run from the scratch disk, since the workspace disk is hot-swapped
+			// between runs, which may not be very Bazel-friendly.
+			{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"},
 		},
 		Arguments: args,
 		Platform: &repb.Platform{

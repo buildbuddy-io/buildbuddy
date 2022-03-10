@@ -419,6 +419,16 @@ func run() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
 
+	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
+	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
+		if err := os.MkdirAll(wd, 0755); err != nil {
+			return status.WrapError(err, "create WORKDIR_OVERRIDE directory")
+		}
+		if err := os.Chdir(wd); err != nil {
+			return err
+		}
+	}
+
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
