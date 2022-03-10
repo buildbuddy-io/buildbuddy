@@ -602,10 +602,7 @@ func (cc *RedisClientConfig) String() string {
 // flags in the default flag set (flag.Commandline) with a corresponding config
 // value will be consistent.
 func (c *Configurator) ReconcileFlagsAndConfig() {
-	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
-	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
-
-	flagSet.VisitAll(func(flg *flag.Flag) {
+	c.GenerateFlagSet().VisitAll(func(flg *flag.Flag) {
 		if configSlice, ok := flg.Value.(*flagutil.StringSliceFlag); ok {
 			if flagSlice, ok := flag.Lookup(flg.Name).Value.(*flagutil.StringSliceFlag); ok {
 				originalSlice, ok := originalStringSlices[flg.Name]
@@ -636,6 +633,12 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 		}
 		flag.Set(flg.Name, flg.Value.String())
 	})
+}
+
+func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
+	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
+	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
+	return flagSet
 }
 
 func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {

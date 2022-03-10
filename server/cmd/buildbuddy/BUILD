@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 
@@ -56,5 +56,16 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/version",
+    ],
+)
+
+go_test(
+    name = "buildbuddy_test",
+    srcs = ["main_test.go"],
+    embed = [":buildbuddy_lib"],
+    deps = [
+        "//server/config",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
