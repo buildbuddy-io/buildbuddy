@@ -419,9 +419,23 @@ func run() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
 
+	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
+	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
+		if err := os.MkdirAll(wd, 0755); err != nil {
+			return status.WrapError(err, "create WORKDIR_OVERRIDE directory")
+		}
+		if err := os.Chdir(wd); err != nil {
+			return err
+		}
+	}
+
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
+	}
+	// Bazel also needs USER to be set.
+	if err := ensureUser(); err != nil {
+		return status.WrapError(err, "ensure USER")
 	}
 	// Make sure PATH is set.
 	if err := ensurePath(); err != nil {
@@ -869,7 +883,10 @@ func bazelArgs(cmd string) ([]string, error) {
 }
 
 func ensureHomeDir() error {
-	if os.Getenv("HOME") != "" {
+	// HOME dir is "/" when there is no user home dir created, which can happen
+	// when running locally (due to docker_inherit_user_ids). Treat this the same
+	// as HOME being unset.
+	if os.Getenv("HOME") != "" && os.Getenv("HOME") != "/" {
 		return nil
 	}
 	os.MkdirAll(".home", 0777)
@@ -879,6 +896,13 @@ func ensureHomeDir() error {
 	}
 	os.Setenv("HOME", path.Join(wd, ".home"))
 	return nil
+}
+
+func ensureUser() error {
+	if os.Getenv("USER") != "" {
+		return nil
+	}
+	return os.Setenv("USER", "buildbuddy")
 }
 
 func ensurePath() error {

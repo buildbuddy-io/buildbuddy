@@ -90,12 +90,17 @@ const (
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
 	workspaceDriveID = "workspacefs"
+	// workspaceDiskSlackSpaceMB is the amount of additional storage allocated to
+	// the workspace disk for writing action outputs, test tempfiles, etc.
+	// TODO(bduffany): Consider making this configurable
+	workspaceDiskSlackSpaceMB = 2_000 // 2 GB
 
 	// The scratchfs image name and drive ID.
 	scratchFSName  = "scratchfs.ext4"
 	scratchDriveID = "scratchfs"
-	// TODO(bduffany): Make this configurable
-	scratchDiskSizeBytes = 2e9
+	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
+	// This is needed because the init binary needs some space to copy files around.
+	minScratchDiskSizeBytes = 25e6
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -270,12 +275,12 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 // changing this algorithm will invalidate all existing cached snapshots. Be
 // careful!
 type Constants struct {
-	NumCPUs          int64
-	MemSizeMB        int64
-	DiskSlackSpaceMB int64
-	EnableNetworking bool
-	InitDockerd      bool
-	DebugMode        bool
+	NumCPUs           int64
+	MemSizeMB         int64
+	ScratchDiskSizeMB int64
+	EnableNetworking  bool
+	InitDockerd       bool
+	DebugMode         bool
 }
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
@@ -326,6 +331,7 @@ func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
 	params := []string{
 		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
 		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
+		fmt.Sprintf("scratch=%d", c.constants.ScratchDiskSizeMB),
 		fmt.Sprintf("net=%t", c.constants.EnableNetworking),
 		fmt.Sprintf("dockerd=%t", c.constants.InitDockerd),
 		fmt.Sprintf("debug=%t", c.constants.DebugMode),
@@ -368,12 +374,12 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 
 	c := &FirecrackerContainer{
 		constants: Constants{
-			NumCPUs:          opts.NumCPUs,
-			MemSizeMB:        opts.MemSizeMB,
-			DiskSlackSpaceMB: opts.DiskSlackSpaceMB,
-			EnableNetworking: opts.EnableNetworking,
-			InitDockerd:      opts.InitDockerd,
-			DebugMode:        opts.DebugMode,
+			NumCPUs:           opts.NumCPUs,
+			MemSizeMB:         opts.MemSizeMB,
+			ScratchDiskSizeMB: opts.ScratchDiskSizeMB,
+			EnableNetworking:  opts.EnableNetworking,
+			InitDockerd:       opts.InitDockerd,
+			DebugMode:         opts.DebugMode,
 		},
 		jailerRoot:         opts.JailerRoot,
 		dockerClient:       opts.DockerClient,
@@ -712,11 +718,12 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	defer span.End()
 
 	c.workspaceGeneration++
-	sizeBytes, err := disk.DirSize(workspacePath)
+	workspaceSizeBytes, err := disk.DirSize(workspacePath)
 	if err != nil {
 		return err
 	}
-	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), sizeBytes+c.constants.DiskSlackSpaceMB*1e6); err != nil {
+	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
+	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), workspaceDiskSizeBytes); err != nil {
 		return err
 	}
 	return nil
@@ -1234,21 +1241,22 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.rmErr = nil
 
 	c.actionWorkingDir = actionWorkingDir
-	workspaceSizeBytes, err := disk.DirSize(c.actionWorkingDir)
-	if err != nil {
-		return err
-	}
 
+	var err error
 	c.tempDir, err = os.MkdirTemp(c.jailerRoot, "fc-container-*")
 	if err != nil {
 		return err
 	}
 	scratchFSPath := filepath.Join(c.tempDir, scratchFSName)
+	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.constants.ScratchDiskSizeMB*1e6
 	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
 		return err
 	}
+	// Create an empty workspace image initially; the real workspace will be
+	// hot-swapped just before running each command in order to ensure that the
+	// workspace contents are up to date.
 	workspaceFSPath := filepath.Join(c.tempDir, workspaceFSName)
-	if err := ext4.DirectoryToImage(ctx, c.actionWorkingDir, workspaceFSPath, workspaceSizeBytes+(c.constants.DiskSlackSpaceMB*1e6)); err != nil {
+	if err := ext4.MakeEmptyImage(ctx, workspaceFSPath, ext4.MinDiskImageSizeBytes); err != nil {
 		return err
 	}
 	log.Debugf("Scratch and workspace disk images written to %q", c.tempDir)
@@ -1388,7 +1396,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		ExitCode:           commandutil.NoExitCode,
 	}
 
-	if c.fsLayout != nil {
+	if c.fsLayout == nil {
+		if err := c.syncWorkspace(ctx); err != nil {
+			result.Error = err
+			return result
+		}
+	} else {
 		req := &vmfspb.PrepareRequest{}
 		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
 		if err != nil {
@@ -1570,12 +1583,12 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
 }
 
-// SyncWorkspace creates a new disk image from the given working directory
+// syncWorkspace creates a new disk image from the given working directory
 // and hot-swaps the currently mounted workspace drive in the guest.
 //
 // This is intended to be called just before Exec, so that the inputs to
 // the executed action will be made available to the VM.
-func (c *FirecrackerContainer) SyncWorkspace(ctx context.Context) error {
+func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
 	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {

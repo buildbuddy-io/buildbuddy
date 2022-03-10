@@ -14,6 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
+const (
+	// MinDiskImageSizeBytes is the approximate minimum size needed for an ext4
+	// image. The functions in this package which create disk images will fail
+	// if the provided size is any smaller.
+	MinDiskImageSizeBytes = 220e3
+)
+
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
 func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
