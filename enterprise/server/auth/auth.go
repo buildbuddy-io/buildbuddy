@@ -81,7 +81,7 @@ const (
 	loginCookieDuration = 365 * 24 * time.Hour
 
 	// BuildBuddy JWT duration maximum.
-	defaultBuildBuddyJWTDuration = 24 * time.Hour
+	defaultBuildBuddyJWTDuration = 6 * time.Hour
 
 	// Maximum amount of time we will cache Group information for an API key.
 	defaultAPIKeyGroupCacheTTL = 5 * time.Minute
@@ -159,10 +159,6 @@ func (c *Claims) GetUseGroupOwnedExecutors() bool {
 
 func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
-	deadline, ok := ctx.Deadline()
-	if ok {
-		expirationTime = deadline
-	}
 	claims.StandardClaims = jwt.StandardClaims{ExpiresAt: expirationTime.Unix()}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
