@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"gopkg.in/yaml.v2"
 
@@ -385,8 +383,8 @@ var (
 	sharedConfigurator = &Configurator{}
 
 	// Contains the string slices originally defined by the flags
-	originalStringSlices = make(map[string][]string)
-	defineFlagsOnce      sync.Once
+	originalSliceLens = make(map[string]int)
+	defineFlagsOnce   sync.Once
 
 	// Set of the flags that were explicitly set on the command line
 	originalSetFlags = make(map[string]struct{})
@@ -411,37 +409,6 @@ func TestOnlySetFlag(flagName string, set bool) bool {
 		delete(originalSetFlags, flagName)
 	}
 	return wasSet
-}
-
-type structSliceFlag struct {
-	dstSlice   reflect.Value
-	structType reflect.Type
-}
-
-func (f *structSliceFlag) String() string {
-	if *f == (structSliceFlag{}) {
-		return "[]"
-	}
-
-	var l []string
-	for i := 0; i < f.dstSlice.Len(); i++ {
-		b, err := json.Marshal(f.dstSlice.Index(i).Interface())
-		if err != nil {
-			alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
-			continue
-		}
-		l = append(l, string(b))
-	}
-	return "[" + strings.Join(l, ",") + "]"
-}
-
-func (f *structSliceFlag) Set(value string) error {
-	dst := reflect.New(f.structType)
-	if err := json.Unmarshal([]byte(value), dst.Interface()); err != nil {
-		return err
-	}
-	f.dstSlice.Set(reflect.Append(f.dstSlice, dst.Elem()))
-	return nil
 }
 
 // If configSet is nil, defines all global flags present in the config that have
@@ -474,17 +441,8 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 			case reflect.Float64:
 				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 			case reflect.Slice:
-				if f.Type().Elem().Kind() == reflect.String {
-					// NOTE: string slice flags are *appended* to the values in the YAML,
-					// instead of overriding them completely.
-					if slice, ok := f.Interface().([]string); ok {
-						sf := flagutil.StringSliceFlag(slice)
-						flagSet.Var(&sf, fqFieldName, docString)
-					}
-					continue
-				} else if f.Type().Elem().Kind() == reflect.Struct {
-					sf := structSliceFlag{f, f.Type().Elem()}
-					flagSet.Var(&sf, fqFieldName, docString)
+				if sf := flagutil.NewSliceFlag(f.Addr().Interface()); sf != nil {
+					flagSet.Var(sf, fqFieldName, docString)
 					continue
 				}
 				fallthrough
@@ -523,6 +481,7 @@ func populateYamlPresenceMap(yamlMap map[interface{}]interface{}) map[string]str
 type Configurator struct {
 	gc          *generalConfig
 	presenceMap map[string]struct{}
+	reconciled  bool
 }
 
 func NewConfiguratorFromData(data []byte) (*Configurator, error) {
@@ -547,7 +506,7 @@ func NewConfiguratorFromData(data []byte) (*Configurator, error) {
 
 	// The shared config caches the last config parsed from a file so that a call to
 	// `readConfig` with an empty `configFile` can return the cached config.
-	sharedConfigurator = &Configurator{gc, populateYamlPresenceMap(generalConfigMap)}
+	sharedConfigurator = &Configurator{gc, populateYamlPresenceMap(generalConfigMap), false}
 
 	return sharedConfigurator, nil
 }
@@ -606,25 +565,38 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
 
 	flagSet.VisitAll(func(flg *flag.Flag) {
-		if configSlice, ok := flg.Value.(*flagutil.StringSliceFlag); ok {
-			if flagSlice, ok := flag.Lookup(flg.Name).Value.(*flagutil.StringSliceFlag); ok {
-				originalSlice, ok := originalStringSlices[flg.Name]
-				if !ok {
-					originalStringSlices[flg.Name] = (*flagSlice)[:]
-					originalSlice = originalStringSlices[flg.Name]
+		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {
+			if flagSlice, ok := flag.Lookup(flg.Name).Value.(flagutil.SliceFlag); ok {
+				flagSliceLen := reflect.ValueOf(flagSlice.UnderlyingSlice()).Len()
+				if originalSliceLen, ok := originalSliceLens[flg.Name]; ok {
+					// reset flagSlice if it has been modified
+					// in this case, flagSliceLen is the sum of the length of the slices
+					// defined in the config and those defined on the command line, and
+					// the config slice comes first.
+					flagSlice.SetTo(reflect.ValueOf(flagSlice.UnderlyingSlice()).Slice(flagSliceLen-originalSliceLen, flagSliceLen))
+					if c.reconciled {
+						// reset configSlice if it has been modified
+						configSlice.SetTo(reflect.ValueOf(configSlice.UnderlyingSlice()).Slice(0, flagSliceLen-originalSliceLen))
+					}
+				} else {
+					originalSliceLens[flg.Name] = flagSliceLen
 				}
-				// string slices from flags are appended to the values in the config, as
+				// slices from flags are appended to the values in the config, as
 				// opposed to either overriding the other, so no conflict check is
-				// necessary. Note that Set for StringSliceFlag is performing the
+				// necessary. Note that Set for SliceFlag is performing the
 				// aforementioned append operation, as opposed to setting anything.
-				flg.Value.Set(strings.Join(originalSlice, ","))
-				*flagSlice = *configSlice
+				configSlice.Set(flagSlice.String())
+				flagSlice.SetTo(configSlice.UnderlyingSlice())
 				return
 			}
-			log.Warningf("yaml defines %s as []string, but flags do not.", flg.Name)
+			log.Warningf("yaml defines %s as %T, but flags do not.", flg.Name, configSlice.UnderlyingSlice())
 		}
 		_, setInFlags := originalSetFlags[flg.Name]
 		_, presentInYaml := c.presenceMap[flg.Name]
+		if !setInFlags {
+			// reset flag to default value if it was not initially set
+			flag.Set(flg.Name, flag.Lookup(flg.Name).DefValue)
+		}
 		// If the flag was set on the command line or there is no value specified in
 		// the config, we use the value defined by the flags and update the config
 		// with that value. Otherwise (which is to say, if there was no flag
@@ -636,6 +608,7 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 		}
 		flag.Set(flg.Name, flg.Value.String())
 	})
+	c.reconciled = true
 }
 
 func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {

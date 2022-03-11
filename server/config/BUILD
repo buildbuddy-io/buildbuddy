@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/alert",
         "//server/util/flagutil",
         "//server/util/log",
         "@in_gopkg_yaml_v2//:yaml_v2",
