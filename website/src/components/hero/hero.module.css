@@ -1,3 +1,15 @@
+.hero {
+  overflow: hidden;
+}
+
+.hero:nth-of-type(even) {
+  background-color: #f8f8f8;
+}
+
+.hero.lessPadding {
+  padding: 16px 0;
+}
+
 .buttons {
   margin-top: 48px;
   display: flex;
@@ -14,8 +26,37 @@
   background-image: none !important;
 }
 
+.image {
+  max-width: 600px;
+}
+
+.image.peekMore {
+  max-width: 740px;
+}
+
+.bigImage img {
+  width: 60vw !important;
+  max-width: 60vw !important;
+}
+
+.noImage .image {
+  display: none;
+}
+
+.noImage div,
+.noImage {
+  grid-template-columns: 1fr;
+  text-align: center;
+  align-items: center;
+  max-width: 100%;
+}
+
 @media (max-width: 1200px) {
   .image {
     display: none;
+  }
+
+  .hero.lessPadding {
+    padding: 96px 0;
   }
 }

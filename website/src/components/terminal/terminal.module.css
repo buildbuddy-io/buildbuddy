@@ -1,0 +1,74 @@
+.terminal {
+  background-color: #000;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.9em;
+}
+
+.terminalMenu {
+  padding: 8px 16px;
+  display: flex;
+  font-weight: 700;
+}
+
+.terminalButtons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: absolute;
+  margin: 8px 0;
+}
+
+.terminalButtons > div {
+  width: 12px;
+  height: 12px;
+  border-radius: 100%;
+}
+
+.terminalClose {
+  background-color: #f44336;
+}
+
+.terminalMinimize {
+  background-color: #ffc107;
+}
+
+.terminalExpand {
+  background-color: #4caf50;
+}
+
+.terminalTitle {
+  flex-grow: 1;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.terminalContent {
+  padding: 8px 16px;
+  padding-bottom: 32px;
+  color: rgba(255, 255, 255, 0.8);
+  min-height: 360px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.terminalContent a {
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: underline;
+}
+
+.terminalUser {
+  color: #64dd17;
+  font-weight: 600;
+}
+
+.terminalPath {
+  color: #03a9f4;
+  font-weight: 600;
+}
+
+.terminalInfo {
+  color: #64dd17;
+}
