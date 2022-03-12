@@ -47,9 +47,9 @@ module.exports = {
           position: "left",
           type: "dropdown",
           items: [
-            {label: "Build & Test UI", href: "/ui"},
-            {label: "Remote Execution", href: "/remote-execution"},
-            {label: "Remote Cache", href: "/remote-cache"},
+            { label: "Build & Test UI", href: "/ui" },
+            { label: "Remote Execution", href: "/remote-execution" },
+            { label: "Remote Cache", href: "/remote-cache" },
             // {label: "Workflows", href: "/workflows"},
             // {label: "Cloud", href: "/cloud"},
             // {label: "Open Source", href: "/open-source"},
