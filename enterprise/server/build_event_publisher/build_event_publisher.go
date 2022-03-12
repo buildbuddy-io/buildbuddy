@@ -210,10 +210,15 @@ func (b *EventBuffer) Subscribe() (<-chan *pepb.OrderedBuildEvent, func()) {
 			// Send all events which haven't been sent yet
 			for i < len(buffer) {
 				buildEvent := buffer[i]
-				events <- &pepb.OrderedBuildEvent{
+				obe := &pepb.OrderedBuildEvent{
 					StreamId:       b.streamID,
 					SequenceNumber: int64(i) + 1,
 					Event:          buildEvent,
+				}
+				select {
+				case <-cancel:
+					return
+				case events <- obe:
 				}
 				if _, ok := buildEvent.Event.(*bepb.BuildEvent_ComponentStreamFinished); ok {
 					return
