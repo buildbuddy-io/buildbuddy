@@ -35,6 +35,21 @@ class RpcService {
     (window as any)._rpcService = this;
   }
 
+  debuggingEnabled(): boolean {
+    const url = new URL(window.location.href);
+    let sp = url.searchParams.get("debug");
+    if (sp == null) {
+      let match = url.hash.match("debug=(.*)");
+      if (match != null) {
+        sp = match[1];
+      }
+    }
+    if (sp == "1" || sp == "true" || sp == "True") {
+      return true;
+    }
+    return false;
+  }
+
   getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "" } = {}): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     const params: Record<string, string> = {
@@ -86,6 +101,9 @@ class RpcService {
   rpc(method: any, requestData: any, callback: any) {
     var request = new XMLHttpRequest();
     request.open("POST", `/rpc/BuildBuddyService/${method.name}`, true);
+    if (this.debuggingEnabled()) {
+      request.setRequestHeader("x-buildbuddy-trace", "force");
+    }
 
     request.setRequestHeader("Content-Type", method.contentType || "application/proto");
     request.responseType = "arraybuffer";
