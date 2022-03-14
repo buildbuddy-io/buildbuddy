@@ -119,18 +119,12 @@ func (p *Publisher) run(ctx context.Context) error {
 		if err := stream.Send(req); err != nil {
 			return status.UnavailableErrorf("send failed: %s", err)
 		}
-		_, finished := obe.Event.Event.(*bepb.BuildEvent_ComponentStreamFinished)
-		if !finished {
-			continue
-		}
-		// After successfully transmitting all events, close our side of the stream
-		// and wait for server ACKs before closing the connection.
-		if err := stream.CloseSend(); err != nil {
-			return status.UnavailableErrorf("close send failed: %s", err)
-		}
-		break
 	}
-
+	// After successfully transmitting all events, close our side of the stream
+	// and wait for server ACKs before closing the connection.
+	if err := stream.CloseSend(); err != nil {
+		return status.UnavailableErrorf("close send failed: %s", err)
+	}
 	// Return any error from receiving ACKs
 	return <-doneReceiving
 }
