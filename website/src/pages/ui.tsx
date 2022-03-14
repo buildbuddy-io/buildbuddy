@@ -14,7 +14,7 @@ function Component() {
           subtitle="Get visibility into your builds and test results. Share links to your local builds with your co-workers and debug together."
           image={require("../../static/img/blog/build_logs.png")}
           flipped={true}
-          peekMore={true}
+          bigImage={true}
         />
         <Hero
           title="Timing profile"

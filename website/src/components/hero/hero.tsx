@@ -9,7 +9,7 @@ function Component(props) {
       className={`${common.section} ${styles.hero} ${props.lessPadding ? styles.lessPadding : ""} ${
         props.noImage ? styles.noImage : ""
       }`}>
-      <div className={`${common.container} ${common.splitContainer} ${props.flipped ? common.flipped : ""}`}>
+      <div className={`${common.container} ${common.splitContainer} ${props.flipped ? styles.flipped : ""}`}>
         <div className={common.text}>
           <h1 className={common.title}>
             {props.title || (

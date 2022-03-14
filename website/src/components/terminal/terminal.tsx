@@ -46,23 +46,17 @@ function Term() {
         {actions} actions, {Math.floor(actions * 0.8)} running
         <br />
         {shuffle([
-          <div key="line-1">
-            &nbsp;&nbsp;&nbsp;&nbsp;GoToolchainBinaryCompile external/go_sdk_Linux/builder.a [for host]; 2s remote
-          </div>,
-          <div key="line-2">&nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/message_lite.cc; 2s remote</div>,
-          <div key="line-3">
-            &nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/io/zero_copy_stream_impl_lite.cc; 2s remote
-          </div>,
-          <div key="line-4">&nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/any_lite.cc; 2s remote</div>,
-          <div key="line-5">
-            &nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/inlined_string_field.cc; 2s remote
-          </div>,
-          <div key="line-6">&nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/wire_format_lite.cc; 2s remote</div>,
-          <div key="line-7">&nbsp;&nbsp;&nbsp;&nbsp;Compiling sc/google/protobuf/stubs/strutil.cc; 2s remote</div>,
-          <div key="line-8">
-            &nbsp;&nbsp;&nbsp;&nbsp;Compiling src/google/protobuf/stubs/structurally_valid.cc; 2s remote
-          </div>,
-        ])}
+          "GoToolchainBinaryCompile external/go_sdk_Linux/builder.a [for host]; 2s remote",
+          "Compiling src/google/protobuf/message_lite.cc; 2s remote",
+          "Compiling src/google/protobuf/io/zero_copy_stream_impl_lite.cc; 2s remote",
+          "Compiling src/google/protobuf/any_lite.cc; 2s remote",
+          "Compiling src/google/protobuf/inlined_string_field.cc; 2s remote",
+          "Compiling src/google/protobuf/wire_format_lite.cc; 2s remote",
+          "Compiling sc/google/protobuf/stubs/strutil.cc; 2s remote",
+          "Compiling src/google/protobuf/stubs/structurally_valid.cc; 2s remote",
+        ]).map((message, index) => (
+          <div key={index}>&nbsp;&nbsp;&nbsp;&nbsp;{message}</div>
+        ))}
       </div>
     </div>
   );

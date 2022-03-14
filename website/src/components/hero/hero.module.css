@@ -37,6 +37,7 @@
 .bigImage img {
   width: 60vw !important;
   max-width: 60vw !important;
+  min-width: 750px;
 }
 
 .noImage .image {
@@ -51,12 +52,50 @@
   max-width: 100%;
 }
 
-@media (max-width: 1200px) {
-  .image {
-    display: none;
+.flipped > div:last-of-type {
+  order: -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 996px) {
+  .flipped > div:last-of-type {
+    order: 1;
   }
 
   .hero.lessPadding {
     padding: 96px 0;
+  }
+}
+
+@media (max-width: 1200px) {
+  .hero > div {
+    display: grid;
+    grid-template-columns: 1fr 40%;
+  }
+
+  .hero > div.flipped {
+    grid-template-columns: 40% 1fr;
+  }
+
+  .image img {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 996px) {
+  .hero > div {
+    display: flex;
+    align-items: center;
+  }
+
+  .image {
+    max-width: 100%;
+  }
+
+  .image img {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100%;
   }
 }

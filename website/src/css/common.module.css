@@ -66,12 +66,6 @@
   }
 }
 
-.flipped > div:last-of-type {
-  order: -1;
-  display: flex;
-  justify-content: flex-end;
-}
-
 .section.sectionRounded .container {
   padding: 0 64px;
 }
@@ -108,8 +102,16 @@
 }
 
 @media (max-width: 600px) {
-  div.title {
+  .title.title {
     font-size: 48px;
+    line-height: 52px;
+  }
+}
+
+@media (max-width: 500px) {
+  .title.title {
+    font-size: 40px;
+    line-height: 48px;
   }
 }
 
