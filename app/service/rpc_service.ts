@@ -38,12 +38,6 @@ class RpcService {
   debuggingEnabled(): boolean {
     const url = new URL(window.location.href);
     let sp = url.searchParams.get("debug");
-    if (sp === null) {
-      let match = url.hash.match("debug=(.*)");
-      if (match !== null) {
-        sp = match[1];
-      }
-    }
     if (sp === "1" || sp === "true" || sp === "True") {
       return true;
     }
