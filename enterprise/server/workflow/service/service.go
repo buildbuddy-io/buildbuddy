@@ -39,7 +39,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
-	githubapi "github.com/google/go-github/github"
+	githubapi "github.com/google/go-github/v43/github"
 	guuid "github.com/google/uuid"
 )
 

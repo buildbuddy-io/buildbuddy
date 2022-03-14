@@ -30,7 +30,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/random",
         "//server/util/status",
-        "@com_github_google_go_github//github",
+        "@com_github_google_go_github_v43//github",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
