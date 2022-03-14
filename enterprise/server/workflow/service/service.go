@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -49,6 +50,11 @@ const (
 
 var (
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
+
+	// ApprovalRequired is an error indicating that a workflow action could not be
+	// run at a commit because it is untrusted. An approving review at the
+	// commit will allow the action to run.
+	ApprovalRequired = status.PermissionDeniedErrorf("approval required")
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -622,7 +628,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		containerImage = ws.workflowsImage()
 	}
 	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
-		return nil, status.PermissionDeniedError("untrusted workflows are not supported on macOS")
+		return nil, ApprovalRequired
 	}
 	// Make the "outer" workflow invocation public if the target repo is public,
 	// so that workflow commit status details can be seen by contributors.
@@ -805,6 +811,12 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		}
 		_, err := ws.executeWorkflow(ctx, apiKey, wf, webhookData, action, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
+			if err == ApprovalRequired {
+				if err := ws.createApprovalRequiredStatus(ctx, wf, webhookData, action.Name); err != nil {
+					log.Warningf("Failed to create workflow action status: %s", err)
+				}
+				continue
+			}
 			return err
 		}
 	}
@@ -837,6 +849,21 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
 	return executionID, nil
+}
+
+func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
+	// TODO: Create a help section in the docs that explains this error status, and link to it
+	u, err := url.Parse(ws.env.GetConfigurator().GetAppBuildBuddyURL())
+	if err != nil {
+		return err
+	}
+	status := github.NewGithubStatusPayload(actionName, u.String(), "Check requires approving review", github.ErrorState)
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
+	if err != nil {
+		return err
+	}
+	ghc := github.NewGithubClient(ws.env, wf.AccessToken)
+	return ghc.CreateStatus(ctx, ownerRepo, wd.SHA, status)
 }
 
 func isGitHubURL(s string) bool {

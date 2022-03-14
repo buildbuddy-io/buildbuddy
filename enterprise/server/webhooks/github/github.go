@@ -22,7 +22,7 @@ import (
 
 var (
 	// GitHub event names to listen for on the webhook.
-	eventsToReceive = []string{"push", "pull_request"}
+	eventsToReceive = []string{"push", "pull_request", "pull_request_review"}
 )
 
 type githubGitProvider struct{}
@@ -139,41 +139,69 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		}, nil
 
 	case *gh.PullRequestEvent:
-		v, err := fieldgetter.ExtractValues(
-			event,
-			"Action",
-			"PullRequest.Head.Repo.CloneURL",
-			"PullRequest.Head.Ref",
-			"PullRequest.Head.SHA",
-			"PullRequest.Base.Repo.CloneURL",
-			"PullRequest.Base.Ref",
-			"PullRequest.Base.Repo.Private",
-		)
-		if err != nil {
-			return nil, err
-		}
 		// Run workflows when the PR is opened, pushed to, or reopened, to match
 		// GitHub the behavior of GitHub actions. Also run workflows when the base
 		// branch changes, to accommodate stacked changes.
-		baseBranchChanged := v["Action"] == "edited" && event.GetChanges().GetBase() != nil
-		if !(baseBranchChanged || v["Action"] == "opened" || v["Action"] == "synchronize" || v["Action"] == "reopened") {
+		baseBranchChanged := event.GetAction() == "edited" && event.GetChanges().GetBase() != nil
+		if !(baseBranchChanged || event.GetAction() == "opened" || event.GetAction() == "synchronize" || event.GetAction() == "reopened") {
 			return nil, nil
 		}
-		isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
-		return &interfaces.WebhookData{
-			EventName:          webhook_data.EventName.PullRequest,
-			PushedRepoURL:      v["PullRequest.Head.Repo.CloneURL"],
-			PushedBranch:       v["PullRequest.Head.Ref"],
-			SHA:                v["PullRequest.Head.SHA"],
-			TargetRepoURL:      v["PullRequest.Base.Repo.CloneURL"],
-			TargetBranch:       v["PullRequest.Base.Ref"],
-			IsTargetRepoPublic: v["PullRequest.Base.Private"] == "false",
-			IsTrusted:          !isFork,
-		}, nil
+		return parsePullRequestOrReview(event)
+
+	case *gh.PullRequestReviewEvent:
+		if event.GetAction() != "submitted" {
+			return nil, nil
+		}
+		if event.GetReview().GetState() != "approved" {
+			return nil, nil
+		}
+		if !isTrustedAssociation(event.GetReview().GetAuthorAssociation()) {
+			return nil, nil
+		}
+		wd, err := parsePullRequestOrReview(event)
+		if err != nil {
+			return nil, err
+		}
+		// We now trust the state that the PR is in, since we have an approved review.
+		wd.IsTrusted = true
+		return wd, nil
 
 	default:
 		return nil, nil
 	}
+}
+
+// isTrustedAssociation returns whether a user should be allowed to execute
+// trusted workflows for a repo, given their association to the repo.
+func isTrustedAssociation(association string) bool {
+	return association == "OWNER" || association == "MEMBER" || association == "COLLABORATOR"
+}
+
+// parsePullRequestOrReview extracts WebhookData from a pull_request or
+// pull_request_review event.
+func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error) {
+	v, err := fieldgetter.ExtractValues(
+		event,
+		"Action",
+		"PullRequest.Base.Ref",
+		"PullRequest.Base.Repo.CloneURL",
+		"PullRequest.Head.Ref",
+		"PullRequest.Head.SHA",
+		"PullRequest.Head.Repo.CloneURL",
+	)
+	if err != nil {
+		return nil, err
+	}
+	isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
+	return &interfaces.WebhookData{
+		EventName:     webhook_data.EventName.PullRequest,
+		PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
+		PushedBranch:  v["PullRequest.Head.Ref"],
+		SHA:           v["PullRequest.Head.SHA"],
+		TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
+		TargetBranch:  v["PullRequest.Base.Ref"],
+		IsTrusted:     !isFork,
+	}, nil
 }
 
 func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {

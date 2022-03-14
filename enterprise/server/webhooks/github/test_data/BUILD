@@ -5,6 +5,7 @@ go_library(
     srcs = ["test_data.go"],
     embedsrcs = [
         "pull_request_event.json",
+        "pull_request_approved_review_event.json",
         "push_event.json",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/test_data",
