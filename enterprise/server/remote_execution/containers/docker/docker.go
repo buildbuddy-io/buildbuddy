@@ -33,6 +33,11 @@ import (
 )
 
 var (
+	// dockerExecSIGKILLExitCode is returned in the ExitCode field of a docker
+	// exec inspect result when an exec process is terminated due to receiving
+	// SIGKILL.
+	dockerExecSIGKILLExitCode = 137
+
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
 	defaultDockerUlimit          = int64(65535)
@@ -66,6 +71,9 @@ type dockerCommandContainer struct {
 	id string
 	// workDir is the path to the workspace directory mounted to the container.
 	workDir string
+	// removed is a flag that is set once Remove is called (before actually
+	// removing the container).
+	removed bool
 }
 
 func NewDockerContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, client *dockerclient.Client, image, hostRootDir string, options *DockerOptions) *dockerCommandContainer {
@@ -458,6 +466,25 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		result.Error = wrapDockerErr(err, "failed to get exec process info")
 		return result
 	}
+	// Docker does not provide a direct way to get the exit signal from an exec
+	// process in the case where the process terminated due to being signaled.
+	// Instead, it uses a (somewhat common) convention of returning an exit code
+	// of `128 + signal`. See:
+	// https://cs.github.com/containerd/containerd/blob/590ef88c7181eb6601fdd2f08afe6f29551c6fb3/sys/reaper/reaper_unix.go?q=repo%3Acontainerd%2Fcontainerd+exitSignalOffset#L278-L283
+	//
+	// This convention is not 100% reliable since these conventional codes are
+	// also valid exit code values. A command could run `exit 137`, for example.
+	//
+	// So we are overly cautious here and only convert the exit code values to
+	// signals for the signals we care about, particularly SIGKILL, and only in
+	// the case where we are expecting a SIGKILL due to the container being
+	// removed.
+	if r.removed && info.ExitCode == dockerExecSIGKILLExitCode {
+		result.ExitCode = commandutil.KilledExitCode
+		result.Error = commandutil.ErrSIGKILL
+		return result
+	}
+
 	result.ExitCode = info.ExitCode
 	return result
 }
@@ -477,6 +504,7 @@ func (r *dockerCommandContainer) Pause(ctx context.Context) error {
 }
 
 func (r *dockerCommandContainer) Remove(ctx context.Context) error {
+	r.removed = true
 	if err := r.client.ContainerRemove(ctx, r.id, dockertypes.ContainerRemoveOptions{Force: true}); err != nil {
 		return wrapDockerErr(err, fmt.Sprintf("failed to remove docker container %s", r.id))
 	}
