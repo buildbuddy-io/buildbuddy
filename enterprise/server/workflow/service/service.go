@@ -634,12 +634,15 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
 		return nil, ApprovalRequired
+<<<<<<< HEAD
 	}
 	// Make the "outer" workflow invocation public if the target repo is public,
 	// so that workflow commit status details can be seen by contributors.
 	visibility := ""
 	if wd.IsTargetRepoPublic {
 		visibility = "PUBLIC"
+=======
+>>>>>>> Treat approved commit as trusted
 	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
