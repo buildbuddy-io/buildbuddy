@@ -31,13 +31,13 @@ function Component() {
         />
         <Hero
           title="Trends"
-          subtitle="Track how your build performance is changing over time. Catch performance regressions and take credit for optimizations."
+          subtitle="Track how your build performance is changing over time. Catch performance regressions and validate performance optimizations."
           image={require("../../static/img/blog/trends.png")}
           bigImage={true}
         />
         <Hero
           title="Action explorer"
-          subtitle="View input files, command details, evironment variables, timing information, output files, and more for each individual action."
+          subtitle="View input files, command details, environment variables, timing information, output files, and more for each individual action."
           image={require("../../static/img/action-explorer.png")}
           bigImage={true}
           flipped={true}
@@ -82,7 +82,7 @@ function Component() {
         />
         <Hero
           title="Live updating"
-          subtitle="The real-time invocation page that shows you the current state of your build, whether it's local or on CI."
+          subtitle="See the current state of your builds and tests in real-time, whether they're local or on CI."
           image={require("../../static/img/live.png")}
           bigImage={true}
           flipped={true}

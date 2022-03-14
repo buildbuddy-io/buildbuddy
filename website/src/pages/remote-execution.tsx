@@ -64,7 +64,7 @@ function Component() {
         />
         <Hero
           title="Action explorer"
-          subtitle="View input files, command details, evironment variables, timing information, output files, and more for each individual action."
+          subtitle="View input files, command details, environment variables, timing information, output files, and more for each individual action."
           image={require("../../static/img/action-explorer.png")}
           bigImage={true}
         />

@@ -25,14 +25,14 @@ function Component() {
         />
         <Hero
           title="Cache stats"
-          subtitle="Tools to track and monitor your cache hit ratios over time. Catch regressions and "
+          subtitle="Tools to track and monitor your cache hit ratios over time. Catch performance regressions and validate performance optimizations."
           image={require("../../static/img/hit-tracking.png")}
           bigImage={true}
           flipped={true}
         />
         <Hero
           title="Build without the bytes support"
-          subtitle="Designed to support Bazel's --remote_download_minimal flag to eliminate the need to download of intermediate artifacts."
+          subtitle="Designed to support Bazel's remote_download_minimal flag to eliminate the need to download of intermediate artifacts."
           image={require("../../static/img/minimal.png")}
           bigImage={true}
         />
@@ -77,7 +77,7 @@ function Component() {
         />
         <Hero
           title="Vertically and horizontally scalable"
-          subtitle="Scale each individual cache nodes to billions of files and dozens of terrabytes — or just add more cache nodes to scale with ease."
+          subtitle="Scale each individual cache node to billions of files and dozens of terrabytes — or just add more cache nodes to scale with ease."
           image={require("../../static/img/scale.png")}
           bigImage={true}
           flipped={true}
