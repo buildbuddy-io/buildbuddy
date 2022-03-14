@@ -21,6 +21,8 @@ function Component() {
           alt="BuildBuddy Bazel build and test logs"
           className={styles.image}
           img={require("../../../static/img/logs.png")}
+          shouldAutoDownload={() => true}
+          threshold={10000}
         />
       </div>
     </div>

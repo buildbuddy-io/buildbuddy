@@ -10,11 +10,12 @@ function Component() {
     <Layout title="Bazel at Enterprise Scale">
       <div className={common.page}>
         <Hero
-          title={<>Build & Test UI</>}
+          title="Build & Test UI"
           subtitle="Get visibility into your builds and test results. Share links to your local builds with your co-workers and debug together."
           image={require("../../static/img/blog/build_logs.png")}
           flipped={true}
           bigImage={true}
+          lessPadding={true}
         />
         <Hero
           title="Timing profile"
@@ -66,45 +67,46 @@ function Component() {
           subtitle="Download the outputs of your builds from the remote cache with just a single click."
           image={require("../../static/img/artifacts.png")}
           bigImage={true}
+          flipped={true}
         />
         <Hero
           title="Test grid"
           subtitle="Quickly find and fix flaky tests. Click on past failures to see test logs from failed runs to identify patterns."
           image={require("../../static/img/test-grid.png")}
           bigImage={true}
-          flipped={true}
         />
         <Hero
           title="Suggestions"
           subtitle="Get relevant suggestions on how to improve your builds surfaced inline — right when you need them."
           image={require("../../static/img/blog/suggested-fixes.png")}
           bigImage={true}
+          flipped={true}
         />
         <Hero
           title="Live updating"
           subtitle="See the current state of your builds and tests in real-time, whether they're local or on CI."
           image={require("../../static/img/live.png")}
           bigImage={true}
-          flipped={true}
         />
         <Hero
           title="Test log parsing"
           subtitle="Test outputs are parsed and rendered in an easy to navigate UI, with any failures bubbled to the top."
           image={require("../../static/img/test-parsing.png")}
           bigImage={true}
+          flipped={true}
         />
         <Hero
           title="Organization management"
           subtitle="Create multiple organizations and manage members, roles, API keys, and more. SSO — check, SAML — check, OIDC — check."
           image={require("../../static/img/blog/settings.png")}
           bigImage={true}
-          flipped={true}
         />
         <Hero
           title="Live remote execution view"
           subtitle="Watch remotely executing actions live, as they're happening."
           image={require("../../static/img/execution.png")}
           bigImage={true}
+          flipped={true}
         />
         <CTA title="And much more!" />
       </div>

@@ -16,14 +16,18 @@ function Component() {
           <Image
             alt="Github Integration Octocat"
             className={styles.logo}
-            style={{ padding: "20px 0", marginRight: "-32px" }}
+            style={{ marginRight: "-32px", width: "72px", height: "60px" }}
             img={require("../../../static/img/github-image.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
           <Image
             alt="Github Integration"
             className={styles.logo}
-            style={{ padding: "20px 0" }}
+            style={{ width: "146px", height: "60px" }}
             img={require("../../../static/img/github-text.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
           <img alt="Slack Integration" width="244px" height="100px" className={styles.logo} src="/img/slack.svg" />
           <img alt="Gitlab Integration" width="226px" height="100px" className={styles.logo} src="/img/gitlab.svg" />
@@ -38,14 +42,18 @@ function Component() {
           <Image
             alt="CircleCI Integration"
             className={styles.logo}
-            style={{ padding: "16px 0" }}
+            style={{ width: "240px", height: "68px" }}
             img={require("../../../static/img/circleci.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
           <Image
             alt="Travis Integration"
             className={styles.logo}
-            style={{ padding: "12px 0" }}
+            style={{ width: "243px", height: "76px" }}
             img={require("../../../static/img/travis.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
           <img
             alt="Jenkins Integration"
@@ -55,12 +63,21 @@ function Component() {
             style={{ padding: "16px 0" }}
             src="/img/jenkins.svg"
           />
-          <Image alt="GCP Integration" className={styles.logo} img={require("../../../static/img/gcp.png")} />
+          <Image
+            alt="GCP Integration"
+            className={styles.logo}
+            style={{ width: "392px", height: "100px" }}
+            img={require("../../../static/img/gcp.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
+          />
           <Image
             alt="AWS Integration"
             className={styles.logo}
-            style={{ padding: "24px 0" }}
+            style={{ width: "87px", height: "52px" }}
             img={require("../../../static/img/aws.png")}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
         </div>
       </div>

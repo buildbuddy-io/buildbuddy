@@ -47,8 +47,11 @@ function Component(props) {
           }`}>
           {props.component || (
             <Image
-              alt="BuildBuddy Enterprise Bazel Results UI"
+              alt={props.title ? `Bazel ${props.title}` : "BuildBuddy Enterprise Bazel Results UI"}
               img={props.image || require("../../../static/img/hero.png")}
+              shouldAutoDownload={() => true}
+              placeholder={{ color: "#607D8B" }}
+              threshold={10000}
             />
           )}
         </div>

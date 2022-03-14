@@ -21,7 +21,7 @@ function Index() {
           bigImage={true}
         />
         <Hero
-          title={<>Build & Test UI</>}
+          title="Build & Test UI"
           subtitle="Get visibility into your build and test performance. Share invocation links with co-workers and debug together."
           image={require("../../static/img/ui.png")}
           secondaryButtonText=""

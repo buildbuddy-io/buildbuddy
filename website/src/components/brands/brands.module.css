@@ -11,6 +11,7 @@
 }
 
 .brands .image {
+  width: 236px;
   aspect-ratio: 100/30;
   opacity: 0.7;
   display: flex;
