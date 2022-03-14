@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -232,11 +233,17 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	}
 
 	req.Header.Set("Authorization", "token "+c.githubToken)
-	_, err = c.client.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
 		log.Warningf("Error posting Github status: %v", err)
+		return err
 	}
-	return err
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		b, _ := io.ReadAll(res.Body)
+		return status.UnknownErrorf("POST %q: HTTP %d: %q", url, res.StatusCode, string(b))
+	}
+	return nil
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
