@@ -1,6 +1,9 @@
 package flagutil
 
-import "strings"
+import (
+	"flag"
+	"strings"
+)
 
 type StringSliceFlag []string
 
@@ -13,4 +16,10 @@ func (f *StringSliceFlag) Set(values string) error {
 		*f = append(*f, val)
 	}
 	return nil
+}
+
+func StringSlice(name string, usage string) *StringSliceFlag {
+	f := &StringSliceFlag{}
+	flag.Var(f, name, usage)
+	return f
 }

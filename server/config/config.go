@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"sync"
-
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -413,6 +412,29 @@ func TestOnlySetFlag(flagName string, set bool) bool {
 	return wasSet
 }
 
+type stringSliceFlag struct {
+	slicePtr *[]string
+}
+
+func newStringSliceFlag(slicePtr *[]string) *stringSliceFlag {
+	return &stringSliceFlag{slicePtr: slicePtr}
+}
+
+func (f *stringSliceFlag) String() string {
+	return strings.Join(*f.slicePtr, ",")
+}
+
+func (f *stringSliceFlag) Set(values string) error {
+	for _, val := range strings.Split(values, ",") {
+		*f.slicePtr = append(*f.slicePtr, val)
+	}
+	return nil
+}
+
+func (f *stringSliceFlag) Values() []string {
+	return *f.slicePtr
+}
+
 type structSliceFlag struct {
 	dstSlice   reflect.Value
 	structType reflect.Type
@@ -477,9 +499,13 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 				if f.Type().Elem().Kind() == reflect.String {
 					// NOTE: string slice flags are *appended* to the values in the YAML,
 					// instead of overriding them completely.
-					if slice, ok := f.Interface().([]string); ok {
-						sf := flagutil.StringSliceFlag(slice)
-						flagSet.Var(&sf, fqFieldName, docString)
+					if slicePtr, ok := f.Addr().Interface().(*[]string); ok {
+						if flagSet == flag.CommandLine {
+							flagutil.StringSlice(fqFieldName, docString)
+						} else {
+							sf := newStringSliceFlag(slicePtr)
+							flagSet.Var(sf, fqFieldName, docString)
+						}
 					}
 					continue
 				} else if f.Type().Elem().Kind() == reflect.Struct {
@@ -606,7 +632,7 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
 
 	flagSet.VisitAll(func(flg *flag.Flag) {
-		if configSlice, ok := flg.Value.(*flagutil.StringSliceFlag); ok {
+		if configSlice, ok := flg.Value.(*stringSliceFlag); ok {
 			if flagSlice, ok := flag.Lookup(flg.Name).Value.(*flagutil.StringSliceFlag); ok {
 				originalSlice, ok := originalStringSlices[flg.Name]
 				if !ok {
@@ -615,10 +641,12 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 				}
 				// string slices from flags are appended to the values in the config, as
 				// opposed to either overriding the other, so no conflict check is
-				// necessary. Note that Set for StringSliceFlag is performing the
+				// necessary. Note that Set for stringSliceFlag is performing the
 				// aforementioned append operation, as opposed to setting anything.
-				flg.Value.Set(strings.Join(originalSlice, ","))
-				*flagSlice = *configSlice
+				if len(originalSlice) > 0 {
+					flg.Value.Set(strings.Join(originalSlice, ","))
+				}
+				*flagSlice = configSlice.Values()
 				return
 			}
 			log.Warningf("yaml defines %s as []string, but flags do not.", flg.Name)
