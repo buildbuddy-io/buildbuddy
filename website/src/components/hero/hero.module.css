@@ -104,6 +104,14 @@
     max-width: 100% !important;
     min-width: 100%;
   }
+
+  .hero:first-of-type .image img {
+    animation: 0.3s ease-in-out 0s 1 animateInFromBottom;
+  }
+
+  .hero:first-of-type .flipped .image img {
+    animation: 0.3s ease-in-out 0s 1 animateInFromBottom;
+  }
 }
 
 @keyframes animateInFromRight {
