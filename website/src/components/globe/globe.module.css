@@ -1,0 +1,13 @@
+.globe {
+  pointer-events: none;
+  margin: -48px 0;
+}
+
+@media (max-width: 996px) {
+  .globe {
+    margin: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+}

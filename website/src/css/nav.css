@@ -185,3 +185,7 @@ html[data-theme="dark"] .menu {
   font-size: 1.4em;
   background-color: transparent;
 }
+
+.dropdown > .navbar__link:after {
+  display: none;
+}
