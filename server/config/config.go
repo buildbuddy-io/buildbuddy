@@ -240,10 +240,10 @@ type authConfig struct {
 }
 
 type OauthProvider struct {
-	IssuerURL    string `yaml:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
-	ClientID     string `yaml:"client_id" usage:"The oauth client ID."`
-	ClientSecret string `yaml:"client_secret" usage:"The oauth client secret."`
-	Slug         string `yaml:"slug" usage:"The slug of this OIDC Provider."`
+	IssuerURL    string `yaml:"issuer_url" json:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
+	ClientID     string `yaml:"client_id" json:"client_id" usage:"The oauth client ID."`
+	ClientSecret string `yaml:"client_secret" json:"client_secret" usage:"The oauth client secret."`
+	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider."`
 }
 type SAMLConfig struct {
 	CertFile string `yaml:"cert_file" usage:"Path to a PEM encoded certificate file used for SAML auth."`
@@ -449,11 +449,6 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 				}
 				fallthrough
 			default:
-				// We know this is not flag compatible and it's here for
-				// long-term support reasons, so don't warn about it.
-				if fqFieldName == "auth.oauth_providers" {
-					continue
-				}
 				log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
 			}
 		}
