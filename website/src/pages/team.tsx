@@ -86,7 +86,11 @@ function Team() {
             {shuffle(teamMembers).map((teamMember) => (
               <div className={styles.teamMember} key={teamMember.name}>
                 <div className={styles.teamMemberImage}>
-                  <Image img={require(`../../static/img/team/${teamMember.image}`)} />
+                  <Image
+                    img={require(`../../static/img/team/${teamMember.image}`)}
+                    shouldAutoDownload={() => true}
+                    threshold={10000}
+                  />
                 </div>
                 <div className={styles.teamMemberName}>{teamMember.name}</div>
                 <div className={styles.teamMemberEmail}>{teamMember.email}</div>
