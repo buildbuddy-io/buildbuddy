@@ -1206,6 +1206,12 @@ func writeBazelrc(path string) error {
 
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
+		// Don't report commit statuses for individual bazel commands, since the
+		// overall status of all bazel commands is reflected in the status reported
+		// for the workflow invocation. In addition, for PRs, we first merge with
+		// the target branch which causes the HEAD commit SHA to change, and this
+		// SHA won't actually exist on GitHub.
+		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
 		"build --bes_backend=" + *besBackend,
 		"build --bes_results_url=" + *besResultsURL,
 	}

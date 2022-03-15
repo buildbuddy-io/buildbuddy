@@ -13,22 +13,24 @@ import (
 )
 
 const (
-	repoURLFieldName    = "repoURL"
-	branchNameFieldName = "branchName"
-	commitSHAFieldName  = "commitSHA"
-	roleFieldName       = "role"
-	commandFieldName    = "command"
-	patternFieldName    = "pattern"
-	workflowIDFieldName = "workflowID"
-	actionNameFieldName = "actionName"
+	repoURLFieldName                      = "repoURL"
+	branchNameFieldName                   = "branchName"
+	commitSHAFieldName                    = "commitSHA"
+	roleFieldName                         = "role"
+	commandFieldName                      = "command"
+	patternFieldName                      = "pattern"
+	workflowIDFieldName                   = "workflowID"
+	actionNameFieldName                   = "actionName"
+	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 )
 
 var (
 	buildMetadataFieldMapping = map[string]string{
-		"REPO_URL":    repoURLFieldName,
-		"BRANCH_NAME": branchNameFieldName,
-		"COMMIT_SHA":  commitSHAFieldName,
-		"ROLE":        roleFieldName,
+		"REPO_URL":                        repoURLFieldName,
+		"BRANCH_NAME":                     branchNameFieldName,
+		"COMMIT_SHA":                      commitSHAFieldName,
+		"ROLE":                            roleFieldName,
+		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
 	}
 )
 
@@ -38,12 +40,14 @@ type Accumulator interface {
 	RepoURL() string
 	BranchName() string
 	CommitSHA() string
+	DisableCommitStatusReporting() bool
 	Role() string
 	Command() string
 	Pattern() string
 	WorkflowID() string
 	ActionName() string
 	WorkspaceIsLoaded() bool
+	BuildMetadataIsLoaded() bool
 	BuildFinished() bool
 }
 
@@ -60,6 +64,7 @@ type BEValues struct {
 	valuesMap               map[string]string
 	invocationID            string
 	sawWorkspaceStatusEvent bool
+	sawBuildMetadataEvent   bool
 	buildStartTime          time.Time
 	buildFinished           bool
 }
@@ -80,6 +85,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 		v.populateWorkspaceInfoFromStructuredCommandLine(p.StructuredCommandLine)
 	case *build_event_stream.BuildEvent_BuildMetadata:
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
+		v.sawBuildMetadataEvent = true
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		v.populateWorkspaceInfoFromWorkspaceStatus(p.WorkspaceStatus)
 		v.sawWorkspaceStatusEvent = true
@@ -107,6 +113,10 @@ func (v *BEValues) CommitSHA() string {
 	return v.getStringValue(commitSHAFieldName)
 }
 
+func (v *BEValues) DisableCommitStatusReporting() bool {
+	return v.getBoolValue(disableCommitStatusReportingFieldName)
+}
+
 func (v *BEValues) Role() string {
 	return v.getStringValue(roleFieldName)
 }
@@ -131,6 +141,10 @@ func (v *BEValues) WorkspaceIsLoaded() bool {
 	return v.sawWorkspaceStatusEvent
 }
 
+func (v *BEValues) BuildMetadataIsLoaded() bool {
+	return v.sawBuildMetadataEvent
+}
+
 func (v *BEValues) BuildFinished() bool {
 	return v.buildFinished
 }
@@ -153,6 +167,11 @@ func (v *BEValues) setStringValue(fieldName, proposedValue string) bool {
 	}
 	v.valuesMap[fieldName] = proposedValue
 	return true
+}
+
+func (v *BEValues) getBoolValue(fieldName string) bool {
+	val := v.getStringValue(fieldName)
+	return val == "true" || val == "True" || val == "TRUE" || val == "yes" || val == "1"
 }
 
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {

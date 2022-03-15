@@ -113,6 +113,11 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	if !r.buildEventAccumulator.WorkspaceIsLoaded() {
 		return // If we haven't loaded the workspace, we can't flush payloads yet.
 	}
+	// Don't flush payloads if explicitly disabled in build metadata, or if we
+	// don't yet have the metadata.
+	if !r.buildEventAccumulator.BuildMetadataIsLoaded() || r.buildEventAccumulator.DisableCommitStatusReporting() {
+		return
+	}
 	if r.githubClient == nil {
 		r.githubClient = r.initGHClient(ctx)
 	}
