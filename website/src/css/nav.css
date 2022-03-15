@@ -116,6 +116,12 @@ html[data-theme="dark"] .menu {
 
 .navbar-sidebar .menu__link {
   font-size: 1.4em;
+  display: flex;
+  align-items: center;
+}
+
+.navbar-sidebar .menu__link:after {
+  opacity: 0.5;
 }
 
 .navbar-sidebar .theme-doc-sidebar-menu.menu__list {
