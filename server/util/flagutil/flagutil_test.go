@@ -8,14 +8,19 @@ import (
 )
 
 func TestStringSliceFlag(t *testing.T) {
+	var err error
+
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	fooFlag := []string{}
 	flags.Var(NewSliceFlag(&fooFlag), "foo", "A list of foos")
 	assert.Equal(t, []string{}, fooFlag)
 	assert.Equal(t, []string{}, flags.Lookup("foo").Value.(SliceFlag).UnderlyingSlice().([]string))
-	flags.Set("foo", "foo0,foo1")
-	flags.Set("foo", "foo2")
-	flags.Set("foo", "foo3,foo4,foo5")
+	err = flags.Set("foo", "foo0,foo1")
+	assert.NoError(t, err)
+	err = flags.Set("foo", "foo2")
+	assert.NoError(t, err)
+	err = flags.Set("foo", "foo3,foo4,foo5")
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"foo0", "foo1", "foo2", "foo3", "foo4", "foo5"}, fooFlag)
 	assert.Equal(t, []string{"foo0", "foo1", "foo2", "foo3", "foo4", "foo5"}, flags.Lookup("foo").Value.(SliceFlag).UnderlyingSlice().([]string))
 
@@ -23,14 +28,17 @@ func TestStringSliceFlag(t *testing.T) {
 	flags.Var(NewSliceFlag(&barFlag), "bar", "A list of bars")
 	assert.Equal(t, []string{"bar0", "bar1"}, barFlag)
 	assert.Equal(t, []string{"bar0", "bar1"}, flags.Lookup("bar").Value.(SliceFlag).UnderlyingSlice().([]string))
-	flags.Set("bar", "bar2")
-	flags.Set("bar", "bar3,bar4,bar5")
+	err = flags.Set("bar", "bar2")
+	assert.NoError(t, err)
+	err = flags.Set("bar", "bar3,bar4,bar5")
+	assert.NoError(t, err)
 	assert.Equal(t, []string{"bar0", "bar1", "bar2", "bar3", "bar4", "bar5"}, barFlag)
 	assert.Equal(t, []string{"bar0", "bar1", "bar2", "bar3", "bar4", "bar5"}, flags.Lookup("bar").Value.(SliceFlag).UnderlyingSlice().([]string))
 
 	bazFlag := []string{}
 	flags.Var(NewSliceFlag(&bazFlag), "baz", "A list of bazs")
-	flags.Set("baz", flags.Lookup("bar").Value.String())
+	err = flags.Set("baz", flags.Lookup("bar").Value.String())
+	assert.NoError(t, err)
 	assert.Equal(t, barFlag, bazFlag)
 }
 
@@ -40,15 +48,19 @@ func TestStructSliceFlag(t *testing.T) {
 		Meadow string `json:"meadow"`
 	}
 
+	var err error
+
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	fooFlag := []testStruct{}
 	flags.Var(NewSliceFlag(&fooFlag), "foo", "A list of foos")
 	assert.Equal(t, []testStruct{}, fooFlag)
 	assert.Equal(t, []testStruct{}, flags.Lookup("foo").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
-	flags.Set("foo", `[{"field":3,"meadow":"watership down"}]`)
+	err = flags.Set("foo", `[{"field":3,"meadow":"watership down"}]`)
+	assert.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 3, Meadow: "watership down"}}, fooFlag)
 	assert.Equal(t, []testStruct{{Field: 3, Meadow: "watership down"}}, flags.Lookup("foo").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
-	flags.Set("foo", `{"field":5,"meadow":"runnymede"}`)
+	err = flags.Set("foo", `{"field":5,"meadow":"runnymede"}`)
+	assert.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 3, Meadow: "watership down"}, {Field: 5, Meadow: "runnymede"}}, fooFlag)
 	assert.Equal(t, []testStruct{{Field: 3, Meadow: "watership down"}, {Field: 5, Meadow: "runnymede"}}, flags.Lookup("foo").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
 	flags.Lookup("foo").Value.(SliceFlag).SetTo([]testStruct{{Field: 7, Meadow: "rose end"}, {}, {Field: 9}})
@@ -62,15 +74,18 @@ func TestStructSliceFlag(t *testing.T) {
 	flags.Lookup("bar").Value.(SliceFlag).SetTo([]testStruct{})
 	assert.Equal(t, []testStruct{}, barFlag)
 	assert.Equal(t, []testStruct{}, flags.Lookup("bar").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
-	flags.Set("bar", `[{"field":13,"meadow":"cors y llyn"},{},{"field":15}]`)
+	err = flags.Set("bar", `[{"field":13,"meadow":"cors y llyn"},{},{"field":15}]`)
+	assert.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 13, Meadow: "cors y llyn"}, {}, {Field: 15}}, barFlag)
 	assert.Equal(t, []testStruct{{Field: 13, Meadow: "cors y llyn"}, {}, {Field: 15}}, flags.Lookup("bar").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
-	flags.Set("bar", `[{"field":17,"meadow":"red hill"},{},{"field":19}]`)
+	err = flags.Set("bar", `[{"field":17,"meadow":"red hill"},{},{"field":19}]`)
+	assert.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 13, Meadow: "cors y llyn"}, {}, {Field: 15}, {Field: 17, Meadow: "red hill"}, {}, {Field: 19}}, barFlag)
 	assert.Equal(t, []testStruct{{Field: 13, Meadow: "cors y llyn"}, {}, {Field: 15}, {Field: 17, Meadow: "red hill"}, {}, {Field: 19}}, flags.Lookup("bar").Value.(SliceFlag).UnderlyingSlice().([]testStruct))
 
 	bazFlag := []testStruct{}
 	flags.Var(NewSliceFlag(&bazFlag), "baz", "A list of bazs")
-	flags.Set("baz", flags.Lookup("bar").Value.String())
+	err = flags.Set("baz", flags.Lookup("bar").Value.String())
+	assert.NoError(t, err)
 	assert.Equal(t, barFlag, bazFlag)
 }
