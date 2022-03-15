@@ -17,6 +17,9 @@ type SliceFlag interface {
 	flag.Value
 	UnderlyingSlice() interface{}
 	SetTo(interface{})
+	Slice(i, j int) interface{}
+	AppendSlice(interface{}) interface{}
+	Len() int
 }
 
 func NewSliceFlag(slicePtr interface{}) SliceFlag {
@@ -61,6 +64,23 @@ func (f *stringSliceFlag) SetTo(stringSlice interface{}) {
 	}
 	*f = make([]string, len(ss))
 	copy(*f, ss)
+}
+
+func (f *stringSliceFlag) Slice(i, j int) interface{} {
+	return f.UnderlyingSlice().([]string)[i:j]
+}
+
+func (f *stringSliceFlag) AppendSlice(stringSlice interface{}) interface{} {
+	ss, ok := stringSlice.([]string)
+	if !ok {
+		alert.UnexpectedEvent("string_slice_flag_type_error", "SetTo accepts only []string, but was passed parameter of type %T", stringSlice)
+		return []string{}
+	}
+	return append(f.UnderlyingSlice().([]string), ss...)
+}
+
+func (f *stringSliceFlag) Len() int {
+	return len(*f)
 }
 
 func newStringSliceFlag(stringSlicePtr *[]string) *stringSliceFlag {
@@ -126,6 +146,30 @@ func (f *structSliceFlag) SetTo(structSlice interface{}) {
 	length := reflect.ValueOf(structSlice).Len()
 	f.dstSlice.Set(reflect.MakeSlice(f.dstSlice.Type(), length, length))
 	reflect.Copy(f.dstSlice, reflect.ValueOf(structSlice))
+}
+
+func (f *structSliceFlag) Slice(i, j int) interface{} {
+	return reflect.ValueOf(f.UnderlyingSlice()).Slice(i, j).Interface()
+}
+
+func (f *structSliceFlag) AppendSlice(structSlice interface{}) interface{} {
+	if reflect.TypeOf(structSlice).Kind() != reflect.Slice {
+		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append accepts only slices of struct types, but was passed parameter of type %T", structSlice)
+		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
+	}
+	if reflect.TypeOf(structSlice).Elem().Kind() != reflect.Struct {
+		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append accepts only slices of struct types, but was passed parameter of type %T", structSlice)
+		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
+	}
+	if reflect.TypeOf(structSlice) != f.dstSlice.Type() {
+		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append was passed a slice of %T, which cannot be appended to a slice of type %T", structSlice, f.UnderlyingSlice())
+		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
+	}
+	return reflect.AppendSlice(reflect.ValueOf(f.UnderlyingSlice()), reflect.ValueOf(structSlice)).Interface()
+}
+
+func (f *structSliceFlag) Len() int {
+	return f.dstSlice.Len()
 }
 
 func newStructSliceFlag(structSlicePtr interface{}) *structSliceFlag {

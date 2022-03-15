@@ -578,23 +578,22 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 	flagSet.VisitAll(func(flg *flag.Flag) {
 		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {
 			if flagSlice, ok := flag.Lookup(flg.Name).Value.(flagutil.SliceFlag); ok {
-				flagSliceLen := reflect.ValueOf(flagSlice.UnderlyingSlice()).Len()
 				if originalSliceLen, ok := originalSliceLens[flg.Name]; ok {
 					// reset flagSlice if it has been modified
 					// in this case, flagSliceLen is the sum of the length of the slices
 					// defined in the config and those defined on the command line, and
 					// the config slice comes first.
-					flagSlice.SetTo(reflect.ValueOf(flagSlice.UnderlyingSlice()).Slice(flagSliceLen-originalSliceLen, flagSliceLen))
+					flagSlice.SetTo(flagSlice.Slice(flagSlice.Len()-originalSliceLen, flagSlice.Len()))
 					if c.reconciled {
 						// reset configSlice if it has been modified
-						configSlice.SetTo(reflect.ValueOf(configSlice.UnderlyingSlice()).Slice(0, flagSliceLen-originalSliceLen))
+						configSlice.SetTo(configSlice.Slice(0, configSlice.Len()-originalSliceLen))
 					}
 				} else {
-					originalSliceLens[flg.Name] = flagSliceLen
+					originalSliceLens[flg.Name] = flagSlice.Len()
 				}
 				// Slices from flags are appended to the values in the config, as
 				// opposed to one overriding the other, so no conflict check is needed.
-				concatSlice := reflect.AppendSlice(reflect.ValueOf(configSlice.UnderlyingSlice()), reflect.ValueOf(flagSlice.UnderlyingSlice())).Interface()
+				concatSlice := configSlice.AppendSlice(flagSlice.UnderlyingSlice())
 				configSlice.SetTo(concatSlice)
 				flagSlice.SetTo(concatSlice)
 				return

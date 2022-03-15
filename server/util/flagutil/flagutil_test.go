@@ -40,6 +40,16 @@ func TestStringSliceFlag(t *testing.T) {
 	err = flags.Set("baz", flags.Lookup("bar").Value.String())
 	assert.NoError(t, err)
 	assert.Equal(t, barFlag, bazFlag)
+
+	testSlice := []string{"yes", "si", "hai"}
+	testFlag := NewSliceFlag(&testSlice)
+	testFlag.SetTo(testFlag.AppendSlice(testFlag.UnderlyingSlice()))
+	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai"}, testSlice)
+	newSlice := testFlag.AppendSlice([]string{"no", "nyet", "iie"})
+	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai"}, testSlice)
+	testFlag.SetTo(newSlice)
+	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai", "no", "nyet", "iie"}, testSlice)
+	assert.Equal(t, 9, testFlag.Len())
 }
 
 func TestStructSliceFlag(t *testing.T) {
@@ -88,4 +98,14 @@ func TestStructSliceFlag(t *testing.T) {
 	err = flags.Set("baz", flags.Lookup("bar").Value.String())
 	assert.NoError(t, err)
 	assert.Equal(t, barFlag, bazFlag)
+
+	testSlice := []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}}
+	testFlag := NewSliceFlag(&testSlice)
+	testFlag.SetTo(testFlag.AppendSlice(testFlag.UnderlyingSlice()))
+	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
+	newSlice := testFlag.AppendSlice([]testStruct{{Field: -1, Meadow: "sunflower fields"}, {Field: -3, Meadow: "keukenhof gardens"}})
+	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
+	testFlag.SetTo(newSlice)
+	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}, {Field: -1, Meadow: "sunflower fields"}, {Field: -3, Meadow: "keukenhof gardens"}}, testSlice)
+	assert.Equal(t, 8, testFlag.Len())
 }
