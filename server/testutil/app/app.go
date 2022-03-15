@@ -2,17 +2,12 @@ package app
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testserver"
 	"google.golang.org/grpc"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -21,30 +16,12 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const (
-	// readyCheckPollInterval determines how often to poll BuildBuddy server to check
-	// whether it's up and running.
-	readyCheckPollInterval = 500 * time.Millisecond
-	// readyCheckTimeout determines how long to wait until giving up on waiting for
-	// BuildBuddy server to become ready. If this timeout is reached, the test case
-	// running the server will fail with a timeout error.
-	readyCheckTimeout = 30 * time.Second
-)
-
-var (
-	portLeaser freePortLeaser
-)
-
 // App is a handle on a BuildBuddy server scoped to a test case, which provides
 // basic facilities for connecting to the server and running builds against it.
 type App struct {
-	// err is the error returned by `cmd.Wait()`.
-	err            error
 	httpPort       int
 	monitoringPort int
 	gRPCPort       int
-	mu             sync.Mutex
-	exited         bool
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -55,12 +32,13 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	dataDir := testfs.MakeTempDir(t)
 	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
-		httpPort:       FreePort(t),
-		gRPCPort:       FreePort(t),
-		monitoringPort: FreePort(t),
+		httpPort:       testport.FindFree(t),
+		gRPCPort:       testport.FindFree(t),
+		monitoringPort: testport.FindFree(t),
 	}
 	args := []string{
 		"--app.log_level=debug",
+		"--app.log_include_short_file_name",
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
@@ -73,25 +51,14 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
 	}
 	args = append(args, commandArgs...)
-	cmd := exec.Command(runfile(t, commandPath), args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cmd.Process.Kill() // ignore errors
+
+	testserver.Run(t, &testserver.Opts{
+		BinaryPath:            commandPath,
+		Args:                  args,
+		HTTPPort:              app.httpPort,
+		HealthCheckServerType: "buildbuddy-server",
 	})
-	go func() {
-		err := cmd.Wait()
-		app.mu.Lock()
-		defer app.mu.Unlock()
-		app.exited = true
-		app.err = err
-	}()
-	if err := app.waitForReady(); err != nil {
-		t.Fatal(err)
-	}
+
 	return app
 }
 
@@ -117,6 +84,13 @@ func (a *App) BESBazelFlags() []string {
 func (a *App) RemoteCacheBazelFlags() []string {
 	return []string{
 		fmt.Sprintf("--remote_cache=grpc://localhost:%d", a.gRPCPort),
+	}
+}
+
+// RemoteExecutorBazelFlags returns the Bazel flags required to use the App's remote cache.
+func (a *App) RemoteExecutorBazelFlags() []string {
+	return []string{
+		fmt.Sprintf("--remote_executor=grpc://localhost:%d", a.gRPCPort),
 	}
 }
 
@@ -159,81 +133,4 @@ func runfile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return resolvedPath
-}
-
-func FreePort(t testing.TB) int {
-	return portLeaser.Lease(t)
-}
-
-func (a *App) waitForReady() error {
-	start := time.Now()
-	for {
-		a.mu.Lock()
-		exited := a.exited
-		err := a.err
-		a.mu.Unlock()
-		if exited {
-			return fmt.Errorf("app failed to start: %s", err)
-		}
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/readyz?server-type=buildbuddy-server", a.httpPort))
-		ok := false
-		if err == nil {
-			ok, err = isOK(resp)
-		}
-		if ok {
-			return nil
-		}
-		if time.Since(start) > readyCheckTimeout {
-			errMsg := ""
-			if err == nil {
-				errMsg = fmt.Sprintf("/readyz status: %d", resp.StatusCode)
-			} else {
-				errMsg = fmt.Sprintf("/readyz err: %s", err)
-			}
-			return fmt.Errorf("app failed to start within %s: %s", readyCheckTimeout, errMsg)
-		}
-		time.Sleep(readyCheckPollInterval)
-	}
-}
-
-func isOK(resp *http.Response) (bool, error) {
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return false, err
-	}
-	return string(body) == "OK", nil
-}
-
-type freePortLeaser struct {
-	leasedPorts map[int]struct{}
-	mu          sync.Mutex
-}
-
-func (p *freePortLeaser) findAPort(t testing.TB) int {
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := net.ListenTCP("tcp", addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l.Close()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
-func (p *freePortLeaser) Lease(t testing.TB) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.leasedPorts == nil {
-		p.leasedPorts = make(map[int]struct{}, 0)
-	}
-	for {
-		port := p.findAPort(t)
-		if _, ok := p.leasedPorts[port]; !ok {
-			p.leasedPorts[port] = struct{}{}
-			return port
-		}
-	}
 }
