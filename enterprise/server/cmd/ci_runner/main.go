@@ -280,7 +280,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	// Flush whenever the log buffer fills past a certain threshold.
 	r.log.writeListener = func() {
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
-			r.FlushProgress() // ignore error; it will surface in `bep.Wait()`
+			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
 	}
 	stopFlushingProgress := r.startBackgroundProgressFlush()
@@ -325,7 +325,7 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 		LastMessage: true,
 	})
 
-	if err := r.bep.Wait(); err != nil {
+	if err := r.bep.Finish(); err != nil {
 		// If we don't publish a build event successfully, then the status may not be
 		// reported to the Git provider successfully. Terminate with a code indicating
 		// that the executor can retry the action, so that we have another chance.
@@ -796,7 +796,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		}
 
 		// Publish the status of each command as well as the finish time.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
@@ -838,7 +838,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		}
 
 		// Flush progress after every command.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Wait()`.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		if err := ar.reporter.FlushProgress(); err != nil {
 			break
 		}
@@ -1206,6 +1206,12 @@ func writeBazelrc(path string) error {
 
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
+		// Don't report commit statuses for individual bazel commands, since the
+		// overall status of all bazel commands is reflected in the status reported
+		// for the workflow invocation. In addition, for PRs, we first merge with
+		// the target branch which causes the HEAD commit SHA to change, and this
+		// SHA won't actually exist on GitHub.
+		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
 		"build --bes_backend=" + *besBackend,
 		"build --bes_results_url=" + *besResultsURL,
 	}

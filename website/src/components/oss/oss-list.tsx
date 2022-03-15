@@ -61,6 +61,8 @@ function Component(props) {
             alt={`${repo.name} Github Repository Powered By BuildBuddy`}
             className={styles.repoImage}
             img={require(`../../../static/img/oss/${repo.name.replaceAll("/", "_")}.png`)}
+            shouldAutoDownload={() => true}
+            threshold={10000}
           />
           <div className={styles.repoTitle}>{repo.name}</div>
           <div className={styles.repoDescription}>{repo.description}</div>

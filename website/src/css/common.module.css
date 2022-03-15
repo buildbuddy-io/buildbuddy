@@ -45,7 +45,7 @@
   display: flex;
   max-width: 1296px;
   padding: 0 24px;
-  gap: 48px;
+  gap: 36px;
   justify-content: center;
   align-items: center;
   width: 100%;
@@ -102,8 +102,16 @@
 }
 
 @media (max-width: 600px) {
-  div.title {
+  .title.title {
     font-size: 48px;
+    line-height: 52px;
+  }
+}
+
+@media (max-width: 500px) {
+  .title.title {
+    font-size: 40px;
+    line-height: 48px;
   }
 }
 

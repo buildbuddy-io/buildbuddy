@@ -1,3 +1,13 @@
+.hero {
+  overflow: hidden;
+  min-height: calc(75vh);
+  padding: 16px 0;
+}
+
+.hero:nth-of-type(even) {
+  background-color: #f8f8f8;
+}
+
 .buttons {
   margin-top: 48px;
   display: flex;
@@ -6,16 +16,129 @@
   justify-content: stretch;
 }
 
-.image {
-  max-width: 500px;
-}
-
 .image div {
   background-image: none !important;
 }
 
+.image {
+  max-width: 600px;
+}
+
+.image img {
+  animation: 0.2s ease-in-out 0s 1 animateInFromRight;
+}
+
+.flipped .image img {
+  animation: 0.2s ease-in-out 0s 1 animateInFromLeft;
+}
+
+.image.peekMore {
+  max-width: 740px;
+}
+
+.bigImage img {
+  width: 60vw !important;
+  max-width: 60vw !important;
+  min-width: 750px;
+}
+
+.noImage .image {
+  display: none;
+}
+
+.noImage div,
+.noImage {
+  grid-template-columns: 1fr;
+  text-align: center;
+  align-items: center;
+  max-width: 100%;
+}
+
+.flipped > div:last-of-type {
+  order: -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 996px) {
+  .flipped > div:last-of-type {
+    order: 1;
+  }
+}
+
 @media (max-width: 1200px) {
+  .hero > div {
+    display: grid;
+    grid-template-columns: 1fr 40%;
+  }
+
+  .hero > div.flipped {
+    grid-template-columns: 40% 1fr;
+  }
+
+  .image img {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 996px) {
+  .hero.hero {
+    padding: 96px 0;
+  }
+
+  .hero > div {
+    display: flex;
+    align-items: center;
+  }
+
   .image {
-    display: none;
+    max-width: 100%;
+  }
+
+  .image img {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100%;
+  }
+
+  .hero .image img {
+    animation: 0.2s ease-in-out 0s 1 animateInFromBottom;
+  }
+
+  .hero .flipped .image img {
+    animation: 0.2s ease-in-out 0s 1 animateInFromBottom;
+  }
+}
+
+@keyframes animateInFromRight {
+  0% {
+    opacity: 0;
+    transform: translateX(5%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes animateInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-5%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes animateInFromBottom {
+  0% {
+    opacity: 0;
+    transform: translateY(10%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

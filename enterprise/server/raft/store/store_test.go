@@ -20,9 +20,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -54,7 +54,7 @@ func getTmpDir(t *testing.T) string {
 }
 
 func localAddr(t *testing.T) string {
-	return fmt.Sprintf("127.0.0.1:%d", app.FreePort(t))
+	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
 func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.GossipManager {

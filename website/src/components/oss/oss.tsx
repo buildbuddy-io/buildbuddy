@@ -25,7 +25,12 @@ function Component() {
             individuals and Open Source projects.
           </div>
         </div>
-        <Image className={styles.image} img={require("../../../static/img/oss/buildbuddy-io_buildbuddy.png")} />
+        <Image
+          className={styles.image}
+          img={require("../../../static/img/oss/buildbuddy-io_buildbuddy.png")}
+          shouldAutoDownload={() => true}
+          threshold={10000}
+        />
       </div>
       <hr className={styles.hr} />
       <div className={`${common.container} ${common.splitContainer} ${styles.ossContainer}`}>

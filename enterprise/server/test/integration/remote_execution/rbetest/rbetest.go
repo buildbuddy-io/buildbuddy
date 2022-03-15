@@ -44,12 +44,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -278,7 +278,7 @@ type BuildBuddyServer struct {
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
-	port := app.FreePort(t)
+	port := testport.FindFree(t)
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
 	env.SetAuthenticator(env.rbeEnv.newTestAuthenticator())
@@ -433,7 +433,7 @@ func (c *testCommandController) exit(name string, exitCode int32) {
 }
 
 func newTestCommandController(t *testing.T) *testCommandController {
-	port := app.FreePort(t)
+	port := testport.FindFree(t)
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		assert.FailNowf(t, "could not listen on port", err.Error())
@@ -662,7 +662,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 
-	executorPort := app.FreePort(r.t)
+	executorPort := testport.FindFree(r.t)
 	execLis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", executorPort))
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not listen on port %d", executorPort), err.Error())

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,13 +11,14 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
+	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -301,6 +303,7 @@ type ExecutorConfig struct {
 	DockerSiblingContainers       bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerInheritUserIDs          bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXcodeVersion           string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
+	DefaultIsolationType          string                    `yaml:"default_isolation_type" usage:"The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner"`
 	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
 	EnablePodman                  bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
 	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
@@ -380,7 +383,7 @@ type OrgConfig struct {
 }
 
 var (
-	sharedConfigurator = &Configurator{}
+	sharedConfigurator = &Configurator{gc: &generalConfig{}}
 
 	// Contains the string slices originally defined by the flags
 	originalSliceLens = make(map[string]int)
@@ -536,6 +539,14 @@ func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, erro
 	RegisterAndParseFlags()
 	if configFilePath == "" {
 		configFilePath = *configFile
+	}
+	if configFilePath == "" {
+		_, err := os.Stat("/config.yaml")
+		if err == nil {
+			configFilePath = "/config.yaml"
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, status.UnknownErrorf("could not load config file: %s", err)
+		}
 	}
 	configurator, err := NewConfigurator(configFilePath)
 	if err != nil {

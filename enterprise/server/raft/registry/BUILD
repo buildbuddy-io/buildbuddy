@@ -24,7 +24,7 @@ go_test(
     deps = [
         ":registry",
         "//server/gossip",
-        "//server/testutil/app",
+        "//server/testutil/testport",
         "//server/util/log",
         "@com_github_stretchr_testify//require",
     ],

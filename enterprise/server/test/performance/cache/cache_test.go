@@ -13,11 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -100,7 +100,7 @@ func getDiskCache(t testing.TB, env environment.Env) interfaces.Cache {
 
 func getDistributedDiskCache(t testing.TB, te *testenv.TestEnv) interfaces.Cache {
 	dc := getDiskCache(t, te)
-	listenAddr := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	conf := distributed.CacheConfig{
 		ListenAddr:         listenAddr,
 		GroupName:          "default",

@@ -376,7 +376,7 @@ func StartAndRunServices(env environment.Env) {
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	buildBuddyProtoHandlers, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	protoletHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
@@ -402,7 +402,7 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle(appRoute, httpfilters.WrapExternalHandler(env, staticFileServer))
 	}
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", buildBuddyProtoHandlers))
+	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())

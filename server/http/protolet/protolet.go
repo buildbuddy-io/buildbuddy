@@ -7,16 +7,37 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
 	contextProtoMessageKey = "protolet.requestMessage"
 )
+
+func copyHeader(m metadata.MD, h http.Header, k string) {
+	if _, ok := h[k]; !ok {
+		return
+	}
+	m[k] = make([]string, len(h[k]))
+	copy(m[k], h[k])
+}
+
+func headersToContext(h http.Header) metadata.MD {
+	m := make(metadata.MD, 0)
+	for key, _ := range h {
+		switch strings.ToLower(key) {
+		case "x-buildbuddy-trace":
+			copyHeader(m, h, key)
+		}
+	}
+	return m
+}
 
 func isRPCMethod(m reflect.Method) bool {
 	t := m.Type
@@ -139,8 +160,12 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 			return
 		}
 
-		reqVal := reflect.ValueOf(r.Context().Value(contextProtoMessageKey).(proto.Message))
-		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(r.Context()), reqVal}
+		// Filter and convert any HTTP headers to grpc MD, and attach
+		// that metadata to the context.
+		ctx := metadata.NewIncomingContext(r.Context(), headersToContext(r.Header))
+
+		reqVal := reflect.ValueOf(ctx.Value(contextProtoMessageKey).(proto.Message))
+		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
 			err, _ := rspArr[1].Interface().(error)

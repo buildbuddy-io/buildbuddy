@@ -43,6 +43,20 @@ module.exports = {
       },
       items: [
         {
+          label: "Features",
+          position: "left",
+          type: "dropdown",
+          items: [
+            { label: "Build & Test UI", href: "/ui" },
+            { label: "Remote Execution", href: "/remote-execution" },
+            { label: "Remote Cache", href: "/remote-cache" },
+            // {label: "Workflows", href: "/workflows"},
+            // {label: "Cloud", href: "/cloud"},
+            // {label: "Open Source", href: "/open-source"},
+            // {label: "Enterprise", href: "/enterpise"},
+          ],
+        },
+        {
           href: "/pricing",
           target: "_self",
           label: "Pricing",
@@ -95,6 +109,21 @@ module.exports = {
         {
           title: "Product",
           items: [
+            {
+              label: "Build & Test UI",
+              href: "/ui",
+              target: "_self",
+            },
+            {
+              label: "Remote Execution",
+              href: "/remote-execution",
+              target: "_self",
+            },
+            {
+              label: "Remote Cache",
+              href: "/remote-cache",
+              target: "_self",
+            },
             {
               label: "Get Started",
               href: "https://app.buildbuddy.io",
@@ -241,7 +270,8 @@ module.exports = {
     [
       "@docusaurus/plugin-ideal-image",
       {
-        sizes: [100, 400, 800, 1200],
+        sizes: [1600],
+        disableInDev: false,
       },
     ],
     [

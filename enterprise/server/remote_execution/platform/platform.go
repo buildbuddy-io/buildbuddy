@@ -261,9 +261,17 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		return status.FailedPreconditionError("No workload isolation types configured.")
 	}
 
-	// If no isolation type was specified; default to the first configured one.
 	if platformProps.WorkloadIsolationType == "" {
-		platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
+		defaultIsolationType := ""
+		if env.GetConfigurator().GetExecutorConfig() != nil {
+			defaultIsolationType = env.GetConfigurator().GetExecutorConfig().DefaultIsolationType
+		}
+		if defaultIsolationType == "" {
+			// Backward-compatibility: if no default isolation type was specified; use the first configured one.
+			platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
+		} else {
+			platformProps.WorkloadIsolationType = string(defaultIsolationType)
+		}
 	}
 
 	// Check that the selected isolation type is supported by this executor.
