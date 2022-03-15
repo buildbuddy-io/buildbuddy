@@ -46,6 +46,7 @@ module.exports = {
           label: "Features",
           position: "left",
           type: "dropdown",
+          to: "features",
           items: [
             { label: "Build & Test UI", href: "/ui" },
             { label: "Remote Execution", href: "/remote-execution" },
