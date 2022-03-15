@@ -100,6 +100,10 @@ func (a *fakeAccumulator) CommitSHA() string {
 	return ""
 }
 
+func (a *fakeAccumulator) DisableCommitStatusReporting() bool {
+	return false
+}
+
 func (a *fakeAccumulator) Pattern() string {
 	return ""
 }
@@ -113,6 +117,10 @@ func (a *fakeAccumulator) ActionName() string {
 }
 
 func (a *fakeAccumulator) WorkspaceIsLoaded() bool {
+	return true
+}
+
+func (a *fakeAccumulator) BuildMetadataIsLoaded() bool {
 	return true
 }
 
