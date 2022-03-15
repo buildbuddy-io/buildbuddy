@@ -14,7 +14,7 @@ go_library(
         "//server/interfaces",
         "//server/util/git",
         "//server/util/status",
-        "@com_github_google_go_github//github",
+        "@com_github_google_go_github_v43//github",
         "@org_golang_x_oauth2//:oauth2",
     ],
 )

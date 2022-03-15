@@ -8,6 +8,6 @@ go_library(
     deps = [
         "//cli/logging",
         "//server/util/status",
-        "@com_github_google_go_github//github",
+        "@com_github_google_go_github_v43//github",
     ],
 )

@@ -9,7 +9,7 @@ import (
 
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v43/github"
 )
 
 const (
