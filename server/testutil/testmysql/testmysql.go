@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/go-sql-driver/mysql"
@@ -38,7 +38,7 @@ func GetOrStart(t testing.TB) string {
 //
 // Currently requires Docker to be available in the test execution environment.
 func Start(t testing.TB) string {
-	port := app.FreePort(t)
+	port := testport.FindFree(t)
 	containerNameSuffix, err := random.RandomString(8)
 	require.NoError(t, err)
 	containerName := "buildbuddy-test-mysql-" + containerNameSuffix

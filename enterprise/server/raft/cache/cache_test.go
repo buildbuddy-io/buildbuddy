@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -80,7 +80,7 @@ func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.
 }
 
 func localAddr(t *testing.T) string {
-	return fmt.Sprintf("127.0.0.1:%d", app.FreePort(t))
+	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
 func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.Config {
@@ -88,8 +88,8 @@ func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.
 		RootDir:       getTmpDir(t),
 		ListenAddress: listenAddr,
 		Join:          join,
-		HTTPPort:      app.FreePort(t),
-		GRPCPort:      app.FreePort(t),
+		HTTPPort:      testport.FindFree(t),
+		GRPCPort:      testport.FindFree(t),
 	}
 }
 

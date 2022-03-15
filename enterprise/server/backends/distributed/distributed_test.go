@@ -89,9 +89,9 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 func TestBasicReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
@@ -143,9 +143,9 @@ func TestBasicReadWrite(t *testing.T) {
 func TestReadMaxOffset(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
@@ -191,10 +191,10 @@ func TestReadMaxOffset(t *testing.T) {
 func TestReadWriteWithFailedNode(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
@@ -259,10 +259,10 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
@@ -342,9 +342,9 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 func TestBackfill(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:    3,
 		Nodes:                []string{peer1, peer2, peer3},
@@ -421,9 +421,9 @@ func TestBackfill(t *testing.T) {
 func TestContainsMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
@@ -491,9 +491,9 @@ func TestContainsMulti(t *testing.T) {
 func TestFindMissing(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
@@ -562,9 +562,9 @@ func TestFindMissing(t *testing.T) {
 func TestGetMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3},
@@ -643,10 +643,10 @@ func TestHintedHandoff(t *testing.T) {
 	}
 
 	singleCacheSizeBytes := int64(1000000)
-	peer1 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer2 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer3 := fmt.Sprintf("localhost:%d", app.FreePort(t))
-	peer4 := fmt.Sprintf("localhost:%d", app.FreePort(t))
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer4 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	baseConfig := CacheConfig{
 		ReplicationFactor:  3,
 		Nodes:              []string{peer1, peer2, peer3, peer4},
