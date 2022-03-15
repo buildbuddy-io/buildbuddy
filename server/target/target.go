@@ -24,7 +24,6 @@ import (
 const (
 	sqlite3Dialect = "sqlite3"
 	ciRole         = "CI"
-	testCommand    = "test"
 
 	// The number of distinct commits returned in GetTargetResponse.
 	targetPageSize = 20
@@ -281,7 +280,6 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 		commitQuery.AddWhereClause("repo_url = ?", repo)
 	}
 	commitQuery.AddWhereClause("role = ?", ciRole)
-	commitQuery.AddWhereClause("command = ?", testCommand)
 	paginationToken, err := NewTokenFromRequest(req)
 	if err != nil {
 		return nil, err
