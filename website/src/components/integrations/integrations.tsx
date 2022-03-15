@@ -16,7 +16,7 @@ function Component() {
           <Image
             alt="Github Integration Octocat"
             className={styles.logo}
-            style={{ marginRight: "-32px", width: "72px", height: "60px" }}
+            style={{ marginRight: "-32px", width: "72px", height: "100px", padding: "20px 0" }}
             img={require("../../../static/img/github-image.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
@@ -24,7 +24,7 @@ function Component() {
           <Image
             alt="Github Integration"
             className={styles.logo}
-            style={{ width: "146px", height: "60px" }}
+            style={{ width: "146px", height: "100px", padding: "20px 0" }}
             img={require("../../../static/img/github-text.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
@@ -42,7 +42,7 @@ function Component() {
           <Image
             alt="CircleCI Integration"
             className={styles.logo}
-            style={{ width: "240px", height: "68px" }}
+            style={{ width: "240px", height: "100px", padding: "16px 0" }}
             img={require("../../../static/img/circleci.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
@@ -50,7 +50,7 @@ function Component() {
           <Image
             alt="Travis Integration"
             className={styles.logo}
-            style={{ width: "243px", height: "76px" }}
+            style={{ width: "243px", height: "100px", padding: "12px 0" }}
             img={require("../../../static/img/travis.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
@@ -74,7 +74,7 @@ function Component() {
           <Image
             alt="AWS Integration"
             className={styles.logo}
-            style={{ width: "87px", height: "52px" }}
+            style={{ width: "87px", height: "100px", padding: "24px 0" }}
             img={require("../../../static/img/aws.png")}
             shouldAutoDownload={() => true}
             threshold={10000}
