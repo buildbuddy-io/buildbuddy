@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -12,13 +13,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
+	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -383,7 +385,7 @@ type OrgConfig struct {
 }
 
 var (
-	sharedConfigurator = &Configurator{}
+	sharedConfigurator = &Configurator{gc: &generalConfig{}}
 
 	// Contains the string slices originally defined by the flags
 	originalStringSlices = make(map[string][]string)
@@ -578,6 +580,14 @@ func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, erro
 	RegisterAndParseFlags()
 	if configFilePath == "" {
 		configFilePath = *configFile
+	}
+	if configFilePath == "" {
+		_, err := os.Stat("/config.yaml")
+		if err == nil {
+			configFilePath = "/config.yaml"
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, status.UnknownErrorf("could not load config file: %s", err)
+		}
 	}
 	configurator, err := NewConfigurator(configFilePath)
 	if err != nil {
