@@ -1076,8 +1076,8 @@ func TestRedisRestart(t *testing.T) {
 		resultCh <- testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
 	}()
 
-	// Wait for the remote execution to start by looking for the presence of a redis task key on one of the shards.
-	// This shard will become the victim.
+	// Wait for the remote execution to start by looking for the presence of a
+	// redis task key on one of the shards. This shard will become the victim.
 	deadline := time.Now().Add(10 * time.Second)
 	var victimShard *testredis.Handle
 	for time.Now().Before(deadline) && victimShard == nil {
@@ -1093,7 +1093,8 @@ func TestRedisRestart(t *testing.T) {
 	}
 	require.NotNil(t, victimShard, "could not find victim shard")
 
-	// Restart the shard containing task information and verify that the Bazel invocation can still finish successfully.
+	// Restart the shard containing task information and verify that the Bazel
+	// invocation can still finish successfully.
 	victimShard.Restart()
 
 	result := <-resultCh
