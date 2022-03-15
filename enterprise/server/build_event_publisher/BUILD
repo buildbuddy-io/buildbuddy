@@ -12,6 +12,7 @@ go_library(
         "//proto:publish_build_event_go_proto",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",

@@ -183,7 +183,7 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 		// Close the build event publisher in case the test failed before we made it
 		// to the part where the stream is closed.
 		if !bepClosed {
-			err := bep.Wait()
+			err := bep.Finish()
 			require.NoError(t, err)
 		}
 	}()
@@ -214,7 +214,7 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 	// Close the BEP stream -- this should not return until all events are ACK'd
 	// by the server. The server sends ACKs only after all events are processed,
 	// so the logs should be available when this returns.
-	err = bep.Wait()
+	err = bep.Finish()
 	bepClosed = true
 	require.NoError(t, err)
 
@@ -235,7 +235,7 @@ func TestBuildLogs_InProgressInvocation(t *testing.T) {
 	defer func() {
 		// Close the BEP stream during cleanup since we keep it open for the
 		// duration of the test (since we are testing "in progress" invocations)
-		err := bep.Wait()
+		err := bep.Finish()
 		require.NoError(t, err)
 	}()
 	log := NewInvocationLog(bbClient, iid)
