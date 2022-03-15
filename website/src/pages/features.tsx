@@ -34,7 +34,7 @@ function Index() {
         <Hero
           title="Remote Cache"
           subtitle="Global remote caching infrastructure made easy. Highly scalable, blazing fast, and incredibly simple to setup."
-          component={<Globe />}
+          image={require("../../static/img/globe.png")}
           secondaryButtonText=""
           primaryButtonText="Learn more about Remote Caching"
           primaryButtonHref="/remote-cache"
