@@ -168,7 +168,7 @@ These flags now do nothing, but still exist to allow for migration off of them:
 One of Bazel's most powerful features is its ability to use [remote caching and remote execution][remote-explained].
 Numerous improvements and fixes to Bazel's remote capabilities are included in Bazel 5.0.
 
-[remote-explained]: https://brentley.dev/bazels-remote-caching-and-remote-execution-explained/
+[remote-explained]: bazels-remote-caching-and-remote-execution-explained.md
 
 ### gRPC
 
@@ -290,7 +290,7 @@ with just a single noticeable change:
 
 [execution_log_binary_file]: https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--execution_log_binary_file
 [execution_log_json_file]: https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--execution_log_json_file
-[spawns]: https://brentley.dev/bazels-remote-caching-and-remote-execution-explained/#spawns
+[spawns]: bazels-remote-caching-and-remote-execution-explained.md#spawns
 
 ## Query
 
