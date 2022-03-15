@@ -9,13 +9,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -1033,4 +1039,69 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	err := cmd.MustFail()
 	require.Contains(t, err.Error(), "already attempted")
 	require.Contains(t, err.Error(), "not found in cache")
+}
+
+func TestRedisRestart(t *testing.T) {
+	workspaceContents := map[string]string{
+		"WORKSPACE": `workspace(name = "integration_test")`,
+		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "sleep 5 && echo 'Hello world' > $@")`,
+	}
+
+	var redisShards []*testredis.Handle
+	for i := 0; i < 4; i++ {
+		redisShards = append(redisShards, testredis.StartTCP(t))
+	}
+
+	args := []string{
+		"--remote_execution.enable_remote_exec=true",
+		"--remote_execution.enable_redis_availability_monitoring=true",
+	}
+	for _, shard := range redisShards {
+		args = append(args, "--remote_execution.sharded_redis.shards="+shard.Target)
+	}
+	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig, args...)
+
+	_ = testexecutor.Run(t,
+		"enterprise/server/cmd/executor/executor_/executor",
+		[]string{"--executor.app_target=" + app.GRPCAddress()})
+
+	ctx := context.Background()
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	buildFlags := []string{"//:hello.txt"}
+	buildFlags = append(buildFlags, app.BESBazelFlags()...)
+	buildFlags = append(buildFlags, app.RemoteExecutorBazelFlags()...)
+
+	resultCh := make(chan *bazel.InvocationResult)
+	go func() {
+		resultCh <- testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+	}()
+
+	// Wait for the remote execution to start by looking for the presence of a redis task key on one of the shards.
+	// This shard will become the victim.
+	deadline := time.Now().Add(10 * time.Second)
+	var victimShard *testredis.Handle
+	for time.Now().Before(deadline) && victimShard == nil {
+		for _, shard := range redisShards {
+			if shard.KeyCount("task/*") > 0 {
+				if victimShard != nil {
+					require.FailNow(t, "multiple redis shards contain task information")
+				}
+				victimShard = shard
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NotNil(t, victimShard, "could not find victim shard")
+
+	// Restart the shard containing task information and verify that the Bazel invocation can still finish successfully.
+	victimShard.Restart()
+
+	result := <-resultCh
+
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	require.NotContains(
+		t, result.Stderr, "1 remote cache hit",
+		"sanity check: initial build shouldn't be cached",
+	)
 }
