@@ -34,7 +34,9 @@ type Publisher struct {
 	besBackend string
 
 	events *EventBuffer
-	done   chan error
+	// errCh streams the stream publishing error (if any) after all retry attempts
+	// are exhausted.
+	errCh chan error
 }
 
 func New(besBackend, apiKey, invocationID string) (*Publisher, error) {
@@ -51,7 +53,7 @@ func New(besBackend, apiKey, invocationID string) (*Publisher, error) {
 		apiKey:     apiKey,
 		besBackend: besBackend,
 		events:     NewEventBuffer(streamID),
-		done:       make(chan error, 1),
+		errCh:      make(chan error, 1),
 	}, nil
 }
 
@@ -59,7 +61,9 @@ func New(besBackend, apiKey, invocationID string) (*Publisher, error) {
 // as soon as the first call to Finish() occurs.
 func (p *Publisher) Start(ctx context.Context) {
 	go func() {
-		defer close(p.done)
+		defer close(p.errCh)
+		// Use a count-based max number of retries (rather than timeout based),
+		// to be consistent with Bazel.
 		r := retry.New(ctx, &retry.Options{
 			MaxRetries:     numStreamRetries,
 			InitialBackoff: 300 * time.Millisecond,
@@ -74,7 +78,7 @@ func (p *Publisher) Start(ctx context.Context) {
 			}
 			log.Debugf("Retrying build event stream due to error: %s", err)
 		}
-		p.done <- err
+		p.errCh <- err
 	}()
 }
 
@@ -154,7 +158,7 @@ func (p *Publisher) Finish() error {
 		},
 	}
 	p.events.Add(be)
-	if err := <-p.done; err != nil {
+	if err := <-p.errCh; err != nil {
 		return status.UnavailableErrorf("failed to publish build event stream after multiple attempts: %s", err)
 	}
 	return nil
