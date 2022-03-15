@@ -100,6 +100,10 @@ func (a *fakeAccumulator) CommitSHA() string {
 	return ""
 }
 
+func (a *fakeAccumulator) DisableCommitStatusReporting() bool {
+	return false
+}
+
 func (a *fakeAccumulator) Pattern() string {
 	return ""
 }
