@@ -131,7 +131,7 @@ function Component() {
     return null;
   }
 
-  console.log(arcsData);
+  const globeSizePx = 600;
 
   return (
     <div className={styles.globe}>
@@ -139,8 +139,8 @@ function Component() {
         ref={globeEl}
         globeImageUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNUM7L4DwACpwGRoMcQzgAAAABJRU5ErkJggg=="
         atmosphereColor={"#607D8B"}
-        width={window.innerWidth > 996 ? window.innerWidth / 2 : window.innerWidth - 48}
-        height={window.innerHeight - 122}
+        width={globeSizePx}
+        height={globeSizePx}
         backgroundColor="#fff"
         arcsData={arcsData}
         arcColor={"color"}
