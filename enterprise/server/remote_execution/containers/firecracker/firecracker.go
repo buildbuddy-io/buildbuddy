@@ -1046,6 +1046,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	}
 	defer os.RemoveAll(wsDir) // clean up
 
+	copyFn := os.Rename
 	if c.mountWorkspaceFile {
 		m, err := mountExt4ImageUsingLoopDevice(c.workspaceFSPath(), wsDir)
 		if err != nil {
@@ -1053,6 +1054,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 			return err
 		}
 		defer m.Unmount()
+		copyFn = copyFile
 	} else {
 		if err := ext4.ImageToDirectory(ctx, c.workspaceFSPath(), wsDir); err != nil {
 			return err
@@ -1073,11 +1075,43 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 			if d.IsDir() {
 				return disk.EnsureDirectoryExists(filepath.Join(c.actionWorkingDir, path))
 			}
-			return os.Rename(filepath.Join(wsDir, path), targetLocation)
+			return copyFn(filepath.Join(wsDir, path), targetLocation)
 		}
 		return nil
 	})
 	return walkErr
+}
+
+func copyFile(src, dst string) error {
+	stat, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if stat.Mode().IsRegular() {
+		sf, err := os.Open(src)
+		if err != nil {
+			return err
+		}
+		defer sf.Close()
+		df, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, stat.Mode())
+		if err != nil {
+			return err
+		}
+		defer df.Close()
+		_, err = io.Copy(df, sf)
+		return err
+	}
+
+	if stat.Mode()&fs.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		return os.Symlink(target, dst)
+	}
+
+	return status.UnimplementedErrorf("unsupported file mode: %x", stat.Mode())
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
