@@ -581,12 +581,11 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 				} else {
 					originalSliceLens[flg.Name] = flagSliceLen
 				}
-				// slices from flags are appended to the values in the config, as
-				// opposed to either overriding the other, so no conflict check is
-				// necessary. Note that Set for SliceFlag is performing the
-				// aforementioned append operation, as opposed to setting anything.
-				configSlice.Set(flagSlice.String())
-				flagSlice.SetTo(configSlice.UnderlyingSlice())
+				// Slices from flags are appended to the values in the config, as
+				// opposed to one overriding the other, so no conflict check is needed.
+				concatSlice := reflect.AppendSlice(reflect.ValueOf(configSlice.UnderlyingSlice()), reflect.ValueOf(flagSlice.UnderlyingSlice())).Interface()
+				configSlice.SetTo(concatSlice)
+				flagSlice.SetTo(concatSlice)
 				return
 			}
 			log.Warningf("yaml defines %s as %T, but flags do not.", flg.Name, configSlice.UnderlyingSlice())
