@@ -116,6 +116,10 @@ func (a *fakeAccumulator) WorkspaceIsLoaded() bool {
 	return true
 }
 
+func (a *fakeAccumulator) BuildMetadataIsLoaded() bool {
+	return true
+}
+
 func (a *fakeAccumulator) BuildFinished() bool {
 	return true
 }
