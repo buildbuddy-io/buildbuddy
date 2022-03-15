@@ -63,9 +63,5 @@ go_test(
     name = "buildbuddy_test",
     srcs = ["main_test.go"],
     embed = [":buildbuddy_lib"],
-    deps = [
-        "//server/config",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
+    deps = ["//server/util/testing/flags"],
 )

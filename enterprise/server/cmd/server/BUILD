@@ -105,9 +105,5 @@ go_test(
     name = "server_test",
     srcs = ["main_test.go"],
     embed = [":server_lib"],
-    deps = [
-        "//server/config",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-    ],
+    deps = ["//server/util/testing/flags"],
 )
