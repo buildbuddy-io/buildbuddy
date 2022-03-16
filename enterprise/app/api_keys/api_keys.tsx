@@ -488,5 +488,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
   if (hasCapability(apiKey, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)) {
     capabilities += "+Executor";
   }
+  if (isVisibleToDevelopers(apiKey)) {
+    capabilities += " [Devs]";
+  }
   return capabilities;
 }
