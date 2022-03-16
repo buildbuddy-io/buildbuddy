@@ -37,4 +37,6 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker
+      # TODO(http://go/b/1249): Increase reliability of runner recycling when
+      # executing with high concurrency, and remove `--jobs=3`
+      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3

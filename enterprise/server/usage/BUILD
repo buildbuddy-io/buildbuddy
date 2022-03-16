@@ -42,10 +42,14 @@ go_test(
 go_test(
     name = "usage_test_mysql",
     srcs = ["usage_test.go"],
-    args = ["--testenv.use_mysql"],
+    args = [
+        "--testenv.use_mysql",
+        "--testmysql.reuse_server",
+    ],
     exec_properties = {
         "workload-isolation-type": "firecracker",
         "init-dockerd": "true",
+        "recycle-runner": "true",
     },
     shard_count = 7,
     tags = ["docker"],
