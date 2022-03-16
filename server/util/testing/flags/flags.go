@@ -28,6 +28,8 @@ func Set(t testing.TB, name, value string) {
 	})
 }
 
+// CheckFlagsAgainstConfig checks that all defined flags containing a `.` are
+// present in the config struct.
 func CheckFlagsAgainstConfig(t *testing.T) {
 	configurator, err := config.NewConfiguratorFromData([]byte{})
 	require.NoError(t, err)
