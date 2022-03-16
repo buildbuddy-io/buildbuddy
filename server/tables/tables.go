@@ -637,11 +637,6 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil
 		})
 	}
-	if db.Migrator().HasIndex("Invocations", "invocations_test_grid_query_index") {
-		postMigrate = append(postMigrate, func() error {
-			return db.Migrator().DropIndex("TargetStatuses", "invocations_test_grid_query_index")
-		})
-	}
 	return postMigrate, nil
 }
 
@@ -806,6 +801,13 @@ func PostAutoMigrate(db *gorm.DB) error {
 			err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `Invocations`%s", indexName, cols)).Error
 			if err != nil {
 				log.Errorf("Error creating %s: %s", indexName, err)
+			}
+		}
+
+		// Drop deprecated invocation indexes
+		if db.Migrator().HasIndex("Invocations", "invocations_test_grid_query_index") {
+			if err := db.Migrator().DropIndex("Invocations", "invocations_test_grid_query_index"); err != nil {
+				log.Errorf("Error dropping deprecated index: %s", err)
 			}
 		}
 	}
