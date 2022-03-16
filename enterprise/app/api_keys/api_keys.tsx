@@ -144,6 +144,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           id: apiKey.id,
           label: apiKey.label,
           capability: [...apiKey.capability],
+          visibleToDevelopers: apiKey.visibleToDevelopers,
         }),
       },
     });
@@ -235,6 +236,15 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, !e.target.checked, onChange);
   }
 
+  private onChangeVisibility<T extends ApiKeyFields>(
+    request: T,
+    onChange: (name: string, value: any) => any,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    request.visibleToDevelopers = e.target.checked;
+    onChange("visibleToDevelopers", request.visibleToDevelopers);
+  }
+
   private onChangeRegisterExecutor<T extends ApiKeyFields>(
     request: T,
     onChange: (name: string, value: any) => any,
@@ -305,6 +315,18 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </label>
                 </div>
               )}
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    onChange={this.onChangeVisibility.bind(this, request, onChange)}
+                    checked={isVisibleToDevelopers(request)}
+                  />
+                  <span>
+                    Visible to developers <span className="field-description">(users with the role Developer)</span>
+                  </span>
+                </label>
+              </div>
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -370,6 +392,11 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         })}
 
         <div className="api-keys-list">
+          {getApiKeysResponse.apiKey.length == 0 && !this.props.user.canCall("createApiKey") && (
+            <div className="no-api-keys-message">
+              No API keys have been made visible to developers. Only organization admins can create API keys.
+            </div>
+          )}
           {getApiKeysResponse.apiKey.map((key) => (
             <div key={key.id} className="api-key-list-item">
               <div className="api-key-label">
@@ -450,6 +477,10 @@ function hasCapability<T extends ApiKeyFields>(apiKey: T | null, capability: api
 
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return !hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+}
+
+function isVisibleToDevelopers<T extends ApiKeyFields>(apiKey: T | null) {
+  return apiKey?.visibleToDevelopers;
 }
 
 function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {

@@ -169,3 +169,9 @@
   padding: 4px 8px;
   border-radius: 4px;
 }
+
+.api-keys .no-api-keys-message {
+  background: #e1f5fe;
+  padding: 16px;
+  border-radius: 8px;
+}
