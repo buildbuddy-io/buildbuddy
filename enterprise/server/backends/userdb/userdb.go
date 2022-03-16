@@ -161,18 +161,14 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		return nil, err
 	}
 
-	filter := "AND visible_to_developers = true"
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err == nil {
-		filter = ""
+	q := query_builder.NewQuery(`SELECT api_key_id, value, label, perms, capabilities, visible_to_developers FROM APIKeys`)
+	q.AddWhereClause("group_id = ?", groupID)
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		q.AddWhereClause("visible_to_developers = ?", true)
 	}
-
-	query := d.h.DB(ctx).Raw(`
-		SELECT api_key_id, value, label, perms, capabilities, visible_to_developers
-		FROM APIKeys
-		WHERE group_id = ?
-		`+filter+`
-		ORDER BY label ASC
-	`, groupID)
+	q.SetOrderBy("label", true /*ascending*/)
+	queryStr, args := q.Build()
+	query := d.h.DB(ctx).Raw(queryStr, args...)
 	rows, err := query.Rows()
 	if err != nil {
 		return nil, err
@@ -344,7 +340,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			if err := tx.Create(&newGroup).Error; err != nil {
 				return err
 			}
-			_, err = createAPIKey(tx, groupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false)
+			_, err = createAPIKey(tx, groupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
 			return err
 		}
 
@@ -526,7 +522,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.Create(&c.group).Error; err != nil {
 					return err
 				}
-				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false); err != nil {
+				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -606,7 +602,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		if err := tx.Create(&sug).Error; err != nil {
 			return err
 		}
-		if _, err := createAPIKey(tx, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false); err != nil {
+		if _, err := createAPIKey(tx, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
 		groupIDs = append(groupIDs, sug.GroupID)

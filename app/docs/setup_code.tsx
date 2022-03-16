@@ -206,6 +206,7 @@ export default class SetupCodeComponent extends React.Component {
             ) : (
               <>This BuildBuddy installation requires authentication, but no API keys are set up.</>
             )}
+            {!this.state.user.canCall("createApiKey") && <> Only organization administrators can create API keys.</>}
           </div>
           {this.state.user.canCall("createApiKey") && (
             <div>

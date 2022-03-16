@@ -241,8 +241,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange: (name: string, value: any) => any,
     e: React.ChangeEvent<HTMLInputElement>
   ) {
-    request.visibleToDevelopers = e.target.checked;
-    onChange("visibleToDevelopers", request.visibleToDevelopers);
+    onChange("visibleToDevelopers", e.target.checked);
   }
 
   private onChangeRegisterExecutor<T extends ApiKeyFields>(
@@ -489,7 +488,7 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
     capabilities += "+Executor";
   }
   if (isVisibleToDevelopers(apiKey)) {
-    capabilities += " [Devs]";
+    capabilities += " [D]";
   }
   return capabilities;
 }
