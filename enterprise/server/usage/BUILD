@@ -46,6 +46,7 @@ go_test(
     exec_properties = {
         "workload-isolation-type": "firecracker",
         "init-dockerd": "true",
+        "recycle-runner": "true",
     },
     shard_count = 7,
     tags = ["docker"],
