@@ -637,6 +637,11 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			return nil
 		})
 	}
+	if db.Migrator().HasIndex("Invocations", "invocations_test_grid_query_index") {
+		postMigrate = append(postMigrate, func() error {
+			return db.Migrator().DropIndex("TargetStatuses", "invocations_test_grid_query_index")
+		})
+	}
 	return postMigrate, nil
 }
 
@@ -776,8 +781,22 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_branch_index":      "(`group_id`, `branch_name`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_commit_index":      "(`group_id`, `commit_sha`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
 		"invocations_stats_role_index":        "(`group_id`, `role`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
-		"invocations_test_grid_query_index":   "(`group_id`, `role`, `repo_url`, `created_at_usec` DESC)",
 	}
+	prefixIndicesByDialect := map[string]map[string]string{
+		mysqlDialect: map[string]string{
+			"invocations_test_grid_query_command_index": "(`group_id` (25), `role` (10), `repo_url`, `command` (10), `created_at_usec` DESC)",
+		},
+		sqliteDialect: map[string]string{
+			"invocations_test_grid_query_command_index": "(`group_id`, `role`, `repo_url`, `command` , `created_at_usec` DESC)",
+		},
+	}
+	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
+	if ok {
+		for name, cols := range prefixIndexes {
+			indexes[name] = cols
+		}
+	}
+
 	m := db.Migrator()
 	if m.HasTable("Invocations") {
 		for indexName, cols := range indexes {
