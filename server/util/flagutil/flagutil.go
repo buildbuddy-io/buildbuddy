@@ -11,6 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 )
 
+// TODO: When we get generics, we can replace this function with Slice and use
+// it for all types of slices (currently just strings and structs).
+func StringSlice(name string, defaultValue []string, usage string) *[]string {
+	flag.Var(NewSliceFlag(&defaultValue), name, usage)
+	return &defaultValue
+}
+
 // NOTE: slice flags are *appended* to default values and
 // config values, instead of overriding them completely.
 type SliceFlag interface {
