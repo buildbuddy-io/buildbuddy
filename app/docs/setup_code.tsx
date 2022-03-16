@@ -202,10 +202,11 @@ export default class SetupCodeComponent extends React.Component {
         <div className="no-api-keys-content">
           <div>
             {capabilities.anonymous ? (
-              <>Looks like your organization doesn't have any API keys.</>
+              <>Looks like your organization doesn't have any API keys that are visible to you.</>
             ) : (
               <>This BuildBuddy installation requires authentication, but no API keys are set up.</>
             )}
+            {!this.state.user.canCall("createApiKey") && <> Only organization administrators can create API keys.</>}
           </div>
           {this.state.user.canCall("createApiKey") && (
             <div>

@@ -305,7 +305,8 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
-	Capabilities int32 `gorm:"default:1"`
+	Capabilities        int32 `gorm:"default:1"`
+	VisibleToDevelopers bool  `gorm:"not null;default:false"`
 }
 
 func (k *APIKey) TableName() string {
