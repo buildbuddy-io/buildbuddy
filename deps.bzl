@@ -1235,16 +1235,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_logr_logr",
         importpath = "github.com/go-logr/logr",
-        sum = "h1:ahHml/yUpnlb96Rp8HCvtYVPY8ZYpxq3g7UYchIYwbs=",
-        version = "v1.2.2",
+        sum = "h1:QvGt2nLcHH0WK9orKa+ppBPAxREcH364nPUedEpK0TY=",
+        version = "v0.2.0",
     )
-    go_repository(
-        name = "com_github_go_logr_stdr",
-        importpath = "github.com/go-logr/stdr",
-        sum = "h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=",
-        version = "v1.2.2",
-    )
-
     go_repository(
         name = "com_github_go_martini_martini",
         importpath = "github.com/go-martini/martini",
@@ -3708,19 +3701,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.4",
     )
     go_repository(
-        name = "com_github_uptrace_opentelemetry_go_extra_otelgorm",
-        importpath = "github.com/uptrace/opentelemetry-go-extra/otelgorm",
-        sum = "h1:35cnndhJ2ubrI0HB+h0cvneKPQgwogjdHjuw+oq4JMk=",
-        version = "v0.1.9",
-    )
-    go_repository(
-        name = "com_github_uptrace_opentelemetry_go_extra_otelsql",
-        importpath = "github.com/uptrace/opentelemetry-go-extra/otelsql",
-        sum = "h1:A0iFD6fkDSwCm4iiNspHIvnF0W8tjune5ZiHie77AvE=",
-        version = "v0.1.9",
-    )
-
-    go_repository(
         name = "com_github_urfave_cli",
         importpath = "github.com/urfave/cli",
         sum = "h1:gsqYFH8bb9ekPA12kRo0hfjngWQjkJPlN9R0N78BoUo=",
@@ -4232,8 +4212,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_driver_mysql",
         importpath = "gorm.io/driver/mysql",
-        sum = "h1:QJryWiqQ91EvZ0jZL48NOpdlPdMjdip1hQ8bTgo4H7I=",
-        version = "v1.3.2",
+        sum = "h1:l8+9VwjjyzEkw0PNPBOr2JHhLOGVk7XEnl5hk42bcvs=",
+        version = "v1.2.0",
     )
     go_repository(
         name = "io_gorm_driver_sqlite",
@@ -4244,8 +4224,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",
-        sum = "h1:xmq9QRMWL8HTJyhAUBXy8FqIIQCYESeKfJL4DoGKiWQ=",
-        version = "v1.23.2",
+        sum = "h1:/JS6z+GStEQvJNW3t1FTwJwG/gZ+A7crFdRqtvG5ehA=",
+        version = "v1.22.3",
     )
     go_repository(
         name = "io_k8s_api",
@@ -4393,8 +4373,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         ],
         build_file_proto_mode = "disable",
         importpath = "go.opentelemetry.io/otel",
-        sum = "h1:QbINgGDDcoQUoMJa2mMaWno49lja9sHwp6aoa2n3a4g=",
-        version = "v1.4.1",
+        sum = "h1:YOQDvxO1FayUcT9MIhJhgMyNO1WqoduiyvQHzGN0kUQ=",
+        version = "v1.2.0",
     )
     go_repository(
         # build_file_generation = "on",
@@ -4436,14 +4416,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go go.opentelemetry.io/otel/metric/registry @io_opentelemetry_go_otel_metric//registry",
         ],
         importpath = "go.opentelemetry.io/otel/internal/metric",
-        sum = "h1:9dAVGAfFiiEq5NVB9FUJ5et+btbDQAUIJehJ+ikyryk=",
-        version = "v0.27.0",
+        sum = "h1:w/7RXe16WdPylaIXDgcYM6t/q0K5lXgSdZOEbIEyliE=",
+        version = "v0.25.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_metric",
         importpath = "go.opentelemetry.io/otel/metric",
-        sum = "h1:HhJPsGhJoKRSegPQILFbODU56NS/L1UE4fS1sC5kIwQ=",
-        version = "v0.27.0",
+        sum = "h1:7cXOnCADUsR3+EOqxPaSKwhEuNu0gz/56dRN1hpIdKw=",
+        version = "v0.25.0",
     )
 
     go_repository(
@@ -4477,8 +4457,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_trace",
         importpath = "go.opentelemetry.io/otel/trace",
-        sum = "h1:O+16qcdTrT7zxv2J6GejTPFinSwA++cYerC5iSiF8EQ=",
-        version = "v1.4.1",
+        sum = "h1:Ys3iqbqZhcf28hHzrm5WAquMkDHNZTUkw7KHbuNjej0=",
+        version = "v1.2.0",
     )
     go_repository(
         name = "io_opentelemetry_go_proto_otlp",

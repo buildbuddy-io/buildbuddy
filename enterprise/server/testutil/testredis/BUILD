@@ -13,9 +13,11 @@ go_library(
     deps = [
         "//enterprise/server/util/redisutil",
         "//server/testutil/testfs",
+        "//server/testutil/testport",
         "//server/util/log",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )

@@ -95,6 +95,12 @@ proto_library(
 )
 
 proto_library(
+    name = "github_proto",
+    srcs = ["github.proto"],
+    deps = [":context_proto"],
+)
+
+proto_library(
     name = "publish_build_event_proto",
     srcs = [
         "publish_build_event.proto",
@@ -286,6 +292,7 @@ proto_library(
         ":bazel_config_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":github_proto",
         ":group_proto",
         ":invocation_proto",
         ":runner_proto",
@@ -430,6 +437,15 @@ go_proto_library(
     name = "failure_details_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/failure_details",
     proto = ":failure_details_proto",
+)
+
+go_proto_library(
+    name = "github_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/github",
+    proto = ":github_proto",
+    deps = [
+        ":context_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -596,6 +612,7 @@ go_proto_library(
         ":bazel_config_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
         ":runner_go_proto",
@@ -761,6 +778,11 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_stats_ts_proto",
     proto = ":execution_stats_proto",
+)
+
+ts_proto_library(
+    name = "github_ts_proto",
+    proto = ":github_proto",
 )
 
 ts_proto_library(
