@@ -138,7 +138,7 @@
 }
 
 .global-filter .filter-menu-button {
-  max-width: 300px;
+  max-width: 400px;
   flex-shrink: 1;
 }
 
@@ -148,7 +148,7 @@
 }
 
 .global-filter .advanced-badge {
-  max-width: 50px;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
@@ -159,6 +159,15 @@
   border-radius: 20px;
   padding: 2px 8px;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+.global-filter .advanced-badge svg {
+  width: 12px;
+  opacity: 0.5;
+  margin-right: 4px;
+  flex-shrink: 0;
 }
 
 .global-filter .filter-menu-button-label {
