@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/autoconfig"
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
@@ -31,12 +32,31 @@ func die(exitCode int, err error) {
 	os.Exit(exitCode)
 }
 
-func runBazelAndDie(args []string) {
+func runBazelAndDie(args []string, opts *autoconfig.BazelOpts) {
 	// Now run bazel.
 	gcs := &repositories.GCSRepo{}
 	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
+
+	if opts.EnableRemoteBazel {
+		repoConfig, err := remotebazel.Config(".")
+		if err != nil {
+			log.Fatalf("config err: %s", err)
+		}
+
+		ctx := context.Background()
+		err = remotebazel.Run(ctx, remotebazel.RunOpts{
+			Server: opts.BuildBuddyEndpoint,
+			APIKey: opts.APIKey,
+			Args:   args,
+		}, repoConfig)
+		if err != nil {
+			die(1, err)
+		}
+		// TODO(vadim): propagate bazel exit code
+		die(0, nil)
+	}
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	die(exitCode, err)
@@ -75,7 +95,7 @@ func main() {
 
 	if *disable {
 		bblog.Printf("Buildbuddy was disabled, just running bazel.")
-		runBazelAndDie(filteredOSArgs)
+		runBazelAndDie(filteredOSArgs, &autoconfig.BazelOpts{})
 	}
 
 	ctx := context.Background()
@@ -94,7 +114,7 @@ func main() {
 	}
 
 	bazelFlags := commandline.ExtractBazelFlags(filteredOSArgs)
-	bazelFlags, filteredOSArgs = autoconfig.Configure(bazelFlags, filteredOSArgs)
+	bazelFlags, bazelOpts, filteredOSArgs := autoconfig.Configure(bazelFlags, filteredOSArgs)
 	opts := parseBazelRCs(bazelFlags)
 
 	// Determine if cache or BES options are set.
@@ -108,8 +128,8 @@ func main() {
 	if subcommand == "version" {
 		fmt.Printf("bb %s\n", version.AppVersion())
 	}
-	if besBackendFlag == "" && remoteCacheFlag == "" {
-		runBazelAndDie(filteredOSArgs)
+	if bazelOpts.EnableRemoteBazel || (besBackendFlag == "" && remoteCacheFlag == "") {
+		runBazelAndDie(filteredOSArgs, bazelOpts)
 	}
 
 	bblog.Printf("--bes_backened was %q", besBackendFlag)
@@ -153,5 +173,5 @@ func main() {
 		}
 	}
 	bblog.Printf("Rewrote bazel command line to: %s", filteredOSArgs)
-	runBazelAndDie(filteredOSArgs)
+	runBazelAndDie(filteredOSArgs, bazelOpts)
 }

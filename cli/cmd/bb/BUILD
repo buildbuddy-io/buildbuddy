@@ -13,6 +13,7 @@ go_library(
         "//cli/commandline",
         "//cli/logging",
         "//cli/parser",
+        "//cli/remotebazel",
         "//cli/sidecar",
         "//server/version",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",

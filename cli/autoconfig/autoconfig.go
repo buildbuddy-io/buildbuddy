@@ -11,34 +11,53 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 )
 
-var (
-	events = flag.Bool("events", true, "If false, disable sending build events to buildbuddy.")
-	remote = flag.Bool("remote", false, "If true, perform build with remote build execution.")
-	cache  = flag.Bool("cache", false, "If true, perform build with remote caching.")
-	dev    = flag.Bool("dev", false, "If true, point at buildbuddy dev cluster.")
+const (
+	remoteExec  = "exec"
+	remoteBazel = "bazel"
 )
 
-func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, []string) {
+var (
+	events = flag.Bool("events", true, "If false, disable sending build events to buildbuddy.")
+	remote = flag.String("remote", "", "A value of 'exec' enables remote execution of actions and 'bazel' enables running both bazel and actions remotely.")
+	cache  = flag.Bool("cache", false, "If true, perform build with remote caching.")
+	dev    = flag.Bool("dev", false, "If true, point at buildbuddy dev cluster.")
+	apiKey = flag.String("api_key", "", "API key to use for BuildBuddy services.")
+)
+
+type BazelOpts struct {
+	APIKey             string
+	BuildBuddyEndpoint string
+	EnableRemoteBazel  bool
+}
+
+func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string) {
 	serviceDomain := "buildbuddy.io"
 	if *dev {
 		serviceDomain = "buildbuddy.dev"
 	}
 
 	if *events && bazelFlags.BESBackend == "" {
-		bazelFlags.BESBackend = fmt.Sprintf("grpcs://cloud.%s", serviceDomain)
+		bazelFlags.BESBackend = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 		filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_results_url=https://app.%s/invocation/", serviceDomain))
 	}
 
-	if *remote && bazelFlags.RemoteExecutor == "" {
-		bazelFlags.RemoteExecutor = fmt.Sprintf("grpcs://cloud.%s", serviceDomain)
-		filteredOSArgs = append(filteredOSArgs, "--crosstool_top=@buildbuddy_toolchain//:toolchain")
-		filteredOSArgs = append(filteredOSArgs, "--javabase=@buildbuddy_toolchain//:javabase_jdk8")
-		filteredOSArgs = append(filteredOSArgs, "--host_javabase=@buildbuddy_toolchain//:javabase_jdk8")
-		filteredOSArgs = append(filteredOSArgs, "--java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8")
-		filteredOSArgs = append(filteredOSArgs, "--host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8")
-		filteredOSArgs = append(filteredOSArgs, "--host_platform=@buildbuddy_toolchain//:platform")
-		filteredOSArgs = append(filteredOSArgs, "--platforms=@buildbuddy_toolchain//:platform")
-		filteredOSArgs = append(filteredOSArgs, "--extra_execution_platforms=@buildbuddy_toolchain//:platform")
+	if (*remote == remoteExec || *remote == remoteBazel) && bazelFlags.RemoteExecutor == "" {
+		bazelFlags.RemoteExecutor = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
+		if *remote == remoteExec {
+			filteredOSArgs = append(filteredOSArgs, "--crosstool_top=@buildbuddy_toolchain//:toolchain")
+			filteredOSArgs = append(filteredOSArgs, "--javabase=@buildbuddy_toolchain//:javabase_jdk8")
+			filteredOSArgs = append(filteredOSArgs, "--host_javabase=@buildbuddy_toolchain//:javabase_jdk8")
+			filteredOSArgs = append(filteredOSArgs, "--java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8")
+			filteredOSArgs = append(filteredOSArgs, "--host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8")
+			filteredOSArgs = append(filteredOSArgs, "--host_platform=@buildbuddy_toolchain//:platform")
+			filteredOSArgs = append(filteredOSArgs, "--platforms=@buildbuddy_toolchain//:platform")
+			filteredOSArgs = append(filteredOSArgs, "--extra_execution_platforms=@buildbuddy_toolchain//:platform")
+		} else {
+			filteredOSArgs = append(filteredOSArgs, "--remote_default_exec_properties=container-image=docker://gcr.io/flame-public/buildbuddy-ci-runner:latest")
+			filteredOSArgs = append(filteredOSArgs, "--remote_header=x-buildbuddy-api-key="+*apiKey)
+			filteredOSArgs = append(filteredOSArgs, "--remote_executor="+bazelFlags.RemoteExecutor)
+			filteredOSArgs = append(filteredOSArgs, "--bes_backend="+bazelFlags.BESBackend)
+		}
 		filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
 		filteredOSArgs = append(filteredOSArgs, "--jobs=200")
 
@@ -46,10 +65,16 @@ func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*co
 	}
 
 	if *cache && bazelFlags.RemoteCache == "" {
-		bazelFlags.RemoteCache = fmt.Sprintf("grpcs://cloud.%s", serviceDomain)
+		bazelFlags.RemoteCache = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 	}
 
-	return bazelFlags, filteredOSArgs
+	bazelOpts := &BazelOpts{
+		BuildBuddyEndpoint: fmt.Sprintf("grpcs://remote.%s", serviceDomain),
+		EnableRemoteBazel:  *remote == remoteBazel,
+		APIKey:             *apiKey,
+	}
+
+	return bazelFlags, bazelOpts, filteredOSArgs
 }
 
 func addToolchainsToWorkspaceIfNotPresent() {
