@@ -16,6 +16,7 @@ go_library(
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
         "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_uptrace_opentelemetry_go_extra_otelgorm//:otelgorm",
         "@io_gorm_driver_mysql//:mysql",
         "@io_gorm_driver_sqlite//:sqlite",
         "@io_gorm_gorm//:gorm",

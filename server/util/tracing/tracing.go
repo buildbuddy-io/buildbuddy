@@ -73,7 +73,8 @@ func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameter
 		return false
 	}
 	hdrs, ok := md[traceHeader]
-	return ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+	forced := ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+	return forced
 }
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
@@ -246,7 +247,32 @@ func (m *HttpServeMux) Handle(pattern string, handler http.Handler) {
 	})
 }
 
+func copyHeader(m metadata.MD, h http.Header, k string) {
+	if _, ok := h[k]; !ok {
+		return
+	}
+	m[k] = make([]string, len(h[k]))
+	copy(m[k], h[k])
+}
+
+func headersToContext(h http.Header) metadata.MD {
+	m := make(metadata.MD, 0)
+	for key, _ := range h {
+		switch strings.ToLower(key) {
+		case "x-buildbuddy-trace":
+			copyHeader(m, h, key)
+		}
+	}
+	return m
+}
+
 func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Filter and convert any HTTP headers to grpc MD, and attach
+	// that metadata to the context. This happens here because this is
+	// early enough in the call chain to influence tracing and other
+	// decisions.
+	ctx := metadata.NewIncomingContext(r.Context(), headersToContext(r.Header))
+	r = r.WithContext(ctx)
 	m.tracingHandler.ServeHTTP(w, r)
 }
 
