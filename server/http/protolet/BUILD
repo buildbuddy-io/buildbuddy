@@ -10,6 +10,6 @@ go_library(
         "//server/util/request_context",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//metadata",
     ],
 )

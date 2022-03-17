@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/uptrace/opentelemetry-go-extra/otelgorm"
 
 	gomysql "github.com/go-sql-driver/mysql"
 	gosqlite "github.com/mattn/go-sqlite3"
@@ -248,9 +247,7 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 	}
 
 	instrumentGORM(gdb)
-	if err := gdb.Use(otelgorm.NewPlugin()); err != nil {
-		return nil, err
-	}
+
 	return gdb, nil
 }
 
