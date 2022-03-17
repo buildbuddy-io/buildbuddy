@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,11 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -27,6 +30,7 @@ const (
 
 type Handle struct {
 	Target     string
+	port       int
 	socketPath string
 
 	t      testing.TB
@@ -58,10 +62,14 @@ func (h *Handle) start() {
 	h.cancel = cancel
 	h.done = make(chan struct{})
 
-	args := []string{
-		"--port", "0",
-		"--unixsocket", h.socketPath,
-		"--unixsocketperm", "700",
+	args := []string{}
+	if h.port != 0 {
+		args = append(args, "--port", strconv.Itoa(h.port))
+	}
+	if h.socketPath != "" {
+		args = append(args, "--port", "0")
+		args = append(args, "--unixsocket", h.socketPath)
+		args = append(args, "--unixsocketperm", "700")
 	}
 	// Disable persistence, not useful for testing.
 	args = append(args, "--save", "")
@@ -98,6 +106,12 @@ func (h *Handle) Restart() {
 	waitUntilHealthy(h.t, h.Target)
 }
 
+func (h *Handle) KeyCount(pattern string) int {
+	keys, err := redis.NewClient(redisutil.TargetToOptions(h.Target)).Keys(context.Background(), pattern).Result()
+	require.NoError(h.t, err)
+	return len(keys)
+}
+
 // Start spawns a Redis server for the given test and returns a handle to the running process.
 func Start(t testing.TB) *Handle {
 	// redis socket must be in /tmp, redis won't read socket files in arbitrary locations
@@ -108,6 +122,24 @@ func Start(t testing.TB) *Handle {
 		Target:     target,
 		socketPath: socketPath,
 		t:          t,
+	}
+	handle.start()
+	waitUntilHealthy(t, target)
+
+	return handle
+}
+
+// StartTCP spawns a Redis server listening on a TCP port.
+// Most uses should prefer the Start function. This function should be used for cases where a unix socket is not
+// acceptable (i.e. Ring client).
+func StartTCP(t testing.TB) *Handle {
+	port := testport.FindFree(t)
+	target := fmt.Sprintf("localhost:%d", port)
+
+	handle := &Handle{
+		Target: target,
+		port:   port,
+		t:      t,
 	}
 	handle.start()
 	waitUntilHealthy(t, target)

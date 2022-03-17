@@ -34,7 +34,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string) *Executor {
 		BinaryPath:            commandPath,
 		Args:                  args,
 		HTTPPort:              e.httpPort,
-		HealthCheckServerType: "buildbuddy-executor-prod",
+		HealthCheckServerType: "prod-buildbuddy-executor",
 	})
 
 	return e
