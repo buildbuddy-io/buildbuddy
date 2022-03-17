@@ -11,12 +11,24 @@ export const START_DATE_PARAM_NAME = "start";
 export const END_DATE_PARAM_NAME = "end";
 export const LAST_N_DAYS_PARAM_NAME = "days";
 
+export const USER_PARAM_NAME = "user";
+export const REPO_PARAM_NAME = "repo";
+export const BRANCH_PARAM_NAME = "branch";
+export const COMMIT_PARAM_NAME = "commit";
+export const HOST_PARAM_NAME = "host";
+
 const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   LAST_N_DAYS_PARAM_NAME,
+
+  USER_PARAM_NAME,
+  REPO_PARAM_NAME,
+  BRANCH_PARAM_NAME,
+  COMMIT_PARAM_NAME,
+  HOST_PARAM_NAME,
 ];
 
 class Router {

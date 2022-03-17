@@ -65,6 +65,17 @@
   margin-right: 8px;
 }
 
+.option-group-input {
+  padding: 0 16px;
+}
+
+.option-group-input button {
+  width: 100%;
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
 .global-filter .status-badge {
   flex-grow: 1;
   border: 1px solid #eee;
@@ -126,9 +137,28 @@
   margin-right: 8px;
 }
 
+.global-filter .filter-menu-button {
+  max-width: 300px;
+  flex-shrink: 1;
+}
+
 .global-filter .filter-menu-button .role-badge {
   font-size: 14px;
   font-weight: 500;
+}
+
+.global-filter .advanced-badge {
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+  background-color: #eceff1;
+  border: 1px solid #eee;
+  border-left: 4px solid var(--status-color);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
 }
 
 .global-filter .filter-menu-button-label {
@@ -138,4 +168,11 @@
 .global-filter .date-picker-popup {
   border-radius: 8px;
   overflow: hidden;
+}
+
+.global-filter .filter-menu-advanced-filter-toggle {
+  padding: 16px 16px 0 16px;
+  font-weight: 600;
+  color: #607d8b;
+  cursor: pointer;
 }

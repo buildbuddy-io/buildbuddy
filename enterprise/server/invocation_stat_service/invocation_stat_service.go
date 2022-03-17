@@ -212,7 +212,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if branchName := req.GetQuery().GetBranchName(); branchName != "" {
-		q.AddWhereClause("branch = ?", branchName)
+		q.AddWhereClause("branch_name = ?", branchName)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {

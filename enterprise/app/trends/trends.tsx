@@ -88,6 +88,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
         // avoid double-counting build times for workflows and their nested CI runs.
         request.query.role = ["", "CI"];
       }
+
+      request.query.host = filterParams.host;
+      request.query.user = filterParams.user;
+      request.query.repoUrl = filterParams.repo;
+      request.query.branchName = filterParams.branch;
+      request.query.commitSha = filterParams.commit;
+
       request.query.updatedBefore = filterParams.updatedBefore;
       request.query.updatedAfter = filterParams.updatedAfter;
       request.query.status = filterParams.status;
