@@ -299,7 +299,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             <div
               className="filter-menu-advanced-filter-toggle"
               onClick={() => this.setState({ isAdvancedFilterOpen: !this.state.isAdvancedFilterOpen })}>
-              {this.state.isAdvancedFilterOpen ? "Hide Advanced Filters" : "Show Advanced Filters"}
+              {this.state.isAdvancedFilterOpen ? "Hide advanced filters" : "Show advanced filters"}
             </div>
             {this.state.isAdvancedFilterOpen && (
               <div className="option-groups-row">
