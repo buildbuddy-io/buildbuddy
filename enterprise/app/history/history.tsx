@@ -87,11 +87,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
-        host: this.props.hostname,
-        user: this.props.username,
-        repoUrl: this.props.repo,
-        branchName: this.props.branch,
-        commitSha: this.props.commit,
+        host: this.props.hostname || filterParams.host,
+        user: this.props.username || filterParams.user,
+        repoUrl: this.props.repo || filterParams.repo,
+        branchName: this.props.branch || filterParams.branch,
+        commitSha: this.props.commit || filterParams.commit,
         groupId: this.props.user?.selectedGroup?.id,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
@@ -127,6 +127,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
     if (capabilities.globalFilter) {
       const filterParams = getProtoFilterParams(this.props.search);
       request.query = new invocation.InvocationStatQuery({
+        host: this.props.hostname || filterParams.host,
+        user: this.props.username || filterParams.user,
+        repoUrl: this.props.repo || filterParams.repo,
+        branchName: this.props.branch || filterParams.branch,
+        commitSha: this.props.commit || filterParams.commit,
+
         role: filterParams.role,
         updatedBefore: filterParams.updatedBefore,
         updatedAfter: filterParams.updatedAfter,
@@ -152,6 +158,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
     });
     if (capabilities.globalFilter) {
       request.query = new invocation.InvocationQuery({
+        host: this.props.hostname || filterParams.host,
+        user: this.props.username || filterParams.user,
+        repoUrl: this.props.repo || filterParams.repo,
+        branchName: this.props.branch || filterParams.branch,
+        commitSha: this.props.commit || filterParams.commit,
+
         role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,
         updatedBefore: filterParams.updatedBefore,

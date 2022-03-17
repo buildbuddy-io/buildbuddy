@@ -3,7 +3,7 @@ import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
-import { Filter, X, Calendar } from "lucide-react";
+import { Filter, X, Calendar, User, Github, GitBranch, GitCommit, HardDrive } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
 import router, {
@@ -12,6 +12,11 @@ import router, {
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
   LAST_N_DAYS_PARAM_NAME,
+  USER_PARAM_NAME,
+  REPO_PARAM_NAME,
+  BRANCH_PARAM_NAME,
+  COMMIT_PARAM_NAME,
+  HOST_PARAM_NAME,
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
@@ -25,6 +30,7 @@ import {
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
 } from "./filter_util";
+import TextInput from "../../../app/components/input/input";
 
 export interface FilterProps {
   search: URLSearchParams;
@@ -33,6 +39,14 @@ export interface FilterProps {
 interface State {
   isDatePickerOpen?: boolean;
   isFilterMenuOpen?: boolean;
+
+  isAdvancedFilterOpen?: boolean;
+
+  user?: string;
+  repo?: string;
+  branch?: string;
+  commit?: string;
+  host?: string;
 }
 
 type PresetRange = {
@@ -55,7 +69,30 @@ type CustomDateRange = Range & {
 const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
-  state: State = {};
+  state: State = this.advancedFilterStateFromUrl(this.props.search);
+
+  componentDidUpdate(prevProps: FilterProps) {
+    if (this.props.search != prevProps.search) {
+      this.setState(this.advancedFilterStateFromUrl(this.props.search));
+    }
+  }
+
+  advancedFilterStateFromUrl(search: URLSearchParams) {
+    return {
+      isAdvancedFilterOpen: Boolean(
+        search.get(USER_PARAM_NAME) ||
+          search.get(REPO_PARAM_NAME) ||
+          search.get(BRANCH_PARAM_NAME) ||
+          search.get(COMMIT_PARAM_NAME) ||
+          search.get(HOST_PARAM_NAME)
+      ),
+      user: search.get(USER_PARAM_NAME),
+      repo: search.get(REPO_PARAM_NAME),
+      branch: search.get(BRANCH_PARAM_NAME),
+      commit: search.get(COMMIT_PARAM_NAME),
+      host: search.get(HOST_PARAM_NAME),
+    };
+  }
 
   private onOpenDatePicker() {
     this.setState({ isDatePickerOpen: true });
@@ -93,6 +130,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       ...Object.fromEntries(this.props.search.entries()),
       [ROLE_PARAM_NAME]: "",
       [STATUS_PARAM_NAME]: "",
+      [USER_PARAM_NAME]: "",
+      [REPO_PARAM_NAME]: "",
+      [BRANCH_PARAM_NAME]: "",
+      [COMMIT_PARAM_NAME]: "",
+      [HOST_PARAM_NAME]: "",
     });
   }
 
@@ -145,6 +187,17 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     );
   }
 
+  private handleApplyClicked() {
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [USER_PARAM_NAME]: this.state.user,
+      [REPO_PARAM_NAME]: this.state.repo,
+      [BRANCH_PARAM_NAME]: this.state.branch,
+      [COMMIT_PARAM_NAME]: this.state.commit,
+      [HOST_PARAM_NAME]: this.state.host,
+    });
+  }
+
   render() {
     const now = new Date();
     const startDate = getStartDate(this.props.search);
@@ -157,8 +210,15 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
+    const userValue = this.props.search.get(USER_PARAM_NAME) || "";
+    const repoValue = this.props.search.get(REPO_PARAM_NAME) || "";
+    const branchValue = this.props.search.get(BRANCH_PARAM_NAME) || "";
+    const commitValue = this.props.search.get(COMMIT_PARAM_NAME) || "";
+    const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
 
-    const isFiltering = Boolean(roleValue || statusValue);
+    const isFiltering = Boolean(
+      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue
+    );
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
@@ -207,6 +267,31 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
             {selectedRoles.has("CI") && <span className="role-badge CI">CI</span>}
             {selectedRoles.has("CI_RUNNER") && <span className="role-badge CI_RUNNER">Workflow</span>}
+            {userValue && (
+              <span className="advanced-badge">
+                <User /> {userValue}
+              </span>
+            )}
+            {repoValue && (
+              <span className="advanced-badge">
+                <Github /> {repoValue}
+              </span>
+            )}
+            {branchValue && (
+              <span className="advanced-badge">
+                <GitBranch /> {branchValue}
+              </span>
+            )}
+            {commitValue && (
+              <span className="advanced-badge">
+                <GitCommit /> {commitValue}
+              </span>
+            )}
+            {hostValue && (
+              <span className="advanced-badge">
+                <HardDrive /> {hostValue}
+              </span>
+            )}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -231,6 +316,60 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 </div>
               </div>
             </div>
+            <div
+              className="filter-menu-advanced-filter-toggle"
+              onClick={() => this.setState({ isAdvancedFilterOpen: !this.state.isAdvancedFilterOpen })}>
+              {this.state.isAdvancedFilterOpen ? "Hide advanced filters" : "Show advanced filters"}
+            </div>
+            {this.state.isAdvancedFilterOpen && (
+              <form className="option-groups-row">
+                <div className="option-group">
+                  <div className="option-group-title">User</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. tylerw"}
+                      value={this.state.user}
+                      onChange={(e) => this.setState({ user: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-title">Repo</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. https://github.com/buildbuddy-io/buildbuddy"}
+                      value={this.state.repo}
+                      onChange={(e) => this.setState({ repo: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-title">Branch</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. main"}
+                      value={this.state.branch}
+                      onChange={(e) => this.setState({ branch: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-title">Commit</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. 115a0cdbe816b8cb80089dd200247752fef723fe"}
+                      value={this.state.commit}
+                      onChange={(e) => this.setState({ commit: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-title">Host</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. lunchbox"}
+                      value={this.state.host}
+                      onChange={(e) => this.setState({ host: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-input">
+                    <FilledButton onClick={this.handleApplyClicked.bind(this)}>Apply</FilledButton>
+                  </div>
+                </div>
+              </form>
+            )}
           </Popup>
         </div>
         <div className="popup-wrapper">

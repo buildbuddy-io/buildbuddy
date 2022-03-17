@@ -8,6 +8,11 @@ import {
   END_DATE_PARAM_NAME,
   STATUS_PARAM_NAME,
   LAST_N_DAYS_PARAM_NAME,
+  USER_PARAM_NAME,
+  REPO_PARAM_NAME,
+  BRANCH_PARAM_NAME,
+  COMMIT_PARAM_NAME,
+  HOST_PARAM_NAME,
 } from "../../../app/router/router";
 
 // URL param value representing the empty role (""), which is the default.
@@ -22,6 +27,12 @@ export interface ProtoFilterParams {
   status?: invocation.OverallStatus[];
   updatedAfter?: google.protobuf.Timestamp;
   updatedBefore?: google.protobuf.Timestamp;
+
+  user: string;
+  repo: string;
+  branch: string;
+  commit: string;
+  host: string;
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
@@ -33,6 +44,12 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     status: parseStatusParam(search.get(STATUS_PARAM_NAME)),
     updatedAfter: proto.dateToTimestamp(getStartDate(search)),
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
+
+    user: search.get(USER_PARAM_NAME),
+    repo: search.get(REPO_PARAM_NAME),
+    branch: search.get(BRANCH_PARAM_NAME),
+    commit: search.get(COMMIT_PARAM_NAME),
+    host: search.get(HOST_PARAM_NAME),
   };
 }
 
