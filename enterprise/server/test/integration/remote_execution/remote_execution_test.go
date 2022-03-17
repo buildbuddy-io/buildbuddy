@@ -131,6 +131,25 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	assert.Contains(t, status.Message(err), "no such file or directory")
 }
 
+func TestSimpleCommand_Abort_ReturnsExecutionErrorWithoutRetrying(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	cmd := rbe.ExecuteCustomCommand("sh", "-c", "kill -ABRT $$")
+	// TODO(bduffany): Expect a failed ActionResult here rather than a
+	// RESOURCE_EXHAUSTED error, since some tools use abort() as a normal
+	// exit condition.
+	err := cmd.MustFail()
+
+	assert.True(
+		t, status.IsResourceExhaustedError(err),
+		"expecting RESOURCE_EXHAUSTED but got: %s", err)
+	assert.Contains(t, err.Error(), "signal: aborted")
+	assert.NotContains(t, err.Error(), "attempt", "task should not have been retried")
+}
+
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
