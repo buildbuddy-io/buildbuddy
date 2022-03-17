@@ -60,6 +60,7 @@ build:untrusted-ci --config=remote
 build:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
 build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
+build:untrusted-ci --flaky_test_attempts=2
 
 # Configuration used for BuildBuddy workflows
 build:workflows --config=remote-shared

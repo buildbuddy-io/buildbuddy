@@ -6,5 +6,9 @@ go_library(
     srcs = ["flags.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/testing/flags",
     visibility = ["//visibility:public"],
-    deps = ["//server/config"],
+    deps = [
+        "//server/config",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

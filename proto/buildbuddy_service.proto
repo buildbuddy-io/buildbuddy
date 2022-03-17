@@ -12,6 +12,7 @@ import "proto/user.proto";
 import "proto/workflow.proto";
 import "proto/scheduler.proto";
 import "proto/usage.proto";
+import "proto/github.proto";
 
 package buildbuddy.service;
 
@@ -82,6 +83,11 @@ service BuildBuddyService {
   rpc ExecuteWorkflow(workflow.ExecuteWorkflowRequest)
       returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
+
+  // GitHub account API
+  // Note: GitHub account linking is accomplished via HTTP redirect flow
+  rpc UnlinkGitHubAccount(github.UnlinkGitHubAccountRequest)
+      returns (github.UnlinkGitHubAccountResponse);
 
   // Runner API
   rpc Run(runner.RunRequest) returns (runner.RunResponse);

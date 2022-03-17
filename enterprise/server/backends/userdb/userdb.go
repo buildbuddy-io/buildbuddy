@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -155,12 +156,19 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 
-	query := d.h.DB(ctx).Raw(`
-		SELECT api_key_id, value, label, perms, capabilities
-		FROM APIKeys
-		WHERE group_id = ?
-		ORDER BY label ASC
-	`, groupID)
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+
+	q := query_builder.NewQuery(`SELECT api_key_id, value, label, perms, capabilities, visible_to_developers FROM APIKeys`)
+	q.AddWhereClause("group_id = ?", groupID)
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		q.AddWhereClause("visible_to_developers = ?", true)
+	}
+	q.SetOrderBy("label", true /*ascending*/)
+	queryStr, args := q.Build()
+	query := d.h.DB(ctx).Raw(queryStr, args...)
 	rows, err := query.Rows()
 	if err != nil {
 		return nil, err
@@ -178,32 +186,33 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 	return keys, nil
 }
 
-func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
 
-	return createAPIKey(d.h.DB(ctx), groupID, newAPIKeyToken(), label, caps)
+	return createAPIKey(d.h.DB(ctx), groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
 }
 
-func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
 		return nil, err
 	}
 	keyPerms := perms.GROUP_READ | perms.GROUP_WRITE
 	if err := db.Exec(
-		`INSERT INTO APIKeys (api_key_id, group_id, perms, capabilities, value, label) VALUES (?, ?, ?, ?, ?, ?)`,
-		pk, groupID, keyPerms, capabilities.ToInt(caps), value, label).Error; err != nil {
+		`INSERT INTO APIKeys (api_key_id, group_id, perms, capabilities, value, label, visible_to_developers) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		pk, groupID, keyPerms, capabilities.ToInt(caps), value, label, visibleToDevelopers).Error; err != nil {
 		return nil, err
 	}
 	return &tables.APIKey{
-		APIKeyID:     pk,
-		GroupID:      groupID,
-		Value:        value,
-		Label:        label,
-		Perms:        keyPerms,
-		Capabilities: capabilities.ToInt(caps),
+		APIKeyID:            pk,
+		GroupID:             groupID,
+		Value:               value,
+		Label:               label,
+		Perms:               keyPerms,
+		Capabilities:        capabilities.ToInt(caps),
+		VisibleToDevelopers: visibleToDevelopers,
 	}, nil
 }
 
@@ -216,9 +225,10 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	}
 
 	err := d.h.DB(ctx).Exec(
-		`UPDATE APIKeys SET label = ?, capabilities = ? WHERE api_key_id = ?`,
+		`UPDATE APIKeys SET label = ?, capabilities = ?, visible_to_developers = ? WHERE api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
+		key.VisibleToDevelopers,
 		key.APIKeyID,
 	).Error
 	if err != nil {
@@ -330,7 +340,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			if err := tx.Create(&newGroup).Error; err != nil {
 				return err
 			}
-			_, err = createAPIKey(tx, groupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities)
+			_, err = createAPIKey(tx, groupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
 			return err
 		}
 
@@ -512,7 +522,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.Create(&c.group).Error; err != nil {
 					return err
 				}
-				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities); err != nil {
+				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -592,7 +602,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		if err := tx.Create(&sug).Error; err != nil {
 			return err
 		}
-		if _, err := createAPIKey(tx, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities); err != nil {
+		if _, err := createAPIKey(tx, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
 		groupIDs = append(groupIDs, sug.GroupID)

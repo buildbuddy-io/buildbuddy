@@ -70,6 +70,8 @@ var (
 		// Org members management
 		"GetGroupUsers",
 		"UpdateGroupUsers",
+		// Org GitHub account link management
+		"UnlinkGitHubAccount",
 		// API key management
 		"CreateApiKey",
 		"UpdateApiKey",

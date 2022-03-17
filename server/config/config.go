@@ -432,7 +432,6 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 				log.Fatal("The config should not contain pointers!")
 			case reflect.Struct:
 				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
-				continue
 			case reflect.Bool:
 				flagSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
 			case reflect.String:
@@ -572,10 +571,7 @@ func (cc *RedisClientConfig) String() string {
 // flags in the default flag set (flag.Commandline) with a corresponding config
 // value will be consistent.
 func (c *Configurator) ReconcileFlagsAndConfig() {
-	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
-	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
-
-	flagSet.VisitAll(func(flg *flag.Flag) {
+	c.GenerateFlagSet().VisitAll(func(flg *flag.Flag) {
 		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {
 			if flagSlice, ok := flag.Lookup(flg.Name).Value.(flagutil.SliceFlag); ok {
 				if originalSliceLen, ok := originalSliceLens[flg.Name]; ok {
@@ -618,6 +614,12 @@ func (c *Configurator) ReconcileFlagsAndConfig() {
 		flag.Set(flg.Name, flg.Value.String())
 	})
 	c.reconciled = true
+}
+
+func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
+	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
+	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
+	return flagSet
 }
 
 func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {
