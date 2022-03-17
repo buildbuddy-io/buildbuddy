@@ -69,7 +69,7 @@
   padding: 0 16px;
 }
 
-.option-group-input button {
+.global-filter .option-group-input button {
   width: 100%;
   margin-top: 16px;
   display: flex;
