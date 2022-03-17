@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
@@ -332,13 +331,29 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
-	// If we know that the command terminated due to receiving SIGKILL, make sure
-	// to retry, since this is not considered a clean termination.
+	// Make sure that any internal errors running the command cause the action to
+	// short-circuit, so that we don't upload an action result, and so that we
+	// don't return the runner to the pool.
 	//
-	// Other termination signals such as SIGABRT are treated as clean exits for
-	// now, since some tools intentionally raise SIGABRT to cause a fatal exit:
-	// https://github.com/bazelbuild/bazel/pull/14399
-	if cmdResult.Error == commandutil.ErrSIGKILL {
+	// The term "error" here refers to any problem starting the command, or any
+	// issue that caused the command's execution to be interrupted. It may also
+	// refer to an internal error creating the runner for the command or retrieving
+	// command outputs from the runner.
+	//
+	// Note, we exclude FAILED_PRECONDITION errors here because these are
+	// considered user errors that should not be retried by the remote execution
+	// service. Instead, we immediately report these to the client as part of a
+	// failed execution result. An example of a FAILED_PRECONDITION error is the
+	// action's executable file (Arguments[0]) being missing from the action's
+	// specified inputs or container image PATH.
+	//
+	// The following cases in particular should NOT result in errors:
+	// - The command exits normally, even if the exit code is > 0
+	// - The command terminates due to receiving SIGABRT: this can happen if a
+	//   program calls abort(). (Note, other kill signals such as SIGKILL
+	//   should result in errors).
+	if cmdResult.Error != nil && !status.IsFailedPreconditionError(cmdResult.Error) {
+		log.Errorf("Encountered abnormal error when running command: %s", cmdResult.Error)
 		return finishWithErrFn(cmdResult.Error)
 	}
 

@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -37,49 +36,37 @@ func TestRun_NormalExit_NoError(t *testing.T) {
 	}
 }
 
-// TODO(bduffany): Treat SIGABRT as a normal exit rather than an unexpected
-// termination, and ensure that unexpected terminations are retried rather than
-// immediately reporting them to Bazel.
+func TestRun_Abort_NoError(t *testing.T) {
+	ctx := context.Background()
 
-func TestRun_Killed_ErrorResult(t *testing.T) {
+	res := runSh(ctx, "kill -ABRT $$")
+
+	assert.NoError(t, res.Error)
+	assert.Equal(t, 134, res.ExitCode) // 134 = SignaledExitCodeOffset(=128) + SIGABRT(=6)
+}
+
+func TestRun_OtherKillSignals_ErrorResult(t *testing.T) {
 	ctx := context.Background()
 
 	{
-		res := runSh(ctx, "kill -ABRT $$")
-
-		require.Error(t, res.Error)
-		assert.Contains(t, res.Error.Error(), "signal: aborted")
-		assert.Equal(t, -1, res.ExitCode)
-	}
-	{
 		res := runSh(ctx, "kill -INT $$")
 
-		require.Error(t, res.Error)
-		assert.Contains(t, res.Error.Error(), "signal: interrupt")
+		assert.Equal(t, commandutil.ErrKilled, res.Error)
 		assert.Equal(t, -1, res.ExitCode)
 	}
 	{
 		res := runSh(ctx, "kill -TERM $$")
 
-		require.Error(t, res.Error)
-		assert.Contains(t, res.Error.Error(), "signal: terminated")
+		assert.Equal(t, commandutil.ErrKilled, res.Error)
 		assert.Equal(t, -1, res.ExitCode)
 	}
 	{
 		res := runSh(ctx, "kill -KILL $$")
 
-		require.Error(t, res.Error)
-		assert.Contains(t, res.Error.Error(), "signal: killed")
+		assert.Equal(t, commandutil.ErrKilled, res.Error)
 		assert.Equal(t, -1, res.ExitCode)
 	}
 }
-
-// TODO(bduffany): All the error codes when the command is not found or not
-// executable should probably have the same error code, instead of a mix of
-// NOT_FOUND / UNAVAILABLE. Also we should probably ensure that Bazel doesn't
-// retry these errors at the executor level, since retrying is unlikely to
-// help (these errors are most likely due to an incorrect input specification or
-// container-image that doesn't contain the executable in PATH)
 
 func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	ctx := context.Background()
@@ -89,9 +76,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 		res := commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)
 
 		assert.Error(t, res.Error)
-		assert.True(
-			t, status.IsUnavailableError(res.Error),
-			"expecting UNAVAILABLE when executable file is missing, got: %s", res.Error)
+		assert.True(t, status.IsFailedPreconditionError(res.Error), "expecting FAILED_PRECONDITION when executable file is missing")
 		assert.Equal(t, -2, res.ExitCode)
 	}
 	{
@@ -99,9 +84,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 		res := commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)
 
 		assert.Error(t, res.Error)
-		assert.True(
-			t, status.IsNotFoundError(res.Error),
-			"expecting NOT_FOUND when executable is not found in $PATH, got: %s", res.Error)
+		assert.True(t, status.IsFailedPreconditionError(res.Error), "expecting FAILED_PRECONDITION when executable is not found in $PATH")
 		assert.Equal(t, -2, res.ExitCode)
 	}
 }
@@ -115,9 +98,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	res := commandutil.Run(ctx, cmd, wd, nil /*=stdin*/, nil /*=stdout*/)
 
 	assert.Error(t, res.Error)
-	assert.True(
-		t, status.IsUnavailableError(res.Error),
-		"expecting UNAVAILABLE when command is not executable, got: %s", res.Error)
+	assert.True(t, status.IsFailedPreconditionError(res.Error), "expecting FAILED_PRECONDITION when command is not executable")
 	assert.Equal(t, -2, res.ExitCode)
 }
 

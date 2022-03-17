@@ -481,7 +481,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	// removed.
 	if r.removed && info.ExitCode == dockerExecSIGKILLExitCode {
 		result.ExitCode = commandutil.KilledExitCode
-		result.Error = commandutil.ErrSIGKILL
+		result.Error = commandutil.ErrKilled
 		return result
 	}
 

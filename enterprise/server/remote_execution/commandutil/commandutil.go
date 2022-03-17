@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,12 +27,17 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
+
+	// SignalExitCodeOffset is an offset added to a signal value when a command
+	// terminates due to a signal that may be raised as part of normal execution,
+	// such as SIGABRT.
+	SignalExitCodeOffset = 128
 )
 
 var (
-	// ErrSIGKILL is a special error used to indicate that a command was terminated
-	// by SIGKILL and may be retried.
-	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
+	// ErrKilled is a special error used to indicate that a command was killed
+	// unexpectedly and may be retried.
+	ErrKilled = status.UnavailableErrorf("command terminated by signal, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
@@ -122,6 +128,11 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	if err == nil {
 		return 0, nil
 	}
+	// fs.PathError is returned when directly invoking an executable that does
+	// not exist.
+	if pathErr, ok := err.(*fs.PathError); ok {
+		return NoExitCode, status.FailedPreconditionError(pathErr.Error())
+	}
 	// exec.Error is only returned when `exec.LookPath` fails to classify a file as an executable.
 	// This could be a "not found" error or a permissions error, but we just report it as "not found".
 	//
@@ -129,7 +140,7 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// - https://golang.org/pkg/os/exec/#Error
 	// - https://github.com/golang/go/blob/fcb9d6b5d0ba6f5606c2b5dfc09f75e2dc5fc1e5/src/os/exec/lp_unix.go#L35
 	if notFoundErr, ok := err.(*exec.Error); ok {
-		return NoExitCode, status.NotFoundError(notFoundErr.Error())
+		return NoExitCode, status.FailedPreconditionError(notFoundErr.Error())
 	}
 
 	// If we fail to get the exit code of the process for any other reason, it might
@@ -145,15 +156,25 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 
 	exitCode := processState.ExitCode()
 
-	// TODO(bduffany): Extract syscall.WaitStatus from exitErr.Sys(), and set
-	// ErrSIGKILL if waitStatus.Signal() == syscall.SIGKILL, so that the command
-	// can be retried if it was OOM killed. Note that KilledExitCode does not
-	// imply that SIGKILL was received.
-
 	if exitCode == KilledExitCode {
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
 			return exitCode, status.DeadlineExceededErrorf("Command timed out: %s", err.Error())
 		}
+
+		if ws, ok := processState.Sys().(syscall.WaitStatus); ok {
+			if ws.Signaled() {
+				// Don't return an error for SIGABRT; this happens when programs
+				// call abort() rather than exit(). Also make sure we return a
+				// non-negative exit code, which is how the executor determines that the
+				// command exited normally.
+				// See https://github.com/bazelbuild/bazel/pull/14399/files#diff-1f6b6a272d521b9a6b5bc8edefdcf9efb47a14f6ae056450cc2040e3926558bdL126
+				if ws.Signal() == syscall.SIGABRT {
+					return SignalExitCodeOffset + int(ws.Signal()), nil
+				}
+				return KilledExitCode, ErrKilled
+			}
+		}
+
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
 		return exitCode, status.ResourceExhaustedErrorf("Command `%s` was killed: %s", cmd.String(), err.Error())
 	}

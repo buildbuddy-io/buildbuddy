@@ -127,27 +127,38 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	err := cmd.MustFail()
 
 	require.Error(t, err)
-	assert.True(t, status.IsFailedPreconditionError(err))
+	assert.True(t, status.IsFailedPreconditionError(err), "expecting failed precondition error but got: %s", err)
 	assert.Contains(t, status.Message(err), "no such file or directory")
 }
 
-func TestSimpleCommand_Abort_ReturnsExecutionErrorWithoutRetrying(t *testing.T) {
+func TestSimpleCommand_Abort_NoError(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "kill -ABRT $$")
-	// TODO(bduffany): Expect a failed ActionResult here rather than a
-	// RESOURCE_EXHAUSTED error, since some tools use abort() as a normal
-	// exit condition.
+	res := cmd.Wait()
+
+	require.NoError(t, res.Err)
+	assert.Equal(t, 134, res.ExitCode) // 134 = SignaledExitCodeOffset(=128) + SIGABRT(=6)
+}
+
+func TestSimpleCommand_Killed_Retried(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	cmd := rbe.ExecuteCustomCommand("sh", "-c", "kill -KILL $$")
 	err := cmd.MustFail()
 
-	assert.True(
-		t, status.IsResourceExhaustedError(err),
-		"expecting RESOURCE_EXHAUSTED but got: %s", err)
-	assert.Contains(t, err.Error(), "signal: aborted")
-	assert.NotContains(t, err.Error(), "attempt", "task should not have been retried")
+	require.Contains(
+		t, err.Error(), "already attempted 5 times",
+		"command should be retried")
+	require.Contains(
+		t, err.Error(), "command terminated by signal",
+		"command error message should communicate the reason it was retried so many times")
 }
 
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
