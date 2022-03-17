@@ -26,6 +26,7 @@ import (
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -764,6 +765,10 @@ func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 	if wfs := s.env.GetWorkflowService(); wfs != nil {
 		return wfs.GetRepos(ctx, req)
 	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.UnlinkGitHubAccountRequest) (*ghpb.UnlinkGitHubAccountResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }
 
