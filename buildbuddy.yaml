@@ -28,14 +28,13 @@ actions:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
       - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
-  # TODO(http://go/b/1151): Switch from dev -> prod and re-enable
-  # - name: Docker tests
-  #   triggers:
-  #     push:
-  #       branches:
-  #         - "master"
-  #     pull_request:
-  #       branches:
-  #         - "master"
-  #   bazel_commands:
-  #     - test //... --config=workflows --config=remote-dev --test_tag_filters=+docker --build_tag_filters=+docker
+  - name: Docker tests
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker
