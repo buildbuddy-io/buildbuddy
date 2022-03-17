@@ -103,7 +103,7 @@ var (
 	actionName                  = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID                = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	bazelSubCommand             = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchDigests                flagutil.StringSliceFlag
+	patchDigests                = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	reportLiveRepoSetupProgress = flag.Bool("report_live_repo_setup_progress", false, "If set, repo setup output will be streamed live to the invocation instead of being postponed until the action is run.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
@@ -117,10 +117,6 @@ var (
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 )
-
-func init() {
-	flag.Var(&patchDigests, "patch_digest", "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-}
 
 type workspace struct {
 	// Whether the workspace setup phase duration and logs were reported as part
@@ -1083,13 +1079,13 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 	}
 
-	if len(patchDigests) > 0 {
+	if len(*patchDigests) > 0 {
 		conn, err := grpc_client.DialTarget(*cacheBackend)
 		if err != nil {
 			return err
 		}
 		bsClient := bspb.NewByteStreamClient(conn)
-		for _, digestString := range patchDigests {
+		for _, digestString := range *patchDigests {
 			if err := ws.applyPatch(ctx, bsClient, digestString); err != nil {
 				return err
 			}
