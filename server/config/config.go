@@ -465,7 +465,6 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 				log.Fatal("The config should not contain pointers!")
 			case reflect.Struct:
 				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
-				continue
 			case reflect.Bool:
 				flagSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
 			case reflect.String:
