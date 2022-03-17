@@ -15,5 +15,6 @@ go_library(
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//plumbing",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_x_sys//unix",
     ],
 )
