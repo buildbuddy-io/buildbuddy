@@ -3,6 +3,7 @@ import InvocationModel from "./invocation_model";
 import { Copy, Info } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
+import { command_line } from "../../proto/command_line_ts_proto";
 
 interface Props {
   model: InvocationModel;
@@ -252,7 +253,6 @@ export default class ArtifactsCardComponent extends React.Component {
                 </div>
               </>
             )}
-
             {this.props.model.structuredCommandLine
               .filter((commandLine) => commandLine.commandLineLabel && commandLine.commandLineLabel.length)
               .sort((a, b) => {
@@ -267,14 +267,29 @@ export default class ArtifactsCardComponent extends React.Component {
                       <div className="invocation-section-title">{section.sectionLabel}</div>
                       <div>
                         {section.chunkList?.chunk.map((chunk) => <div className="invocation-chunk">{chunk}</div>) || []}
-                        {section.optionList?.option.map((option) => (
-                          <div>
-                            <span className="invocation-option-dash">--</span>
-                            <span className="invocation-option-name">{option.optionName}</span>
-                            <span className="invocation-option-equal">=</span>
-                            <span className="invocation-option-value">{option.optionValue}</span>
-                          </div>
-                        )) || []}
+                        {/* Bazel sometimes sends empty options in the command line event; filter these out.
+                            Also, Bazel sometimes sends options with only a combined form.
+                            Attempt to split these into optionName/optionValue so we can render them nicely. */}
+                        {section.optionList?.option
+                          .filter((option) => option.optionName || option.combinedForm)
+                          .map((option) => ensureNameAndValue(option))
+                          .map((option) => (
+                            <div>
+                              <span className="invocation-option-dash">--</span>
+                              <a
+                                className="invocation-option-name"
+                                href={`https://bazel.build/reference/command-line-reference#flag--${option.optionName}`}
+                                target="_blank">
+                                {option.optionName}
+                              </a>
+                              {option.optionValue !== undefined && (
+                                <>
+                                  <span className="invocation-option-equal">=</span>
+                                  <span className="invocation-option-value">{option.optionValue}</span>
+                                </>
+                              )}
+                            </div>
+                          )) || []}
                       </div>
                     </div>
                   ))}
@@ -295,4 +310,16 @@ export default class ArtifactsCardComponent extends React.Component {
       </div>
     );
   }
+}
+
+function ensureNameAndValue(option: command_line.IOption): command_line.IOption {
+  if (option.optionName) return option;
+  if (!option.combinedForm.startsWith("--")) return option;
+
+  if (!option.combinedForm.includes("=")) {
+    return { ...option, optionName: option.combinedForm.substring(2), optionValue: undefined };
+  }
+
+  const [optionName, optionValue] = option.combinedForm.substring(2).split("=");
+  return { ...option, optionName, optionValue };
 }
