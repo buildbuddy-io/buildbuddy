@@ -12,5 +12,8 @@ go_test(
     name = "flagutil_test",
     srcs = ["flagutil_test.go"],
     embed = [":flagutil"],
-    deps = ["@com_github_stretchr_testify//assert"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

@@ -2,20 +2,37 @@ package flagutil
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 )
 
-// TODO: When we get generics, we can replace this function with Slice and use
+var (
+	// Change only for testing purposes
+	defaultFlagSet = flag.CommandLine
+)
+
+// TODO: When we get generics, we can replace these function with Slice and use
 // it for all types of slices (currently just strings and structs).
 func StringSlice(name string, defaultValue []string, usage string) *[]string {
-	flag.Var(NewSliceFlag(&defaultValue), name, usage)
+	sliceFlag, err := NewSliceFlag(&defaultValue)
+	if err != nil {
+		log.Fatalf("Encountered error creating flag for %s: %v", name, err)
+	}
+	defaultFlagSet.Var(sliceFlag, name, usage)
 	return &defaultValue
+}
+
+func StructSliceVar(structSlicePtr interface{}, name, usage string) {
+	sliceFlag, err := NewSliceFlag(structSlicePtr)
+	if err != nil {
+		log.Fatalf("Encountered error creating flag for %s: %v", name, err)
+	}
+	defaultFlagSet.Var(sliceFlag, name, usage)
 }
 
 // NOTE: slice flags are *appended* to default values and
@@ -29,19 +46,14 @@ type SliceFlag interface {
 	Len() int
 }
 
-func NewSliceFlag(slicePtr interface{}) SliceFlag {
+func NewSliceFlag(slicePtr interface{}) (SliceFlag, error) {
 	if stringSlicePtr, ok := slicePtr.(*[]string); ok {
-		return newStringSliceFlag(stringSlicePtr)
+		return newStringSliceFlag(stringSlicePtr), nil
 	}
 	if reflect.TypeOf(slicePtr).Elem().Elem().Kind() == reflect.Struct {
-		return newStructSliceFlag(slicePtr)
+		return newStructSliceFlag(slicePtr), nil
 	}
-	alert.UnexpectedEvent(
-		"unrecognized_slice_pointer_for_flags",
-		"Unrecognized slice pointer type in NewSliceFlag: %T",
-		slicePtr,
-	)
-	return nil
+	return nil, fmt.Errorf("Unrecognized slice pointer type in NewSliceFlag: %T", slicePtr)
 }
 
 type stringSliceFlag []string
@@ -128,7 +140,7 @@ func (f *structSliceFlag) Set(value string) error {
 		f.dstSlice.Set(reflect.Append(f.dstSlice, dst.Elem()))
 		return nil
 	}
-	return errors.New(fmt.Sprintf("Set for structSliceFlag can only accept JSON objects or arrays, but type was %T", i))
+	return fmt.Errorf("Set for structSliceFlag can only accept JSON objects or arrays, but type was %T", i)
 }
 
 func (f *structSliceFlag) UnderlyingSlice() interface{} {

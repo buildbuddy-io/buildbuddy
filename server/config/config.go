@@ -444,7 +444,7 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 			case reflect.Float64:
 				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
 			case reflect.Slice:
-				if sf := flagutil.NewSliceFlag(f.Addr().Interface()); sf != nil {
+				if sf, err := flagutil.NewSliceFlag(f.Addr().Interface()); err == nil {
 					flagSet.Var(sf, fqFieldName, docString)
 					continue
 				}
