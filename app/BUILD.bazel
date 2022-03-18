@@ -53,6 +53,7 @@ genrule(
         "//app/components/dialog:dialog.css",
         "//app/components/digest:digest.css",
         "//app/components/input:input.css",
+        "//app/components/link:link.css",
         "//app/components/menu:menu.css",
         "//app/components/modal:modal.css",
         "//app/components/popup:popup.css",
