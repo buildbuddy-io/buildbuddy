@@ -26,6 +26,8 @@ import (
 )
 
 var (
+	zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", false, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
+
 	readThrough  = flag.Bool("read_through", true, "If true, cache remote reads locally")
 	writeThrough = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
 )

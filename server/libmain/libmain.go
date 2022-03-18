@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -66,6 +67,16 @@ import (
 )
 
 var (
+	cacheMaxSizeBytes      = flag.Int64("cache.max_size_bytes", 0, "How big to allow the cache to be (in bytes).")
+	cacheInMemory          = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
+	zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", false, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
+
+	// Disk cache
+	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	partitions        = []config.DiskCachePartition{}
+	partitionMappings = []config.DiskCachePartitionMapping{}
+	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
@@ -95,6 +106,8 @@ var (
 )
 
 func init() {
+	flagutil.StructSliceVar(&partitions, "cache.disk.partitions", "")
+	flagutil.StructSliceVar(&partitionMappings, "cache.disk.partition_mappings", "")
 	grpc.EnableTracing = false
 }
 

@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -53,6 +54,36 @@ import (
 )
 
 var (
+	memcacheTargets        = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+	zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", false, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
+
+	//Redis
+	redisTarget                 = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheRedisTarget            = flag.String("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheRedisShards            = flagutil.StringSlice("cache.redis.sharded.shards", []string{}, "Ordered list of Redis shard addresses.")
+	cacheRedisUsername          = flag.String("cache.redis.sharded.username", "", "Redis username")
+	cacheRedisPassword          = flag.String("cache.redis.sharded.password", "", "Redis password")
+	cacheRedisMaxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 0, "The maximum value size to cache in redis (in bytes).")
+
+	// GCS flags
+	gcsBucket          = flag.String("cache.gcs.bucket", "", "The name of the GCS bucket to store cache files in.")
+	gcsCredentialsFile = flag.String("cache.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	gcsProjectID       = flag.String("cache.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+
+	// AWS S3 flags
+	s3Region                   = flag.String("cache.s3.region", "", "The AWS region.")
+	s3Bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
+	s3CredentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
+	s3WebIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
+	s3RoleARN                  = flag.String("cache.s3.role_arn", "", "The role ARN to use for web identity auth.")
+	s3RoleSessionName          = flag.String("cache.s3.role_session_name", "", "The role session name to use for web identity auth.")
+	s3Endpoint                 = flag.String("cache.s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsID      = flag.String("cache.s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsSecret  = flag.String("cache.s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsToken   = flag.String("cache.s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
+	s3DisableSSL               = flag.Bool("cache.s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	s3ForcePathStyle           = flag.Bool("cache.s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
+
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
