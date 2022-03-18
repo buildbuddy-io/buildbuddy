@@ -7,13 +7,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,8 +47,11 @@ func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (fs *fakeStore) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (fs *fakeStore) GetDB(clusterID uint64) (*pebble.DB, error) {
+func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return nil, nil
+}
+func (fs *fakeStore) Sender() *sender.Sender {
+	return nil
 }
 
 func TestSnapshotAndRestore(t *testing.T) {
@@ -127,6 +133,26 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
+func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
+	// Do a direct write of the range local range.
+	rdBuf, err := proto.Marshal(&rfpb.RangeDescriptor{
+		Left:    []byte{constants.MinByte},
+		Right:   []byte("z"),
+		RangeId: 1,
+	})
+	require.Nil(t, err)
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: rdBuf,
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	writeRsp, err := r.Update(entries)
+	require.Nil(t, err)
+	require.Equal(t, 1, len(writeRsp))
+}
+
 func TestReplicaDirectReadWrite(t *testing.T) {
 	rootDir := getTmpDir(t)
 	fileDir := getTmpDir(t)
@@ -138,9 +164,10 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	lastAppliedIndex, err := repl.Open(stopc)
 	require.Nil(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Do a DirectWrite.
-	em := newEntryMaker(t)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   []byte("key-name"),
@@ -180,9 +207,10 @@ func TestReplicaIncrement(t *testing.T) {
 	lastAppliedIndex, err := repl.Open(stopc)
 	require.Nil(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Do a DirectWrite.
-	em := newEntryMaker(t)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 		Key:   []byte("incr-key"),
 		Delta: 1,
@@ -227,9 +255,10 @@ func TestReplicaCAS(t *testing.T) {
 	lastAppliedIndex, err := repl.Open(stopc)
 	require.Nil(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Do a DirectWrite.
-	em := newEntryMaker(t)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   []byte("key-name"),
@@ -290,9 +319,10 @@ func TestReplicaScan(t *testing.T) {
 	lastAppliedIndex, err := repl.Open(stopc)
 	require.Nil(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
 
 	// Do a DirectWrite of some range descriptors.
-	em := newEntryMaker(t)
 	batch := rbuilder.NewBatchBuilder()
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{

@@ -169,7 +169,7 @@ func (s *Store) acquireRangeLease(clusterID uint64) {
 			}
 			err := rl.Lease()
 			if err == nil {
-				log.Printf("Succesfully leased range: %+v", rl)
+				log.Debugf("Succesfully leased range: %+v", rl)
 				return
 			}
 			log.Warningf("Error leasing range: %s", err)
@@ -248,12 +248,20 @@ func (s *Store) gossipUsage() {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
+	log.Debugf("%q adding range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	s.replicaMu.Lock()
+	s.replicas[rd.GetRangeId()] = r
+	s.replicaMu.Unlock()
+
+	s.rangeMu.Lock()
+	s.clusterRanges[rd.GetRangeId()] = rd
+	s.rangeMu.Unlock()
+
 	if len(rd.GetReplicas()) == 0 {
-		log.Error("range descriptor had no replicas; this should not happen")
+		log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
 	}
 	clusterID := rd.GetReplicas()[0].GetClusterId()
-
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -265,24 +273,16 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
 
-	s.replicaMu.Lock()
-	s.replicas[rd.GetRangeId()] = r
-	s.replicaMu.Unlock()
-
-	s.rangeMu.Lock()
-	s.clusterRanges[rd.GetRangeId()] = rd
-	s.rangeMu.Unlock()
-
 	leader := s.isLeader(clusterID)
 	if leader {
 		s.acquireRangeLease(clusterID)
-	} else {
-		s.releaseRangeLease(clusterID)
+		log.Debugf("%s attempting to get range lease; we are the leader", s.nodeHost.ID())
 	}
 	s.gossipUsage()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
+	log.Debugf("%q remove range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
 	s.replicaMu.Lock()
 	delete(s.replicas, rd.GetRangeId())
 	s.replicaMu.Unlock()
@@ -290,41 +290,63 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Lock()
 	delete(s.clusterRanges, rd.GetRangeId())
 	s.rangeMu.Unlock()
+
+	if len(rd.GetReplicas()) == 0 {
+		log.Debugf("range descriptor had no replicas yet")
+		return
+	}
+	clusterID := rd.GetReplicas()[0].GetClusterId()
+	s.releaseRangeLease(clusterID)
+	log.Debugf("%s precautionary-releasing range lease; we are not leader", s.nodeHost.ID())
+
 	s.gossipUsage()
 }
 
-func (s *Store) RangeIsActive(header *rfpb.Header) bool {
+func (s *Store) RangeIsActive(header *rfpb.Header) error {
+	if header == nil {
+		return status.FailedPreconditionError("Nil header not allowed")
+	}
 	s.leaseMu.RLock()
 	rl, leaseOK := s.leases[header.GetRangeId()]
 	rd, rangeOK := s.clusterRanges[header.GetRangeId()]
 	s.leaseMu.RUnlock()
 
-	if !leaseOK || !rangeOK {
-		return false
+	if !rangeOK {
+		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
+	}
+
+	if !leaseOK {
+		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotLeasedMsg, header.GetRangeId())
 	}
 
 	// Ensure the header generation matches what we have locally -- if not,
 	// force client to go back and re-pull the rangeDescriptor from the meta
 	// range.
 	if rd.GetGeneration() != header.GetGeneration() {
-		return false
+		return status.OutOfRangeErrorf("%s: current: %d request: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
 	}
 
-	valid := rl.Valid()
-	return valid
+	if !rl.Valid() {
+		return status.OutOfRangeError(constants.RangeLeaseInvalidMsg)
+	}
+	return nil
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
 	return replica.New(s.rootDir, s.fileDir, clusterID, nodeID, s)
 }
 
+func (s *Store) Sender() *sender.Sender {
+	return s.sender
+}
+
 func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-	fileKey, err := constants.FileKey(fileRecord)
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
 	var rc io.ReadCloser
-	err = s.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err = s.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
 			h.GetReplica().GetNodeId() == except.GetNodeId() {
 			return status.OutOfRangeError("except node")
@@ -336,7 +358,6 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 		}
 		r, err := s.apiClient.RemoteReader(ctx, c, req)
 		if err != nil {
-			log.Printf("RemoteReader %+v err: %s", fileRecord, err)
 			return err
 		}
 		rc = r
@@ -345,7 +366,7 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 	return rc, err
 }
 
-func (s *Store) GetDB(rangeID uint64) (*pebble.DB, error) {
+func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	s.replicaMu.RLock()
 	defer s.replicaMu.RUnlock()
 	// This code will be called by all replicas in a range when
@@ -354,7 +375,7 @@ func (s *Store) GetDB(rangeID uint64) (*pebble.DB, error) {
 	if !ok {
 		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
 	}
-	return r.DB()
+	return r, nil
 }
 
 func (s *Store) isLeader(clusterID uint64) bool {
@@ -431,8 +452,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if !s.RangeIsActive(req.GetHeader()) {
-		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
@@ -445,8 +465,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	if !s.RangeIsActive(req.GetHeader()) {
-		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
@@ -462,8 +481,7 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
 	s.replicaMu.RLock()
 	defer s.replicaMu.RUnlock()
-	if !s.RangeIsActive(req.GetHeader()) {
-		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return nil, err
 	}
 	r, ok := s.replicas[req.GetHeader().GetRangeId()]
@@ -503,8 +521,7 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	s.replicaMu.RLock()
 	defer s.replicaMu.RUnlock()
-	if !s.RangeIsActive(req.GetHeader()) {
-		err := status.OutOfRangeErrorf("Range %d not present", req.GetHeader().GetRangeId())
+	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return err
 	}
 	r, ok := s.replicas[req.GetHeader().GetRangeId()]
@@ -517,23 +534,19 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	}
 	defer iter.Close()
 
-	fileKey, err := constants.FileKey(req.GetFileRecord())
-	if err != nil {
-		return err
-	}
 	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return err
 	}
 
-	// First, lookup the FileRecord. If it's not found, we don't have the file.
+	// First, lookup the FileMetadata. If it's not found, we don't have the file.
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("file %q not found", fileKey)
+		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
 	}
 	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading file %q metadata", fileKey)
+		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
 	}
 	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, iter, fileMetadata.GetStorageMetadata())
 	if err != nil {
@@ -567,6 +580,10 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 		if writeCloser == nil {
 			s.replicaMu.RLock()
 			defer s.replicaMu.RUnlock()
+			// It's expected that clients will directly write bytes
+			// to all replicas  in a range and then syncpropose a
+			// write which confirms the data is inplace. For that
+			// reason, we don't check if the range is leased here.
 			r, ok := s.replicas[req.GetHeader().GetRangeId()]
 			if !ok {
 				return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
@@ -644,7 +661,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	if nodeHostInfo != nil {
 		for _, logInfo := range nodeHostInfo.LogInfo {
 			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				log.Printf("Skipping %q because it already had cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
+				log.Debugf("Skipping %q because it already had cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
 				return
 			}
 		}
@@ -663,7 +680,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	}
 	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
 	if myDiskUsage > maximumDiskCapacity {
-		log.Debugf("Ignoring placement queryy: node is over capacity")
+		log.Debugf("Ignoring placement query: node is over capacity")
 		return
 	}
 
@@ -672,7 +689,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 		return
 	}
 	if err := query.Respond(nodeBuf); err != nil {
-		log.Warningf("Error responding to gossip query: %s", err)
+		log.Errorf("Error responding to gossip query: %s", err)
 	}
 }
 
@@ -785,7 +802,20 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 		nodeGrpcAddrs[nhid] = grpcAddr
 	}
 	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, newIDs.maxNodeID, nodeGrpcAddrs)
-	err = bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, rbuilder.NewBatchBuilder())
+	stubRange := &rfpb.RangeDescriptor{
+		RangeId: newIDs.rangeID,
+	}
+	stubRangeBuf, err := proto.Marshal(stubRange)
+	if err != nil {
+		return err
+	}
+	stubRangeBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: stubRangeBuf,
+		},
+	})
+	err = bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, stubRangeBatch)
 	if err != nil {
 		return err
 	}
@@ -794,12 +824,28 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 	if err != nil {
 		return err
 	}
+	stubRange.Replicas = newMembers
+
+	// Find an appropriate split point.
+	findSplit, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).ToProto()
+	if err != nil {
+		return err
+	}
+	findSplitBatch, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, findSplit)
+	if err != nil {
+		return err
+	}
+	findSplitRsp, err := rbuilder.NewBatchResponseFromProto(findSplitBatch).FindSplitPointResponse(0)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("Found split point: %+v", findSplitRsp)
 	// Send a SplitRequest through the cluster that is to be split.
 	splitBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.SplitRequest{
-		SourceRange: sourceRange,
-		ProposedRange: &rfpb.RangeDescriptor{
-			Replicas: newMembers,
-		},
+		Left:          sourceRange,
+		ProposedRight: stubRange,
+		SplitPoint:    findSplitRsp,
 	}).ToProto()
 	if err != nil {
 		return err
@@ -812,15 +858,7 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("SplitResponse was: %s", proto.CompactTextString(splitRsp))
-	// The split request will contain the new nodes that will own
-	// the second half of the split range.
-	//  - first range will determine a split point
-	//  - first range will copy the data to a file
-	//  - first range will ask store to load the file on the new node
-	//  - first range will
-	//  - first range will delete the copied data
-	// update the range descriptor
+	log.Debugf("SplitResponse: %+v", splitRsp)
 	return nil
 }
 

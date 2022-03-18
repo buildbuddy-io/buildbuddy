@@ -86,6 +86,14 @@ var (
 	LocalRangeSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("range_initialization_time"))
 )
 
+// Error constants -- sender recognizes these errors.
+var (
+	RangeNotFoundMsg     = "Range not present"   // break
+	RangeNotLeasedMsg    = "Range not leased"    // continue
+	RangeNotCurrentMsg   = "Range not current"   // break
+	RangeLeaseInvalidMsg = "Range lease invalid" // continue
+)
+
 func fileRecordSegments(r *rfpb.FileRecord) ([4]string, error) {
 	var segments [4]string
 	if r.GetGroupId() == "" {

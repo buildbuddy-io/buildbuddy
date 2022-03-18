@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,28 +36,10 @@ const (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
+	Sender() *sender.Sender
 	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
-	GetDB(clusterID uint64) (*pebble.DB, error)
+	GetReplica(rangeID uint64) (*Replica, error)
 }
-
-// KVs are stored directly in Pebble by the raft state machine, so the key and
-// value types must match what Pebble expects. Rather than storing all blob
-// data directly in Pebble and replicating it via raft, we instead store
-// pointers to blobs that can be fetched from a node. So an example key/value
-// might look something like this:
-//
-// KV{
-//   Key: "GR1234/ac/1231231241321312312331",
-//   Value: "disk:"/path/to/GR1234/ac/1231231241321312312331",
-// }
-//
-// or possibly:
-//
-// KV{
-//   Key: "GR1234/ac/1231231241321312312331",
-//   Value: "s3:"/bucket/GR1234/ac/1231231241321312312331",
-// }
-//
 
 // IOnDiskStateMachine is the interface to be implemented by application's
 // state machine when the state machine state is always persisted on disks.
@@ -148,49 +132,54 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	return ru, nil
 }
 
-func (sm *Replica) maybeSetRange(key, val []byte) error {
-	sm.rangeMu.RLock()
-	alreadySet := sm.mappedRange != nil
-	sm.rangeMu.RUnlock()
-	if alreadySet {
-		return nil
-	}
+func (sm *Replica) setRange(key, val []byte) error {
 	if bytes.Compare(key, constants.LocalRangeKey) != 0 {
-		return nil
+		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
 	}
 
 	rangeDescriptor := &rfpb.RangeDescriptor{}
 	if err := proto.Unmarshal(val, rangeDescriptor); err != nil {
 		return err
 	}
+
 	sm.rangeMu.Lock()
-	if sm.mappedRange == nil {
-		sm.rangeDescriptor = rangeDescriptor
-		sm.mappedRange = &rangemap.Range{
-			Left:  rangeDescriptor.GetLeft(),
-			Right: rangeDescriptor.GetRight(),
-		}
-		sm.store.AddRange(sm.rangeDescriptor, sm)
+	defer sm.rangeMu.Unlock()
+
+	if sm.rangeDescriptor != nil {
+		sm.store.RemoveRange(sm.rangeDescriptor, sm)
 	}
-	sm.rangeMu.Unlock()
+
+	sm.rangeDescriptor = rangeDescriptor
+	sm.mappedRange = &rangemap.Range{
+		Left:  rangeDescriptor.GetLeft(),
+		Right: rangeDescriptor.GetRight(),
+	}
+	sm.store.AddRange(sm.rangeDescriptor, sm)
 	return nil
 }
 
 func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
-	rangeIsSet := sm.mappedRange != nil
-	if rangeIsSet && !keys.IsLocalKey(key) && !sm.mappedRange.Contains(key) {
+
+	if !keys.IsLocalKey(key) {
+		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
+			sm.rangeMu.RUnlock()
+			return wb.Set(key, val, nil /*ignored write options*/)
+		}
 		sm.rangeMu.RUnlock()
 		return status.OutOfRangeErrorf("range %s does not contain key %q", sm.mappedRange, string(key))
 	}
 	sm.rangeMu.RUnlock()
-	if !rangeIsSet {
-		if err := sm.maybeSetRange(key, val); err != nil {
+
+	if err := wb.Set(key, val, nil /*ignored write options*/); err != nil {
+		return err
+	}
+	if bytes.Compare(key, constants.LocalRangeKey) == 0 {
+		if err := sm.setRange(key, val); err != nil {
 			log.Errorf("Error setting range: %s", err)
 		}
 	}
-
-	return wb.Set(key, val, nil /*ignored write options*/)
+	return nil
 }
 
 func (sm *Replica) lookup(query []byte) ([]byte, error) {
@@ -289,7 +278,7 @@ func (sm *Replica) checkAndSetRangeDescriptor() {
 		sm.log.Debugf("LocalRangeKey not found on replica")
 		return
 	}
-	sm.maybeSetRange(constants.LocalRangeKey, buf)
+	sm.setRange(constants.LocalRangeKey, buf)
 }
 
 func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord, wb *pebble.Batch) (*rfpb.FileMetadata, error) {
@@ -432,13 +421,13 @@ type splitPoint struct {
 	rightSize int64
 }
 
-func findSplitPoint(db *pebble.DB) *splitPoint {
+func (sm *Replica) findSplitPoint(*rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
 		UpperBound: keys.Key([]byte{constants.MaxByte}),
 	}
 
-	iter := db.NewIter(iterOpts)
+	iter := sm.db.NewIter(iterOpts)
 	defer iter.Close()
 	var t bool = iter.First()
 
@@ -454,15 +443,16 @@ func findSplitPoint(db *pebble.DB) *splitPoint {
 	var lastKey []byte
 	for ; t; t = iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
-			sp := splitPoint{
-				left:      make([]byte, len(lastKey)),
-				leftSize:  leftSplitSize,
-				right:     make([]byte, len(iter.Key())),
-				rightSize: totalSize - leftSplitSize,
+			sp := &rfpb.FindSplitPointResponse{
+				Left:           make([]byte, len(lastKey)),
+				LeftSizeBytes:  leftSplitSize,
+				Right:          make([]byte, len(iter.Key())),
+				RightSizeBytes: totalSize - leftSplitSize,
 			}
-			copy(sp.left, lastKey)
-			copy(sp.right, iter.Key())
-			return &sp
+			copy(sp.Left, lastKey)
+			copy(sp.Right, iter.Key())
+			log.Debugf("Found split point: %+v", sp)
+			return sp, nil
 		}
 		if t {
 			leftSplitSize += int64(len(iter.Value()))
@@ -472,17 +462,19 @@ func findSplitPoint(db *pebble.DB) *splitPoint {
 			copy(lastKey, iter.Key())
 		}
 	}
-	return nil
+	return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSplitSize)
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
 	splitStart := []byte{constants.UnsplittableMaxByte}
 	// Disallow splitting the metarange, or any range before '\x04'.
 	if bytes.Compare(rightKey, splitStart) <= 0 {
+		log.Debugf("can't split between %q and %q, end in metarange", leftKey, rightKey)
 		return false
 	}
 
 	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
+		log.Debugf("can't split between %q and %q, overlaps metarange", leftKey, rightKey)
 		return false
 	}
 
@@ -490,55 +482,215 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	// File mdata will have a key like /foo/bar/baz
 	// File data will have a key like /foo/bar/baz-{1..n}
 	if bytes.HasPrefix(rightKey, leftKey) {
+		log.Debugf("can't split between %q and %q, prefix match", leftKey, rightKey)
 		return false
 	}
 
 	return true
 }
 
-func (sm *Replica) split(req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-
-	//  - first range will determine a split point
-	sp := findSplitPoint(sm.db)
-	if sp == nil {
-		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
-	}
-
+func (sm *Replica) populateDBFromSnapshot(db *pebble.DB) error {
+	// Create a snapshot of the left range.
 	f, err := os.CreateTemp(sm.fileDir, "replica-*.snap")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer os.Remove(f.Name())
 
 	preparedSnap, err := sm.PrepareSnapshot()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	snap, ok := preparedSnap.(*pebble.Snapshot)
 	if !ok {
-		return nil, status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
+		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
 	if err := SaveSnapshotToWriter(f, snap); err != nil {
-		return nil, err
+		return err
 	}
-	rightDB, err := sm.store.GetDB(req.GetSourceRange().GetRangeId())
+
+	// Load the snapshot into the new right range.
+	f.Seek(0, 0)
+	return ApplySnapshotFromReader(f, db)
+}
+
+func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) error {
+	leftBuf, err := proto.Marshal(left)
+	if err != nil {
+		return err
+	}
+	oldLeftBuf, err := proto.Marshal(oldLeft)
+	if err != nil {
+		return err
+	}
+	rightBuf, err := proto.Marshal(right)
+	if err != nil {
+		return err
+	}
+
+	// Send a single request that:
+	//  - CAS sets the left value to leftRDBuf
+	//  - inserts the new rightBuf
+	//
+	// if the CAS fails, check the existing value
+	//  if it's generation is past ours, ignore the error, we're out of date
+	//  if the existing value already matches what we were trying to set, we're done.
+	//  else return an error
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(right.GetRight()),
+			Value: rightBuf,
+		},
+		ExpectedValue: oldLeftBuf,
+	}).Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(left.GetRight()),
+			Value: leftBuf,
+		},
+	}).ToProto()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rsp, err := sm.store.Sender().SyncPropose(ctx, keys.RangeMetaKey(right.GetRight()), batchProto)
+	if err != nil {
+		return err
+	}
+	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
+	casRsp, err := batchRsp.CASResponse(0)
+	if err != nil {
+		if casRsp == nil {
+			return err // shouldn't happen.
+		}
+		if bytes.Compare(casRsp.GetKv().GetValue(), rightBuf) == 0 {
+			// another replica already applied the change.
+			return nil
+		}
+		existingRange := &rfpb.RangeDescriptor{}
+		if err := proto.Unmarshal(casRsp.GetKv().GetValue(), existingRange); err != nil {
+			return err
+		}
+		if existingRange.GetGeneration() > right.GetGeneration() {
+			// this replica is behind; don't need to update mr.
+			return nil
+		}
+		return err // shouldn't happen.
+	}
+	return nil
+}
+
+func printRange(wb *pebble.Batch, tag string) {
+	iter := wb.NewIter(&pebble.IterOptions{})
+	for iter.First(); iter.Valid(); iter.Next() {
+		log.Printf("%q: key: %q", tag, iter.Key())
+	}
+	defer iter.Close()
+}
+
+func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
+	if req.GetLeft() == nil || req.GetProposedRight() == nil {
+		return nil, status.FailedPreconditionError("left and right ranges must be provided")
+	}
+	if req.GetSplitPoint() == nil {
+		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
+	}
+
+	sm.closedMu.RLock()
+	defer sm.closedMu.RUnlock()
+
+	sm.rangeMu.Lock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
+	if !proto.Equal(rd, req.GetLeft()) {
+		return nil, status.OutOfRangeErrorf("split %q (current) != %q (req)", proto.CompactTextString(rd), proto.CompactTextString(req.GetLeft()))
+	}
+
+	rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())
 	if err != nil {
 		return nil, err
 	}
-	f.Seek(0, 0)
-	if err := ApplySnapshotFromReader(f, rightDB); err != nil {
+
+	// Populate the new replica.
+	rightDB, err := rightSM.DB()
+	if err != nil {
 		return nil, err
 	}
-	if err := rightDB.DeleteRange(keys.Key{constants.MinByte}, sp.left, nil /*ignored write options*/); err != nil {
+	if err := sm.populateDBFromSnapshot(rightDB); err != nil {
 		return nil, err
 	}
-	if err := sm.db.DeleteRange(sp.right, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+	rwb := rightDB.NewIndexedBatch()
+	defer rwb.Close()
+
+	sp := req.GetSplitPoint()
+
+	// Delete the keys from each side that are now owned by the other side.
+	// Right side delete should be a no-op if this is a freshly created replica.
+	rightDeleteEnd := keys.Key(sp.GetLeft()).Next()
+	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, rightDeleteEnd, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
-	return &rfpb.SplitResponse{}, nil
+	if err := wb.DeleteRange(sp.GetRight(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+
+	// Write the updated local range keys to both places
+	// Update the metarange and return any errors.
+	leftRD := proto.Clone(req.GetLeft()).(*rfpb.RangeDescriptor)
+	rightRD := proto.Clone(req.GetProposedRight()).(*rfpb.RangeDescriptor)
+	leftRD.Generation += 1                     // increment rd generation upon split
+	rightRD.Generation = leftRD.Generation + 1 // increment rd generation upon split
+	rightRD.Right = req.GetLeft().GetRight()   // new range's end is the prev range's end
+	rightRD.Left = sp.GetRight()               // new range's beginning is split point right side
+	leftRD.Right = sp.GetLeft()                // old range's end is now split point left side
+	rightRDBuf, err := proto.Marshal(rightRD)
+	if err != nil {
+		return nil, err
+	}
+	leftRDBuf, err := proto.Marshal(leftRD)
+	if err != nil {
+		return nil, err
+	}
+
+	// update the left local range (when this batch is committed).
+	if err := sm.rangeCheckedSet(wb, constants.LocalRangeKey, leftRDBuf); err != nil {
+		return nil, err
+	}
+
+	// update the right local range: this will make it active, but no
+	// traffic will be sent yet because the metarange has not been updated.
+	if err := rightSM.rangeCheckedSet(rwb, constants.LocalRangeKey, rightRDBuf); err != nil {
+		return nil, err
+	}
+
+	if err := rightDB.Apply(rwb, &pebble.WriteOptions{Sync: true}); err != nil {
+		return nil, err
+	}
+
+	// if left limit is < constants.UnsplittableMaxByte, then we own the
+	// metarange, so update it here.
+	unsplittable := []byte{constants.UnsplittableMaxByte}
+	if bytes.Compare(rd.GetLeft(), unsplittable) == -1 {
+		// we own the metarange, so update it here.
+		if err := sm.rangeCheckedSet(wb, keys.RangeMetaKey(rightRD.Right), rightRDBuf); err != nil {
+			return nil, err
+		}
+		if err := sm.rangeCheckedSet(wb, keys.RangeMetaKey(leftRD.Right), leftRDBuf); err != nil {
+			return nil, err
+		}
+	} else {
+		// use sender to remotely update the metarange, and return any
+		// errors.
+		if err := sm.updateMetarange(rd, leftRD, rightRD); err != nil {
+			return nil, err
+		}
+	}
+	return &rfpb.SplitResponse{
+		Left:  leftRD,
+		Right: rightRD,
+	}, nil
 }
 
 func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
@@ -611,8 +763,14 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 			Cas: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint(value.FindSplitPoint)
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
+		}
+		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Split:
-		r, err := sm.split(value.Split)
+		r, err := sm.split(wb, value.Split)
 		rsp.Value = &rfpb.ResponseUnion_Split{
 			Split: r,
 		}

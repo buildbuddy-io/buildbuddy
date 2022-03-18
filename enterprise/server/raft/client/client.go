@@ -67,7 +67,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 	return c.getClient(ctx, peer)
 }
 
-func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
+func RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
 	stream, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, err
@@ -88,6 +88,9 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, re
 				firstError <- err
 				readOnce = true
 			}
+			if rsp != nil {
+				writer.Write(rsp.Data)
+			}
 			if err == io.EOF {
 				writer.Close()
 				break
@@ -96,7 +99,7 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, re
 				writer.CloseWithError(err)
 				break
 			}
-			writer.Write(rsp.Data)
+
 		}
 	}()
 	err = <-firstError
@@ -104,10 +107,14 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, re
 	// If we get an EOF, and we're expecting one - don't return an error.
 	digestSize := req.GetFileRecord().GetDigest().GetSizeBytes()
 	offset := req.GetOffset()
-	if err == io.EOF && digestSize == offset {
+	if err == io.EOF && offset == digestSize {
 		return reader, nil
 	}
 	return reader, err
+}
+
+func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, req *rfpb.ReadRequest) (io.ReadCloser, error) {
+	return RemoteReader(ctx, client, req)
 }
 
 type streamWriteCloser struct {
@@ -130,6 +137,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 
 func (wc *streamWriteCloser) Close() error {
 	req := &rfpb.WriteRequest{
+		Header:      wc.header,
 		FileRecord:  wc.fileRecord,
 		FinishWrite: true,
 	}
@@ -140,13 +148,13 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func RemoteWriter(ctx context.Context, client rfspb.ApiClient, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
 	stream, err := client.Write(ctx)
 	if err != nil {
 		return nil, err
 	}
 	wc := &streamWriteCloser{
-		header:        peerHeader.Header,
+		header:        header,
 		fileRecord:    fileRecord,
 		bytesUploaded: 0,
 		stream:        stream,
@@ -159,7 +167,7 @@ func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fi
 	if err != nil {
 		return nil, err
 	}
-	return RemoteWriter(ctx, client, peerHeader, fileRecord)
+	return RemoteWriter(ctx, client, peerHeader.Header, fileRecord)
 }
 
 type multiWriteCloser struct {

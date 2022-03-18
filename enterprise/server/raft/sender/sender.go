@@ -2,6 +2,7 @@ package sender
 
 import (
 	"context"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -90,6 +91,10 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Errorf("Error reading scan response: %s", err)
 			continue
 		}
+		if len(scanRsp.GetKvs()) == 0 {
+			log.Errorf("scan response had 0 kvs")
+			continue
+		}
 		for _, kv := range scanRsp.GetKvs() {
 			rd := &rfpb.RangeDescriptor{}
 			if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
@@ -103,25 +108,21 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
 }
 
-func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
+func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (*rfpb.RangeDescriptor, error) {
 	rangeDescriptor := s.rangeCache.Get(key)
 	// TODO(tylerw): loop until available or context timeout?
-	if rangeDescriptor == nil {
+	if rangeDescriptor == nil || skipCache {
 		rd, err := s.fetchRangeDescriptorFromMetaRange(ctx, key)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.rangeCache.UpdateRange(rd); err != nil {
-			return nil, err
-		}
-		log.Debugf("Updated rangeCache with rd: %+v", rd)
 		rangeDescriptor = rd
 	}
 	return rangeDescriptor, nil
 }
 
 func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHeader, error) {
-	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
+	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, false /*skipCache*/)
 	if err != nil {
 		return nil, err
 	}
@@ -142,51 +143,94 @@ func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHea
 	return allNodes, nil
 }
 
-func (s *Sender) Run(ctx context.Context, key []byte, fn func(c rfspb.ApiClient, h *rfpb.Header) error) error {
-	retrier := retry.DefaultWithContext(ctx)
-	var lastErr error
-	for retrier.Next() {
-		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key)
+type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
+
+func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) error {
+	for i, replica := range rd.GetReplicas() {
+		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
-			lastErr = err
-			log.Printf("sender.Run error getting rd for %q: %s", key, err)
+			return err
+		}
+		client, err := s.apiClient.Get(ctx, addr)
+		if err != nil {
+			return err
+		}
+		header := makeHeader(rd, i)
+		err = fn(client, header)
+		if err != nil {
+			if status.IsOutOfRangeError(err) {
+				m := status.Message(err)
+				switch {
+				// range not found, no replicas are likely to have it; bail.
+				case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+					log.Debugf("out of range: %s (skipping rangecache)", m)
+					return err
+				case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
+					log.Debugf("out of range: %s (skipping replica only)", m)
+					continue
+				default:
+					return err
+				}
+			}
+			return err
+		}
+		if i != 0 {
+			// If a replica served a request, mark it as the preferred
+			// replica in the rangecache.
+			if err := s.rangeCache.UpdateRange(rd); err == nil {
+				s.rangeCache.SetPreferredReplica(replica, rd)
+			} else {
+				log.Errorf("Error updating rangecache: %s", err)
+			}
+		}
+		break
+	}
+	return nil
+}
+
+func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
+	retrier := retry.DefaultWithContext(ctx)
+	skipRangeCache := false
+	for retrier.Next() {
+		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
+		if err != nil {
+			log.Warningf("sender.Run error getting rd for %q: %s", key, err)
 			continue
 		}
-		for i, replica := range rangeDescriptor.GetReplicas() {
-			addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
-			if err != nil {
-				lastErr = err
-				break
-			}
-			client, err := s.apiClient.Get(ctx, addr)
-			if err != nil {
-				lastErr = err
-				break
-			}
-			header := makeHeader(rangeDescriptor, i)
-			lastErr = fn(client, header)
-			if lastErr != nil {
-				if status.IsOutOfRangeError(lastErr) || status.IsUnavailableError(lastErr) {
-					log.Debugf("sender.Run got outOfRange or Unavailable on %+v, continuing to next replica: %s", replica, lastErr)
-					continue
-				}
-			} else {
-				if i != 0 {
-					// If a replica served a request, mark it as the preferred
-					// replica in the rangecache.
-					s.rangeCache.SetPreferredReplica(replica, rangeDescriptor)
-				}
-			}
-			return lastErr
+		if err = s.tryReplicas(ctx, rangeDescriptor, fn); err == nil {
+			return nil
+		}
+		skipRangeCache = true
+		if !status.IsOutOfRangeError(err) {
+			return err
 		}
 	}
-	return lastErr
+	return status.UnavailableError("sender run retries exceeded")
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	var rsp *rfpb.SyncProposeResponse
 	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  batchCmd,
+		})
+		if err != nil {
+			return err
+		}
+		rsp = r
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rsp.GetBatch(), nil
+}
+
+func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	var rsp *rfpb.SyncReadResponse
+	err := s.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchCmd,
 		})
@@ -220,4 +264,23 @@ func (s *Sender) Increment(ctx context.Context, key []byte, n uint64) (uint64, e
 		return 0, err
 	}
 	return incResponse.GetValue(), nil
+}
+
+func (s *Sender) DirectRead(ctx context.Context, key []byte) ([]byte, error) {
+	batch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+		Key: key,
+	}).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.SyncRead(ctx, key, batch)
+	if err != nil {
+		return nil, err
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(rsp)
+	readResponse, err := batchResp.DirectReadResponse(0)
+	if err != nil {
+		return nil, err
+	}
+	return readResponse.GetKv().GetValue(), nil
 }
