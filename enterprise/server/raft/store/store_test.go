@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -37,23 +36,6 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
-
-func getTmpDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("/tmp", "buildbuddy_diskcache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
 
 func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
@@ -76,7 +58,7 @@ type storeFactory struct {
 }
 
 func newStoreFactory(t *testing.T) *storeFactory {
-	rootDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
 	fileDir := filepath.Join(rootDir, "files")
 	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
 		t.Fatal(err)

@@ -34,7 +34,7 @@ go_test(
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//server/testutil/testdigest",
-        "//server/util/disk",
+        "//server/testutil/testfs",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_golang_protobuf//proto:go_default_library",

@@ -2,12 +2,10 @@ package filestore_test
 
 import (
 	"io"
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
@@ -16,25 +14,8 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func getTmpDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("/tmp", "buildbuddy_diskcache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
-
 func TestPebbleWriteCloser(t *testing.T) {
-	db, err := pebble.Open(getTmpDir(t), &pebble.Options{})
+	db, err := pebble.Open(testfs.MakeTempDir(t), &pebble.Options{})
 	if err != nil {
 		t.Fatalf("Error opening pebble db: %s", err)
 	}
@@ -90,7 +71,7 @@ func TestPebbleWriteCloser(t *testing.T) {
 }
 
 func TestPebbleReadCloser(t *testing.T) {
-	db, err := pebble.Open(getTmpDir(t), &pebble.Options{})
+	db, err := pebble.Open(testfs.MakeTempDir(t), &pebble.Options{})
 	if err != nil {
 		t.Fatalf("Error opening pebble db: %s", err)
 	}
@@ -137,7 +118,7 @@ func TestPebbleReadCloser(t *testing.T) {
 }
 
 func TestMissingChunks(t *testing.T) {
-	db, err := pebble.Open(getTmpDir(t), &pebble.Options{})
+	db, err := pebble.Open(testfs.MakeTempDir(t), &pebble.Options{})
 	if err != nil {
 		t.Fatalf("Error opening pebble db: %s", err)
 	}
@@ -173,7 +154,7 @@ func TestMissingChunks(t *testing.T) {
 }
 
 func TestPebbleReadWrite(t *testing.T) {
-	db, err := pebble.Open(getTmpDir(t), &pebble.Options{})
+	db, err := pebble.Open(testfs.MakeTempDir(t), &pebble.Options{})
 	if err != nil {
 		t.Fatalf("Error opening pebble db: %s", err)
 	}

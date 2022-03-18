@@ -3,9 +3,7 @@ package cache_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -14,8 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -39,23 +37,6 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 	return te, ta, ctx
-}
-
-func getTmpDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("/tmp", "buildbuddy_diskcache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
@@ -85,7 +66,7 @@ func localAddr(t *testing.T) string {
 
 func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.Config {
 	return &raft_cache.Config{
-		RootDir:       getTmpDir(t),
+		RootDir:       testfs.MakeTempDir(t),
 		ListenAddress: listenAddr,
 		Join:          join,
 		HTTPPort:      testport.FindFree(t),

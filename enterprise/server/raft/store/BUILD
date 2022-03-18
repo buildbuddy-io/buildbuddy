@@ -57,6 +57,7 @@ go_test(
         "//server/gossip",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/random",
