@@ -297,6 +297,7 @@ type UserDB interface {
 	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
 	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
+	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 
 	// API Keys API
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
@@ -345,6 +346,10 @@ type WorkflowService interface {
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+
+	// GetLinkedWorkflows returns any workflows linked with the given repo access
+	// token.
+	GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error)
 }
 
 type RunnerService interface {

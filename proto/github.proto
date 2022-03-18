@@ -12,4 +12,9 @@ message UnlinkGitHubAccountRequest {
 
 message UnlinkGitHubAccountResponse {
   context.ResponseContext response_context = 1;
+
+  // Warnings encountered while unlinking the account. For example, we may fail
+  // to delete webhooks if the linked GitHub token has already been revoked via
+  // the GitHub UI.
+  repeated string warning = 2;
 }

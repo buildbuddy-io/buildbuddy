@@ -769,7 +769,47 @@ func (s *BuildBuddyServer) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 }
 
 func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.UnlinkGitHubAccountRequest) (*ghpb.UnlinkGitHubAccountResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+	if u.GetGroupID() == "" {
+		return nil, status.InternalErrorf("authenticated user's group ID is empty")
+	}
+
+	// Lookup linked token
+	g, err := udb.GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+	if g.GithubToken == nil || *g.GithubToken == "" {
+		return nil, status.NotFoundError("no linked GitHub account was found")
+	}
+
+	res := &ghpb.UnlinkGitHubAccountResponse{}
+	// Delete workflows linked with this GitHub token
+	if ws := s.env.GetWorkflowService(); ws != nil {
+		wfids, err := ws.GetLinkedWorkflows(ctx, *g.GithubToken)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range wfids {
+			if _, err := ws.DeleteWorkflow(ctx, &wfpb.DeleteWorkflowRequest{Id: id}); err != nil {
+				// TODO(bduffany): Treat only webhook unlink errors as warnings;
+				// failing to delete the workflow from the DB should be fatal
+				res.Warning = append(res.Warning, err.Error())
+			}
+		}
+	}
+	// Remove the token association from the group
+	if err := udb.DeleteGroupGitHubToken(ctx, u.GetGroupID()); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

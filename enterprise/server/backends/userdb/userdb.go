@@ -362,6 +362,16 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 	return groupID, err
 }
 
+func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
+	return d.h.DB(ctx).Exec(`
+		UPDATE `+"`Groups`"+`
+		SET github_token = ""
+		WHERE group_id = ?
+		`,
+		groupID,
+	).Error
+}
+
 func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		existing, err := getUserGroup(tx, userID, groupID)
