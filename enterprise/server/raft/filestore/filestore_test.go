@@ -171,3 +171,48 @@ func TestMissingChunks(t *testing.T) {
 	_, err = rc.Read(rbuf)
 	require.True(t, status.IsOutOfRangeError(err))
 }
+
+func TestPebbleReadWrite(t *testing.T) {
+	db, err := pebble.Open(getTmpDir(t), &pebble.Options{})
+	if err != nil {
+		t.Fatalf("Error opening pebble db: %s", err)
+	}
+	defer db.Close()
+
+	wb := db.NewIndexedBatch()
+	defer wb.Close()
+
+	fr := &rfpb.FileRecord{
+		GroupId: "major",
+		Isolation: &rfpb.Isolation{
+			CacheType: rfpb.Isolation_CAS_CACHE,
+		},
+		Digest: &repb.Digest{
+			Hash:      "key/alert",
+			SizeBytes: 100,
+		},
+	}
+
+	wc, err := filestore.PebbleWriter(wb, fr)
+	require.Nil(t, err, err)
+	buf := make([]byte, 1000)
+
+	for i := 0; i < len(buf); i++ {
+		buf[i] = byte('a')
+	}
+	n, err := wc.Write(buf)
+	require.Nil(t, err)
+	require.Equal(t, len(buf), n)
+	require.Nil(t, wc.Close())
+
+	iter := wb.NewIter(nil)
+	defer iter.Close()
+
+	rc := filestore.PebbleReader(iter, wc.Metadata().GetPebbleMetadata())
+	rbuf := make([]byte, len(buf))
+	n, err = rc.Read(rbuf)
+
+	require.Nil(t, err, err)
+	require.Equal(t, len(buf), n)
+	require.Equal(t, len(buf), len(rbuf))
+}

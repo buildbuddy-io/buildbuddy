@@ -260,13 +260,13 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	if err != nil {
 		return nil, err
 	}
-	fileKey, err := constants.FileKey(fileRecord)
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
 
 	var readCloser io.ReadCloser
-	err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		req := &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fileRecord,
@@ -299,11 +299,11 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	fileKey, err := constants.FileKey(fileRecord)
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
-	peers, err := rc.sender.GetAllNodes(ctx, fileKey)
+	peers, err := rc.sender.GetAllNodes(ctx, fileMetadataKey)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +320,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		if err != nil {
 			return err
 		}
-		err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  writeReq,
@@ -361,11 +361,11 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		if err != nil {
 			return nil, err
 		}
-		fileKey, err := constants.FileKey(fileRecord)
+		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
-		rangeDescriptor, err := rc.sender.LookupRangeDescriptor(ctx, fileKey)
+		rangeDescriptor, err := rc.sender.LookupRangeDescriptor(ctx, fileMetadataKey, false /*skipCache*/)
 		if err != nil {
 			return nil, err
 		}
@@ -378,11 +378,11 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 
 	missingDigests := make([]*repb.Digest, 0)
 	for _, req := range reqs {
-		fileKey, err := constants.FileKey(req.GetFileRecord()[0])
+		fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord()[0])
 		if err != nil {
 			return nil, err
 		}
-		err = rc.sender.Run(ctx, fileKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
 			req.Header = h
 			rsp, err := c.FindMissing(ctx, req)
 			if err != nil {

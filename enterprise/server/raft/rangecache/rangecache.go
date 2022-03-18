@@ -40,6 +40,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		// Easy add, there were no overlaps.
 		_, err := rc.rangeMap.Add(left, right, newDescriptor)
 		if err == nil {
+			log.Debugf("rangeCache easy-add of [%q, %q) %+v", left, right, newDescriptor)
 			return nil
 		}
 
@@ -52,7 +53,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 				continue
 			}
 			if v.GetGeneration() >= newDescriptor.GetGeneration() {
-				log.Debugf("Ignoring rangeDescriptor %+v, current generation: %d", newDescriptor, v.GetGeneration())
+				log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
 				return nil
 			}
 		}
@@ -60,8 +61,10 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		// If we got here, all overlapping ranges are older, so we're gonna
 		// delete them and replace with the new one.
 		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
+			log.Debugf("Removing (outdated) overlapping range: [%q, %q)", overlappingRange.Left, overlappingRange.Right)
 			rc.rangeMap.Remove(overlappingRange.Left, overlappingRange.Right)
 		}
+		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), left, right)
 		_, err = rc.rangeMap.Add(left, right, newDescriptor)
 		return err
 	} else {

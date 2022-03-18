@@ -171,12 +171,13 @@ func (c *pebbleChunker) Metadata() *rfpb.StorageMetadata {
 	if !c.closed {
 		return nil
 	}
-	return &rfpb.StorageMetadata{
+	md := &rfpb.StorageMetadata{
 		PebbleMetadata: &rfpb.StorageMetadata_PebbleMetadata{
 			Key:    c.key,
-			Chunks: c.chunkNum - 1,
+			Chunks: c.chunkNum - initialChunkNum,
 		},
 	}
+	return md
 }
 
 type pebbleStreamer struct {
@@ -223,7 +224,7 @@ func (c *pebbleStreamer) Close() error {
 // fetchNext is guaranteed to either return an error or
 // fill c.buf.
 func (c *pebbleStreamer) fetchNext() error {
-	if c.idx > c.numChunks {
+	if c.idx >= c.numChunks+initialChunkNum {
 		return io.EOF
 	}
 	chunk := chunkName(c.key, c.idx)
