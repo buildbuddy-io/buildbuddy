@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,12 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -22,6 +26,15 @@ import (
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	listenAddr        = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
+	redisTarget       = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	groupName         = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
+	nodes             = flagutil.StringSlice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	replicationFactor = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
+	clusterSize       = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 )
 
 const (
@@ -66,6 +79,30 @@ type Cache struct {
 	shutDownChan         chan bool
 	isolation            *dcpb.Isolation
 	config               CacheConfig
+}
+
+func Register(env environment.Env) error {
+	if *listenAddr == "" {
+		return nil
+	}
+	dcConfig := CacheConfig{
+		ListenAddr:        *listenAddr,
+		GroupName:         *groupName,
+		ReplicationFactor: *replicationFactor,
+		Nodes:             *nodes,
+		ClusterSize:       *clusterSize,
+	}
+	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
+	if len(dcConfig.Nodes) == 0 {
+		dcConfig.PubSub = pubsub.NewPubSub(redisutil.NewSimpleClient(*redisTarget, env.GetHealthChecker(), "distributed_cache_redis"))
+	}
+	dc, err := NewDistributedCache(env, env.GetCache(), dcConfig, env.GetHealthChecker())
+	if err != nil {
+		log.Fatalf("Error enabling distributed cache: %s", err.Error())
+	}
+	dc.StartListening()
+	env.SetCache(dc)
+	return nil
 }
 
 // NewDistributedCache creates a new cache by wrapping the provided cache "c",

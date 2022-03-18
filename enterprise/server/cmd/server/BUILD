@@ -15,14 +15,12 @@ go_library(
         "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/memcache",
-        "//enterprise/server/backends/pubsub",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/backends/redis_kvstore",
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
-        "//enterprise/server/composable_cache",
         "//enterprise/server/execution_service",
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
@@ -57,7 +55,6 @@ go_library(
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
-        "@org_golang_google_api//option:go_default_library",
     ],
 )
 

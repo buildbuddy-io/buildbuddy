@@ -3,19 +3,26 @@ package memcache
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"sync"
 
 	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"golang.org/x/sync/errgroup"
 )
+
+var memcacheTargets = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB
@@ -32,6 +39,23 @@ func eligibleForMc(d *repb.Digest) bool {
 type Cache struct {
 	mc     *memcache.Client
 	prefix string
+}
+
+func Register(env environment.Env) error {
+	if fmt.Sprintf("%T", env.GetCache()) == fmt.Sprintf("%T", composable_cache.NewComposableCache(nil, nil, 0)) {
+		// Cache has already been composed, don't do it again.
+		return nil
+	}
+	if len(*memcacheTargets) == 0 {
+		return nil
+	}
+	if env.GetCache() == nil {
+		return status.FailedPreconditionErrorf("Memcache layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+	}
+	log.Infof("Enabling memcache layer with targets: %s", *memcacheTargets)
+	mc := NewCache(*memcacheTargets...)
+	env.SetCache(composable_cache.NewComposableCache(mc, env.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
+	return nil
 }
 
 func NewCache(mcServers ...string) *Cache {

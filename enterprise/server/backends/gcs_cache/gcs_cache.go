@@ -2,6 +2,7 @@ package gcs_cache
 
 import (
 	"context"
+	"flag"
 	"io"
 	"io/ioutil"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
@@ -22,6 +24,13 @@ import (
 	"google.golang.org/api/option"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	bucket          = flag.String("cache.gcs.bucket", "", "The name of the GCS bucket to store cache files in.")
+	credentialsFile = flag.String("cache.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	projectID       = flag.String("cache.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+	ttlDays         = flag.Int64("cache.gcs.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
 )
 
 const (
@@ -38,6 +47,22 @@ type GCSCache struct {
 	projectID    string
 	prefix       string
 	ttlInDays    int64
+}
+
+func Register(env environment.Env) error {
+	if *bucket == "" {
+		return nil
+	}
+	opts := make([]option.ClientOption, 0)
+	if *credentialsFile != "" {
+		opts = append(opts, option.WithCredentialsFile(*credentialsFile))
+	}
+	gcsCache, err := NewGCSCache(*bucket, *projectID, *ttlDays, opts...)
+	if err != nil {
+		return status.InternalErrorf("Error configuring GCS cache: %s", err)
+	}
+	env.SetCache(gcsCache)
+	return nil
 }
 
 func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.ClientOption) (*GCSCache, error) {

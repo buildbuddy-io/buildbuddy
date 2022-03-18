@@ -3,6 +3,7 @@ package s3_cache
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
@@ -29,6 +31,22 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	region                   = flag.String("cache.s3.region", "", "The AWS region.")
+	bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
+	credentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
+	ttlDays                  = flag.Int64("cache.s3.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
+	webIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
+	roleARN                  = flag.String("cache.s3.role_arn", "", "The role ARN to use for web identity auth.")
+	roleSessionName          = flag.String("cache.s3.role_session_name", "", "The role session name to use for web identity auth.")
+	endpoint                 = flag.String("cache.s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
+	staticCredentialsID      = flag.String("cache.s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
+	staticCredentialsSecret  = flag.String("cache.s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.")
+	staticCredentialsToken   = flag.String("cache.s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
+	disableSSL               = flag.Bool("cache.s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	forcePathStyle           = flag.Bool("cache.s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 )
 
 const (
@@ -47,6 +65,31 @@ type S3Cache struct {
 	uploader   *s3manager.Uploader
 	prefix     string
 	ttlInDays  int64
+}
+
+func Register(env environment.Env) error {
+	if *bucket == "" {
+		return nil
+	}
+	s3Cache, err := NewS3Cache(&config.S3CacheConfig{
+		Region:                   *region,
+		Bucket:                   *bucket,
+		CredentialsProfile:       *credentialsProfile,
+		TTLDays:                  *ttlDays,
+		WebIdentityTokenFilePath: *webIdentityTokenFilePath,
+		RoleARN:                  *roleARN,
+		RoleSessionName:          *roleSessionName,
+		Endpoint:                 *endpoint,
+		StaticCredentialsID:      *staticCredentialsID,
+		StaticCredentialsSecret:  *staticCredentialsSecret,
+		DisableSSL:               *disableSSL,
+		S3ForcePathStyle:         *forcePathStyle,
+	})
+	if err != nil {
+		status.InternalErrorf("Error configuring S3 cache: %s", err)
+	}
+	env.SetCache(s3Cache)
+	return nil
 }
 
 func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {

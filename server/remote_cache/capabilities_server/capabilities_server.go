@@ -8,6 +8,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 )
 
 type CapabilitiesServer struct {
@@ -22,7 +23,7 @@ func Register(env environment.Env) error {
 	env.SetCapabilitiesServer(NewCapabilitiesServer(
 		/*supportCAS=*/ env.GetCache() != nil,
 		/*supportRemoteExec=*/ env.GetRemoteExecutionService() != nil,
-		/*supportZstd=*/ env.GetConfigurator().GetCacheZstdTranscodingEnabled(),
+		/*supportZstd=*/ remote_cache_config.ZstdTranscodingEnabled(),
 	))
 	return nil
 }

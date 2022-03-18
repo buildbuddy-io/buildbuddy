@@ -9,5 +9,6 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:semver_go_proto",
         "//server/environment",
+        "//server/remote_cache/config",
     ],
 )

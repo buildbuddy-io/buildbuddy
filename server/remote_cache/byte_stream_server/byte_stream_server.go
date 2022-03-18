@@ -22,6 +22,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -381,7 +382,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 
 func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value) bool {
 	return compression == repb.Compressor_IDENTITY ||
-		compression == repb.Compressor_ZSTD && s.env.GetConfigurator().GetCacheZstdTranscodingEnabled()
+		compression == repb.Compressor_ZSTD && remote_cache_config.ZstdTranscodingEnabled()
 }
 
 // `QueryWriteStatus()` is used to find the `committed_size` for a resource

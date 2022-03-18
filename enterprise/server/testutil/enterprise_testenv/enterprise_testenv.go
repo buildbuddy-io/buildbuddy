@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,12 +22,13 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	if opts.RedisTarget != "" {
 		healthChecker := healthcheck.NewTestingHealthChecker()
+		flags.Set(t, "cache.distributed_cache.redis_target", opts.RedisTarget)
 		redisClient := redisutil.NewSimpleClient(opts.RedisTarget, healthChecker, "cache_redis")
-		env.SetCacheRedisClient(redisClient)
 		env.SetRemoteExecutionRedisClient(redisClient)
 		env.SetRemoteExecutionRedisPubSubClient(redisClient)
 		log.Info("Using redis cache")
-		cache := redis_cache.NewCache(redisClient, 500000000 /*=maxValueSizeBytes*/)
+		flags.Set(t, "cache.redis.max_value_size_bytes", "500000000")
+		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
 	}
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())

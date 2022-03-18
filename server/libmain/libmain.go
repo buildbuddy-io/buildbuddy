@@ -164,27 +164,13 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(realEnv))
 
 	// If configured, enable the cache.
-	var cache interfaces.Cache
-	if configurator.GetCacheInMemory() {
-		maxSizeBytes := configurator.GetCacheMaxSizeBytes()
-		if maxSizeBytes == 0 {
-			log.Fatalf("Cache size must be greater than 0 if in_memory cache is enabled!")
-		}
-		c, err := memory_cache.NewMemoryCache(maxSizeBytes)
-		if err != nil {
-			log.Fatalf("Error configuring in-memory cache: %s", err)
-		}
-		cache = c
-	} else if configurator.GetCacheDiskConfig() != nil {
-		diskConfig := configurator.GetCacheDiskConfig()
-		c, err := disk_cache.NewDiskCache(realEnv, diskConfig, configurator.GetCacheMaxSizeBytes())
-		if err != nil {
-			log.Fatalf("Error configuring cache: %s", err)
-		}
-		cache = c
+	if err := memory_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-	if cache != nil {
-		realEnv.SetCache(cache)
+	if err := disk_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if realEnv.GetCache() != nil {
 		log.Printf("Cache: BuildBuddy cache API enabled!")
 	}
 

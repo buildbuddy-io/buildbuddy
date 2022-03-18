@@ -624,80 +624,6 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	return flagSet
 }
 
-func (c *Configurator) GetCacheMaxSizeBytes() int64 {
-	return c.gc.Cache.MaxSizeBytes
-}
-
-func (c *Configurator) GetCacheDiskConfig() *DiskConfig {
-	if c.gc.Cache.Disk.RootDirectory != "" {
-		return &c.gc.Cache.Disk
-	}
-	return nil
-}
-
-func (c *Configurator) GetCacheGCSConfig() *GCSCacheConfig {
-	if c.gc.Cache.GCS.Bucket != "" {
-		return &c.gc.Cache.GCS
-	}
-	return nil
-}
-
-func (c *Configurator) GetCacheS3Config() *S3CacheConfig {
-	if c.gc.Cache.S3.Bucket != "" {
-		return &c.gc.Cache.S3
-	}
-	return nil
-}
-
-func (c *Configurator) GetDistributedCacheConfig() *DistributedCacheConfig {
-	if c.gc.Cache.DistributedCache.ListenAddr != "" {
-		return &c.gc.Cache.DistributedCache
-	}
-	return nil
-}
-
-func (c *Configurator) GetRaftCacheConfig() *RaftCacheConfig {
-	if c.gc.Cache.RaftCache.ListenAddr != "" {
-		return &c.gc.Cache.RaftCache
-	}
-	return nil
-}
-
-func (c *Configurator) GetCacheMemcacheTargets() []string {
-	return c.gc.Cache.MemcacheTargets
-}
-
-func (c *Configurator) GetCacheRedisClientConfig() *RedisClientConfig {
-	// Prefer the client configs from Redis sub-config, is present.
-	if len(c.gc.Cache.Redis.Sharded.Shards) > 0 {
-		return &RedisClientConfig{ShardedConfig: &c.gc.Cache.Redis.Sharded}
-	}
-	if c.gc.Cache.Redis.RedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.Cache.Redis.RedisTarget}
-	}
-
-	if c.gc.Cache.RedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.Cache.RedisTarget}
-	}
-
-	return nil
-}
-
-func (c *Configurator) GetCacheRedisConfig() *RedisCacheConfig {
-	if c.gc.Cache.Redis.RedisTarget != "" {
-		return &c.gc.Cache.Redis
-	}
-	return nil
-}
-
-func (c *Configurator) GetCacheInMemory() bool {
-	return c.gc.Cache.InMemory
-}
-
-func (c *Configurator) GetCacheZstdTranscodingEnabled() bool {
-	return c.gc.Cache.ZstdTranscodingEnabled
-}
-
 func (c *Configurator) GetAnonymousUsageEnabled() bool {
 	numOauthProviders := len(c.gc.Auth.OauthProviders)
 	if c.GetSelfAuthEnabled() {
@@ -770,10 +696,16 @@ func (c *Configurator) GetRemoteExecutionRedisClientConfig() *RedisClientConfig 
 		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
 	}
 
-	if c.GetCacheRedisClientConfig() != nil {
-		// Fall back to the cache redis config if redis config is not specified in remote execution config or app config.
-		// Historically we did not have a separate redis target for remote execution.
-		return c.GetCacheRedisClientConfig()
+	// Prefer the client configs from Redis sub-config, is present.
+	if len(c.gc.Cache.Redis.Sharded.Shards) > 0 {
+		return &RedisClientConfig{ShardedConfig: &c.gc.Cache.Redis.Sharded}
+	}
+	if c.gc.Cache.Redis.RedisTarget != "" {
+		return &RedisClientConfig{SimpleTarget: c.gc.Cache.Redis.RedisTarget}
+	}
+
+	if c.gc.Cache.RedisTarget != "" {
+		return &RedisClientConfig{SimpleTarget: c.gc.Cache.RedisTarget}
 	}
 
 	return nil
