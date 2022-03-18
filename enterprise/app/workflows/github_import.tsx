@@ -7,6 +7,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import { ArrowRight, Check, ChevronsDown } from "lucide-react";
+import { TextLink } from "../../../app/components/link/link";
 
 type GitHubRepoPickerProps = {};
 
@@ -79,7 +80,23 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
 
   render() {
     if (this.state.error) {
-      return <div className="error">{this.state.error}</div>;
+      return (
+        <div className="workflows-github-import">
+          <div className="container">
+            <div className="card card-failure">
+              <div className="content">
+                <p>Error: {this.state.error.message}</p>
+                {this.state.error.code === "PermissionDenied" && (
+                  <p>
+                    You may be able to fix this error by{" "}
+                    <TextLink href="/settings/org/github">re-linking a GitHub account to your organization</TextLink>.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
     }
     if (!this.state.reposResponse || !this.state.workflowsResponse) {
       return <div className="loading"></div>;
