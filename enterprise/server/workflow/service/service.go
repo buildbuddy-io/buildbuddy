@@ -500,9 +500,12 @@ func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposReque
 		return nil, status.FailedPreconditionError("Unknown git provider")
 	}
 	token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
 	urls, err := listGitHubRepoURLs(ctx, token)
 	if err != nil {
-		return nil, status.UnknownErrorf("Failed to list GitHub repo URLs: %s", err)
+		return nil, status.WrapErrorf(err, "failed to list GitHub repo URLs")
 	}
 	res := &wfpb.GetReposResponse{}
 	for _, url := range urls {
@@ -534,10 +537,13 @@ func listGitHubRepoURLs(ctx context.Context, accessToken string) ([]string, erro
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
 	client := githubapi.NewClient(tc)
-	repos, _, err := client.Repositories.List(ctx, "", &githubapi.RepositoryListOptions{
+	repos, res, err := client.Repositories.List(ctx, "", &githubapi.RepositoryListOptions{
 		Sort: "updated",
 	})
 	if err != nil {
+		if res != nil && res.StatusCode == 401 {
+			return nil, status.PermissionDeniedError(err.Error())
+		}
 		// TODO: transform GH HTTP response to proper gRPC status code
 		return nil, err
 	}

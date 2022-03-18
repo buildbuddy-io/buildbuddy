@@ -1,7 +1,7 @@
 import React from "react";
 import router from "../../router/router";
 
-export type LinkProps = React.HTMLProps<HTMLAnchorElement>;
+export type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>;
 
 /**
  * `Link` renders an unstyled, router-aware `<a>` element.
@@ -43,7 +43,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
   );
 });
 
-export type TextLinkProps = React.HTMLAttributes<HTMLAnchorElement>;
+export type TextLinkProps = LinkProps;
 
 /**
  * TextLink renders an inline text `<Link>` with underline styling.
