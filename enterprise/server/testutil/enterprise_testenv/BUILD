@@ -14,6 +14,7 @@ go_library(
         "//server/testutil/healthcheck",
         "//server/testutil/testenv",
         "//server/util/log",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
     ],
 )

@@ -14,14 +14,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
@@ -51,7 +49,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-	"google.golang.org/api/option"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
@@ -61,9 +58,7 @@ import (
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
-var (
-	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
-)
+var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 	// Ensure we always override the app filesystem because the enterprise
@@ -185,33 +180,11 @@ func main() {
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
-	// Install any prod-specific backends here.
-	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
-		opts := make([]option.ClientOption, 0)
-		if gcsCacheConfig.CredentialsFile != "" {
-			opts = append(opts, option.WithCredentialsFile(gcsCacheConfig.CredentialsFile))
-		}
-		gcsCache, err := gcs_cache.NewGCSCache(gcsCacheConfig.Bucket, gcsCacheConfig.ProjectID, gcsCacheConfig.TTLDays, opts...)
-		if err != nil {
-			log.Fatalf("Error configuring GCS cache: %s", err)
-		}
-		realEnv.SetCache(gcsCache)
+	if err := gcs_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-
-	if s3CacheConfig := configurator.GetCacheS3Config(); s3CacheConfig != nil {
-		s3Cache, err := s3_cache.NewS3Cache(s3CacheConfig)
-		if err != nil {
-			log.Fatalf("Error configuring S3 cache: %s", err)
-		}
-		realEnv.SetCache(s3Cache)
-	}
-
-	if redisConfig := configurator.GetCacheRedisClientConfig(); redisConfig != nil {
-		redisClient, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "cache_redis")
-		if err != nil {
-			log.Fatalf("Error configuring cache Redis client: %s", err)
-		}
-		realEnv.SetCacheRedisClient(redisClient)
+	if err := s3_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
@@ -276,60 +249,19 @@ func main() {
 		}
 	}
 
-	if dcc := configurator.GetDistributedCacheConfig(); dcc != nil {
-		dcConfig := distributed.CacheConfig{
-			ListenAddr:        dcc.ListenAddr,
-			GroupName:         dcc.GroupName,
-			ReplicationFactor: dcc.ReplicationFactor,
-			Nodes:             dcc.Nodes,
-			ClusterSize:       dcc.ClusterSize,
-		}
-		log.Infof("Enabling distributed cache with config: %+v", dcConfig)
-		if len(dcConfig.Nodes) == 0 {
-			dcConfig.PubSub = pubsub.NewPubSub(redisutil.NewSimpleClient(dcc.RedisTarget, healthChecker, "distributed_cache_redis"))
-		}
-		dc, err := distributed.NewDistributedCache(realEnv, realEnv.GetCache(), dcConfig, healthChecker)
-		if err != nil {
-			log.Fatalf("Error enabling distributed cache: %s", err.Error())
-		}
-		dc.StartListening()
-		realEnv.SetCache(dc)
+	if err := distributed.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
-	if rcc := configurator.GetRaftCacheConfig(); rcc != nil {
-		rcConfig := &raft_cache.Config{
-			RootDir:       rcc.RootDirectory,
-			ListenAddress: rcc.ListenAddr,
-			Join:          rcc.Join,
-			HTTPPort:      rcc.HTTPPort,
-			GRPCPort:      rcc.GRPCPort,
-		}
-		rc, err := raft_cache.NewRaftCache(realEnv, rcConfig)
-		if err != nil {
-			log.Fatalf("Error enabling raft cache: %s", err.Error())
-		}
-		defer rc.Stop()
-		realEnv.SetCache(rc)
+	if err := raft_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
-	if mcTargets := configurator.GetCacheMemcacheTargets(); len(mcTargets) > 0 {
-		if realEnv.GetCache() == nil {
-			log.Fatalf("Memcache layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
-		}
-		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
-		mc := memcache.NewCache(mcTargets...)
-		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisClientConfig := configurator.GetCacheRedisClientConfig(); redisClientConfig != nil {
-		if realEnv.GetCache() == nil {
-			log.Fatalf("Redis layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
-		}
-		log.Infof("Enabling redis layer with targets: %s", redisClientConfig)
-		maxValueSizeBytes := int64(0)
-		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
-			maxValueSizeBytes = redisConfig.MaxValueSizeBytes
-		}
-		r := redis_cache.NewCache(realEnv.GetCacheRedisClient(), maxValueSizeBytes)
-		realEnv.SetCache(composable_cache.NewComposableCache(r, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
+	if err := memcache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := redis_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {

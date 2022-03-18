@@ -15,13 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -40,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/test/bufconn"
@@ -144,46 +141,18 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	xl := xcode.NewXcodeLocator()
 	realEnv.SetXcodeLocator(xl)
 
-	if gcsCacheConfig := configurator.GetCacheGCSConfig(); gcsCacheConfig != nil {
-		opts := make([]option.ClientOption, 0)
-		if gcsCacheConfig.CredentialsFile != "" {
-			opts = append(opts, option.WithCredentialsFile(gcsCacheConfig.CredentialsFile))
-		}
-		gcsCache, err := gcs_cache.NewGCSCache(gcsCacheConfig.Bucket, gcsCacheConfig.ProjectID, gcsCacheConfig.TTLDays, opts...)
-		if err != nil {
-			log.Fatalf("Error configuring GCS cache: %s", err)
-		}
-		realEnv.SetCache(gcsCache)
+	if err := gcs_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := s3_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
-	if s3CacheConfig := configurator.GetCacheS3Config(); s3CacheConfig != nil {
-		s3Cache, err := s3_cache.NewS3Cache(s3CacheConfig)
-		if err != nil {
-			log.Fatalf("Error configuring S3 cache: %s", err)
-		}
-		realEnv.SetCache(s3Cache)
+	if err := memcache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-
-	// OK, here on below we will layer several caches together with
-	// composable cache, and the final result will become our digestCache.
-	if mcTargets := configurator.GetCacheMemcacheTargets(); len(mcTargets) > 0 {
-		log.Infof("Enabling memcache layer with targets: %s", mcTargets)
-		mc := memcache.NewCache(mcTargets...)
-		realEnv.SetCache(composable_cache.NewComposableCache(mc, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
-	} else if redisClientConfig := configurator.GetCacheRedisClientConfig(); redisClientConfig != nil {
-		log.Infof("Enabling redis layer with targets: %s", redisClientConfig)
-
-		redisClient, err := redisutil.NewClientFromConfig(redisClientConfig, healthChecker, "cache_redis")
-		if err != nil {
-			log.Fatalf("Error configuring cache Redis client: %s", err)
-		}
-
-		maxValueSizeBytes := int64(0)
-		if redisConfig := configurator.GetCacheRedisConfig(); redisConfig != nil {
-			maxValueSizeBytes = redisConfig.MaxValueSizeBytes
-		}
-		r := redis_cache.NewCache(redisClient, maxValueSizeBytes)
-		realEnv.SetCache(composable_cache.NewComposableCache(r, realEnv.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
+	if err := redis_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	useLocalCache := realEnv.GetCache() != nil

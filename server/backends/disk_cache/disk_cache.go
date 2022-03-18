@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -32,6 +33,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 const (
@@ -50,8 +52,18 @@ const (
 )
 
 var (
+	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	partitions        = []config.DiskCachePartition{}
+	partitionMappings = []config.DiskCachePartitionMapping{}
+	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 )
+
+func init() {
+	flagutil.StructSliceVar(&partitions, "cache.disk.partitions", "")
+	flagutil.StructSliceVar(&partitionMappings, "cache.disk.partition_mappings", "")
+}
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
 // Difference between v1 and v2:
@@ -140,6 +152,27 @@ type DiskCache struct {
 	partition          *partition
 	cacheType          interfaces.CacheType
 	remoteInstanceName string
+}
+
+func Register(env environment.Env) error {
+	if *rootDirectory == "" || env.GetCache() != nil {
+		return nil
+	}
+	c, err := NewDiskCache(
+		env,
+		&config.DiskConfig{
+			RootDirectory:     *rootDirectory,
+			Partitions:        partitions,
+			PartitionMappings: partitionMappings,
+			UseV2Layout:       *useV2Layout,
+		},
+		cache_config.MaxSizeBytes(),
+	)
+	if err != nil {
+		return status.InternalErrorf("Error configuring cache: %s", err)
+	}
+	env.SetCache(c)
+	return nil
 }
 
 func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSizeBytes int64) (*DiskCache, error) {

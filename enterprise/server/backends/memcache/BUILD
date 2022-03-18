@@ -9,9 +9,13 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/composable_cache",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/flagutil",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_bradfitz_gomemcache//memcache",

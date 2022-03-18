@@ -3,6 +3,8 @@ package redis_cache
 import (
 	"bytes"
 	"context"
+	"flag"
+	"fmt"
 	"io"
 	"path/filepath"
 	"time"
@@ -10,6 +12,10 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
@@ -19,9 +25,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+var maxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 10000000, "The maximum value size to cache in redis (in bytes).")
+
 const (
-	defaultCutoffSizeBytes = 10000000
-	ttl                    = 3 * 24 * time.Hour
+	ttl = 3 * 24 * time.Hour
 )
 
 var (
@@ -37,16 +44,34 @@ type Cache struct {
 	cutoffSizeBytes int64
 }
 
-func NewCache(redisClient redis.UniversalClient, maxValueSizeBytes int64) *Cache {
-	c := &Cache{
+func Register(env environment.Env) error {
+	if fmt.Sprintf("%T", env.GetCache()) == fmt.Sprintf("%T", composable_cache.NewComposableCache(nil, nil, 0)) {
+		// Cache has already been composed, don't do it again.
+		return nil
+	}
+	crcc := redis_client.CacheRedisClientConfig()
+	if crcc == nil {
+		return nil
+	}
+	if env.GetCache() == nil {
+		return status.FailedPreconditionErrorf("Redis layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+	}
+	rc, err := redisutil.NewClientFromConfig(crcc, env.GetHealthChecker(), "cache_redis")
+	if err != nil {
+		return status.InternalErrorf("Error configuring cache Redis client: %s", err)
+	}
+
+	r := NewCache(rc)
+	env.SetCache(composable_cache.NewComposableCache(r, env.GetCache(), composable_cache.ModeReadThrough|composable_cache.ModeWriteThrough))
+	return nil
+}
+
+func NewCache(redisClient redis.UniversalClient) *Cache {
+	return &Cache{
 		prefix:          "",
 		rdb:             redisClient,
-		cutoffSizeBytes: maxValueSizeBytes,
+		cutoffSizeBytes: *maxValueSizeBytes,
 	}
-	if c.cutoffSizeBytes == 0 {
-		c.cutoffSizeBytes = defaultCutoffSizeBytes
-	}
-	return c
 }
 
 func (c *Cache) eligibleForCache(d *repb.Digest) bool {

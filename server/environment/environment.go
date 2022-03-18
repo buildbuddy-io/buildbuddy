@@ -55,6 +55,7 @@ type Env interface {
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	SetBuildEventProxyClients([]pepb.PublishBuildEventClient)
 	GetCache() interfaces.Cache
+	SetCache(interfaces.Cache)
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
@@ -71,7 +72,6 @@ type Env interface {
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetTaskRouter() interfaces.TaskRouter
-	GetCacheRedisClient() redis.UniversalClient
 	GetDefaultRedisClient() redis.UniversalClient
 	SetDefaultRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisClient() redis.UniversalClient

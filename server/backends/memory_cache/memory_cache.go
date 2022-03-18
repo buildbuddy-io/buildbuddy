@@ -3,10 +3,12 @@ package memory_cache
 import (
 	"bytes"
 	"context"
+	"flag"
 	"io"
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -14,7 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
+
+var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
 	l                  interfaces.LRU
@@ -29,6 +34,22 @@ func sizeFn(value interface{}) int64 {
 		size += int64(len(v))
 	}
 	return size
+}
+
+func Register(env environment.Env) error {
+	if !*cacheInMemory || env.GetCache() != nil {
+		return nil
+	}
+	maxSizeBytes := cache_config.MaxSizeBytes()
+	if maxSizeBytes == 0 {
+		return status.FailedPreconditionError("Cache size must be greater than 0 if in_memory cache is enabled!")
+	}
+	c, err := NewMemoryCache(maxSizeBytes)
+	if err != nil {
+		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
+	}
+	env.SetCache(c)
+	return nil
 }
 
 func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {

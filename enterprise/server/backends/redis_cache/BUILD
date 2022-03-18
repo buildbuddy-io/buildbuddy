@@ -9,7 +9,11 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/backends/redis_client",
+        "//enterprise/server/composable_cache",
+        "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/cache_metrics",
