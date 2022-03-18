@@ -33,7 +33,6 @@ go_library(
         "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
-        "@com_github_google_go_github_v43//github",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
