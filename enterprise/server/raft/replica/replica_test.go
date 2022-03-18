@@ -3,7 +3,6 @@ package replica_test
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/golang/protobuf/proto"
@@ -22,23 +21,6 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
-
-func getTmpDir(t *testing.T) string {
-	dir, err := ioutil.TempDir("/tmp", "buildbuddy_diskcache_*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := disk.EnsureDirectoryExists(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-	return dir
-}
 
 type fakeStore struct{}
 
@@ -55,11 +37,11 @@ func (fs *fakeStore) Sender() *sender.Sender {
 }
 
 func TestSnapshotAndRestore(t *testing.T) {
-	baseDir := getTmpDir(t)
+	baseDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(baseDir, &pebble.Options{})
 	require.Nil(t, err)
 
-	snapFile, err := os.CreateTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
 	require.Nil(t, err)
 	snapFileName := snapFile.Name()
 	defer os.Remove(snapFileName)
@@ -80,7 +62,7 @@ func TestSnapshotAndRestore(t *testing.T) {
 	snapFile, err = os.Open(snapFileName)
 	require.Nil(t, err)
 
-	newDir := getTmpDir(t)
+	newDir := testfs.MakeTempDir(t)
 	db, err = pebble.Open(newDir, &pebble.Options{})
 	require.Nil(t, err)
 	err = replica.ApplySnapshotFromReader(snapFile, db)
@@ -99,8 +81,8 @@ func TestSnapshotAndRestore(t *testing.T) {
 }
 
 func TestOpenCloseReplica(t *testing.T) {
-	rootDir := getTmpDir(t)
-	fileDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, fileDir, 1, 1, store)
 	require.NotNil(t, repl)
@@ -154,8 +136,8 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
-	rootDir := getTmpDir(t)
-	fileDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, fileDir, 1, 1, store)
 	require.NotNil(t, repl)
@@ -197,8 +179,8 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 }
 
 func TestReplicaIncrement(t *testing.T) {
-	rootDir := getTmpDir(t)
-	fileDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, fileDir, 1, 1, store)
 	require.NotNil(t, repl)
@@ -245,8 +227,8 @@ func TestReplicaIncrement(t *testing.T) {
 }
 
 func TestReplicaCAS(t *testing.T) {
-	rootDir := getTmpDir(t)
-	fileDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, fileDir, 1, 1, store)
 	require.NotNil(t, repl)
@@ -309,8 +291,8 @@ func TestReplicaCAS(t *testing.T) {
 }
 
 func TestReplicaScan(t *testing.T) {
-	rootDir := getTmpDir(t)
-	fileDir := getTmpDir(t)
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, fileDir, 1, 1, store)
 	require.NotNil(t, repl)

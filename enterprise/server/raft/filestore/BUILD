@@ -22,7 +22,7 @@ go_test(
         ":filestore",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
-        "//server/util/disk",
+        "//server/testutil/testfs",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
