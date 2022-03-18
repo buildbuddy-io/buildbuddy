@@ -62,11 +62,55 @@ import (
 )
 
 var (
-	usageTrackingEnabled        = flag.Bool("app.usage_tracking_enabled", false, "If set, enable usage data collection.")
+	usageTrackingEnabled = flag.Bool("app.usage_tracking_enabled", false, "If set, enable usage data collection.")
+	memcacheTargets      = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+
+	// Redis
 	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
 	defaultRedisShards          = flagutil.StringSlice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
 	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
 	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")
+	// TODO: We need to deprecate one of the redis targets here or distinguish them
+	cacheRedisTargetFallback    = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheRedisTarget            = flag.String("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheRedisShards            = flagutil.StringSlice("cache.redis.sharded.shards", []string{}, "Ordered list of Redis shard addresses.")
+	cacheRedisUsername          = flag.String("cache.redis.sharded.username", "", "Redis username")
+	cacheRedisPassword          = flag.String("cache.redis.sharded.password", "", "Redis password")
+	cacheRedisMaxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 0, "The maximum value size to cache in redis (in bytes).")
+
+	// Distributed cache
+	cacheDistributedListenAddr        = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
+	cacheDistributedRedisTarget       = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheDistributedGroupName         = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
+	cacheDistributedNodes             = flagutil.StringSlice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	cacheDistributedReplicationFactor = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
+	cacheDistributedClusterSize       = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
+
+	// Raft cache config
+	cacheRaftRootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	cacheRaftListenAddr    = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
+	cacheRaftJoin          = flagutil.StringSlice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	cacheRaftHTTPPort      = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
+	cacheRaftGRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
+
+	// GCS flags
+	gcsBucket          = flag.String("cache.gcs.bucket", "", "The name of the GCS bucket to store cache files in.")
+	gcsCredentialsFile = flag.String("cache.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	gcsProjectID       = flag.String("cache.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+
+	// AWS S3 flags
+	s3Region                   = flag.String("cache.s3.region", "", "The AWS region.")
+	s3Bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
+	s3CredentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
+	s3WebIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
+	s3RoleARN                  = flag.String("cache.s3.role_arn", "", "The role ARN to use for web identity auth.")
+	s3RoleSessionName          = flag.String("cache.s3.role_session_name", "", "The role session name to use for web identity auth.")
+	s3Endpoint                 = flag.String("cache.s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsID      = flag.String("cache.s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsSecret  = flag.String("cache.s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.")
+	s3StaticCredentialsToken   = flag.String("cache.s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
+	s3DisableSSL               = flag.Bool("cache.s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	s3ForcePathStyle           = flag.Bool("cache.s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
