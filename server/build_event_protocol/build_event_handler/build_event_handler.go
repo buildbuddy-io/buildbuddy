@@ -74,6 +74,9 @@ const (
 )
 
 var (
+	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 0, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+
 	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
 )
 

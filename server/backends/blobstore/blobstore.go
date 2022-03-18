@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -33,6 +34,32 @@ import (
 	"google.golang.org/api/option"
 
 	gstatus "google.golang.org/grpc/status"
+)
+
+var (
+	// GCS flags
+	gcsBucket          = flag.String("storage.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsCredentialsFile = flag.String("storage.gcs.credentials_file", "", "A path to a JSON credentials file that will be used to authenticate to GCS.")
+	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+
+	// AWS S3 flags
+	awsS3Region                   = flag.String("storage.aws_s3.region", "", "The AWS region.")
+	awsS3Bucket                   = flag.String("storage.aws_s3.bucket", "", "The AWS S3 bucket to store files in.")
+	awsS3CredentialsProfile       = flag.String("storage.aws_s3.credentials_profile", "", "A custom credentials profile to use.")
+	awsS3WebIdentityTokenFilePath = flag.String("storage.aws_s3.web_identity_token_file", "", "The file path to the web identity token file.")
+	awsS3RoleARN                  = flag.String("storage.aws_s3.role_arn", "", "The role ARN to use for web identity auth.")
+	awsS3RoleSessionName          = flag.String("storage.aws_s3.role_session_name", "", "The role session name to use for web identity auth.")
+	awsS3Endpoint                 = flag.String("storage.aws_s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsID      = flag.String("storage.aws_s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsSecret  = flag.String("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsToken   = flag.String("storage.aws_s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
+	awsS3DisableSSL               = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
+	awsS3ForcePathStyle         = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
+
+	// Azure flags
+	azureAccountName   = flag.String("storage.azure.account_name", "", "The name of the Azure storage account")
+	azureAccountKey    = flag.String("storage.azure.account_key", "", "The key for the Azure storage account")
+	azureContainerName = flag.String("storage.azure.container_name", "", "The name of the Azure storage container")
 )
 
 const (
