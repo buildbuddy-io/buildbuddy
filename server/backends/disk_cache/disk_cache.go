@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -50,8 +51,18 @@ const (
 )
 
 var (
+	rootDirectory     = flag.String("storage.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	partitions        []config.DiskCachePartition
+	partitionMappings []config.DiskCachePartitionMapping
+	useV2Layout       = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 )
+
+func init() {
+	flagutil.StructSliceVar(&partitions, "storage.disk.partitions", "")
+	flagutil.StructSliceVar(&partitionMappings, "storage.disk.partition_mappings", "")
+}
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
 // Difference between v1 and v2:
