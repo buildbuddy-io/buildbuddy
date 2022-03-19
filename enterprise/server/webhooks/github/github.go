@@ -149,8 +149,11 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if err != nil {
 			return nil, err
 		}
-		// Only build when the PR is opened or pushed to.
-		if !(v["Action"] == "opened" || v["Action"] == "synchronize") {
+		// Run workflows when the PR is opened, pushed to, or reopened, to match
+		// GitHub the behavior of GitHub actions. Also run workflows when the base
+		// branch changes, to accommodate stacked changes.
+		baseBranchChanged := v["Action"] == "edited" && event.GetChanges().GetBase() != nil
+		if !(baseBranchChanged || v["Action"] == "opened" || v["Action"] == "synchronize" || v["Action"] == "reopened") {
 			return nil, nil
 		}
 		isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
