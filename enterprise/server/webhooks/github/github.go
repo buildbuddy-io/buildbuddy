@@ -146,7 +146,12 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if !(baseBranchChanged || event.GetAction() == "opened" || event.GetAction() == "synchronize" || event.GetAction() == "reopened") {
 			return nil, nil
 		}
-		return parsePullRequestOrReview(event)
+		wd, err := parsePullRequestOrReview(event)
+		if err != nil {
+			return nil, err
+		}
+		wd.IsTrusted = isTrustedAssociation(event.GetPullRequest().GetAuthorAssociation())
+		return wd, nil
 
 	case *gh.PullRequestReviewEvent:
 		if event.GetAction() != "submitted" {
@@ -198,7 +203,6 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 	if err != nil {
 		return nil, err
 	}
-	isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
 	return &interfaces.WebhookData{
 		EventName:     webhook_data.EventName.PullRequest,
 		PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
@@ -206,7 +210,6 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		SHA:           v["PullRequest.Head.SHA"],
 		TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
 		TargetBranch:  v["PullRequest.Base.Ref"],
-		IsTrusted:     !isFork,
 	}, nil
 }
 
