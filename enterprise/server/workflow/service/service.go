@@ -248,10 +248,11 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 }
 
 func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
-	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT workflow_id FROM Workflows WHERE access_token = ?`,
-		accessToken,
-	).Rows()
+	q, args := query_builder.
+		NewQuery("SELECT workflow_id FROM Workflows").
+		AddWhereClause("access_token = ?", accessToken).
+		Build()
+	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
