@@ -234,7 +234,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 	}
 	newTargetStatuses := make([]*tables.TargetStatus, 0)
 	for _, target := range t.targets {
-		if !isTest(target) {
+		if !isTest(target) || target.overallStatus == build_event_stream.TestStatus_NO_STATUS {
 			continue
 		}
 		newTargetStatuses = append(newTargetStatuses, &tables.TargetStatus{

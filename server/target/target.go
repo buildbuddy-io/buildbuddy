@@ -127,6 +127,7 @@ func readTargets(ctx context.Context, env environment.Env, req *trpb.GetTargetRe
                                      JOIN Invocations AS i ON ts.invocation_uuid = i.invocation_uuid`)
 	q.AddWhereClause("i.group_id = ?", req.GetRequestContext().GetGroupId())
 	q.AddWhereClause("t.group_id = ?", req.GetRequestContext().GetGroupId())
+	q.AddWhereClause("ts.status != 0")
 	// Adds user / permissions to targets (t) table.
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, env, q, "t"); err != nil {
 		return nil, err
@@ -318,5 +319,6 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 		FROM Targets as t
 		JOIN TargetStatuses as ts ON ts.target_id = t.target_id`)
 	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
+	q.AddWhereClause(`ts.status != 0`)
 	return fetchTargetsFromDB(ctx, env, q, repo)
 }
