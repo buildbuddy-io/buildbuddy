@@ -1242,7 +1242,7 @@ func readConfig() (*config.BuildBuddyConfig, error) {
 	f, err := os.Open(config.FilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config.GetDefault(*targetBranch), nil
+			return config.GetDefault(), nil
 		}
 		return nil, status.FailedPreconditionErrorf("open %q: %s", config.FilePath, err)
 	}

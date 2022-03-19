@@ -56,14 +56,15 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 }
 
 // GetDefault returns the default workflow config, which tests all targets
-// when pushing to the given target branch, sending build events to BuildBuddy.
-func GetDefault(targetBranch string) *BuildBuddyConfig {
+// when pushing or sending pull requests to merge into to any branch.
+func GetDefault() *BuildBuddyConfig {
 	return &BuildBuddyConfig{
 		Actions: []*Action{
 			{
 				Name: "Test all targets",
 				Triggers: &Triggers{
-					Push: &PushTrigger{Branches: []string{targetBranch}},
+					Push:        &PushTrigger{Branches: []string{"*"}},
+					PullRequest: &PullRequestTrigger{Branches: []string{"*"}},
 				},
 				// Note: default Bazel flags are written by the runner to ~/.bazelrc
 				BazelCommands: []string{"test //..."},
@@ -90,6 +91,9 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 
 func matchesAnyBranch(branches []string, branch string) bool {
 	for _, b := range branches {
+		if b == "*" {
+			return true
+		}
 		if b == branch {
 			return true
 		}
