@@ -102,6 +102,7 @@ var (
 	workflowID                  = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName                  = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID                = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	visibility                  = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand             = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	patchDigests                = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	reportLiveRepoSetupProgress = flag.Bool("report_live_repo_setup_progress", false, "If set, repo setup output will be streamed live to the invocation instead of being postponed until the action is run.")
@@ -732,6 +733,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.T
 		buildMetadata.Metadata["ROLE"] = "CI_RUNNER"
 	} else {
 		buildMetadata.Metadata["ROLE"] = "HOSTED_BAZEL"
+	}
+	if *visibility != "" {
+		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
 	buildMetadataEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},

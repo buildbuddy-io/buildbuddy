@@ -388,6 +388,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		TargetBranch:  req.GetTargetBranch(),
 		SHA:           req.GetCommitSha(),
 		IsTrusted:     req.GetTargetRepoUrl() == req.GetPushedRepoUrl(),
+		// Don't set IsTargetRepoPublic here; instead set visibility directly
+		// from build metadata.
 	}
 	invocationUUID, err := guuid.NewRandom()
 	if err != nil {
@@ -396,6 +398,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	invocationID := invocationUUID.String()
 	extraCIRunnerArgs := []string{
 		fmt.Sprintf("--invocation_id=%s", invocationID),
+		fmt.Sprintf("--visibility=%s", req.GetVisibility()),
 	}
 	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
@@ -601,6 +604,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
 		return nil, status.PermissionDeniedError("untrusted workflows are not supported on macOS")
 	}
+	// Make the "outer" workflow invocation public if the target repo is public,
+	// so that workflow commit status details can be seen by contributors.
+	visibility := ""
+	if wd.IsTargetRepoPublic {
+		visibility = "PUBLIC"
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -618,6 +627,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--pushed_branch=" + wd.PushedBranch,
 			"--target_repo_url=" + wd.TargetRepoURL,
 			"--target_branch=" + wd.TargetBranch,
+			"--visibility=" + visibility,
 			"--workflow_id=" + wf.WorkflowID,
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),

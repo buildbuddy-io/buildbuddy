@@ -66,6 +66,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           targetRepoUrl: configuredEvent.targetRepoUrl,
           targetBranch: configuredEvent.targetBranch,
           clean,
+          visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
         })
       )
       .then((response) => router.navigateTo(`/invocation/${response.invocationId}`))
