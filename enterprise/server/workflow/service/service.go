@@ -247,6 +247,26 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	return &wfpb.DeleteWorkflowResponse{}, nil
 }
 
+func (ws *workflowService) GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error) {
+	q, args := query_builder.
+		NewQuery("SELECT workflow_id FROM Workflows").
+		AddWhereClause("access_token = ?", accessToken).
+		Build()
+	rows, err := ws.env.GetDBHandle().DB(ctx).Raw(q, args...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		id := ""
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func (ws *workflowService) providerForRepo(u *url.URL) (interfaces.GitProvider, error) {
 	for _, provider := range ws.env.GetGitProviders() {
 		if provider.MatchRepoURL(u) {
