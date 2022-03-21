@@ -32,7 +32,7 @@ func die(exitCode int, err error) {
 	os.Exit(exitCode)
 }
 
-func runBazelAndDie(args []string, opts *autoconfig.BazelOpts) {
+func runBazelAndDie(ctx context.Context, args []string, opts *autoconfig.BazelOpts) {
 	// Now run bazel.
 	gcs := &repositories.GCSRepo{}
 	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
@@ -45,7 +45,6 @@ func runBazelAndDie(args []string, opts *autoconfig.BazelOpts) {
 			log.Fatalf("config err: %s", err)
 		}
 
-		ctx := context.Background()
 		err = remotebazel.Run(ctx, remotebazel.RunOpts{
 			Server: opts.BuildBuddyEndpoint,
 			APIKey: opts.APIKey,
@@ -93,12 +92,12 @@ func main() {
 	// Parse any flags (and remove them so bazel isn't confused).
 	filteredOSArgs := commandline.ParseFlagsAndRewriteArgs(os.Args[1:])
 
+	ctx := context.Background()
+
 	if *disable {
 		bblog.Printf("Buildbuddy was disabled, just running bazel.")
-		runBazelAndDie(filteredOSArgs, &autoconfig.BazelOpts{})
+		runBazelAndDie(ctx, filteredOSArgs, &autoconfig.BazelOpts{})
 	}
-
-	ctx := context.Background()
 
 	// Make sure we have a home directory to work in.
 	bbHome := os.Getenv("BUILDBUDDY_HOME")
@@ -129,7 +128,7 @@ func main() {
 		fmt.Printf("bb %s\n", version.AppVersion())
 	}
 	if bazelOpts.EnableRemoteBazel || (besBackendFlag == "" && remoteCacheFlag == "") {
-		runBazelAndDie(filteredOSArgs, bazelOpts)
+		runBazelAndDie(ctx, filteredOSArgs, bazelOpts)
 	}
 
 	bblog.Printf("--bes_backened was %q", besBackendFlag)
@@ -173,5 +172,5 @@ func main() {
 		}
 	}
 	bblog.Printf("Rewrote bazel command line to: %s", filteredOSArgs)
-	runBazelAndDie(filteredOSArgs, bazelOpts)
+	runBazelAndDie(ctx, filteredOSArgs, bazelOpts)
 }
