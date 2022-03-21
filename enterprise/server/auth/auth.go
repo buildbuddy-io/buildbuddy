@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -33,6 +34,15 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	oidc "github.com/coreos/go-oidc"
+)
+
+var (
+	jWTKey =               flag.String("auth.jwt_key", "", "The key to use when signing JWT tokens.")
+	aPIKeyGroupCacheTTL =  flag.String("auth.api_key_group_cache_ttl", "", "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
+	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
+	adminGroupID =         flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+	httpsOnlyCookies =     flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	disableRefreshToken =  flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 )
 
 const (

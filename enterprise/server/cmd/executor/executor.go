@@ -56,6 +56,8 @@ import (
 var (
 	memcacheTargets        = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 	zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", false, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
+	oauthProviders       = []config.OauthProvider{}
+	enableSelfAuth =       flag.Bool("auth.enable_self_auth", false, "If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **")
 
 	//Redis
 	redisTarget                 = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
@@ -124,6 +126,7 @@ var (
 )
 
 func init() {
+	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "")
 	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
 }
 

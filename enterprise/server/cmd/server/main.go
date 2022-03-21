@@ -61,7 +61,9 @@ import (
 )
 
 var (
-	memcacheTargets = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+	memcacheTargets      = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+	oauthProviders       = []config.OauthProvider{}
+	enableSelfAuth =       flag.Bool("auth.enable_self_auth", false, "If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **")
 
 	// Redis
 	// TODO: We need to deprecate one of the redis targets here or distinguish them
@@ -128,6 +130,10 @@ var (
 
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
+
+func init() {
+	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "")
+}
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 	// Ensure we always override the app filesystem because the enterprise
