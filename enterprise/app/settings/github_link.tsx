@@ -59,14 +59,14 @@ export default class GitHubLink extends React.Component<Props, State> {
         this.setState({ deleteModalVisible: false });
         this.refreshUser();
       })
-      .catch((e) => errorService.handleError(e))
+      .catch((e: any) => errorService.handleError(e))
       .finally(() => this.setState({ isDeleting: false }));
   }
   private refreshUser() {
     this.setState({ isRefreshingUser: true });
     authService
       .refreshUser()
-      .catch((e) => errorService.handleError(e))
+      .catch((e: any) => errorService.handleError(e))
       .finally(() => this.setState({ isRefreshingUser: false }));
   }
 
