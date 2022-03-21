@@ -19,6 +19,7 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",
+        "//server/util/testing/flags",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//test/bufconn",
     ],

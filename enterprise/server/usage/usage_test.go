@@ -393,7 +393,6 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Redis instances should be different.
 	te1 := setupEnv(t)
 	te2 := setupEnv(t)
-	te2.GetConfigurator().GetDatabaseConfig().DataSource = te1.GetConfigurator().GetDatabaseConfig().DataSource
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")

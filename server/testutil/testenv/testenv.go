@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -162,8 +163,9 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	te.SetCache(c)
 
 	if *useMySQL {
-		currentConfigurator.GetDatabaseConfig().DataSource = testmysql.GetOrStart(t)
+		flags.Set(t, "database.data_source", testmysql.GetOrStart(t))
 	}
+	currentConfigurator.ReconcileFlagsAndConfig()
 	dbHandle, err := db.GetConfiguredDatabase(currentConfigurator, healthChecker)
 	if err != nil {
 		t.Fatal(err)
