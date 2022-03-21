@@ -41,7 +41,6 @@ const (
 	sqliteDialect = "sqlite3"
 	mysqlDialect  = "mysql"
 
-	defaultDbStatsPollInterval       = 5 * time.Second
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
@@ -299,7 +298,7 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 			Colorful: !configurator.GetAppEnableStructuredLogging(),
 		})
 	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
-	if configurator.GetDatabaseConfig().LogQueries {
+	if *logQueries {
 		l = l.LogMode(logger.Info)
 	}
 	config := gorm.Config{
@@ -346,7 +345,7 @@ func (l sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
 	return sqlLogger{l.Interface.LogMode(level), level}
 }
 
-func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) error {
+func setDBOptions(dialect string, gdb *gorm.DB) error {
 	db, err := gdb.DB()
 	if err != nil {
 		return err
@@ -357,14 +356,14 @@ func setDBOptions(c *config.Configurator, dialect string, gdb *gorm.DB) error {
 		db.SetMaxOpenConns(1)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
-		if maxOpenConns := c.GetDatabaseConfig().MaxOpenConns; maxOpenConns != 0 {
-			db.SetMaxOpenConns(maxOpenConns)
+		if *maxOpenConns != 0 {
+			db.SetMaxOpenConns(*maxOpenConns)
 		}
-		if maxIdleConns := c.GetDatabaseConfig().MaxIdleConns; maxIdleConns != 0 {
-			db.SetMaxIdleConns(maxIdleConns)
+		if *maxIdleConns != 0 {
+			db.SetMaxIdleConns(*maxIdleConns)
 		}
-		if connMaxLifetimeSecs := c.GetDatabaseConfig().ConnMaxLifetimeSeconds; connMaxLifetimeSecs != 0 {
-			db.SetConnMaxLifetime(time.Duration(connMaxLifetimeSecs) * time.Second)
+		if *connMaxLifetimeSeconds != 0 {
+			db.SetConnMaxLifetime(time.Duration(*connMaxLifetimeSeconds) * time.Second)
 		}
 	}
 
@@ -377,10 +376,10 @@ type dbStatsRecorder struct {
 	lastRecordedStats sql.DBStats
 }
 
-func (r *dbStatsRecorder) poll(interval time.Duration) {
+func (r *dbStatsRecorder) poll() {
 	for {
 		r.recordStats()
-		time.Sleep(interval)
+		time.Sleep(*statsPollInterval)
 	}
 }
 
@@ -416,10 +415,10 @@ func (r *dbStatsRecorder) recordStats() {
 }
 
 func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) (interfaces.DBHandle, error) {
-	if c.GetDBDataSource() == "" {
+	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
-	dialect, connString, err := parseDatasource(c.GetDBDataSource())
+	dialect, connString, err := parseDatasource(*dataSource)
 	if err != nil {
 		return nil, err
 	}
@@ -428,17 +427,9 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		return nil, err
 	}
 
-	err = setDBOptions(c, dialect, primaryDB)
+	err = setDBOptions(dialect, primaryDB)
 	if err != nil {
 		return nil, err
-	}
-
-	statsPollInterval := defaultDbStatsPollInterval
-	dbConf := c.GetDatabaseConfig()
-	if dbConf != nil && dbConf.StatsPollInterval != "" {
-		if statsPollInterval, err = time.ParseDuration(dbConf.StatsPollInterval); err != nil {
-			return nil, err
-		}
 	}
 
 	primarySQLDB, err := primaryDB.DB()
@@ -449,7 +440,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		db:   primarySQLDB,
 		role: "primary",
 	}
-	go statsRecorder.poll(statsPollInterval)
+	go statsRecorder.poll()
 
 	if *autoMigrateDBAndExit {
 		if err := runMigrations(dialect, primaryDB); err != nil {
@@ -473,8 +464,8 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	}))
 
 	// Setup a read replica if one is configured.
-	if c.GetDBReadReplica() != "" {
-		readDialect, readConnString, err := parseDatasource(c.GetDBReadReplica())
+	if *readReplica != "" {
+		readDialect, readConnString, err := parseDatasource(*readReplica)
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +473,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		if err != nil {
 			return nil, err
 		}
-		setDBOptions(c, readDialect, replicaDB)
+		setDBOptions(readDialect, replicaDB)
 		log.Info("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
 
@@ -494,7 +485,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 			db:   replicaSQLDB,
 			role: "read_replica",
 		}
-		go statsRecorder.poll(statsPollInterval)
+		go statsRecorder.poll()
 
 		hc.AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
 			return replicaSQLDB.Ping()

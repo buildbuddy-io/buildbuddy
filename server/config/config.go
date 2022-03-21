@@ -650,18 +650,6 @@ func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
 	return &c.gc.Storage.Azure
 }
 
-func (c *Configurator) GetDatabaseConfig() *DatabaseConfig {
-	return &c.gc.Database
-}
-
-func (c *Configurator) GetDBDataSource() string {
-	return c.gc.Database.DataSource
-}
-
-func (c *Configurator) GetDBReadReplica() string {
-	return c.gc.Database.ReadReplica
-}
-
 func (c *Configurator) GetAppBuildBuddyURL() string {
 	return c.gc.App.BuildBuddyURL
 }
