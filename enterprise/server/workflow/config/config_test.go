@@ -34,3 +34,26 @@ func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
 		},
 	}, conf)
 }
+
+func TestMatchesAnyTrigger_SupportsBasicWildcard(t *testing.T) {
+	for _, testCase := range []struct {
+		pattern, branchName string
+		shouldMatch         bool
+	}{
+		{"main", "main", true},
+		{"main", "other", false},
+		{"*", "main", true},
+		{"*", "other", true},
+	} {
+		action := &config.Action{
+			Triggers: &config.Triggers{
+				Push: &config.PushTrigger{Branches: []string{testCase.pattern}},
+			},
+		}
+		event := "push"
+
+		match := config.MatchesAnyTrigger(action, event, testCase.branchName)
+
+		assert.Equal(t, testCase.shouldMatch, match, "expected match(%q, %q) => %v", testCase.branchName, testCase.pattern, testCase.shouldMatch)
+	}
+}

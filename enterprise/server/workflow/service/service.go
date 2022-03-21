@@ -752,7 +752,7 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 	b, err := gitProvider.GetFileContents(ctx, workflow.AccessToken, webhookData.PushedRepoURL, config.FilePath, webhookData.SHA)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return config.GetDefault(webhookData.TargetBranch), nil
+			return config.GetDefault(), nil
 		}
 		return nil, err
 	}
