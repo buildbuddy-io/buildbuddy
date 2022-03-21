@@ -119,18 +119,20 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			"HeadCommit.ID",
 			"Ref",
 			"Repo.CloneURL",
+			"Repo.Private",
 		)
 		if err != nil {
 			return nil, err
 		}
 		branch := strings.TrimPrefix(v["Ref"], "refs/heads/")
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.Push,
-			PushedRepoURL: v["Repo.CloneURL"],
-			PushedBranch:  branch,
-			SHA:           v["HeadCommit.ID"],
-			TargetRepoURL: v["Repo.CloneURL"],
-			TargetBranch:  branch,
+			EventName:          webhook_data.EventName.Push,
+			PushedRepoURL:      v["Repo.CloneURL"],
+			PushedBranch:       branch,
+			SHA:                v["HeadCommit.ID"],
+			TargetRepoURL:      v["Repo.CloneURL"],
+			TargetBranch:       branch,
+			IsTargetRepoPublic: v["Repo.Private"] == "false",
 			// The push handler will not receive events from forked repositories,
 			// so if a commit was pushed to this repo then it is trusted.
 			IsTrusted: true,
@@ -140,11 +142,12 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		v, err := fieldgetter.ExtractValues(
 			event,
 			"Action",
-			"PullRequest.Base.Ref",
-			"PullRequest.Base.Repo.CloneURL",
+			"PullRequest.Head.Repo.CloneURL",
 			"PullRequest.Head.Ref",
 			"PullRequest.Head.SHA",
-			"PullRequest.Head.Repo.CloneURL",
+			"PullRequest.Base.Repo.CloneURL",
+			"PullRequest.Base.Ref",
+			"PullRequest.Base.Repo.Private",
 		)
 		if err != nil {
 			return nil, err
@@ -158,13 +161,14 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		}
 		isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
 		return &interfaces.WebhookData{
-			EventName:     webhook_data.EventName.PullRequest,
-			PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
-			PushedBranch:  v["PullRequest.Head.Ref"],
-			SHA:           v["PullRequest.Head.SHA"],
-			TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
-			TargetBranch:  v["PullRequest.Base.Ref"],
-			IsTrusted:     !isFork,
+			EventName:          webhook_data.EventName.PullRequest,
+			PushedRepoURL:      v["PullRequest.Head.Repo.CloneURL"],
+			PushedBranch:       v["PullRequest.Head.Ref"],
+			SHA:                v["PullRequest.Head.SHA"],
+			TargetRepoURL:      v["PullRequest.Base.Repo.CloneURL"],
+			TargetBranch:       v["PullRequest.Base.Ref"],
+			IsTargetRepoPublic: v["PullRequest.Base.Private"] == "false",
+			IsTrusted:          !isFork,
 		}, nil
 
 	default:

@@ -420,6 +420,10 @@ type WebhookData struct {
 	// Ex: "main"
 	TargetBranch string
 
+	// IsTargetRepoPublic reflects whether the target repo is publicly visible via
+	// the git provider.
+	IsTargetRepoPublic bool
+
 	// IsTrusted returns whether the committed code came from a trusted actor.
 	// For example, this will be true for members of the organization that owns
 	// the repo, and false for forked repositories sending pull requests to the
