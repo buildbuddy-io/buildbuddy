@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,6 +20,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/crewjam/saml/samlsp"
+)
+
+var (
+	certFile = flag.String("auth.saml.cert_file", "", "Path to a PEM encoded certificate file used for SAML auth.")
+	keyFile  = flag.String("auth.saml.key_file", "", "Path to a PEM encoded certificate key file used for SAML auth.")
 )
 
 const (

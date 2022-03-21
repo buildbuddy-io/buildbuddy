@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -34,6 +36,20 @@ import (
 	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 	oidc "github.com/coreos/go-oidc"
 )
+
+var (
+	adminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
+	oauthProviders       = []config.OauthProvider{}
+	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
+	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 0, "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
+	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
+	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
+)
+
+func init() {
+	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "")
+}
 
 const (
 	// The key that the user object is stored under in the

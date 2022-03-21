@@ -22,6 +22,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+var enableSelfAuth = flag.Bool("auth.enable_self_auth", false, "If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **")
+
 const (
 	nString = `
 23854054546089486752143428681593425828175873941670684122390466251269713159245737
