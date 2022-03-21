@@ -7,6 +7,7 @@ import EditOrgComponent from "../org/edit_org";
 import OrgMembersComponent from "../org/org_members";
 import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
+import GitHubLink from "./github_link";
 
 export interface SettingsProps {
   user: User;
@@ -49,15 +50,6 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
       return this.getDefaultTabId();
     }
     return path;
-  }
-
-  private gitHubLinkUrl(): string {
-    const params = new URLSearchParams({
-      group_id: this.props.user?.selectedGroup?.id,
-      user_id: this.props.user?.displayUser.userId.id,
-      redirect_url: window.location.href,
-    });
-    return `/auth/github/link/?${params}`;
   }
 
   render() {
@@ -148,22 +140,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
-                  {activeTabId === TabId.OrgGitHub && capabilities.github && (
-                    <>
-                      <div className="settings-option-title">GitHub account link</div>
-                      <div className="settings-option-description">
-                        Linking a GitHub account allows BuildBuddy to report commit statuses that appear in the GitHub
-                        UI.
-                      </div>
-                      {this.props.user.selectedGroup.githubLinked ? (
-                        <FilledButton className="settings-button success">GitHub account linked</FilledButton>
-                      ) : (
-                        <FilledButton className="settings-button settings-link-button">
-                          <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-                        </FilledButton>
-                      )}
-                    </>
-                  )}
+                  {activeTabId === TabId.OrgGitHub && capabilities.github && <GitHubLink user={this.props.user} />}
                   {activeTabId === TabId.OrgApiKeys && capabilities.manageApiKeys && (
                     <>
                       <div className="settings-option-title">API keys</div>

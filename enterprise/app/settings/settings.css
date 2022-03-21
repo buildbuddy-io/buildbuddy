@@ -54,6 +54,27 @@
   padding: 32px 0;
 }
 
+.github-account-link {
+  max-width: 600px;
+}
+
+.github-account-link .linked-github-account-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #eee;
+  padding: 8px 16px;
+  border-radius: 8px;
+}
+
+.github-account-link .linked-github-account-row .unlink-button {
+  margin-left: auto;
+}
+
+.github-account-link-delete-modal .checkbox-input {
+  margin-top: 3px;
+}
+
 /* Large screen */
 @media (min-width: 1281px) {
   .settings .settings-tabs {
