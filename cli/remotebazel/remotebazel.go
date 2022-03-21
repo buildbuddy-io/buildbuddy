@@ -263,6 +263,30 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 
 	chunkID := ""
 	moveBack := 0
+
+	drawChunk := func(chunk *elpb.GetEventLogChunkResponse) {
+		// Are we redrawing the current chunk?
+		if moveBack > 0 {
+			consoleCursorMoveUp(moveBack)
+			consoleCursorMoveBeginningLine()
+			consoleDeleteLines(moveBack)
+		}
+
+		logLines := splitLogBuffer(chunk.GetBuffer())
+		if !chunk.GetLive() {
+			moveBack = 0
+		} else {
+			moveBack = len(logLines)
+		}
+
+		for _, l := range logLines {
+			_, _ = os.Stdout.Write([]byte(l))
+			_, _ = os.Stdout.Write([]byte("\n"))
+		}
+	}
+
+	var chunks []*elpb.GetEventLogChunkResponse
+	wasLive := false
 	for {
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: iid,
@@ -277,24 +301,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 			break
 		}
 
-		// Are we redrawing the current chunk?
-		if moveBack > 0 {
-			consoleCursorMoveUp(moveBack)
-			consoleCursorMoveBeginningLine()
-			consoleDeleteLines(moveBack)
+		chunks = append(chunks, l)
+		// If the current chunk was live but is no longer then delay redraw
+		// until the next chunk is retrieved. The "volatile" part of the
+		// chunk moves to the next chunk when a chunk is finalized. Without
+		// the delay, we would print the chunk without the volatile portion
+		// which will look like a "flicker" once the volatile portion is
+		// printed again.
+		if !wasLive || l.GetLive() {
+			for _, chunk := range chunks {
+				drawChunk(chunk)
+			}
+			chunks = nil
 		}
-
-		logLines := splitLogBuffer(l.GetBuffer())
-		if !l.GetLive() {
-			moveBack = 0
-		} else {
-			moveBack = len(logLines)
-		}
-
-		for _, l := range logLines {
-			_, _ = os.Stdout.Write([]byte(l))
-			_, _ = os.Stdout.Write([]byte("\n"))
-		}
+		wasLive = l.GetLive()
 
 		if l.GetNextChunkId() == chunkID {
 			time.Sleep(1 * time.Second)
