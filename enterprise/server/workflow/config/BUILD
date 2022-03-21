@@ -10,7 +10,6 @@ go_library(
     ],
     deps = [
         "//enterprise/server/webhooks/webhook_data",
-        "@com_github_gobwas_glob//:glob",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )
