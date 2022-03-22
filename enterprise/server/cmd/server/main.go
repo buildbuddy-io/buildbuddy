@@ -61,6 +61,7 @@ import (
 )
 
 var (
+
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
