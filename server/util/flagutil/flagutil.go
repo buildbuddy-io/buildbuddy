@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -196,4 +197,32 @@ func (f *structSliceFlag) Len() int {
 
 func newStructSliceFlag(structSlicePtr interface{}) *structSliceFlag {
 	return &structSliceFlag{reflect.ValueOf(structSlicePtr).Elem()}
+}
+
+type URLFlag string
+
+func NewURLFlag(s *string) *URLFlag {
+	return (*URLFlag)(s)
+}
+
+func (f *URLFlag) Set(value string) error {
+	*f = URLFlag(value)
+	_, err := url.Parse(value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *URLFlag) String() string {
+	return string(*f)
+}
+
+func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	err := unmarshal((*string)(f))
+	if err != nil {
+		return err
+	}
+	_, err = url.Parse(string(*f))
+	return err
 }
