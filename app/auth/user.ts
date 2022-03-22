@@ -16,10 +16,6 @@ export class User {
     return this.selectedGroup?.name?.trim();
   }
 
-  isInDefaultGroup() {
-    return this.selectedGroup?.id == "GR0000000000000000000";
-  }
-
   canCall(rpc: BuildBuddyServiceRpcName) {
     return this.allowedRpcs.has(rpc);
   }

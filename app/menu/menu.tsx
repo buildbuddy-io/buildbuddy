@@ -52,10 +52,6 @@ export default class MenuComponent extends React.Component<Props, State> {
     this.dismissMenu();
   }
 
-  handleCreateOrgClicked() {
-    router.navigateToCreateOrg();
-  }
-
   private gitHubLinkUrl(): string {
     const params = new URLSearchParams({
       group_id: this.props.user?.selectedGroup?.id,
@@ -94,15 +90,6 @@ export default class MenuComponent extends React.Component<Props, State> {
               <div className="side-menu">
                 <ul>
                   {this.props.children && <li onClick={this.dismissMenu.bind(this)}>{this.props.children}</li>}
-                  {this.props.user &&
-                    !this.props.user?.selectedGroup.ownedDomain &&
-                    !this.props.user?.isInDefaultGroup() && (
-                      <li onClick={this.dismissMenu.bind(this)}>
-                        <div className="clickable" onClick={this.handleCreateOrgClicked.bind(this)}>
-                          Create organization
-                        </div>
-                      </li>
-                    )}
                   <li onClick={this.dismissMenu.bind(this)}>
                     <a target="_blank" href="https://github.com/buildbuddy-io/buildbuddy/issues/new">
                       Report an issue
