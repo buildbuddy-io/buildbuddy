@@ -29,9 +29,8 @@ import (
 // }
 
 func init() {
-	log.Configure(log.Opts{
-		Level: "debug",
-	})
+	*log.LogLevel = "debug"
+	log.Configure()
 }
 
 func metaRangeEvent(t *testing.T, nhid string, rangeDescriptor *rfpb.RangeDescriptor) (serf.EventType, serf.Event) {

@@ -97,7 +97,9 @@ func main() {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 
-	log.Configure(log.Opts{Level: "debug", EnableShortFileName: true})
+	*log.LogLevel = "debug"
+	*log.IncludeShortFileName = true
+	log.Configure()
 
 	emptyActionDir, err := os.MkdirTemp("", "fc-container-*")
 	if err != nil {

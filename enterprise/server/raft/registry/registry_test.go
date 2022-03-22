@@ -12,7 +12,9 @@ import (
 )
 
 func init() {
-	log.Configure(log.Opts{Level: "debug", EnableShortFileName: true})
+	*log.LogLevel = "debug"
+	*log.IncludeShortFileName = true
+	log.Configure()
 }
 
 func localAddr(t *testing.T) string {

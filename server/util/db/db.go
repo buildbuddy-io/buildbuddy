@@ -26,7 +26,6 @@ import (
 
 	// Allow for "cloudsql" type connections that support workload identity.
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -270,7 +269,7 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Update().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 }
 
-func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {
+func openDB(dialect string, connString string) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch dialect {
 	case sqliteDialect:
@@ -295,7 +294,7 @@ func openDB(configurator *config.Configurator, dialect string, connString string
 			SlowThreshold: 500 * time.Millisecond,
 			LogLevel:      logger.Warn,
 			// Disable log colors when structured logging is enabled.
-			Colorful: !configurator.GetAppEnableStructuredLogging(),
+			Colorful: *log.EnableStructuredLogging,
 		})
 	l = sqlLogger{Interface: gormLogger, logLevel: logger.Warn}
 	if *logQueries {
@@ -414,7 +413,7 @@ func (r *dbStatsRecorder) recordStats() {
 	r.lastRecordedStats = stats
 }
 
-func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) (interfaces.DBHandle, error) {
+func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, error) {
 	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
@@ -422,7 +421,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 	if err != nil {
 		return nil, err
 	}
-	primaryDB, err := openDB(c, dialect, connString)
+	primaryDB, err := openDB(dialect, connString)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +468,7 @@ func GetConfiguredDatabase(c *config.Configurator, hc interfaces.HealthChecker) 
 		if err != nil {
 			return nil, err
 		}
-		replicaDB, err := openDB(c, readDialect, readConnString)
+		replicaDB, err := openDB(readDialect, readConnString)
 		if err != nil {
 			return nil, err
 		}

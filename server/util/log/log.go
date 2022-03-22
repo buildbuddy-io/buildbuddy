@@ -35,8 +35,6 @@ const (
 	callerSkipFrameCount = 3
 )
 
-var logErrorStackTraces bool
-
 func formatDuration(dur time.Duration) string {
 	switch {
 	case dur < time.Millisecond:
@@ -86,7 +84,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	} else {
 		Debugf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
-	if logErrorStackTraces {
+	if *LogErrorStackTraces {
 		code := gstatus.Code(err)
 		if isExpectedGRPCError(code) {
 			return
@@ -112,9 +110,11 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 }
 
 func init() {
-	// Start us in a "nice" configuration, in case any logging
-	// is done before Configure is called.
-	Configure(Opts{Level: "info"})
+	err := Configure()
+	if err != nil {
+		fmt.Printf("Error configuring logging: %v", err)
+		os.Exit(1) // in case log.Fatalf does not work.
+	}
 }
 
 func LocalLogger() zerolog.Logger {
@@ -156,33 +156,24 @@ func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg str
 	e.Dict("logging.googleapis.com/sourceLocation", sourceLocation)
 }
 
-type Opts struct {
-	Level                  string
-	EnableShortFileName    bool
-	EnableGCPLoggingFormat bool
-	EnableStructured       bool
-	EnableStackTraces      bool
-}
-
-func Configure(opts Opts) error {
-	logErrorStackTraces = opts.EnableStackTraces
+func Configure() error {
 	var logger zerolog.Logger
-	if opts.EnableStructured {
+	if *EnableStructuredLogging {
 		logger = StructuredLogger()
 	} else {
 		logger = LocalLogger()
 	}
 	intLogLevel := zerolog.InfoLevel
-	if opts.Level != "" {
-		if l, err := zerolog.ParseLevel(opts.Level); err == nil {
+	if *LogLevel != "" {
+		if l, err := zerolog.ParseLevel(*LogLevel); err == nil {
 			intLogLevel = l
 		} else {
 			return err
 		}
 	}
 	logger = logger.Level(intLogLevel)
-	if opts.EnableShortFileName {
-		if opts.EnableStructured && opts.EnableGCPLoggingFormat {
+	if *IncludeShortFileName {
+		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
 			logger = logger.Hook(gcpLoggingCallerHook{})
 		} else {
 			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()

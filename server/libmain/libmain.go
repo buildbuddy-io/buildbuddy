@@ -142,14 +142,7 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
-	opts := log.Opts{
-		Level:                  configurator.GetAppLogLevel(),
-		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
-		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
-		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
-		EnableStackTraces:      configurator.GetAppLogErrorStackTraces(),
-	}
-	if err := log.Configure(opts); err != nil {
+	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
@@ -157,7 +150,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	dbHandle, err := db.GetConfiguredDatabase(configurator, healthChecker)
+	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}

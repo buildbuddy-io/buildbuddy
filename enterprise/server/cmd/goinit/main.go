@@ -183,10 +183,7 @@ func main() {
 	rootContext := context.Background()
 
 	// setup logging
-	opts := log.Opts{
-		Level: *logLevel,
-	}
-	if err := log.Configure(opts); err != nil {
+	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1) // in case log.Fatalf does not work.
 	}

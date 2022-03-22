@@ -35,9 +35,9 @@ var (
 func init() {
 	// N.B. We do this here to avoid a data race condition that happens when
 	// multiple tests Configure the logger simultaneously.
-	if err := log.Configure(log.Opts{Level: "debug", EnableShortFileName: true}); err != nil {
-		log.Fatalf("Error configuring logging: %s", err)
-	}
+	*log.LogLevel = "debug"
+	*log.IncludeShortFileName = true
+	log.Configure()
 }
 
 type ConfigTemplateParams struct {
@@ -166,7 +166,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t))
 	}
 	currentConfigurator.ReconcileFlagsAndConfig()
-	dbHandle, err := db.GetConfiguredDatabase(currentConfigurator, healthChecker)
+	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
 	if err != nil {
 		t.Fatal(err)
 	}

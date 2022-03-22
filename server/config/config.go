@@ -678,26 +678,6 @@ func (c *Configurator) GetAppAddUserToDomainGroup() bool {
 	return c.gc.App.AddUserToDomainGroup
 }
 
-func (c *Configurator) GetAppLogIncludeShortFileName() bool {
-	return c.gc.App.LogIncludeShortFileName
-}
-
-func (c *Configurator) GetAppLogErrorStackTraces() bool {
-	return c.gc.App.LogErrorStackTraces
-}
-
-func (c *Configurator) GetAppEnableStructuredLogging() bool {
-	return c.gc.App.EnableStructuredLogging
-}
-
-func (c *Configurator) GetAppLogLevel() string {
-	return c.gc.App.LogLevel
-}
-
-func (c *Configurator) GetAppLogEnableGCPLoggingFormat() bool {
-	return c.gc.App.LogEnableGCPLoggingFormat
-}
-
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
