@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -50,6 +51,8 @@ type podmanCommandContainer struct {
 
 	// name is the container name.
 	name string
+
+	mu sync.Mutex // protects(removed)
 	// removed is a flag that is set once Remove is called (before actually
 	// removing the container).
 	removed bool
@@ -156,7 +159,10 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	// interpret this code specially when the container was removed and we are
 	// expecting a SIGKILL as a result.
 	res := runPodman(ctx, "exec", stdin, stdout, podmanRunArgs...)
-	if c.removed && res.ExitCode == podmanExecSIGKILLExitCode {
+	c.mu.Lock()
+	removed := c.removed
+	c.mu.Unlock()
+	if removed && res.ExitCode == podmanExecSIGKILLExitCode {
 		res.ExitCode = commandutil.KilledExitCode
 		res.Error = commandutil.ErrSIGKILL
 	}
@@ -198,7 +204,9 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 }
 
 func (c *podmanCommandContainer) Remove(ctx context.Context) error {
+	c.mu.Lock()
 	c.removed = true
+	c.mu.Unlock()
 	res := runPodman(ctx, "kill", nil /*=stdin*/, nil /*=stdout*/, "--signal=KILL", c.name)
 	return res.Error
 }
