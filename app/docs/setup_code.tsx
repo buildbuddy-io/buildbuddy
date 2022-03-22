@@ -69,16 +69,16 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return response.credential[index] || null;
   }
 
-  handleInputChange(event: React.ChangeEvent) {
-    const target = event.target as HTMLInputElement;
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const target = event.target;
     const name = target.name;
     this.setState({
       [name]: target.value,
     } as Record<keyof State, any>);
   }
 
-  handleCheckboxChange(event: React.ChangeEvent) {
-    const target = event.target as HTMLInputElement;
+  handleCheckboxChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const target = event.target;
     const name = target.name;
     this.setState({
       [name]: target.checked,
