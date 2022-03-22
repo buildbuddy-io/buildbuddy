@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
@@ -50,6 +52,7 @@ type RunOpts struct {
 }
 
 type RepoConfig struct {
+	Root      string
 	URL       string
 	CommitSHA string
 	Patches   []string
@@ -159,7 +162,13 @@ func Config(path string) (*RepoConfig, error) {
 
 	bblog.Printf("Using base branch commit hash: %s", defaultBranchCommitHash)
 
+	wt, err := repo.Worktree()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not determine git repo root")
+	}
+
 	repoConfig := &RepoConfig{
+		Root:      wt.Filesystem.Root(),
 		URL:       fetchURL,
 		CommitSHA: defaultBranchCommitHash.String(),
 	}
@@ -224,6 +233,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 
 	bblog.Printf("Requesting command execution on remote Bazel instance.")
 
+	instanceHash := sha256.New()
+	instanceHash.Write(uuid.NodeID())
+	instanceHash.Write([]byte(repoConfig.Root))
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: repoConfig.URL,
@@ -231,7 +244,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 		RepoState: &rnpb.RunRequest_RepoState{
 			CommitSha: repoConfig.CommitSHA,
 		},
-		BazelCommand: strings.Join(opts.Args, " "),
+		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
+		BazelCommand:       strings.Join(opts.Args, " "),
 	}
 
 	for _, patch := range repoConfig.Patches {
