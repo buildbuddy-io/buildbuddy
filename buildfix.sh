@@ -70,3 +70,5 @@ if ((GAZELLE)); then
 fi
 
 echo 'All done!'
+
+bad
