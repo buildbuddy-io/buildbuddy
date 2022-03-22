@@ -420,7 +420,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
-	tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
+	tableKeys, err := userDB.GetAPIKeys(ctx, groupID, true /*checkVisibility*/)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +610,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	}
 	for _, allowedGroupID := range authenticatedUser.GetAllowedGroups() {
 		if allowedGroupID == groupID {
-			tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
+			tableKeys, err := userDB.GetAPIKeys(ctx, groupID, true /*checkVisibility*/)
 			if err != nil {
 				return nil, err
 			}
@@ -870,7 +870,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	apiKeys, err := userDB.GetAPIKeys(ctx, in.GroupID)
+	apiKeys, err := userDB.GetAPIKeys(ctx, in.GroupID, false /*checkVisibility*/)
 	if err != nil {
 		return nil, err
 	}
