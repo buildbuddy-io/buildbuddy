@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
@@ -190,6 +191,28 @@ func Config(path string) (*RepoConfig, error) {
 	return repoConfig, nil
 }
 
+func getTermWidth() int {
+	size, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		return 80
+	}
+	return int(size.Col)
+}
+
+func splitLogBuffer(buf []byte) []string {
+	var lines []string
+
+	termWidth := getTermWidth()
+	for _, line := range strings.Split(string(buf), "\n") {
+		for len(line) > termWidth {
+			lines = append(lines, line[0:termWidth])
+			line = line[termWidth:]
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 	conn, err := grpc_client.DialTarget(opts.Server)
 	if err != nil {
@@ -242,22 +265,22 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 
 		// Are we redrawing the current chunk?
 		if moveBack > 0 {
-			// TODO(vadim): fix handling of long lines
-			// we move the cursor up by the number of lines in the buffer,
-			// which may be different from the # of lines in the terminal
-			// due to wrapping.
 			consoleCursorMoveUp(moveBack)
 			consoleCursorMoveBeginningLine()
 			consoleDeleteLines(moveBack)
 		}
+
+		logLines := splitLogBuffer(l.GetBuffer())
 		if !l.GetLive() {
 			moveBack = 0
 		} else {
-			moveBack = len(strings.Split(string(l.GetBuffer()), "\n"))
+			moveBack = len(logLines)
 		}
 
-		_, _ = os.Stdout.Write(l.GetBuffer())
-		_, _ = os.Stdout.Write([]byte("\n"))
+		for _, l := range logLines {
+			_, _ = os.Stdout.Write([]byte(l))
+			_, _ = os.Stdout.Write([]byte("\n"))
+		}
 
 		if l.GetNextChunkId() == chunkID {
 			time.Sleep(1 * time.Second)
