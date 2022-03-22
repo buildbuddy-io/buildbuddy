@@ -21,6 +21,10 @@ import (
 )
 
 var (
+	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
+	// process is killed due to the parent container being removed.
+	podmanExecSIGKILLExitCode = 137
+
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
 )
@@ -46,6 +50,9 @@ type podmanCommandContainer struct {
 
 	// name is the container name.
 	name string
+	// removed is a flag that is set once Remove is called (before actually
+	// removing the container).
+	removed bool
 }
 
 func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, image, buildRoot string, options *PodmanOptions) container.CommandContainer {
@@ -142,7 +149,18 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
-	return runPodman(ctx, "exec", stdin, stdout, podmanRunArgs...)
+	// Podman doesn't provide a way to find out whether an exec process was
+	// killed. Instead, `podman exec` returns 137 (= 128 + SIGKILL(9)). However,
+	// this exit code is also valid as a regular exit code returned by a command
+	// during a normal execution, so we are overly cautious here and only
+	// interpret this code specially when the container was removed and we are
+	// expecting a SIGKILL as a result.
+	res := runPodman(ctx, "exec", stdin, stdout, podmanRunArgs...)
+	if c.removed && res.ExitCode == podmanExecSIGKILLExitCode {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = commandutil.ErrSIGKILL
+	}
+	return res
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
@@ -180,7 +198,8 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 }
 
 func (c *podmanCommandContainer) Remove(ctx context.Context) error {
-	res := runPodman(ctx, "rm", nil /*=stdin*/, nil /*=stdout*/, "--force", c.name)
+	c.removed = true
+	res := runPodman(ctx, "kill", nil /*=stdin*/, nil /*=stdout*/, "--signal=KILL", c.name)
 	return res.Error
 }
 
