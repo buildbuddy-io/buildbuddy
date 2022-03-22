@@ -18,6 +18,8 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+var region = flag.String("app.region", "", "The region in which the app is running.")
+
 const (
 	// collectionPeriodDuration determines the length of time for usage data
 	// buckets in Redis. This directly affects the minimum period at which we
