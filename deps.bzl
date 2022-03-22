@@ -4702,3 +4702,4 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:4AuOwCGf4lLR9u3YOe2awrHygurzhO/HeQ6laiA6Sx0=",
         version = "v3.0.3",
     )
+    bbb
