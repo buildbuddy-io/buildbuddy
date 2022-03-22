@@ -9,9 +9,7 @@ interface Props {
   invocationId: string;
 }
 
-export default class TargetArtifactsCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetArtifactsCardComponent extends React.Component<Props> {
   handleArtifactClicked(outputUri: string, outputFilename: string, event: MouseEvent) {
     event.preventDefault();
     if (!outputUri) return false;

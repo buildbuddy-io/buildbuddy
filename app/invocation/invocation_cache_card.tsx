@@ -10,9 +10,7 @@ interface Props {
 
 const BITS_PER_BYTE = 8;
 
-export default class CacheCardComponent extends React.Component {
-  props: Props;
-
+export default class CacheCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className="card">

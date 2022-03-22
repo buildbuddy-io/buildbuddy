@@ -8,9 +8,7 @@ interface Props {
   placeholder?: string;
 }
 
-export default class InvocationFilterComponent extends React.Component {
-  props: Props;
-
+export default class InvocationFilterComponent extends React.Component<Props> {
   handleFilterChange(event: any) {
     let value = event.target.value;
     let params = {};

@@ -14,9 +14,7 @@ interface State {
   filterString: string;
 }
 
-export default class RawLogsCardComponent extends React.Component {
-  props: Props;
-
+export default class RawLogsCardComponent extends React.Component<Props, State> {
   state: State = {
     expandedMap: new Map<Long, boolean>(),
     numPages: 1,

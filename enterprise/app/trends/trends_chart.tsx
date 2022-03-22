@@ -66,9 +66,7 @@ const TrendsChartTooltip = ({
   return null;
 };
 
-export default class TrendsChartComponent extends React.Component {
-  props: Props;
-
+export default class TrendsChartComponent extends React.Component<Props> {
   render() {
     const hasSecondaryAxis = this.props.extractSecondaryValue && this.props.separateAxis;
     return (

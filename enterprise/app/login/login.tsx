@@ -19,8 +19,6 @@ interface Props {
 }
 
 export default class LoginComponent extends React.Component<Props, State> {
-  props: Props;
-
   state: State = {
     showSSO: false,
     defaultToSSO: false,

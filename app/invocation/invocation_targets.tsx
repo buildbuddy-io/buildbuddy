@@ -11,9 +11,7 @@ interface Props {
   mode: string;
 }
 
-export default class TargetsComponent extends React.Component {
-  props: Props;
-
+export default class TargetsComponent extends React.Component<Props> {
   render() {
     return (
       <div>

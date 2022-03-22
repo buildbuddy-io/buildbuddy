@@ -30,9 +30,7 @@ interface Props {
   dark: boolean;
 }
 
-export default class TargetComponent extends React.Component {
-  props: Props;
-
+export default class TargetComponent extends React.Component<Props> {
   componentWillMount() {
     document.title = `Target ${this.props.invocationId} | BuildBuddy`;
   }

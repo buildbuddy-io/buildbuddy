@@ -29,9 +29,7 @@ interface Props {
   invocationId: string;
   user?: User;
 }
-export default class InvocationOverviewComponent extends React.Component {
-  props: Props;
-
+export default class InvocationOverviewComponent extends React.Component<Props> {
   handleOrganizationClicked() {
     router.navigateHome();
   }

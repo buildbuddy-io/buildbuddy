@@ -16,9 +16,7 @@ interface State {
 
 const defaultPageSize = 1;
 
-export default class ArtifactsCardComponent extends React.Component {
-  props: Props;
-
+export default class ArtifactsCardComponent extends React.Component<Props, State> {
   state: State = {
     limit: defaultPageSize,
   };

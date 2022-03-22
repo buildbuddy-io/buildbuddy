@@ -37,9 +37,7 @@ interface State {
   profileExpanded: boolean;
 }
 
-export default class SidebarComponent extends React.Component {
-  props: Props;
-
+export default class SidebarComponent extends React.Component<Props, State> {
   state: State = {
     profileExpanded: false,
   };

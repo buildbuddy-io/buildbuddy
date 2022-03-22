@@ -4,9 +4,7 @@ interface Props {
   hash: string;
 }
 
-export default class HistoryTabsComponent extends React.Component {
-  props: Props;
-
+export default class HistoryTabsComponent extends React.Component<Props> {
   render() {
     return (
       <div className="tabs">

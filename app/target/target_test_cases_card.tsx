@@ -9,9 +9,7 @@ interface Props {
   tagName?: string;
 }
 
-export default class TargetTestCasesCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetTestCasesCardComponent extends React.Component<Props> {
   getStatusTitle() {
     switch (this.props.tagName) {
       case "failure":

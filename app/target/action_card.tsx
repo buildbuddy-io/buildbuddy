@@ -20,9 +20,7 @@ interface State {
   loadingStderr: boolean;
 }
 
-export default class ActionCardComponent extends React.Component {
-  props: Props;
-
+export default class ActionCardComponent extends React.Component<Props, State> {
   state: State = {
     stdErr: "",
     stdOut: "",
@@ -69,7 +67,7 @@ export default class ActionCardComponent extends React.Component {
       .catch(() => {
         this.setState({
           ...this.state,
-          testLog: "Error loading bytestream stderr!",
+          stdErr: "Error loading bytestream stderr!",
         });
       });
   }
@@ -92,14 +90,14 @@ export default class ActionCardComponent extends React.Component {
       .then((contents: string) => {
         this.setState({
           ...this.state,
-          stdout: contents,
+          stdOut: contents,
           loadingStdout: false,
         });
       })
       .catch(() => {
         this.setState({
           ...this.state,
-          testLog: "Error loading bytestream stdout!",
+          stdErr: "Error loading bytestream stdout!",
         });
       });
   }

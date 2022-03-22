@@ -33,8 +33,6 @@ interface State {
 const SECONDS_PER_MICROSECOND = 1e-6;
 
 export default class TrendsComponent extends React.Component<Props, State> {
-  props: Props;
-
   state: State = {
     stats: [],
     loading: true,

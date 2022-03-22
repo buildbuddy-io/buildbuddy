@@ -38,9 +38,7 @@ const CacheChartTooltip = ({ active, payload, labelFormatter, extractHits, extra
   return null;
 };
 
-export default class CacheChartComponent extends React.Component {
-  props: Props;
-
+export default class CacheChartComponent extends React.Component<Props> {
   render() {
     return (
       <div className="trend-chart">

@@ -4,9 +4,7 @@ interface Props {
   invocationId: string;
 }
 
-export default class InvocationInProgressComponent extends React.Component {
-  props: Props;
-
+export default class InvocationInProgressComponent extends React.Component<Props> {
   render() {
     return (
       <div className="state-page">
