@@ -666,18 +666,6 @@ func (c *Configurator) GetAppRemoteExecutionAPIURL() string {
 	return c.gc.App.RemoteExecutionAPIURL
 }
 
-func (c *Configurator) GetAppNoDefaultUserGroup() bool {
-	return c.gc.App.NoDefaultUserGroup
-}
-
-func (c *Configurator) GetAppCreateGroupPerUser() bool {
-	return c.gc.App.CreateGroupPerUser
-}
-
-func (c *Configurator) GetAppAddUserToDomainGroup() bool {
-	return c.gc.App.AddUserToDomainGroup
-}
-
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
