@@ -167,19 +167,24 @@ func Config(path string) (*RepoConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	repoConfig.Patches = append(repoConfig.Patches, patch)
+	if patch != "" {
+		repoConfig.Patches = append(repoConfig.Patches, patch)
+	}
 
 	// TODO(vadim): prompt user before uploading untracked files
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, err
 	}
-	for _, uf := range strings.Split(strings.Trim(untrackedFiles, "\n"), "\n") {
-		patch, err := diffUntrackedFile(uf)
-		if err != nil {
-			return nil, err
+	untrackedFiles = strings.Trim(untrackedFiles, "\n")
+	if untrackedFiles != "" {
+		for _, uf := range strings.Split(untrackedFiles, "\n") {
+			patch, err := diffUntrackedFile(uf)
+			if err != nil {
+				return nil, err
+			}
+			repoConfig.Patches = append(repoConfig.Patches, patch)
 		}
-		repoConfig.Patches = append(repoConfig.Patches, patch)
 	}
 
 	return repoConfig, nil
