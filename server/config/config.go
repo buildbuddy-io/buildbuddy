@@ -40,10 +40,10 @@ type generalConfig struct {
 }
 
 type appConfig struct {
-	BuildBuddyURL             string             `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
-	EventsAPIURL              string             `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	CacheAPIURL               string             `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
-	RemoteExecutionAPIURL     string             `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	BuildBuddyURL             flagutil.URLFlag   `yaml:"build_buddy_url" usage:"The external URL where your BuildBuddy instance can be found."`
+	EventsAPIURL              flagutil.URLFlag   `yaml:"events_api_url" usage:"Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	CacheAPIURL               flagutil.URLFlag   `yaml:"cache_api_url" usage:"Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen."`
+	RemoteExecutionAPIURL     flagutil.URLFlag   `yaml:"remote_execution_api_url" usage:"Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen."`
 	LogLevel                  string             `yaml:"log_level" usage:"The desired log level. Logs with a level >= this level will be emitted. One of {'fatal', 'error', 'warn', 'info', 'debug'}"`
 	GRPCMaxRecvMsgSizeBytes   int                `yaml:"grpc_max_recv_msg_size_bytes" usage:"Configures the max GRPC receive message size [bytes]"`
 	GRPCOverHTTPPortEnabled   bool               `yaml:"grpc_over_http_port_enabled" usage:"Cloud-Only"`
@@ -434,19 +434,19 @@ func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet 
 			case reflect.Struct:
 				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
 			case reflect.Bool:
-				flagSet.BoolVar(f.Addr().Interface().(*bool), fqFieldName, f.Bool(), docString)
+				flagSet.BoolVar(f.Addr().Convert(reflect.TypeOf((*bool)(nil))).Interface().(*bool), fqFieldName, f.Bool(), docString)
 			case reflect.String:
-				flagSet.StringVar(f.Addr().Interface().(*string), fqFieldName, f.String(), docString)
+				flagSet.StringVar(f.Addr().Convert(reflect.TypeOf((*string)(nil))).Interface().(*string), fqFieldName, f.String(), docString)
 			case reflect.Int:
-				flagSet.IntVar(f.Addr().Interface().(*int), fqFieldName, int(f.Int()), docString)
+				flagSet.IntVar(f.Addr().Convert(reflect.TypeOf((*int)(nil))).Interface().(*int), fqFieldName, int(f.Int()), docString)
 			case reflect.Int64:
 				if f.Addr().Type() == reflect.TypeOf((*time.Duration)(nil)) {
 					flagSet.DurationVar(f.Addr().Interface().(*time.Duration), fqFieldName, time.Duration(f.Int()), docString)
 					continue
 				}
-				flagSet.Int64Var(f.Addr().Interface().(*int64), fqFieldName, int64(f.Int()), docString)
+				flagSet.Int64Var(f.Addr().Convert(reflect.TypeOf((*int64)(nil))).Interface().(*int64), fqFieldName, int64(f.Int()), docString)
 			case reflect.Float64:
-				flagSet.Float64Var(f.Addr().Interface().(*float64), fqFieldName, f.Float(), docString)
+				flagSet.Float64Var(f.Addr().Convert(reflect.TypeOf((*float64)(nil))).Interface().(*float64), fqFieldName, f.Float(), docString)
 			case reflect.Slice:
 				if sf, err := flagutil.NewSliceFlag(f.Addr().Interface()); err == nil {
 					flagSet.Var(sf, fqFieldName, docString)
