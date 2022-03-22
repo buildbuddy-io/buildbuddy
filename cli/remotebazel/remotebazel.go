@@ -128,7 +128,7 @@ func diffUntrackedFile(path string) (string, error) {
 }
 
 func Config(path string) (*RepoConfig, error) {
-	repo, err := git.PlainOpen(path)
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
 		return nil, err
 	}
