@@ -60,10 +60,15 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData) string {
-	// Note, we use a unique remote instance per repo URL, so that the cache as
-	// well as runners aren't shared across repos.
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+wf.InstanceNameSuffix)))
+func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) string {
+	// Use a unique remote instance name per repo URL and action name, to help
+	// route workflow tasks to runners which previously executed the same workflow
+	// action.
+	//
+	// Instance name suffix is additionally used to effectively invalidate all
+	// existing runners for the workflow and cause subsequent workflows to be run
+	// from a clean runner.
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+actionName+wf.InstanceNameSuffix)))
 }
 
 type workflowService struct {
@@ -818,7 +823,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	in := instanceName(wf, wd)
+	in := instanceName(wf, wd, workflowAction.Name)
 	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, workflowAction, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
