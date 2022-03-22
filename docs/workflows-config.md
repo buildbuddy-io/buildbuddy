@@ -4,8 +4,27 @@ title: Workflows configuration
 sidebar_label: Workflows configuration
 ---
 
-This page provides documentation for `buildbuddy.yaml`, which can be placed
-at the root of your git repo to configure BuildBuddy workflow execution.
+Once you've linked your repo to BuildBuddy via
+[BuildBuddy workflows](workflows-setup.md), BuildBuddy will automatically
+run `bazel test //...` on each push to your repo, reporting results to the
+BuildBuddy UI.
+
+But you may wish to configure multiple test commands with different test
+tag filters, or run the same tests on multiple different platform
+configurations (running some tests on Linux, and some on macOS, for
+example).
+
+This page describes how to configure your workflows beyond the default
+configuration.
+
+## Configuring workflow actions and triggers
+
+BuildBuddy workflows can be configured using a file called
+`buildbuddy.yaml`, which can be placed at the root of your git repo.
+
+`buildbuddy.yaml` consists of multiple **actions**. Each action describes
+a list of bazel commands to be run in order, as well as the set of git
+events that should trigger these commands.
 
 :::note
 
@@ -14,7 +33,7 @@ The configuration in `buildbuddy.yaml` only takes effect after you
 
 :::
 
-## Example config
+### Example config
 
 You can copy this example config as a starting point for your own `buildbuddy.yaml`:
 
@@ -24,36 +43,60 @@ actions:
     triggers:
       push:
         branches:
-          - "main"
+          - "main" # <-- replace "main" with your main branch name
       pull_request:
         branches:
-          - "main"
+          - "*"
     bazel_commands:
       - "test //..."
 ```
 
-This config is equivalent to the default config that we use if you do
-not have a `buildbuddy.yaml`, with one exception: this example uses `"main"`
-for the branch name -- if you copy this config, be sure to replace that with
-the name of your main branch. By default, we run the above bazel command
-when any branch is pushed.
+This config is roughly equivalent to the default config that we use if you
+do not have a `buildbuddy.yaml`.
 
-Other points to note:
+## Bazel configuration
 
-- Remote cache and remote execution (RBE) require additional configuration.
-  The configuration steps are the same as when running Bazel locally.
-  See the **Setup** page in the BuildBuddy UI.
-- Bazel commands are run directly in your workspace, which means that your
-  `.bazelrc` is respected. If you have lots of flags, we recommend adding
-  them to your `.bazelrc` instead of adding them in this YAML config.
-- We run your commands with a [bazelisk](https://github.com/bazelbuild/bazelisk)-compatible
-  wrapper so that your `.bazelversion` file is respected. If
-  `.bazelversion` is missing, the latest version of Bazel is used. We
-  always recommend including a `.bazelversion` in your repo to prevent
-  problems caused by using conflicting versions of Bazel in different
-  build environments.
+### Bazel version
 
-<!-- TODO(bduffany): Document ~/.bazelrc -->
+BuildBuddy runs each bazel command in your workflow with a
+[bazelisk](https://github.com/bazelbuild/bazelisk)-compatible wrapper so
+that your `.bazelversion` file is respected.
+
+If `.bazelversion` is missing, the latest version of Bazel is used. We
+always recommend including a `.bazelversion` in your repo to prevent
+problems caused by using conflicting versions of Bazel in different build
+environments.
+
+### bazelrc
+
+BuildBuddy runs each bazel command directly in your workspace, which means
+that your `.bazelrc` is respected. If you have lots of flags, we recommend
+adding them to your `.bazelrc` instead of adding them to your `buildbuddy.yaml`.
+
+BuildBuddy also provides a [`bazelrc`](https://bazel.build/docs/bazelrc)
+file which passes these default options to each bazel invocation listed in
+`bazel_commands`:
+
+- `--bes_backend` and `--bes_results_url`, so that the results from each
+  Bazel command are viewable with BuildBuddy
+- `--remote_header=x-buildbuddy-api-key=YOUR_API_KEY`, so that invocations
+  are authenticated by default
+- `--build_metadata=ROLE=CI`, so that workflow invocations are tagged as
+  CI invocations, and so that workflow tests are viewable in the test grid
+
+BuildBuddy's `bazelrc` takes lower precedence than your workspace
+`.bazelrc`. You can view the exact flags provided by this bazelrc by
+inspecting the command line details in the invocation page (look for
+`buildbuddy.bazelrc`).
+
+:::note
+
+BuildBuddy remote cache and remote execution (RBE) are not enabled by
+default for workflows, and require additional configuration. The
+configuration steps are the same as when running Bazel locally. See the
+**Setup** page in the BuildBuddy UI.
+
+:::
 
 ## Mac configuration
 
@@ -171,7 +214,9 @@ Defines whether an action should execute when a branch is pushed.
 
 **Fields:**
 
-- **`branches`** (`string` list): The branches that, when pushed to, will trigger the action.
+- **`branches`** (`string` list): The branches that, when pushed to, will
+  trigger the action. This field accepts a simple wildcard character
+  (`"*"`) as a possible value, which will match any branch.
 
 ### `PullRequestTrigger`
 
@@ -181,6 +226,7 @@ pushed.
 **Fields:**
 
 - **`branches`** (`string` list): The _target_ branches of a pull request.
-  For example, if this is set to `[ "v1", "v2" ]`, then the
-  associated action is only run when a PR wants to merge a branch _into_
-  the `v1` branch or the `v2` branch.
+  For example, if this is set to `[ "v1", "v2" ]`, then the associated
+  action is only run when a PR wants to merge a branch _into_ the `v1`
+  branch or the `v2` branch. This field accepts a simple wildcard
+  character (`"*"`) as a possible value, which will match any branch.
