@@ -15,9 +15,7 @@ interface State {
   menuExpanded: boolean;
 }
 
-export default class MenuComponent extends React.Component {
-  props: Props;
-
+export default class MenuComponent extends React.Component<Props, State> {
   state: State = {
     menuExpanded: false,
   };

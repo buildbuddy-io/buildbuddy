@@ -58,9 +58,7 @@ const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
 // TODO(siggisim): Add links to the code editor from anywhere we reference a repo
 // TODO(siggisim): Add branch / workspace selection
 // TODO(siggisim): Add some form of search
-export default class CodeComponent extends React.Component<Props> {
-  props: Props;
-
+export default class CodeComponent extends React.Component<Props, State> {
   state: State = {
     commitSHA: "",
     repoResponse: undefined,
@@ -617,7 +615,7 @@ export default class CodeComponent extends React.Component<Props> {
   }
 
   updateState(newState: Partial<State>, callback?: VoidFunction) {
-    this.setState(newState, () => {
+    this.setState(newState as State, () => {
       this.saveState();
       if (callback) {
         callback();

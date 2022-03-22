@@ -19,9 +19,7 @@ interface State {
   loading: boolean;
 }
 
-export default class TargetTestLogCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetTestLogCardComponent extends React.Component<Props, State> {
   state: State = {
     testLog: "",
     cacheEnabled: true,

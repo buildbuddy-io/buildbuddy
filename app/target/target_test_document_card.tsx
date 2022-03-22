@@ -17,9 +17,7 @@ interface State {
   cacheEnabled: boolean;
 }
 
-export default class TargetTestDocumentCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetTestDocumentCardComponent extends React.Component<Props> {
   state: State = {
     testLog: "",
     testDocument: null,

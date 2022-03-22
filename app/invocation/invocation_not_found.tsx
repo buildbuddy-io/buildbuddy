@@ -13,9 +13,7 @@ interface Props {
   user?: User;
 }
 
-export default class InvocationNotFoundComponent extends React.Component {
-  props: Props;
-
+export default class InvocationNotFoundComponent extends React.Component<Props> {
   handleLoginClicked() {
     authService.login();
   }

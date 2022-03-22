@@ -8,11 +8,11 @@ import rpcService from "../service/rpc_service";
 import router from "../router/router";
 
 interface Props {
-  bazelConfigResponse?: bazel_config.GetBazelConfigResponse;
+  bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
 }
 
 interface State {
-  bazelConfigResponse: bazel_config.GetBazelConfigResponse;
+  bazelConfigResponse: bazel_config.IGetBazelConfigResponse;
   user: User;
   selectedCredentialIndex: number;
 
@@ -23,8 +23,7 @@ interface State {
   executionChecked: boolean;
 }
 
-export default class SetupCodeComponent extends React.Component {
-  props: Props;
+export default class SetupCodeComponent extends React.Component<Props, State> {
   state: State = {
     bazelConfigResponse: null,
     selectedCredentialIndex: 0,
@@ -59,7 +58,7 @@ export default class SetupCodeComponent extends React.Component {
     }
   }
 
-  setConfigResponse(response: bazel_config.GetBazelConfigResponse) {
+  setConfigResponse(response: bazel_config.IGetBazelConfigResponse) {
     this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
   }
 
@@ -70,33 +69,38 @@ export default class SetupCodeComponent extends React.Component {
     return response.credential[index] || null;
   }
 
-  handleInputChange(event: any) {
-    const target = event.target;
+  handleInputChange(event: React.ChangeEvent) {
+    const target = event.target as HTMLInputElement;
     const name = target.name;
     this.setState({
       [name]: target.value,
-    });
+    } as Record<keyof State, any>);
   }
 
-  handleCheckboxChange(event: any) {
-    const target = event.target;
+  handleCheckboxChange(event: React.ChangeEvent) {
+    const target = event.target as HTMLInputElement;
     const name = target.name;
     this.setState({
       [name]: target.checked,
-    });
+    } as Record<keyof State, any>);
   }
 
   getResultsUrl() {
-    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_results_url")
-      ?.body;
+    return this.state.bazelConfigResponse?.configOption.find(
+      (option: bazel_config.IConfigOption) => option.flagName == "bes_results_url"
+    )?.body;
   }
 
   getEventStream() {
-    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "bes_backend")?.body;
+    return this.state.bazelConfigResponse?.configOption.find(
+      (option: bazel_config.IConfigOption) => option.flagName == "bes_backend"
+    )?.body;
   }
 
   getCache() {
-    return this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")?.body;
+    return this.state.bazelConfigResponse?.configOption.find(
+      (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
+    )?.body;
   }
 
   getCacheOptions() {
@@ -122,8 +126,9 @@ export default class SetupCodeComponent extends React.Component {
   }
 
   getRemoteExecution() {
-    return this.state.bazelConfigResponse?.configOption?.find((option: any) => option.flagName == "remote_executor")
-      ?.body;
+    return this.state.bazelConfigResponse?.configOption?.find(
+      (option: bazel_config.IConfigOption) => option.flagName == "remote_executor"
+    )?.body;
   }
 
   getCredentials() {
@@ -156,14 +161,20 @@ export default class SetupCodeComponent extends React.Component {
 
   isCacheEnabled() {
     return Boolean(
-      this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_cache")
+      this.state.bazelConfigResponse?.configOption.find(
+        (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
+      )
     );
   }
 
   isExecutionEnabled() {
     return (
       (this.isAuthenticated() || !capabilities.auth) &&
-      Boolean(this.state.bazelConfigResponse?.configOption.find((option: any) => option.flagName == "remote_executor"))
+      Boolean(
+        this.state.bazelConfigResponse?.configOption.find(
+          (option: bazel_config.IConfigOption) => option.flagName == "remote_executor"
+        )
+      )
     );
   }
 

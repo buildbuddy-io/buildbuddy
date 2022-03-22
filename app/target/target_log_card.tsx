@@ -8,9 +8,7 @@ interface Props {
   dark: boolean;
 }
 
-export default class TargetLogCardComponent extends React.Component {
-  props: Props;
-
+export default class TargetLogCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>

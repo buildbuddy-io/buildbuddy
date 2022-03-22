@@ -11,9 +11,7 @@ interface State {
   loading: boolean;
 }
 
-export default class FetchCardComponent extends React.Component {
-  props: Props;
-
+export default class FetchCardComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
   };

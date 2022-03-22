@@ -9,9 +9,7 @@ interface Props {
   model: InvocationModel;
   invocationId: string;
 }
-export default class DenseInvocationOverviewComponent extends React.Component {
-  props: Props;
-
+export default class DenseInvocationOverviewComponent extends React.Component<Props> {
   handleUserClicked() {
     router.navigateToUserHistory(this.props.model.getUser(false));
   }

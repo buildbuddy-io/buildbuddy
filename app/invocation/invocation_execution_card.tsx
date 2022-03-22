@@ -19,7 +19,7 @@ interface Props {
 
 interface State {
   loading: boolean;
-  executions: execution_stats.Execution[];
+  executions: execution_stats.IExecution[];
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
@@ -45,7 +45,7 @@ const GRPC_STATUS_LABEL_BY_CODE: Record<number, string> = Object.fromEntries(
   Object.entries(google.rpc.Code).map(([name, value]) => [value, name])
 );
 
-function getExecutionStatus(execution: execution_stats.Execution): ExecutionStatus {
+function getExecutionStatus(execution: execution_stats.IExecution): ExecutionStatus {
   if (execution.stage === ExecutionStage.Value.COMPLETED) {
     if (execution.status.code !== 0) {
       return {
@@ -65,9 +65,7 @@ function getExecutionStatus(execution: execution_stats.Execution): ExecutionStat
   return STATUSES_BY_STAGE[execution.stage];
 }
 
-export default class ExecutionCardComponent extends React.Component {
-  props: Props;
-
+export default class ExecutionCardComponent extends React.Component<Props, State> {
   state: State = {
     executions: [],
     loading: true,
@@ -126,42 +124,42 @@ export default class ExecutionCardComponent extends React.Component {
     return microsA - microsB;
   }
 
-  totalDuration(execution: execution_stats.Execution) {
+  totalDuration(execution: execution_stats.IExecution) {
     return this.subtractTimestamp(
       execution?.executedActionMetadata?.workerCompletedTimestamp,
       execution?.executedActionMetadata?.queuedTimestamp
     );
   }
 
-  queuedDuration(execution: execution_stats.Execution) {
+  queuedDuration(execution: execution_stats.IExecution) {
     return this.subtractTimestamp(
       execution?.executedActionMetadata?.workerStartTimestamp,
       execution?.executedActionMetadata?.queuedTimestamp
     );
   }
 
-  downloadDuration(execution: execution_stats.Execution) {
+  downloadDuration(execution: execution_stats.IExecution) {
     return this.subtractTimestamp(
       execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
       execution?.executedActionMetadata?.inputFetchStartTimestamp
     );
   }
 
-  executionDuration(execution: execution_stats.Execution) {
+  executionDuration(execution: execution_stats.IExecution) {
     return this.subtractTimestamp(
       execution?.executedActionMetadata?.executionCompletedTimestamp,
       execution?.executedActionMetadata?.executionStartTimestamp
     );
   }
 
-  uploadDuration(execution: execution_stats.Execution) {
+  uploadDuration(execution: execution_stats.IExecution) {
     return this.subtractTimestamp(
       execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
       execution?.executedActionMetadata?.outputUploadStartTimestamp
     );
   }
 
-  sort(a: execution_stats.Execution, b: execution_stats.Execution) {
+  sort(a: execution_stats.IExecution, b: execution_stats.IExecution) {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
@@ -218,27 +216,27 @@ export default class ExecutionCardComponent extends React.Component {
     }
   }
 
-  handleInputChange(event: any) {
-    const target = event.target;
+  handleInputChange(event: React.ChangeEvent) {
+    const target = event.target as HTMLInputElement;
     const name = target.name;
     this.setState({
       [name]: target.value,
-    });
+    } as Record<keyof State, any>);
   }
 
-  handleSortChange(event: any) {
+  handleSortChange(event: React.ChangeEvent) {
     this.setState({
-      sort: event.target.value,
+      sort: (event.target as HTMLInputElement).value,
     });
   }
 
-  handleStatusFilterChange(event: any) {
+  handleStatusFilterChange(event: React.ChangeEvent) {
     this.setState({
-      statusFilter: event.target.value,
+      statusFilter: (event.target as HTMLInputElement).value,
     });
   }
 
-  handleActionDigestClick(execution: execution_stats.Execution) {
+  handleActionDigestClick(execution: execution_stats.IExecution) {
     let path =
       "/invocation/" +
       this.props.model.getId() +

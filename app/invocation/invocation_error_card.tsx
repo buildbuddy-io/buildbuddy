@@ -6,9 +6,7 @@ interface Props {
   model: InvocationModel;
 }
 
-export default class ErrorCardComponent extends React.Component {
-  props: Props;
-
+export default class ErrorCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className="card card-failure">

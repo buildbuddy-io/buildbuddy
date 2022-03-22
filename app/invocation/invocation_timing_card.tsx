@@ -45,9 +45,7 @@ const sortByDurationDescStorageValue = "duration-desc";
 const groupByThreadStorageValue = "thread";
 const groupByAllStorageValue = "all";
 
-export default class InvocationTimingCardComponent extends React.Component {
-  props: Props;
-
+export default class InvocationTimingCardComponent extends React.Component<Props, State> {
   state: State = {
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
@@ -78,7 +76,7 @@ export default class InvocationTimingCardComponent extends React.Component {
     let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
 
     if (!profileFile?.uri) {
-      const hasBuildToolLogs = this.props.model.buildToolLogs;
+      const hasBuildToolLogs = Boolean(this.props.model.buildToolLogs);
       this.setState({
         ...this.state,
         buildInProgress: !hasBuildToolLogs,
