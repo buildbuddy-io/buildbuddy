@@ -117,8 +117,8 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
 
     this.setState({ isEditRoleModalVisible: false });
   }
-  private onChangeRoleToApply(event: React.ChangeEvent) {
-    const roleToApply = Number((event.target as HTMLSelectElement).value) as grp.Group.Role;
+  private onChangeRoleToApply(event: React.ChangeEvent<HTMLSelectElement>) {
+    const roleToApply = Number(event.target.value) as grp.Group.Role;
     this.setState({ roleToApply });
   }
   private onClickApplyRoleEdits() {

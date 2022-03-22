@@ -557,13 +557,13 @@ export default class CodeComponent extends React.Component<Props, State> {
       });
   }
 
-  onTitleChange(e: React.ChangeEvent) {
-    const input = e.target as HTMLInputElement;
+  onTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
     this.updateState({ prTitle: input.value });
   }
 
-  onBodyChange(e: React.ChangeEvent) {
-    const input = e.target as HTMLInputElement;
+  onBodyChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
     this.updateState({ prBody: input.value });
   }
 

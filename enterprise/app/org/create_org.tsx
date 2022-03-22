@@ -23,7 +23,7 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
     router.navigateTo(Path.settingsPath);
   }
 
-  onChangeName(e: React.ChangeEvent) {
+  onChangeName(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = getChangedFormState(e);
     // Auto-populate the slug field from the opg name if the slug field
     // hasn't yet been touched (we don't want to modify any existing input

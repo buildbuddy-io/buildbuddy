@@ -216,23 +216,23 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     }
   }
 
-  handleInputChange(event: React.ChangeEvent) {
-    const target = event.target as HTMLInputElement;
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const target = event.target;
     const name = target.name;
     this.setState({
       [name]: target.value,
     } as Record<keyof State, any>);
   }
 
-  handleSortChange(event: React.ChangeEvent) {
+  handleSortChange(event: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      sort: (event.target as HTMLInputElement).value,
+      sort: event.target.value,
     });
   }
 
-  handleStatusFilterChange(event: React.ChangeEvent) {
+  handleStatusFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      statusFilter: (event.target as HTMLInputElement).value,
+      statusFilter: event.target.value,
     });
   }
 

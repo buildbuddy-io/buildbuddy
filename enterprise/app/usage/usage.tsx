@@ -35,8 +35,8 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
       .finally(() => this.setState({ loading: false }));
   }
 
-  private onChangePeriod(e: React.ChangeEvent) {
-    const selectedPeriod = (e.target as HTMLOptionElement).value;
+  private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
+    const selectedPeriod = e.target.value;
     this.setState({ selectedPeriod });
   }
 

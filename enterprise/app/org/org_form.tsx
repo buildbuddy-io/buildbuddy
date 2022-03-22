@@ -58,14 +58,14 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
     const name = (e.target as HTMLInputElement).name;
     this.setState({ touched: new Set([...this.state.touched, name]) });
   }
-  onChange(e: React.ChangeEvent) {
+  onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, value);
   }
-  onChangeName(e: React.ChangeEvent) {
+  onChangeName(e: React.ChangeEvent<HTMLInputElement>) {
     return this.onChange(e);
   }
-  onChangeUrlIdentifier(e: React.ChangeEvent) {
+  onChangeUrlIdentifier(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, makeSlug(value as string));
   }
@@ -178,8 +178,8 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 }
 
-export function getChangedFormState(changeEvent: React.ChangeEvent) {
-  const input = changeEvent.target as HTMLInputElement;
+export function getChangedFormState(changeEvent: React.ChangeEvent<HTMLInputElement>) {
+  const input = changeEvent.target;
 
   const name = input.name;
   const value = input.type === "checkbox" ? input.checked : input.value;
