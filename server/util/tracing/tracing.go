@@ -3,6 +3,7 @@ package tracing
 import (
 	"context"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"math"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
@@ -29,6 +31,16 @@ import (
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+)
+
+var (
+	// TODO: use this project ID or deprecate it. It is currently unreferenced.
+	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
+	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
+	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
+	traceFractionOverrides    = flagutil.StringSlice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
+	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
 )
 
 const (
