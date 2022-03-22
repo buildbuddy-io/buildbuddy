@@ -26,6 +26,13 @@ const (
 )
 
 var (
+	defaultToDenseMode    = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
+	codeEditorEnabled     = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
+	userManagementEnabled = flag.Bool("app.user_management_enabled", false, "If set, the user management page will be enabled in the UI.")
+	globalFilterEnabled   = flag.Bool("app.global_filter_enabled", false, "If set, the global filter will be enabled in the UI.")
+	testGridV2Enabled     = flag.Bool("app.test_grid_v2_enabled", false, "Whether to enable test grid V2")
+	usageEnabled          = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
+
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
 )
