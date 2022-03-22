@@ -9,6 +9,7 @@ go_library(
         "//proto:trace_go_proto",
         "//server/config",
         "//server/interfaces",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@io_opentelemetry_go_contrib_detectors_gcp//:gcp",
