@@ -60,15 +60,15 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) string {
-	// Use a unique remote instance name per repo URL and action name, to help
+func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActionName string) string {
+	// Use a unique remote instance name per repo URL and workflow action name, to help
 	// route workflow tasks to runners which previously executed the same workflow
 	// action.
 	//
 	// Instance name suffix is additionally used to effectively invalidate all
 	// existing runners for the workflow and cause subsequent workflows to be run
 	// from a clean runner.
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+actionName+wf.InstanceNameSuffix)))
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+workflowActionName+wf.InstanceNameSuffix)))
 }
 
 type workflowService struct {
