@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/db",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/config",
         "//server/interfaces",
         "//server/metrics",
         "//server/tables",

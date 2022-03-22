@@ -36,9 +36,9 @@ var (
 )
 
 func init() {
-	if err := log.Configure(log.Opts{Level: "warn", EnableShortFileName: true}); err != nil {
-		log.Fatalf("Error configuring logging: %s", err)
-	}
+	*log.LogLevel = "warn"
+	*log.IncludeShortFileName = true
+	log.Configure()
 }
 
 func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.TestEnv {
