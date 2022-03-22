@@ -90,7 +90,7 @@ func NewUserDB(env environment.Env, h interfaces.DBHandle) (*UserDB, error) {
 		env: env,
 		h:   h,
 	}
-	if !db.env.GetConfigurator().GetAppNoDefaultUserGroup() {
+	if !*noDefaultUserGroup {
 		if err := db.CreateDefaultGroup(context.Background()); err != nil {
 			return nil, err
 		}
@@ -596,7 +596,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 
 	// If the user signed up using an authenticator associated with a group (i.e. SAML or OIDC SSO),
 	// don't add it to a group based on domain.
-	if len(u.Groups) == 0 && d.env.GetConfigurator().GetAppAddUserToDomainGroup() {
+	if len(u.Groups) == 0 && *addUserToDomainGroup {
 		dg, err := d.getDomainOwnerGroup(ctx, tx, emailDomain)
 		if err != nil {
 			log.Errorf("error in createUser: %s", err)
@@ -607,7 +607,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		}
 	}
 
-	if d.env.GetConfigurator().GetAppCreateGroupPerUser() {
+	if *createGroupPerUser {
 		sug, err := singleUserGroup(u)
 		if err != nil {
 			return err
@@ -622,7 +622,7 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 	}
 
 	cfg := d.getDefaultGroupConfig()
-	if !d.env.GetConfigurator().GetAppNoDefaultUserGroup() {
+	if !*noDefaultUserGroup {
 		if cfg.group.OwnedDomain != "" && cfg.group.OwnedDomain != emailDomain {
 			return status.FailedPreconditionErrorf("Failed to create user, email address: %s does not belong to domain: %s", u.Email, cfg.group.OwnedDomain)
 		}
