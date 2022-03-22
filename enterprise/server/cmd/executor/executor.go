@@ -244,13 +244,7 @@ func main() {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
-	opts := log.Opts{
-		Level:                  configurator.GetAppLogLevel(),
-		EnableShortFileName:    configurator.GetAppLogIncludeShortFileName(),
-		EnableGCPLoggingFormat: configurator.GetAppLogEnableGCPLoggingFormat(),
-		EnableStructured:       configurator.GetAppEnableStructuredLogging(),
-	}
-	if err := log.Configure(opts); err != nil {
+	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}

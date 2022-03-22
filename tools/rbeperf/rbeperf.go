@@ -830,15 +830,11 @@ func main() {
 	flag.Parse()
 	rand.Seed(time.Now().UnixNano())
 
-	logLevel := "info"
 	if *verbose {
-		logLevel = "debug"
+		*log.LogLevel = "debug"
 	}
-	opts := log.Opts{
-		Level:               logLevel,
-		EnableShortFileName: true,
-	}
-	if err := log.Configure(opts); err != nil {
+	*log.IncludeShortFileName = true
+	if err := log.Configure(); err != nil {
 		log.Fatalf("Could not configure logger: %s", err)
 	}
 
