@@ -37,4 +37,5 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker
+      # TODO(http://go/b/1249): remove --jobs=3
+      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
