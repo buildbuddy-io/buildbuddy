@@ -250,6 +250,9 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if err != nil {
 		return nil, err
 	}
+	if d.GetHash() == digest.EmptySha256 {
+		return d, nil
+	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
