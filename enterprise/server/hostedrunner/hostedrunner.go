@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -119,6 +120,12 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
 	}
 
+	// Use https for git operations.
+	repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
 	conf := r.env.GetConfigurator()
 	args := []string{
 		"./" + runnerName,
@@ -126,8 +133,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--cache_backend=" + conf.GetAppCacheAPIURL(),
 		"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
-		"--pushed_repo_url=" + req.GetGitRepo().GetRepoUrl(),
-		"--target_repo_url=" + req.GetGitRepo().GetRepoUrl(),
+		"--pushed_repo_url=" + repoURL.String(),
+		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--pushed_branch=master",
 		"--target_branch=master",
@@ -143,7 +150,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	affinityKey := req.GetSessionAffinityKey()
 	if affinityKey == "" {
-		affinityKey = req.GetGitRepo().GetRepoUrl()
+		affinityKey = repoURL.String()
 	}
 
 	cmd := &repb.Command{

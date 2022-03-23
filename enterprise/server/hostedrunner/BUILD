@@ -14,6 +14,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/tables",
+        "//server/util/git",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/query_builder",
