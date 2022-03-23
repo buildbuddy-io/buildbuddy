@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -57,7 +58,7 @@ const (
 
 func Provider(env environment.Env) config.OauthProvider {
 	return config.OauthProvider{
-		IssuerURL:    env.GetConfigurator().GetAppBuildBuddyURL(),
+		IssuerURL:    build_buddy_url.BuildBuddyURLString(),
 		ClientID:     "buildbuddy",
 		ClientSecret: "secret",
 	}
@@ -139,7 +140,7 @@ func (o *selfAuth) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.R
 }
 
 func (o *selfAuth) IssuerURL() *url.URL {
-	return o.env.GetSelfAuthURL()
+	return build_buddy_url.BuildBuddyURL("")
 }
 
 func (o *selfAuth) AuthorizationEndpoint() *url.URL {

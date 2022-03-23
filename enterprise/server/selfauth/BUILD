@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//server/config",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/util/log",
         "//server/util/status",

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -164,10 +165,12 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 
 	hooks := make([]interfaces.Webhook, 0)
-	appURL := configurator.GetAppBuildBuddyURL()
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
 		if sc.WebhookURL != "" {
-			hooks = append(hooks, slack.NewSlackWebhook(sc.WebhookURL, appURL))
+			hooks = append(hooks, slack.NewSlackWebhook(
+				sc.WebhookURL,
+				build_buddy_url.BuildBuddyURLString(),
+			))
 		}
 	}
 	if configurator.GetIntegrationsInvocationUploadConfig().Enabled {

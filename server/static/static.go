@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -116,7 +117,7 @@ type FrontendTemplateData struct {
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	if env.GetConfigurator().GetSelfAuthEnabled() {
-		issuers = append(issuers, env.GetSelfAuthURL().String())
+		issuers = append(issuers, build_buddy_url.BuildBuddyURLString())
 	}
 	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
 	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,

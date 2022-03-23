@@ -55,7 +55,10 @@ func CheckFlagsAgainstConfig(t *testing.T) {
 		if yamlFlg == nil {
 			return
 		}
-		assert.Equal(t, reflect.TypeOf(yamlFlg.Value), reflect.TypeOf(flg.Value), "Flag %s is of type %T, but yaml flag is of type %T", flg.Name, flg.Value, yamlFlg.Value)
-		assert.Equal(t, yamlFlg.Usage, flg.Usage, "Flag %s is has usage: `%s`, but yaml docstring is `%s`", flg.Name, flg.Usage, yamlFlg.Usage)
+		assert.Equal(t, yamlFlg.Usage, flg.Usage, "Flag %s has usage: `%s`, but yaml docstring is `%s`", flg.Name, flg.Usage, yamlFlg.Usage)
+		require.Equal(t, reflect.TypeOf(yamlFlg.Value).Kind(), reflect.TypeOf(flg.Value).Kind(), "Flag %s is of type %T, but yaml flag is of type %T", flg.Name, flg.Value, yamlFlg.Value)
+		if reflect.TypeOf(yamlFlg.Value).Kind() == reflect.Slice || reflect.TypeOf(yamlFlg.Value).Kind() == reflect.Struct {
+			assert.Equal(t, reflect.TypeOf(yamlFlg.Value), reflect.TypeOf(flg.Value), "Flag %s is of type %T, but yaml flag is of type %T", flg.Name, flg.Value, yamlFlg.Value)
+		}
 	})
 }

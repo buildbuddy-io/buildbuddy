@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -99,12 +100,11 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		setCookie(w, groupIDCookieName, groupID)
 		setCookie(w, redirectCookieName, redirectURL)
 
-		appURL := c.env.GetConfigurator().GetAppBuildBuddyURL()
 		url := fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			githubConfig.ClientID,
 			state,
-			appURL+"/auth/github/link/",
+			build_buddy_url.BuildBuddyURL("/auth/github/link/"),
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return

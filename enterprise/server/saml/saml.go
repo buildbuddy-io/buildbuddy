@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -207,23 +208,12 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if err != nil {
 		return nil, err
 	}
-	myURL, err := url.Parse(a.env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return nil, err
-	}
-	authURL, err := myURL.Parse("/auth/")
-	if err != nil {
-		return nil, err
-	}
-	entityURL, err := myURL.Parse("saml/metadata")
-	if err != nil {
-		return nil, err
-	}
+	entityURL := build_buddy_url.BuildBuddyURL("saml/metadata")
 	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	entityURL.RawQuery = query
 	samlSP, _ := samlsp.New(samlsp.Options{
 		EntityID:          entityURL.String(),
-		URL:               *authURL,
+		URL:               *build_buddy_url.BuildBuddyURL("/auth/"),
 		Key:               keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate:       keyPair.Leaf,
 		IDPMetadata:       idpMetadata,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -458,20 +459,12 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 }
 
 func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProviders []config.OauthProvider) (*OpenIDAuthenticator, error) {
-	oia := &OpenIDAuthenticator{
-		env: env,
-	}
-
-	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return nil, err
-	}
-	authURL, err := myURL.Parse("/auth/")
-	if err != nil {
-		return nil, err
-	}
-	oia.myURL = myURL
-	oia.authenticators, err = createAuthenticatorsFromConfig(ctx, env, oauthProviders, authURL)
+	authenticators, err := createAuthenticatorsFromConfig(
+		ctx,
+		env,
+		oauthProviders,
+		build_buddy_url.BuildBuddyURL("/auth/"),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -480,14 +473,20 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 	jwtKey = []byte(env.GetConfigurator().GetAuthJWTKey())
 
 	// Initialize API Key -> Group cache unless it's disabled by config.
+	var akgCache *apiKeyGroupCache
 	if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "0" {
-		akgCache, err := newAPIKeyGroupCache(env.GetConfigurator())
+		akgCache, err = newAPIKeyGroupCache(env.GetConfigurator())
 		if err != nil {
 			return nil, err
 		}
-		oia.apiKeyGroupCache = akgCache
 	}
-	return oia, nil
+
+	return &OpenIDAuthenticator{
+		env:              env,
+		myURL:            build_buddy_url.BuildBuddyURL(""),
+		authenticators:   authenticators,
+		apiKeyGroupCache: akgCache,
+	}, nil
 }
 
 func newForTesting(ctx context.Context, env environment.Env, testAuthenticator authenticator) (*OpenIDAuthenticator, error) {
