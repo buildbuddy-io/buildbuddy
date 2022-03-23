@@ -103,7 +103,8 @@ setup of the next test. You can use `docker container inspect` to see if
 it the server is already running, and SQL queries like `DROP DATABASE IF EXISTS`
 followed by `CREATE DATABASE` to get a clean DB instance.
 
-See [BuildBuddy's test MySQL implementation](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/testutil/testmysql/testmysql.go)
+See
+[BuildBuddy's test MySQL implementation](https://github.com/buildbuddy-io/buildbuddy/blob/master/server/testutil/testmysql/testmysql.go)
 for an example in Golang.
 
 :::
