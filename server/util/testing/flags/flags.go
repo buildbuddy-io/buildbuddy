@@ -7,21 +7,9 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// Set a flag value and register a cleanup function to restore the flag
-// to its original value after the given test is complete.
-// TODO: Remove this function when we no longer need to reconcile flags
-func SetAndReconcile(t testing.TB, name, value string, env environment.Env) {
-	Set(t, name, value)
-	env.GetConfigurator().ReconcileFlagsAndConfig()
-	t.Cleanup(func() {
-		env.GetConfigurator().ReconcileFlagsAndConfig()
-	})
-}
 
 // Set a flag value and register a cleanup function to restore the flag
 // to its original value after the given test is complete.

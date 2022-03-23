@@ -658,22 +658,6 @@ func (c *Configurator) GetDisableCertConfig() bool {
 	return c.gc.App.DisableCertConfig
 }
 
-func (c *Configurator) GetAppUsageEnabled() bool {
-	return c.gc.App.UsageEnabled
-}
-
-func (c *Configurator) GetAppUsageStartDate() string {
-	return c.gc.App.UsageStartDate
-}
-
-func (c *Configurator) GetAppUsageTrackingEnabled() bool {
-	return c.gc.App.UsageTrackingEnabled
-}
-
-func (c *Configurator) GetAppRegion() string {
-	return c.gc.App.Region
-}
-
 func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
 	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
 		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}

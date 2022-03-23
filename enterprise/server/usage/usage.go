@@ -2,10 +2,12 @@ package usage
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/usage_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -97,13 +99,22 @@ type tracker struct {
 }
 
 func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
+	if !usage_config.UsageTrackingEnabled() {
+		return nil, nil
+	}
+	if *region == "" {
+		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
+	}
+	if env.GetDefaultRedisClient() == nil {
+		return nil, status.FailedPreconditionError("Usage tracking is enabled, but no Redis client is configured.")
+	}
 	if env.GetMetricsCollector() == nil {
 		return nil, status.FailedPreconditionError("Metrics Collector must be configured for usage tracker.")
 	}
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    env.GetConfigurator().GetAppRegion(),
+		region:    *region,
 		clock:     clock,
 		flushLock: flushLock,
 		stopFlush: make(chan struct{}),
