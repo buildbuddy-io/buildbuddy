@@ -509,7 +509,7 @@ export default class InvocationModel {
     let testResult = this.testSummaryMap.get(label)?.buildEvent.testSummary;
     if (testResult) {
       let durationMillis = durationToMillisWithFallback(testResult.totalRunDuration, testResult.totalRunDurationMillis);
-      return durationMillis / 1000 + " seconds";
+      return (durationMillis / 1000).toFixed(3) + " seconds";
     }
     return (
       this.getDuration(this.completedMap.get(label)?.eventTime, this.configuredMap.get(label)?.eventTime) + " seconds"
