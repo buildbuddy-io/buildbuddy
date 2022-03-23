@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/usage_config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -30,6 +31,9 @@ type usageService struct {
 }
 
 func New(env environment.Env) *usageService {
+	if !usage_config.UsageTrackingEnabled() {
+		return nil
+	}
 	return &usageService{
 		env:   env,
 		start: configuredUsageStartDate(env),
@@ -141,18 +145,17 @@ func reverseUsageSlice(a []*usagepb.Usage) {
 }
 
 func configuredUsageStartDate(env environment.Env) time.Time {
-	startDateStr := env.GetConfigurator().GetAppUsageStartDate()
-	if startDateStr == "" {
+	if *usageStartDate == "" {
 		log.Warningf("Usage start date is not configured; usage page may show some months with missing usage data.")
 		return time.Unix(0, 0).UTC()
 	}
-	start, err := time.Parse(time.RFC3339, startDateStr)
+	start, err := time.Parse(time.RFC3339, *usageStartDate)
 	if err != nil {
-		log.Errorf("Failed to parse app.usage_start_date from string %q: %s", startDateStr, err)
+		log.Errorf("Failed to parse app.usage_start_date from string %q: %s", *usageStartDate, err)
 		return time.Unix(0, 0).UTC()
 	}
 	if start.After(time.Now()) {
-		log.Warningf("Configured usage start date %q is in the future; usage page may show empty usage data.", startDateStr)
+		log.Warningf("Configured usage start date %q is in the future; usage page may show empty usage data.", *usageStartDate)
 	}
 	return start.UTC()
 }

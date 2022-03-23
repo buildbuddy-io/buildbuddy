@@ -61,7 +61,6 @@ import (
 )
 
 var (
-
 	serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
 )
 
@@ -145,9 +144,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
 	env.SetInvocationSearchService(search)
 
-	if env.GetConfigurator().GetAppUsageEnabled() {
-		env.SetUsageService(usage_service.New(env))
-	}
+	env.SetUsageService(usage_service.New(env))
 
 	apiServer := api.NewAPIServer(env)
 	env.SetAPIService(apiServer)
@@ -214,6 +211,7 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
+	var rbuf *redisutil.CommandBuffer
 	if redisConfig := configurator.GetDefaultRedisClientConfig(); redisConfig != nil {
 		rdb, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "default_redis")
 		if err != nil {
@@ -221,7 +219,7 @@ func main() {
 		}
 		realEnv.SetDefaultRedisClient(rdb)
 
-		rbuf := redisutil.NewCommandBuffer(rdb)
+		rbuf = redisutil.NewCommandBuffer(rdb)
 		rbuf.StartPeriodicFlush(context.Background())
 		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
 
@@ -229,27 +227,16 @@ func main() {
 		realEnv.SetKeyValStore(rkv)
 		rmc := redis_metrics_collector.New(rdb, rbuf)
 		realEnv.SetMetricsCollector(rmc)
+	}
 
-		if configurator.GetAppUsageTrackingEnabled() {
-			region := realEnv.GetConfigurator().GetAppRegion()
-			if region == "" {
-				log.Fatalf("Usage tracking requires app.region to be configured.")
-			}
-			ut, err := usage.NewTracker(
-				realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
-			if err != nil {
-				log.Fatalf("Error creating usage tracker: %s", err)
-			}
-			realEnv.SetUsageTracker(ut)
-
-			ut.StartDBFlush()
-			healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
-				ut.StopDBFlush()
-				return nil
-			})
-		}
-	} else if configurator.GetAppUsageTrackingEnabled() {
-		log.Fatalf("Usage tracking is enabled, but no Redis client is configured.")
+	if ut, err := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv)); err != nil {
+		log.Fatalf("%v", err)
+	} else if ut != nil {
+		ut.StartDBFlush()
+		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+			ut.StopDBFlush()
+			return nil
+		})
 	}
 
 	if redisConfig := configurator.GetRemoteExecutionRedisClientConfig(); redisConfig != nil {
