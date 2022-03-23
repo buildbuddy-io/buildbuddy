@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -122,24 +121,23 @@ func (s *fractionSampler) Description() string {
 	return s.description
 }
 
-func Configure(configurator *config.Configurator, healthChecker interfaces.HealthChecker) error {
-	if configurator.GetTraceFraction() <= 0 {
+func Configure(healthChecker interfaces.HealthChecker) error {
+	if *traceFraction <= 0 {
 		return nil
 	}
 
-	collector := configurator.GetTraceJaegerCollector()
-	if collector == "" {
+	if *traceJaegerCollector == "" {
 		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
 	}
 
-	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(collector)))
+	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
 	if err != nil {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
 	}
 
 	fractionOverrides := make(map[string]float64)
-	for _, override := range configurator.GetTraceFractionOverrides() {
+	for _, override := range *traceFractionOverrides {
 		parts := strings.Split(override, "=")
 		if len(parts) != 2 {
 			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
@@ -151,11 +149,11 @@ func Configure(configurator *config.Configurator, healthChecker interfaces.Healt
 		}
 		fractionOverrides[name] = fraction
 	}
-	sampler := newFractionSampler(configurator.GetTraceFraction(), fractionOverrides, configurator.GetIgnoreForcedTracingHeader())
+	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
 
 	var resourceAttrs []attribute.KeyValue
-	if configurator.GetTraceServiceName() != "" {
-		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(configurator.GetTraceServiceName()))
+	if *traceServiceName != "" {
+		resourceAttrs = append(resourceAttrs, semconv.ServiceNameKey.String(*traceServiceName))
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
