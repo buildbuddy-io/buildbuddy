@@ -12,9 +12,11 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net/http"
-	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -146,29 +148,21 @@ func (s *SSLService) populateTLSConfig() error {
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
 	} else if sslConf.UseACME {
-		appURL := s.env.GetConfigurator().GetAppBuildBuddyURL()
-		if appURL == "" {
+		if build_buddy_url.BuildBuddyURLString() == "" {
 			return status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
 		}
-
-		url, err := url.Parse(appURL)
-		if err != nil {
-			return err
-		}
-		hosts := []string{url.Hostname()}
+		hosts := []string{build_buddy_url.BuildBuddyURL("").Hostname()}
 
 		if sslConf.HostWhitelist != nil {
 			hosts = append(hosts, sslConf.HostWhitelist...)
 		}
 
-		cacheURL := s.env.GetConfigurator().GetAppCacheAPIURL()
-		if url, err = url.Parse(cacheURL); cacheURL != "" && err == nil {
-			hosts = append(hosts, url.Hostname())
+		if cache_api_url.CacheAPIURLString() != "" {
+			hosts = append(hosts, cache_api_url.CacheAPIURL("").Hostname())
 		}
 
-		eventsURL := s.env.GetConfigurator().GetAppEventsAPIURL()
-		if url, err = url.Parse(eventsURL); eventsURL != "" && err == nil {
-			hosts = append(hosts, url.Hostname())
+		if events_api_url.EventsAPIURLString() != "" {
+			hosts = append(hosts, events_api_url.EventsAPIURL("").Hostname())
 		}
 
 		// Google LB frontend (GFE) doesn't send SNI to backend so we need to provide a default.

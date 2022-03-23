@@ -3,6 +3,7 @@ package url
 import (
 	"net/url"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -19,18 +20,13 @@ func SameHostname(urlStringA, urlStringB string) bool {
 // ValidateRedirectURL ensures that the provided redirectURL exists on this
 // server, otherwise an error is returned.
 func ValidateRedirect(env environment.Env, redirectURL string) error {
-	myURL, err := url.Parse(env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return err
-	}
 	redir, err := url.Parse(redirectURL)
 	if err != nil {
 		return err
 	}
-	if redir.Hostname() != "" {
-		if !SameHostname(redirectURL, myURL.String()) {
-			return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myURL.Host)
-		}
+	myURL := build_buddy_url.BuildBuddyURL("")
+	if redir.Hostname() != "" && redir.Hostname() != myURL.Hostname() {
+		return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myURL.Host)
 	}
 	return nil
 }

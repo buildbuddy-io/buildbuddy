@@ -11,6 +11,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -101,7 +102,7 @@ func (t *TelemetryClient) logTelemetryData() {
 		LogUuid:          getLogUUID(),
 		RecordedAtUsec:   time.Now().UnixMicro(),
 		AppVersion:       t.version,
-		AppUrl:           t.env.GetConfigurator().GetAppBuildBuddyURL(),
+		AppUrl:           build_buddy_url.BuildBuddyURLString(),
 		Hostname:         getHostname(),
 		TelemetryStat:    &telpb.TelemetryStat{},
 		TelemetryFeature: getFeatures(t.env),

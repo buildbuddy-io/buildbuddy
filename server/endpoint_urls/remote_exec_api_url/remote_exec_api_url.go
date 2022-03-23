@@ -11,7 +11,7 @@ import (
 var remoteExecAPIURL string
 
 func init() {
-	flag.Var(flagutil.NewURLFlag(&remoteExecAPIURL), "app.remote_execution_api_url", "The external URL where your BuildBuddy instance can be found.")
+	flag.Var(flagutil.NewURLFlag(&remoteExecAPIURL), "app.remote_execution_api_url", "Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen.")
 }
 
 func RemoteExecAPIURL(path string) *url.URL {

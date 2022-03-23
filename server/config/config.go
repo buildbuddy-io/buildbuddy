@@ -650,22 +650,6 @@ func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
 	return &c.gc.Storage.Azure
 }
 
-func (c *Configurator) GetAppBuildBuddyURL() string {
-	return c.gc.App.BuildBuddyURL
-}
-
-func (c *Configurator) GetAppEventsAPIURL() string {
-	return c.gc.App.EventsAPIURL
-}
-
-func (c *Configurator) GetAppCacheAPIURL() string {
-	return c.gc.App.CacheAPIURL
-}
-
-func (c *Configurator) GetAppRemoteExecutionAPIURL() string {
-	return c.gc.App.RemoteExecutionAPIURL
-}
-
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }

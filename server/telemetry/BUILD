@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:telemetry_go_proto",
         "//server/backends/blobstore",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/util/grpc_client",
         "//server/util/log",

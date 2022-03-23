@@ -18,6 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -94,15 +98,11 @@ func NewWorkflowService(env environment.Env) *workflowService {
 // getWebhookURL takes a webhookID and returns a fully qualified URL, on this
 // server, where the specified webhook can be called.
 func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
-	base, err := url.Parse(ws.env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return "", err
-	}
 	u, err := url.Parse(fmt.Sprintf("/webhooks/workflow/%s", webhookID))
 	if err != nil {
 		return "", err
 	}
-	wu := base.ResolveReference(u)
+	wu := build_buddy_url.BuildBuddyURL(u.String())
 	return wu.String(), nil
 }
 
@@ -628,7 +628,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			{Name: "REPO_TOKEN", Value: wf.AccessToken},
 		}...)
 	}
-	conf := ws.env.GetConfigurator()
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
@@ -661,10 +660,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"./buildbuddy_ci_runner",
 			"--invocation_id=" + invocationID,
 			"--action_name=" + workflowAction.Name,
-			"--bes_backend=" + conf.GetAppEventsAPIURL(),
-			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
-			"--cache_backend=" + conf.GetAppCacheAPIURL(),
-			"--rbe_backend=" + conf.GetAppRemoteExecutionAPIURL(),
+			"--bes_backend=" + events_api_url.EventsAPIURLString(),
+			"--bes_results_url=" + build_buddy_url.BuildBuddyURL("/invocation/").String(),
+			"--cache_backend=" + cache_api_url.CacheAPIURLString(),
+			"--rbe_backend=" + remote_exec_api_url.RemoteExecAPIURLString(),
 			"--commit_sha=" + wd.SHA,
 			"--pushed_repo_url=" + wd.PushedRepoURL,
 			"--pushed_branch=" + wd.PushedBranch,
@@ -890,11 +889,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
 	// TODO: Create a help section in the docs that explains this error status, and link to it
-	u, err := url.Parse(ws.env.GetConfigurator().GetAppBuildBuddyURL())
-	if err != nil {
-		return err
-	}
-	status := github.NewGithubStatusPayload(actionName, u.String(), "Check requires approving review", github.ErrorState)
+	status := github.NewGithubStatusPayload(actionName, build_buddy_url.BuildBuddyURLString(), "Check requires approving review", github.ErrorState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err
