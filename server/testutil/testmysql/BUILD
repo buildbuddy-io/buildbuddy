@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//server/testutil/testport",
         "//server/util/log",
-        "//server/util/random",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_stretchr_testify//require",
     ],
