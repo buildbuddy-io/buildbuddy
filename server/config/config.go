@@ -654,32 +654,12 @@ func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
 
-func (c *Configurator) GetDefaultToDenseMode() bool {
-	return c.gc.App.DefaultToDenseMode
-}
-
-func (c *Configurator) GetCodeEditorEnabled() bool {
-	return c.gc.App.CodeEditorEnabled
-}
-
-func (c *Configurator) GetAppUserManagementEnabled() bool {
-	return c.gc.App.UserManagementEnabled
-}
-
-func (c *Configurator) GetAppGlobalFilterEnabled() bool {
-	return c.gc.App.GlobalFilterEnabled
+func (c *Configurator) GetDisableCertConfig() bool {
+	return c.gc.App.DisableCertConfig
 }
 
 func (c *Configurator) GetAppUsageEnabled() bool {
 	return c.gc.App.UsageEnabled
-}
-
-func (c *Configurator) GetAppTestGridV2Enabled() bool {
-	return c.gc.App.TestGridV2Enabled
-}
-
-func (c *Configurator) GetDisableCertConfig() bool {
-	return c.gc.App.DisableCertConfig
 }
 
 func (c *Configurator) GetAppUsageStartDate() string {
