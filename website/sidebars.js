@@ -6,6 +6,7 @@ module.exports = {
       "remote-build-execution",
       "rbe-setup",
       "rbe-platforms",
+      "rbe-microvms",
       "rbe-github-actions",
       "rbe-pools",
     ],
