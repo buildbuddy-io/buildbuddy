@@ -151,21 +151,21 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 	config := cfgpb.FrontendConfig{
 		Version:                       version,
 		ConfiguredIssuers:             issuers,
-		DefaultToDenseMode:            env.GetConfigurator().GetDefaultToDenseMode(),
+		DefaultToDenseMode:            *defaultToDenseMode,
 		GithubEnabled:                 env.GetConfigurator().GetGithubConfig() != nil,
 		AnonymousUsageEnabled:         env.GetConfigurator().GetAnonymousUsageEnabled(),
 		TestDashboardEnabled:          env.GetConfigurator().EnableTargetTracking(),
 		UserOwnedExecutorsEnabled:     userOwnedExecutorsEnabled,
 		ExecutorKeyCreationEnabled:    executorKeyCreationEnabled,
 		WorkflowsEnabled:              workflowsEnabled,
-		CodeEditorEnabled:             env.GetConfigurator().GetCodeEditorEnabled(),
+		CodeEditorEnabled:             *codeEditorEnabled,
 		RemoteExecutionEnabled:        env.GetConfigurator().GetRemoteExecutionConfig() != nil,
 		SsoEnabled:                    ssoEnabled,
-		GlobalFilterEnabled:           env.GetConfigurator().GetAppGlobalFilterEnabled(),
-		UsageEnabled:                  env.GetConfigurator().GetAppUsageEnabled(),
-		UserManagementEnabled:         env.GetConfigurator().GetAppUserManagementEnabled(),
+		GlobalFilterEnabled:           *globalFilterEnabled,
+		UsageEnabled:                  *usageEnabled,
+		UserManagementEnabled:         *userManagementEnabled,
 		ForceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
-		TestGridV2Enabled:             env.GetConfigurator().GetAppTestGridV2Enabled(),
+		TestGridV2Enabled:             *testGridV2Enabled,
 	}
 
 	configJSON := &bytes.Buffer{}
