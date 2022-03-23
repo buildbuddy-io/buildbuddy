@@ -2,6 +2,7 @@ package usage_test
 
 import (
 	"context"
+	"flag"
 	"reflect"
 	"testing"
 	"time"
@@ -36,6 +37,10 @@ var (
 	usage1Collection3Start = usage1Start.Add(2 * collectionPeriodDuration)
 	usage1Collection4Start = usage1Start.Add(3 * collectionPeriodDuration)
 )
+
+func init() {
+	flag.Set("app.usage_tracking_enabled", "true")
+}
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -110,7 +115,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
@@ -194,7 +199,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
@@ -266,7 +271,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
@@ -308,7 +313,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
@@ -337,7 +342,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
@@ -397,10 +402,10 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
 	clock := testclock.StartingAt(usage1Collection1Start)
-	flags.SetAndReconcile(t, "app.region", "us-west1", te1)
+	flags.Set(t, "app.region", "us-west1")
 	ut1, err := usage.NewTracker(te1, clock, usage.NewFlushLock(te1))
 	require.NoError(t, err)
-	flags.SetAndReconcile(t, "app.region", "europe-north1", te2)
+	flags.Set(t, "app.region", "europe-north1")
 	ut2, err := usage.NewTracker(te2, clock, usage.NewFlushLock(te2))
 	require.NoError(t, err)
 
@@ -444,7 +449,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	te := setupEnv(t)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	ctx := authContext(te, "US1")
-	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 

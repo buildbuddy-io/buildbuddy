@@ -8,7 +8,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/config",
-        "//server/environment",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
