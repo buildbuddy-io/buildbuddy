@@ -2,6 +2,7 @@ package grpc_server
 
 import (
 	"context"
+	"flag"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -15,6 +16,12 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+)
+
+var (
+	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
+	// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
+	gRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 )
 
 func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
