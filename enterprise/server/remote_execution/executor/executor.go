@@ -341,6 +341,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.Error == commandutil.ErrSIGKILL {
 		return finishWithErrFn(cmdResult.Error)
 	}
+	if cmdResult.Error != nil {
+		log.Warningf("Command execution returned non-retriable error: %s", cmdResult.Error)
+	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
