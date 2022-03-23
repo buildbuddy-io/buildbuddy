@@ -252,7 +252,7 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
 
-	if err := tracing.Configure(configurator, healthChecker); err != nil {
+	if err := tracing.Configure(healthChecker); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
 

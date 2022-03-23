@@ -929,23 +929,3 @@ func (c *Configurator) GetOrgConfig() *OrgConfig {
 	}
 	return nil
 }
-
-func (c *Configurator) GetTraceJaegerCollector() string {
-	return c.gc.App.TraceJaegerCollector
-}
-
-func (c *Configurator) GetTraceServiceName() string {
-	return c.gc.App.TraceServiceName
-}
-
-func (c *Configurator) GetTraceFraction() float64 {
-	return c.gc.App.TraceFraction
-}
-
-func (c *Configurator) GetTraceFractionOverrides() []string {
-	return c.gc.App.TraceFractionOverrides
-}
-
-func (c *Configurator) GetIgnoreForcedTracingHeader() bool {
-	return c.gc.App.IgnoreForcedTracingHeader
-}
