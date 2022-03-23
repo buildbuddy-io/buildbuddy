@@ -9,6 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//server/backends/github",
         "//server/build_event_protocol/accumulator",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/tables",
         "//server/util/git",

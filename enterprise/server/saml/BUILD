@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/auth",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",

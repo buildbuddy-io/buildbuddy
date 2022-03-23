@@ -10,6 +10,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
@@ -632,14 +636,15 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
 	// Use config urls if they're set and fall back to host & protocol from request if not.
-	resultsURL := s.env.GetConfigurator().GetAppBuildBuddyURL()
-	if resultsURL == "" {
+	resultsURL := build_buddy_url.BuildBuddyURL("/invocation/").String()
+	if build_buddy_url.BuildBuddyURLString() == "" {
 		resultsURL = assembleURL(req.Host, req.Protocol, "")
+		resultsURL += "/invocation/"
 	}
-	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL+"/invocation/"))
+	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL))
 
 	grpcPort := getIntFlag("grpc_port", "1985")
-	eventsAPIURL := s.env.GetConfigurator().GetAppEventsAPIURL()
+	eventsAPIURL := events_api_url.EventsAPIURLString()
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 	}
@@ -651,7 +656,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	configOptions = append(configOptions, makeConfigOption("build", "bes_backend", eventsAPIURL))
 
 	if s.env.GetCache() != nil {
-		cacheAPIURL := s.env.GetConfigurator().GetAppCacheAPIURL()
+		cacheAPIURL := cache_api_url.CacheAPIURLString()
 		if cacheAPIURL == "" {
 			cacheAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}
@@ -659,7 +664,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	}
 
 	if s.env.GetConfigurator().GetRemoteExecutionConfig() != nil {
-		remoteExecutionAPIURL := s.env.GetConfigurator().GetAppRemoteExecutionAPIURL()
+		remoteExecutionAPIURL := remote_exec_api_url.RemoteExecAPIURLString()
 		if remoteExecutionAPIURL == "" {
 			remoteExecutionAPIURL = assembleURL(req.Host, "grpc:", grpcPort)
 		}

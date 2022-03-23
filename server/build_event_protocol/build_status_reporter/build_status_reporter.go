@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -248,19 +249,19 @@ func (r *BuildStatusReporter) invocationLabel() string {
 }
 
 func (r *BuildStatusReporter) invocationURL() string {
-	return fmt.Sprintf("%s/invocation/%s", r.appURL(), r.buildEventAccumulator.InvocationID())
+	return build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID())).String()
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
-	return fmt.Sprintf("%s?targetFilter=%s", r.invocationURL(), label)
+	u := build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u.RawQuery = fmt.Sprintf("targetFilter=%s", label)
+	return u.String()
 }
 
 func (r *BuildStatusReporter) targetURL(label string) string {
-	return fmt.Sprintf("%s?target=%s", r.invocationURL(), label)
-}
-
-func (r *BuildStatusReporter) appURL() string {
-	return r.env.GetConfigurator().GetAppBuildBuddyURL()
+	u := build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u.RawQuery = fmt.Sprintf("target=%s", label)
+	return u.String()
 }
 
 func (r *BuildStatusReporter) initializeGroups(testGroups string) {

@@ -10,6 +10,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -129,12 +132,11 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 
-	conf := r.env.GetConfigurator()
 	args := []string{
 		"./" + runnerName,
-		"--bes_backend=" + conf.GetAppEventsAPIURL(),
-		"--cache_backend=" + conf.GetAppCacheAPIURL(),
-		"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
+		"--bes_backend=" + events_api_url.EventsAPIURLString(),
+		"--cache_backend=" + cache_api_url.CacheAPIURLString(),
+		"--bes_results_url=" + build_buddy_url.BuildBuddyURL("/invocation/").String(),
 		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
