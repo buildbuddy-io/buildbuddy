@@ -44,6 +44,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+var (
+	disableCertConfig = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+)
+
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
