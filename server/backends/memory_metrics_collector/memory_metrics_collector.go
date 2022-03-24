@@ -70,6 +70,6 @@ func (m *MemoryMetricsCollector) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (m *MemoryMetricsCollector) BufferDelay() time.Duration {
+func (m *MemoryMetricsCollector) ReadbackDelay() time.Duration {
 	return 0
 }

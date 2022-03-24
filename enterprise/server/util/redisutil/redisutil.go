@@ -21,7 +21,10 @@ import (
 )
 
 var (
-	CommandBufferFlushPeriod = flag.Duration("redis_command_buffer_flush_period", 250*time.Millisecond, "How long to wait between flushing buffered redis commands. Setting to 0 will disable buffering.")
+	CommandBufferFlushPeriod = flag.Duration(
+		"redis_command_buffer_flush_period", 250*time.Millisecond,
+		"How long to wait between flushing buffered redis commands. "+
+			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
 )
 
 func isRedisURI(redisTarget string) bool {

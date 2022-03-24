@@ -250,11 +250,11 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		metrics.StatsRecorderDuration.Observe(float64(time.Since(start).Microseconds()))
 	}()
 
-	// Apply the finalization delay relative to when the invocation was marked
+	// Apply the readback delay relative to when the invocation was marked
 	// finalized, rather than relative to now. Otherwise each worker would be
 	// unnecessarily throttled.
 	if mc := r.env.GetMetricsCollector(); mc != nil {
-		time.Sleep(time.Until(task.createdAt.Add(mc.BufferDelay())))
+		time.Sleep(time.Until(task.createdAt.Add(mc.ReadbackDelay())))
 	}
 	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
