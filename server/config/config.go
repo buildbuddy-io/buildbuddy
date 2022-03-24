@@ -649,10 +649,6 @@ func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
 	return &c.gc.Storage.Azure
 }
 
-func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
-	return c.gc.App.GRPCOverHTTPPortEnabled
-}
-
 func (c *Configurator) GetDisableCertConfig() bool {
 	return c.gc.App.DisableCertConfig
 }
@@ -673,15 +669,6 @@ func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
 
 	// Otherwise, fall back to the remote exec redis target.
 	return c.GetRemoteExecutionRedisClientConfig()
-}
-
-func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
-	n := c.gc.App.GRPCMaxRecvMsgSizeBytes
-	if n == 0 {
-		// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
-		return 50000000
-	}
-	return n
 }
 
 func (c *Configurator) EnableTargetTracking() bool {

@@ -430,18 +430,13 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
 	}
 
-	handler := http.Handler(mux)
-	if env.GetConfigurator().GetGRPCOverHTTPPortEnabled() {
-		handler = httpfilters.ServeGRPCOverHTTPPort(grpcServer, mux)
-	}
-
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(*port, *GRPCPort)
 	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
-		Handler: handler,
+		Handler: grpc_server.ServeGRPCOverHTTPPort(grpcServer, mux),
 	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -450,13 +445,13 @@ func StartAndRunServices(env environment.Env) {
 	})
 
 	if sslService.IsEnabled() {
-		tlsConfig, sslHandler := sslService.ConfigureTLS(handler)
+		tlsConfig, sslHandler := sslService.ConfigureTLS(server.Handler)
 		if err != nil {
 			log.Fatalf("Error configuring TLS: %s", err)
 		}
 		sslServer := &http.Server{
 			Addr:      fmt.Sprintf("%s:%d", *listen, *sslPort),
-			Handler:   handler,
+			Handler:   server.Handler,
 			TLSConfig: tlsConfig,
 		}
 		go func() {
