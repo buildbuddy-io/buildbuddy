@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -30,7 +31,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
-	"github.com/lni/dragonboat/v3/raftio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -64,11 +64,12 @@ type Store struct {
 	rangeMu       sync.RWMutex
 	clusterRanges map[uint64]*rfpb.RangeDescriptor
 
-	leaseMu sync.RWMutex
-	leases  map[uint64]*rangelease.Lease
+	leases sync.Map // map of uint64 rangeID -> *rangelease.Lease
 
 	replicaMu sync.RWMutex
 	replicas  map[uint64]*replica.Replica
+
+	metaRangeData string
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -85,15 +86,14 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		rangeMu:       sync.RWMutex{},
 		clusterRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leaseMu: sync.RWMutex{},
-		leases:  make(map[uint64]*rangelease.Lease),
+		leases: sync.Map{},
 
 		replicaMu: sync.RWMutex{},
 		replicas:  make(map[uint64]*replica.Replica),
+
+		metaRangeData: "",
 	}
 	gossipManager.AddListener(s)
-	cb := listener.LeaderCB(s.leaderUpdated)
-	listener.DefaultListener().RegisterLeaderUpdatedCB(&cb)
 	s.gossipUsage()
 	return s
 }
@@ -121,16 +121,6 @@ func (s *Store) Stop(ctx context.Context) error {
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
-func (s *Store) leaderUpdated(info raftio.LeaderInfo) {
-	clusterID := info.ClusterID
-	leader := s.isLeader(clusterID)
-	if leader {
-		s.acquireRangeLease(clusterID)
-	} else {
-		s.releaseRangeLease(clusterID)
-	}
-}
-
 func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
@@ -146,55 +136,54 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return nil
 }
 
-func (s *Store) acquireRangeLease(clusterID uint64) {
-	rd := s.lookupRange(clusterID)
-	if rd == nil {
+func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
+	if len(rd.GetReplicas()) == 0 {
+		log.Debugf("Not acquiring range %d lease: no replicas", rd.GetRangeId())
 		return
 	}
-	var rl *rangelease.Lease
 
-	s.leaseMu.Lock()
-	if existingLease, ok := s.leases[rd.GetRangeId()]; ok {
-		rl = existingLease
-	} else {
-		rl = rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd)
-		s.leases[rd.GetRangeId()] = rl
+	clusterID := rd.GetReplicas()[0].GetClusterId()
+	if !s.isLeader(clusterID) {
+		log.Debugf("Not acquiring range %d lease: not raft leader", rd.GetRangeId())
+		return
 	}
-	s.leaseMu.Unlock()
 
-	go func() {
-		for {
-			if rl.Valid() {
-				return
-			}
-			err := rl.Lease()
-			if err == nil {
-				log.Debugf("Succesfully leased range: %+v", rl)
-				return
-			}
-			log.Warningf("Error leasing range: %s", err)
+	start := time.Now()
+	rangeID := rd.GetRangeId()
+	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd))
+	rl, ok := rlIface.(*rangelease.Lease)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_leases_map_type_error")
+		return
+	}
+
+	for s.isLeader(clusterID) {
+		if rl.Valid() {
+			return
 		}
-	}()
+		err := rl.Lease()
+		if err == nil {
+			log.Debugf("Succesfully leased range: %s in %s", rl, time.Since(start))
+			break
+		}
+		log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
+	}
 }
 
-func (s *Store) releaseRangeLease(clusterID uint64) {
-	rd := s.lookupRange(clusterID)
-	if rd == nil {
-		return
-	}
-
-	s.leaseMu.Lock()
-	rl, ok := s.leases[rd.GetRangeId()]
-	if ok {
-		delete(s.leases, rd.GetRangeId())
-	}
-	s.leaseMu.Unlock()
+func (s *Store) releaseRangeLease(rangeID uint64) {
+	rlIface, ok := s.leases.Load(rangeID)
 	if !ok {
 		return
 	}
-	go func() {
+	rl, ok := rlIface.(*rangelease.Lease)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_leases_map_type_error")
+		return
+	}
+	s.leases.Delete(rangeID)
+	if rl.Valid() {
 		rl.Release()
-	}()
+	}
 }
 
 func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
@@ -207,10 +196,14 @@ func (s *Store) GetRangeLease(clusterID uint64) *rangelease.Lease {
 		return nil
 	}
 
-	s.leaseMu.RLock()
-	defer s.leaseMu.RUnlock()
-	rl, ok := s.leases[rd.GetRangeId()]
+	rlIface, ok := s.leases.Load(rd.GetRangeId())
 	if !ok {
+		alert.UnexpectedEvent("unexpected_leases_map_type_error")
+		return nil
+	}
+	rl, ok := rlIface.(*rangelease.Lease)
+	if !ok {
+		log.Errorf("leases map did not hold rangelease type")
 		return nil
 	}
 	return rl
@@ -261,7 +254,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
 	}
-	clusterID := rd.GetReplicas()[0].GetClusterId()
+
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -270,15 +263,10 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
-		s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
+		go s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
-
-	leader := s.isLeader(clusterID)
-	if leader {
-		s.acquireRangeLease(clusterID)
-		log.Debugf("%s attempting to get range lease; we are the leader", s.nodeHost.ID())
-	}
-	s.gossipUsage()
+	go s.maybeAcquireRangeLease(rd)
+	go s.gossipUsage()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -295,28 +283,21 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		log.Debugf("range descriptor had no replicas yet")
 		return
 	}
-	clusterID := rd.GetReplicas()[0].GetClusterId()
-	s.releaseRangeLease(clusterID)
-	log.Debugf("%s precautionary-releasing range lease; we are not leader", s.nodeHost.ID())
 
-	s.gossipUsage()
+	go s.releaseRangeLease(rd.GetRangeId())
+	go s.gossipUsage()
 }
 
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
 	if header == nil {
 		return status.FailedPreconditionError("Nil header not allowed")
 	}
-	s.leaseMu.RLock()
-	rl, leaseOK := s.leases[header.GetRangeId()]
-	rd, rangeOK := s.clusterRanges[header.GetRangeId()]
-	s.leaseMu.RUnlock()
 
+	s.rangeMu.RLock()
+	rd, rangeOK := s.clusterRanges[header.GetRangeId()]
+	s.rangeMu.RUnlock()
 	if !rangeOK {
 		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
-	}
-
-	if !leaseOK {
-		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotLeasedMsg, header.GetRangeId())
 	}
 
 	// Ensure the header generation matches what we have locally -- if not,
@@ -326,10 +307,17 @@ func (s *Store) RangeIsActive(header *rfpb.Header) error {
 		return status.OutOfRangeErrorf("%s: current: %d request: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
 	}
 
-	if !rl.Valid() {
-		return status.OutOfRangeError(constants.RangeLeaseInvalidMsg)
+	if rlIface, ok := s.leases.Load(header.GetRangeId()); ok {
+		if rl, ok := rlIface.(*rangelease.Lease); ok {
+			if rl.Valid() {
+				return nil
+			}
+		} else {
+			alert.UnexpectedEvent("unexpected_leases_map_type_error")
+		}
 	}
-	return nil
+
+	return status.OutOfRangeError(constants.RangeLeaseInvalidMsg)
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
@@ -581,7 +569,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			s.replicaMu.RLock()
 			defer s.replicaMu.RUnlock()
 			// It's expected that clients will directly write bytes
-			// to all replicas  in a range and then syncpropose a
+			// to all replicas in a range and then syncpropose a
 			// write which confirms the data is inplace. For that
 			// reason, we don't check if the range is leased here.
 			r, ok := s.replicas[req.GetHeader().GetRangeId()]
@@ -634,21 +622,48 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
-	if updateType != serf.EventQuery {
+	switch updateType {
+	case serf.EventQuery:
+		query, ok := event.(*serf.Query)
+		if !ok || query.Payload == nil {
+			return
+		}
+
+		ctx, cancel := context.WithDeadline(context.Background(), query.Deadline())
+		defer cancel()
+
+		switch query.Name {
+		case constants.PlacementDriverQueryEvent:
+			s.handlePlacementQuery(ctx, query)
+		}
+	case serf.EventMemberJoin, serf.EventMemberUpdate:
+		memberEvent, _ := event.(serf.MemberEvent)
+		for _, member := range memberEvent.Members {
+			if metaRangeData, ok := member.Tags[constants.MetaRangeTag]; ok {
+				// Whenever the metarange data changes, for any
+				// reason, start a goroutine that ensures the
+				// node liveness record is up to date.
+				if s.metaRangeData != metaRangeData {
+					s.metaRangeData = metaRangeData
+					// Start this in a goroutine so that
+					// other gossip callbacks are not
+					// blocked.
+					go s.renewNodeLiveness()
+				}
+			}
+		}
+	default:
 		return
 	}
+}
 
-	query, ok := event.(*serf.Query)
-	if !ok || query.Payload == nil {
+func (s *Store) renewNodeLiveness() {
+	if s.liveness.Valid() {
 		return
 	}
-
-	ctx, cancel := context.WithDeadline(context.Background(), query.Deadline())
-	defer cancel()
-
-	switch query.Name {
-	case constants.PlacementDriverQueryEvent:
-		s.handlePlacementQuery(ctx, query)
+	err := s.liveness.Lease()
+	if err != nil {
+		log.Errorf("Error leasing node liveness record: %s", err)
 	}
 }
 
@@ -872,6 +887,9 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 	})
 	if err != nil {
 		return 0, err
+	}
+	if membership == nil {
+		return 0, status.InternalErrorf("null cluster membership for cluster: %d", clusterID)
 	}
 	return membership.ConfigChangeID, nil
 }
