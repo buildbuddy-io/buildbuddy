@@ -649,10 +649,6 @@ func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
 	return &c.gc.Storage.Azure
 }
 
-func (c *Configurator) GetDisableCertConfig() bool {
-	return c.gc.App.DisableCertConfig
-}
-
 func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
 	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
 		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
