@@ -180,9 +180,6 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 }
 
 func (h *Liveness) clearLease() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
 	var expectedValue []byte
 	if h.lastLivenessRecord != nil {
 		buf, err := proto.Marshal(h.lastLivenessRecord)
@@ -201,7 +198,7 @@ func (h *Liveness) clearLease() error {
 		return err
 	}
 
-	_, err = h.sendCasRequest(ctx, expectedValue, newVal)
+	_, err = h.sendCasRequest(context.TODO(), expectedValue, newVal)
 	if err == nil {
 		h.lastLivenessRecord = nil
 	}
@@ -209,9 +206,6 @@ func (h *Liveness) clearLease() error {
 }
 
 func (h *Liveness) renewLease() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
 	var expectedValue []byte
 	if h.lastLivenessRecord != nil {
 		buf, err := proto.Marshal(h.lastLivenessRecord)
@@ -230,7 +224,7 @@ func (h *Liveness) renewLease() error {
 		return err
 	}
 
-	kv, err := h.sendCasRequest(ctx, expectedValue, newVal)
+	kv, err := h.sendCasRequest(context.TODO(), expectedValue, newVal)
 	if err == nil {
 		// This means we set the lease succesfully.
 		h.lastLivenessRecord = leaseRequest

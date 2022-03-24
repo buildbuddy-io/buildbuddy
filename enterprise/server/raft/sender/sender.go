@@ -46,7 +46,7 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Hea
 	}
 }
 
-func (s *Sender) ConnectionForReplicaDesciptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+func (s *Sender) connectionForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
 	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetClusterId(), rd.GetNodeId())
 	if err != nil {
 		return nil, err
@@ -54,63 +54,74 @@ func (s *Sender) ConnectionForReplicaDesciptor(ctx context.Context, rd *rfpb.Rep
 	return s.apiClient.Get(ctx, addr)
 }
 
+func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, key []byte) (*rfpb.RangeDescriptor, error) {
+	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+		Left:     keys.RangeMetaKey(key),
+		Right:    constants.SystemPrefix,
+		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+	}).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+		Header: h,
+		Batch:  batchReq,
+	})
+	if err != nil {
+		return nil, err
+	}
+	scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
+	if err != nil {
+		log.Errorf("Error reading scan response: %s", err)
+		return nil, err
+	}
+
+	if len(scanRsp.GetKvs()) == 0 {
+		log.Errorf("scan response had 0 kvs")
+		return nil, status.FailedPreconditionError("scan response had 0 kvs")
+	}
+	for _, kv := range scanRsp.GetKvs() {
+		rd := &rfpb.RangeDescriptor{}
+		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
+			log.Errorf("scan returned unparsable kv: %s", err)
+			continue
+		}
+		return rd, nil
+	}
+	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
+}
+
 func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []byte) (*rfpb.RangeDescriptor, error) {
-	metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
-	if metaRangeDescriptor == nil {
-		return nil, status.FailedPreconditionError("RangeCache did not have meta range. This should not happen")
-	}
+	retrier := retry.DefaultWithContext(ctx)
 
-	for i, replica := range metaRangeDescriptor.GetReplicas() {
-		client, err := s.ConnectionForReplicaDesciptor(ctx, replica)
+	var rangeDescriptor *rfpb.RangeDescriptor
+	fn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+		rd, err := lookupRangeDescriptor(ctx, c, h, key)
 		if err != nil {
-			log.Errorf("Error getting api conn: %s", err)
+			return err
+		}
+		rangeDescriptor = rd
+		return nil
+	}
+	for retrier.Next() {
+		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
+		if metaRangeDescriptor == nil {
+			log.Warningf("RangeCache did not have meta range. This should not happen")
 			continue
 		}
-		batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-			Left:     keys.RangeMetaKey(key),
-			Right:    constants.SystemPrefix,
-			ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
-		}).ToProto()
-		if err != nil {
+		err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
+		if err == nil {
+			return rangeDescriptor, nil
+		}
+		if !status.IsOutOfRangeError(err) {
 			return nil, err
 		}
-		header := makeHeader(metaRangeDescriptor, i)
-		rsp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header,
-			Batch:  batchReq,
-		})
-		if err != nil {
-			if status.IsOutOfRangeError(err) || status.IsUnavailableError(err) {
-				log.Printf("Unable to get rd from replica: %+v: %s", replica, err)
-				continue
-			}
-			return nil, err
-		}
-		scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
-		if err != nil {
-			log.Errorf("Error reading scan response: %s", err)
-			continue
-		}
-		if len(scanRsp.GetKvs()) == 0 {
-			log.Errorf("scan response had 0 kvs")
-			continue
-		}
-		for _, kv := range scanRsp.GetKvs() {
-			rd := &rfpb.RangeDescriptor{}
-			if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-				log.Errorf("scan returned unparsable kv: %s", err)
-				continue
-			}
-			return rd, nil
-		}
 	}
-
 	return nil, status.UnavailableErrorf("Error finding range descriptor for %q", key)
 }
 
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (*rfpb.RangeDescriptor, error) {
 	rangeDescriptor := s.rangeCache.Get(key)
-	// TODO(tylerw): loop until available or context timeout?
 	if rangeDescriptor == nil || skipCache {
 		rd, err := s.fetchRangeDescriptorFromMetaRange(ctx, key)
 		if err != nil {
@@ -147,11 +158,7 @@ type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) error {
 	for i, replica := range rd.GetReplicas() {
-		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
-		if err != nil {
-			return err
-		}
-		client, err := s.apiClient.Get(ctx, addr)
+		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
 			return err
 		}
@@ -205,7 +212,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 			return err
 		}
 	}
-	return status.UnavailableError("sender run retries exceeded")
+	return status.UnavailableError("sender.Run retries exceeded")
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {

@@ -462,7 +462,7 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 	require.Nil(t, err)
 
 	rd, err := stores[0].Sender.LookupRangeDescriptor(ctx, fk, true /*skipCache*/)
-	require.Nil(t, err)
+	require.Nil(t, err, err)
 	rangeID := rd.GetRangeId()
 
 	for _, ts := range stores {

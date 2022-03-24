@@ -324,10 +324,7 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), peerReadTimeout)
-		defer cancel()
-
-		md, err := sm.readFileFromPeer(ctx, req.GetFileRecord(), wb)
+		md, err := sm.readFileFromPeer(context.TODO(), req.GetFileRecord(), wb)
 		if err != nil {
 			log.Errorf("Error recovering file %v from peer: %s", md.GetFileRecord(), err)
 			return nil, err
@@ -552,9 +549,7 @@ func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) e
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	rsp, err := sm.store.Sender().SyncPropose(ctx, keys.RangeMetaKey(right.GetRight()), batchProto)
+	rsp, err := sm.store.Sender().SyncPropose(context.TODO(), keys.RangeMetaKey(right.GetRight()), batchProto)
 	if err != nil {
 		return err
 	}
