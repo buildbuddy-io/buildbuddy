@@ -50,6 +50,7 @@ go_library(
         "//server/static",
         "//server/telemetry",
         "//server/util/fileresolver",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
