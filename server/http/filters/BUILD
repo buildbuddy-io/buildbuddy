@@ -17,6 +17,5 @@ go_library(
         "//server/util/uuid",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_prometheus_client_golang//prometheus",
-        "@org_golang_google_grpc//:go_default_library",
     ],
 )

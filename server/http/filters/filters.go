@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
@@ -296,16 +295,5 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
-	})
-}
-
-func ServeGRPCOverHTTPPort(grpcServer *grpc.Server, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 2 && strings.HasPrefix(
-			r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
 	})
 }
