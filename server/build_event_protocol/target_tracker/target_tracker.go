@@ -258,6 +258,9 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 }
 
 func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	if !*enableTargetTracking {
+		return
+	}
 	// Depending on the event type we will either:
 	//  - read the set of targets for this repo
 	//  - update the set of targets for this repo
@@ -489,4 +492,8 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		}
 	}
 	return nil
+}
+
+func TargetTrackingEnabled() bool {
+	return *enableTargetTracking
 }
