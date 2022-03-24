@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -154,7 +155,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		DefaultToDenseMode:            *defaultToDenseMode,
 		GithubEnabled:                 env.GetConfigurator().GetGithubConfig() != nil,
 		AnonymousUsageEnabled:         env.GetConfigurator().GetAnonymousUsageEnabled(),
-		TestDashboardEnabled:          env.GetConfigurator().EnableTargetTracking(),
+		TestDashboardEnabled:          target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:     userOwnedExecutorsEnabled,
 		ExecutorKeyCreationEnabled:    executorKeyCreationEnabled,
 		WorkflowsEnabled:              workflowsEnabled,
