@@ -88,24 +88,23 @@ const (
 )
 
 var (
-	besBackend                  = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	cacheBackend                = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
-	rbeBackend                  = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
-	besResultsURL               = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	remoteInstanceName          = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
-	triggerEvent                = flag.String("trigger_event", "", "Event type that triggered the action runner.")
-	pushedRepoURL               = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
-	pushedBranch                = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
-	commitSHA                   = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
-	targetRepoURL               = flag.String("target_repo_url", "", "URL of the target repo.")
-	targetBranch                = flag.String("target_branch", "", "Branch to check action triggers against.")
-	workflowID                  = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName                  = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID                = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
-	visibility                  = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand             = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchDigests                = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	reportLiveRepoSetupProgress = flag.Bool("report_live_repo_setup_progress", false, "If set, repo setup output will be streamed live to the invocation instead of being postponed until the action is run.")
+	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
+	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
+	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
+	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
+	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
+	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
+	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
+	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
+	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
+	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	patchDigests       = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -146,8 +145,7 @@ type workspace struct {
 	// log contains logs from the workspace setup phase (cloning the git repo and
 	// deciding which actions to run), which are reported as part of the first
 	// action's logs.
-	log    io.Writer
-	logBuf bytes.Buffer
+	log io.Writer
 }
 
 type buildEventReporter struct {
@@ -406,15 +404,20 @@ func run() error {
 		forcedInvocationID: *invocationID,
 	}
 
-	// Write setup logs to the current task's stderr (to make debugging easier),
-	// and also to a buffer to be flushed to the first workflow action's logs.
-	ws.log = io.MultiWriter(os.Stderr, &ws.logBuf)
-	ws.hostname, ws.username = getHostAndUserName()
-
 	ctx := context.Background()
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
+
+	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	if err != nil {
+		return err
+	}
+
+	// Write setup logs to the current task's stderr (to make debugging easier),
+	// and also to the invocation.
+	ws.log = io.MultiWriter(os.Stderr, buildEventReporter)
+	ws.hostname, ws.username = getHostAndUserName()
 
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
 	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
@@ -489,127 +492,78 @@ func run() error {
 		return nil
 	}
 
-	var buildEventReporter *buildEventReporter
-	if *reportLiveRepoSetupProgress {
-		ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
-		if err != nil {
-			return err
-		}
-		buildEventReporter = ber
-		if err := buildEventReporter.Start(ws.startTime); err != nil {
-			return status.WrapError(err, "could not publish started event")
-		}
+	if err := buildEventReporter.Start(ws.startTime); err != nil {
+		return status.WrapError(err, "could not publish started event")
 	}
-	if err := ws.setup(ctx, buildEventReporter); err != nil {
-		if buildEventReporter != nil {
-			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		}
+	if err := ws.setup(ctx); err != nil {
+		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
 		return status.WrapError(err, "failed to set up git repo")
 	}
 	cfg, err := readConfig()
 	if err != nil {
-		if buildEventReporter != nil {
-			_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		}
+		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
 		return status.WrapError(err, "failed to read BuildBuddy config")
 	}
 
-	var actions []*config.Action
+	var action *config.Action
 	if *bazelSubCommand != "" {
-		actions = []*config.Action{{
+		action = &config.Action{
 			Name: "run",
 			BazelCommands: []string{
 				*bazelSubCommand,
 			},
-		}}
+		}
 	} else if *actionName != "" {
 		// If a specific action was specified, filter to configured
 		// actions with a matching action name.
-		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
-			return action.Name == *actionName
-		})
+		action, err = findAction(cfg.Actions, *actionName)
+		if err != nil {
+			return err
+		}
 	} else {
-		// If no action was specified; filter to configured actions that
-		// match any trigger.
-		actions = filterActions(cfg.Actions, func(action *config.Action) bool {
-			match := config.MatchesAnyTrigger(action, *triggerEvent, *targetBranch)
-			if !match {
-				log.Debugf("No triggers matched for %q event with target branch %q. Action config:\n===\n%s===", *triggerEvent, *targetBranch, actionDebugString(action))
-			}
-			return match
-		})
-	}
-	if *invocationID != "" && len(actions) > 1 {
-		return status.InvalidArgumentError("Cannot specify --invocationID when running multiple actions")
+		return status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
 	}
 
-	return ws.RunAllActions(ctx, actions, buildEventReporter)
+	result, err := ws.RunAction(ctx, action, buildEventReporter)
+	if err != nil {
+		return err
+	}
+	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
+		return err
+	}
+	return nil
 }
 
-// RunAllActions runs the specified actions in serial, creating a synthetic
-// invocation for each one.
-func (ws *workspace) RunAllActions(ctx context.Context, actions []*config.Action, buildEventReporter *buildEventReporter) error {
-	for _, action := range actions {
-		startTime := time.Now()
+type actionResult struct {
+	exitCode     int
+	exitCodeName string
+}
 
-		if buildEventReporter == nil {
-			ber, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
-			if err != nil {
-				return err
-			}
-			buildEventReporter = ber
-		}
+// RunAction runs the specified action and streams the progress to the invocation via the buildEventReporter.
+func (ws *workspace) RunAction(ctx context.Context, action *config.Action, buildEventReporter *buildEventReporter) (*actionResult, error) {
+	// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
+	// and the logs uploaded to BuildBuddy for this action. Anything that we want
+	// the user to see in the invocation UI needs to go in that log, instead of
+	// the global `log.Print`.
+	ar := &actionRunner{
+		isWorkflow: *workflowID != "",
+		action:     action,
+		reporter:   buildEventReporter,
+		hostname:   ws.hostname,
+		username:   ws.username,
+	}
+	exitCode := 0
+	exitCodeName := "OK"
 
-		// NB: Anything logged to `ar.log` gets output to both the stdout of this binary
-		// and the logs uploaded to BuildBuddy for this action. Anything that we want
-		// the user to see in the invocation UI needs to go in that log, instead of
-		// the global `log.Print`.
-		ar := &actionRunner{
-			isWorkflow: *workflowID != "",
-			action:     action,
-			reporter:   buildEventReporter,
-			hostname:   ws.hostname,
-			username:   ws.username,
-		}
-		exitCode := 0
-		exitCodeName := "OK"
-
-		// Include the repo's download time as part of the first invocation.
-		if !ws.reportedInitMetrics {
-			ws.reportedInitMetrics = true
-			// Print the setup logs to the first action's logs.
-			ar.reporter.Printf("Setup completed in %s", startTime.Sub(ws.startTime))
-			startTime = ws.startTime
-			b, _ := io.ReadAll(&ws.logBuf)
-			ws.logBuf.Reset()
-			if len(b) > 0 {
-				ar.reporter.Printf("Setup logs:")
-				ar.reporter.Printf(string(b))
-			}
-		}
-
-		if err := ar.reporter.Start(startTime); err != nil {
-			log.Errorf("Failed to start reporter: %s", err)
-			if err := ar.reporter.Stop(noExitCode, failedExitCodeName); err != nil {
-				return err
-			}
-			return err
-		}
-
-		if err := ar.Run(ctx, ws, startTime); err != nil {
-			ar.reporter.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
-			exitCode = getExitCode(err)
-			// TODO: More descriptive exit code names, so people have a better
-			// sense of what happened without even needing to open the invocation.
-			exitCodeName = failedExitCodeName
-		}
-
-		if err := ar.reporter.Stop(exitCode, exitCodeName); err != nil {
-			return err
-		}
+	if err := ar.Run(ctx, ws); err != nil {
+		ar.reporter.Printf(aurora.Sprintf(aurora.Red("\nAction failed: %s"), status.Message(err)))
+		exitCode = getExitCode(err)
+		// TODO: More descriptive exit code names, so people have a better
+		// sense of what happened without even needing to open the invocation.
+		exitCodeName = failedExitCodeName
 	}
 
-	return nil
+	return &actionResult{exitCode, exitCodeName}, nil
 }
 
 func (r *buildEventReporter) Write(b []byte) (int, error) {
@@ -657,7 +611,7 @@ type actionRunner struct {
 	hostname   string
 }
 
-func (ar *actionRunner) Run(ctx context.Context, ws *workspace, startTime time.Time) error {
+func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	ar.reporter.Printf("Running action %q", ar.action.Name)
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
@@ -950,21 +904,16 @@ func getHostAndUserName() (string, string) {
 	return hostname, username
 }
 
-func filterActions(actions []*config.Action, fn func(action *config.Action) bool) []*config.Action {
-	matched := make([]*config.Action, 0)
+func findAction(actions []*config.Action, name string) (*config.Action, error) {
 	for _, action := range actions {
-		if fn(action) {
-			matched = append(matched, action)
+		if action.Name == name {
+			return action, nil
 		}
 	}
-	return matched
+	return nil, status.NotFoundErrorf("action %q not found", name)
 }
 
-func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) error {
-	if reporter != nil {
-		// If we have a reporter, stream the logs through it instead of buffering them until later.
-		ws.log = reporter
-	}
+func (ws *workspace) setup(ctx context.Context) error {
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
@@ -1007,7 +956,11 @@ func (ws *workspace) setup(ctx context.Context, reporter *buildEventReporter) er
 	if err := ws.config(ctx); err != nil {
 		return err
 	}
-	return ws.sync(ctx)
+	if err := ws.sync(ctx); err != nil {
+		return err
+	}
+	ws.log.Write([]byte(fmt.Sprintf("Setup completed in %s", time.Now().Sub(ws.startTime))))
+	return nil
 }
 
 func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, digestString string) error {
