@@ -62,15 +62,3 @@ func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int6
 func (c *collector) Delete(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
 }
-
-func (c *collector) ReadbackDelay() time.Duration {
-	if *redisutil.CommandBufferFlushPeriod == 0 {
-		// Command buffer is operating in synchronous mode, meaning any call to
-		// IncrementCount() is reflected in ReadCounts() immediately afterwards.
-		// So, there is no readback delay.
-		return 0
-	}
-	// Readback delay is the buffer period plus max expected amount of time
-	// it takes to flush all buffered values to Redis.
-	return *redisutil.CommandBufferFlushPeriod + 250*time.Millisecond
-}
