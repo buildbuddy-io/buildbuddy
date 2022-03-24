@@ -266,7 +266,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		go s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
 	}
 	go s.maybeAcquireRangeLease(rd)
-	s.gossipUsage()
+	go s.gossipUsage()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -285,7 +285,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	go s.releaseRangeLease(rd.GetRangeId())
-	s.gossipUsage()
+	go s.gossipUsage()
 }
 
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
