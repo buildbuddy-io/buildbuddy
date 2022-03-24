@@ -26,7 +26,7 @@ Upon mutual execution of the Order Form, Company will: (a) for Company Hosted De
 
 ### 2.1 License Grant.
 
-or Company Hosted Deployment, Customer shall have the right to access, use, and configure the Product during the Term subject to the defined Scope of Use and described in the applicable Order Form. For Customer Hosted Deployment, Company grants to Customer, during the Term only, a fee-bearing non-exclusive, revocable, non-transferable, non-sublicensable license to install use and modify the Product in accordance with the defined Scope of Use described in the applicable Order Form.
+For Company Hosted Deployment, Customer shall have the right to access, use, and configure the Product during the Term subject to the defined Scope of Use and described in the applicable Order Form. For Customer Hosted Deployment, Company grants to Customer, during the Term only, a fee-bearing non-exclusive, revocable, non-transferable, non-sublicensable license to install use and modify the Product in accordance with the defined Scope of Use described in the applicable Order Form.
 
 ### 2.2 Third Party Software.
 
