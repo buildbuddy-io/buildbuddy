@@ -62,3 +62,14 @@ func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int6
 func (c *collector) Delete(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
 }
+
+func (c *collector) BufferDelay() time.Duration {
+	// Buffer is operating in synchronous mode; don't report a buffer delay.
+	if *redisutil.CommandBufferFlushPeriod == 0 {
+		return 0
+	}
+	// Report the buffer delay as slightly more than the command buffer flush
+	// period, to allow some time to actually execute the Redis commands, plus
+	// a little extra to account for clock skew across apps.
+	return *redisutil.CommandBufferFlushPeriod + 250*time.Millisecond
+}

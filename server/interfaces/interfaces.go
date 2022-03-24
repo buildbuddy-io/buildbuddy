@@ -548,6 +548,12 @@ type MetricsCollector interface {
 	IncrementCount(ctx context.Context, key, field string, n int64) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
+	// BufferDelay returns the maximum amount of time that a metric written via
+	// IncrementCount is buffered in memory before being flushed to the backing
+	// storage. This delay exists to allow metrics collectors to batch multiple
+	// IncrementCount operations together, to avoid placing excessive load on
+	// the storage backend.
+	BufferDelay() time.Duration
 }
 
 // A KeyValStore allows for storing ephemeral values globally.
