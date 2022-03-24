@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	CommandBufferFlushPeriod = flag.Duration(
+	commandBufferFlushPeriod = flag.Duration(
 		"redis_command_buffer_flush_period", 250*time.Millisecond,
 		"How long to wait between flushing buffered redis commands. "+
 			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
@@ -283,7 +283,7 @@ func (c *CommandBuffer) init() {
 }
 
 func (c *CommandBuffer) shouldFlushSynchronously() bool {
-	return c.isShuttingDown || (*CommandBufferFlushPeriod == 0)
+	return c.isShuttingDown || (*commandBufferFlushPeriod == 0)
 }
 
 // IncrBy adds an INCRBY operation to the buffer.
@@ -429,7 +429,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 // StartPeriodicFlush starts a loop that periodically flushes buffered commands
 // to Redis.
 func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
-	if *CommandBufferFlushPeriod == 0 {
+	if *commandBufferFlushPeriod == 0 {
 		return
 	}
 
@@ -439,7 +439,7 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 			select {
 			case <-c.stopFlush:
 				return
-			case <-time.After(*CommandBufferFlushPeriod):
+			case <-time.After(*commandBufferFlushPeriod):
 				if err := c.Flush(ctx); err != nil {
 					log.Errorf("Failed to flush Redis command buffer: %s", err)
 				}
@@ -451,7 +451,7 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 // StopPeriodicFlush stops flushing the buffer to Redis. If a flush is currently
 // in progress, this will block until the flush is complete.
 func (c *CommandBuffer) StopPeriodicFlush(ctx context.Context) error {
-	if *CommandBufferFlushPeriod == 0 {
+	if *commandBufferFlushPeriod == 0 {
 		return nil
 	}
 

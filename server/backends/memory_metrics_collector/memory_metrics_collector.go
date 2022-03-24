@@ -3,7 +3,6 @@ package memory_metrics_collector
 import (
 	"context"
 	"sync"
-	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 )
@@ -68,8 +67,4 @@ func (m *MemoryMetricsCollector) Delete(ctx context.Context, key string) error {
 
 	m.l.Remove(key)
 	return nil
-}
-
-func (m *MemoryMetricsCollector) ReadbackDelay() time.Duration {
-	return 0
 }

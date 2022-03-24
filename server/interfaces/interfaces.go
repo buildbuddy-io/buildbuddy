@@ -548,11 +548,6 @@ type MetricsCollector interface {
 	IncrementCount(ctx context.Context, key, field string, n int64) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
-
-	// ReadbackDelay returns the duration between the time that a call to
-	// IncrementCounts() is completed, and the time that the written count
-	// can be read back via ReadCounts().
-	ReadbackDelay() time.Duration
 }
 
 // A KeyValStore allows for storing ephemeral values globally.

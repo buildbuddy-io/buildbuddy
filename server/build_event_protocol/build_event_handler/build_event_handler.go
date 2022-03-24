@@ -69,6 +69,11 @@ const (
 )
 
 var (
+	cacheStatsFinalizationDelay = flag.Duration(
+		"cache_stats_finalization_delay", 500*time.Millisecond,
+		"The time allowed for all metrics collectors across all apps to flush their "+
+			"local cache stats to the backing storage, before finalizing stats in the DB.")
+
 	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
 )
 
@@ -250,12 +255,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		metrics.StatsRecorderDuration.Observe(float64(time.Since(start).Microseconds()))
 	}()
 
-	// Apply the readback delay relative to when the invocation was marked
+	// Apply the finalization delay relative to when the invocation was marked
 	// finalized, rather than relative to now. Otherwise each worker would be
 	// unnecessarily throttled.
-	if mc := r.env.GetMetricsCollector(); mc != nil {
-		time.Sleep(time.Until(task.createdAt.Add(mc.ReadbackDelay())))
-	}
+	time.Sleep(time.Until(task.createdAt.Add(*cacheStatsFinalizationDelay)))
 	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
