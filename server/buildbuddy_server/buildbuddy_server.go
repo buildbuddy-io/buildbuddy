@@ -682,7 +682,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		}
 	}
 
-	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() && !s.env.GetConfigurator().GetDisableCertConfig() {
+	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() && !*disableCertConfig {
 		for _, c := range credentials {
 			cert, key, err := s.sslService.GenerateCerts(c.ApiKey.Value)
 			if err != nil {

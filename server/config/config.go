@@ -654,10 +654,6 @@ func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
 
-func (c *Configurator) GetDisableCertConfig() bool {
-	return c.gc.App.DisableCertConfig
-}
-
 func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
 	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
 		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
