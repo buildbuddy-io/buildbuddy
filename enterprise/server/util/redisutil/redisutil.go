@@ -3,6 +3,7 @@ package redisutil
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"strings"
 	"sync"
@@ -19,9 +20,11 @@ import (
 	redsync_goredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
 )
 
-const (
-	// How long to wait between flushing CommandBuffer instances to Redis.
-	commandBufferFlushInterval = 250 * time.Millisecond
+var (
+	commandBufferFlushPeriod = flag.Duration(
+		"redis_command_buffer_flush_period", 250*time.Millisecond,
+		"How long to wait between flushing buffered redis commands. "+
+			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
 )
 
 func isRedisURI(redisTarget string) bool {
@@ -279,6 +282,10 @@ func (c *CommandBuffer) init() {
 	c.expire = map[string]time.Duration{}
 }
 
+func (c *CommandBuffer) shouldFlushSynchronously() bool {
+	return c.isShuttingDown || (*commandBufferFlushPeriod == 0)
+}
+
 // IncrBy adds an INCRBY operation to the buffer.
 //
 // If the server is shutting down, the command will be issued to Redis
@@ -286,7 +293,7 @@ func (c *CommandBuffer) init() {
 // the buffer and the context is ignored.
 func (c *CommandBuffer) IncrBy(ctx context.Context, key string, increment int64) error {
 	c.mu.Lock()
-	if c.isShuttingDown {
+	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
 		return c.rdb.IncrBy(ctx, key, increment).Err()
 	}
@@ -303,7 +310,7 @@ func (c *CommandBuffer) IncrBy(ctx context.Context, key string, increment int64)
 // the buffer and the context is ignored.
 func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, increment int64) error {
 	c.mu.Lock()
-	if c.isShuttingDown {
+	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
 		return c.rdb.HIncrBy(ctx, key, field, increment).Err()
 	}
@@ -326,7 +333,7 @@ func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, incremen
 // the buffer and the context is ignored.
 func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interface{}) error {
 	c.mu.Lock()
-	if c.isShuttingDown {
+	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
 		return c.rdb.SAdd(ctx, key, members...).Err()
 	}
@@ -364,7 +371,7 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 // immediately upon seeing the `EXPIRE key 0` command.
 func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Duration) error {
 	c.mu.Lock()
-	if c.isShuttingDown {
+	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
 		return c.rdb.Expire(ctx, key, duration).Err()
 	}
@@ -422,13 +429,17 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 // StartPeriodicFlush starts a loop that periodically flushes buffered commands
 // to Redis.
 func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
+	if *commandBufferFlushPeriod == 0 {
+		return
+	}
+
 	c.stopFlush = make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-c.stopFlush:
 				return
-			case <-time.After(commandBufferFlushInterval):
+			case <-time.After(*commandBufferFlushPeriod):
 				if err := c.Flush(ctx); err != nil {
 					log.Errorf("Failed to flush Redis command buffer: %s", err)
 				}
@@ -440,6 +451,10 @@ func (c *CommandBuffer) StartPeriodicFlush(ctx context.Context) {
 // StopPeriodicFlush stops flushing the buffer to Redis. If a flush is currently
 // in progress, this will block until the flush is complete.
 func (c *CommandBuffer) StopPeriodicFlush(ctx context.Context) error {
+	if *commandBufferFlushPeriod == 0 {
+		return nil
+	}
+
 	c.stopFlush <- struct{}{}
 
 	c.mu.Lock()
