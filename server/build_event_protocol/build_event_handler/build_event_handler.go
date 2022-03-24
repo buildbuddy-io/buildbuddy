@@ -821,9 +821,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		}
 	}
 
-	if e.env.GetConfigurator().EnableTargetTracking() {
-		e.targetTracker.TrackTargetsForEvent(e.ctx, event.BuildEvent)
-	}
+	e.targetTracker.TrackTargetsForEvent(e.ctx, event.BuildEvent)
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
 	// For everything else, just save the event to our buffer and keep on chugging.
