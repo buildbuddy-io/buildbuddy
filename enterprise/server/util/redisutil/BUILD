@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//server/config",
         "//server/interfaces",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@com_github_go_redis_redis_extra_redisotel_v8//:redisotel",
