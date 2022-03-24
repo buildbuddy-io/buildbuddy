@@ -69,13 +69,12 @@ func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*co
 		bazelFlags.RemoteExecutor = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 		if *remote == remoteExec {
 			filteredOSArgs = append(filteredOSArgs, bbToolchainArgs()...)
+			addToolchainsToWorkspaceIfNotPresent()
 		} else {
 			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, bazelFlags.RemoteExecutor)...)
 		}
 		filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
 		filteredOSArgs = append(filteredOSArgs, "--jobs=200")
-
-		addToolchainsToWorkspaceIfNotPresent()
 	}
 
 	if *cache && bazelFlags.RemoteCache == "" {
