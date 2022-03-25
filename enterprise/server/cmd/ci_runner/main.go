@@ -1005,10 +1005,10 @@ func (ws *workspace) sync(ctx context.Context) error {
 		}
 	}
 	// TODO: Fetch from remotes in parallel
-	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
+	if err := ws.fetch(ctx, *targetRepoURL, baseRefs); err != nil {
 		return err
 	}
-	if err := ws.fetch(ctx, *targetRepoURL, baseRefs); err != nil {
+	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
 		return err
 	}
 
