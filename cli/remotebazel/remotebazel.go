@@ -297,10 +297,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 			return status.UnknownErrorf("error streaming logs: %s", err)
 		}
 
-		if l.GetNextChunkId() == "" {
-			break
-		}
-
 		chunks = append(chunks, l)
 		// If the current chunk was live but is no longer then delay redraw
 		// until the next chunk is retrieved. The "volatile" part of the
@@ -315,6 +311,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 			chunks = nil
 		}
 		wasLive = l.GetLive()
+
+		if l.GetNextChunkId() == "" {
+			break
+		}
 
 		if l.GetNextChunkId() == chunkID {
 			time.Sleep(1 * time.Second)
