@@ -6,10 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/usage/usage_config",
+        "//enterprise/server/usage/config",
         "//enterprise/server/util/redisutil",
         "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/tables",
         "//server/util/db",
         "//server/util/log",

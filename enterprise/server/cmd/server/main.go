@@ -47,7 +47,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/api/option"
@@ -144,7 +143,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
 	env.SetInvocationSearchService(search)
 
-	env.SetUsageService(usage_service.New(env))
+	usage_service.Register(env, env.SetUsageService)
 
 	apiServer := api.NewAPIServer(env)
 	env.SetAPIService(apiServer)
@@ -211,7 +210,6 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
-	var rbuf *redisutil.CommandBuffer
 	if redisConfig := configurator.GetDefaultRedisClientConfig(); redisConfig != nil {
 		rdb, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "default_redis")
 		if err != nil {
@@ -219,7 +217,7 @@ func main() {
 		}
 		realEnv.SetDefaultRedisClient(rdb)
 
-		rbuf = redisutil.NewCommandBuffer(rdb)
+		rbuf := redisutil.NewCommandBuffer(rdb)
 		rbuf.StartPeriodicFlush(context.Background())
 		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
 
@@ -229,14 +227,9 @@ func main() {
 		realEnv.SetMetricsCollector(rmc)
 	}
 
-	if ut, err := usage.NewTracker(realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv)); err != nil {
+	err = usage.RegisterTracker(realEnv)
+	if err != nil {
 		log.Fatalf("%v", err)
-	} else if ut != nil {
-		ut.StartDBFlush()
-		healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
-			ut.StopDBFlush()
-			return nil
-		})
 	}
 
 	if redisConfig := configurator.GetRemoteExecutionRedisClientConfig(); redisConfig != nil {

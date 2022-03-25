@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/usage_config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 
+	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 )
 
@@ -30,13 +31,17 @@ type usageService struct {
 	start time.Time
 }
 
-func New(env environment.Env) *usageService {
-	if !usage_config.UsageTrackingEnabled() {
-		return nil
+// Registers the usage service if usage tracking is enabled
+func Register(env environment.Env, registerFxn func(interfaces.UsageService)) {
+	if usage_config.UsageTrackingEnabled() {
+		registerFxn(New(env))
 	}
+}
+
+func New(env environment.Env) *usageService {
 	return &usageService{
 		env:   env,
-		start: configuredUsageStartDate(env),
+		start: configuredUsageStartDate(),
 	}
 }
 
@@ -144,7 +149,7 @@ func reverseUsageSlice(a []*usagepb.Usage) {
 	}
 }
 
-func configuredUsageStartDate(env environment.Env) time.Time {
+func configuredUsageStartDate() time.Time {
 	if *usageStartDate == "" {
 		log.Warningf("Usage start date is not configured; usage page may show some months with missing usage data.")
 		return time.Unix(0, 0).UTC()

@@ -1,4 +1,4 @@
-package usage_config
+package config
 
 import "flag"
 
