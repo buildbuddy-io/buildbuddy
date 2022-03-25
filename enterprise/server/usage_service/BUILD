@@ -6,9 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/usage/usage_config",
+        "//enterprise/server/usage/config",
         "//proto:usage_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/perms",
     ],

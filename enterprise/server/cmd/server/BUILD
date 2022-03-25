@@ -53,7 +53,6 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",
-        "//server/util/timeutil",
         "//server/util/tracing",
         "//server/version",
         "@org_golang_google_api//option:go_default_library",
