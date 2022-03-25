@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/usage_config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
+
+	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
 
 var region = flag.String("app.region", "", "The region in which the app is running.")
@@ -98,10 +100,23 @@ type tracker struct {
 	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
-	if !usage_config.UsageTrackingEnabled() {
-		return nil, nil
+func RegisterTracker(env *real_environment.RealEnv) error {
+	if usage_config.UsageTrackingEnabled() {
+		ut, err := NewTracker(env, timeutil.NewClock(), NewFlushLock(env))
+		if err != nil {
+			return err
+		}
+		env.SetUsageTracker(ut)
+		ut.StartDBFlush()
+		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			ut.StopDBFlush()
+			return nil
+		})
 	}
+	return nil
+}
+
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
 	if *region == "" {
 		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
 	}
