@@ -40,9 +40,14 @@ message RunRequest {
 
   message RepoState {
     // SHA of the commit to be checked out. This happens before applying
-    // any patches (see below).
+    // any patches (see below). Mutually exclusive with "branch".
     // Ex. "e782592faf56da05cc0a243220689135e807958f"
     string commit_sha = 1;
+
+    // Branch to be checked out. This happens before applying any patches
+    // (see below). Mutually exclusive with "commit_sha".
+    // Ex. "main"
+    string branch = 3;
 
     // Any local patches that should be applied to the repo before
     // running the command. Patches will be applied using "git apply"
@@ -50,7 +55,8 @@ message RunRequest {
     repeated string patch = 2;
   }
 
-  // The state of the repository. Optional. (default is HEAD, without patches).
+  // The state of the repository.
+  // A minimum of commit_sha or branch must be specified.
   RepoState repo_state = 3;
 
   // The bazel command to run. Required.
