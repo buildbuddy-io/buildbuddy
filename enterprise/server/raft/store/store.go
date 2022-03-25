@@ -64,10 +64,8 @@ type Store struct {
 	rangeMu       sync.RWMutex
 	clusterRanges map[uint64]*rfpb.RangeDescriptor
 
-	leases sync.Map // map of uint64 rangeID -> *rangelease.Lease
-
-	replicaMu sync.RWMutex
-	replicas  map[uint64]*replica.Replica
+	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
+	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 
 	metaRangeData string
 }
@@ -86,10 +84,8 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		rangeMu:       sync.RWMutex{},
 		clusterRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
-		leases: sync.Map{},
-
-		replicaMu: sync.RWMutex{},
-		replicas:  make(map[uint64]*replica.Replica),
+		leases:   sync.Map{},
+		replicas: sync.Map{},
 
 		metaRangeData: "",
 	}
@@ -214,17 +210,21 @@ func (s *Store) gossipUsage() {
 		Nhid: s.nodeHost.ID(),
 	}
 
-	s.replicaMu.RLock()
-	usage.NumReplicas = int64(len(s.replicas))
-	for _, r := range s.replicas {
+	s.replicas.Range(func(key, value interface{}) bool {
+		r, ok := value.(*replica.Replica)
+		if !ok {
+			alert.UnexpectedEvent("unexpected_replicas_map_type_error")
+			return true
+		}
 		ru, err := r.Usage()
 		if err != nil {
 			log.Warningf("error getting replica usage: %s", err)
-			continue
+			return true
 		}
+		usage.NumReplicas += 1
 		usage.ReplicaUsage = append(usage.ReplicaUsage, ru)
-	}
-	s.replicaMu.RUnlock()
+		return true
+	})
 
 	du, err := disk.GetDirUsage(s.fileDir)
 	if err != nil {
@@ -242,9 +242,10 @@ func (s *Store) gossipUsage() {
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Debugf("%q adding range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
-	s.replicaMu.Lock()
-	s.replicas[rd.GetRangeId()] = r
-	s.replicaMu.Unlock()
+	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
+	if loaded {
+		log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
+	}
 
 	s.rangeMu.Lock()
 	s.clusterRanges[rd.GetRangeId()] = rd
@@ -271,9 +272,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	log.Debugf("%q remove range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
-	s.replicaMu.Lock()
-	delete(s.replicas, rd.GetRangeId())
-	s.replicaMu.Unlock()
+	s.replicas.Delete(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.clusterRanges, rd.GetRangeId())
@@ -317,7 +316,8 @@ func (s *Store) RangeIsActive(header *rfpb.Header) error {
 		}
 	}
 
-	return status.OutOfRangeError(constants.RangeLeaseInvalidMsg)
+	go s.maybeAcquireRangeLease(rd)
+	return status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, header.GetRangeId())
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
@@ -355,13 +355,16 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
-	s.replicaMu.RLock()
-	defer s.replicaMu.RUnlock()
 	// This code will be called by all replicas in a range when
 	// doing a split, so we do not check for range leases here.
-	r, ok := s.replicas[rangeID]
+	rIface, ok := s.replicas.Load(rangeID)
 	if !ok {
-		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+		return nil, status.NotFoundErrorf("Replica %d not found", rangeID)
+	}
+	r, ok := rIface.(*replica.Replica)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_replicas_map_type_error")
+		return nil, status.FailedPreconditionError("Replica type-mismatch; this should not happen")
 	}
 	return r, nil
 }
@@ -467,19 +470,19 @@ func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.
 }
 
 func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (*rfpb.FindMissingResponse, error) {
-	s.replicaMu.RLock()
-	defer s.replicaMu.RUnlock()
 	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return nil, err
 	}
-	r, ok := s.replicas[req.GetHeader().GetRangeId()]
-	if !ok {
-		return nil, status.FailedPreconditionError("Range was active but replica not found; this should not happen")
-	}
-	iter, err := r.Iterator()
+	r, err := s.GetReplica(req.GetHeader().GetRangeId())
 	if err != nil {
 		return nil, err
 	}
+	reader, err := r.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	iter := reader.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	rsp := &rfpb.FindMissingResponse{}
@@ -507,19 +510,21 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 }
 
 func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
-	s.replicaMu.RLock()
-	defer s.replicaMu.RUnlock()
 	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return err
 	}
-	r, ok := s.replicas[req.GetHeader().GetRangeId()]
-	if !ok {
-		return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
-	}
-	iter, err := r.Iterator()
+	r, err := s.GetReplica(req.GetHeader().GetRangeId())
 	if err != nil {
 		return err
 	}
+
+	db, err := r.Reader()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
@@ -566,20 +571,19 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			s.replicaMu.RLock()
-			defer s.replicaMu.RUnlock()
 			// It's expected that clients will directly write bytes
 			// to all replicas in a range and then syncpropose a
 			// write which confirms the data is inplace. For that
 			// reason, we don't check if the range is leased here.
-			r, ok := s.replicas[req.GetHeader().GetRangeId()]
-			if !ok {
-				return status.FailedPreconditionError("Range was active but replica not found; this should not happen")
+			r, err := s.GetReplica(req.GetHeader().GetRangeId())
+			if err != nil {
+				return err
 			}
 			db, err := r.DB()
 			if err != nil {
 				return err
 			}
+			defer db.Close()
 			batch = db.NewBatch()
 			fileMetadataKey, err = constants.FileMetadataKey(req.GetFileRecord())
 			if err != nil {

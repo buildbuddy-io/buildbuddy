@@ -34,7 +34,7 @@ type WriteCloserMetadata interface {
 	MetadataWriter
 }
 
-func NewWriter(ctx context.Context, fileDir string, wb *pebble.Batch, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
@@ -95,7 +95,7 @@ func chunkName(key []byte, idx int64) []byte {
 }
 
 type pebbleChunker struct {
-	wb       *pebble.Batch
+	wb       pebble.Writer
 	key      keys.Key
 	idx      int
 	chunkNum int64
@@ -108,7 +108,7 @@ type pebbleChunker struct {
 // equal to key + "-%d" where %d is the chunk number. StreamChunker implements
 // the WriteCloser interface, but additionally implements a Metadata call,
 // which returns a bit of metedata in proto form describing the data written.
-func PebbleWriter(wb *pebble.Batch, fr *rfpb.FileRecord) (WriteCloserMetadata, error) {
+func PebbleWriter(wb pebble.Writer, fr *rfpb.FileRecord) (WriteCloserMetadata, error) {
 	key, err := constants.FileDataKey(fr)
 	if err != nil {
 		return nil, err
