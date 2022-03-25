@@ -77,9 +77,6 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
 		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
 	}
-	if req.GetRepoState().GetCommitSha() != "" && req.GetRepoState().GetBranch() != "" {
-		return status.InvalidArgumentError("Only one of commit_sha and branch can be specified.")
-	}
 	return nil
 }
 

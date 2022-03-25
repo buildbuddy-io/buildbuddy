@@ -40,12 +40,12 @@ message RunRequest {
 
   message RepoState {
     // SHA of the commit to be checked out. This happens before applying
-    // any patches (see below). Mutually exclusive with "branch".
+    // any patches (see below). Takes preference over branch.
     // Ex. "e782592faf56da05cc0a243220689135e807958f"
     string commit_sha = 1;
 
     // Branch to be checked out. This happens before applying any patches
-    // (see below). Mutually exclusive with "commit_sha".
+    // (see below). commit_sha takes preference, if specified.
     // Ex. "main"
     string branch = 3;
 
