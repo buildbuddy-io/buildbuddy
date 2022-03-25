@@ -176,6 +176,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -203,6 +204,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Test all targets",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -241,6 +243,7 @@ func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -279,6 +282,7 @@ func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
 		"--trigger_event=push",
 		"--pushed_repo_url=file://" + repoPath,
 		"--pushed_branch=master",
@@ -331,6 +335,7 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
@@ -387,6 +392,7 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Test",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
@@ -427,6 +433,7 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
 		"--trigger_event=pull_request",
 		"--pushed_repo_url=file://" + pushedRepoPath,
 		"--pushed_branch=feature",
