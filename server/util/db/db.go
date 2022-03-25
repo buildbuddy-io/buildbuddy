@@ -14,9 +14,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
 	"gorm.io/driver/mysql"
@@ -29,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	gomysql "github.com/go-sql-driver/mysql"
 	gosqlite "github.com/mattn/go-sqlite3"
@@ -43,6 +46,10 @@ const (
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
 	gormRecordMetricsCallbackKey     = "buildbuddy:record_metrics"
 	gormQueryNameKey                 = "buildbuddy:query_name"
+
+	gormStmtSpanKey          = "buildbuddy:span"
+	gormStartSpanCallbackKey = "buildbuddy:start_span"
+	gormEndSpanCallbackKey   = "buildbuddy:end_span"
 )
 
 var (
@@ -156,55 +163,104 @@ func runMigrations(dialect string, gdb *gorm.DB) error {
 	return nil
 }
 
+func makeStartSpanBeforeFn(spanName string) func(db *gorm.DB) {
+	return func(db *gorm.DB) {
+		ctx, span := tracing.StartSpan(db.Statement.Context)
+		span.SetName(spanName)
+		db.Statement.Context = ctx
+		db.Statement.Settings.Store(gormStmtSpanKey, span)
+	}
+}
+
+func recordMetricstBeforeFn(db *gorm.DB) {
+	if db.DryRun || db.Statement == nil {
+		return
+	}
+	db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
+}
+
+func recordMetricsAfterFn(db *gorm.DB) {
+	if db.DryRun || db.Statement == nil {
+		return
+	}
+
+	labels := prometheus.Labels{}
+	qv, _ := db.Get(gormQueryNameKey)
+	if queryName, ok := qv.(string); ok {
+		labels[metrics.SQLQueryTemplateLabel] = queryName
+	} else {
+		labels[metrics.SQLQueryTemplateLabel] = db.Statement.SQL.String()
+	}
+
+	metrics.SQLQueryCount.With(labels).Inc()
+	// v will be nil if our key is not in the map so we can ignore the presence indicator.
+	v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
+	if opStartTime, ok := v.(time.Time); ok {
+		metrics.SQLQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
+	}
+	// Ignore "record not found" errors as they don't generally indicate a
+	// problem with the server.
+	if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+		metrics.SQLErrorCount.With(labels).Inc()
+	}
+}
+
+func recordSpanAfterFn(db *gorm.DB) {
+	// v will be nil if our key is not in the map so we can ignore the presence indicator.
+	spanIface, _ := db.Statement.Settings.LoadAndDelete(gormStmtSpanKey)
+	span, ok := spanIface.(trace.Span)
+	if !ok {
+		return
+	}
+	if !span.IsRecording() {
+		return
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String("dialect", db.Dialector.Name()),
+		attribute.String("query", db.Statement.SQL.String()),
+		attribute.String("table", db.Statement.Table),
+		attribute.Int64("rows_affected", db.Statement.RowsAffected),
+	}
+	span.SetAttributes(attrs...)
+	if db.Error != nil {
+		span.RecordError(db.Error)
+		span.SetStatus(codes.Error, db.Error.Error())
+	}
+	span.End()
+}
+
 // instrumentGORM adds GORM callbacks that populate query metrics.
 func instrumentGORM(gdb *gorm.DB) {
 	// Add callback that runs before other callbacks that records when the operation began.
 	// We use this to calculate how long a query takes to run.
-	recordStartTime := func(db *gorm.DB) {
-		if db.DryRun || db.Statement == nil {
-			return
-		}
-		db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
-	}
-	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
-	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
-	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
-	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
-	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
-	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordStartTime)
+	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+
+	gdb.Callback().Create().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:create"))
+	gdb.Callback().Delete().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:delete"))
+	gdb.Callback().Query().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:query"))
+	gdb.Callback().Raw().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:raw"))
+	gdb.Callback().Row().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:row"))
+	gdb.Callback().Update().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:update"))
 
 	// Add callback that runs after other callbacks that records executed queries and their durations.
-	recordMetrics := func(db *gorm.DB) {
-		if db.DryRun || db.Statement == nil {
-			return
-		}
+	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
+	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
+	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
+	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
+	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
+	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 
-		labels := prometheus.Labels{}
-		qv, _ := db.Get(gormQueryNameKey)
-		if queryName, ok := qv.(string); ok {
-			labels[metrics.SQLQueryTemplateLabel] = queryName
-		} else {
-			labels[metrics.SQLQueryTemplateLabel] = db.Statement.SQL.String()
-		}
-
-		metrics.SQLQueryCount.With(labels).Inc()
-		// v will be nil if our key is not in the map so we can ignore the presence indicator.
-		v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
-		if opStartTime, ok := v.(time.Time); ok {
-			metrics.SQLQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
-		}
-		// Ignore "record not found" errors as they don't generally indicate a
-		// problem with the server.
-		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
-			metrics.SQLErrorCount.With(labels).Inc()
-		}
-	}
-	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
-	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
-	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
-	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
-	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
-	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetrics)
+	gdb.Callback().Create().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+	gdb.Callback().Delete().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+	gdb.Callback().Query().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+	gdb.Callback().Raw().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+	gdb.Callback().Row().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
+	gdb.Callback().Update().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 }
 
 func openDB(configurator *config.Configurator, dialect string, connString string) (*gorm.DB, error) {

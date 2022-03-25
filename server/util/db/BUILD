@@ -12,6 +12,7 @@ go_library(
         "//server/tables",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
@@ -20,5 +21,8 @@ go_library(
         "@io_gorm_driver_sqlite//:sqlite",
         "@io_gorm_gorm//:gorm",
         "@io_gorm_gorm//logger",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
