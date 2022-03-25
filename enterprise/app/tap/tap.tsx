@@ -107,8 +107,8 @@ export default class TapComponent extends React.Component<Props, State> {
     if (this.props.hash !== prevProps.hash) {
       this.updateColoring();
     }
-    // Repo-changed; re-fetch targets starting from scratch.
-    if (this.props.search !== prevProps.search) {
+    if (this.props.search.get("repo") !== prevProps.search.get("repo")) {
+      // Repo-changed; re-fetch targets starting from scratch.
       this.fetchTargets(/*initial=*/ true);
     }
     localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY] = this.selectedRepo();
@@ -256,7 +256,7 @@ export default class TapComponent extends React.Component<Props, State> {
     router.navigateTo(destination);
   }
 
-  handleFilterChange(event: any) {
+  handleFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
     router.replaceParams({ filter: event.target.value });
   }
 

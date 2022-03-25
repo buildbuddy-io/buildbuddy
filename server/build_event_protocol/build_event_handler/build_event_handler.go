@@ -52,11 +52,6 @@ import (
 const (
 	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
 
-	// The time allowed for the cache hit trackers across all app instances to
-	// flush their stats from their local buffer to the backing storage (Redis).
-	// We wait this long before we write the invocation's cache stats to the DB.
-	cacheStatsFinalizationDelay = 500 * time.Millisecond
-
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
 
@@ -74,6 +69,11 @@ const (
 )
 
 var (
+	cacheStatsFinalizationDelay = flag.Duration(
+		"cache_stats_finalization_delay", 500*time.Millisecond,
+		"The time allowed for all metrics collectors across all apps to flush their "+
+			"local cache stats to the backing storage, before finalizing stats in the DB.")
+
 	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
 )
 
@@ -258,7 +258,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	// Apply the finalization delay relative to when the invocation was marked
 	// finalized, rather than relative to now. Otherwise each worker would be
 	// unnecessarily throttled.
-	time.Sleep(time.Until(task.createdAt.Add(cacheStatsFinalizationDelay)))
+	time.Sleep(time.Until(task.createdAt.Add(*cacheStatsFinalizationDelay)))
 	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
