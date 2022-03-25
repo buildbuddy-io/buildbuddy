@@ -99,6 +99,7 @@ var (
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
+	targetCommitSHA    = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
@@ -989,22 +990,43 @@ func (ws *workspace) sync(ctx context.Context) error {
 	// "base" here is referring to the repo on which the workflow is configured.
 	// "fork" is referring to the forked repo, if the runner was triggered by a
 	// PR from a fork (forkBranches will be empty otherwise).
-	baseBranches := []string{*targetBranch}
+	baseRefs := []string{}
+	if *targetBranch != "" {
+		baseRefs = append(baseRefs, *targetBranch)
+	}
 	forkBranches := []string{}
 	// Add the pushed branch to the appropriate list corresponding to the remote
 	// to be fetched (base or fork).
-	if isPushedBranchInFork := *pushedRepoURL != *targetRepoURL; isPushedBranchInFork {
-		forkBranches = append(forkBranches, *pushedBranch)
-	} else if *pushedBranch != *targetBranch {
-		baseBranches = append(baseBranches, *pushedBranch)
+	if *pushedRepoURL != "" {
+		if isPushedBranchInFork := *pushedRepoURL != *targetRepoURL; isPushedBranchInFork {
+			forkBranches = append(forkBranches, *pushedBranch)
+		} else if *pushedBranch != *targetBranch {
+			baseRefs = append(baseRefs, *pushedBranch)
+		}
 	}
 	// TODO: Fetch from remotes in parallel
-	if err := ws.fetch(ctx, *targetRepoURL, baseBranches); err != nil {
+	if err := ws.fetch(ctx, *targetRepoURL, baseRefs); err != nil {
 		return err
 	}
 	if err := ws.fetch(ctx, *pushedRepoURL, forkBranches); err != nil {
 		return err
 	}
+
+	checkoutRef := ""
+	checkoutLocalBranchName := ""
+	if *pushedRepoURL != "" {
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
+		checkoutLocalBranchName = *pushedBranch
+	} else {
+		if *targetBranch != "" {
+			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+			checkoutLocalBranchName = *targetBranch
+		} else {
+			checkoutRef = *targetCommitSHA
+			checkoutLocalBranchName = "local"
+		}
+	}
+
 	// Clean up in case a previous workflow made a mess.
 	if err := git(ctx, ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
 		return err
@@ -1014,13 +1036,12 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 	// Create the branch if it doesn't already exist, then update it to point to
 	// the pushed branch tip.
-	remotePushedBranchRef := fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", *pushedBranch, remotePushedBranchRef); err != nil {
+	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
 		return err
 	}
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
-	if *pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch {
+	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {
 		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 		if err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
 			errMsg := err.Output
