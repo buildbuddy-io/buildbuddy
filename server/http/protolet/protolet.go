@@ -7,37 +7,17 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc/metadata"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
 	contextProtoMessageKey = "protolet.requestMessage"
 )
-
-func copyHeader(m metadata.MD, h http.Header, k string) {
-	if _, ok := h[k]; !ok {
-		return
-	}
-	m[k] = make([]string, len(h[k]))
-	copy(m[k], h[k])
-}
-
-func headersToContext(h http.Header) metadata.MD {
-	m := make(metadata.MD, 0)
-	for key, _ := range h {
-		switch strings.ToLower(key) {
-		case "x-buildbuddy-trace":
-			copyHeader(m, h, key)
-		}
-	}
-	return m
-}
 
 func isRPCMethod(m reflect.Method) bool {
 	t := m.Type
@@ -160,9 +140,14 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 			return
 		}
 
-		// Filter and convert any HTTP headers to grpc MD, and attach
-		// that metadata to the context.
-		ctx := metadata.NewIncomingContext(r.Context(), headersToContext(r.Header))
+		// If we know this is a protolet request and we expect to handle it,
+		// override the span name to something legible instead of the generic
+		// handled-path name. This means instead of the span appearing with a
+		// name like "POST /rpc/BuildBuddyService/", it will instead appear
+		// with the name: "POST /rpc/BuildBuddyService/GetUser".
+		ctx := r.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName(fmt.Sprintf("%s %s", r.Method, r.RequestURI))
 
 		reqVal := reflect.ValueOf(ctx.Value(contextProtoMessageKey).(proto.Message))
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
