@@ -36,6 +36,7 @@ type Liveness struct {
 
 	mu                    sync.RWMutex
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
+	stopped               bool
 	quitLease             chan struct{}
 	timeUntilLeaseRenewal time.Duration
 }
@@ -49,6 +50,7 @@ func New(nodeID string, localSender client.LocalSender) *Liveness {
 		gracePeriod:           defaultGracePeriod,
 		mu:                    sync.RWMutex{},
 		lastLivenessRecord:    &rfpb.NodeLivenessRecord{},
+		stopped:               true,
 		quitLease:             make(chan struct{}),
 		timeUntilLeaseRenewal: 0 * time.Second,
 	}
@@ -70,27 +72,28 @@ func (h *Liveness) Valid() bool {
 }
 
 func (h *Liveness) Lease() error {
-	h.quitLease = make(chan struct{})
 	_, err := h.ensureValidLease(false)
-	if err == nil {
-		go h.keepLeaseAlive()
-	}
 	return err
 }
 
 func (h *Liveness) Release() error {
-	close(h.quitLease)
-	// clear existing lease if it's valid.
-	h.mu.RLock()
-	valid := h.verifyLease(h.lastLivenessRecord) == nil
-	h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
-	if valid {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		if err := h.clearLease(); err != nil {
-			return err
-		}
+	// close the background lease-renewal thread.
+	if !h.stopped {
+		h.stopped = true
+		close(h.quitLease)
+	}
+
+	// clear existing lease if it's valid.
+	valid := h.verifyLease(h.lastLivenessRecord) == nil
+	if !valid {
+		return nil
+	}
+
+	if h.verifyLease(h.lastLivenessRecord) == nil {
+		return h.clearLease()
 	}
 	return nil
 }
@@ -150,6 +153,16 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 		}
 		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
 			renewed = true
+		}
+	}
+
+	// If we just renewed the lease, and there isn't already a background
+	// thread running to keep it renewed, start one now.
+	if renewed {
+		if h.stopped {
+			h.stopped = false
+			h.quitLease = make(chan struct{})
+			go h.keepLeaseAlive()
 		}
 	}
 	return h.lastLivenessRecord, nil

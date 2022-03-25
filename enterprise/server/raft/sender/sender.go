@@ -173,7 +173,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 					log.Debugf("out of range: %s (skipping rangecache)", m)
 					return err
 				case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-					log.Debugf("out of range: %s (skipping replica only)", m)
+					log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
 					continue
 				default:
 					return err
@@ -190,9 +190,9 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				log.Errorf("Error updating rangecache: %s", err)
 			}
 		}
-		break
+		return nil
 	}
-	return nil
+	return status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
 
 func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {

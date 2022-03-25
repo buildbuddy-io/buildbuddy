@@ -69,6 +69,7 @@ type Replica struct {
 	db       *pebble.DB
 	closedMu *sync.RWMutex // PROTECTS(closed)
 	closed   bool
+	wg       sync.WaitGroup
 
 	rootDir   string
 	fileDir   string
@@ -77,6 +78,7 @@ type Replica struct {
 
 	store            IStore
 	lastAppliedIndex uint64
+	splitMu          sync.RWMutex
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -182,13 +184,8 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	return nil
 }
 
-func (sm *Replica) lookup(query []byte) ([]byte, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
-	}
-	buf, closer, err := sm.db.Get(query)
+func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
+	buf, closer, err := db.Get(query)
 	if err != nil {
 		if err == pebble.ErrNotFound {
 			return nil, status.NotFoundErrorf("Key not found: %s", err)
@@ -207,8 +204,8 @@ func (sm *Replica) lookup(query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (sm *Replica) getLastAppliedIndex() (uint64, error) {
-	val, err := sm.lookup([]byte(constants.LastAppliedIndexKey))
+func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
+	val, err := sm.lookup(db, []byte(constants.LastAppliedIndexKey))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return 0, nil
@@ -228,22 +225,80 @@ func (sm *Replica) getDBDir() string {
 		fmt.Sprintf("node-%d", sm.nodeID))
 }
 
-func (sm *Replica) Iterator() (*pebble.Iterator, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
-	}
-	return sm.db.NewIter(nil), nil
+type ReplicaReader interface {
+	pebble.Reader
+	io.Closer
 }
 
-func (sm *Replica) DB() (*pebble.DB, error) {
+type ReplicaWriter interface {
+	pebble.Writer
+	io.Closer
+
+	// Would prefer to just use pebble.Writer here but the interface offers
+	// no functionality for actually creating a new batch, so we amend it.
+	NewBatch() *pebble.Batch
+	NewIndexedBatch() *pebble.Batch
+	NewSnapshot() *pebble.Snapshot
+}
+
+type refCounter struct {
+	wg     *sync.WaitGroup
+	closed bool
+}
+
+func newRefCounter(wg *sync.WaitGroup) *refCounter {
+	wg.Add(1)
+	return &refCounter{
+		wg:     wg,
+		closed: false,
+	}
+}
+func (r *refCounter) Close() error {
+	if !r.closed {
+		r.closed = true
+		r.wg.Add(-1)
+	}
+	return nil
+}
+
+type refCountedDB struct {
+	*pebble.DB
+	*refCounter
+}
+
+func (r *refCountedDB) Close() error {
+	// Just close the refcounter, not the DB.
+	return r.refCounter.Close()
+}
+
+func (sm *Replica) Reader() (ReplicaReader, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
 		return nil, status.FailedPreconditionError("db is closed.")
 	}
-	return sm.db, nil
+
+	return &refCountedDB{
+		sm.db,
+		newRefCounter(&sm.wg),
+	}, nil
+}
+
+func (sm *Replica) DB() (ReplicaWriter, error) {
+	sm.closedMu.RLock()
+	defer sm.closedMu.RUnlock()
+	if sm.closed {
+		return nil, status.FailedPreconditionError("db is closed.")
+	}
+
+	// RLock the split lock. This prevents DB writes during a split.
+	sm.splitMu.RLock()
+	defer sm.splitMu.RUnlock()
+
+	return &refCountedDB{
+		sm.db,
+		newRefCounter(&sm.wg),
+	}, nil
 }
 
 // Open opens the existing on disk state machine to be used or it creates a
@@ -268,12 +323,12 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.closed = false
 	sm.closedMu.Unlock()
 
-	sm.checkAndSetRangeDescriptor()
-	return sm.getLastAppliedIndex()
+	sm.checkAndSetRangeDescriptor(db)
+	return sm.getLastAppliedIndex(db)
 }
 
-func (sm *Replica) checkAndSetRangeDescriptor() {
-	buf, err := sm.lookup(constants.LocalRangeKey)
+func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
+	buf, err := sm.lookup(db, constants.LocalRangeKey)
 	if err != nil {
 		sm.log.Debugf("LocalRangeKey not found on replica")
 		return
@@ -343,8 +398,8 @@ func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (
 	return &rfpb.DirectWriteResponse{}, sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 }
 
-func (sm *Replica) directRead(req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
-	buf, err := sm.lookup(req.GetKey())
+func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
+	buf, err := sm.lookup(db, req.GetKey())
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +443,7 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 	kv := req.GetKv()
 	var buf []byte
 	var err error
-	buf, err = sm.lookup(kv.GetKey())
+	buf, err = sm.lookup(wb, kv.GetKey())
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}
@@ -418,13 +473,13 @@ type splitPoint struct {
 	rightSize int64
 }
 
-func (sm *Replica) findSplitPoint(*rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
 		UpperBound: keys.Key([]byte{constants.MaxByte}),
 	}
 
-	iter := sm.db.NewIter(iterOpts)
+	iter := wb.NewIter(iterOpts)
 	defer iter.Close()
 	var t bool = iter.First()
 
@@ -486,7 +541,7 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) populateDBFromSnapshot(db *pebble.DB) error {
+func (sm *Replica) populateDBFromSnapshot(sourceDB, destDB ReplicaWriter) error {
 	// Create a snapshot of the left range.
 	f, err := os.CreateTemp(sm.fileDir, "replica-*.snap")
 	if err != nil {
@@ -494,14 +549,7 @@ func (sm *Replica) populateDBFromSnapshot(db *pebble.DB) error {
 	}
 	defer os.Remove(f.Name())
 
-	preparedSnap, err := sm.PrepareSnapshot()
-	if err != nil {
-		return err
-	}
-	snap, ok := preparedSnap.(*pebble.Snapshot)
-	if !ok {
-		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
-	}
+	snap := sourceDB.NewSnapshot()
 	defer snap.Close()
 	if err := SaveSnapshotToWriter(f, snap); err != nil {
 		return err
@@ -509,7 +557,7 @@ func (sm *Replica) populateDBFromSnapshot(db *pebble.DB) error {
 
 	// Load the snapshot into the new right range.
 	f.Seek(0, 0)
-	return ApplySnapshotFromReader(f, db)
+	return ApplySnapshotFromReader(f, destDB)
 }
 
 func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) error {
@@ -592,8 +640,15 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
 	}
 
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
+	leftDB, err := sm.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer leftDB.Close()
+
+	// Lock the range to external writes.
+	sm.splitMu.Lock()
+	defer sm.splitMu.Unlock()
 
 	sm.rangeMu.Lock()
 	rd := sm.rangeDescriptor
@@ -613,16 +668,17 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	if err != nil {
 		return nil, err
 	}
-	if err := sm.populateDBFromSnapshot(rightDB); err != nil {
+	defer rightDB.Close()
+
+	if err := sm.populateDBFromSnapshot(leftDB, rightDB); err != nil {
 		return nil, err
 	}
 	rwb := rightDB.NewIndexedBatch()
 	defer rwb.Close()
 
-	sp := req.GetSplitPoint()
-
 	// Delete the keys from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
+	sp := req.GetSplitPoint()
 	rightDeleteEnd := keys.Key(sp.GetLeft()).Next()
 	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, rightDeleteEnd, nil /*ignored write options*/); err != nil {
 		return nil, err
@@ -688,7 +744,7 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	}, nil
 }
 
-func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
+func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetLeft()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
 	}
@@ -700,7 +756,7 @@ func (sm *Replica) scan(req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 		iterOpts.UpperBound = keys.Key(req.GetLeft()).Next()
 	}
 
-	iter := sm.db.NewIter(iterOpts)
+	iter := db.NewIter(iterOpts)
 	defer iter.Close()
 	var t bool
 
@@ -759,7 +815,7 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint(value.FindSplitPoint)
+		r, err := sm.findSplitPoint(wb, value.FindSplitPoint)
 		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
 			FindSplitPoint: r,
 		}
@@ -777,18 +833,18 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 	return rsp
 }
 
-func (sm *Replica) handleRead(req *rfpb.RequestUnion) *rfpb.ResponseUnion {
+func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 	rsp := &rfpb.ResponseUnion{}
 
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_DirectRead:
-		r, err := sm.directRead(value.DirectRead)
+		r, err := sm.directRead(db, value.DirectRead)
 		rsp.Value = &rfpb.ResponseUnion_DirectRead{
 			DirectRead: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Scan:
-		r, err := sm.scan(value.Scan)
+		r, err := sm.scan(db, value.Scan)
 		rsp.Value = &rfpb.ResponseUnion_Scan{
 			Scan: r,
 		}
@@ -845,6 +901,11 @@ func (sm *Replica) handleRead(req *rfpb.RequestUnion) *rfpb.ResponseUnion {
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+	db, err := sm.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	wb := sm.db.NewIndexedBatch()
 	defer wb.Close()
 
@@ -878,7 +939,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		return nil, err
 	}
 
-	if err := sm.db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
 		return nil, err
 	}
 	if sm.lastAppliedIndex >= lastEntry.Index {
@@ -912,6 +973,12 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
+	db, err := sm.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
 	batchCmdReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(reqBuf, batchCmdReq); err != nil {
 		return nil, err
@@ -919,7 +986,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 	batchCmdRsp := &rfpb.BatchCmdResponse{}
 	for _, req := range batchCmdReq.GetUnion() {
 		//sm.log.Debugf("Lookup: request union: %+v", req)
-		rsp := sm.handleRead(req)
+		rsp := sm.handleRead(db, req)
 		//sm.log.Debugf("Lookup: response union: %+v", rsp)
 		batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 	}
@@ -958,13 +1025,12 @@ func (sm *Replica) Sync() error {
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
 func (sm *Replica) PrepareSnapshot() (interface{}, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
+	db, err := sm.DB()
+	if err != nil {
+		return nil, err
 	}
-
-	snap := sm.db.NewSnapshot()
+	defer db.Close()
+	snap := db.NewSnapshot()
 	return snap, nil
 }
 
@@ -1000,7 +1066,7 @@ func SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
 	return nil
 }
 
-func ApplySnapshotFromReader(r io.Reader, db *pebble.DB) error {
+func ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
 
@@ -1077,11 +1143,6 @@ func ApplySnapshotFromReader(r io.Reader, db *pebble.DB) error {
 // error when the system need to be immediately halted for critical errors,
 // e.g. disk error preventing you from saving the snapshot.
 func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-chan struct{}) error {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return status.FailedPreconditionError("db is closed.")
-	}
 	snap, ok := preparedSnap.(*pebble.Snapshot)
 	if !ok {
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
@@ -1109,10 +1170,22 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	if err := ApplySnapshotFromReader(r, sm.db); err != nil {
+	db, err := sm.DB()
+	if err != nil {
 		return err
 	}
-	newLastApplied, err := sm.getLastAppliedIndex()
+	err = ApplySnapshotFromReader(r, db)
+	db.Close() // close the DB before handling errors or checking keys.
+	if err != nil {
+		return err
+	}
+
+	readDB, err := sm.Reader()
+	if err != nil {
+		return err
+	}
+	defer readDB.Close()
+	newLastApplied, err := sm.getLastAppliedIndex(readDB)
 	if err != nil {
 		return err
 	}
@@ -1120,7 +1193,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, newLastApplied)
 	}
 	sm.lastAppliedIndex = newLastApplied
-	sm.checkAndSetRangeDescriptor()
+	sm.checkAndSetRangeDescriptor(readDB)
 	return nil
 }
 
@@ -1146,8 +1219,8 @@ func (sm *Replica) Close() error {
 	if sm.closed {
 		return nil
 	}
-
 	sm.closed = true
+	sm.wg.Wait() // wait for all db users to finish up.
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -1166,6 +1239,7 @@ func (sm *Replica) Close() error {
 func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
 		closedMu:  &sync.RWMutex{},
+		wg:        sync.WaitGroup{},
 		rootDir:   rootDir,
 		fileDir:   fileDir,
 		clusterID: clusterID,
