@@ -422,7 +422,6 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 	if req.GetNodeId() == nodeIDs[len(nodeIDs)-1] {
-		time.Sleep(100 * time.Millisecond)
 		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetClusterId(), req.GetBatch())
 		if err != nil {
 			return nil, err

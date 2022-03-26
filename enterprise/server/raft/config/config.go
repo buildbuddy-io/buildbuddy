@@ -8,11 +8,12 @@ func GetRaftConfig(clusterID, nodeID uint64) dbConfig.Config {
 	rc := dbConfig.Config{
 		NodeID:             nodeID,
 		ClusterID:          clusterID,
-		ElectionRTT:        5,
-		HeartbeatRTT:       1,
+		PreVote:            true,
+		ElectionRTT:        200,
+		HeartbeatRTT:       20,
 		CheckQuorum:        true,
-		SnapshotEntries:    1000,
-		CompactionOverhead: 50,
+		SnapshotEntries:    1000000,
+		CompactionOverhead: 1000,
 	}
 	return rc
 }
