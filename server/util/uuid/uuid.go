@@ -24,7 +24,7 @@ var (
 	hostIDError error
 	hostIDOnce  sync.Once
 
-	failsafeID   string
+	failsafeID     string
 	failsafeIDOnce sync.Once
 )
 
