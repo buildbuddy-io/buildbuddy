@@ -122,3 +122,23 @@ func GetHostID() (string, error) {
 	)
 	return hostID, hostIDError
 }
+
+// GetHostIDOrUUID is the "failsafe" version of GetHostID. In most cases it will
+// return the output of GetHostID, but if an error is encountered, another UUID
+// will be generated.
+func GetHostIDOrUUID() string {
+	hostID, err := GetHostID()
+	if err == nil {
+		return hostID
+	}
+
+	// In practice this should never error, but check err anyway and provide
+	// a fallback (that will never be used).
+	uuid, err := guuid.NewRandom()
+	if err != nil {
+		return uuid.String()
+	}
+
+	failsafe := guuid.New()
+	return string(failsafe.NodeID())
+}

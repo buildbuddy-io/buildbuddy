@@ -94,11 +94,9 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 
 func setWorkerMetadata(ar *repb.ActionResult) error {
 	if ar.ExecutionMetadata == nil {
-		hostID, err := uuid.GetHostID()
-		if err != nil {
-			return err
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
+			Worker: uuid.GetHostIDOrUUID(),
 		}
-		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{Worker: hostID}
 	}
 	return nil
 }
