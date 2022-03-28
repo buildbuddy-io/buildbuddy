@@ -81,7 +81,6 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	}
 	hostID := options.NameOverride
 	if hostID == "" {
-		var err error
 		hostID = uuid.GetHostIDOrUUID()
 	}
 	runnerPool, err := runner.NewPool(env)
