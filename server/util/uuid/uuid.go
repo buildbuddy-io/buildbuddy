@@ -13,18 +13,19 @@ import (
 )
 
 const (
-	uuidContextKey = "uuid"
-
 	// Name of the configuration directory in os.UserConfigDir
-	configDirName = "buildbuddy"
-
+	configDirName  = "buildbuddy"
 	hostIDFilename = "host_id"
+	uuidContextKey = "uuid"
 )
 
 var (
 	hostID      string
 	hostIDError error
 	hostIDOnce  sync.Once
+
+	failsafeID     string
+	failsafeIDOnce sync.Once
 )
 
 func GetFromContext(ctx context.Context) (string, error) {
@@ -121,4 +122,25 @@ func GetHostID() (string, error) {
 		},
 	)
 	return hostID, hostIDError
+}
+
+// GetFailsafeHostID is the "failsafe" version of GetHostID. If GetHostID fails
+// then callers can use this method to generate a process-wide stable GUID like
+// identifier. NB: If HostID is available this will return it.
+func GetFailsafeHostID() string {
+	failsafeIDOnce.Do(func() {
+		hostID, err := GetHostID()
+		if err == nil {
+			failsafeID = hostID
+			return
+		}
+		uuid, err := guuid.NewRandom()
+		if err == nil {
+			failsafeID = uuid.String()
+			return
+		}
+		failsafe := guuid.New()
+		failsafeID = string(failsafe.NodeID())
+	})
+	return failsafeID
 }

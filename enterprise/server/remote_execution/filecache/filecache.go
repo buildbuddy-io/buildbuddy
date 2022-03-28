@@ -98,7 +98,8 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	}
 	hostID, err := uuid.GetHostID()
 	if err != nil {
-		return nil, err
+		log.Warning("Unable to get stable BuildBuddy HostID; filecache will not be reused across process restarts.")
+		hostID = uuid.GetFailsafeHostID()
 	}
 	rootDir = filepath.Join(rootDir, hostID)
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
