@@ -319,13 +319,16 @@ export default class CodeComponent extends React.Component<Props, State> {
   getRepoState() {
     let state = new runner.RunRequest.RepoState();
     state.commitSha = this.state.commitSHA;
+    var enc = new TextEncoder();
     for (let path of this.state.changes.keys()) {
       state.patch.push(
-        diff.createTwoFilesPatch(
-          `a/${path}`,
-          `b/${path}`,
-          this.state.originalFileContents.get(path),
-          this.state.changes.get(path)
+        enc.encode(
+          diff.createTwoFilesPatch(
+            `a/${path}`,
+            `b/${path}`,
+            this.state.originalFileContents.get(path),
+            this.state.changes.get(path)
+          )
         )
       );
     }

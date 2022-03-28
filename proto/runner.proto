@@ -52,7 +52,7 @@ message RunRequest {
     // Any local patches that should be applied to the repo before
     // running the command. Patches will be applied using "git apply"
     // in the root directory of the repository.
-    repeated string patch = 2;
+    repeated bytes patch = 2;
   }
 
   // The state of the repository.
