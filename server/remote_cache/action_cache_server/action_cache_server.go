@@ -95,6 +95,11 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 func setWorkerMetadata(ar *repb.ActionResult) error {
 	if ar.ExecutionMetadata == nil {
 		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{
+			// This will return the Host ID in the normal case and
+			// fall back to a safe ID if permissions don't allow a
+			// Host ID. Don't warn in that case because this func is
+			// called on every UpdateActionResult, and the
+			// consequences of this ID changing are none.
 			Worker: uuid.GetFailsafeHostID(),
 		}
 	}
