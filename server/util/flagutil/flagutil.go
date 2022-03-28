@@ -111,6 +111,9 @@ type structSliceFlag struct {
 }
 
 func (f *structSliceFlag) String() string {
+	if !f.dstSlice.IsValid() {
+		return "[]"
+	}
 	b, err := json.Marshal(f.dstSlice.Interface())
 	if err != nil {
 		alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
