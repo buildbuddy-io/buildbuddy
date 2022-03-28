@@ -381,11 +381,17 @@ func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Du
 	return nil
 }
 
+const flushPipelined = true
+
 // Flush flushes the buffered commands to Redis. The commands needed to flush
 // the buffers are issued in serial. If a command fails, the error is returned
 // and the rest of the commands in the series are not executed, and their data
 // is dropped from the buffer.
 func (c *CommandBuffer) Flush(ctx context.Context) error {
+	if flushPipelined {
+		return c.flushPipelined(ctx)
+	}
+
 	c.mu.Lock()
 	incr := c.incr
 	hincr := c.hincr
@@ -424,6 +430,42 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *CommandBuffer) flushPipelined(ctx context.Context) error {
+	c.mu.Lock()
+	incr := c.incr
+	hincr := c.hincr
+	sadd := c.sadd
+	expire := c.expire
+	// Set all fields to fresh values so the current ones can be flushed without
+	// keeping a hold on the lock.
+	c.init()
+	c.mu.Unlock()
+
+	pipe := c.rdb.Pipeline()
+
+	for key, increment := range incr {
+		pipe.IncrBy(ctx, key, increment)
+	}
+	for key, h := range hincr {
+		for field, increment := range h {
+			pipe.HIncrBy(ctx, key, field, increment)
+		}
+	}
+	for key, set := range sadd {
+		members := []interface{}{}
+		for member, _ := range set {
+			members = append(members, member)
+		}
+		pipe.SAdd(ctx, key, members...)
+	}
+	for key, duration := range expire {
+		pipe.Expire(ctx, key, duration)
+	}
+
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // StartPeriodicFlush starts a loop that periodically flushes buffered commands
