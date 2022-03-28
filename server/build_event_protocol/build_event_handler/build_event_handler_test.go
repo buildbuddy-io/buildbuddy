@@ -160,6 +160,9 @@ func (t *FakeUsageTracker) Increment(ctx context.Context, usage *tables.UsageCou
 	return nil
 }
 
+func (t *FakeUsageTracker) StartDBFlush() {}
+func (t *FakeUsageTracker) StopDBFlush()  {}
+
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
