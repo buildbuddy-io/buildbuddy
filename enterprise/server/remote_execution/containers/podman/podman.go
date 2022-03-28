@@ -36,6 +36,7 @@ const (
 
 type PodmanOptions struct {
 	ForceRoot bool
+	Network   string
 }
 
 // podmanCommandContainer containerizes a command's execution using a Podman container.
@@ -86,6 +87,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if c.options.ForceRoot {
 		args = append(args, "--user=0:0")
+	}
+	if strings.ToLower(c.options.Network) == "off" {
+		args = append(args, "--network=none")
 	}
 	return args
 }
@@ -149,6 +153,9 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	}
 	if c.options.ForceRoot {
 		podmanRunArgs = append(podmanRunArgs, "--user=0:0")
+	}
+	if strings.ToLower(c.options.Network) == "off" {
+		podmanRunArgs = append(args, "--network=none")
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
