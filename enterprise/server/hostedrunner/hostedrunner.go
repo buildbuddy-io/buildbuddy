@@ -74,6 +74,9 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetBazelCommand() == "" {
 		return status.InvalidArgumentError("A bazel command is required.")
 	}
+	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
+		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
+	}
 	return nil
 }
 
@@ -139,7 +142,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if req.GetRepoState().GetCommitSha() != "" {
 		args = append(args, "--target_commit_sha="+req.GetRepoState().GetCommitSha())
 	} else {
-		args = append(args, "--target_branch=master")
+		args = append(args, "--target_branch="+req.GetRepoState().GetBranch())
 	}
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
