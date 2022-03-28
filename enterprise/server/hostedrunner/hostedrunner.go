@@ -116,7 +116,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	var patchDigests []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), []byte(patch))
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), patch)
 		if err != nil {
 			return nil, err
 		}

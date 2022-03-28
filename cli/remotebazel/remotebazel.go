@@ -55,7 +55,7 @@ type RepoConfig struct {
 	Root      string
 	URL       string
 	CommitSHA string
-	Patches   []string
+	Patches   [][]byte
 }
 
 func determineRemote(repo *git.Repository) (*git.Remote, error) {
@@ -178,7 +178,7 @@ func Config(path string) (*RepoConfig, error) {
 		return nil, err
 	}
 	if patch != "" {
-		repoConfig.Patches = append(repoConfig.Patches, patch)
+		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 	}
 
 	// TODO(vadim): prompt user before uploading untracked files
@@ -193,7 +193,7 @@ func Config(path string) (*RepoConfig, error) {
 			if err != nil {
 				return nil, err
 			}
-			repoConfig.Patches = append(repoConfig.Patches, patch)
+			repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 		}
 	}
 
