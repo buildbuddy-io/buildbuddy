@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"sync"
-
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -941,6 +940,9 @@ func (c *Configurator) GetRemoteExecutionRedisClientConfig() *RedisClientConfig 
 	}
 
 	// If no remote execution target is defined, use the default.
+	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
+		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
+	}
 	if c.gc.App.DefaultRedisTarget != "" {
 		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
 	}
