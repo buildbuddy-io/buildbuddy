@@ -96,7 +96,7 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
-	DockerNetwork              string
+	DockerNetwork             string
 	RecycleRunner             bool
 	EnableVFS                 bool
 	// InitDockerd specifies whether to initialize dockerd within the execution

@@ -788,7 +788,7 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
-		opts.DockerNetwork  = props.DockerNetwork
+		opts.DockerNetwork = props.DockerNetwork
 		ctr = docker.NewDockerContainer(
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
 			p.hostBuildRoot(), opts,
