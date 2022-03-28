@@ -155,7 +155,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 		podmanRunArgs = append(podmanRunArgs, "--user=0:0")
 	}
 	if strings.ToLower(c.options.Network) == "off" {
-		podmanRunArgs = append(args, "--network=none")
+		podmanRunArgs = append(podmanRunArgs, "--network=none")
 	}
 	podmanRunArgs = append(podmanRunArgs, c.name)
 	podmanRunArgs = append(podmanRunArgs, cmd.Arguments...)
