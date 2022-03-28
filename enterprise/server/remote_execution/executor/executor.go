@@ -84,7 +84,7 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 		if h, err := uuid.GetHostID(); err == nil {
 			hostID = h
 		} else {
-			log.Warning("Unable to get stable BuildBuddy HostID. Falling back to temp UUID. %s", err)
+			log.Warningf("Unable to get stable BuildBuddy HostID. Falling back to failsafe ID. %s", err)
 			hostID = uuid.GetFailsafeHostID()
 		}
 	}
