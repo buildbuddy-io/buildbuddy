@@ -81,7 +81,12 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 	}
 	hostID := options.NameOverride
 	if hostID == "" {
-		hostID = uuid.GetHostIDOrUUID()
+		if h, err := uuid.GetHostID(); err == nil {
+			hostID = h
+		} else {
+			log.Warning("Unable to get stable BuildBuddy HostID. Falling back to temp UUID. %s", err)
+			hostID = uuid.GetFailsafeHostID()
+		}
 	}
 	runnerPool, err := runner.NewPool(env)
 	if err != nil {

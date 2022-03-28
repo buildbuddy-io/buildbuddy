@@ -96,7 +96,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
-	hostID := uuid.GetHostIDOrUUID()
+	hostID := uuid.GetFailsafeHostID()
 	rootDir = filepath.Join(rootDir, hostID)
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
