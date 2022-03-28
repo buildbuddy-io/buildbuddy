@@ -396,16 +396,14 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	c.init()
 	c.mu.Unlock()
 
+	pipe := c.rdb.Pipeline()
+
 	for key, increment := range incr {
-		if _, err := c.rdb.IncrBy(ctx, key, increment).Result(); err != nil {
-			return err
-		}
+		pipe.IncrBy(ctx, key, increment)
 	}
 	for key, h := range hincr {
 		for field, increment := range h {
-			if _, err := c.rdb.HIncrBy(ctx, key, field, increment).Result(); err != nil {
-				return err
-			}
+			pipe.HIncrBy(ctx, key, field, increment)
 		}
 	}
 	for key, set := range sadd {
@@ -413,17 +411,14 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 		for member, _ := range set {
 			members = append(members, member)
 		}
-		if _, err := c.rdb.SAdd(ctx, key, members...).Result(); err != nil {
-			return err
-		}
+		pipe.SAdd(ctx, key, members...)
 	}
 	for key, duration := range expire {
-		if _, err := c.rdb.Expire(ctx, key, duration).Result(); err != nil {
-			return err
-		}
+		pipe.Expire(ctx, key, duration)
 	}
 
-	return nil
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // StartPeriodicFlush starts a loop that periodically flushes buffered commands

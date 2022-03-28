@@ -435,3 +435,36 @@ func TestCommandBuffer_PostShutdown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "value2", e2)
 }
+
+func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {
+	addr := testredis.Start(b).Target
+	rdb := redis.NewClient(redisutil.TargetToOptions(addr))
+	ctx := context.Background()
+	buf := redisutil.NewCommandBuffer(rdb)
+
+	for _, p := range []struct {
+		nRedisKeys int
+		nHashKeys  int
+	}{
+		{1, 1},
+		{10, 1},
+		{1, 10},
+		{10, 10},
+		{100, 100},
+	} {
+		p := p
+		b.Run(fmt.Sprintf("Keys=%d,Fields=%d,", p.nRedisKeys, p.nHashKeys), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+
+				for r := 0; r < p.nRedisKeys; r++ {
+					for h := 0; h < p.nHashKeys; h++ {
+						err := buf.HIncrBy(ctx, fmt.Sprintf("test_redis_key_%d", r), fmt.Sprintf("test_hash_key_%d", h), 1)
+						require.NoError(b, err)
+					}
+				}
+				err := buf.Flush(ctx)
+				require.NoError(b, err)
+			}
+		})
+	}
+}
