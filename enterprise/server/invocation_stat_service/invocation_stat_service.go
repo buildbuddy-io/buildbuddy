@@ -3,6 +3,7 @@ package invocation_stat_service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -140,7 +141,6 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
-	q.SetOrderBy("MAX(updated_at_usec)" /*ascending=*/, false)
 
 	qStr, qArgs := q.Build()
 	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
@@ -159,6 +159,11 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		}
 		rsp.TrendStat = append(rsp.TrendStat, stat)
 	}
+	sort.Slice(rsp.TrendStat, func(i, j int) bool {
+		// Name is a date of the form "YYYY-MM-DD" so lexicographic
+		// sorting is correct.
+		return rsp.TrendStat[i].Name < rsp.TrendStat[j].Name
+	})
 	return rsp, nil
 }
 

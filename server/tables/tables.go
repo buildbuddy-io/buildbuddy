@@ -856,7 +856,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 }
 
 func dropColumnInPlaceForMySQL(db *gorm.DB, table Table, column string) error {
-	return db.Exec("ALTER TABLE " + table.TableName() + " DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
+	return db.Exec("ALTER TABLE `" + table.TableName() + "` DROP COLUMN " + column + ", ALGORITHM=INPLACE, LOCK=NONE").Error
 }
 
 func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
