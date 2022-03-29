@@ -55,6 +55,25 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	}, data)
 }
 
+func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
+	req := webhookRequest(t, "pull_request_review", test_data.PullRequestApprovedReviewEvent)
+
+	data, err := github.NewProvider().ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:     "pull_request",
+		PushedRepoURL: "https://github.com/test2/bb-workflows-test.git",
+		PushedBranch:  "pr-test",
+		SHA:           "7d27db5443e48541a49693422c3b30fe6e8e3e9f",
+		TargetRepoURL: "https://github.com/test/bb-workflows-test.git",
+		TargetBranch:  "main",
+		// Even though the PR is from a fork, this should be trusted since the
+		// review is in "approved" state.
+		IsTrusted: true,
+	}, data)
+}
+
 func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 	req := webhookRequest(t, "push", []byte{})
 

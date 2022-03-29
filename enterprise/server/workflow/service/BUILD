@@ -16,6 +16,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
+        "//server/backends/github",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
