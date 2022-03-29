@@ -26,17 +26,53 @@ func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
 	}
 }
 
-func (c *collector) IncrementCount(ctx context.Context, key, field string, n int64) error {
+func (c *collector) IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error {
+	// Buffer writes to avoid high load on Redis.
+
+	for field, n := range counts {
+		if err := c.rbuf.HIncrBy(ctx, key, field, n); err != nil {
+			return err
+		}
+	}
+	// Set an expiration so keys don't stick around forever if we fail to clean
+	// up.
+	return c.rbuf.Expire(ctx, key, expiry)
+}
+
+func (c *collector) IncrementCounts(ctx context.Context, key string, counts map[string]int64) error {
+	return c.IncrementCountsWithExpiry(ctx, key, counts, countExpiration)
+}
+
+func (c *collector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
 	// Buffer writes to avoid high load on Redis.
 	if err := c.rbuf.HIncrBy(ctx, key, field, n); err != nil {
 		return err
 	}
 	// Set an expiration so keys don't stick around forever if we fail to clean
 	// up.
-	if err := c.rbuf.Expire(ctx, key, countExpiration); err != nil {
+	return c.rbuf.Expire(ctx, key, expiry)
+}
+
+func (c *collector) IncrementCount(ctx context.Context, key, field string, n int64) error {
+	return c.IncrementCountWithExpiry(ctx, key, field, n, countExpiration)
+}
+
+func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
+	membersIface := make([]interface{}, len(members))
+	for i, member := range members {
+		membersIface[i] = member
+	}
+	// Buffer writes to avoid high load on Redis.
+	if err := c.rbuf.SAdd(ctx, key, membersIface...); err != nil {
 		return err
 	}
-	return nil
+	// Set an expiration so keys don't stick around forever if we fail to clean
+	// up.
+	return c.rbuf.Expire(ctx, key, expiry)
+}
+
+func (c *collector) SetAdd(ctx context.Context, key string, members ...string) error {
+	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
 }
 
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
@@ -61,4 +97,8 @@ func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int6
 
 func (c *collector) Delete(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func (c *collector) Flush(ctx context.Context) error {
+	return c.rbuf.Flush(ctx)
 }

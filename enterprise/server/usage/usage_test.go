@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
@@ -41,6 +43,9 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
 	te.SetDefaultRedisClient(rdb)
+	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
+	rmc := redis_metrics_collector.New(rdb, rbuf)
+	te.SetMetricsCollector(rmc)
 
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers(
 		"US1", "GR1",
@@ -105,8 +110,9 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	require.NoError(t, err)
 
 	// Increment some counts
 	ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
@@ -122,7 +128,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 	ut.Increment(ctx, &tables.UsageCounts{ActionCacheHits: 20})
 
 	// Flush Redis command buffer and check that Redis has the expected state.
-	err := rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	rdb := te.GetDefaultRedisClient()
 	keys, err := rdb.Keys(ctx, "usage/*").Result()
@@ -188,14 +194,15 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	require.NoError(t, err)
 
 	// Increment for group 1, then group 2
 	ut.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
 	ut.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 10})
 
-	err := rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	rdb := te.GetDefaultRedisClient()
 	ctx := context.Background()
@@ -259,10 +266,11 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	require.NoError(t, err)
 
-	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(usage1Collection2Start)
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 10})
@@ -272,7 +280,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 	require.NoError(t, err)
 
 	// Note: we're at the start of the 3rd collection period when flushing.
-	err = rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	err = ut.FlushToDB(ctx)
 
@@ -300,13 +308,14 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
-
-	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
 	require.NoError(t, err)
 
-	err = rbuf.Flush(context.Background())
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	require.NoError(t, err)
+
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 	err = ut.FlushToDB(ctx)
@@ -328,30 +337,29 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{Region: "us-west1"})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	require.NoError(t, err)
 
 	// Write 2 collection periods worth of data.
-	err := ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
+	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(collectionPeriodDuration))
 	err = ut.Increment(ctx, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
-	err = rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
-			ut := usage.NewTracker(
+			ut, err := usage.NewTracker(
 				te, clock,
 				// Disable Redis locking to test that the DB queries are properly
 				// synchronized on their own. Redis is purely used as an optimization to
 				// reduce DB load, and we should not overcount data if Redis fails.
 				&nopDistributedLock{},
-				rbuf,
-				&usage.TrackerOpts{Region: "us-west1"},
 			)
 			require.NoError(t, err)
 			err = ut.FlushToDB(ctx)
@@ -389,19 +397,21 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
-	rbuf1 := redisutil.NewCommandBuffer(te1.GetDefaultRedisClient())
-	rbuf2 := redisutil.NewCommandBuffer(te2.GetDefaultRedisClient())
 	clock := testclock.StartingAt(usage1Collection1Start)
-	ut1 := usage.NewTracker(te1, clock, usage.NewFlushLock(te1), rbuf1, &usage.TrackerOpts{Region: "us-west1"})
-	ut2 := usage.NewTracker(te2, clock, usage.NewFlushLock(te2), rbuf2, &usage.TrackerOpts{Region: "europe-north1"})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te1)
+	ut1, err := usage.NewTracker(te1, clock, usage.NewFlushLock(te1))
+	require.NoError(t, err)
+	flags.SetAndReconcile(t, "app.region", "europe-north1", te2)
+	ut2, err := usage.NewTracker(te2, clock, usage.NewFlushLock(te2))
+	require.NoError(t, err)
 
 	// Record and flush usage in 2 different regions.
-	err := ut1.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
+	err = ut1.Increment(ctx1, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
 	err = ut2.Increment(ctx2, &tables.UsageCounts{CASCacheHits: 100})
-	err = rbuf1.Flush(context.Background())
+	err = te1.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	err = rbuf2.Flush(context.Background())
+	err = te2.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 	err = ut1.FlushToDB(context.Background())
@@ -435,15 +445,16 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	te := setupEnv(t)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	ctx := authContext(te, "US1")
-	rbuf := redisutil.NewCommandBuffer(te.GetDefaultRedisClient())
-	ut := usage.NewTracker(te, clock, usage.NewFlushLock(te), rbuf, &usage.TrackerOpts{})
+	flags.SetAndReconcile(t, "app.region", "us-west1", te)
+	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
+	require.NoError(t, err)
 
 	// Increment twice to test both insert and update queries.
 
-	err := ut.Increment(ctx, counts1)
+	err = ut.Increment(ctx, counts1)
 	require.NoError(t, err)
 
-	err = rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 	err = ut.FlushToDB(ctx)
@@ -452,7 +463,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	err = ut.Increment(ctx, counts2)
 	require.NoError(t, err)
 
-	err = rbuf.Flush(context.Background())
+	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
 	clock.Set(clock.Now().Add(2 * collectionPeriodDuration))
 	err = ut.FlushToDB(ctx)
@@ -465,6 +476,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 		FinalBeforeUsec: usage1Collection4Start.UnixMicro(),
 		GroupID:         "GR1",
 		UsageCounts:     *expectedCounts,
+		Region:          "us-west1",
 	}}, usages)
 }
 

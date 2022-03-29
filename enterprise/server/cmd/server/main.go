@@ -234,9 +234,11 @@ func main() {
 			if region == "" {
 				log.Fatalf("Usage tracking requires app.region to be configured.")
 			}
-			opts := &usage.TrackerOpts{Region: region}
-			ut := usage.NewTracker(
-				realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv), rbuf, opts)
+			ut, err := usage.NewTracker(
+				realEnv, timeutil.NewClock(), usage.NewFlushLock(realEnv))
+			if err != nil {
+				log.Fatalf("Error creating usage tracker: %s", err)
+			}
 			realEnv.SetUsageTracker(ut)
 
 			ut.StartDBFlush()

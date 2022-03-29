@@ -3,6 +3,7 @@ package memory_metrics_collector
 import (
 	"context"
 	"sync"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 )
@@ -32,6 +33,35 @@ func NewMemoryMetricsCollector() (*MemoryMetricsCollector, error) {
 	}, nil
 }
 
+func (m *MemoryMetricsCollector) IncrementCounts(ctx context.Context, key string, counts map[string]int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(counts) == 0 {
+		return nil
+	}
+
+	var existingMap map[string]int64
+	if existingValIface, ok := m.l.Get(key); ok {
+		if existingVal, ok := existingValIface.(map[string]int64); ok {
+			existingMap = existingVal
+		}
+	}
+	if existingMap == nil {
+		existingMap = make(map[string]int64, len(counts))
+	}
+	for field, n := range counts {
+		existingMap[field] += n
+	}
+	m.l.Add(key, existingMap)
+	return nil
+
+}
+
+func (m *MemoryMetricsCollector) IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error {
+	return m.IncrementCounts(ctx, key, counts)
+}
+
 func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, key, field string, n int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -46,6 +76,39 @@ func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, key, field 
 	m.l.Add(key, map[string]int64{field: n})
 	return nil
 
+}
+
+func (m *MemoryMetricsCollector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
+	return m.IncrementCount(ctx, key, field, n)
+}
+
+func (m *MemoryMetricsCollector) SetAdd(ctx context.Context, key string, members ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(members) == 0 {
+		return nil
+	}
+
+	var existingMap map[string]struct{}
+	if existingValIface, ok := m.l.Get(key); ok {
+		if existingVal, ok := existingValIface.(map[string]struct{}); ok {
+			existingMap = existingVal
+		}
+	}
+	if existingMap == nil {
+		existingMap = make(map[string]struct{}, len(members))
+	}
+	for _, member := range members {
+		existingMap[member] = struct{}{}
+	}
+	m.l.Add(key, existingMap)
+	return nil
+
+}
+
+func (m *MemoryMetricsCollector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
+	return m.SetAdd(ctx, key, members...)
 }
 
 func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
@@ -66,5 +129,9 @@ func (m *MemoryMetricsCollector) Delete(ctx context.Context, key string) error {
 	defer m.mu.Unlock()
 
 	m.l.Remove(key)
+	return nil
+}
+
+func (m *MemoryMetricsCollector) Flush(ctx context.Context) error {
 	return nil
 }
