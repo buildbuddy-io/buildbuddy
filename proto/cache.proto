@@ -2,6 +2,11 @@ syntax = "proto3";
 
 package cache;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "proto/remote_execution.proto";
+
 // Next Tag: 14
 message CacheStats {
   // Server-side Action-cache stats.
@@ -32,11 +37,57 @@ message CacheStats {
 
 message ScoreCard {
   message Result {
+    enum CacheType {
+      UNKNOWN_CACHE_TYPE = 0;
+      // Content addressable storage (CAS) cache
+      CAS = 1;
+      // Action cache (AC)
+      AC = 2;
+    }
+
+    enum ResultType {
+      UNKNOWN_RESULT_TYPE = 0;
+      // CAS or AC read.
+      HIT = 1;
+      // AC miss.
+      MISS = 2;
+      // CAS or AC write.
+      UPLOAD = 3;
+    }
+
+    // The short action name of the action relevant to the transfer,
+    // such as "GoCompile".
     string action_mnemonic = 1;
+
+    // The Bazel target label relevant to the transfer, such as "//foo:bar".
     string target_id = 2;
+
+    // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
+
+    // The digest of the requested contents.
+    build.bazel.remote.execution.v2.Digest digest = 4;
+
+    // The timestamp at which the server received the request from the client.
+    google.protobuf.Timestamp start_time = 5;
+
+    // The time needed for the transfer to complete, starting from start_time.
+    google.protobuf.Duration duration = 6;
+
+    // Whether the transferred payload was compressed.
+    bool compressed = 7;
+
+    // The compressed size of the transferred payload. Should be ignored if
+    // `compressed` is false.
+    int64 compressed_size_bytes = 8;
+
+    // Response status of the cache request.
+    google.rpc.Status status = 9;
   }
 
   // In the interest of saving space, we only show cache misses.
+  // TODO(bduffany): use flat `results` list and deprecate this
   repeated Result misses = 1;
+
+  repeated Result results = 2;
 }
