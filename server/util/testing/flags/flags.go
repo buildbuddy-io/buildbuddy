@@ -14,6 +14,7 @@ import (
 
 // Set a flag value and register a cleanup function to restore the flag
 // to its original value after the given test is complete.
+// TODO: Remove this function when we no longer need to reconcile flags
 func SetAndReconcile(t testing.TB, name, value string, env environment.Env) {
 	Set(t, name, value)
 	env.GetConfigurator().ReconcileFlagsAndConfig()
