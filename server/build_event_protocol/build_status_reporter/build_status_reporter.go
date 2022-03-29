@@ -249,17 +249,17 @@ func (r *BuildStatusReporter) invocationLabel() string {
 }
 
 func (r *BuildStatusReporter) invocationURL() string {
-	return build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID())).String()
+	return build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID())).String()
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
-	u := build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
 	u.RawQuery = fmt.Sprintf("targetFilter=%s", label)
 	return u.String()
 }
 
 func (r *BuildStatusReporter) targetURL(label string) string {
-	u := build_buddy_url.BuildBuddyURL(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
 	u.RawQuery = fmt.Sprintf("target=%s", label)
 	return u.String()
 }

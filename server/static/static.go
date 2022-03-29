@@ -117,7 +117,7 @@ type FrontendTemplateData struct {
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	if env.GetConfigurator().GetSelfAuthEnabled() {
-		issuers = append(issuers, build_buddy_url.BuildBuddyURLString())
+		issuers = append(issuers, build_buddy_url.String())
 	}
 	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
 	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,

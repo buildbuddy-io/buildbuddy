@@ -148,21 +148,21 @@ func (s *SSLService) populateTLSConfig() error {
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
 	} else if sslConf.UseACME {
-		if build_buddy_url.BuildBuddyURLString() == "" {
+		if build_buddy_url.String() == "" {
 			return status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
 		}
-		hosts := []string{build_buddy_url.BuildBuddyURL("").Hostname()}
+		hosts := []string{build_buddy_url.WithPath("").Hostname()}
 
 		if sslConf.HostWhitelist != nil {
 			hosts = append(hosts, sslConf.HostWhitelist...)
 		}
 
-		if cache_api_url.CacheAPIURLString() != "" {
-			hosts = append(hosts, cache_api_url.CacheAPIURL("").Hostname())
+		if cache_api_url.String() != "" {
+			hosts = append(hosts, cache_api_url.WithPath("").Hostname())
 		}
 
-		if events_api_url.EventsAPIURLString() != "" {
-			hosts = append(hosts, events_api_url.EventsAPIURL("").Hostname())
+		if events_api_url.String() != "" {
+			hosts = append(hosts, events_api_url.WithPath("").Hostname())
 		}
 
 		// Google LB frontend (GFE) doesn't send SNI to backend so we need to provide a default.

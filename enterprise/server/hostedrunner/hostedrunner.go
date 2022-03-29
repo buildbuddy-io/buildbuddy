@@ -134,9 +134,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	args := []string{
 		"./" + runnerName,
-		"--bes_backend=" + events_api_url.EventsAPIURLString(),
-		"--cache_backend=" + cache_api_url.CacheAPIURLString(),
-		"--bes_results_url=" + build_buddy_url.BuildBuddyURL("/invocation/").String(),
+		"--bes_backend=" + events_api_url.String(),
+		"--cache_backend=" + cache_api_url.String(),
+		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,

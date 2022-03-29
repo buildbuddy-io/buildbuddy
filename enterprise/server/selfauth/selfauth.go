@@ -58,7 +58,7 @@ const (
 
 func Provider(env environment.Env) config.OauthProvider {
 	return config.OauthProvider{
-		IssuerURL:    build_buddy_url.BuildBuddyURLString(),
+		IssuerURL:    build_buddy_url.String(),
 		ClientID:     "buildbuddy",
 		ClientSecret: "secret",
 	}
@@ -140,7 +140,7 @@ func (o *selfAuth) WellKnownOpenIDConfiguration(w http.ResponseWriter, r *http.R
 }
 
 func (o *selfAuth) IssuerURL() *url.URL {
-	return build_buddy_url.BuildBuddyURL("")
+	return build_buddy_url.WithPath("")
 }
 
 func (o *selfAuth) AuthorizationEndpoint() *url.URL {

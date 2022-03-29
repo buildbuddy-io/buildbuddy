@@ -463,7 +463,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		ctx,
 		env,
 		oauthProviders,
-		build_buddy_url.BuildBuddyURL("/auth/"),
+		build_buddy_url.WithPath("/auth/"),
 	)
 	if err != nil {
 		return nil, err
@@ -483,7 +483,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 
 	return &OpenIDAuthenticator{
 		env:              env,
-		myURL:            build_buddy_url.BuildBuddyURL(""),
+		myURL:            build_buddy_url.WithPath(""),
 		authenticators:   authenticators,
 		apiKeyGroupCache: akgCache,
 	}, nil

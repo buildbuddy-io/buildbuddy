@@ -14,7 +14,7 @@ func init() {
 	flag.Var(flagutil.NewURLFlag(&cacheAPIURL), "app.cache_api_url", "Overrides the default remote cache protocol gRPC address shown by BuildBuddy on the configuration screen.")
 }
 
-func CacheAPIURL(path string) *url.URL {
+func WithPath(path string) *url.URL {
 	u, err := url.Parse(cacheAPIURL)
 	if err != nil {
 		// Shouldn't happen, URLFlag should validate it.
@@ -26,6 +26,6 @@ func CacheAPIURL(path string) *url.URL {
 	return u.ResolveReference(&url.URL{Path: path})
 }
 
-func CacheAPIURLString() string {
+func String() string {
 	return cacheAPIURL
 }

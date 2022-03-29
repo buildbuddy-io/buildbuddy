@@ -14,7 +14,7 @@ func init() {
 	flag.Var(flagutil.NewURLFlag(&buildBuddyURL), "app.build_buddy_url", "The external URL where your BuildBuddy instance can be found.")
 }
 
-func BuildBuddyURL(path string) *url.URL {
+func WithPath(path string) *url.URL {
 	u, err := url.Parse(buildBuddyURL)
 	if err != nil {
 		// Shouldn't happen, URLFlag should validate it.
@@ -26,6 +26,6 @@ func BuildBuddyURL(path string) *url.URL {
 	return u.ResolveReference(&url.URL{Path: path})
 }
 
-func BuildBuddyURLString() string {
+func String() string {
 	return buildBuddyURL
 }
