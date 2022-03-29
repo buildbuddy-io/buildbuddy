@@ -1,21 +1,16 @@
 package build_buddy_url
 
 import (
-	"flag"
 	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 )
 
-var buildBuddyURL string
-
-func init() {
-	flag.Var(flagutil.NewURLFlag(&buildBuddyURL), "app.build_buddy_url", "The external URL where your BuildBuddy instance can be found.")
-}
+var buildBuddyURL = flagutil.URLString("app.build_buddy_url", "", "The external URL where your BuildBuddy instance can be found.")
 
 func WithPath(path string) *url.URL {
-	u, err := url.Parse(buildBuddyURL)
+	u, err := url.Parse(*buildBuddyURL)
 	if err != nil {
 		// Shouldn't happen, URLFlag should validate it.
 		alert.UnexpectedEvent("flag app.build_buddy_url was not a parseable URL: %v", err)
@@ -27,5 +22,5 @@ func WithPath(path string) *url.URL {
 }
 
 func String() string {
-	return buildBuddyURL
+	return *buildBuddyURL
 }
