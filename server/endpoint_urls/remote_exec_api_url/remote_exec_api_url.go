@@ -14,7 +14,7 @@ func init() {
 	flag.Var(flagutil.NewURLFlag(&remoteExecAPIURL), "app.remote_execution_api_url", "Overrides the default remote execution protocol gRPC address shown by BuildBuddy on the configuration screen.")
 }
 
-func RemoteExecAPIURL(path string) *url.URL {
+func WithPath(path string) *url.URL {
 	u, err := url.Parse(remoteExecAPIURL)
 	if err != nil {
 		// Shouldn't happen, URLFlag should validate it.
@@ -26,6 +26,6 @@ func RemoteExecAPIURL(path string) *url.URL {
 	return u.ResolveReference(&url.URL{Path: path})
 }
 
-func RemoteExecAPIURLString() string {
+func String() string {
 	return remoteExecAPIURL
 }

@@ -208,12 +208,12 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if err != nil {
 		return nil, err
 	}
-	entityURL := build_buddy_url.BuildBuddyURL("saml/metadata")
+	entityURL := build_buddy_url.WithPath("saml/metadata")
 	query := fmt.Sprintf("%s=%s", slugParam, slug)
 	entityURL.RawQuery = query
 	samlSP, _ := samlsp.New(samlsp.Options{
 		EntityID:          entityURL.String(),
-		URL:               *build_buddy_url.BuildBuddyURL("/auth/"),
+		URL:               *build_buddy_url.WithPath("/auth/"),
 		Key:               keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate:       keyPair.Leaf,
 		IDPMetadata:       idpMetadata,

@@ -102,7 +102,7 @@ func (t *TelemetryClient) logTelemetryData() {
 		LogUuid:          getLogUUID(),
 		RecordedAtUsec:   time.Now().UnixMicro(),
 		AppVersion:       t.version,
-		AppUrl:           build_buddy_url.BuildBuddyURLString(),
+		AppUrl:           build_buddy_url.String(),
 		Hostname:         getHostname(),
 		TelemetryStat:    &telpb.TelemetryStat{},
 		TelemetryFeature: getFeatures(t.env),

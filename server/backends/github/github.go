@@ -104,7 +104,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			githubConfig.ClientID,
 			state,
-			build_buddy_url.BuildBuddyURL("/auth/github/link/"),
+			build_buddy_url.WithPath("/auth/github/link/"),
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 		return
