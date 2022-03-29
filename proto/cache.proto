@@ -5,6 +5,7 @@ package cache;
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
+import "proto/context.proto";
 import "proto/remote_execution.proto";
 
 // Next Tag: 14
@@ -35,24 +36,43 @@ message CacheStats {
   int64 total_cached_action_exec_usec = 11;
 }
 
+// Request to retrieve detailed per-request cache stats.
+message GetCacheScoreCardRequest {
+  context.RequestContext request_context = 1;
+
+  // The invocation ID for which to look up cache stats.
+  string invocation_id = 2;
+}
+
+message GetCacheScoreCardResponse {
+  context.ResponseContext response_context = 1;
+
+  // The cache scorecard containing detailed per-request stats.
+  ScoreCard scorecard = 2;
+}
+
+// CacheType represents the type of cache being written to.
+enum CacheType {
+  UNKNOWN_CACHE_TYPE = 0;
+  // Content addressable storage (CAS) cache.
+  CAS = 1;
+  // Action cache (AC).
+  AC = 2;
+}
+
+// RequestType represents the type of cache request being performed: read or
+// write.
+enum RequestType {
+  UNKNOWN_REQUEST_TYPE = 0;
+  // Cache read.
+  READ = 1;
+  // Cache write.
+  WRITE = 2;
+}
+
 message ScoreCard {
+  // Result holds details about the result of a single cache request.
   message Result {
-    enum CacheType {
-      UNKNOWN_CACHE_TYPE = 0;
-      // Content addressable storage (CAS) cache.
-      CAS = 1;
-      // Action cache (AC).
-      AC = 2;
-    }
-
-    enum RequestType {
-      UNKNOWN_RESULT_TYPE = 0;
-      // Cache read.
-      READ = 1;
-      // Cache write.
-      WRITE = 2;
-    }
-
     // The short action name of the action relevant to the transfer,
     // such as "GoCompile".
     string action_mnemonic = 1;
