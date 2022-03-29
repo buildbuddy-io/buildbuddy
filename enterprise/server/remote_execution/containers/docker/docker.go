@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -50,6 +51,7 @@ type DockerOptions struct {
 	ForceRoot               bool
 	DockerMountMode         string
 	InheritUserIDs          bool
+	DockerNetwork           string
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -225,6 +227,9 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	networkMode := dockercontainer.NetworkMode("")
 	if r.options.UseHostNetwork {
 		networkMode = dockercontainer.NetworkMode("host")
+	}
+	if strings.ToLower(r.options.DockerNetwork) == "off" {
+		networkMode = dockercontainer.NetworkMode("none")
 	}
 	mountMode := ""
 	if r.options.DockerMountMode != "" {

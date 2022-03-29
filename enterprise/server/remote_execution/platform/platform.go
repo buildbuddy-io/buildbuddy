@@ -65,6 +65,8 @@ const (
 
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
+	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
+	dockerNetworkPropertyName = "dockerNetwork"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -94,6 +96,7 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
+	DockerNetwork             string
 	RecycleRunner             bool
 	EnableVFS                 bool
 	// InitDockerd specifies whether to initialize dockerd within the execution
@@ -163,6 +166,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
 		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
+		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
