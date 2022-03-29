@@ -57,6 +57,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":usage",
+        "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/tables",
@@ -64,6 +65,7 @@ go_test(
         "//server/testutil/testclock",
         "//server/testutil/testenv",
         "//server/testutil/testmysql",
+        "//server/util/testing/flags",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_stretchr_testify//assert",
