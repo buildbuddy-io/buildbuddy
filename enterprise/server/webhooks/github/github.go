@@ -158,6 +158,12 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if !isTrustedAssociation(event.GetReview().GetAuthorAssociation()) {
 			return nil, nil
 		}
+		// If the PR author is trusted, we don't need an approving review to run
+		// the workflow -- the workflow will already have been run as part of the
+		// pull_request synchronize event.
+		if isTrustedAssociation(event.GetPullRequest().GetAuthorAssociation()) {
+			return nil, nil
+		}
 		wd, err := parsePullRequestOrReview(event)
 		if err != nil {
 			return nil, err
