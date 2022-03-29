@@ -27,9 +27,11 @@ import (
 )
 
 const (
-	escapeSeq                  = "\u001B["
-	gitConfigSection           = "buildbuddy"
-	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	escapeSeq                            = "\u001B["
+	gitConfigSection                     = "buildbuddy"
+	gitConfigRemoteBazelRemote           = "remote-bazel-remote-name"
+	gitConfigRemoteBazelUploadChangesAck = "remote-bazel-upload-changes-ack"
+	gitConfigTrueValue                   = "true"
 )
 
 var (
@@ -173,6 +175,28 @@ func Config(path string) (*RepoConfig, error) {
 		return nil, err
 	}
 
+	conf, err := repo.Config()
+	if err != nil {
+		return nil, err
+	}
+	if conf.Raw.Section(gitConfigSection).Option(gitConfigRemoteBazelUploadChangesAck) != gitConfigTrueValue {
+		confirm := false
+		prompt := &survey.Confirm{
+			Message: "In order to perform remote Bazel builds, local changes from your git worktree, including untracked files, will be sent as part of the execution request. Continue?",
+			Default: true,
+		}
+		if err := survey.AskOne(prompt, &confirm); err != nil {
+			return nil, err
+		}
+		if !confirm {
+			return nil, fmt.Errorf("user declined to continue")
+		}
+		conf.Raw.Section(gitConfigSection).SetOption(gitConfigRemoteBazelUploadChangesAck, gitConfigTrueValue)
+		if err := repo.SetConfig(conf); err != nil {
+			return nil, fmt.Errorf("error updating git config: %s", err)
+		}
+	}
+
 	remote, err := determineRemote(repo)
 	if err != nil {
 		return nil, err
@@ -217,7 +241,6 @@ func Config(path string) (*RepoConfig, error) {
 		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 	}
 
-	// TODO(vadim): prompt user before uploading untracked files
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, err
