@@ -545,9 +545,15 @@ type PubSub interface {
 // evicted from the backing store that maintains them (usually memcache or
 // redis), so they should *not* be used for data that requires durability.
 type MetricsCollector interface {
+	IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error
+	IncrementCounts(ctx context.Context, key string, counts map[string]int64) error
+	IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error
 	IncrementCount(ctx context.Context, key, field string, n int64) error
+	SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error
+	SetAdd(ctx context.Context, key string, members ...string) error
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
+	Flush(ctx context.Context) error
 }
 
 // A KeyValStore allows for storing ephemeral values globally.

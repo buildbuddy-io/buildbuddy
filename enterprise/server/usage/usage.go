@@ -84,16 +84,9 @@ func NewFlushLock(env environment.Env) interfaces.DistributedLock {
 	return redisutil.NewWeakLock(env.GetDefaultRedisClient(), redisUsageLockKey, redisUsageLockExpiry)
 }
 
-type TrackerOpts struct {
-	// Region identifies the datacenter in which the Redis deployment is running.
-	// Usage is tracked separately per Redis deployment.
-	Region string
-}
-
 type tracker struct {
 	env    environment.Env
 	rdb    redis.UniversalClient
-	rbuf   *redisutil.CommandBuffer
 	clock  timeutil.Clock
 	region string
 
@@ -101,16 +94,18 @@ type tracker struct {
 	stopFlush chan struct{}
 }
 
-func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock, rbuf *redisutil.CommandBuffer, opts *TrackerOpts) *tracker {
+func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
+	if env.GetMetricsCollector() == nil {
+		return nil, status.FailedPreconditionError("Metrics Collector must be configured for usage tracker.")
+	}
 	return &tracker{
 		env:       env,
 		rdb:       env.GetDefaultRedisClient(),
-		region:    opts.Region,
+		region:    env.GetConfigurator().GetAppRegion(),
 		clock:     clock,
 		flushLock: flushLock,
-		rbuf:      rbuf,
 		stopFlush: make(chan struct{}),
-	}
+	}, nil
 }
 
 func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
@@ -135,20 +130,12 @@ func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error 
 
 	// Add the group ID to the set of groups with usage
 	groupsCollectionPeriodKey := groupsRedisKey(t)
-	if err := ut.rbuf.SAdd(ctx, groupsCollectionPeriodKey, groupID); err != nil {
-		return err
-	}
-	if err := ut.rbuf.Expire(ctx, groupsCollectionPeriodKey, redisKeyTTL); err != nil {
+	if err := ut.env.GetMetricsCollector().SetAddWithExpiry(ctx, groupsCollectionPeriodKey, redisKeyTTL, groupID); err != nil {
 		return err
 	}
 	// Increment the hash values
 	countsKey := countsRedisKey(groupID, t)
-	for countField, count := range counts {
-		if err := ut.rbuf.HIncrBy(ctx, countsKey, countField, count); err != nil {
-			return err
-		}
-	}
-	if err := ut.rbuf.Expire(ctx, countsKey, redisKeyTTL); err != nil {
+	if err := ut.env.GetMetricsCollector().IncrementCountsWithExpiry(ctx, countsKey, counts, redisKeyTTL); err != nil {
 		return err
 	}
 
