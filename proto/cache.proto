@@ -39,20 +39,18 @@ message ScoreCard {
   message Result {
     enum CacheType {
       UNKNOWN_CACHE_TYPE = 0;
-      // Content addressable storage (CAS) cache
+      // Content addressable storage (CAS) cache.
       CAS = 1;
-      // Action cache (AC)
+      // Action cache (AC).
       AC = 2;
     }
 
-    enum ResultType {
+    enum RequestType {
       UNKNOWN_RESULT_TYPE = 0;
-      // CAS or AC read.
-      HIT = 1;
-      // AC miss.
-      MISS = 2;
-      // CAS or AC write.
-      UPLOAD = 3;
+      // Cache read.
+      READ = 1;
+      // Cache write.
+      WRITE = 2;
     }
 
     // The short action name of the action relevant to the transfer,
@@ -65,24 +63,31 @@ message ScoreCard {
     // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
 
+    // The type of cache relevant to this result.
+    CacheType cache_type = 4;
+
+    // The type of cache request described by this result (read or write).
+    RequestType request_type = 5;
+
+    // Response status of the cache request. For example, a cache miss is
+    // represented by a READ request_type with a NotFound status code.
+    google.rpc.Status status = 6;
+
     // The digest of the requested contents.
-    build.bazel.remote.execution.v2.Digest digest = 4;
+    build.bazel.remote.execution.v2.Digest digest = 7;
 
     // The timestamp at which the server received the request from the client.
-    google.protobuf.Timestamp start_time = 5;
+    google.protobuf.Timestamp start_time = 8;
 
     // The time needed for the transfer to complete, starting from start_time.
-    google.protobuf.Duration duration = 6;
+    google.protobuf.Duration duration = 9;
 
     // Whether the transferred payload was compressed.
-    bool compressed = 7;
+    bool compressed = 10;
 
     // The compressed size of the transferred payload. Should be ignored if
     // `compressed` is false.
-    int64 compressed_size_bytes = 8;
-
-    // Response status of the cache request.
-    google.rpc.Status status = 9;
+    int64 compressed_size_bytes = 11;
   }
 
   // In the interest of saving space, we only show cache misses.
