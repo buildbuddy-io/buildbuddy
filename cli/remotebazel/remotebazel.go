@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -26,7 +27,9 @@ import (
 )
 
 const (
-	escapeSeq = "\u001B["
+	escapeSeq                  = "\u001B["
+	gitConfigSection           = "buildbuddy"
+	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
 )
 
 var (
@@ -67,14 +70,47 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 	if len(remotes) == 0 {
 		return nil, status.FailedPreconditionError("the git repository must have a remote configured to use remote Bazel")
 	}
-	if len(remotes) > 1 {
-		// TODO(vadim): allow user to pick
-		return nil, status.UnimplementedError("repositories with multiple remotes are not yet supported")
+
+	if len(remotes) == 1 {
+		return remotes[0], nil
 	}
 
-	remote := remotes[0]
-	if len(remote.Config().URLs) == 0 {
-		return nil, status.FailedPreconditionErrorf("remote %q does not have a fetch URL", remote.Config().Name)
+	conf, err := repo.Config()
+	if err != nil {
+		return nil, err
+	}
+	confRemote := conf.Raw.Section(gitConfigSection).Option(gitConfigRemoteBazelRemote)
+	if confRemote != "" {
+		r, err := repo.Remote(confRemote)
+		if err == nil {
+			return r, nil
+		}
+		bblog.Printf("Could not find remote %q saved in config, ignoring", confRemote)
+	}
+
+	var remoteNames []string
+	for _, r := range remotes {
+		remoteNames = append(remoteNames, fmt.Sprintf("%s (%s)", r.Config().Name, r.Config().URLs[0]))
+	}
+
+	selectedRemoteAndURL := ""
+	prompt := &survey.Select{
+		Message: "Select the git remote that will be used by the remote Bazel instance to fetch your repo:",
+		Options: remoteNames,
+	}
+	if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
+		return nil, err
+	}
+
+	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
+	remote, err := repo.Remote(selectedRemote)
+	if err != nil {
+		return nil, err
+	}
+
+	conf.Raw.Section(gitConfigSection).SetOption(gitConfigRemoteBazelRemote, selectedRemote)
+	if err := repo.SetConfig(conf); err != nil {
+		return nil, err
 	}
 
 	return remote, nil

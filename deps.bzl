@@ -57,6 +57,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:uSoVVbwJiQipAclBbw+8quDsfcvFjOpI5iCf4p/cqCs=",
         version = "v0.0.0-20161220082320-9c5fe88206d7",
     )
+    go_repository(
+        name = "com_github_alecaivazis_survey_v2",
+        importpath = "github.com/AlecAivazis/survey/v2",
+        sum = "h1:pchTU9rsLUSvWEl2Aq9Pv3k0IE2fkqtGxazskAMd9Ng=",
+        version = "v2.3.4",
+    )
 
     go_repository(
         name = "com_github_alecthomas_kingpin",
@@ -2062,6 +2068,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.9.6",
     )
     go_repository(
+        name = "com_github_hinshun_vt10x",
+        importpath = "github.com/hinshun/vt10x",
+        sum = "h1:qv2VnGeEQHchGaZ/u7lxST/RaJw+cv273q79D81Xbog=",
+        version = "v0.0.0-20220119200601-820417d04eec",
+    )
+
+    go_repository(
         name = "com_github_hpcloud_tail",
         importpath = "github.com/hpcloud/tail",
         sum = "h1:nfCOvKYfkgYP8hkirhJocXT2+zOD8yUNjXaWfTlyFKI=",
@@ -2417,6 +2430,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/kataras/pio",
         sum = "h1:V5Rs9ztEWdp58oayPq/ulmlqJJZeJP6pP79uP3qjcao=",
         version = "v0.0.0-20190103105442-ea782b38602d",
+    )
+    go_repository(
+        name = "com_github_kballard_go_shellquote",
+        importpath = "github.com/kballard/go-shellquote",
+        sum = "h1:Z9n2FFNUXsshfwJMBgNA0RU6/i7WVaAegv3PtuIHPMs=",
+        version = "v0.0.0-20180428030007-95032a82bc51",
     )
 
     go_repository(
@@ -2781,6 +2800,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.8.3",
     )
     go_repository(
+        name = "com_github_mgutz_ansi",
+        importpath = "github.com/mgutz/ansi",
+        sum = "h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=",
+        version = "v0.0.0-20170206155736-9520e82c474b",
+    )
+
+    go_repository(
         name = "com_github_microcosm_cc_bluemonday",
         importpath = "github.com/microcosm-cc/bluemonday",
         sum = "h1:5lPfLTTAvAbtS0VqT+94yOtFnGfUWYyx0+iToC3Os3s=",
@@ -3007,6 +3033,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/ncw/swift",
         sum = "h1:4DQRPj35Y41WogBxyhOXlrI37nzGlyEcsforeudyYPQ=",
         version = "v1.0.47",
+    )
+    go_repository(
+        name = "com_github_netflix_go_expect",
+        importpath = "github.com/Netflix/go-expect",
+        sum = "h1:+vx7roKuyA63nhn5WAunQHLTznkw5W8b1Xc0dNjp83s=",
+        version = "v0.0.0-20220104043353-73e0943537d2",
     )
 
     go_repository(
@@ -4614,8 +4646,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_term",
         importpath = "golang.org/x/term",
-        sum = "h1:SZxvLBoTP5yHO3Frd4z4vrF+DBX9vMVanchswa69toE=",
-        version = "v0.0.0-20210220032956-6a3ed077a48d",
+        sum = "h1:b8jxX3zqjpqb2LklXPzKSGJhzyxCOZSz8ncv8Nv+y7w=",
+        version = "v0.0.0-20210503060354-a79de5458b56",
     )
 
     go_repository(
