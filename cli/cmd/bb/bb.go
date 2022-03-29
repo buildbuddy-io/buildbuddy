@@ -45,7 +45,7 @@ func runBazelAndDie(ctx context.Context, args []string, opts *autoconfig.BazelOp
 			log.Fatalf("config err: %s", err)
 		}
 
-		err = remotebazel.Run(ctx, remotebazel.RunOpts{
+		exitCode, err := remotebazel.Run(ctx, remotebazel.RunOpts{
 			Server: opts.BuildBuddyEndpoint,
 			APIKey: opts.APIKey,
 			Args:   args,
@@ -53,8 +53,7 @@ func runBazelAndDie(ctx context.Context, args []string, opts *autoconfig.BazelOp
 		if err != nil {
 			die(1, err)
 		}
-		// TODO(vadim): propagate bazel exit code
-		die(0, nil)
+		die(exitCode, nil)
 	}
 
 	exitCode, err := core.RunBazelisk(args, repos)

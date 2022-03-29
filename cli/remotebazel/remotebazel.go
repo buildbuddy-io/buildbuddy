@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -23,6 +24,7 @@ import (
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
@@ -258,10 +260,10 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
-func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
+func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	conn, err := grpc_client.DialTarget(opts.Server)
 	if err != nil {
-		return status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
+		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
@@ -290,7 +292,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
-		return status.UnknownErrorf("error running bazel: %s", err)
+		return 0, status.UnknownErrorf("error running bazel: %s", err)
 	}
 
 	iid := rsp.GetInvocationId()
@@ -330,7 +332,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 			MinLines:     100,
 		})
 		if err != nil {
-			return status.UnknownErrorf("error streaming logs: %s", err)
+			return 0, status.UnknownErrorf("error streaming logs: %s", err)
 		}
 
 		chunks = append(chunks, l)
@@ -358,5 +360,17 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) error {
 		chunkID = l.GetNextChunkId()
 	}
 
-	return nil
+	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+	if err != nil {
+		return 0, fmt.Errorf("could not retrieve invocation: %s", err)
+	}
+	if len(inRsp.GetInvocation()) == 0 {
+		return 0, fmt.Errorf("invocation not found")
+	}
+	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
+		if cic, ok := e.GetBuildEvent().GetPayload().(*build_event_stream.BuildEvent_ChildInvocationCompleted); ok {
+			return int(cic.ChildInvocationCompleted.ExitCode), nil
+		}
+	}
+	return 0, fmt.Errorf("could not determine remote Bazel exit code")
 }
