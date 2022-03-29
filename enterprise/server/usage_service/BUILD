@@ -9,7 +9,7 @@ go_library(
         "//enterprise/server/usage/config",
         "//proto:usage_go_proto",
         "//server/environment",
-        "//server/interfaces",
+        "//server/real_environment",
         "//server/util/log",
         "//server/util/perms",
     ],

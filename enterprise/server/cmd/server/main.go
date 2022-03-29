@@ -143,7 +143,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
 	env.SetInvocationSearchService(search)
 
-	usage_service.Register(env, env.SetUsageService)
+	usage_service.Register(env)
 
 	apiServer := api.NewAPIServer(env)
 	env.SetAPIService(apiServer)
