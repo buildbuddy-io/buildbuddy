@@ -12,6 +12,7 @@ go_library(
         "//proto:runner_go_proto",
         "//server/util/grpc_client",
         "//server/util/status",
+        "@com_github_alecaivazis_survey_v2//:survey",
         "@com_github_go_git_go_git_v5//:go-git",
         "@com_github_go_git_go_git_v5//plumbing",
         "@com_github_google_uuid//:uuid",
