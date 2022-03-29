@@ -101,18 +101,19 @@ type tracker struct {
 }
 
 func RegisterTracker(env *real_environment.RealEnv) error {
-	if usage_config.UsageTrackingEnabled() {
-		ut, err := NewTracker(env, timeutil.NewClock(), NewFlushLock(env))
-		if err != nil {
-			return err
-		}
-		env.SetUsageTracker(ut)
-		ut.StartDBFlush()
-		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			ut.StopDBFlush()
-			return nil
-		})
+	if !usage_config.UsageTrackingEnabled() {
+		return nil
 	}
+	ut, err := NewTracker(env, timeutil.NewClock(), NewFlushLock(env))
+	if err != nil {
+		return err
+	}
+	env.SetUsageTracker(ut)
+	ut.StartDBFlush()
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		ut.StopDBFlush()
+		return nil
+	})
 	return nil
 }
 
