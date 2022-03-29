@@ -48,6 +48,7 @@ proto_library(
         "cache.proto",
     ],
     deps = [
+        ":context_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -305,6 +306,7 @@ proto_library(
     deps = [
         ":api_key_proto",
         ":bazel_config_proto",
+        ":cache_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
         ":github_proto",
@@ -633,6 +635,7 @@ go_proto_library(
     deps = [
         ":api_key_go_proto",
         ":bazel_config_go_proto",
+        ":cache_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
         ":github_go_proto",
@@ -685,6 +688,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache",
     proto = ":cache_proto",
     deps = [
+        ":context_go_proto",
         ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
