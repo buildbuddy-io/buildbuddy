@@ -98,7 +98,7 @@ func (ws *workflowService) getWebhookURL(webhookID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	wu := build_buddy_url.BuildBuddyURL(u.String())
+	wu := build_buddy_url.WithPath(u.String())
 	return wu.String(), nil
 }
 
@@ -648,10 +648,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			// whenever it sees the `workflow-id` platform property.
 			"./buildbuddy_ci_runner",
 			"--action_name=" + workflowAction.Name,
-			"--bes_backend=" + events_api_url.EventsAPIURLString(),
-			"--bes_results_url=" + build_buddy_url.BuildBuddyURL("/invocation/").String(),
-			"--cache_backend=" + cache_api_url.CacheAPIURLString(),
-			"--rbe_backend=" + remote_exec_api_url.RemoteExecAPIURLString(),
+			"--bes_backend=" + events_api_url.String(),
+			"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
+			"--cache_backend=" + cache_api_url.String(),
+			"--rbe_backend=" + remote_exec_api_url.String(),
 			"--commit_sha=" + wd.SHA,
 			"--pushed_repo_url=" + wd.PushedRepoURL,
 			"--pushed_branch=" + wd.PushedBranch,
@@ -857,7 +857,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
 	// TODO: Create a help section in the docs that explains this error status, and link to it
-	status := github.NewGithubStatusPayload(actionName, build_buddy_url.BuildBuddyURLString(), "Check requires approving review", github.ErrorState)
+	status := github.NewGithubStatusPayload(actionName, build_buddy_url.String(), "Check requires approving review", github.ErrorState)
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(wd.TargetRepoURL)
 	if err != nil {
 		return err

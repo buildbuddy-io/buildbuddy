@@ -169,7 +169,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		if sc.WebhookURL != "" {
 			hooks = append(hooks, slack.NewSlackWebhook(
 				sc.WebhookURL,
-				build_buddy_url.BuildBuddyURLString(),
+				build_buddy_url.String(),
 			))
 		}
 	}
