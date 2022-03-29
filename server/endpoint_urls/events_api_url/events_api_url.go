@@ -1,21 +1,16 @@
 package events_api_url
 
 import (
-	"flag"
 	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 )
 
-var eventsAPIURL string
-
-func init() {
-	flag.Var(flagutil.NewURLFlag(&eventsAPIURL), "app.events_api_url", "Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.")
-}
+var eventsAPIURL = flagutil.URLString("app.events_api_url", "", "Overrides the default build event protocol gRPC address shown by BuildBuddy on the configuration screen.")
 
 func WithPath(path string) *url.URL {
-	u, err := url.Parse(eventsAPIURL)
+	u, err := url.Parse(*eventsAPIURL)
 	if err != nil {
 		// Shouldn't happen, URLFlag should validate it.
 		alert.UnexpectedEvent("flag app.events_api_url was not a parseable URL: %v", err)
@@ -27,5 +22,5 @@ func WithPath(path string) *url.URL {
 }
 
 func String() string {
-	return eventsAPIURL
+	return *eventsAPIURL
 }

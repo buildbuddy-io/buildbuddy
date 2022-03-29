@@ -36,6 +36,15 @@ func StructSliceVar(structSlicePtr interface{}, name, usage string) {
 	defaultFlagSet.Var(sliceFlag, name, usage)
 }
 
+// String flag that gets validated as a URL
+// TODO: just use the URL directly (not the string) once we can generate the
+// yaml map from the flags instead of the other way around.
+func URLString(name, value, usage string) *string {
+	u := NewURLFlag(&value)
+	defaultFlagSet.Var(u, name, usage)
+	return &value
+}
+
 // NOTE: slice flags are *appended* to default values and
 // config values, instead of overriding them completely.
 type SliceFlag interface {
@@ -202,6 +211,11 @@ func newStructSliceFlag(structSlicePtr interface{}) *structSliceFlag {
 type URLFlag string
 
 func NewURLFlag(s *string) *URLFlag {
+	_, err := url.Parse(*s)
+	if err != nil {
+		log.Fatalf("Error parsing default URL value '%s' for flag: %v", *s, err)
+		return nil
+	}
 	return (*URLFlag)(s)
 }
 
