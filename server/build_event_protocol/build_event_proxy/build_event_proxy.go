@@ -18,15 +18,14 @@ import (
 
 var (
 	hosts      = flagutil.StringSlice("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
-	bufferSize = flag.Int("build_event_proxy.buffer_size", 0, "The number of build events to buffer locally when proxying build events.")
+	bufferSize = flag.Int("build_event_proxy.buffer_size", 100, "The number of build events to buffer locally when proxying build events.")
 )
 
 type BuildEventProxyClient struct {
-	client          pepb.PublishBuildEventClient
-	rootCtx         context.Context
-	target          string
-	eventBufferSize int
-	clientMux       sync.Mutex // PROTECTS(client)
+	client    pepb.PublishBuildEventClient
+	rootCtx   context.Context
+	target    string
+	clientMux sync.Mutex // PROTECTS(client)
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -44,15 +43,22 @@ func (c *BuildEventProxyClient) reconnectIfNecessary() {
 	c.client = pepb.NewPublishBuildEventClient(conn)
 }
 
-func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventProxyClient {
-	bufferSize := 100
-	if configuredBufferSize := env.GetConfigurator().GetBuildEventProxyBufferSize(); configuredBufferSize != 0 {
-		bufferSize = configuredBufferSize
+func Register(env environment.Env) error {
+	buildEventProxyClients := make([]pepb.PublishBuildEventClient, len(*hosts))
+	for i, target := range *hosts {
+		// NB: This can block for up to a second on connecting. This would be a
+		// great place to have our health checker and mark these as optional.
+		buildEventProxyClients[i] = NewBuildEventProxyClient(env, target)
+		log.Printf("Proxy: forwarding build events to: %s", target)
 	}
+	env.SetBuildEventProxyClients(buildEventProxyClients)
+	return nil
+}
+
+func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
-		target:          target,
-		rootCtx:         context.Background(),
-		eventBufferSize: bufferSize,
+		target:  target,
+		rootCtx: context.Background(),
 	}
 	c.reconnectIfNecessary()
 	return c
@@ -78,7 +84,7 @@ type asyncStreamProxy struct {
 func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) *asyncStreamProxy {
 	asp := &asyncStreamProxy{
 		ctx:    ctx,
-		events: make(chan pepb.PublishBuildToolEventStreamRequest, c.eventBufferSize),
+		events: make(chan pepb.PublishBuildToolEventStreamRequest, *bufferSize),
 	}
 	// Start a goroutine that will open the stream and pass along events.
 	go func() {
