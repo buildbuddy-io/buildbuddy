@@ -689,14 +689,6 @@ func (c *Configurator) GetIntegrationsInvocationUploadConfig() *InvocationUpload
 	return &c.gc.Integrations.InvocationUpload
 }
 
-func (c *Configurator) GetBuildEventProxyHosts() []string {
-	return c.gc.BuildEventProxy.Hosts
-}
-
-func (c *Configurator) GetBuildEventProxyBufferSize() int {
-	return c.gc.BuildEventProxy.BufferSize
-}
-
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 	return c.gc.Cache.MaxSizeBytes
 }
