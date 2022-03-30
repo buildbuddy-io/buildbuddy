@@ -131,6 +131,24 @@ func TestGetAction(t *testing.T) {
 	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+	assert.Equal(t, 3, len(resp.Action))
+	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
+	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
+}
+
+func TestGetActionWithTargetID(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+	testTargetID := "aWQ6OnYxOjovL215L3RhcmdldDpmb28"
+
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamBuild(t, env, testInvocationID)
+	env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
+	s := NewAPIServer(env)
+	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID, TargetId: testTargetID}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Action))
 	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
 	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
@@ -210,10 +228,16 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/other/target:foo", "go_binary rule", "tag-b"), iid, 5))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 6))
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/other/target:foo"), iid, 6))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 7))
+	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 7))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/third/target:foo"), iid, 8))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 9))
 	assert.NoError(t, err)
 
 	err = channel.FinalizeInvocation(iid)

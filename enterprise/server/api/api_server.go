@@ -387,7 +387,7 @@ func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSel
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
 func actionMatchesActionSelector(id *apipb.Action_Id, selector *apipb.ActionSelector) bool {
-	return (selector.TargetId == "" || selector.TargetId == id.TargetId) ||
-		(selector.ConfigurationId == "" || selector.ConfigurationId == id.ConfigurationId) ||
+	return (selector.TargetId == "" || selector.TargetId == id.TargetId) &&
+		(selector.ConfigurationId == "" || selector.ConfigurationId == id.ConfigurationId) &&
 		(selector.ActionId == "" || selector.ActionId == id.ActionId)
 }
