@@ -49,6 +49,7 @@ type Env interface {
 	GetWebhooks() []interfaces.Webhook
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
+	SetBuildEventProxyClients([]pepb.PublishBuildEventClient)
 	GetCache() interfaces.Cache
 	GetUserDB() interfaces.UserDB
 	GetAuthDB() interfaces.AuthDB
