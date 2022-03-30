@@ -178,14 +178,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 	realEnv.SetWebhooks(hooks)
 
-	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
-	for _, target := range configurator.GetBuildEventProxyHosts() {
-		// NB: This can block for up to a second on connecting. This would be a
-		// great place to have our health checker and mark these as optional.
-		buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(realEnv, target))
-		log.Printf("Proxy: forwarding build events to: %s", target)
+	if err := build_event_proxy.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-	realEnv.SetBuildEventProxyClients(buildEventProxyClients)
 	realEnv.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(realEnv))
 
 	// If configured, enable the cache.
