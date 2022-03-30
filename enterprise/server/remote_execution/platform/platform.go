@@ -55,12 +55,12 @@ const (
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
 
-	operatingSystemPropertyName = "OSFamily"
+	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
 	defaultOperatingSystemName  = LinuxOperatingSystemName
 	DarwinOperatingSystemName   = "darwin"
 
-	cpuArchitecturePropertyName = "Arch"
+	CPUArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
 
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
@@ -155,8 +155,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	}
 
 	return &Properties{
-		OS:                        strings.ToLower(stringProp(m, operatingSystemPropertyName, defaultOperatingSystemName)),
-		Arch:                      strings.ToLower(stringProp(m, cpuArchitecturePropertyName, defaultCPUArchitecture)),
+		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
 		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedFreeDiskBytes:    int64Prop(m, EstimatedFreeDiskPropertyName, 0),

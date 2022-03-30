@@ -179,6 +179,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		},
 	}
 
+	if req.GetOs() != "" {
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.OperatingSystemPropertyName,
+			Value: req.GetOs(),
+		})
+	}
+	if req.GetArch() != "" {
+		cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{
+			Name:  platform.CPUArchitecturePropertyName,
+			Value: req.GetArch(),
+		})
+	}
+
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), cmd)
 	if err != nil {
 		return nil, err

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +37,8 @@ const (
 )
 
 var (
+	execOs            = flag.String("os", "", "If set, requests execution on a specific OS.")
+	execArch          = flag.String("arch", "", "If set, requests execution on a specific CPU architecture.")
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
@@ -275,6 +279,15 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	instanceHash.Write(uuid.NodeID())
 	instanceHash.Write([]byte(repoConfig.Root))
 
+	reqOS := runtime.GOOS
+	if *execOs != "" {
+		reqOS = *execOs
+	}
+	reqArch := runtime.GOARCH
+	if *execArch != "" {
+		reqArch = *execArch
+	}
+
 	req := &rnpb.RunRequest{
 		GitRepo: &rnpb.RunRequest_GitRepo{
 			RepoUrl: repoConfig.URL,
@@ -284,6 +297,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		},
 		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
 		BazelCommand:       strings.Join(opts.Args, " "),
+		Os:                 reqOS,
+		Arch:               reqArch,
 	}
 
 	for _, patch := range repoConfig.Patches {
