@@ -42,6 +42,8 @@ message GetCacheScoreCardRequest {
 
   // The invocation ID for which to look up cache stats.
   string invocation_id = 2;
+
+  // TODO(bduffany): Add paging
 }
 
 message GetCacheScoreCardResponse {
