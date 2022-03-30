@@ -10,6 +10,7 @@ go_library(
     ],
     deps = [
         "//enterprise/server/util/redisutil",
+        "//server/environment",
         "@com_github_go_redis_redis_v8//:redis",
     ],
 )

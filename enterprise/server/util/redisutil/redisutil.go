@@ -11,7 +11,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/extra/redisotel/v8"
@@ -22,11 +21,6 @@ import (
 )
 
 var (
-	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
-	defaultRedisShards          = flagutil.StringSlice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
-	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
-	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")
-
 	commandBufferFlushPeriod = flag.Duration(
 		"redis_command_buffer_flush_period", 250*time.Millisecond,
 		"How long to wait between flushing buffered redis commands. "+
