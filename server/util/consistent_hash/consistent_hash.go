@@ -108,14 +108,14 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	// computing a hash of the replicas in the set, and checking if this set
 	// has been returned before. If it has -- return that set.
 	originalIndex := c.ring[c.keys[idx]]
-
-	replicasHash := crc32.NewIEEE()
-	replicasHash.Write([]byte{originalIndex})
+	inputBuf := make([]byte, len(c.keys))
+	inputBuf[0] = originalIndex
+	inputIdx := 1
 	c.lookupReplicas(idx, func(replicaIndex uint8) {
-		replicasHash.Write([]byte{replicaIndex})
+		inputBuf[inputIdx] = replicaIndex
+		inputIdx += 1
 	})
-
-	replicasKey := replicasHash.Sum32()
+	replicasKey := crc32.ChecksumIEEE(inputBuf)
 
 	c.replicaMu.RLock()
 	replicas, ok := c.replicaSets[replicasKey]
