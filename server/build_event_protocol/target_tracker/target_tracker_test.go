@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -144,6 +145,7 @@ func TestTrackTargetsForEvents(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
+	flags.Set(t, "app.enable_target_tracking", "true")
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
 	require.NoError(t, err)
@@ -335,6 +337,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
+	flags.Set(t, "app.enable_target_tracking", "true")
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
 	require.NoError(t, err)
