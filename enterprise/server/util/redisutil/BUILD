@@ -10,7 +10,9 @@ go_library(
     ],
     deps = [
         "//server/config",
+        "//server/environment",
         "//server/interfaces",
+        "//server/real_environment",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",

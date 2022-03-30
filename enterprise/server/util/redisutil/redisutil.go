@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -32,6 +34,56 @@ var (
 		"How long to wait between flushing buffered redis commands. "+
 			"Setting this to 0 will disable buffering at the cost of higher redis QPS.")
 )
+
+func DefaultRedisTargetConfigNoFallback() *config.RedisClientConfig {
+	if len(*defaultRedisShards) > 0 {
+		return &config.RedisClientConfig{
+			ShardedConfig: &config.ShardedRedisConfig{
+				Shards:   *defaultRedisShards,
+				Username: *defaultShardedRedisUsername,
+				Password: *defaultShardedRedisPassword,
+			},
+		}
+	}
+
+	if *defaultRedisTarget != "" {
+		return &config.RedisClientConfig{SimpleTarget: *defaultRedisTarget}
+	}
+	return nil
+}
+
+func DefaultRedisTargetConfig(env environment.Env) *config.RedisClientConfig {
+	if drcc := DefaultRedisTargetConfigNoFallback(); drcc != nil {
+		return drcc
+	}
+
+	if crcc := env.GetConfigurator().GetCacheRedisClientConfig(); crcc != nil {
+		// Fall back to the cache redis client config if default redis target is not specified.
+		return crcc
+	}
+
+	// Otherwise, fall back to the remote exec redis target.
+	return env.GetConfigurator().GetRemoteExecutionRedisClientConfig()
+}
+
+// TODO: make this `environment.Env` once Set methods are
+// defined for said interface.
+func RegisterDefaultRedisClient(env *real_environment.RealEnv) error {
+	redisConfig := DefaultRedisTargetConfig(env)
+	if redisConfig == nil {
+		return nil
+	}
+	rdb, err := NewClientFromConfig(redisConfig, env.GetHealthChecker(), "default_redis")
+	if err != nil {
+		return status.InvalidArgumentErrorf("Invalid redis config: %s", err)
+	}
+	env.SetDefaultRedisClient(rdb)
+
+	rbuf := NewCommandBuffer(rdb)
+	rbuf.StartPeriodicFlush(context.Background())
+	env.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
+	return nil
+}
 
 func isRedisURI(redisTarget string) bool {
 	return strings.HasPrefix(redisTarget, "redis://") ||

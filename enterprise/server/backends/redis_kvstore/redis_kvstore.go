@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 )
@@ -14,6 +15,17 @@ const (
 
 type store struct {
 	rdb redis.UniversalClient
+}
+
+// TODO: make this `environment.Env` once Set methods are
+// defined for said interface.
+func Register(env *real_environment.RealEnv) error {
+	rdb := env.GetDefaultRedisClient()
+	if rdb == nil {
+		return nil
+	}
+	env.SetKeyValStore(New(rdb))
+	return nil
 }
 
 func New(rdb redis.UniversalClient) *store {

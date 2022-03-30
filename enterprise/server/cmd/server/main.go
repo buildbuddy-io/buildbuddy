@@ -143,7 +143,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
 	env.SetInvocationSearchService(search)
 
-	usage_service.Register(env)
+	if err := usage_service.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	apiServer := api.NewAPIServer(env)
 	env.SetAPIService(apiServer)
@@ -210,25 +212,16 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
-	if redisConfig := configurator.GetDefaultRedisClientConfig(); redisConfig != nil {
-		rdb, err := redisutil.NewClientFromConfig(redisConfig, healthChecker, "default_redis")
-		if err != nil {
-			log.Fatalf("Invalid redis config: %s", err)
-		}
-		realEnv.SetDefaultRedisClient(rdb)
-
-		rbuf := redisutil.NewCommandBuffer(rdb)
-		rbuf.StartPeriodicFlush(context.Background())
-		realEnv.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
-
-		rkv := redis_kvstore.New(rdb)
-		realEnv.SetKeyValStore(rkv)
-		rmc := redis_metrics_collector.New(rdb, rbuf)
-		realEnv.SetMetricsCollector(rmc)
+	if err := redisutil.RegisterDefaultRedisClient(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-
-	err = usage.RegisterTracker(realEnv)
-	if err != nil {
+	if err := redis_kvstore.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := redis_metrics_collector.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err = usage.RegisterTracker(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

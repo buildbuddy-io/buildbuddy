@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -17,6 +18,20 @@ const (
 type collector struct {
 	rdb  redis.UniversalClient
 	rbuf *redisutil.CommandBuffer
+}
+
+// TODO: make this `environment.Env` once Set methods are
+// defined for said interface.
+func Register(env *real_environment.RealEnv) error {
+	rdb := env.GetDefaultRedisClient()
+	if rdb == nil {
+		return nil
+	}
+	rbuf := redisutil.NewCommandBuffer(rdb)
+	rbuf.StartPeriodicFlush(context.Background())
+	env.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
+	env.SetMetricsCollector(New(rdb, rbuf))
+	return nil
 }
 
 func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
