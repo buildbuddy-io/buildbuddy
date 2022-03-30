@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/logging",
+        "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:invocation_go_proto",
         "//proto:runner_go_proto",
         "//server/util/grpc_client",
         "//server/util/status",
