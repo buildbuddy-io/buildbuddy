@@ -32,6 +32,7 @@ go_test(
         "//proto/api/v1:common_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
