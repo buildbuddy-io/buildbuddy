@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 )
@@ -14,6 +15,15 @@ const (
 
 type store struct {
 	rdb redis.UniversalClient
+}
+
+func Register(env environment.Env) error {
+	rdb := env.GetDefaultRedisClient()
+	if rdb == nil {
+		return nil
+	}
+	env.SetKeyValStore(New(rdb))
+	return nil
 }
 
 func New(rdb redis.UniversalClient) *store {

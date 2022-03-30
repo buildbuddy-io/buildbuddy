@@ -73,10 +73,13 @@ type Env interface {
 	GetTaskRouter() interfaces.TaskRouter
 	GetCacheRedisClient() redis.UniversalClient
 	GetDefaultRedisClient() redis.UniversalClient
+	SetDefaultRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisClient() redis.UniversalClient
 	GetRemoteExecutionRedisPubSubClient() redis.UniversalClient
 	GetMetricsCollector() interfaces.MetricsCollector
+	SetMetricsCollector(interfaces.MetricsCollector)
 	GetKeyValStore() interfaces.KeyValStore
+	SetKeyValStore(interfaces.KeyValStore)
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
 	GetRunnerService() interfaces.RunnerService

@@ -31,10 +31,11 @@ type usageService struct {
 }
 
 // Registers the usage service if usage tracking is enabled
-func Register(env environment.Env) {
+func Register(env environment.Env) error {
 	if usage_config.UsageTrackingEnabled() {
 		env.SetUsageService(New(env))
 	}
+	return nil
 }
 
 func New(env environment.Env) *usageService {

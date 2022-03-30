@@ -624,24 +624,6 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	return flagSet
 }
 
-func (c *Configurator) GetDefaultRedisClientConfig() *RedisClientConfig {
-	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
-		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
-	}
-
-	if c.gc.App.DefaultRedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
-	}
-
-	if crcc := c.GetCacheRedisClientConfig(); crcc != nil {
-		// Fall back to the cache redis client config if default redis target is not specified.
-		return crcc
-	}
-
-	// Otherwise, fall back to the remote exec redis target.
-	return c.GetRemoteExecutionRedisClientConfig()
-}
-
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
 	return c.gc.Cache.MaxSizeBytes
 }
@@ -771,12 +753,13 @@ func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 }
 
 func (c *Configurator) GetRemoteExecutionRedisClientConfig() *RedisClientConfig {
-	if rec := c.GetRemoteExecutionConfig(); rec != nil && len(rec.ShardedRedis.Shards) > 0 {
-		return &RedisClientConfig{ShardedConfig: &rec.ShardedRedis}
-	}
-
-	if rec := c.GetRemoteExecutionConfig(); rec != nil && rec.RedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: rec.RedisTarget}
+	if rec := c.GetRemoteExecutionConfig(); rec != nil {
+		if len(rec.ShardedRedis.Shards) > 0 {
+			return &RedisClientConfig{ShardedConfig: &rec.ShardedRedis}
+		}
+		if rec.RedisTarget != "" {
+			return &RedisClientConfig{SimpleTarget: rec.RedisTarget}
+		}
 	}
 
 	// If no remote execution target is defined, use the default.
