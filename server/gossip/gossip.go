@@ -72,14 +72,15 @@ func (gm *GossipManager) Leave() error {
 func (gm *GossipManager) Shutdown() error {
 	return gm.serfInstance.Shutdown()
 }
-func (gm *GossipManager) SetTag(tagName, tagValue string) error {
+func (gm *GossipManager) SetTags(tags map[string]string) error {
 	gm.tagMu.Lock()
 	defer gm.tagMu.Unlock()
-	log.Debugf("Setting tag %q = %q", tagName, tagValue)
-	if tagValue == "" {
-		delete(gm.tags, tagName)
-	} else {
-		gm.tags[tagName] = tagValue
+	for tagName, tagValue := range tags {
+		if tagValue == "" {
+			delete(gm.tags, tagName)
+		} else {
+			gm.tags[tagName] = tagValue
+		}
 	}
 	return gm.serfInstance.SetTags(gm.tags)
 }
@@ -100,10 +101,12 @@ type logWriter struct {
 
 func (lw *logWriter) Write(d []byte) (int, error) {
 	s := strings.TrimSuffix(string(d), "\n")
+	// Gossip logs are very verbose and there is
+	// very little useful info in DEBUG/INFO level logs.
 	if strings.Contains(s, "[DEBUG]") {
-		log.Debug(s)
+		//		log.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
-		log.Info(s)
+		//		log.Info(s)
 	} else {
 		log.Warning(s)
 	}

@@ -90,7 +90,7 @@ func TestSendTag(t *testing.T) {
 	node2 := newGossipManager(t, localAddr(t), []string{node1Addr}, &testBroker{onEvent: eventCB})
 	defer node2.Shutdown()
 
-	err := node1.SetTag("testTagName", "testTagValue")
+	err := node1.SetTags(map[string]string{"testTagName": "testTagValue"})
 	require.Nil(t, err)
 
 	select {
