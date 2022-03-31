@@ -883,7 +883,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 	log.Debugf("SplitResponse: %+v", splitRsp)
 	return &rfpb.SplitClusterResponse{
-		Left: splitRsp.GetLeft(),
+		Left:  splitRsp.GetLeft(),
 		Right: splitRsp.GetRight(),
 	}, nil
 }
