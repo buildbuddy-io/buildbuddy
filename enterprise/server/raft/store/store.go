@@ -793,29 +793,34 @@ func (s *Store) membersInState(memberStatus serf.MemberStatus) []serf.Member {
 	return members
 }
 
-func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
-	sourceRange := s.GetRange(clusterID)
+func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+	sourceRange := req.GetRange()
 	if sourceRange == nil {
-		return status.FailedPreconditionErrorf("No range found for cluster: %d", clusterID)
+		return nil, status.FailedPreconditionErrorf("No range provided to split: %+v", req)
 	}
+	if len(sourceRange.GetReplicas()) == 0 {
+		return nil, status.FailedPreconditionErrorf("No replicas in range: %+v", sourceRange)
+	}
+	clusterID := sourceRange.GetReplicas()[0].GetClusterId()
+
 	// start a new cluster in parallel to the existing cluster
 	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	newIDs, err := s.reserveIDsForNewCluster(ctx, len(existingMembers))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	nodeGrpcAddrs := make(map[string]string)
 	for _, replica := range existingMembers {
 		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		grpcAddr, _, err := s.registry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		nodeGrpcAddrs[nhid] = grpcAddr
 	}
@@ -825,7 +830,7 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 	}
 	stubRangeBuf, err := proto.Marshal(stubRange)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stubRangeBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -835,27 +840,27 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 	})
 	err = bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, stubRangeBatch)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	newMembers, err := s.GetClusterMembership(ctx, newIDs.clusterID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stubRange.Replicas = newMembers
 
 	// Find an appropriate split point.
 	findSplit, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).ToProto()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	findSplitBatch, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, findSplit)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	findSplitRsp, err := rbuilder.NewBatchResponseFromProto(findSplitBatch).FindSplitPointResponse(0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Debugf("Found split point: %+v", findSplitRsp)
@@ -866,18 +871,21 @@ func (s *Store) SplitRange(ctx context.Context, clusterID uint64) error {
 		SplitPoint:    findSplitRsp,
 	}).ToProto()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	batchRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, splitBatch)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	splitRsp, err := rbuilder.NewBatchResponseFromProto(batchRsp).SplitResponse(0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Debugf("SplitResponse: %+v", splitRsp)
-	return nil
+	return &rfpb.SplitClusterResponse{
+		Left: splitRsp.GetLeft(),
+		Right: splitRsp.GetRight(),
+	}, nil
 }
 
 func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64, error) {
@@ -897,78 +905,86 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 	return membership.ConfigChangeID, nil
 }
 
-func (s *Store) AddNodeToCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, node *rfpb.NodeDescriptor) error {
-	if len(rangeDescriptor.GetReplicas()) == 0 {
-		return status.FailedPreconditionErrorf("No replicas in range: %+v", rangeDescriptor)
+func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
+	if len(req.GetRange().GetReplicas()) == 0 {
+		return nil, status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
 	}
-	clusterID := rangeDescriptor.GetReplicas()[0].GetClusterId()
+	node := req.GetNode()
+	if node.GetNhid() == "" || node.GetRaftAddress() == "" || node.GetGrpcAddress() == "" {
+		return nil, status.FailedPreconditionErrorf("Incomplete node descriptor: %+v", node)
+	}
+	clusterID := req.GetRange().GetReplicas()[0].GetClusterId()
 
 	// Reserve a new node ID for the node about to be added.
 	nodeIDs, err := s.reserveNodeIDs(ctx, 1)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	nodeID := nodeIDs[0]
+	newNodeID := nodeIDs[0]
 
 	// Get the config change index for this cluster.
 	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Gossip the address of the node that is about to be added.
-	s.registry.Add(clusterID, nodeID, node.GetNhid())
+	s.registry.Add(clusterID, newNodeID, node.GetNhid())
 	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
 
 	// Propose the config change (this adds the node to the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestAddNode(ctx, clusterID, nodeID, node.GetNhid(), configChangeID)
+		return s.nodeHost.SyncRequestAddNode(ctx, clusterID, newNodeID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Start the cluster on the newly added node.
 	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
 		ClusterId: clusterID,
-		NodeId:    nodeID,
+		NodeId:    newNodeID,
 		Join:      true,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Finally, update the range descriptor information to reflect the
 	// membership of this new node in the range.
-	return s.addReplicaToRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
+	if err := s.addReplicaToRangeDescriptor(ctx, clusterID, newNodeID, req.GetRange()); err != nil {
+		return nil, err
+	}
+
+	return &rfpb.AddClusterNodeResponse{}, nil
 }
 
-func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb.RangeDescriptor, targetNodeID uint64) error {
+func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
 	var clusterID, nodeID uint64
-	for _, replica := range rangeDescriptor.GetReplicas() {
-		if replica.GetNodeId() == targetNodeID {
+	for _, replica := range req.GetRange().GetReplicas() {
+		if replica.GetNodeId() == req.GetNodeId() {
 			clusterID = replica.GetClusterId()
 			nodeID = replica.GetNodeId()
 			break
 		}
 	}
 	if clusterID == 0 && nodeID == 0 {
-		return status.FailedPreconditionErrorf("No node with id %d found in range: %+v", targetNodeID, rangeDescriptor)
+		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetNodeId(), req.GetRange())
 	}
 
 	grpcAddr, _, err := s.registry.ResolveGRPC(clusterID, nodeID)
 	if err != nil {
 		log.Errorf("error resolving grpc addr: %s", err)
-		return err
+		return nil, err
 	}
 
 	configChangeID, err := s.getConfigChangeID(ctx, clusterID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Propose the config change (this removes the node from the raft cluster).
@@ -976,14 +992,14 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 		return s.nodeHost.SyncRequestDeleteNode(ctx, clusterID, nodeID, configChangeID)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Remove the data from the now stopped node.
 	c, err := s.apiClient.Get(ctx, grpcAddr)
 	if err != nil {
 		log.Errorf("err getting api client: %s", err)
-		return err
+		return nil, err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		ClusterId: clusterID,
@@ -991,12 +1007,15 @@ func (s *Store) RemoveNodeFromCluster(ctx context.Context, rangeDescriptor *rfpb
 	})
 	if err != nil {
 		log.Errorf("remove data err: %s", err)
-		return err
+		return nil, err
 	}
 
 	// Finally, update the range descriptor information to reflect the
 	// new membership of this range without the removed node.
-	return s.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, rangeDescriptor)
+	if err := s.removeReplicaFromRangeDescriptor(ctx, clusterID, nodeID, req.GetRange()); err != nil {
+		return nil, err
+	}
+	return &rfpb.RemoveClusterNodeResponse{}, nil
 }
 
 func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {

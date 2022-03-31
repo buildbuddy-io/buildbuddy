@@ -367,10 +367,13 @@ func TestAddNodeToCluster(t *testing.T) {
 		require.Nil(t, err)
 	}
 
-	err = s1.AddNodeToCluster(ctx, rd, &rfpb.NodeDescriptor{
-		Nhid:        nh4.ID(),
-		RaftAddress: s4.RaftAddress,
-		GrpcAddress: s4.GRPCAddress,
+	_, err = s1.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+		Range: rd,
+		Node: &rfpb.NodeDescriptor{
+			Nhid:        nh4.ID(),
+			RaftAddress: s4.RaftAddress,
+			GrpcAddress: s4.GRPCAddress,
+		},
 	})
 	require.Nil(t, err, err)
 
@@ -441,7 +444,10 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 		require.Nil(t, err)
 	}
 
-	err = s1.RemoveNodeFromCluster(ctx, rd, 4)
+	_, err = s1.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
+		Range:  rd,
+		NodeId: 4,
+	})
 	require.Nil(t, err, err)
 
 	replicas, err := s1.GetClusterMembership(ctx, 1)
@@ -575,7 +581,9 @@ func TestSplitMetaRange(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, stores, 10)
 
-	err = s1.SplitRange(ctx, 1)
+	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Range: rd,
+	})
 	require.Nil(t, err, err)
 
 	// Expect that a new cluster was added with clusterID = 2
@@ -654,7 +662,9 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, stores, 5)
 
-	err = s1.SplitRange(ctx, 1)
+	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Range: rd,
+	})
 	require.Nil(t, err, err)
 
 	// Expect that a new cluster was added with clusterID = 2
@@ -671,7 +681,9 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// Write some more records to the new right range.
 	written = append(written, writeNRecords(ctx, t, stores, 5)...)
 
-	err = s2.SplitRange(ctx, 2)
+	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Range: s1.GetRange(2),
+	})
 	require.Nil(t, err, err)
 
 	// Expect that a new cluster was added with clusterID = 3

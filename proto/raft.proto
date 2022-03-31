@@ -359,16 +359,24 @@ message RemoveDataRequest {
 
 message RemoveDataResponse {}
 
-message Operation {
-  enum OpType {
-    UNKNOWN_TYPE = 0;
-    ADD_NODE = 1;
-    REMOVE_NODE = 2;
-  }
+message AddClusterNodeRequest {
+  RangeDescriptor range = 1;
+  NodeDescriptor node = 2;
+}
+message AddClusterNodeResponse {}
 
-  OpType op_type = 1;
-  uint64 cluster_id = 2;
-  uint64 node_id = 3;
+message RemoveClusterNodeRequest {
+  RangeDescriptor range = 1;
+  uint64 node_id = 2;
+}
+message RemoveClusterNodeResponse {}
+
+message SplitClusterRequest {
+  RangeDescriptor range = 1;
+}
+message SplitClusterResponse {
+  RangeDescriptor left = 1;
+  RangeDescriptor right = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
