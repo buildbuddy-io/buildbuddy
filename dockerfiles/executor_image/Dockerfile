@@ -15,8 +15,8 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
 # Also install iproute2 ("ip" command) to configure networking on host.
 RUN apt-get update && apt-get install -y umoci iproute2
 
-RUN echo 'deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/Debian_11/ /' >> /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list && \
-    curl -fsSL https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/Debian_11/Release.key | gpg --dearmor >> /etc/apt/trusted.gpg.d/devel_kubic_libcontainers_stable.gpg && \
+RUN echo 'deb https://download.opensuse.org/repositories/home:/alvistack/Debian_11/ /' >> /etc/apt/sources.list.d/home:alvistack.list && \
+    curl -fsSL https://download.opensuse.org/repositories/home:/alvistack/Debian_11/Release.key | gpg --dearmor >> /etc/apt/trusted.gpg.d/home_alvistack_debian11.gpg && \
     apt-get update && apt-get -y upgrade && apt-get install -y podman skopeo
 
 
