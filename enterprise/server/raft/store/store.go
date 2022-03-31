@@ -233,8 +233,10 @@ func (s *Store) gossipUsage() {
 	}
 	usage.DiskBytesTotal = int64(du.TotalBytes)
 	usage.DiskBytesUsed = int64(du.UsedBytes)
-	s.gossipManager.SetTag(constants.NodeHostIDTag, string(s.nodeHost.ID()))
-	s.gossipManager.SetTag(constants.NodeUsageTag, proto.MarshalTextString(usage))
+	s.gossipManager.SetTags(map[string]string{
+		constants.NodeHostIDTag: string(s.nodeHost.ID()),
+		constants.NodeUsageTag:  proto.MarshalTextString(usage),
+	})
 }
 
 // We need to implement the RangeTracker interface so that stores opened and
@@ -264,7 +266,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
-		go s.gossipManager.SetTag(constants.MetaRangeTag, string(buf))
+		go s.gossipManager.SetTags(map[string]string{constants.MetaRangeTag: string(buf)})
 	}
 	go s.maybeAcquireRangeLease(rd)
 	go s.gossipUsage()
