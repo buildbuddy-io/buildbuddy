@@ -622,34 +622,6 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	return flagSet
 }
 
-func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {
-	return c.gc.Storage.EnableChunkedEventLogs
-}
-
-func (c *Configurator) GetStorageTTLSeconds() int {
-	return c.gc.Storage.TTLSeconds
-}
-
-func (c *Configurator) GetStorageChunkFileSizeBytes() int {
-	return c.gc.Storage.ChunkFileSizeBytes
-}
-
-func (c *Configurator) GetStorageDiskRootDir() string {
-	return c.gc.Storage.Disk.RootDirectory
-}
-
-func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
-	return &c.gc.Storage.GCS
-}
-
-func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
-	return &c.gc.Storage.AwsS3
-}
-
-func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
-	return &c.gc.Storage.Azure
-}
-
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }

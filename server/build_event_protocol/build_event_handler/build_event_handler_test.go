@@ -3,6 +3,7 @@ package build_event_handler_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -660,6 +661,8 @@ func TestRetryOnComplete(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
+	chunkSize := 128
+	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -670,7 +673,7 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it gets removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -732,6 +735,8 @@ func TestRetryOnDisconnect(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
+	chunkSize := 128
+	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -742,7 +747,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it gets removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -837,6 +842,8 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
+	chunkSize := 128
+	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -847,7 +854,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it doesn't get removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -887,7 +894,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it doesn't get removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("b", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("b", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -937,7 +944,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it doesn't get removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("c", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("c", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -1013,6 +1020,8 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
+	chunkSize := 128
+	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -1026,7 +1035,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Write some stuff to disk so we can verify it gets removed on retry
-	request = streamRequest(progressEventWithOutput(strings.Repeat("a", te.GetConfigurator().GetStorageChunkFileSizeBytes()/2+1), ""), testInvocationID, 2)
+	request = streamRequest(progressEventWithOutput(strings.Repeat("a", chunkSize/2+1), ""), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
