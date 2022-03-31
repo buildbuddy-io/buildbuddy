@@ -733,7 +733,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 			Attempt:          e.attempt,
 		}
-		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		if *enableChunkedEventLogs {
 			ti.LastChunkId = eventlog.EmptyId
 		}
 
@@ -749,7 +749,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return nil
 			}
 			e.attempt = ti.Attempt
-			chunkFileSizeBytes := e.env.GetConfigurator().GetStorageChunkFileSizeBytes()
+			chunkFileSizeBytes := *chunkFileSizeBytes
 			if chunkFileSizeBytes == 0 {
 				chunkFileSizeBytes = defaultChunkFileSizeBytes
 			}
@@ -758,7 +758,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
 				chunkFileSizeBytes,
 			)
-			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			if *enableChunkedEventLogs {
 				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
 				if numLinesToRetain != 0 {
 					// the number of lines curses can overwrite is 3 + the ui_actions shown:
