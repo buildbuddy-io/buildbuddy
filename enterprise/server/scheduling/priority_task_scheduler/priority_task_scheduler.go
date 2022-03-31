@@ -278,11 +278,17 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 		q.log.Warningf("Error opening publish operation stream: %s", err)
 		return true, err
 	}
+	start := time.Now()
+	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
+	// it too soon after establishing the clientStream, and remove this delay.
+	const closeStreamDelay = 10 * time.Millisecond
 	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
 		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
+		time.Sleep(time.Until(start.Add(closeStreamDelay)))
 		_, _ = clientStream.CloseAndRecv()
 		return retry, err
 	}
+	time.Sleep(time.Until(start.Add(closeStreamDelay)))
 	if _, err = clientStream.CloseAndRecv(); err != nil {
 		return true, err
 	}
