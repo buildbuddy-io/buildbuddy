@@ -25,6 +25,7 @@ type Listener interface {
 type GossipManager struct {
 	serfInstance  *serf.Serf
 	serfEventChan chan serf.Event
+	tagChangeChan chan struct{}
 	listeners     []Listener
 
 	ListenAddr string
@@ -41,6 +42,47 @@ func (gm *GossipManager) processEvents() {
 			for _, listener := range gm.listeners {
 				listener.OnEvent(event.EventType(), event)
 			}
+		}
+	}
+}
+
+func copyMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func equal(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if a[k] != b[k] {
+			return false
+		}
+	}
+	return true
+}
+
+func (gm *GossipManager) keepSendingTags() {
+	var lastSent map[string]string
+	for {
+		select {
+		case <-gm.tagChangeChan:
+			gm.tagMu.Lock()
+			sendTags := copyMap(gm.tags)
+			gm.tagMu.Unlock()
+
+			if equal(lastSent, sendTags) {
+				break
+			}
+
+			if err := gm.serfInstance.SetTags(sendTags); err != nil {
+				log.Errorf("Error setting tags: %s", err)
+			}
+			lastSent = sendTags
 		}
 	}
 }
@@ -74,7 +116,6 @@ func (gm *GossipManager) Shutdown() error {
 }
 func (gm *GossipManager) SetTags(tags map[string]string) error {
 	gm.tagMu.Lock()
-	defer gm.tagMu.Unlock()
 	for tagName, tagValue := range tags {
 		if tagValue == "" {
 			delete(gm.tags, tagName)
@@ -82,7 +123,9 @@ func (gm *GossipManager) SetTags(tags map[string]string) error {
 			gm.tags[tagName] = tagValue
 		}
 	}
-	return gm.serfInstance.SetTags(gm.tags)
+	gm.tagMu.Unlock()
+	gm.tagChangeChan <- struct{}{}
+	return nil
 }
 
 func (gm *GossipManager) SendUserEvent(name string, payload []byte, coalesce bool) error {
@@ -140,6 +183,7 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 	gossipMan := &GossipManager{
 		listeners:     make([]Listener, 0),
 		serfEventChan: make(chan serf.Event, 16),
+		tagChangeChan: make(chan struct{}, 16),
 		tagMu:         sync.Mutex{},
 		tags:          make(map[string]string, 0),
 		ListenAddr:    listenAddress,
@@ -147,6 +191,7 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan
 	go gossipMan.processEvents()
+	go gossipMan.keepSendingTags()
 
 	serfInstance, err := serf.Create(serfConfig)
 	if err != nil {
