@@ -342,6 +342,13 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_count[5m]))
 	/// ```
 
+	RemoteExecutionTasksStartedCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "tasks_started_count",
+		Help:      "Number of tasks started remotely, but not necessarily completed. Includes retry attempts of the same task.",
+	})
+
 	RemoteExecutionExecutedActionMetadataDurationsUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

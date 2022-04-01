@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -119,6 +120,11 @@ func (r *Env) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
 
 func (r *Env) GetRemoteExecutionClient() repb.ExecutionClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].executionClient
+}
+
+func (r *Env) GetRemoteExecutionTarget() string {
+	server := r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
+	return fmt.Sprintf("grpc://localhost:%d", server.port)
 }
 
 func (r *Env) GetByteStreamClient() bspb.ByteStreamClient {
@@ -265,6 +271,7 @@ type BuildBuddyServer struct {
 
 	schedulerServer         *scheduler_server.SchedulerServer
 	executionServer         repb.ExecutionServer
+	capabilitiesServer      repb.CapabilitiesServer
 	buildBuddyServiceServer *buildbuddy_server.BuildBuddyServer
 	buildEventServer        *build_event_server.BuildEventProtocolServer
 
@@ -300,6 +307,11 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	require.NoError(t, err, "could not set up BuildEventProtocolServer")
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
 	require.NoError(t, err, "could not set up BuildBuddyServiceServer")
+	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
+		/*cache=*/ true,
+		/*remoteExec=*/ true,
+		/*zstd=*/ true,
+	)
 
 	server := &BuildBuddyServer{
 		t:                       t,
@@ -309,6 +321,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		executionServer:         executionServer,
 		buildBuddyServiceServer: buildBuddyServiceServer,
 		buildEventServer:        buildEventServer,
+		capabilitiesServer:      capabilitiesServer,
 	}
 	server.start()
 
@@ -339,6 +352,7 @@ func (s *BuildBuddyServer) start() {
 	s.env.SetSchedulerService(s.schedulerServer)
 	scpb.RegisterSchedulerServer(grpcServer, s.schedulerServer)
 	repb.RegisterExecutionServer(grpcServer, s.executionServer)
+	repb.RegisterCapabilitiesServer(grpcServer, s.capabilitiesServer)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, s.buildBuddyServiceServer)
 	pepb.RegisterPublishBuildEventServer(grpcServer, s.buildEventServer)
 
