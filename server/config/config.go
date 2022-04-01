@@ -681,10 +681,6 @@ func (c *Configurator) GetGRPCMaxRecvMsgSizeBytes() int {
 	return n
 }
 
-func (c *Configurator) EnableTargetTracking() bool {
-	return c.gc.App.EnableTargetTracking
-}
-
 func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 	return &c.gc.Integrations.Slack
 }
