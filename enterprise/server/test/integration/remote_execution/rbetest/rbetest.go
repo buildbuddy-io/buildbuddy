@@ -5,7 +5,6 @@ package rbetest
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -89,10 +88,6 @@ const (
 	defaultInstanceName = ""
 
 	defaultWaitTimeout = 20 * time.Second
-)
-
-var (
-	enableDocker = flag.Bool("rbetest.enable_docker", false, "Whether to enable docker for executors created via the rbetest framework")
 )
 
 func init() {
@@ -631,9 +626,6 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	// only after all the executors have shutdown.
 	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
 	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
-	if *enableDocker {
-		executorConfig.DockerSocket = "/var/run/docker.sock"
-	}
 
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
