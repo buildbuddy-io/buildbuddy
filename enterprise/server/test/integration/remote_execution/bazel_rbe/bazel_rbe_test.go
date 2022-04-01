@@ -77,15 +77,11 @@ func TestActionWithContainerImage_InvalidArgument(t *testing.T) {
 		"--remote_default_exec_properties=container-image=INVALID")
 
 	require.Error(t, res.Error)
-	assert.Contains(t, res.Stderr, "InvalidArgument")
-	// TODO(bduffany): Fail faster. Currently, these get retried by both the
-	// scheduler and Bazel, causing 5 bazel attempts, each of which results in
-	// 6 attempts by the scheduler, with exponential backoff between each bazel
-	// attempt.
-	assert.Equal(t, 30, tasksStarted(t))
+	assert.Contains(t, res.Stderr, "Invalid Argument")
+	assert.Equal(t, 1, tasksStarted(t))
 }
 
-func TestActionWithRunnerRecycling_Unauthenticated(t *testing.T) {
+func TestActionWithRunnerRecycling_AnonymousBuild_InvalidArgument(t *testing.T) {
 	env := setup(t)
 	ctx := context.Background()
 
@@ -96,14 +92,9 @@ func TestActionWithRunnerRecycling_Unauthenticated(t *testing.T) {
 		"--remote_default_exec_properties=recycle-runner=true")
 
 	require.Error(t, res.Error)
-	// TODO(bduffany): return Unauthenticated here, not Unavailable
-	assert.Contains(t, res.Stderr, "Unavailable")
+	assert.Contains(t, res.Stderr, "Invalid Argument")
 	assert.Contains(t, res.Stderr, "runner recycling is not supported for anonymous builds")
-	// TODO(bduffany): Fail faster. Currently, these get retried by both the
-	// scheduler and Bazel, causing 5 bazel attempts, each of which results in
-	// 6 attempts by the scheduler, with exponential backoff between each bazel
-	// attempt.
-	assert.Equal(t, 30, tasksStarted(t))
+	assert.Equal(t, 1, tasksStarted(t))
 }
 
 func setup(t *testing.T) *rbetest.Env {

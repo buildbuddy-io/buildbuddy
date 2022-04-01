@@ -91,7 +91,7 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 			}
 		}
 	}
-	return finalErr
+	return nil
 }
 
 // ExecuteResponseWithCachedResult returns an ExecuteResponse for an action

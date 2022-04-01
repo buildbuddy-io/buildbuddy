@@ -155,6 +155,8 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
+// TODO(http://go/b/1045): make this logic match Bazel's logic here:
+// https://cs.github.com/bazelbuild/bazel/blob/d49b1000799a1629628a723bb0e366e65b3021bf/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L45
 func isBazelRetryableError(taskError error) bool {
 	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
 		return true
@@ -167,7 +169,22 @@ func isBazelRetryableError(taskError error) bool {
 	return false
 }
 
+// isTaskMisconfigured returns whether a task failed to execute because of a
+// configuration error that will prevent the action from executing properly,
+// even if retried.
+func isTaskMisconfigured(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnauthenticatedError(err)
+}
+
 func shouldRetry(taskError error) bool {
+	// If the task is misconfigured, retrying will not help.
+	if isTaskMisconfigured(taskError) {
+		return false
+	}
+	// If bazel will retry these error codes, don't bother retrying at the
+	// scheduler level.
 	return !isBazelRetryableError(taskError)
 }
 
@@ -195,6 +212,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 			return true, finalErr
 		}
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
+			log.Warningf("PublishOperationDone failed: %s", err)
 			return true, err
 		}
 		return false, finalErr
@@ -222,7 +240,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
+		return finishWithErrFn(status.WrapErrorf(err, "failed to create runner"))
 	}
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)

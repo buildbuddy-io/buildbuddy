@@ -678,6 +678,8 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 		return nil, err
 	}
 	if props.RecycleRunner && err != nil {
+		// Note: not returning Unauthenticated here because Bazel allows 1 retry
+		// for Unauthenticated errors, and a retry won't help.
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
