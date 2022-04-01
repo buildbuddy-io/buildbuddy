@@ -123,38 +123,6 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 	assert.Equal(t, "bye\n", res.Stderr, "stderr should be propagated")
 }
 
-func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
-	ctx := context.Background()
-	rbe := rbetest.NewRBETestEnv(t)
-
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor()
-	invocationID := "testabc123"
-
-	cmd := rbe.Execute(
-		&repb.Command{Arguments: []string{"sh", "-c", `
-			echo >&1 ExampleStdout
-			echo >&2 ExampleStderr
-      # Wait for context to be canceled
-			sleep 100
-		`}},
-		&rbetest.ExecuteOpts{
-			ActionTimeout: 750 * time.Millisecond,
-			InvocationID:  invocationID,
-		},
-	)
-	err := cmd.MustFail()
-	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %s", err)
-
-	ar, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
-	require.NoError(t, err)
-	assert.Less(t, ar.GetExitCode(), int32(0), "expecting exit code < 0 since command did not exit normally")
-	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, ar, "")
-	require.NoError(t, err)
-	assert.Equal(t, "ExampleStdout\n", stdout, "stdout should be propagated")
-	assert.Equal(t, "ExampleStderr\n", stderr, "stderr should be propagated")
-}
-
 func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
