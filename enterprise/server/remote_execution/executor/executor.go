@@ -181,6 +181,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	metrics.RemoteExecutionTasksStartedCount.Inc()
+
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
