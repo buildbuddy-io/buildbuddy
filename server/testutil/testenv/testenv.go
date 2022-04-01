@@ -174,7 +174,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	}
 	te.SetDBHandle(dbHandle)
 	te.RealEnv.SetInvocationDB(invocationdb.NewInvocationDB(te, dbHandle))
-	bs, err := blobstore.GetConfiguredBlobstore(currentConfigurator)
+	bs, err := blobstore.GetConfiguredBlobstore()
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
