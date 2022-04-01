@@ -190,16 +190,6 @@ func (h *HitTracker) TrackEmptyHit() error {
 	return nil
 }
 
-type closeFunction func() error
-
-type transferTimer struct {
-	closeFn closeFunction
-}
-
-func (t *transferTimer) Close() error {
-	return t.closeFn()
-}
-
 func cacheEventTypeLabel(c counterType) string {
 	if c == Hit {
 		return hitLabel
@@ -224,47 +214,58 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 	return metrics.CacheDownloadDurationUsec
 }
 
-func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounter, sizeCounter, timeCounter counterType) closeFunction {
-	return func() error {
-		dur := time.Since(start)
+type transferTimer struct {
+	h *HitTracker
 
-		et := cacheEventTypeLabel(actionCounter)
-		ct := h.cacheTypeLabel()
-		metrics.CacheEvents.With(prometheus.Labels{
-			metrics.CacheTypeLabel:      ct,
-			metrics.CacheEventTypeLabel: et,
-		}).Inc()
-		sizeMetric(sizeCounter).With(prometheus.Labels{
-			metrics.CacheTypeLabel: ct,
-		}).Observe(float64(d.GetSizeBytes()))
-		durationMetric(timeCounter).With(prometheus.Labels{
-			metrics.CacheTypeLabel: ct,
-		}).Observe(float64(dur.Microseconds()))
+	d     *repb.Digest
+	start time.Time
+	actionCounter,
+	sizeCounter,
+	timeCounter counterType
 
-		if err := h.recordCacheUsage(d, actionCounter); err != nil {
-			return err
-		}
+	// TODO(bduffany): Add response code, compression mode, compressed size
+}
 
-		if h.c == nil || h.iid == "" {
-			return nil
-		}
+func (t *transferTimer) Close() error {
+	dur := time.Since(t.start)
 
-		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(actionCounter), 1); err != nil {
-			return err
-		}
-		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(sizeCounter), d.GetSizeBytes()); err != nil {
-			return err
-		}
-		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(timeCounter), dur.Microseconds()); err != nil {
-			return err
-		}
-		if h.actionCache && actionCounter == Miss {
-			if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
-				return err
-			}
-		}
+	h := t.h
+	et := cacheEventTypeLabel(t.actionCounter)
+	ct := h.cacheTypeLabel()
+	metrics.CacheEvents.With(prometheus.Labels{
+		metrics.CacheTypeLabel:      ct,
+		metrics.CacheEventTypeLabel: et,
+	}).Inc()
+	sizeMetric(t.sizeCounter).With(prometheus.Labels{
+		metrics.CacheTypeLabel: ct,
+	}).Observe(float64(t.d.GetSizeBytes()))
+	durationMetric(t.timeCounter).With(prometheus.Labels{
+		metrics.CacheTypeLabel: ct,
+	}).Observe(float64(dur.Microseconds()))
+
+	if err := h.recordCacheUsage(t.d, t.actionCounter); err != nil {
+		return err
+	}
+
+	if h.c == nil || h.iid == "" {
 		return nil
 	}
+
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.actionCounter), 1); err != nil {
+		return err
+	}
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.sizeCounter), t.d.GetSizeBytes()); err != nil {
+		return err
+	}
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
+		return err
+	}
+	if h.actionCache && t.actionCounter == Miss {
+		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Example Usage:
@@ -276,7 +277,12 @@ func (h *HitTracker) makeCloseFunc(d *repb.Digest, start time.Time, actionCounte
 func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(d, start, Hit, DownloadSizeBytes, DownloadUsec),
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Hit,
+		sizeCounter:   DownloadSizeBytes,
+		timeCounter:   DownloadUsec,
 	}
 }
 
@@ -289,7 +295,12 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
 	start := time.Now()
 	return &transferTimer{
-		closeFn: h.makeCloseFunc(d, start, Upload, UploadSizeBytes, UploadUsec),
+		h:             h,
+		d:             d,
+		start:         start,
+		actionCounter: Upload,
+		sizeCounter:   UploadSizeBytes,
+		timeCounter:   UploadUsec,
 	}
 }
 
