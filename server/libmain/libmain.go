@@ -147,7 +147,7 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	bs, err := blobstore.GetConfiguredBlobstore(configurator)
+	bs, err := blobstore.GetConfiguredBlobstore()
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}

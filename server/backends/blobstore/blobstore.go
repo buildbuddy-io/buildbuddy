@@ -84,7 +84,7 @@ const (
 )
 
 // Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
+func GetConfiguredBlobstore() (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
 	if *rootDirectory != "" {
 		log.Debug("Disk blobstore configured")
