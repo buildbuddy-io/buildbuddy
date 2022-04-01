@@ -253,7 +253,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 	}
 }
 
-func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command) (*Command, error) {
+func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
 	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, commandProto)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload command %q to CAS: %s", name, err)
@@ -262,6 +262,9 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	action := &repb.Action{
 		CommandDigest:   commandDigest,
 		InputRootDigest: inputRootDigest,
+	}
+	if timeout != 0 {
+		action.Timeout = ptypes.DurationProto(timeout)
 	}
 	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, action)
 	if err != nil {

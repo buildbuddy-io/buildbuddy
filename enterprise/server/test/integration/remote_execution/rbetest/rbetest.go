@@ -5,6 +5,7 @@ package rbetest
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -88,6 +89,10 @@ const (
 	defaultInstanceName = ""
 
 	defaultWaitTimeout = 20 * time.Second
+)
+
+var (
+	enableDocker = flag.Bool("rbetest.enable_docker", false, "Whether to enable docker for executors created via the rbetest framework")
 )
 
 func init() {
@@ -626,6 +631,9 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	// only after all the executors have shutdown.
 	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
 	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
+	if *enableDocker {
+		executorConfig.DockerSocket = "/var/run/docker.sock"
+	}
 
 	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
 	if err != nil {
@@ -951,7 +959,7 @@ func (r *Env) ExecuteControlledCommand(name string) *ControlledCommand {
 
 	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(ctx)
 
-	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, minimalCommand(args...))
+	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, minimalCommand(args...), 0 /*=timeout*/)
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
@@ -996,6 +1004,8 @@ type ExecuteOpts struct {
 	SimulateMissingDigest bool
 	// The invocation ID in the incoming gRPC context.
 	InvocationID string
+	// ActionTimeout is the value of Timeout to be passed to the spawned action.
+	ActionTimeout time.Duration
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -1028,7 +1038,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	}
 
 	name := strings.Join(command.GetArguments(), " ")
-	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command)
+	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, opts.ActionTimeout)
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("unable to request action execution for command %q", name), err.Error())
 	}

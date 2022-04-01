@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
@@ -39,7 +40,7 @@ func TestDockerRun(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
-	cfg := &docker.DockerOptions{Socket: socket}
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
@@ -75,7 +76,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
-	cfg := &docker.DockerOptions{Socket: socket}
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
@@ -153,4 +154,118 @@ func TestDockerLifecycleControl(t *testing.T) {
 
 	// No need for cleanup anymore, since removal was successful.
 	isContainerRunning = false
+}
+
+func TestDockerRun_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	writeFile(t, workDir, "world.txt", "world")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			touch output
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+	// Ensure the image is cached
+	c.PullImage(ctx, container.PullCredentials{})
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	go func() {
+		// Cancel the context early once we know that stderr/stdout have been
+		// written, to keep the test from running too long
+		for !testfs.Exists(t, workDir, "output") {
+			time.Sleep(5 * time.Millisecond)
+			if ctx.Err() != nil {
+				return
+			}
+		}
+		// Allow some time for stdout/stderr to be read from docker logs before
+		// cancelling the context, since this also cancels the log read request
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.Equal(t, -2, res.ExitCode)
+	assert.Equal(t, "ExampleStdout\n", string(res.Stdout))
+	assert.Equal(t, "ExampleStderr\n", string(res.Stderr))
+}
+
+func TestDockerExec_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	writeFile(t, workDir, "world.txt", "world")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			touch output
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+	// Ensure the image is cached
+	c.PullImage(ctx, container.PullCredentials{})
+
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	go func() {
+		// Cancel the context early once we know that stderr/stdout have been
+		// written, to keep the test from running too long
+		for !testfs.Exists(t, workDir, "output") {
+			time.Sleep(5 * time.Millisecond)
+			if ctx.Err() != nil {
+				return
+			}
+		}
+		// Allow some time for stdout/stderr to be read from docker logs before
+		// cancelling the context, since this also cancels the log read request
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	res := c.Exec(ctx, cmd, nil /*=stdin*/, nil /*=stdout*/)
+
+	assert.Equal(t, -2, res.ExitCode)
+	assert.Equal(t, "ExampleStdout\n", string(res.Stdout))
+	assert.Equal(t, "ExampleStderr\n", string(res.Stderr))
 }
