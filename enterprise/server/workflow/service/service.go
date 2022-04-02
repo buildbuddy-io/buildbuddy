@@ -16,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -41,6 +42,7 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -711,35 +713,31 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 }
 
 func (ws *workflowService) workflowsPoolName() string {
-	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
-	if cfg != nil && cfg.WorkflowsPoolName != "" {
-		return cfg.WorkflowsPoolName
+	if remote_execution_config.RemoteExecutionEnabled() && rbeutil.WorkflowsPoolName() != "" {
+		return rbeutil.WorkflowsPoolName()
 	}
 	return platform.DefaultPoolValue
 }
 
 func (ws *workflowService) workflowsImage() string {
-	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
-	if cfg != nil && cfg.WorkflowsDefaultImage != "" {
-		return cfg.WorkflowsDefaultImage
+	if remote_execution_config.RemoteExecutionEnabled() && rbeutil.WorkflowsDefaultImage() != "" {
+		return rbeutil.WorkflowsDefaultImage()
 	}
 	return workflowsImage
 }
 
 func (ws *workflowService) ciRunnerDebugMode() bool {
-	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
-	if cfg == nil {
+	if !remote_execution_config.RemoteExecutionEnabled() {
 		return false
 	}
-	return cfg.WorkflowsCIRunnerDebug
+	return rbeutil.WorkflowsCIRunnerDebug()
 }
 
 func (ws *workflowService) ciRunnerBazelCommand() string {
-	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
-	if cfg == nil {
+	if !remote_execution_config.RemoteExecutionEnabled() {
 		return ""
 	}
-	return cfg.WorkflowsCIRunnerBazelCommand
+	return rbeutil.WorkflowsCIRunnerBazelCommand()
 }
 
 func runnerBinaryFile() (*os.File, error) {

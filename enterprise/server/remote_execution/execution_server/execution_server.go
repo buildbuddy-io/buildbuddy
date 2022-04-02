@@ -14,9 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -34,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
 
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -102,6 +105,20 @@ type ExecutionServer struct {
 	enableRedisAvailabilityMonitoring bool
 }
 
+func Register(env *real_environment.RealEnv) error {
+	if !remote_execution_config.RemoteExecutionEnabled() {
+		return nil
+	}
+	// Make sure capabilities server reflect that we're running
+	// remote execution.
+	executionServer, err := NewExecutionServer(env)
+	if err != nil {
+		log.Fatalf("Error initializing ExecutionServer: %s", err)
+	}
+	env.SetRemoteExecutionService(executionServer)
+	return nil
+}
+
 func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	cache := env.GetCache()
 	if cache == nil {
@@ -115,8 +132,8 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		cache:        cache,
 		streamPubSub: pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 	}
-	if rec := env.GetConfigurator().GetRemoteExecutionConfig(); rec != nil {
-		es.enableRedisAvailabilityMonitoring = rec.EnableRedisAvailabilityMonitoring
+	if remote_execution_config.RemoteExecutionEnabled() {
+		es.enableRedisAvailabilityMonitoring = rbeutil.RedisAvailabilityMonitoringEnabled()
 	}
 	return es, nil
 }

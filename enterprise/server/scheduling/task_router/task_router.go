@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -41,6 +42,19 @@ const (
 type taskRouter struct {
 	env environment.Env
 	rdb redis.UniversalClient
+}
+
+func Register(env *real_environment.RealEnv) error {
+	if env.GetRemoteExecutionRedisClient() == nil {
+		return nil
+	}
+	// Task router uses the remote execution redis client.
+	taskRouter, err := New(env)
+	if err != nil {
+		return status.InternalErrorf("Failed to create server: %s", err)
+	}
+	env.SetTaskRouter(taskRouter)
+	return nil
 }
 
 func New(env environment.Env) (interfaces.TaskRouter, error) {

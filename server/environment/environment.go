@@ -75,6 +75,7 @@ type Env interface {
 	GetDefaultRedisClient() redis.UniversalClient
 	SetDefaultRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisClient() redis.UniversalClient
+	SetRemoteExecutionRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisPubSubClient() redis.UniversalClient
 	GetMetricsCollector() interfaces.MetricsCollector
 	SetMetricsCollector(interfaces.MetricsCollector)
