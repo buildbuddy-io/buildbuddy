@@ -19,6 +19,11 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
+type ISender interface {
+	SyncPropose(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
+	SyncRead(ctx context.Context, key []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
+}
+
 type Sender struct {
 	// Keeps track of which raft nodes are responsible for which data.
 	rangeCache *rangecache.RangeCache
@@ -201,7 +206,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
-			log.Warningf("sender.Run error getting rd for %q: %s", key, err)
+			log.Warningf("sender.Run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
 			continue
 		}
 		if err = s.tryReplicas(ctx, rangeDescriptor, fn); err == nil {

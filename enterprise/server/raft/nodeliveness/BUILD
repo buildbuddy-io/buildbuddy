@@ -6,11 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
+        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",

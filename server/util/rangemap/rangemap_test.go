@@ -118,10 +118,13 @@ func TestLookupSparseRange(t *testing.T) {
 	addRange("a", "e", 1)
 	// f-m is missing
 	addRange("m", "z", 2)
+	// weird prefix
+	addRange(string([]byte{0}), "a", 3)
 
 	require.Equal(t, 1, r.Lookup([]byte("d")))
 	require.Equal(t, nil, r.Lookup([]byte("g")))
 	require.Equal(t, 2, r.Lookup([]byte("m")))
+	require.Equal(t, 3, r.Lookup([]byte{'\x03', 'm'}))
 }
 
 func TestLookupNarrowRange(t *testing.T) {

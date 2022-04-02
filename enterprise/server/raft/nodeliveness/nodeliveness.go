@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
@@ -28,7 +29,7 @@ const (
 )
 
 type Liveness struct {
-	localSender   client.LocalSender
+	sender        sender.ISender
 	nodeID        []byte
 	clock         *serf.LamportClock
 	leaseDuration time.Duration
@@ -41,10 +42,10 @@ type Liveness struct {
 	timeUntilLeaseRenewal time.Duration
 }
 
-func New(nodeID string, localSender client.LocalSender) *Liveness {
+func New(nodeID string, sender sender.ISender) *Liveness {
 	return &Liveness{
 		nodeID:                []byte(nodeID),
-		localSender:           localSender,
+		sender:                sender,
 		clock:                 &serf.LamportClock{},
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -140,10 +141,14 @@ func (h *Liveness) verifyLease(l *rfpb.NodeLivenessRecord) error {
 func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if !forceRenewal {
-		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
-			return h.lastLivenessRecord, nil
-		}
+
+	alreadyValid := false
+	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+		alreadyValid = true
+	}
+
+	if alreadyValid && !forceRenewal {
+		return h.lastLivenessRecord, nil
 	}
 
 	renewed := false
@@ -156,14 +161,18 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 		}
 	}
 
-	// If we just renewed the lease, and there isn't already a background
+	if alreadyValid {
+		log.Debugf("Renewed %s", h.String())
+	} else {
+		log.Debugf("Acquired %s", h.String())
+	}
+
+	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
-	if renewed {
-		if h.stopped {
-			h.stopped = false
-			h.quitLease = make(chan struct{})
-			go h.keepLeaseAlive()
-		}
+	if h.stopped {
+		h.stopped = false
+		h.quitLease = make(chan struct{})
+		go h.keepLeaseAlive()
 	}
 	return h.lastLivenessRecord, nil
 }
@@ -180,7 +189,7 @@ func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []b
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := h.localSender.SyncProposeLocal(ctx, 1, casRequest)
+	rsp, err := h.sender.SyncPropose(ctx, leaseKey, casRequest)
 	if err != nil {
 		// This indicates a communication error proposing the message.
 		return nil, err
@@ -275,8 +284,7 @@ func (h *Liveness) keepLeaseAlive() {
 }
 
 func (h *Liveness) String() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	// Don't lock here (to avoid recursive locking).
 	err := h.verifyLease(h.lastLivenessRecord)
 	if err != nil {
 		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(h.nodeID), err)

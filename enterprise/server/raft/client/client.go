@@ -53,7 +53,6 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (rfspb.ApiClient
 	if client, ok := c.clients[peer]; ok {
 		return client, nil
 	}
-	log.Debugf("Creating new client for peer: %q", peer)
 	conn, err := grpc_client.DialTarget("grpc://" + peer)
 	if err != nil {
 		return nil, err
@@ -327,11 +326,6 @@ func SyncReadLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID
 		return nil, err
 	}
 	return batchResponse, nil
-}
-
-type LocalSender interface {
-	SyncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
-	SyncReadLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error)
 }
 
 type NodeHostSender struct {
