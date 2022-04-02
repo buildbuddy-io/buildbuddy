@@ -26,6 +26,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/executor/config",
             "//enterprise/server/remote_execution/snaploader",
             "//enterprise/server/util/container",
             "//enterprise/server/util/ext4",

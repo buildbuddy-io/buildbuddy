@@ -45,7 +45,7 @@ func init() {
 	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
 }
 
-func UsageTrackingEnabled() *config.ExecutorConfig {
+func ExecutorConfig() *config.ExecutorConfig {
 	return &config.ExecutorConfig{
 		AppTarget:           *appTarget,
 		Pool:                *pool,

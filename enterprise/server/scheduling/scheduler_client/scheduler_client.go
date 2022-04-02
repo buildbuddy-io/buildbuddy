@@ -17,6 +17,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/metadata"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
@@ -236,7 +237,7 @@ func (r *Registration) Start(ctx context.Context) {
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
 func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
-	pool := env.GetConfigurator().GetExecutorConfig().Pool
+	pool := executor_config.ExecutorConfig().Pool
 	if pool == "" {
 		pool = resources.GetPoolName()
 	}
@@ -244,7 +245,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
-	apiKey := env.GetConfigurator().GetExecutorConfig().APIKey
+	apiKey := executor_config.ExecutorConfig().APIKey
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}

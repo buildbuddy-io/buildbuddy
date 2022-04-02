@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auth",
+        "//enterprise/server/remote_execution/executor/config",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//proto:scheduler_go_proto",
         "//server/environment",

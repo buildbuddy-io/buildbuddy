@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -370,7 +371,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
-		mountWorkspaceFile: env.GetConfigurator().GetExecutorConfig().FirecrackerMountWorkspaceFile,
+		mountWorkspaceFile: executor_config.ExecutorConfig().FirecrackerMountWorkspaceFile,
 	}
 
 	if err := c.newID(); err != nil {
