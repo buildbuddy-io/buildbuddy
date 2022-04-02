@@ -182,6 +182,10 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 	}
 }
 
+func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
+	return s.lookupRange(clusterID)
+}
+
 func (s *Store) gossipUsage() {
 	usage := &rfpb.NodeUsage{
 		Nhid: s.nodeHost.ID(),
