@@ -61,8 +61,8 @@ type Store struct {
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 
-	rangeMu       sync.RWMutex
-	clusterRanges map[uint64]*rfpb.RangeDescriptor
+	rangeMu    sync.RWMutex
+	openRanges map[uint64]*rfpb.RangeDescriptor
 
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
@@ -81,8 +81,8 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		apiClient:     apiClient,
 		liveness:      nodeliveness.New(nodeHost.ID(), sender),
 
-		rangeMu:       sync.RWMutex{},
-		clusterRanges: make(map[uint64]*rfpb.RangeDescriptor),
+		rangeMu:    sync.RWMutex{},
+		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
@@ -121,7 +121,7 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 	s.rangeMu.RLock()
 	defer s.rangeMu.RUnlock()
 
-	for _, rangeDescriptor := range s.clusterRanges {
+	for _, rangeDescriptor := range s.openRanges {
 		if len(rangeDescriptor.GetReplicas()) == 0 {
 			continue
 		}
@@ -231,7 +231,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	s.rangeMu.Lock()
-	s.clusterRanges[rd.GetRangeId()] = rd
+	s.openRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
 
 	if len(rd.GetReplicas()) == 0 {
@@ -258,7 +258,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.replicas.Delete(rd.GetRangeId())
 
 	s.rangeMu.Lock()
-	delete(s.clusterRanges, rd.GetRangeId())
+	delete(s.openRanges, rd.GetRangeId())
 	s.rangeMu.Unlock()
 
 	if len(rd.GetReplicas()) == 0 {
@@ -276,7 +276,7 @@ func (s *Store) RangeIsActive(header *rfpb.Header) error {
 	}
 
 	s.rangeMu.RLock()
-	rd, rangeOK := s.clusterRanges[header.GetRangeId()]
+	rd, rangeOK := s.openRanges[header.GetRangeId()]
 	s.rangeMu.RUnlock()
 	if !rangeOK {
 		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
@@ -998,6 +998,32 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		return nil, err
 	}
 	return &rfpb.RemoveClusterNodeResponse{}, nil
+}
+
+func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (*rfpb.ListClusterResponse, error) {
+	s.rangeMu.RLock()
+	openRanges := make([]*rfpb.RangeDescriptor, 0, len(s.openRanges))
+	for _, rd := range s.openRanges {
+		openRanges = append(openRanges, rd)
+	}
+	s.rangeMu.RUnlock()
+
+	rsp := &rfpb.ListClusterResponse{
+		Node: s.MyNodeDescriptor(),
+	}
+	for _, rd := range openRanges {
+		if req.GetLeasedOnly() {
+			header := &rfpb.Header{
+				RangeId:    rd.GetRangeId(),
+				Generation: rd.GetGeneration(),
+			}
+			if err := s.RangeIsActive(header); err != nil {
+				continue
+			}
+		}
+		rsp.Ranges = append(rsp.Ranges, rd)
+	}
+	return rsp, nil
 }
 
 func (s *Store) reserveNodeIDs(ctx context.Context, n int) ([]uint64, error) {

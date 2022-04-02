@@ -379,6 +379,16 @@ message SplitClusterResponse {
   RangeDescriptor right = 2;
 }
 
+message ListClusterRequest {
+  // If true, only return the clusters that this node holds the rangelease for.
+  bool leased_only = 1;
+}
+
+message ListClusterResponse {
+  NodeDescriptor node = 1;
+  repeated RangeDescriptor ranges = 2;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Data API, used for shipping the actual bytes around, outside raft.
