@@ -7,14 +7,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	"github.com/stretchr/testify/require"
 )
 
 func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, user string) (*SchedulerServer, context.Context) {
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
-	env.GetConfigurator().GetRemoteExecutionConfig().DefaultPoolName = "defaultPoolName"
-	env.GetConfigurator().GetRemoteExecutionConfig().SharedExecutorPoolGroupID = "sharedGroupID"
+
+	flags.Set(t, "remote_execution.default_pool_name", "defaultPoolName")
+	flags.Set(t, "remote_execution.shared_executor_pool_group_id", "sharedGroupID")
 
 	s := &SchedulerServer{env: env}
 

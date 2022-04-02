@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/golang/protobuf/jsonpb"
 
+	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
 
@@ -145,11 +147,11 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 	executorKeyCreationEnabled := false
 	workflowsEnabled := false
 	forceUserOwnedDarwinExecutors := false
-	if reConf := env.GetConfigurator().GetRemoteExecutionConfig(); reConf != nil {
-		userOwnedExecutorsEnabled = reConf.EnableUserOwnedExecutors
-		executorKeyCreationEnabled = reConf.EnableExecutorKeyCreation
-		workflowsEnabled = reConf.EnableWorkflows
-		forceUserOwnedDarwinExecutors = reConf.ForceUserOwnedDarwinExecutors
+	if remote_execution_config.RemoteExecutionEnabled() {
+		userOwnedExecutorsEnabled = rbeutil.UserOwnedExecutorsEnabled()
+		executorKeyCreationEnabled = rbeutil.ExecutorKeyCreationEnabled()
+		workflowsEnabled = rbeutil.WorkflowsEnabled()
+		forceUserOwnedDarwinExecutors = rbeutil.ForceUserOwnedDarwinExecutors()
 	}
 
 	config := cfgpb.FrontendConfig{
@@ -163,7 +165,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ExecutorKeyCreationEnabled:    executorKeyCreationEnabled,
 		WorkflowsEnabled:              workflowsEnabled,
 		CodeEditorEnabled:             *codeEditorEnabled,
-		RemoteExecutionEnabled:        env.GetConfigurator().GetRemoteExecutionConfig() != nil,
+		RemoteExecutionEnabled:        remote_execution_config.RemoteExecutionEnabled(),
 		SsoEnabled:                    ssoEnabled,
 		GlobalFilterEnabled:           *globalFilterEnabled,
 		UsageEnabled:                  *usageEnabled,

@@ -9,8 +9,10 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/remote_execution/config",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/util/rbeutil",
         "//enterprise/server/workflow/config",
         "//proto:context_go_proto",
         "//proto:remote_execution_go_proto",

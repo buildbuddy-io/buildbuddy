@@ -645,46 +645,6 @@ func (c *Configurator) GetDisableRefreshToken() bool {
 	return c.gc.Auth.DisableRefreshToken
 }
 
-func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
-	if c.gc.RemoteExecution.EnableRemoteExec {
-		return &c.gc.RemoteExecution
-	}
-	return nil
-}
-
-func (c *Configurator) GetRemoteExecutionRedisClientConfig() *RedisClientConfig {
-	if rec := c.GetRemoteExecutionConfig(); rec != nil {
-		if len(rec.ShardedRedis.Shards) > 0 {
-			return &RedisClientConfig{ShardedConfig: &rec.ShardedRedis}
-		}
-		if rec.RedisTarget != "" {
-			return &RedisClientConfig{SimpleTarget: rec.RedisTarget}
-		}
-	}
-
-	// If no remote execution target is defined, use the default.
-	if len(c.gc.App.DefaultShardedRedis.Shards) > 0 {
-		return &RedisClientConfig{ShardedConfig: &c.gc.App.DefaultShardedRedis}
-	}
-	if c.gc.App.DefaultRedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.App.DefaultRedisTarget}
-	}
-
-	// Prefer the client configs from Redis sub-config, is present.
-	if len(c.gc.Cache.Redis.Sharded.Shards) > 0 {
-		return &RedisClientConfig{ShardedConfig: &c.gc.Cache.Redis.Sharded}
-	}
-	if c.gc.Cache.Redis.RedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.Cache.Redis.RedisTarget}
-	}
-
-	if c.gc.Cache.RedisTarget != "" {
-		return &RedisClientConfig{SimpleTarget: c.gc.Cache.RedisTarget}
-	}
-
-	return nil
-}
-
 func (c *Configurator) GetAPIConfig() *APIConfig {
 	if c.gc.API.EnableAPI {
 		return &c.gc.API
