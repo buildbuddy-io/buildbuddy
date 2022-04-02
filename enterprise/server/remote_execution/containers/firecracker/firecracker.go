@@ -371,7 +371,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
-		mountWorkspaceFile: executor_config.ExecutorConfig().FirecrackerMountWorkspaceFile,
+		mountWorkspaceFile: executor_config.Get().FirecrackerMountWorkspaceFile,
 	}
 
 	if err := c.newID(); err != nil {

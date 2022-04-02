@@ -179,7 +179,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
 	}
 
-	executorConfig := executor_config.ExecutorConfig()
+	executorConfig := executor_config.Get()
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:                     env,

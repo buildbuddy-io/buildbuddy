@@ -65,7 +65,7 @@ func setSysMilliCPUCapacity() {
 }
 
 func Configure() error {
-	cfg := executor_config.ExecutorConfig()
+	cfg := executor_config.Get()
 	if cfg.MemoryBytes > 0 {
 		if os.Getenv(memoryEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")

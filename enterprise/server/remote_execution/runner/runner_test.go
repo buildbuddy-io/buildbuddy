@@ -28,7 +28,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
@@ -121,7 +120,6 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolCon
 	flags.Set(t, "executor.runner_pool.max_runner_count", strconv.Itoa(cfg.MaxRunnerCount))
 	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", strconv.FormatInt(cfg.MaxRunnerDiskSizeBytes, 10))
 	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", strconv.FormatInt(cfg.MaxRunnerMemoryUsageBytes, 10))
-	executor_config.ExecutorConfig().RunnerPool = *cfg
 	p, err := NewPool(env)
 	require.NoError(t, err)
 	require.NotNil(t, p)

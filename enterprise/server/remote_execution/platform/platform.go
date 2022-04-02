@@ -267,7 +267,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	if platformProps.WorkloadIsolationType == "" {
-		defaultIsolationType := executor_config.ExecutorConfig().DefaultIsolationType
+		defaultIsolationType := executor_config.Get().DefaultIsolationType
 		if defaultIsolationType == "" {
 			// Backward-compatibility: if no default isolation type was specified; use the first configured one.
 			platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
@@ -281,7 +281,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 
-	defaultContainerImage := executor_config.ExecutorConfig().DefaultImage
+	defaultContainerImage := executor_config.Get().DefaultImage
 	if defaultContainerImage == "" {
 		defaultContainerImage = DefaultContainerImage
 	}

@@ -227,7 +227,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		}
 	}
 
-	regCfgs := executor_config.ExecutorConfig().ContainerRegistries
+	regCfgs := executor_config.Get().ContainerRegistries
 	if len(regCfgs) == 0 {
 		return PullCredentials{}
 	}

@@ -232,7 +232,7 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStat
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 	}
 
-	if executor_config.ExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
+	if executor_config.Get().EnableVFS && r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
 		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
@@ -449,7 +449,7 @@ type pool struct {
 }
 
 func NewPool(env environment.Env) (*pool, error) {
-	executorConfig := executor_config.ExecutorConfig()
+	executorConfig := executor_config.Get()
 
 	hc := env.GetHealthChecker()
 	if hc == nil {
@@ -639,7 +639,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 
 func (p *pool) hostBuildRoot() string {
 	// If host root dir is explicitly configured, prefer that.
-	if hd := executor_config.ExecutorConfig().HostRootDirectory; hd != "" {
+	if hd := executor_config.Get().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
 	}
 	if p.podID == "" {
@@ -654,7 +654,7 @@ func (p *pool) hostBuildRoot() string {
 }
 
 func (p *pool) dockerOptions() *docker.DockerOptions {
-	cfg := executor_config.ExecutorConfig()
+	cfg := executor_config.Get()
 	return &docker.DockerOptions{
 		Socket:                  cfg.DockerSocket,
 		EnableSiblingContainers: cfg.DockerSiblingContainers,
@@ -700,7 +700,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 }
 
 func (p *pool) Warmup(ctx context.Context) {
-	config := executor_config.ExecutorConfig()
+	config := executor_config.Get()
 	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 2 minute to succeed.
 	// In practice warmup take about 30 seconds for docker and 75 seconds for firecracker.
@@ -742,7 +742,7 @@ func (p *pool) Warmup(ctx context.Context) {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
-	executorProps := platform.GetExecutorProperties(executor_config.ExecutorConfig())
+	executorProps := platform.GetExecutorProperties(executor_config.Get())
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
@@ -807,7 +807,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	}
 	var fs *vfs.VFS
 	var vfsServer *vfs_server.Server
-	enableVFS := executor_config.ExecutorConfig().EnableVFS && props.EnableVFS
+	enableVFS := executor_config.Get().EnableVFS && props.EnableVFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
 	if enableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
 		vfsDir := ws.Path() + "_vfs"
@@ -870,7 +870,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.hostBuildRoot(), opts,
 		)
 	case platform.PodmanContainerType:
-		cfg := executor_config.ExecutorConfig()
+		cfg := executor_config.Get()
 		opts := &podman.PodmanOptions{
 			ForceRoot: props.DockerForceRoot,
 			Network:   props.DockerNetwork,

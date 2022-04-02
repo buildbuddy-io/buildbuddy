@@ -107,7 +107,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
 
-	executorConfig := executor_config.ExecutorConfig()
+	executorConfig := executor_config.Get()
 	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
@@ -228,7 +228,7 @@ func main() {
 	localServer := grpc.NewServer(grpcOptions...)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
-	executorConfig := executor_config.ExecutorConfig()
+	executorConfig := executor_config.Get()
 	executorUUID, err := uuid.NewRandom()
 	if err != nil {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)

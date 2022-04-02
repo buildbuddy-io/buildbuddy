@@ -237,7 +237,7 @@ func (r *Registration) Start(ctx context.Context) {
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
 func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
-	pool := executor_config.ExecutorConfig().Pool
+	pool := executor_config.Get().Pool
 	if pool == "" {
 		pool = resources.GetPoolName()
 	}
@@ -245,7 +245,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
-	apiKey := executor_config.ExecutorConfig().APIKey
+	apiKey := executor_config.Get().APIKey
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}
