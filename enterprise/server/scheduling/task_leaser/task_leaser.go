@@ -62,7 +62,7 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 		TaskId: t.taskID,
 		Reason: reason,
 	}
-	if apiKey := executor_config.ExecutorConfig().APIKey; apiKey != "" {
+	if apiKey := executor_config.Get().APIKey; apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, apiKey)
 	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
@@ -91,7 +91,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
 	leaseTaskCtx := ctx
-	if apiKey := executor_config.ExecutorConfig().APIKey; apiKey != "" {
+	if apiKey := executor_config.Get().APIKey; apiKey != "" {
 		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, apiKey)
 	}
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)

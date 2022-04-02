@@ -45,7 +45,7 @@ func init() {
 	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
 }
 
-func ExecutorConfig() *config.ExecutorConfig {
+func Get() *config.ExecutorConfig {
 	return &config.ExecutorConfig{
 		AppTarget:           *appTarget,
 		Pool:                *pool,

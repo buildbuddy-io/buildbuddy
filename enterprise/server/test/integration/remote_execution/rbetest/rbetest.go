@@ -725,7 +725,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	err = resources.Configure()
 	require.NoError(r.t, err)
 
-	executorConfig := executor_config.ExecutorConfig()
+	executorConfig := executor_config.Get()
 	flags.Set(t, "executor.pool", options.Pool)
 	// Place executor data under the env root dir, since that dir gets removed
 	// only after all the executors have shutdown.

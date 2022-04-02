@@ -51,7 +51,6 @@ go_test(
     srcs = ["runner_test.go"],
     embed = [":runner"],
     deps = [
-        "//enterprise/server/remote_execution/executor/config",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
