@@ -44,6 +44,7 @@ import (
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -106,15 +107,11 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
 
-	executorConfig := configurator.GetExecutorConfig()
-	if executorConfig == nil {
-		log.Fatal("Executor config not found")
-	}
-
+	executorConfig := executor_config.ExecutorConfig()
 	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
 		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	if err := resources.Configure(realEnv); err != nil {
+	if err := resources.Configure(); err != nil {
 		log.Fatal(status.Message(err))
 	}
 
@@ -231,10 +228,7 @@ func main() {
 	localServer := grpc.NewServer(grpcOptions...)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
-	executorConfig := configurator.GetExecutorConfig()
-	if executorConfig == nil {
-		log.Fatal("Executor config not found")
-	}
+	executorConfig := executor_config.ExecutorConfig()
 	executorUUID, err := uuid.NewRandom()
 	if err != nil {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)

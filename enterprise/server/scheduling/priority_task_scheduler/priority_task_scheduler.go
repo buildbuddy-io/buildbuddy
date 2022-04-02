@@ -20,6 +20,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gcodes "google.golang.org/grpc/codes"
@@ -178,7 +179,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
 	}
 
-	executorConfig := env.GetConfigurator().GetExecutorConfig()
+	executorConfig := executor_config.ExecutorConfig()
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:                     env,

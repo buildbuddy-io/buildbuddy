@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -226,7 +227,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		}
 	}
 
-	regCfgs := env.GetConfigurator().GetExecutorConfig().ContainerRegistries
+	regCfgs := executor_config.ExecutorConfig().ContainerRegistries
 	if len(regCfgs) == 0 {
 		return PullCredentials{}
 	}

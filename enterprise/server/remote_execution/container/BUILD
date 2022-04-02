@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/executor/config",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -32,6 +33,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

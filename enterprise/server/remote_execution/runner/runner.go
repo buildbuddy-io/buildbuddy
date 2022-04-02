@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -231,7 +232,7 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStat
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 	}
 
-	if r.env.GetConfigurator().GetExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
+	if executor_config.ExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
 		// pass the layout information to the implementation.
 		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
@@ -448,10 +449,8 @@ type pool struct {
 }
 
 func NewPool(env environment.Env) (*pool, error) {
-	executorConfig := env.GetConfigurator().GetExecutorConfig()
-	if executorConfig == nil {
-		return nil, status.FailedPreconditionError("No executor config found")
-	}
+	executorConfig := executor_config.ExecutorConfig()
+
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -640,7 +639,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 
 func (p *pool) hostBuildRoot() string {
 	// If host root dir is explicitly configured, prefer that.
-	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
+	if hd := executor_config.ExecutorConfig().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
 	}
 	if p.podID == "" {
@@ -655,7 +654,7 @@ func (p *pool) hostBuildRoot() string {
 }
 
 func (p *pool) dockerOptions() *docker.DockerOptions {
-	cfg := p.env.GetConfigurator().GetExecutorConfig()
+	cfg := executor_config.ExecutorConfig()
 	return &docker.DockerOptions{
 		Socket:                  cfg.DockerSocket,
 		EnableSiblingContainers: cfg.DockerSiblingContainers,
@@ -701,7 +700,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 }
 
 func (p *pool) Warmup(ctx context.Context) {
-	config := p.env.GetConfigurator().GetExecutorConfig()
+	config := executor_config.ExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 2 minute to succeed.
 	// In practice warmup take about 30 seconds for docker and 75 seconds for firecracker.
@@ -743,7 +742,7 @@ func (p *pool) Warmup(ctx context.Context) {
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
 func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
-	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
+	executorProps := platform.GetExecutorProperties(executor_config.ExecutorConfig())
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
@@ -808,7 +807,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	}
 	var fs *vfs.VFS
 	var vfsServer *vfs_server.Server
-	enableVFS := p.env.GetConfigurator().GetExecutorConfig().EnableVFS && props.EnableVFS
+	enableVFS := executor_config.ExecutorConfig().EnableVFS && props.EnableVFS
 	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
 	if enableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
 		vfsDir := ws.Path() + "_vfs"
@@ -871,7 +870,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.hostBuildRoot(), opts,
 		)
 	case platform.PodmanContainerType:
-		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		cfg := executor_config.ExecutorConfig()
 		opts := &podman.PodmanOptions{
 			ForceRoot: props.DockerForceRoot,
 			Network:   props.DockerNetwork,

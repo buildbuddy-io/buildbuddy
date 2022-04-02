@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -266,10 +267,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	if platformProps.WorkloadIsolationType == "" {
-		defaultIsolationType := ""
-		if env.GetConfigurator().GetExecutorConfig() != nil {
-			defaultIsolationType = env.GetConfigurator().GetExecutorConfig().DefaultIsolationType
-		}
+		defaultIsolationType := executor_config.ExecutorConfig().DefaultIsolationType
 		if defaultIsolationType == "" {
 			// Backward-compatibility: if no default isolation type was specified; use the first configured one.
 			platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
@@ -283,9 +281,9 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
 	}
 
-	defaultContainerImage := DefaultContainerImage
-	if env.GetConfigurator().GetExecutorConfig() != nil && env.GetConfigurator().GetExecutorConfig().DefaultImage != "" {
-		defaultContainerImage = env.GetConfigurator().GetExecutorConfig().DefaultImage
+	defaultContainerImage := executor_config.ExecutorConfig().DefaultImage
+	if defaultContainerImage == "" {
+		defaultContainerImage = DefaultContainerImage
 	}
 
 	// Normalize the container image string

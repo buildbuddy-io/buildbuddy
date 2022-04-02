@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
+
+	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 )
 
 const (
@@ -63,8 +64,8 @@ func setSysMilliCPUCapacity() {
 	allocatedCPUMillis = int64(numCores * 1000)
 }
 
-func Configure(env environment.Env) error {
-	cfg := env.GetConfigurator().GetExecutorConfig()
+func Configure() error {
+	cfg := executor_config.ExecutorConfig()
 	if cfg.MemoryBytes > 0 {
 		if os.Getenv(memoryEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")

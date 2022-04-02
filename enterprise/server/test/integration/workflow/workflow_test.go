@@ -81,7 +81,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 
 	env.GetConfigurator().ReconcileFlagsAndConfig()
 
-	env.AddExecutors(10)
+	env.AddExecutors(t, 10)
 	return env, workflowService
 }
 
