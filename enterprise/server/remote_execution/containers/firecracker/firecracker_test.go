@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -826,6 +827,105 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "world\n", string(res.Stdout), "stdout should contain expected output")
 	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+}
+
+// NOTE: These Timeout tests are somewhat slow and may be a bit flaky because
+// they rely on timing of events that is difficult to coordinate with the VM. If
+// we ever change this to run on CI, we probably want to move this to a manual
+// test, or figure out some way to determine that the VM has started the
+// `sleep` command.
+func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+		ScratchDiskSizeMB:      100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		echo stdout >&1
+		echo stderr >&2
+		echo output > output.txt
+		sleep infinity
+	`}}
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+
+	require.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded, but got: %s", res.Error)
+	assert.Equal(
+		t, "stdout\n", string(res.Stdout),
+		"should get partial stdout if the exec times out")
+	assert.Equal(
+		t, "stderr\n", string(res.Stderr),
+		"should get partial stderr if the exec times out")
+	out := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", out,
+		"should get partial output files even if the exec times out")
+}
+
+func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+		ScratchDiskSizeMB:      100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	require.NoError(t, err)
+	err = container.PullImageIfNecessary(ctx, env, auth, c, container.PullCredentials{}, opts.ContainerImage)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err = c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		echo stdout >&1
+		echo stderr >&2
+		echo output > output.txt
+		sleep infinity
+	`}}
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	res := c.Exec(ctx, cmd, nil, nil)
+
+	require.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded, but got: %s", res.Error)
+	assert.Equal(
+		t, "stdout\n", string(res.Stdout),
+		"should get partial stdout if the exec times out")
+	assert.Equal(
+		t, "stderr\n", string(res.Stderr),
+		"should get partial stderr if the exec times out")
+	out := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", out,
+		"should get partial output files even if the exec times out")
 }
 
 func tree(label string) {

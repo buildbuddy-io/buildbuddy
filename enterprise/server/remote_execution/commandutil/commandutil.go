@@ -38,7 +38,7 @@ var (
 
 func constructExecCommand(ctx context.Context, command *repb.Command, workDir string, in io.Reader, out io.Writer) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 	executable, args := splitExecutableArgs(command.GetArguments())
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.Command(executable, args...)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -97,6 +97,42 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Re
 		Stderr:             stderrBuf.Bytes(),
 		CommandDebugString: cmd.String(),
 	}
+}
+
+// RunWithProcessGroupCleanup runs the given command, ensuring that child
+// processes are killed if the command times out.
+//
+// It is intended to be used with a command created via exec.Command(), not
+// exec.CommandContext(). Unlike exec.CommandContext.Run(), it kills the process
+// group when the context is done, instead of just killing the top-level
+// process. This helps ensure that orphaned processes aren't left running after
+// the command completes.
+//
+// It returns a FailedPrecondition error if cmd.SysProcAttr.Setpgid is not set
+// to true.
+func RunWithProcessGroupCleanup(ctx context.Context, cmd *exec.Cmd) error {
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		return status.FailedPreconditionError("process group cleanup requires SysProcAttr.Setpgid to be set")
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	pgid := cmd.Process.Pid
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-ctx.Done():
+			// TODO(bduffany): This works well if all child processes stay in the same
+			// process group as the parent, but this isn't guaranteed, so we might
+			// want to think about a more reliable solution here.
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+	}()
+
+	return cmd.Wait()
 }
 
 func ErrorResult(err error) *interfaces.CommandResult {
