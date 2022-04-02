@@ -15,6 +15,7 @@ service Api {
       returns (raft.AddClusterNodeResponse);
   rpc RemoveClusterNode(raft.RemoveClusterNodeRequest)
       returns (raft.RemoveClusterNodeResponse);
+  rpc ListCluster(raft.ListClusterRequest) returns (raft.ListClusterResponse);
   rpc SplitCluster(raft.SplitClusterRequest)
       returns (raft.SplitClusterResponse);
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
