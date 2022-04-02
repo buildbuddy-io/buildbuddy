@@ -47,7 +47,7 @@ func (tp *testingProposer) cmdResponse(kv *rfpb.KV, err error) *rfpb.BatchCmdRes
 	}
 }
 
-func (tp *testingProposer) SyncProposeLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (tp *testingProposer) SyncPropose(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	// This is "fake" sender that only supports CAS values and stores them in a local map for ease of testing.
 	if len(batch.GetUnion()) != 1 {
 		tp.t.Fatal("Only one cmd at a time is allowed.")
@@ -76,7 +76,7 @@ func (tp *testingProposer) SyncProposeLocal(ctx context.Context, clusterID uint6
 	return nil, nil
 }
 
-func (tp *testingProposer) SyncReadLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (tp *testingProposer) SyncRead(ctx context.Context, _ []byte, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 

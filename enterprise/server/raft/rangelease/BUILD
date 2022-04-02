@@ -6,11 +6,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
+        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_golang_protobuf//proto:go_default_library",

@@ -145,3 +145,7 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	}
 	return nil
 }
+
+func (rc *RangeCache) String() string {
+	return rc.rangeMap.String()
+}

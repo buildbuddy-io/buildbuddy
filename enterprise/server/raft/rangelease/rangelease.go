@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
@@ -34,7 +35,7 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 }
 
 type Lease struct {
-	localSender   client.LocalSender
+	sender        sender.ISender
 	liveness      *nodeliveness.Liveness
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
@@ -48,9 +49,9 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(localSender client.LocalSender, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(sender sender.ISender, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	return &Lease{
-		localSender:           localSender,
+		sender:                sender,
 		liveness:              liveness,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -100,23 +101,6 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 	return l.rangeDescriptor
 }
 
-func (l *Lease) String() string {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	rd := l.rangeDescriptor
-	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
-	err := l.verifyLease(l.leaseRecord)
-	if err != nil {
-		return fmt.Sprintf("%s invalid (%s)", leaseName, err)
-	}
-	lr := l.leaseRecord
-	if nl := lr.GetNodeLiveness(); nl != nil {
-		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
-	}
-	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
-	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
-}
-
 func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 	if rl == nil {
 		return status.FailedPreconditionErrorf("Invalid rangeLease: nil")
@@ -135,11 +119,6 @@ func (l *Lease) verifyLease(rl *rfpb.RangeLeaseRecord) error {
 }
 
 func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
-	clusterID, err := l.getClusterID()
-	if err != nil {
-		return nil, err
-	}
-
 	leaseKey := constants.LocalRangeLeaseKey
 	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
@@ -151,7 +130,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := l.localSender.SyncProposeLocal(ctx, clusterID, casRequest)
+	rsp, err := l.sender.SyncPropose(ctx, l.rangeDescriptor.GetLeft(), casRequest)
 	if err != nil {
 		// This indicates a communication error proposing the message.
 		return nil, err
@@ -267,10 +246,14 @@ func (l *Lease) renewLease() error {
 func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !forceRenewal {
-		if err := l.verifyLease(l.leaseRecord); err == nil {
-			return l.leaseRecord, nil
-		}
+
+	alreadyValid := false
+	if err := l.verifyLease(l.leaseRecord); err == nil {
+		alreadyValid = true
+	}
+
+	if alreadyValid && !forceRenewal {
+		return l.leaseRecord, nil
 	}
 
 	renewed := false
@@ -283,17 +266,21 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 		}
 	}
 
-	// If we just renewed the lease, and there isn't already a background
+	if alreadyValid {
+		log.Debugf("Renewed %s", l.String())
+	} else {
+		log.Debugf("Acquired %s", l.String())
+	}
+
+	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
-	if renewed {
-		if l.stopped {
-			l.stopped = false
-			l.quitLease = make(chan struct{})
-			if l.leaseRecord.GetExpiration() != 0 {
-				// Only start the renew-goroutine for time-based
-				// leases which need periodic renewal.
-				go l.keepLeaseAlive()
-			}
+	if l.stopped {
+		l.stopped = false
+		l.quitLease = make(chan struct{})
+		if l.leaseRecord.GetExpiration() != 0 {
+			// Only start the renew-goroutine for time-based
+			// leases which need periodic renewal.
+			go l.keepLeaseAlive()
 		}
 	}
 	return l.leaseRecord, nil
@@ -317,4 +304,20 @@ func (l *Lease) Valid() bool {
 		return true
 	}
 	return false
+}
+
+func (l *Lease) String() string {
+	// Don't lock here (to avoid recursive locking).
+	rd := l.rangeDescriptor
+	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	err := l.verifyLease(l.leaseRecord)
+	if err != nil {
+		return fmt.Sprintf("%s invalid (%s)", leaseName, err)
+	}
+	lr := l.leaseRecord
+	if nl := lr.GetNodeLiveness(); nl != nil {
+		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
+	}
+	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
+	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
 }

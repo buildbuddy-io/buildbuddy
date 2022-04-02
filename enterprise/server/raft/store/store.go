@@ -79,7 +79,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		sender:        sender,
 		registry:      registry,
 		apiClient:     apiClient,
-		liveness:      nodeliveness.New(nodeHost.ID(), &client.NodeHostSender{NodeHost: nodeHost}),
+		liveness:      nodeliveness.New(nodeHost.ID(), sender),
 
 		rangeMu:       sync.RWMutex{},
 		clusterRanges: make(map[uint64]*rfpb.RangeDescriptor),
@@ -146,7 +146,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 
 	start := time.Now()
 	rangeID := rd.GetRangeId()
-	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(&client.NodeHostSender{NodeHost: s.nodeHost}, s.liveness, rd))
+	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.sender, s.liveness, rd))
 	rl, ok := rlIface.(*rangelease.Lease)
 	if !ok {
 		alert.UnexpectedEvent("unexpected_leases_map_type_error")
@@ -180,29 +180,6 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 	if rl.Valid() {
 		rl.Release()
 	}
-}
-
-func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
-	return s.lookupRange(clusterID)
-}
-
-func (s *Store) GetRangeLease(clusterID uint64) *rangelease.Lease {
-	rd := s.lookupRange(clusterID)
-	if rd == nil {
-		return nil
-	}
-
-	rlIface, ok := s.leases.Load(rd.GetRangeId())
-	if !ok {
-		alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		return nil
-	}
-	rl, ok := rlIface.(*rangelease.Lease)
-	if !ok {
-		log.Errorf("leases map did not hold rangelease type")
-		return nil
-	}
-	return rl
 }
 
 func (s *Store) gossipUsage() {
@@ -444,9 +421,6 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
-	if err := s.RangeIsActive(req.GetHeader()); err != nil {
-		return nil, err
-	}
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
 		return nil, err
@@ -457,9 +431,6 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 }
 
 func (s *Store) SyncRead(ctx context.Context, req *rfpb.SyncReadRequest) (*rfpb.SyncReadResponse, error) {
-	if err := s.RangeIsActive(req.GetHeader()); err != nil {
-		return nil, err
-	}
 	batchResponse, err := client.SyncReadLocal(ctx, s.nodeHost, req.GetHeader().GetReplica().GetClusterId(), req.GetBatch())
 	if err != nil {
 		return nil, err
@@ -663,12 +634,17 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 }
 
 func (s *Store) renewNodeLiveness() {
-	if s.liveness.Valid() {
-		return
-	}
-	err := s.liveness.Lease()
-	if err != nil {
+	for {
+		if s.liveness.Valid() {
+			return
+		}
+		err := s.liveness.Lease()
+		if err == nil {
+			log.Printf("Node is now live: %s", s.liveness.String())
+			return
+		}
 		log.Errorf("Error leasing node liveness record: %s", err)
+		time.Sleep(time.Second)
 	}
 }
 
@@ -681,7 +657,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	if nodeHostInfo != nil {
 		for _, logInfo := range nodeHostInfo.LogInfo {
 			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				log.Debugf("Skipping %q because it already had cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
+				log.Debugf("%q ignoring placement query: already have cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
 				return
 			}
 		}
