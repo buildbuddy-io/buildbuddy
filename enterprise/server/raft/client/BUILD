@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/environment",
