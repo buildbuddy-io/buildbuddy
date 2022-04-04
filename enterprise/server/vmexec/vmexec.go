@@ -108,11 +108,11 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		return nil, status.InvalidArgumentError("Arguments not specified")
 	}
 	if req.Timeout != nil {
-		var cancel context.CancelFunc
 		timeout, err := ptypes.Duration(req.Timeout)
 		if err != nil {
 			return nil, status.InternalErrorf("failed to parse exec timeout: %s", err.Error())
 		}
+		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
