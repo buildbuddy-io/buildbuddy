@@ -281,6 +281,33 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 	return nil
 }
 
+func getRequestState(ctx context.Context, rs *dragonboat.RequestState) (dbsm.Result, error) {
+	select {
+	case r := <-rs.AppliedC():
+		if r.Completed() {
+			return r.GetResult(), nil
+		} else if r.Rejected() {
+			return dbsm.Result{}, dragonboat.ErrRejected
+		} else if r.Timeout() {
+			return dbsm.Result{}, dragonboat.ErrTimeout
+		} else if r.Terminated() {
+			return dbsm.Result{}, dragonboat.ErrClusterClosed
+		} else if r.Dropped() {
+			return dbsm.Result{}, dragonboat.ErrClusterNotReady
+		} else {
+			log.Errorf("unknown v code %v", r)
+			return dbsm.Result{}, status.InternalErrorf("unknown v code %v", r)
+		}
+	case <-ctx.Done():
+		if ctx.Err() == context.Canceled {
+			return dbsm.Result{}, dragonboat.ErrCanceled
+		} else if ctx.Err() == context.DeadlineExceeded {
+			return dbsm.Result{}, dragonboat.ErrTimeout
+		}
+	}
+	return dbsm.Result{}, status.InternalError("unreachable")
+}
+
 func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	sesh := nodehost.GetNoOPSession(clusterID)
 	buf, err := proto.Marshal(batch)
@@ -289,8 +316,17 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		raftResponse, err = nodehost.SyncPropose(ctx, sesh, buf)
-		return err
+		rs, err := nodehost.Propose(sesh, buf, time.Second)
+		if err != nil {
+			return err
+		}
+		result, err := getRequestState(ctx, rs)
+		if err != nil {
+			return err
+		}
+		rs.Release()
+		raftResponse = result
+		return nil
 	})
 	if err != nil {
 		return nil, err
