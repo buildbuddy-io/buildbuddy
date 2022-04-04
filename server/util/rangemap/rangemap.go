@@ -126,7 +126,6 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 	if len(rm.ranges) == 0 {
 		return nil
 	}
-
 	// Search returns the smallest i for which func returns true.
 	// We want the smallest range that is bigger than this key
 	// aka, starts AFTER this key, and then we'll go one left of it
@@ -134,6 +133,10 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
 		return bytes.Compare(rm.ranges[i].Left, left) > 0
 	})
+
+	if leftIndex > 0 && rm.ranges[leftIndex-1].Contains(left) {
+		leftIndex -= 1
+	}
 
 	// Search returns the smallest i for which func returns true.
 	// We want the smallest range that is bigger than this key
@@ -143,7 +146,10 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 		return bytes.Compare(rm.ranges[i].Left, right) > 0
 	})
 
-	return rm.ranges[leftIndex-1 : rightIndex]
+	if rightIndex > 0 {
+		rightIndex -= 1
+	}
+	return rm.ranges[leftIndex : rightIndex+1]
 }
 
 func (rm *RangeMap) Lookup(key []byte) interface{} {
