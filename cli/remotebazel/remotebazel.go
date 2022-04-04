@@ -37,8 +37,8 @@ const (
 )
 
 var (
-	execOs            = flag.String("os", "", "If set, requests execution on a specific OS.")
-	execArch          = flag.String("arch", "", "If set, requests execution on a specific CPU architecture.")
+	execOs            = flag.String("os", "linux", "If set, requests execution on a specific OS.")
+	execArch          = flag.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
