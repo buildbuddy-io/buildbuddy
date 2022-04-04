@@ -980,6 +980,11 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	return &rfpb.AddClusterNodeResponse{}, nil
 }
 
+// AddClusterNode removes a new node from the specified cluster if pre-reqs are
+// met. Pre-reqs are:
+//  * The request must be valid and contain all information
+//  * This node must be a member of the cluster that is being removed from
+//  * The provided range descriptor must be up to date
 func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
