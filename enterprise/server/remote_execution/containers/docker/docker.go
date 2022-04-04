@@ -154,7 +154,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}()
 	}()
 
-	r.containerLogs(ctx, cid, result)
+	r.copyContainerLogs(ctx, cid, result)
 	if result.Error != nil {
 		return result
 	}
@@ -177,7 +177,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func (r *dockerCommandContainer) containerLogs(ctx context.Context, cid string, result *interfaces.CommandResult) {
+func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid string, result *interfaces.CommandResult) {
 	logOptions := dockertypes.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -471,7 +471,8 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		go stdcopy.StdCopy(stdout, ioutil.Discard, r)
 	}
 
-	defer attachResp.Close() // note: Close() doesn't return an error.
+	// note: Close() doesn't return an error, and can be safely called more than once.
+	defer attachResp.Close()
 	go func() {
 		// If the context times out before we return from this func, close the
 		// attachResp -- otherwise copyOutputs() hangs.

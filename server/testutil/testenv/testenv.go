@@ -65,9 +65,6 @@ executor:
   # If we don't actually have the memory, we'll OOM, which is OK
   # for testing purposes.
   memory_bytes: 10_000_000_000
-  # Make sure Bazel can clean up the sandbox when running docker tests locally.
-  # Without this, containers run as root, so outputs can't be cleaned up.
-  docker_inherit_user_ids: true
 auth:
   oauth_providers:
     - issuer_url: 'https://auth.test.buildbuddy.io'
