@@ -72,6 +72,12 @@ message RunRequest {
   // Key used to indicate preference to which Bazel instance the request should
   // be routed to.
   string session_affinity_key = 6;
+
+  // OS on which to run. Defaults to "linux".
+  string os = 7;
+
+  // Arch on which to run. Defaults to "amd64".
+  string arch = 8;
 }
 
 message RunResponse {
