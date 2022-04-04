@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -99,6 +100,100 @@ func TestHelloWorldExec(t *testing.T) {
 
 	err = podman.Remove(ctx)
 	assert.NoError(t, err)
+}
+
+func TestRun_Timeout(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			echo "output" > output.txt
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	c := podman.NewPodmanCommandContainer(
+		env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	// Ensure the image is cached
+	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
+}
+
+func TestExec_Timeout(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			echo "output" > output.txt
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	c := podman.NewPodmanCommandContainer(
+		env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+	// Ensure the image is cached
+	err := container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
 }
 
 func TestIsImageCached(t *testing.T) {
