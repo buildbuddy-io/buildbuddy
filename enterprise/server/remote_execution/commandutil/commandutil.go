@@ -115,6 +115,9 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Re
 //
 // It returns a FailedPrecondition error if cmd.SysProcAttr.Setpgid is not set
 // to true.
+//
+// For an example command that can be passed to this func, see
+// constructExecCommand.
 func RunWithProcessGroupCleanup(ctx context.Context, cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		return status.FailedPreconditionError("process group cleanup requires SysProcAttr.Setpgid to be set")
