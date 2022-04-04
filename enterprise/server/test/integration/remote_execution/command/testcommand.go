@@ -52,9 +52,14 @@ func main() {
 		CommandName: *name,
 	}
 
-	stream, err := client.RegisterCommand(ctx, req)
+	stream, err := client.RegisterCommand(ctx)
 	if err != nil {
 		log.Printf("Could not register with the controller: %v", err)
+		os.Exit(abnormalTerminationExitCode)
+	}
+
+	if err := stream.Send(req); err != nil {
+		log.Warningf("Could not send registration request: %s", err)
 		os.Exit(abnormalTerminationExitCode)
 	}
 

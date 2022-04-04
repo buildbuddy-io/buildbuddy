@@ -209,7 +209,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err
 		}
-		return tx.Model(&existing).Where("execution_id = ?", executionID).Updates(execution).Error
+		return tx.Model(&existing).Where("execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
 	})
 }
 
@@ -743,4 +743,35 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 		return 0, status.InternalErrorf("Execution duration is <= 0")
 	}
 	return dur, nil
+}
+
+func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
+	dbh := s.env.GetDBHandle()
+	rows, err := dbh.DB(ctx).Raw(
+		"SELECT * FROM Executions WHERE invocation_id = ? AND stage != ?",
+		invocationID,
+		repb.ExecutionStage_COMPLETED).Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	numCancelled := 0
+	for rows.Next() {
+		e := &tables.Execution{}
+		if err := dbh.DB(ctx).ScanRows(rows, e); err != nil {
+			return err
+		}
+		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, e.ExecutionID)
+		if cancelled {
+			numCancelled++
+		}
+		if err == nil && cancelled {
+			err = s.MarkExecutionFailed(ctx, e.ExecutionID, status.CanceledError("invocation cancelled"))
+			if err != nil {
+				log.Warningf("Could not mark execution %q as cancelled: %s", e.ExecutionID, err)
+			}
+		}
+	}
+	log.Infof("Cancelled %d executions for invocation %s", numCancelled, invocationID)
+	return nil
 }

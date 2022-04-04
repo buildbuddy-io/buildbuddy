@@ -381,6 +381,71 @@ func (s *BuildBuddyServer) GRPCPort() int {
 	return s.port
 }
 
+func (s *BuildBuddyServer) GRPCAddress() string {
+	return fmt.Sprintf("grpc://localhost:%d", s.GRPCPort())
+}
+
+const (
+	testCommandStateUnknown = iota
+	testCommandStateStarted
+	testCommandStateDisconnected
+)
+
+type testCommandState struct {
+	mu           sync.Mutex
+	opChan       chan *retpb.ControllerToCommandRequest
+	state        int
+	stateChanged chan struct{}
+}
+
+func (s *testCommandState) SetState(state int) {
+	s.mu.Lock()
+	s.state = state
+	if s.stateChanged != nil {
+		s.stateChanged <- struct{}{}
+	}
+	s.mu.Unlock()
+}
+
+func (s *testCommandState) waitState(ctx context.Context, predicate func(state int) bool) error {
+	s.mu.Lock()
+	reached := predicate(s.state)
+	if reached {
+		s.mu.Unlock()
+		return nil
+	}
+
+	s.stateChanged = make(chan struct{})
+	s.mu.Unlock()
+
+	for {
+		select {
+		case <-s.stateChanged:
+			s.mu.Lock()
+			reached := predicate(s.state)
+			if reached {
+				s.mu.Unlock()
+				return nil
+			}
+			s.mu.Unlock()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (s *testCommandState) WaitStarted(ctx context.Context) error {
+	return s.waitState(ctx, func(state int) bool {
+		return state > testCommandStateUnknown
+	})
+}
+
+func (s *testCommandState) WaitDisconnected(ctx context.Context) error {
+	return s.waitState(ctx, func(state int) bool {
+		return state == testCommandStateDisconnected
+	})
+}
+
 type testCommandController struct {
 	t    *testing.T
 	port int
@@ -389,32 +454,56 @@ type testCommandController struct {
 	startedCommands map[string]bool
 	// Channels to instruct waiters that a command has started.
 	commandStartWaiters map[string]chan struct{}
-	// Commands that are currently connected.
-	connectedCommands map[string]chan *retpb.ControllerToCommandRequest
+	// Current command state.
+	commandState map[string]*testCommandState
 }
 
-func (c *testCommandController) RegisterCommand(req *retpb.RegisterCommandRequest, stream retpb.CommandController_RegisterCommandServer) error {
+func (c *testCommandController) RegisterCommand(stream retpb.CommandController_RegisterCommandServer) error {
+	req, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+
 	opChannel := make(chan *retpb.ControllerToCommandRequest)
-	log.Printf("Test command registering: %s", req.GetCommandName())
+	cmdName := req.GetCommandName()
+	log.Infof("Test command registering: %s", cmdName)
 	c.mu.Lock()
 	c.startedCommands[req.GetCommandName()] = true
+
+	cmdState := &testCommandState{opChan: opChannel, state: testCommandStateStarted}
+	c.commandState[cmdName] = cmdState
 	if ch, ok := c.commandStartWaiters[req.GetCommandName()]; ok {
 		close(ch)
 		delete(c.commandStartWaiters, req.GetCommandName())
 	}
-	c.connectedCommands[req.GetCommandName()] = opChannel
 	c.mu.Unlock()
 
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, err := stream.Recv()
+			if err != nil {
+				log.Warningf("Test command %q stream closed: %s", cmdName, err)
+				cmdState.SetState(testCommandStateDisconnected)
+				return
+			}
+		}
+	}()
+
 	for {
-		op := <-opChannel
-		log.Printf("Sending request to command [%s]:\n%s", req.GetCommandName(), proto.MarshalTextString(req))
-		err := stream.Send(op)
-		if err != nil {
-			log.Printf("Send failed: %v", err)
-			break
+		select {
+		case op := <-opChannel:
+			log.Infof("Sending request to command [%s]:\n%s", req.GetCommandName(), proto.MarshalTextString(req))
+			err := stream.Send(op)
+			if err != nil {
+				log.Warningf("Send failed: %v", err)
+				break
+			}
+		case <-done:
+			return nil
 		}
 	}
-	return nil
 }
 
 // waitStarted returns a channel that will be closed when command with given name first connects to the controller.
@@ -437,13 +526,23 @@ func (c *testCommandController) waitStarted(name string) <-chan struct{} {
 func (c *testCommandController) exit(name string, exitCode int32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ch, ok := c.connectedCommands[name]
+	state, ok := c.commandState[name]
 	if !ok {
 		assert.FailNow(c.t, fmt.Sprintf("command %q is not connected", name))
 	}
-	ch <- &retpb.ControllerToCommandRequest{
+	state.opChan <- &retpb.ControllerToCommandRequest{
 		ExitOp: &retpb.ExitOp{ExitCode: exitCode},
 	}
+}
+
+func (c *testCommandController) waitDisconnected(ctx context.Context, name string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	state, ok := c.commandState[name]
+	if !ok {
+		assert.FailNow(c.t, fmt.Sprintf("command %q was never connected", name))
+	}
+	return state.WaitDisconnected(ctx)
 }
 
 func newTestCommandController(t *testing.T) *testCommandController {
@@ -458,7 +557,7 @@ func newTestCommandController(t *testing.T) *testCommandController {
 		port:                port,
 		startedCommands:     make(map[string]bool),
 		commandStartWaiters: make(map[string]chan struct{}),
-		connectedCommands:   make(map[string]chan *retpb.ControllerToCommandRequest),
+		commandState:        make(map[string]*testCommandState),
 	}
 
 	server := grpc.NewServer()
@@ -936,17 +1035,31 @@ func (c *ControlledCommand) Exit(exitCode int32) {
 	c.controller.exit(c.Name, exitCode)
 }
 
+func (c *ControlledCommand) WaitDisconnected() {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
+	defer cancel()
+	err := c.controller.waitDisconnected(ctx, c.Name)
+	require.NoError(c.t, err)
+}
+
+type ExecuteControlledOpts struct {
+	InvocationID string
+}
+
 // ExecuteControlledCommand anonymously executes a special test command binary
 // that connects to a controller server and blocks until it receives further
 // instructions from the controller.
 // The returned handle is used to send instructions to the test command.
-func (r *Env) ExecuteControlledCommand(name string) *ControlledCommand {
+func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts) *ControlledCommand {
 	ctx := context.Background()
 	args := []string{"./" + testCommandBinaryName, "--name", name, "--controller", fmt.Sprintf("localhost:%d", r.testCommandController.port)}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
 	if err != nil {
 		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
+	}
+	if opts.InvocationID != "" {
+		ctx = testcontext.AttachInvocationIDToContext(r.t, ctx, opts.InvocationID)
 	}
 
 	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(ctx)
