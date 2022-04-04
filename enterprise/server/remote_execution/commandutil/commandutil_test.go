@@ -3,6 +3,7 @@ package commandutil_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -119,6 +120,25 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 		t, status.IsUnavailableError(res.Error),
 		"expecting UNAVAILABLE when command is not executable, got: %s", res.Error)
 	assert.Equal(t, -2, res.ExitCode)
+}
+
+func TestRun_Timeout(t *testing.T) {
+	ctx := context.Background()
+	wd := testfs.MakeTempDir(t)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		echo stdout >&1
+		echo stderr >&2
+		sleep infinity
+	`}}
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	res := commandutil.Run(ctx, cmd, wd, nil, nil)
+
+	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
+	assert.Equal(t, "stdout\n", string(res.Stdout))
+	assert.Equal(t, "stderr\n", string(res.Stderr))
 }
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {

@@ -36,8 +36,12 @@ var (
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
-func constructExecCommand(ctx context.Context, command *repb.Command, workDir string, in io.Reader, out io.Writer) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+func constructExecCommand(command *repb.Command, workDir string, in io.Reader, out io.Writer) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 	executable, args := splitExecutableArgs(command.GetArguments())
+	// Note: we don't use CommandContext here because the default behavior of
+	// CommandContext is to kill just the top-level process when the context is
+	// canceled. Instead, we would rather kill the entire process group to ensure
+	// that child processes are killed too.
 	cmd := exec.Command(executable, args...)
 	if workDir != "" {
 		cmd.Dir = workDir
@@ -77,15 +81,16 @@ func RetryIfTextFileBusy(fn func() error) error {
 	}
 }
 
-// Run a command, retrying "text file busy" errors.
+// Run a command, retrying "text file busy" errors and killing the process group
+// when the context is cancelled.
 func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
-		cmd, stdoutBuf, stderrBuf = constructExecCommand(ctx, command, workDir, stdin, stdout)
-		return cmd.Run()
+		cmd, stdoutBuf, stderrBuf = constructExecCommand(command, workDir, stdin, stdout)
+		return RunWithProcessGroupCleanup(ctx, cmd)
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
@@ -110,6 +115,9 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Re
 //
 // It returns a FailedPrecondition error if cmd.SysProcAttr.Setpgid is not set
 // to true.
+//
+// For an example command that can be passed to this func, see
+// constructExecCommand.
 func RunWithProcessGroupCleanup(ctx context.Context, cmd *exec.Cmd) error {
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		return status.FailedPreconditionError("process group cleanup requires SysProcAttr.Setpgid to be set")
