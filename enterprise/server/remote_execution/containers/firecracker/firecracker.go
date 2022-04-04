@@ -32,12 +32,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -51,6 +53,7 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -133,6 +136,16 @@ const (
 
 	// The path in the guest where VFS is mounted.
 	guestVFSMountDir = "/vfs"
+
+	// How much of the context deadline to allocate towards collecting outputs
+	// from the command. The remaining time is allocated towards actually
+	// executing the command.
+	collectOutputsDuration = 1 * time.Second
+
+	// How long to allow for the VM to be removed when called as part of Run().
+	// This deadline isn't used for the Exec() codepath because removal is handled
+	// in the background by the runner pool.
+	finalizationTimeout = 10 * time.Second
 )
 
 var (
@@ -1220,7 +1233,17 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 	}
 
-	defer c.Remove(ctx)
+	// TODO(bduffany): Remove in the background so that we don't unnecessarily
+	// block the client on container removal. Need a way to explicitly wait for
+	// the removal result so that we can ensure the removal is complete during
+	// executor shutdown and test cleanup.
+	defer func() {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
+		defer cancel()
+		if err := c.Remove(ctx); err != nil {
+			log.Errorf("Failed to remove firecracker VM: %s", err)
+		}
+	}()
 
 	cmdResult := c.Exec(ctx, command, nil /*=stdin*/, nil /*=stdout*/)
 	return cmdResult
@@ -1423,12 +1446,24 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		})
 	}
 
+	// Allocate some of the deadline towards collecting outputs. If we let the
+	// command take up the entire deadline, then we will just get a
+	// DeadlineExceeded error from the exec request instead of any debug output on
+	// stdout/stderr, and there won't be any time left to collect output files
+	// from the workspace which are also useful for debugging.
+	if deadline, ok := ctx.Deadline(); ok {
+		execDeadline := deadline.Add(-collectOutputsDuration)
+		execRequest.Timeout = ptypes.DurationProto(time.Until(execDeadline))
+	}
+
 	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
 	if err != nil {
 		result.Error = err
 		return result
 	}
-
+	if rsp.Status != nil {
+		result.Error = gstatus.ErrorProto(rsp.Status)
+	}
 	// If FUSE is enabled then outputs are already in the workspace.
 	if c.fsLayout == nil {
 		// Command was successful, let's unpack the files back to our

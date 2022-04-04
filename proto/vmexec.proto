@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package vmexec;
 
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
 // The exec service is run from inside a VM. The host uses this service to
 // execute commands as well as prepare the VM for command execution.
 service Exec {
@@ -45,12 +48,18 @@ message ExecRequest {
   int32 stdin_vsock_port = 4;
   int32 stdout_vsock_port = 5;
   int32 stderr_vsock_port = 6;
+
+  // An explicit timeout for the action. This is used instead of a request
+  // context deadline so that we can return partial command outputs in the
+  // ExecResponse.
+  google.protobuf.Duration timeout = 7;
 }
 
 message ExecResponse {
   int32 exit_code = 1;
   bytes stdout = 2;
   bytes stderr = 3;
+  google.rpc.Status status = 4;
 }
 
 message InitializeRequest {

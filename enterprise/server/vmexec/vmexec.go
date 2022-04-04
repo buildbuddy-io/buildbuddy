@@ -11,10 +11,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -105,7 +107,17 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	if len(req.GetArguments()) < 1 {
 		return nil, status.InvalidArgumentError("Arguments not specified")
 	}
-	cmd := exec.CommandContext(ctx, req.GetArguments()[0], req.GetArguments()[1:]...)
+	if req.Timeout != nil {
+		timeout, err := ptypes.Duration(req.Timeout)
+		if err != nil {
+			return nil, status.InternalErrorf("failed to parse exec timeout: %s", err.Error())
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	cmd := exec.Command(req.GetArguments()[0], req.GetArguments()[1:]...)
 	if req.GetWorkingDirectory() != "" {
 		cmd.Dir = req.GetWorkingDirectory()
 	}
@@ -136,14 +148,11 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	defer x.reapMutex.RUnlock()
 
 	log.Debugf("Running command in VM: %q", cmd.String())
-	err := cmd.Run()
+	err := commandutil.RunWithProcessGroupCleanup(ctx, cmd)
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
-	if err != nil {
-		return nil, err
-	}
-
 	rsp := &vmxpb.ExecResponse{}
 	rsp.ExitCode = int32(exitCode)
+	rsp.Status = gstatus.Convert(err).Proto()
 	rsp.Stdout = stdoutBuf.Bytes()
 	rsp.Stderr = stderrBuf.Bytes()
 	return rsp, nil
