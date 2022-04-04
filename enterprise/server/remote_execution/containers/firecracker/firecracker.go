@@ -137,10 +137,10 @@ const (
 	// The path in the guest where VFS is mounted.
 	guestVFSMountDir = "/vfs"
 
-	// How much of the context deadline to allocate towards actually executing
-	// the command. The remaining fraction is dedicated allocated towards
-	// collecting outputs.
-	execDeadlineFraction = 0.85
+	// How much of the context deadline to allocate towards collecting outputs
+	// from the command. The remaining time is allocated towards actually
+	// executing the command.
+	collectOutputsDuration = 1 * time.Second
 
 	// How long to allow for the VM to be removed when called as part of Run().
 	// This deadline isn't used for the Exec() codepath because removal is handled
@@ -1452,9 +1452,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// stdout/stderr, and there won't be any time left to collect output files
 	// from the workspace which are also useful for debugging.
 	if deadline, ok := ctx.Deadline(); ok {
-		timeRemaining := time.Until(deadline)
-		execTimeout := time.Duration(execDeadlineFraction * float64(timeRemaining))
-		execRequest.Timeout = ptypes.DurationProto(execTimeout)
+		execDeadline := deadline.Add(-collectOutputsDuration)
+		execRequest.Timeout = ptypes.DurationProto(time.Until(execDeadline))
 	}
 
 	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
