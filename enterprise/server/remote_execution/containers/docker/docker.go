@@ -33,7 +33,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var (
+const (
 	// dockerExecSIGKILLExitCode is returned in the ExitCode field of a docker
 	// exec inspect result when an exec process is terminated due to receiving
 	// SIGKILL.
@@ -479,6 +479,12 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		attachResp.Close()
 	}()
 	if err := copyOutputs(responseReader, result); err != nil {
+		// If we timed out, ignore the "closed connection" error from copying
+		// outputs
+		if ctx.Err() == context.DeadlineExceeded {
+			result.Error = status.DeadlineExceededError("command timed out")
+			return result
+		}
 		result.Error = wrapDockerErr(err, "failed to get output of exec process")
 		return result
 	}

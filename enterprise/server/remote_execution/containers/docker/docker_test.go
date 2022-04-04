@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -156,7 +157,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	isContainerRunning = false
 }
 
-func TestDockerRun_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
+func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	socket := "/var/run/docker.sock"
 	dc, err := dockerclient.NewClientWithOpts(
 		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
@@ -174,7 +175,7 @@ func TestDockerRun_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
 		"sh", "-c", `
 			echo ExampleStdout >&1
 			echo ExampleStderr >&2
-			touch output
+			echo "output" > output.txt
       # Wait for the context to be canceled
 			sleep 100
 		`,
@@ -184,33 +185,34 @@ func TestDockerRun_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
-	c.PullImage(ctx, container.PullCredentials{})
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	go func() {
-		// Cancel the context early once we know that stderr/stdout have been
-		// written, to keep the test from running too long
-		for !testfs.Exists(t, workDir, "output") {
-			time.Sleep(5 * time.Millisecond)
-			if ctx.Err() != nil {
-				return
-			}
-		}
-		// Allow some time for stdout/stderr to be read from docker logs before
-		// cancelling the context, since this also cancels the log read request
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
 
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
-	assert.Equal(t, -2, res.ExitCode)
-	assert.Equal(t, "ExampleStdout\n", string(res.Stdout))
-	assert.Equal(t, "ExampleStderr\n", string(res.Stderr))
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
 }
 
-func TestDockerExec_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
+func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	socket := "/var/run/docker.sock"
 	dc, err := dockerclient.NewClientWithOpts(
 		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
@@ -221,14 +223,13 @@ func TestDockerExec_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
 	}
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	writeFile(t, workDir, "world.txt", "world")
 	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{Arguments: []string{
 		"sh", "-c", `
 			echo ExampleStdout >&1
 			echo ExampleStderr >&2
-			touch output
+			echo "output" > output.txt
       # Wait for the context to be canceled
 			sleep 100
 		`,
@@ -238,7 +239,9 @@ func TestDockerExec_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
 	// Ensure the image is cached
-	c.PullImage(ctx, container.PullCredentials{})
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
 
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
@@ -246,26 +249,25 @@ func TestDockerExec_ContextCanceled_StdoutStderrStillVisible(t *testing.T) {
 		err := c.Remove(context.Background())
 		require.NoError(t, err)
 	})
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	go func() {
-		// Cancel the context early once we know that stderr/stdout have been
-		// written, to keep the test from running too long
-		for !testfs.Exists(t, workDir, "output") {
-			time.Sleep(5 * time.Millisecond)
-			if ctx.Err() != nil {
-				return
-			}
-		}
-		// Allow some time for stdout/stderr to be read from docker logs before
-		// cancelling the context, since this also cancels the log read request
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
 
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
 	res := c.Exec(ctx, cmd, nil /*=stdin*/, nil /*=stdout*/)
 
-	assert.Equal(t, -2, res.ExitCode)
-	assert.Equal(t, "ExampleStdout\n", string(res.Stdout))
-	assert.Equal(t, "ExampleStderr\n", string(res.Stderr))
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
 }
