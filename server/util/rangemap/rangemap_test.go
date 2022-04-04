@@ -210,3 +210,40 @@ func TestClear(t *testing.T) {
 	r.Clear()
 	require.Equal(t, 0, len(r.Ranges()))
 }
+
+func TestGetOverlappingNPE(t *testing.T) {
+	r := rangemap.New()
+
+	addRange := func(left, right string, id int) {
+		_, err := r.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	addRange("e", "z", 1)
+	overlap := r.GetOverlapping([]byte("d"), []byte("m"))
+	require.Equal(t, 1, overlap[0].Val)
+}
+
+func TestGetOverlappingMulti(t *testing.T) {
+	r := rangemap.New()
+
+	addRange := func(left, right string, id int) {
+		_, err := r.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	addRange("a", "c", 1)
+	addRange("c", "e", 2)
+	addRange("e", "g", 3)
+	addRange("l", "n", 4)
+	addRange("n", "p", 5)
+
+	overlap := r.GetOverlapping([]byte("d"), []byte("m"))
+	require.Equal(t, 2, overlap[0].Val)
+	require.Equal(t, 3, overlap[1].Val)
+	require.Equal(t, 4, overlap[2].Val)
+
+	overlap2 := r.GetOverlapping([]byte("g"), []byte("z"))
+	require.Equal(t, 4, overlap2[0].Val)
+	require.Equal(t, 5, overlap2[1].Val)
+}
