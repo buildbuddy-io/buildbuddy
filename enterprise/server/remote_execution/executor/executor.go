@@ -417,7 +417,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		logActionResult(taskID, md)
 		return finishWithErrFn(err) // CHECK (these errors should not happen).
 	}
-	finishedCleanly = true
+	if cmdResult.Error == nil {
+		finishedCleanly = true
+	}
 	return false, nil
 }
 
