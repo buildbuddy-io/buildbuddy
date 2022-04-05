@@ -79,7 +79,7 @@ const (
 	defaultRunnerMemoryLimitBytes = tasksize.WorkflowMemEstimate
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
-	runnerMemUsageEstimateMultiplierBytes = 6.5
+	runnerMemUsageEstimateMultiplierBytes = 2
 
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
@@ -471,11 +471,10 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 			"stats_failed",
 		}
 	}
-	// If memory usage stats are not implemented, fall back to the task size
-	// estimate.
+	// If memory usage stats are not implemented, fall back to the default task
+	// size estimate.
 	if stats.MemoryUsageBytes == 0 {
-		estimate := tasksize.Estimate(r.task)
-		stats.MemoryUsageBytes = estimate.GetEstimatedMemoryBytes()
+		stats.MemoryUsageBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 	}
 
 	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
