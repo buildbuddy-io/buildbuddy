@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,6 +50,8 @@ const (
 )
 
 var (
+	enableFirecracker = flag.Bool("remote_execution.workflows_enable_firecracker", false, "Whether to enable firecracker for Linux workflow actions.")
+
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
 	// ApprovalRequired is an error indicating that a workflow action could not be
@@ -627,10 +630,18 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	}
 	conf := ws.env.GetConfigurator()
 	containerImage := ""
+	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
 	// Use the CI runner image if the OS supports containerized actions.
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		containerImage = ws.workflowsImage()
+		if *enableFirecracker {
+			isolationType = string(platform.FirecrackerContainerType)
+			// When using Firecracker, write all outputs to the scratch disk, which
+			// has more space than the workspace disk and doesn't need to be extracted
+			// to the executor between action runs.
+			envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"})
+		}
 	}
 	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
 		return nil, ApprovalRequired
@@ -666,11 +677,12 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.workflowsPoolName()},
+				{Name: "Pool", Value: ws.workflowsPoolName(os)},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
+				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: "container-image", Value: containerImage},
-				// Reuse the docker container for the CI runner across executions if
+				// Reuse the container/VM for the CI runner across executions if
 				// possible, and also keep the git repo around so it doesn't need to be
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
@@ -678,6 +690,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
 		},
 	}
@@ -694,7 +708,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func (ws *workflowService) workflowsPoolName() string {
+func (ws *workflowService) workflowsPoolName(os string) string {
+	// When using firecracker, don't use the workflows pool.
+	if *enableFirecracker && (os == "" || os == platform.LinuxOperatingSystemName) {
+		return platform.DefaultPoolValue
+	}
 	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
 	if cfg != nil && cfg.WorkflowsPoolName != "" {
 		return cfg.WorkflowsPoolName
