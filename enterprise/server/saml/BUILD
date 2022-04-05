@@ -13,6 +13,7 @@ go_library(
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
+        "//server/nullauth",
         "//server/tables",
         "//server/util/log",
         "//server/util/status",

@@ -59,21 +59,8 @@ func TestFromInt_MultipleCapabilities(t *testing.T) {
 	t.Skip()
 }
 
-func TestIsGranted_AnonymousUsageDisabled_AnonymousUser_False(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	flags.Set(t, "auth.enable_anonymous_usage", "false")
-	anonCtx := context.Background()
-	te.GetConfigurator().ReconcileFlagsAndConfig()
-
-	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-
-	assert.False(t, canWrite)
-	assert.Nil(t, err)
-}
-
 func TestIsGranted_AnonymousUsageEnabled_AnonymousUser_True(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	anonCtx := context.Background()
 	te.GetConfigurator().ReconcileFlagsAndConfig()
 
@@ -94,14 +81,15 @@ func TestIsGranted_NullAuthenticator(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func TestIsGranted_NilAuthenticator(t *testing.T) {
+func TestNotGranted_NullAuthenticator_AnonymousUsage_Disabled(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
-	te.SetAuthenticator(nil)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(false, ""))
+
 	anonCtx := context.Background()
 
 	canWrite, err := capabilities.IsGranted(anonCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
 
-	assert.True(t, canWrite)
+	assert.False(t, canWrite)
 	assert.Nil(t, err)
 }
 

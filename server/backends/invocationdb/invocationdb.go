@@ -92,7 +92,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 		}
 	}
 
-	if permissions == nil && d.env.GetConfigurator().GetAnonymousUsageEnabled() {
+	if permissions == nil && d.env.GetAuthenticator().AnonymousUsageEnabled() {
 		permissions = perms.AnonymousUserPermissions()
 	} else if permissions == nil {
 		return false, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")

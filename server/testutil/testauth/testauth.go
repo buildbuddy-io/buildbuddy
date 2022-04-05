@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -99,12 +100,14 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 }
 
 type TestAuthenticator struct {
+	*nullauth.NullAuthenticator
 	testUsers map[string]interfaces.UserInfo
 }
 
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
 	return &TestAuthenticator{
-		testUsers: testUsers,
+		NullAuthenticator: &nullauth.NullAuthenticator{},
+		testUsers:         testUsers,
 	}
 }
 

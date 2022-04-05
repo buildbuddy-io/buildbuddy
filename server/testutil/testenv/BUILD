@@ -11,6 +11,7 @@ go_library(
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
         "//server/config",
+        "//server/nullauth",
         "//server/real_environment",
         "//server/rpc/filters",
         "//server/testutil/testfs",

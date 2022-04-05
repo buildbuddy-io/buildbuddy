@@ -11,6 +11,7 @@ go_library(
         "//proto:context_go_proto",
         "//proto:user_id_go_proto",
         "//server/interfaces",
+        "//server/nullauth",
         "//server/tables",
         "//server/util/capabilities",
         "//server/util/log",

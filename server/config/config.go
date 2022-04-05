@@ -230,7 +230,7 @@ type cacheConfig struct {
 
 type authConfig struct {
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
-	APIKeyGroupCacheTTL  string          `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
+	APIKeyGroupCacheTTL  time.Duration   `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
 	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
@@ -597,53 +597,6 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
 	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
 	return flagSet
-}
-
-func (c *Configurator) GetAnonymousUsageEnabled() bool {
-	numOauthProviders := len(c.gc.Auth.OauthProviders)
-	if c.GetSelfAuthEnabled() {
-		// SelfAuth is considered an Oauth Provider
-		numOauthProviders++
-	}
-	return numOauthProviders == 0 || c.gc.Auth.EnableAnonymousUsage
-}
-
-func (c *Configurator) GetAuthJWTKey() string {
-	return c.gc.Auth.JWTKey
-}
-
-func (c *Configurator) GetAuthOauthProviders() []OauthProvider {
-	op := c.gc.Auth.OauthProviders
-	if len(c.gc.Auth.OauthProviders) == 1 {
-		if cs := os.Getenv("BB_OAUTH_CLIENT_SECRET"); cs != "" {
-			op[0].ClientSecret = cs
-		}
-	}
-	return op
-}
-
-func (c *Configurator) GetAuthAPIKeyGroupCacheTTL() string {
-	return c.gc.Auth.APIKeyGroupCacheTTL
-}
-
-func (c *Configurator) GetAuthAdminGroupID() string {
-	return c.gc.Auth.AdminGroupID
-}
-
-func (c *Configurator) GetSAMLConfig() *SAMLConfig {
-	return &c.gc.Auth.SAMLConfig
-}
-
-func (c *Configurator) GetSelfAuthEnabled() bool {
-	return c.gc.Auth.EnableSelfAuth
-}
-
-func (c *Configurator) GetHttpsOnlyCookies() bool {
-	return c.gc.Auth.HttpsOnlyCookies
-}
-
-func (c *Configurator) GetDisableRefreshToken() bool {
-	return c.gc.Auth.DisableRefreshToken
 }
 
 func (c *Configurator) GetAPIConfig() *APIConfig {

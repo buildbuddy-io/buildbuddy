@@ -28,7 +28,7 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 		}
 	}
 
-	if !env.GetConfigurator().GetAnonymousUsageEnabled() {
+	if !env.GetAuthenticator().AnonymousUsageEnabled() {
 		return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
@@ -37,7 +37,7 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 
 func AttachUserPrefixToContext(ctx context.Context, env environment.Env) (context.Context, error) {
 	prefix, err := userPrefixCacheKey(ctx, env, "")
-	if err != nil && !env.GetConfigurator().GetAnonymousUsageEnabled() {
+	if err != nil && !env.GetAuthenticator().AnonymousUsageEnabled() {
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 	return context.WithValue(ctx, userPrefix, prefix), nil

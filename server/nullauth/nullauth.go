@@ -9,7 +9,45 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-type NullAuthenticator struct{}
+func NewNullAuthenticator(anonymousUsageEnabled bool, adminGroupID string) *NullAuthenticator {
+	return &NullAuthenticator{
+		adminGroupID:           adminGroupID,
+		anonymousUsageDisabled: !anonymousUsageEnabled,
+	}
+}
+
+type NullAuthenticator struct {
+	adminGroupID           string
+	anonymousUsageDisabled bool
+}
+
+func (a *NullAuthenticator) AdminGroupID() string {
+	return a.adminGroupID
+}
+
+func (a *NullAuthenticator) AnonymousUsageEnabled() bool {
+	return !a.anonymousUsageDisabled
+}
+
+func (a *NullAuthenticator) EnableAnonymousUsage() {
+	a.anonymousUsageDisabled = false
+}
+
+func (a *NullAuthenticator) DisableAnonymousUsage() {
+	a.anonymousUsageDisabled = true
+}
+
+func (a *NullAuthenticator) SetAdminGroupID(adminGroupID string) {
+	a.adminGroupID = adminGroupID
+}
+
+func (a *NullAuthenticator) PublicIssuers() []string {
+	return []string{}
+}
+
+func (a *NullAuthenticator) SSOEnabled() bool {
+	return false
+}
 
 func (a *NullAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	return r.Context()

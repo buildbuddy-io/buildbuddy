@@ -11,10 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -38,7 +40,7 @@ import (
 )
 
 var (
-	adminGroupID = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
+	adminGroupID         = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = []config.OauthProvider{}
 	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
@@ -113,11 +115,10 @@ const (
 
 var (
 	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
-	jwtKey      = []byte("set_the_jwt_in_config") // set via config.
 )
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
-	return jwtKey, nil
+	return []byte(*jwtKey), nil
 }
 
 type Claims struct {
@@ -178,7 +179,7 @@ func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
 	claims.StandardClaims = jwt.StandardClaims{ExpiresAt: expirationTime.Unix()}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtKey)
+	tokenString, err := token.SignedString([]byte(*jwtKey))
 	return tokenString, err
 }
 
@@ -190,7 +191,7 @@ func SetCookie(env environment.Env, w http.ResponseWriter, name, value string, e
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
-		Secure:   env.GetConfigurator().GetHttpsOnlyCookies(),
+		Secure:   *httpsOnlyCookies,
 	})
 }
 
@@ -229,7 +230,7 @@ type userToken struct {
 	slug       string
 }
 
-func (t *userToken) GetIssuer() string {
+func (t *userToken) getIssuer() string {
 	return t.issuer
 }
 
@@ -360,12 +361,8 @@ type apiKeyGroupCache struct {
 
 func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
 	ttl := defaultAPIKeyGroupCacheTTL
-	if configurator.GetAuthAPIKeyGroupCacheTTL() != "" {
-		configTTL, err := time.ParseDuration(configurator.GetAuthAPIKeyGroupCacheTTL())
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("invalid API Key -> Group cache TTL [%s]: %v", configurator.GetAuthAPIKeyGroupCacheTTL(), err)
-		}
-		ttl = configTTL
+	if *apiKeyGroupCacheTTL != time.Duration(0) {
+		ttl = *apiKeyGroupCacheTTL
 	}
 
 	config := &lru.Config{
@@ -405,10 +402,12 @@ func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup
 }
 
 type OpenIDAuthenticator struct {
-	env              environment.Env
-	myURL            *url.URL
-	apiKeyGroupCache *apiKeyGroupCache
-	authenticators   []authenticator
+	env                  environment.Env
+	myURL                *url.URL
+	apiKeyGroupCache     *apiKeyGroupCache
+	authenticators       []authenticator
+	enableAnonymousUsage bool
+	adminGroupID         string
 }
 
 func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, authConfigs []config.OauthProvider, authURL *url.URL) ([]authenticator, error) {
@@ -440,7 +439,7 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 					// Google reject the offline_access scope in favor of access_type=offline url param which already gets
 					// set in our auth flow thanks to the oauth2.AccessTypeOffline authCodeOption at the top of this file.
 					// https://github.com/coreos/go-oidc/blob/v2.2.1/oidc.go#L30
-					if authConfig.IssuerURL != "https://accounts.google.com" && !env.GetConfigurator().GetDisableRefreshToken() {
+					if authConfig.IssuerURL != "https://accounts.google.com" && !*disableRefreshToken {
 						scopes = append(scopes, oidc.ScopeOfflineAccess)
 					}
 					// Configure an OpenID Connect aware OAuth2 client.
@@ -485,23 +484,24 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		return nil, err
 	}
 
-	// Set the JWT key.
-	jwtKey = []byte(env.GetConfigurator().GetAuthJWTKey())
-
 	// Initialize API Key -> Group cache unless it's disabled by config.
 	var akgCache *apiKeyGroupCache
-	if env.GetConfigurator().GetAuthAPIKeyGroupCacheTTL() != "0" {
+	if *apiKeyGroupCacheTTL != time.Duration(0) {
 		akgCache, err = newAPIKeyGroupCache(env.GetConfigurator())
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	anonymousUsageEnabled := *enableAnonymousUsage || (len(oauthProviders) == 0 && selfauth.Provider() == nil)
+
 	return &OpenIDAuthenticator{
-		env:              env,
-		myURL:            build_buddy_url.WithPath(""),
-		authenticators:   authenticators,
-		apiKeyGroupCache: akgCache,
+		env:                  env,
+		myURL:                build_buddy_url.WithPath(""),
+		authenticators:       authenticators,
+		apiKeyGroupCache:     akgCache,
+		enableAnonymousUsage: anonymousUsageEnabled,
+		adminGroupID:         *adminGroupID,
 	}, nil
 }
 
@@ -512,6 +512,32 @@ func newForTesting(ctx context.Context, env environment.Env, testAuthenticator a
 	}
 	oia.authenticators = append(oia.authenticators, testAuthenticator)
 	return oia, nil
+}
+
+func RegisterNullAuth(env environment.Env) error {
+	env.SetAuthenticator(
+		nullauth.NewNullAuthenticator(
+			*enableAnonymousUsage || (len(oauthProviders) == 0 && selfauth.Provider() == nil),
+			*adminGroupID,
+		),
+	)
+	return nil
+}
+
+func Register(ctx context.Context, env environment.Env) error {
+	authConfigs := oauthProviders
+	if selfAuthProvider := selfauth.Provider(); selfAuthProvider != nil {
+		authConfigs = append(
+			authConfigs,
+			*selfAuthProvider,
+		)
+	}
+	authenticator, err := NewOpenIDAuthenticator(ctx, env, authConfigs)
+	if err != nil {
+		return status.InternalErrorf("Authenticator failed to configure: %v", err)
+	}
+	env.SetAuthenticator(authenticator)
+	return nil
 }
 
 func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfigs []config.OauthProvider) (*OpenIDAuthenticator, error) {
@@ -525,6 +551,42 @@ func NewOpenIDAuthenticator(ctx context.Context, env environment.Env, authConfig
 	}
 
 	return a, err
+}
+
+func (a *OpenIDAuthenticator) AdminGroupID() string {
+	return a.adminGroupID
+}
+
+func (a *OpenIDAuthenticator) AnonymousUsageEnabled() bool {
+	if len(oauthProviders) == 0 && selfauth.Provider() == nil {
+		return true
+	}
+	return a.enableAnonymousUsage
+}
+
+func (a *OpenIDAuthenticator) PublicIssuers() []string {
+	providers := make([]string, len(a.authenticators))
+	i := 0
+	for _, authenticator := range a.authenticators {
+		if authenticator.getSlug() != "" {
+			// Skip "private" issuers and shorten the new slice to account for it
+			providers = providers[:len(providers)-1]
+			continue
+		}
+		providers[i] = authenticator.getIssuer()
+		i++
+	}
+
+	return providers
+}
+
+func (a *OpenIDAuthenticator) SSOEnabled() bool {
+	for _, authenticator := range a.authenticators {
+		if authenticator.getSlug() != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *OpenIDAuthenticator) validateRedirectURL(redirectURL string) error {
@@ -554,7 +616,7 @@ func (a *OpenIDAuthenticator) getAuthConfigForSlug(slug string) authenticator {
 
 func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthCodeOption {
 	options := []oauth2.AuthCodeOption{}
-	if !a.env.GetConfigurator().GetDisableRefreshToken() {
+	if !*disableRefreshToken {
 		options = append(options, oauth2.AccessTypeOffline)
 	}
 	sessionID := GetCookie(r, sessionIDCookie)
@@ -720,9 +782,8 @@ func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*C
 	// role within the configured admin group, set their authenticated user to
 	// *only* have access to the org being impersonated.
 	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetImpersonatingGroupId() != "" {
-		adminGroupID := env.GetConfigurator().GetAuthAdminGroupID()
 		for _, membership := range claims.GetGroupMemberships() {
-			if membership.GroupID != adminGroupID || membership.Role != role.Admin {
+			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
 				continue
 			}
 			u.Groups = []*tables.GroupRole{{

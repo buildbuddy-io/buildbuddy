@@ -214,7 +214,7 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 		}
 	}
 
-	if !hasUser && !env.GetConfigurator().GetAnonymousUsageEnabled() {
+	if !hasUser && !env.GetAuthenticator().AnonymousUsageEnabled() {
 		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 

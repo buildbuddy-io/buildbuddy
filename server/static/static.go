@@ -14,7 +14,6 @@ import (
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -130,48 +129,32 @@ type FrontendTemplateData struct {
 }
 
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
-	issuers := make([]string, 0)
-	if env.GetConfigurator().GetSelfAuthEnabled() {
-		issuers = append(issuers, build_buddy_url.String())
-	}
-	ssoEnabled := env.GetConfigurator().GetSAMLConfig().CertFile != ""
-	// Assemble a slice of the supported issuers. Omit "private" issuers, which have a slug,
-	// and set ssoEnabled = true if any private issuers are present in the config.
-	for _, provider := range env.GetConfigurator().GetAuthOauthProviders() {
-		if provider.Slug == "" {
-			issuers = append(issuers, provider.IssuerURL)
-		} else {
-			ssoEnabled = true
-		}
-	}
-
-	config := cfgpb.FrontendConfig{
+	configJSON := &bytes.Buffer{}
+	err := (&jsonpb.Marshaler{}).Marshal(configJSON, &cfgpb.FrontendConfig{
 		Version:                       version,
-		ConfiguredIssuers:             issuers,
+		ConfiguredIssuers:             env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:            *defaultToDenseMode,
 		GithubEnabled:                 github.Enabled(),
-		AnonymousUsageEnabled:         env.GetConfigurator().GetAnonymousUsageEnabled(),
+		AnonymousUsageEnabled:         env.GetAuthenticator().AnonymousUsageEnabled(),
 		TestDashboardEnabled:          target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:    remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
 		WorkflowsEnabled:              remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
 		CodeEditorEnabled:             *codeEditorEnabled,
 		RemoteExecutionEnabled:        remote_execution_config.RemoteExecutionEnabled(),
-		SsoEnabled:                    ssoEnabled,
+		SsoEnabled:                    env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:           *globalFilterEnabled,
 		UsageEnabled:                  *usageEnabled,
 		UserManagementEnabled:         *userManagementEnabled,
 		ForceUserOwnedDarwinExecutors: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:             *testGridV2Enabled,
 		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
-	}
-
-	configJSON := &bytes.Buffer{}
-	if err := (&jsonpb.Marshaler{}).Marshal(configJSON, &config); err != nil {
+	})
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
+	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,

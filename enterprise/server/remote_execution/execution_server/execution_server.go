@@ -165,7 +165,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		}
 	}
 
-	if permissions == nil && s.env.GetConfigurator().GetAnonymousUsageEnabled() {
+	if permissions == nil && s.env.GetAuthenticator().AnonymousUsageEnabled() {
 		permissions = perms.AnonymousUserPermissions()
 	} else if permissions == nil {
 		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")

@@ -92,6 +92,14 @@ const (
 )
 
 type Authenticator interface {
+	// The ID of the admin group
+	AdminGroupID() string
+	// Whether or not anonymous usage is enabled
+	AnonymousUsageEnabled() bool
+	// Return a slice containing the providers
+	PublicIssuers() []string
+	// Whether SSO is enabled for this authenticator
+	SSOEnabled() bool
 	// Redirect to configured authentication provider.
 	Login(w http.ResponseWriter, r *http.Request)
 	// Clear any logout state.
