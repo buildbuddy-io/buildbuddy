@@ -139,7 +139,7 @@ func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.
 func (ut *tracker) Increment(ctx context.Context, uc *tables.UsageCounts) error {
 	groupID, err := perms.AuthenticatedGroupID(ctx, ut.env)
 	if err != nil {
-		if perms.IsAnonymousUserError(err) && ut.env.GetConfigurator().GetAnonymousUsageEnabled() {
+		if perms.IsAnonymousUserError(err) && ut.env.GetAuthenticator().AnonymousUsageEnabled() {
 			// Don't track anonymous usage for now.
 			return nil
 		}

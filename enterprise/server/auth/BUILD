@@ -9,11 +9,13 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
+        "//enterprise/server/selfauth",
         "//proto:api_key_go_proto",
         "//server/config",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",
+        "//server/nullauth",
         "//server/tables",
         "//server/util/alert",
         "//server/util/capabilities",

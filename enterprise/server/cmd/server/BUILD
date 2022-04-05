@@ -40,7 +40,6 @@ go_library(
         "//enterprise/server/webhooks/github",
         "//enterprise/server/workflow/service",
         "//server/config",
-        "//server/http/filters",
         "//server/interfaces",
         "//server/janitor",
         "//server/libmain",

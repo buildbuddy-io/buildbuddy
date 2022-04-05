@@ -4,6 +4,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"math/big"
 	"math/rand"
 	"net/http"
@@ -20,6 +21,8 @@ import (
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"golang.org/x/oauth2"
+
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
 var enableSelfAuth = flag.Bool("auth.enable_self_auth", false, "If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **")
@@ -58,8 +61,11 @@ const (
 415611243927536855210038614935566984835254900497766783308172151277711`
 )
 
-func Provider(env environment.Env) config.OauthProvider {
-	return config.OauthProvider{
+func Provider() *config.OauthProvider {
+	if !*enableSelfAuth {
+		return nil
+	}
+	return &config.OauthProvider{
 		IssuerURL:    build_buddy_url.String(),
 		ClientID:     "buildbuddy",
 		ClientSecret: "secret",
@@ -67,7 +73,6 @@ func Provider(env environment.Env) config.OauthProvider {
 }
 
 type selfAuth struct {
-	env           environment.Env
 	rsaPrivateKey jwk.RSAPrivateKey
 	rsaPublicKey  jwk.RSAPublicKey
 }
@@ -89,7 +94,23 @@ type tokenJSON struct {
 	IdToken      string `json:"id_token"`
 }
 
-func NewSelfAuth(env environment.Env) (*selfAuth, error) {
+func Register(env environment.Env) error {
+	if !*enableSelfAuth {
+		return nil
+	}
+	oauth, err := NewSelfAuth()
+	if err != nil {
+		return status.InternalErrorf("Error initializing self auth: %s", err)
+	}
+	mux := env.GetMux()
+	mux.Handle(oauth.AuthorizationEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
+	mux.Handle(oauth.TokenEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
+	mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
+	mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
+	return nil
+}
+
+func NewSelfAuth() (*selfAuth, error) {
 	// generate the same key every time; this is not meant to secure or secret
 	var n, d, p, q big.Int
 	n.SetString(strings.Join(strings.Fields(nString), ""), 10)
@@ -125,7 +146,6 @@ func NewSelfAuth(env environment.Env) (*selfAuth, error) {
 		return nil, status.InternalErrorf("Expected jwk.RSAPublicKey, got %T\n", jwkKey)
 	}
 	return &selfAuth{
-		env:           env,
 		rsaPrivateKey: jwkPrivateKey,
 		rsaPublicKey:  jwkPublicKey,
 	}, nil

@@ -5,7 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
@@ -44,14 +43,8 @@ func ToInt(caps []akpb.ApiKey_Capability) int32 {
 }
 
 func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capability) (bool, error) {
-	authIsRequired := !env.GetConfigurator().GetAnonymousUsageEnabled()
 	a := env.GetAuthenticator()
-	if a == nil {
-		if authIsRequired {
-			return false, status.UnimplementedError("Not Implemented")
-		}
-		return int32(cap)&AnonymousUserCapabilitiesMask > 0, nil
-	}
+	authIsRequired := !a.AnonymousUsageEnabled()
 	user, err := a.AuthenticatedUser(ctx)
 	if err != nil {
 		if perms.IsAnonymousUserError(err) {

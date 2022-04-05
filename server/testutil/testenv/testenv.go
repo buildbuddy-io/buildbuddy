@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
@@ -179,6 +180,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
 	te.RealEnv.SetBlobstore(bs)
+	te.RealEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 
 	return te
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -51,12 +52,43 @@ type SAMLAuthenticator struct {
 	fallback      interfaces.Authenticator
 }
 
+func Register(env environment.Env) error {
+	if *certFile == "" || env.GetAuthenticator() == nil {
+		return nil
+	}
+	if _, ok := env.GetAuthenticator().(*nullauth.NullAuthenticator); ok {
+		return nil
+	}
+	log.Info("SAML auth configured.")
+	env.SetAuthenticator(NewSAMLAuthenticator(env, env.GetAuthenticator()))
+	return nil
+}
+
 func NewSAMLAuthenticator(env environment.Env, fallback interfaces.Authenticator) *SAMLAuthenticator {
 	return &SAMLAuthenticator{
 		env:           env,
 		samlProviders: make(map[string]*samlsp.Middleware),
 		fallback:      fallback,
 	}
+}
+
+func (a *SAMLAuthenticator) AdminGroupID() string {
+	return a.fallback.AdminGroupID()
+}
+
+func (a *SAMLAuthenticator) AnonymousUsageEnabled() bool {
+	return a.fallback.AnonymousUsageEnabled()
+}
+
+func (a *SAMLAuthenticator) PublicIssuers() []string {
+	return a.fallback.PublicIssuers()
+}
+
+func (a *SAMLAuthenticator) SSOEnabled() bool {
+	if *certFile != "" {
+		return true
+	}
+	return a.fallback.SSOEnabled()
 }
 
 func (a *SAMLAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
@@ -193,11 +225,10 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if ok {
 		return provider, nil
 	}
-	SAMLConfig := a.env.GetConfigurator().GetSAMLConfig()
-	if SAMLConfig.CertFile == "" || SAMLConfig.KeyFile == "" {
+	if *certFile == "" || *keyFile == "" {
 		return nil, status.NotFoundError("No SAML Configured")
 	}
-	keyPair, err := tls.LoadX509KeyPair(SAMLConfig.CertFile, SAMLConfig.KeyFile)
+	keyPair, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
 		return nil, err
 	}

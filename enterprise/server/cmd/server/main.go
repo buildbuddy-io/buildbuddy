@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"io/fs"
-	"net/http"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -50,7 +49,6 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
-	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -104,23 +102,14 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
 	configureFilesystemsOrDie(env)
 
-	authConfigs := env.GetConfigurator().GetAuthOauthProviders()
-	if env.GetConfigurator().GetSelfAuthEnabled() {
-		authConfigs = append(
-			authConfigs,
-			selfauth.Provider(env),
-		)
-	}
-	var authenticator interfaces.Authenticator
-	authenticator, err := auth.NewOpenIDAuthenticator(ctx, env, authConfigs)
-	if err == nil {
-		if env.GetConfigurator().GetSAMLConfig().CertFile != "" {
-			log.Info("SAML auth configured.")
-			authenticator = saml.NewSAMLAuthenticator(env, authenticator)
+	if err := auth.Register(ctx, env); err != nil {
+		if err := auth.RegisterNullAuth(env); err != nil {
+			log.Fatalf("%v", err)
 		}
-		env.SetAuthenticator(authenticator)
-	} else {
 		log.Warningf("No authentication will be configured: %s", err)
+	}
+	if err := saml.Register(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
@@ -248,16 +237,9 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
-	if realEnv.GetConfigurator().GetSelfAuthEnabled() {
-		oauth, err := selfauth.NewSelfAuth(realEnv)
-		if err != nil {
-			log.Fatalf("Error initializing self auth: %s", err)
-		}
-		mux := realEnv.GetMux()
-		mux.Handle(oauth.AuthorizationEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
-		mux.Handle(oauth.TokenEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
-		mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
-		mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
+	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
+
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
