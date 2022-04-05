@@ -2,11 +2,38 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2022-03-16T12:00:00.000Z</updated>
+    <updated>2022-04-05T08:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Meet rules_xcodeproj]]></title>
+        <id>meet-rules_xcodeproj</id>
+        <link href="https://www.buildbuddy.io/blog/meet-rules_xcodeproj"/>
+        <updated>2022-04-05T08:00:00.000Z</updated>
+        <summary type="html"><![CDATA[We are happy to announce that today we are releasing the first version of rules_xcodeproj, version 0.1.0.]]></summary>
+        <content type="html"><![CDATA[<p><a href="https://github.com/buildbuddy-io/rules_xcodeproj">rules_xcodeproj</a> is a Bazel ruleset that can be used to
+generate Xcode projects from targets in your workspace. We are happy to announce
+that today we are releasing the first version of the ruleset,
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/releases/tag/0.1.0">version 0.1.0</a>.</p><p align="center"><img src="/img/blog/rules_xcodeproj.png" height="256"/></p><p>There are already other tools out there that allow you to integrate Xcode with
+Bazel. So you may be wondering why we decided to create another one. The core
+reason is there wasn&#x27;t one tool that satisfied all of these requirements:</p><ul><li>Fully supports all of Xcode&#x27;s features<ul><li>Indexing (i.e. autocomplete, syntax highlighting, jump to definition)</li><li>Debugging</li><li>Inline warnings and errors</li><li>Fix-its</li><li>Tests</li><li>SwiftUI Previews</li></ul></li><li>Supports building with Xcode (<em>not</em> Bazel)<ul><li>Useful for testing new Xcode features before Bazel and/or
+rules_apple/rules_swift supports it</li><li>An option if you don&#x27;t want developers to build with Bazel quite yet</li></ul></li><li>Supports building with Bazel, in Xcode<ul><li>While still fully supporting all of Xcode&#x27;s features</li><li>Without needing an XCBBuildService proxy</li></ul></li><li>Supports all of the Core C/C++/Obj-C, rules_apple, and rules_swift rules</li><li>Can be extended to support custom rules if needed</li><li>Supports target discovery and focused projects<ul><li>Target discovery means it can use a query system to find related targets,
+such as tests, without having to manually list them all</li><li>Focused projects allow Xcode to have only a portion of your build graph
+included in it, making Xcode perform better for large projects</li></ul></li><li>Produces Xcode projects that look and feel like normal Xcode projects</li></ul><p>We&#x27;ve been working on rules_xcodeproj for two months, and while it doesn&#x27;t
+yet support all of the above, we have designs and a roadmap to cover all of
+those requirements. Depending on the rules your project uses, or the attributes
+of those rules, you should be able to generate an Xcode project that builds with
+Xcode today, using version 0.1.0.</p><p>If you run into any problems with rules_xcodeproj, please check if
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/issues">another issue already exists</a> and comment on it, and if not,
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/issues/new/choose">file an issue</a>! You can also email us at <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a>
+with any questions, comments, or thoughts.</p>]]></content>
+        <author>
+            <name>Brentley Jones</name>
+            <uri>https://brentleyjones.com</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Bazel's Remote Caching and Remote Execution Explained]]></title>
         <id>bazels-remote-caching-and-remote-execution-explained</id>
