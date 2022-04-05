@@ -418,7 +418,7 @@ func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
 		MaxRunnerCount:            unlimited,
-		MaxRunnerMemoryUsageBytes: 16 * 1e9,
+		MaxRunnerMemoryUsageBytes: 5200e6,
 		MaxRunnerDiskSizeBytes:    unlimited,
 	})
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -429,8 +429,8 @@ func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	r3 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
 
 	// Try adding all of them to the pool. 3rd runner should result in eviction,
-	// since the estimated memory usage for bare runners is 8GB, and the pool can
-	// only fit 2 * 8GB = 16GB worth of runners.
+	// since the estimated memory usage for paused bare runners is 2.6GB, and the
+	// pool can only fit 2 * 2.6GB = 5.2GB worth of runners.
 	mustAddWithoutEviction(t, ctx, pool, r1)
 	mustAddWithoutEviction(t, ctx, pool, r2)
 	mustAddWithEviction(t, ctx, pool, r3)

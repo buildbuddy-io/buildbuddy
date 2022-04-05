@@ -79,7 +79,7 @@ const (
 	defaultRunnerMemoryLimitBytes = tasksize.WorkflowMemEstimate
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
-	runnerMemUsageEstimateMultiplierBytes = 2
+	runnerMemUsageEstimateMultiplierBytes = 6.5
 
 	// Label assigned to runner pool request count metric for fulfilled requests.
 	hitStatusLabel = "hit"
