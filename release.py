@@ -96,7 +96,7 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
 
-    commit_msg_file = tempfile.NamedTemporaryFile(delete=False)
+    commit_msg_file = tempfile.NamedTemporaryFile(mode='w+', delete=False)
     commit_msg_file_name = commit_msg_file.name
     commit_msg_file.write(commit_message)
     commit_msg_file.close()
