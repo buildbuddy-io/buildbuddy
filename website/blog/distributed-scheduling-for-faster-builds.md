@@ -4,7 +4,7 @@ title: Distributed Scheduling for Faster Builds
 description: The distributed scheduler that powers BuildBuddy remote execution
 author: Tyler Williams
 author_title: Co-founder @ BuildBuddy
-date: 2022-04-06:08:00:00
+date: 2022-04-07:08:00:00
 author_url: https://www.linkedin.com/in/tyler-williams-80480519b/
 author_image_url: https://avatars.githubusercontent.com/u/141737?v=4
 image: /img/vashon_ferry.jpg
@@ -15,20 +15,18 @@ Let's start with "what's BuildBuddy" for the kids in back. In short, we provide 
 
 Obviously to do all this, we have to handle some thorny engineering challenges, one of which is scheduling remote executions. For that, we have a scheduler. The scheduler just matches actions (basically jobs) received by our API to remote workers that actually do the work. If you think of a full build of something like Tensorflow as a 10 course meal, a single action is like a recipe for a tiny part of that meal. To make it easier to visualize, here's a real action from building BuildBuddy:
 
-```bash
+```bash title="this action just uses gcc to compile zlib/infback.c into an object file, zlib/infback.o"
 /usr/bin/gcc -U_FORTIFY_SOURCE -fstack-protector -Wall -Wunused-but-set-parameter -Wno-free-nonheap-object -fno-omit-frame-pointer -g0 -O2 -D_FORTIFY_SOURCE=1 -DNDEBUG -ffunction-sections -fdata-sections -MD -MF bazel-out/k8-opt-exec-34F00540/bin/external/zlib/_objs/zlib/infback.d -frandom-seed=bazel-out/k8-opt-exec-34F00540/bin/external/zlib/_objs/zlib/infback.o -iquote external/zlib -iquote bazel-out/k8-opt-exec-34F00540/bin/external/zlib -isystem external/zlib/zlib/include -isystem bazel-out/k8-opt-exec-34F00540/bin/external/zlib/zlib/include -g0 -Wno-unused-variable -Wno-implicit-function-declaration -fno-canonical-system-headers -Wno-builtin-macro-redefined -D__DATE__="redacted" -D__TIMESTAMP__="redacted" -D__TIME__="redacted" -c external/zlib/infback.c -o bazel-out/k8-opt-exec-34F00540/bin/external/zlib/_objs/zlib/infback.o
 ```
-[ this action just uses gcc to compile zlib/infback.c into an object file, zlib/infback.o]
 
 And here's another:
 
-```bash
+```bash title="this action uses protobufjs to generate typescript bindings for a protobuf file"
 bazel-out/host/bin/external/npm/protobufjs/bin/pbts.sh
 --out=bazel-out/k8-fastbuild/bin/proto/buildbuddy_service_ts_proto.d.ts
 bazel-out/k8-fastbuild/bin/proto/buildbuddy_service_ts_proto.js
 --bazel_node_modules_manifest=bazel-out/k8-fastbuild/bin/proto/__buildbuddy_service_ts_proto_pbts.module_mappings.json
 ```
-[ this action uses protobufjs to generate typescript bindings for a protobuf file ]
 
 So you get the idea, building a binary involves compiling and linking many different libraries etc and a single action is usually one of those commands. Great.
 
@@ -44,9 +42,13 @@ And in the end, nothing worked well. The core reason a load balancer was such a 
 
 So I went and did some reading about schedulers, and found this really lovely paper [https://cs.stanford.edu/~matei/papers/2013/sosp_sparrow.pdf](https://cs.stanford.edu/~matei/papers/2013/sosp_sparrow.pdf) about a distributed scheduler called Sparrow. This paper is great because it's short and clearly written, and it talks about some cool ideas. The biggest idea is the power of two choices.
 
-```bash [Two Choices](https://www.eecs.harvard.edu/~michaelm/postscripts/mythesis.pdf)
+:::note
+
+[Two Choices](https://www.eecs.harvard.edu/~michaelm/postscripts/mythesis.pdf)
+
 In a typical load balancer, some metrics are kept about how loaded a worker is based on how long it takes to serve a request, and then the load balancer uses those metrics to decide where to assign new requests. The metrics are stale though, being based on past requests, which leads to some non-optimal behavior. A better way to assign requests is just to pick two random workers and assign to the least loaded of the two. This leads to an exponential improvement in the maximum load.
-```
+
+:::
 
 Sparrow modifies two-choices slightly, and also introduces the idea of Late-Binding. In many schedulers, each worker maintains a queue and the scheduler tries to assign work to the worker with the shortest queue. The problem with this, and one of the core reasons it doesn't give good performance on our workloads, is that queue length is not a good indicator of how long a task will take. Late-binding solves this by enqueuing a task on multiple workers, and then the first worker to get to the task takes it. This effectively avoids the problems of huge single tasks blocking other work.
 
