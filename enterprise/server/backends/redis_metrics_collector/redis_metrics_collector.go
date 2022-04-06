@@ -75,6 +75,28 @@ func (c *collector) SetAdd(ctx context.Context, key string, members ...string) e
 	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
 }
 
+func (c *collector) SetMembers(ctx context.Context, key string) ([]string, error) {
+	// TODO: convert redis.Nil to empty map?
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+func (c *collector) HashSet(ctx context.Context, key, field string, value interface{}) error {
+	return c.rbuf.HSet(ctx, key, field, value)
+}
+
+func (c *collector) HashGetAll(ctx context.Context, key string) (map[string]string, error) {
+	// TODO: convert redis.Nil to empty map?
+	return c.rdb.HGetAll(ctx, key).Result()
+}
+
+func (c *collector) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	return c.rbuf.Set(ctx, key, value, expiration)
+}
+
+func (c *collector) Get(ctx context.Context, key string) (string, error) {
+	return c.rdb.Get(ctx, key).Result()
+}
+
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	h, err := c.rdb.HGetAll(ctx, key).Result()
 	if err != nil {

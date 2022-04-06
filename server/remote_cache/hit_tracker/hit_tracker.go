@@ -2,6 +2,7 @@ package hit_tracker
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"regexp"
 	"sort"
@@ -10,17 +11,27 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	guuid "github.com/google/uuid"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
-// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
-var actionRegexp = regexp.MustCompile("^(?P<action_mnemonic>[[:alnum:]]*)\\((?P<target_id>.+)\\)/(?P<action_id>[[:alnum:]]+)$")
+var (
+	// Example: "GoLink(//merger:merger_test)/16f1152b7b260f690ea06f8b938a1b60712b5ee41a1c125ecad8ed9416481fbb"
+	actionRegexp = regexp.MustCompile("^(?P<action_mnemonic>[[:alnum:]]*)\\((?P<target_id>.+)\\)/(?P<action_id>[[:alnum:]]+)$")
+
+	detailedStatsEnabled = flag.Bool("cache.detailed_stats_enabled", false, "Whether to enable detailed stats recording for all cache requests.")
+)
 
 type CacheMode int
 type counterType int
@@ -55,6 +66,10 @@ const (
 	// New counter types go here!
 )
 
+func DetailedStatsEnabled() bool {
+	return *detailedStatsEnabled
+}
+
 func cacheTypePrefix(actionCache bool, name string) string {
 	if actionCache {
 		return "action-cache-" + name
@@ -73,6 +88,18 @@ func counterKey(iid string) string {
 // be accounted.
 func targetMissesKey(iid string) string {
 	return "hit_tracker/" + iid + "/misses"
+}
+
+// resultIDsKey returns a redis key that stores a set of IDs for all cache
+// results associated with the invocation.
+func resultIDsKey(iid string) string {
+	return "hit_tracker/" + iid + "/result_ids"
+}
+
+// resultKey returns a redis key that stores a serialized ScoreCard Result
+// for a particular result ID.
+func resultKey(resultID string) string {
+	return "hit_tracker/result/" + resultID
 }
 
 func counterField(actionCache bool, ct counterType) string {
@@ -158,6 +185,8 @@ func makeTargetField(actionMnemonic, targetID, actionID string) string {
 //   log.Printf("Error counting cache miss.")
 // }
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
+	start := time.Now()
+
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: missLabel,
@@ -168,7 +197,11 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Miss), 1); err != nil {
 		return err
 	}
-	if h.actionCache {
+	if *detailedStatsEnabled {
+		if err := h.recordDetailedStats(d, Miss, start, 0); err != nil {
+			return err
+		}
+	} else if h.actionCache {
 		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
 			return err
 		}
@@ -177,6 +210,8 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 }
 
 func (h *HitTracker) TrackEmptyHit() error {
+	start := time.Now()
+
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
 		metrics.CacheEventTypeLabel: hitLabel,
@@ -187,7 +222,64 @@ func (h *HitTracker) TrackEmptyHit() error {
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(Hit), 1); err != nil {
 		return err
 	}
+	if *detailedStatsEnabled {
+		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
+		if err := h.recordDetailedStats(emptyDigest, Miss, start, 0); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, startTime time.Time, duration time.Duration) error {
+	rid, err := guuid.NewRandom()
+	if err != nil {
+		return err
+	}
+
+	if err := h.c.SetAdd(h.ctx, resultIDsKey(h.iid), rid.String()); err != nil {
+		return err
+	}
+
+	// TODO(bduffany): Use protos instead of counterType so we can avoid this
+	// translation
+	cacheType := capb.CacheType_CAS
+	if h.actionCache {
+		cacheType = capb.CacheType_AC
+	}
+	requestType := capb.RequestType_READ
+	if status == Upload {
+		requestType = capb.RequestType_WRITE
+	}
+	// TODO(bduffany): Set response code explicitly
+	statusCode := codes.OK
+	if status == Miss {
+		statusCode = codes.NotFound
+	}
+	startTimeProto, err := ptypes.TimestampProto(startTime)
+	if err != nil {
+		return err
+	}
+	durationProto := ptypes.DurationProto(duration)
+
+	key := resultKey(rid.String())
+	result := &capb.ScoreCard_Result{
+		ActionMnemonic: h.requestMetadata.ActionMnemonic,
+		TargetId:       h.requestMetadata.TargetId,
+		ActionId:       h.requestMetadata.ActionId,
+		CacheType:      cacheType,
+		RequestType:    requestType,
+		Digest:         d,
+		Status:         &statuspb.Status{Code: int32(statusCode)},
+		StartTime:      startTimeProto,
+		Duration:       durationProto,
+		// TODO(bduffany): Compressed, CompressedSizeBytes, Committed
+	}
+	b, err := proto.Marshal(result)
+	if err != nil {
+		return err
+	}
+	return h.c.Set(h.ctx, key, b, 0)
 }
 
 func cacheEventTypeLabel(c counterType) string {
@@ -227,6 +319,8 @@ type transferTimer struct {
 }
 
 func (t *transferTimer) Close() error {
+	// randDelay := rand.Intn(5)
+	// time.Sleep(200*time.Microsecond*time.Duration(t.d.SizeBytes) + time.Duration(randDelay)*time.Millisecond) // DO NOT SUBMIT
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -260,7 +354,11 @@ func (t *transferTimer) Close() error {
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
 		return err
 	}
-	if h.actionCache && t.actionCounter == Miss {
+	if *detailedStatsEnabled {
+		if err := h.recordDetailedStats(t.d, t.actionCounter, t.start, dur); err != nil {
+			return err
+		}
+	} else if h.actionCache && t.actionCounter == Miss {
 		if err := h.c.IncrementCount(h.ctx, h.targetMissesKey(), h.targetField(), 1); err != nil {
 			return err
 		}
@@ -338,6 +436,10 @@ func parseTargetField(f string) (string, string, string) {
 }
 
 func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.ScoreCard {
+	if *detailedStatsEnabled {
+		return readResults(ctx, env, iid)
+	}
+
 	c := env.GetMetricsCollector()
 	if c == nil || iid == "" {
 		return nil
@@ -376,6 +478,38 @@ func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.Score
 			ActionId:       actionID,
 		})
 	}
+	return sc
+}
+
+func readResults(ctx context.Context, env environment.Env, iid string) *capb.ScoreCard {
+	c := env.GetMetricsCollector()
+	if c == nil || iid == "" {
+		return nil
+	}
+	sc := &capb.ScoreCard{}
+
+	resultIDs, err := c.SetMembers(ctx, resultIDsKey(iid))
+	if err != nil {
+		log.Warningf("Failed to read detailed scorecard: %s", err)
+		return sc
+	}
+	sc.Results = make([]*capb.ScoreCard_Result, 0, len(resultIDs))
+	for _, resultID := range resultIDs {
+		// Read proto from redis
+		// TODO: parallelize and/or pipeline this
+		serializedResult, err := c.Get(ctx, resultKey(resultID))
+		if err != nil {
+			log.Warning(err.Error())
+			continue
+		}
+		r := &capb.ScoreCard_Result{}
+		if err := proto.Unmarshal([]byte(serializedResult), r); err != nil {
+			log.Warning(err.Error())
+			continue
+		}
+		sc.Results = append(sc.Results, r)
+	}
+
 	return sc
 }
 

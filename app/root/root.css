@@ -1295,6 +1295,9 @@ code .comment {
 .scorecard-action-id {
   display: block;
   margin-top: 4px;
+}
+
+.scorecard-action-id .digest-component {
   font-weight: 600;
   text-decoration: underline;
 }

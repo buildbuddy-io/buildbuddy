@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -66,6 +68,9 @@ const (
 
 	// Default number of actions shown by bazel
 	defaultActionsShown = 8
+
+	// How many results to return at a time for the cache scorecard.
+	scoreCardPageSize = 100
 )
 
 var (
@@ -222,7 +227,7 @@ func writeScoreCard(ctx context.Context, env environment.Env, invocationID strin
 	return err
 }
 
-func readScoreCard(ctx context.Context, env environment.Env, invocationID string) (*capb.ScoreCard, error) {
+func readScoreCard(ctx context.Context, env environment.Env, invocationID string, pageToken *capb.GetCacheScoreCardRequest_PageToken) (*capb.ScoreCard, error) {
 	blobStore := env.GetBlobstore()
 	buf, err := blobStore.ReadBlob(ctx, scoreCardBlobName(invocationID))
 	if err != nil {
@@ -232,7 +237,60 @@ func readScoreCard(ctx context.Context, env environment.Env, invocationID string
 	if err := proto.Unmarshal(buf, sc); err != nil {
 		return nil, err
 	}
+	// TODO: store these sorted so we don't need to sort here
+	sortScoreCardResults(sc.Results)
+	// TODO: base this on a bit in the invocation table, not the current flag setting (?)
+	if hit_tracker.DetailedStatsEnabled() {
+		var start, end int
+		if pageToken != nil {
+			start = int(pageToken.Index)
+		} else {
+			start = 0
+		}
+		end = start + scoreCardPageSize
+		if end > len(sc.Results) {
+			end = len(sc.Results)
+		}
+		sc.Results = sc.Results[start:end]
+		// TODO: return next PageToken
+	}
 	return sc, nil
+}
+
+func isTimestampLess(a, b *timestamppb.Timestamp) bool {
+	if a.Seconds != b.Seconds {
+		return a.Seconds < b.Seconds
+	}
+	return a.Nanos < b.Nanos
+}
+
+func sortScoreCardResults(results []*capb.ScoreCard_Result) {
+	minStartTimeByActionID := map[string]*timestamppb.Timestamp{}
+	for _, result := range results {
+		existing, ok := minStartTimeByActionID[result.ActionId]
+		if !ok {
+			minStartTimeByActionID[result.ActionId] = result.StartTime
+			continue
+		}
+		if isTimestampLess(result.StartTime, existing) {
+			minStartTimeByActionID[result.ActionId] = result.StartTime
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		// Sort first by the min start time of the parent action
+		msti := minStartTimeByActionID[results[i].ActionId]
+		mstj := minStartTimeByActionID[results[j].ActionId]
+		if isTimestampLess(msti, mstj) {
+			return true
+		}
+		// If two different actions have the same start time, break the tie using
+		// their action ID, so that results stay grouped by action ID.
+		if !isTimestampLess(mstj, msti) && results[i].ActionId != results[j].ActionId {
+			return results[i].ActionId < results[j].ActionId
+		}
+		// Within a single action, sort by start time.
+		return isTimestampLess(results[i].StartTime, results[j].StartTime)
+	})
 }
 
 func (r *statsRecorder) Start() {
@@ -970,7 +1028,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
 			scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
 		} else {
-			if sc, err := readScoreCard(ctx, env, iid); err == nil {
+			if sc, err := readScoreCard(ctx, env, iid, nil /*=pageToken*/); err == nil {
 				scoreCard = sc
 			}
 		}

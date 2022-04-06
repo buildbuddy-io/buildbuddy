@@ -43,7 +43,14 @@ message GetCacheScoreCardRequest {
   // The invocation ID for which to look up cache stats.
   string invocation_id = 2;
 
-  // TODO(bduffany): Add paging
+  // Paging info. Not intended for direct client usage.
+  message PageToken {
+    int64 index = 1;
+  }
+
+  // A string representation of the page token, which must be a value returned
+  // by a previous response.
+  string page_token = 3;
 }
 
 message GetCacheScoreCardResponse {
@@ -51,6 +58,9 @@ message GetCacheScoreCardResponse {
 
   // The cache scorecard containing detailed per-request stats.
   ScoreCard scorecard = 2;
+
+  // A token used to fetch more results for the original request.
+  string page_token = 3;
 }
 
 // CacheType represents the type of cache being written to.

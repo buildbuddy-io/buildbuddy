@@ -593,9 +593,9 @@ ansi-escapes@^4.3.0:
     type-fest "^0.11.0"
 
 ansi-regex@^4.1.0:
-  version "4.1.1"
-  resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-4.1.1.tgz#164daac87ab2d6f6db3a29875e2d1766582dabed"
-  integrity sha512-ILlv4k/3f6vfQ4OoP2AGvirOktlQ98ZEL1k9FaQjxa3L1abBgbuTDAdPOpvbGncC0BTVQrl+OM8xZGK6tWXt7g==
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-4.1.0.tgz#8b9f8f08cf1acb843756a839ca8c7e3168c51997"
+  integrity sha512-1apePfXM1UOSqw0o9IiFAovVz9M5S1Dg+4TrDwfMewQ6p/rmMueb7tWZjQ1rx4Loy1ArBggoqGpfqqdI4rondg==
 
 ansi-regex@^5.0.0:
   version "5.0.0"
@@ -1690,10 +1690,10 @@ lru-cache@^6.0.0:
   dependencies:
     yallist "^4.0.0"
 
-lucide-react@^0.16.19:
-  version "0.16.19"
-  resolved "https://registry.yarnpkg.com/lucide-react/-/lucide-react-0.16.19.tgz#c1a3ff65bbc562ccc02640657e12f0d4e385749a"
-  integrity sha512-x4PFAAxLjvrCisOdigDhF6Zh5OPNaLRalxkdvVoKI4xmEN7U7EoeYSZlZPTk8Cyp/RR048FRu8uyXu3yqAKNQA==
+lucide-react@^0.16.29:
+  version "0.16.29"
+  resolved "https://registry.yarnpkg.com/lucide-react/-/lucide-react-0.16.29.tgz#019b936a0b232bbb1869069927da65eec260f45a"
+  integrity sha512-9lWoXEmwpxNdA5ZMeHBz/EKfu9GLuR+ia4FtxFK0BFPDXlmJqejjrhtp0HBQELavyHzlCO7L2ppibV1m9dDxbg==
 
 magic-string@^0.25.2:
   version "0.25.7"
@@ -1760,10 +1760,10 @@ minimatch@^3.0.4:
   dependencies:
     brace-expansion "^1.1.7"
 
-minimist@^1.2.5, minimist@^1.2.6:
-  version "1.2.6"
-  resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.6.tgz#8637a5b759ea0d6e98702cfb3a9283323c93af44"
-  integrity sha512-Jsjnk4bw3YJqYzbdyBiNsPWHPfO++UGG749Cxs6peCu5Xg4nrena6OVxOYxrQTqww0Jmwt+Ref8rggumkTLz9Q==
+minimist@^1.2.3, minimist@^1.2.5:
+  version "1.2.5"
+  resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.5.tgz#67d66014b66a6a8aaa0c083c5fd58df4e4e97602"
+  integrity sha512-FM9nNUYrRBAELZQT3xeZQ7fmMOBg6nWNmJKTcgsJeaLstP/UODVpGsr5OhXhhXg6f+qtJ8uiZ+PUxkDWcgIXLw==
 
 mitt@^1.1.2:
   version "1.2.0"

@@ -228,6 +228,11 @@ func (r *redlock) Unlock(ctx context.Context) error {
 	return err
 }
 
+type valueExpiration struct {
+	value      interface{}
+	expiration time.Duration
+}
+
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
 // periodically flushing the aggregate results in batch. This is useful for
 // reducing the load placed on Redis in cases where a high volume of commands
@@ -256,10 +261,14 @@ type CommandBuffer struct {
 	stopFlush chan struct{}
 
 	mu sync.Mutex // protects all fields below
+	// Buffer for SET commands.
+	set map[string]valueExpiration
 	// Buffer for INCRBY commands.
 	incr map[string]int64
 	// Buffer for HINCRBY commands.
 	hincr map[string]map[string]int64
+	// Buffer for HSET commands.
+	hset map[string]map[string]interface{}
 	// Buffer for SADD commands.
 	sadd map[string]map[interface{}]struct{}
 	// Buffer for EXPIRE commands.
@@ -276,8 +285,10 @@ func NewCommandBuffer(rdb redis.UniversalClient) *CommandBuffer {
 }
 
 func (c *CommandBuffer) init() {
+	c.set = map[string]valueExpiration{}
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
+	c.hset = map[string]map[string]interface{}{}
 	c.sadd = map[string]map[interface{}]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
@@ -322,6 +333,51 @@ func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, incremen
 		c.hincr[key] = h
 	}
 	h[field] += increment
+	return nil
+}
+
+// HSet adds an HSET operation to the buffer.
+//
+// For simplicity, we don't try to reconcile dependencies between buffered
+// HINCRBY or HSET commands. Instead, any buffered HSET operations are issued
+// after any buffered HINCRBY operations with the same key and field name when
+// flushing. So, given the following sequence of buffered commands:
+//
+//     HSET foo bar 1
+//     HINCRBY foo bar 10
+//
+// The hash field foo["bar"] will contain the value 1 after the flush, since the
+// HSET is issued *after* the HINCRBY.
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to the
+// buffer and the context is ignored.
+func (c *CommandBuffer) HSet(ctx context.Context, key, field string, value interface{}) error {
+	c.mu.Lock()
+	if c.shouldFlushSynchronously() {
+		c.mu.Unlock()
+		return c.rdb.HSet(ctx, key, field, value).Err()
+	}
+	defer c.mu.Unlock()
+
+	h, ok := c.hset[key]
+	if !ok {
+		h = map[string]interface{}{}
+		c.hset[key] = h
+	}
+	h[field] = value
+	return nil
+}
+
+func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	c.mu.Lock()
+	if c.shouldFlushSynchronously() {
+		c.mu.Unlock()
+		return c.rdb.Set(ctx, key, value, expiration).Err()
+	}
+	defer c.mu.Unlock()
+
+	c.set[key] = valueExpiration{value, expiration}
 	return nil
 }
 
@@ -387,8 +443,10 @@ func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Du
 // is dropped from the buffer.
 func (c *CommandBuffer) Flush(ctx context.Context) error {
 	c.mu.Lock()
+	set := c.set
 	incr := c.incr
 	hincr := c.hincr
+	hset := c.hset
 	sadd := c.sadd
 	expire := c.expire
 	// Set all fields to fresh values so the current ones can be flushed without
@@ -396,6 +454,11 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	c.init()
 	c.mu.Unlock()
 
+	for key, ve := range set {
+		if _, err := c.rdb.Set(ctx, key, ve.value, ve.expiration).Result(); err != nil {
+			return err
+		}
+	}
 	for key, increment := range incr {
 		if _, err := c.rdb.IncrBy(ctx, key, increment).Result(); err != nil {
 			return err
@@ -404,6 +467,13 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	for key, h := range hincr {
 		for field, increment := range h {
 			if _, err := c.rdb.HIncrBy(ctx, key, field, increment).Result(); err != nil {
+				return err
+			}
+		}
+	}
+	for key, h := range hset {
+		for field, value := range h {
+			if _, err := c.rdb.HSet(ctx, key, field, value).Result(); err != nil {
 				return err
 			}
 		}

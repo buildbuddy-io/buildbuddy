@@ -38,6 +38,7 @@ go_library(
         "@com_github_google_shlex//:shlex",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
     ],
 )
