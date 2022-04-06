@@ -677,7 +677,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.workflowsPoolName(os)},
+				{Name: "Pool", Value: ws.workflowsPoolName()},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: "workload-isolation-type", Value: isolationType},
@@ -708,11 +708,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func (ws *workflowService) workflowsPoolName(os string) string {
-	// When using firecracker, don't use the workflows pool.
-	if *enableFirecracker && (os == "" || os == platform.LinuxOperatingSystemName) {
-		return platform.DefaultPoolValue
-	}
+func (ws *workflowService) workflowsPoolName() string {
 	cfg := ws.env.GetConfigurator().GetRemoteExecutionConfig()
 	if cfg != nil && cfg.WorkflowsPoolName != "" {
 		return cfg.WorkflowsPoolName
