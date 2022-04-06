@@ -274,6 +274,7 @@ type RemoteExecutionConfig struct {
 	WorkflowsDefaultImage             string             `yaml:"workflows_default_image" usage:"The default docker image to use for running workflows."`
 	WorkflowsCIRunnerDebug            bool               `yaml:"workflows_ci_runner_debug" usage:"Whether to run the CI runner in debug mode."`
 	WorkflowsCIRunnerBazelCommand     string             `yaml:"workflows_ci_runner_bazel_command" usage:"Bazel command to be used by the CI runner."`
+	WorkflowsEnableFirecracker        bool               `yaml:"workflows_enable_firecracker" usage:"Whether to enable firecracker for Linux workflow actions."`
 	RedisTarget                       string             `yaml:"redis_target" usage:"A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified."`
 	ShardedRedis                      ShardedRedisConfig `yaml:"sharded_redis" usage:"Optional configuration for sharding execution data across multiple Redis instances. Mutually exclusive with the redis_target option."`
 	SharedExecutorPoolGroupID         string             `yaml:"shared_executor_pool_group_id" usage:"Group ID that owns the shared executor pool."`
