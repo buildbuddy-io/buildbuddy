@@ -2,6 +2,7 @@ package scheduler_server
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -30,10 +30,17 @@ import (
 	"google.golang.org/grpc/peer"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
+	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+)
+
+var (
+	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
+	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
+	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
 )
 
 const (
@@ -716,21 +723,6 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
 
-	enableUserOwnedExecutors := false
-	requireExecutorAuthorization := false
-	forceUserOwnedDarwinExecutors := false
-	enableRedisAvailabilityMonitoring := false
-	if remote_execution_config.RemoteExecutionEnabled() {
-		enableUserOwnedExecutors = rbeutil.UserOwnedExecutorsEnabled()
-		requireExecutorAuthorization = rbeutil.RequireExecutorAuthorization()
-		forceUserOwnedDarwinExecutors = rbeutil.ForceUserOwnedDarwinExecutors()
-		enableRedisAvailabilityMonitoring = rbeutil.RedisAvailabilityMonitoringEnabled()
-	}
-
-	if options.RequireExecutorAuthorization {
-		requireExecutorAuthorization = true
-	}
-
 	shuttingDown := make(chan struct{})
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		close(shuttingDown)
@@ -760,10 +752,10 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		rdb:                               env.GetRemoteExecutionRedisClient(),
 		taskRouter:                        taskRouter,
 		shuttingDown:                      shuttingDown,
-		enableUserOwnedExecutors:          enableUserOwnedExecutors,
-		forceUserOwnedDarwinExecutors:     forceUserOwnedDarwinExecutors,
-		requireExecutorAuthorization:      requireExecutorAuthorization,
-		enableRedisAvailabilityMonitoring: enableRedisAvailabilityMonitoring,
+		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
+		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
+		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
+		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(s.ownHostPort, s)
@@ -771,9 +763,8 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 }
 
 func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string, useSelfHosted bool) (string, string, error) {
-	defaultPool := rbeutil.DefaultPoolName()
 	if !s.enableUserOwnedExecutors {
-		return "", defaultPool, nil
+		return "", *defaultPoolName, nil
 	}
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
@@ -784,7 +775,7 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 			if useSelfHosted {
 				return "", "", status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
-			return rbeutil.SharedExecutorPoolGroupID(), defaultPool, nil
+			return *sharedExecutorPoolGroupID, *defaultPoolName, nil
 		}
 		return "", "", err
 	}
@@ -797,7 +788,7 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 	if useSelfHosted {
 		return user.GetGroupID(), "", nil
 	}
-	return rbeutil.SharedExecutorPoolGroupID(), defaultPool, nil
+	return *sharedExecutorPoolGroupID, *defaultPoolName, nil
 }
 
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
@@ -1578,7 +1569,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 
 	userOwnedExecutorsEnabled := s.enableUserOwnedExecutors
 	// Don't report user owned executors as being enabled for the shared executor group ID (i.e. the BuildBuddy group)
-	if userOwnedExecutorsEnabled && groupID == rbeutil.SharedExecutorPoolGroupID() {
+	if userOwnedExecutorsEnabled && groupID == *sharedExecutorPoolGroupID {
 		userOwnedExecutorsEnabled = false
 	}
 
@@ -1598,7 +1589,7 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
 			IsDefault: !s.requireExecutorAuthorization ||
-				groupID == rbeutil.SharedExecutorPoolGroupID() ||
+				groupID == *sharedExecutorPoolGroupID ||
 				(s.enableUserOwnedExecutors &&
 					(useGroupOwnedExecutors || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
 		}

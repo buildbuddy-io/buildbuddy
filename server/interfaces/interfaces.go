@@ -468,6 +468,7 @@ type RemoteExecutionService interface {
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
 	MarkExecutionFailed(ctx context.Context, taskID string, reason error) error
 	Cancel(ctx context.Context, invocationID string) error
+	RedisAvailabilityMonitoringEnabled() bool
 }
 
 type FileCache interface {

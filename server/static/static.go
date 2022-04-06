@@ -22,7 +22,7 @@ import (
 	"github.com/golang/protobuf/jsonpb"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
+	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
 )
 
@@ -32,12 +32,14 @@ const (
 )
 
 var (
-	defaultToDenseMode    = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled     = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
-	userManagementEnabled = flag.Bool("app.user_management_enabled", false, "If set, the user management page will be enabled in the UI.")
-	globalFilterEnabled   = flag.Bool("app.global_filter_enabled", false, "If set, the global filter will be enabled in the UI.")
-	testGridV2Enabled     = flag.Bool("app.test_grid_v2_enabled", false, "Whether to enable test grid V2")
-	usageEnabled          = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
+	defaultToDenseMode        = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
+	codeEditorEnabled         = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
+	userManagementEnabled     = flag.Bool("app.user_management_enabled", false, "If set, the user management page will be enabled in the UI.")
+	globalFilterEnabled       = flag.Bool("app.global_filter_enabled", false, "If set, the global filter will be enabled in the UI.")
+	testGridV2Enabled         = flag.Bool("app.test_grid_v2_enabled", false, "Whether to enable test grid V2")
+	usageEnabled              = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
+	enableWorkflows           = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
+	enableExecutorKeyCreation = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -143,17 +145,6 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		}
 	}
 
-	userOwnedExecutorsEnabled := false
-	executorKeyCreationEnabled := false
-	workflowsEnabled := false
-	forceUserOwnedDarwinExecutors := false
-	if remote_execution_config.RemoteExecutionEnabled() {
-		userOwnedExecutorsEnabled = rbeutil.UserOwnedExecutorsEnabled()
-		executorKeyCreationEnabled = rbeutil.ExecutorKeyCreationEnabled()
-		workflowsEnabled = rbeutil.WorkflowsEnabled()
-		forceUserOwnedDarwinExecutors = rbeutil.ForceUserOwnedDarwinExecutors()
-	}
-
 	config := cfgpb.FrontendConfig{
 		Version:                       version,
 		ConfiguredIssuers:             issuers,
@@ -161,16 +152,16 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		GithubEnabled:                 github.Enabled(),
 		AnonymousUsageEnabled:         env.GetConfigurator().GetAnonymousUsageEnabled(),
 		TestDashboardEnabled:          target_tracker.TargetTrackingEnabled(),
-		UserOwnedExecutorsEnabled:     userOwnedExecutorsEnabled,
-		ExecutorKeyCreationEnabled:    executorKeyCreationEnabled,
-		WorkflowsEnabled:              workflowsEnabled,
+		UserOwnedExecutorsEnabled:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
+		ExecutorKeyCreationEnabled:    remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
+		WorkflowsEnabled:              remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
 		CodeEditorEnabled:             *codeEditorEnabled,
 		RemoteExecutionEnabled:        remote_execution_config.RemoteExecutionEnabled(),
 		SsoEnabled:                    ssoEnabled,
 		GlobalFilterEnabled:           *globalFilterEnabled,
 		UsageEnabled:                  *usageEnabled,
 		UserManagementEnabled:         *userManagementEnabled,
-		ForceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
+		ForceUserOwnedDarwinExecutors: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:             *testGridV2Enabled,
 		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
 	}
