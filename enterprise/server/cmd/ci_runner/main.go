@@ -52,6 +52,9 @@ const (
 
 	// Name of the dir into which the repo is cloned.
 	repoDirName = "repo-root"
+	// Name of the bazel output base dir. This is written under the workspace
+	// so that it can be cleaned up when the workspace is cleaned up.
+	outputBaseDirName = "output-base"
 
 	defaultGitRemoteName = "origin"
 	forkGitRemoteName    = "fork"
@@ -485,8 +488,12 @@ func run() error {
 		if err := os.Chdir(repoDirName); err != nil {
 			return err
 		}
-		printCommandLine(os.Stderr, *bazelCommand, "shutdown")
-		if err := runCommand(ctx, *bazelCommand, []string{"shutdown"}, nil, os.Stderr); err != nil {
+		args, err := bazelArgs("shutdown")
+		if err != nil {
+			return err
+		}
+		printCommandLine(os.Stderr, *bazelCommand, args...)
+		if err := runCommand(ctx, *bazelCommand, args, nil, os.Stderr); err != nil {
 			return err
 		}
 		log.Info("Shutdown complete.")
@@ -822,6 +829,7 @@ func bazelArgs(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	startupFlags = append(startupFlags, "--output_base="+filepath.Join("..", outputBaseDirName))
 	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join("..", buildbuddyBazelrcPath))
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
 	// than our --bazelrc, which is undesired. So instead, explicitly add the
