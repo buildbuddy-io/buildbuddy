@@ -7,7 +7,7 @@ author_title: Co-founder @ BuildBuddy
 date: 2022-04-07:08:00:00
 author_url: https://www.linkedin.com/in/tyler-williams-80480519b/
 author_image_url: https://avatars.githubusercontent.com/u/141737?v=4
-image: /img/distributed_scheduling.png
+image: /img/distributed-scheduling.png
 tags: [engineering, go, sparrow, scheduler]
 ---
 
