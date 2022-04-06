@@ -16,7 +16,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -57,7 +56,11 @@ const (
 )
 
 var (
-	enableFirecracker = flag.Bool("remote_execution.workflows_enable_firecracker", false, "Whether to enable firecracker for Linux workflow actions.")
+	enableFirecracker             = flag.Bool("remote_execution.workflows_enable_firecracker", false, "Whether to enable firecracker for Linux workflow actions.")
+	workflowsPoolName             = flag.String("remote_execution.workflows_pool_name", "", "The executor pool to use for workflow actions. Defaults to the default executor pool if not specified.")
+	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", "", "The default docker image to use for running workflows.")
+	workflowsCIRunnerDebug        = flag.Bool("remote_execution.workflows_ci_runner_debug", false, "Whether to run the CI runner in debug mode.")
+	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -713,31 +716,28 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 }
 
 func (ws *workflowService) workflowsPoolName() string {
-	if remote_execution_config.RemoteExecutionEnabled() && rbeutil.WorkflowsPoolName() != "" {
-		return rbeutil.WorkflowsPoolName()
+	if remote_execution_config.RemoteExecutionEnabled() && *workflowsPoolName != "" {
+		return *workflowsPoolName
 	}
 	return platform.DefaultPoolValue
 }
 
 func (ws *workflowService) workflowsImage() string {
-	if remote_execution_config.RemoteExecutionEnabled() && rbeutil.WorkflowsDefaultImage() != "" {
-		return rbeutil.WorkflowsDefaultImage()
+	if remote_execution_config.RemoteExecutionEnabled() && *workflowsDefaultImage != "" {
+		return *workflowsDefaultImage
 	}
 	return workflowsImage
 }
 
 func (ws *workflowService) ciRunnerDebugMode() bool {
-	if !remote_execution_config.RemoteExecutionEnabled() {
-		return false
-	}
-	return rbeutil.WorkflowsCIRunnerDebug()
+	return remote_execution_config.RemoteExecutionEnabled() && *workflowsCIRunnerDebug
 }
 
 func (ws *workflowService) ciRunnerBazelCommand() string {
 	if !remote_execution_config.RemoteExecutionEnabled() {
 		return ""
 	}
-	return rbeutil.WorkflowsCIRunnerBazelCommand()
+	return *workflowsCIRunnerBazelCommand
 }
 
 func runnerBinaryFile() (*os.File, error) {

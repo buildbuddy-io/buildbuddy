@@ -3,6 +3,7 @@ package execution_server
 import (
 	"context"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -43,6 +43,8 @@ import (
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	gstatus "google.golang.org/grpc/status"
 )
+
+var enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 
 func timestampToMicros(tsPb *tspb.Timestamp) int64 {
 	ts, _ := ptypes.Timestamp(tsPb)
@@ -127,15 +129,16 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if env.GetRemoteExecutionRedisClient() == nil || env.GetRemoteExecutionRedisPubSubClient() == nil {
 		return nil, status.FailedPreconditionErrorf("Redis is required for remote execution")
 	}
-	es := &ExecutionServer{
-		env:          env,
-		cache:        cache,
-		streamPubSub: pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
-	}
-	if remote_execution_config.RemoteExecutionEnabled() {
-		es.enableRedisAvailabilityMonitoring = rbeutil.RedisAvailabilityMonitoringEnabled()
-	}
-	return es, nil
+	return &ExecutionServer{
+		env:                               env,
+		cache:                             cache,
+		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
+		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
+	}, nil
+}
+
+func (s *ExecutionServer) RedisAvailabilityMonitoringEnabled() bool {
+	return s.enableRedisAvailabilityMonitoring
 }
 
 func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsub.Channel {

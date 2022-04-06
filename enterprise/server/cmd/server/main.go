@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -48,6 +47,7 @@ import (
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
+	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
@@ -202,10 +202,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	if err := rbeutil.RegisterRemoteExecutionClient(realEnv); err != nil {
+	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := rbeutil.RegisterRemoteExecutionRedisPubSubClient(realEnv); err != nil {
+	if err := remote_execution_redis_client.RegisterRemoteExecutionRedisPubSubClient(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -230,7 +230,7 @@ func main() {
 	if err := scheduler_server.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := rbeutil.RegisterRemoteExecutionClient(realEnv); err != nil {
+	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
