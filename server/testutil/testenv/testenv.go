@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 	"path/filepath"
+	"sync"
 	"testing"
 	"text/template"
 
@@ -30,15 +31,9 @@ import (
 
 var (
 	useMySQL = flag.Bool("testenv.use_mysql", false, "Whether to use MySQL instead of sqlite for tests.")
-)
 
-func init() {
-	// N.B. We do this here to avoid a data race condition that happens when
-	// multiple tests Configure the logger simultaneously.
-	*log.LogLevel = "debug"
-	*log.IncludeShortFileName = true
-	log.Configure()
-}
+	configureLoggerOnce sync.Once
+)
 
 type ConfigTemplateParams struct {
 	TestRootDir string
@@ -137,6 +132,13 @@ func writeTmpConfigFile(testRootDir string) (string, error) {
 var currentConfigurator *config.Configurator
 
 func GetTestEnv(t testing.TB) *TestEnv {
+
+	configureLoggerOnce.Do(func() {
+		*log.LogLevel = "debug"
+		*log.IncludeShortFileName = true
+		log.Configure()
+	})
+
 	testRootDir := testfs.MakeTempDir(t)
 	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
 	if err != nil {
