@@ -138,19 +138,19 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 	assert.Empty(t, getCommandLineOptions(event), "--default_override options should be removed")
 }
 
-func TestRedactMetadata_OptionsParsed_StripsURLSecrets(t *testing.T) {
+func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
-		CmdLine:         []string{"213wZJyTUyhXkj381312@foo", "--flag=@repo//package"},
-		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit", "--flag=@repo//package"},
+		CmdLine:         []string{"213wZJyTUyhXkj381312@foo", "--flag=@repo//package", "--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET"},
+		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit", "--flag=@repo//package", "--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT"},
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
 
-	assert.Equal(t, []string{"foo", "--flag=@repo//package"}, optionsParsed.CmdLine)
-	assert.Equal(t, []string{"explicit", "--flag=@repo//package"}, optionsParsed.ExplicitCmdLine)
+	assert.Equal(t, []string{"foo", "--flag=@repo//package", "--remote_header=<REDACTED>"}, optionsParsed.CmdLine)
+	assert.Equal(t, []string{"explicit", "--flag=@repo//package", "--remote_header=<REDACTED>"}, optionsParsed.ExplicitCmdLine)
 }
 
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
