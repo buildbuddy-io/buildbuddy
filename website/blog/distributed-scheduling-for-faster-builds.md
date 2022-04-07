@@ -15,6 +15,8 @@ Let's start with "what's BuildBuddy" for the kids in back. In short, we provide 
 
 Obviously to do all this, we have to handle some thorny engineering challenges, one of which is scheduling remote executions. For that, we have a scheduler. The scheduler just matches actions (basically jobs) received by our API to remote workers that actually do the work. If you think of a full build of something like Tensorflow as a 10 course meal, a single action is like a recipe for a tiny part of that meal. To make it easier to visualize, here's a real action from building BuildBuddy:
 
+<!-- truncate -->
+
 ```bash
 # this action just uses gcc to compile zlib/infback.c into an object file, zlib/infback.o
 /usr/bin/gcc -U_FORTIFY_SOURCE -fstack-protector -Wall -Wunused-but-set-parameter \
@@ -73,4 +75,4 @@ So with this paper as a basis, I went and implemented Sparrow in Go, which was n
 
 We still use this scheduler in production today, and it's working well for us. We've made some modifications to the way requests are routed, but fundamentally this algorithm is the same one in the paper, the same one powering all remote execution on BuildBuddy today.
 
-If you want to learn more about BuildBuddy or try it, check out [docs.buildbuddy.io](https://docs.buildbuddy.io). And if you enjoy this kind of problem solving and engineering work, [we’re hiring](https://www.buildbuddy.io/careers/)!
+If you want to learn more about BuildBuddy or try it, check out [our docs](https://www.buildbuddy.io/docs/introduction/). And if you enjoy this kind of problem solving and engineering work, [we’re hiring](https://www.buildbuddy.io/careers/)!
