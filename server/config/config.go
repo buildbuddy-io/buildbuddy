@@ -782,13 +782,6 @@ func (c *Configurator) GetDisableRefreshToken() bool {
 	return c.gc.Auth.DisableRefreshToken
 }
 
-func (c *Configurator) GetSSLConfig() *SSLConfig {
-	if c.gc.SSL.EnableSSL {
-		return &c.gc.SSL
-	}
-	return nil
-}
-
 func (c *Configurator) GetRemoteExecutionConfig() *RemoteExecutionConfig {
 	if c.gc.RemoteExecution.EnableRemoteExec {
 		return &c.gc.RemoteExecution
