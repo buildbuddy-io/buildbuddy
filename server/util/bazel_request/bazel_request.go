@@ -3,6 +3,7 @@ package bazel_request
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/metadata"
 
@@ -30,4 +31,15 @@ func GetInvocationID(ctx context.Context) string {
 		iid = rmd.GetToolInvocationId()
 	}
 	return iid
+}
+
+func WithRequestMetadata(ctx context.Context, md *repb.RequestMetadata) (context.Context, error) {
+	if rmd := GetRequestMetadata(ctx); rmd != nil {
+		return nil, status.FailedPreconditionError("context already has request metadata")
+	}
+	mdBytes, err := proto.Marshal(md)
+	if err != nil {
+		return nil, err
+	}
+	return metadata.AppendToOutgoingContext(ctx, RequestMetadataKey, string(mdBytes)), nil
 }
