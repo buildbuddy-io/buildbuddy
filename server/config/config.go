@@ -832,14 +832,3 @@ func (c *Configurator) GetAPIConfig() *APIConfig {
 	}
 	return nil
 }
-
-func (c *Configurator) GetGithubConfig() *GithubConfig {
-	if c.gc.Github == (GithubConfig{}) {
-		return nil
-	}
-	ghc := c.gc.Github
-	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
-		ghc.ClientSecret = cs
-	}
-	return &ghc
-}
