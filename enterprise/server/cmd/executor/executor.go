@@ -56,7 +56,6 @@ var (
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
-	gRPCPort       = flag.Int("grpc_port", 1987, "The port to listen for gRPC traffic on")
 	serverType     = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 )
 

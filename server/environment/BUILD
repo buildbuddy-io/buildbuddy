@@ -13,5 +13,6 @@ go_library(
         "//server/interfaces",
         "@com_github_go_redis_redis_v8//:redis",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )

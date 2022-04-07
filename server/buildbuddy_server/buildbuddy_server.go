@@ -16,8 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
-	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -55,10 +55,19 @@ const (
 
 type BuildBuddyServer struct {
 	env        environment.Env
-	sslService *ssl.SSLService
+	sslService interfaces.SSLService
 }
 
-func NewBuildBuddyServer(env environment.Env, sslService *ssl.SSLService) (*BuildBuddyServer, error) {
+func Register(env environment.Env) error {
+	buildBuddyServer, err := NewBuildBuddyServer(env, env.GetSSLService())
+	if err != nil {
+		return status.InternalErrorf("Error initializing BuildBuddyServer: %s", err)
+	}
+	env.SetBuildBuddyServer(buildBuddyServer)
+	return nil
+}
+
+func NewBuildBuddyServer(env environment.Env, sslService interfaces.SSLService) (*BuildBuddyServer, error) {
 	return &BuildBuddyServer{
 		env:        env,
 		sslService: sslService,

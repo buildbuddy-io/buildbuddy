@@ -74,6 +74,15 @@ type SSLService struct {
 	AuthorityKey    *rsa.PrivateKey
 }
 
+func Register(env environment.Env) error {
+	sslService, err := NewSSLService(env)
+	if err != nil {
+		return status.InternalErrorf("Error configuring SSL: %s", err)
+	}
+	env.SetSSLService(sslService)
+	return nil
+}
+
 func NewSSLService(env environment.Env) (*SSLService, error) {
 	sslService := &SSLService{
 		env: env,
