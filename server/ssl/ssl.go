@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"flag"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -19,10 +20,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc/credentials"
+)
+
+var (
+	certFile         = flag.String("ssl.cert_file", "", "Path to a PEM encoded certificate file to use for TLS if not using ACME.")
+	keyFile          = flag.String("ssl.key_file", "", "Path to a PEM encoded key file to use for TLS if not using ACME.")
+	clientCACertFile = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
+	clientCAKeyFile  = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
+	hostWhitelist    = flagutil.StringSlice("ssl.host_whitelist", []string{}, "Cloud-Only")
+	enableSSL        = flag.Bool("ssl.enable_ssl", false, "Whether or not to enable SSL/TLS on gRPC connections (gRPCS).")
+	useACME          = flag.Bool("ssl.use_acme", false, "Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set.")
+	defaultHost      = flag.String("ssl.default_host", "", "Host name to use for ACME generated cert if TLS request does not contain SNI.")
 )
 
 type CertCache struct {
@@ -81,9 +94,8 @@ func NewSSLService(env environment.Env) (*SSLService, error) {
 func (s *SSLService) populateTLSConfig() error {
 	clientCACertPool := x509.NewCertPool()
 
-	sslConf := s.env.GetConfigurator().GetSSLConfig()
-	if sslConf.ClientCACertFile != "" && sslConf.ClientCAKeyFile != "" {
-		cert, key, err := loadX509KeyPair(sslConf.ClientCACertFile, sslConf.ClientCAKeyFile)
+	if *clientCACertFile != "" && *clientCAKeyFile != "" {
+		cert, key, err := loadX509KeyPair(*clientCACertFile, *clientCAKeyFile)
 		if err != nil {
 			return err
 		}
@@ -138,8 +150,8 @@ func (s *SSLService) populateTLSConfig() error {
 		CipherSuites:             cipherSuites,
 	}
 
-	if sslConf.KeyFile != "" && sslConf.CertFile != "" {
-		certPair, err := tls.LoadX509KeyPair(sslConf.CertFile, sslConf.KeyFile)
+	if *keyFile != "" && *certFile != "" {
+		certPair, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 		if err != nil {
 			return err
 		}
@@ -147,14 +159,14 @@ func (s *SSLService) populateTLSConfig() error {
 		grpcTLSConfig.Certificates = []tls.Certificate{certPair}
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
-	} else if sslConf.UseACME {
+	} else if *useACME {
 		if build_buddy_url.String() == "" {
 			return status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
 		}
 		hosts := []string{build_buddy_url.WithPath("").Hostname()}
 
-		if sslConf.HostWhitelist != nil {
-			hosts = append(hosts, sslConf.HostWhitelist...)
+		if *hostWhitelist != nil {
+			hosts = append(hosts, *hostWhitelist...)
 		}
 
 		if cache_api_url.String() != "" {
@@ -168,7 +180,7 @@ func (s *SSLService) populateTLSConfig() error {
 		// Google LB frontend (GFE) doesn't send SNI to backend so we need to provide a default.
 		getCert := func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			if hello.ServerName == "" {
-				hello.ServerName = sslConf.DefaultHost
+				hello.ServerName = *defaultHost
 			}
 			return s.autocertManager.GetCertificate(hello)
 		}
@@ -191,8 +203,7 @@ func (s *SSLService) populateTLSConfig() error {
 }
 
 func (s *SSLService) IsEnabled() bool {
-	sslConf := s.env.GetConfigurator().GetSSLConfig()
-	return sslConf != nil && sslConf.EnableSSL
+	return *enableSSL
 }
 
 func (s *SSLService) IsCertGenerationEnabled() bool {
