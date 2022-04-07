@@ -68,7 +68,7 @@ type Store struct {
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 
-	metaRangeData string
+	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
 }
 
