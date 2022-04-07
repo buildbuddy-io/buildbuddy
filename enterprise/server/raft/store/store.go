@@ -158,7 +158,6 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		return
 	}
 
-	start := time.Now()
 	rangeID := rd.GetRangeId()
 	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.sender, s.liveness, rd))
 	rl, ok := rlIface.(*rangelease.Lease)
