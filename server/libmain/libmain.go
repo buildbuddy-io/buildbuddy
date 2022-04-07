@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -165,19 +164,13 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 	realEnv.SetBlobstore(bs)
 
-	hooks := make([]interfaces.Webhook, 0)
-	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
-		if sc.WebhookURL != "" {
-			hooks = append(hooks, slack.NewSlackWebhook(
-				sc.WebhookURL,
-				build_buddy_url.String(),
-			))
-		}
+	realEnv.SetWebhooks(make([]interfaces.Webhook, 0))
+	if err := slack.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-	if configurator.GetIntegrationsInvocationUploadConfig().Enabled {
-		hooks = append(hooks, webhooks.NewInvocationUploadHook(realEnv))
+	if err := webhooks.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
 	}
-	realEnv.SetWebhooks(hooks)
 
 	if err := build_event_proxy.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
