@@ -23,6 +23,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 )
 
 const (
@@ -562,8 +563,8 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 			Name:    "Organization",
 		},
 	}
-	if apiConfig := d.env.GetConfigurator().GetAPIConfig(); apiConfig != nil && apiConfig.APIKey != "" {
-		c.apiKeyValue = apiConfig.APIKey
+	if api_config.Enabled() {
+		c.apiKeyValue = api_config.Key()
 	}
 	if *orgName != "" {
 		c.group.Name = *orgName

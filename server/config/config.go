@@ -597,10 +597,3 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
 	return flagSet
 }
-
-func (c *Configurator) GetAPIConfig() *APIConfig {
-	if c.gc.API.EnableAPI {
-		return &c.gc.API
-	}
-	return nil
-}

@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//:bundle",
+        "//server/api/config",
         "//server/backends/blobstore",
         "//server/backends/disk_cache",
         "//server/backends/github",

@@ -18,6 +18,7 @@ import (
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 )
 
 const (
@@ -222,13 +223,12 @@ func getHostname() string {
 
 func getFeatures(env environment.Env) *telpb.TelemetryFeature {
 	cache := env.GetCache()
-	apiConfig := env.GetConfigurator().GetAPIConfig()
 	authenticator := env.GetAuthenticator()
 
 	return &telpb.TelemetryFeature{
 		CacheEnabled: cache != nil,
 		RbeEnabled:   remote_execution_config.RemoteExecutionEnabled(),
-		ApiEnabled:   apiConfig != nil && apiConfig.EnableAPI,
+		ApiEnabled:   api_config.Enabled(),
 		AuthEnabled:  authenticator != nil,
 	}
 }
