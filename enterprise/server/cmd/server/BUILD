@@ -51,6 +51,7 @@ go_library(
         "//server/telemetry",
         "//server/util/fileresolver",
         "//server/util/grpc_client",
+        "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",

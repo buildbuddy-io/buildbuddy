@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"net"
 	"net/http"
 	"os"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -29,12 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
@@ -48,28 +40,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 
 	bundle "github.com/buildbuddy-io/buildbuddy"
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
-	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	GRPCPort       = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
-	gRPCSPort      = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
@@ -220,115 +199,9 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	return realEnv
 }
 
-func StartBuildEventServicesOrDie(env environment.Env, grpcServer *grpc.Server) {
-	// Register to handle build event protocol messages.
-	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
-	if err != nil {
-		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err)
-	}
-	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
-
-	enableCache := env.GetCache() != nil
-	// OPTIONAL CACHE API -- only enable if configured.
-	if enableCache {
-		// Register to handle content addressable storage (CAS) messages.
-		casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ContentAddressableStorageServer: %s", err)
-		}
-		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-
-		// Register to handle bytestream (upload and download) messages.
-		byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ByteStreamServer: %s", err)
-		}
-		bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-
-		// Register to handle action cache (upload and download) messages.
-		actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing ActionCacheServer: %s", err)
-		}
-		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
-
-		pushServer := push_server.NewPushServer(env)
-		rapb.RegisterPushServer(grpcServer, pushServer)
-
-		fetchServer, err := fetch_server.NewFetchServer(env)
-		if err != nil {
-			log.Fatalf("Error initializing FetchServer: %s", err)
-		}
-		rapb.RegisterFetchServer(grpcServer, fetchServer)
-
-	}
-	enableRemoteExec := false
-	if rexec := env.GetRemoteExecutionService(); rexec != nil {
-		enableRemoteExec = true
-		repb.RegisterExecutionServer(grpcServer, rexec)
-	}
-	if scheduler := env.GetSchedulerService(); scheduler != nil {
-		scpb.RegisterSchedulerServer(grpcServer, scheduler)
-	}
-	// Register to handle GetCapabilities messages, which tell the client
-	// that this server supports CAS functionality.
-	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
-		/*supportCAS=*/ enableCache,
-		/*supportRemoteExec=*/ enableRemoteExec,
-		/*supportZstd=*/ env.GetConfigurator().GetCacheZstdTranscodingEnabled(),
-	)
-	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
-}
-
-func StartGRPCServiceOrDie(env environment.Env, buildBuddyServer *buildbuddy_server.BuildBuddyServer, port *int, credentialOption grpc.ServerOption) *grpc.Server {
-	// Initialize our gRPC server (and fail early if that doesn't happen).
-	hostAndPort := fmt.Sprintf("%s:%d", *listen, *port)
-
-	lis, err := net.Listen("tcp", hostAndPort)
-	if err != nil {
-		log.Fatalf("Failed to listen: %s", err)
-	}
-
-	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
-	if credentialOption != nil {
-		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s", hostAndPort)
-	} else {
-		log.Printf("gRPC listening on http://%s", hostAndPort)
-	}
-
-	grpcServer := grpc.NewServer(grpcOptions...)
-
-	// Support reflection so that tools like grpc-cli (aka stubby) can
-	// enumerate our services and call them.
-	reflection.Register(grpcServer)
-
-	// Support prometheus grpc metrics.
-	grpc_prometheus.Register(grpcServer)
-	// Enable prometheus latency metrics too.
-	grpc_prometheus.EnableHandlingTimeHistogram()
-
-	// Start Build-Event-Protocol and Remote-Cache services.
-	StartBuildEventServicesOrDie(env, grpcServer)
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
-
-	// Register API Server as a gRPC service.
-	apiConfig := env.GetConfigurator().GetAPIConfig()
-	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
-		apipb.RegisterApiServiceServer(grpcServer, api)
-	}
-
-	// Register health check service.
-	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
-
-	go func() {
-		grpcServer.Serve(lis)
-	}()
-	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
-	return grpcServer
-}
-
 func StartAndRunServices(env environment.Env) {
+	env.SetListenAddr(*listen)
+
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
@@ -348,35 +221,29 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("Error initializing app server: %s", err)
 	}
 
-	sslService, err := ssl.NewSSLService(env)
-	if err != nil {
-		log.Fatalf("Error configuring SSL: %s", err)
+	if err := ssl.Register(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Register to handle BuildBuddy API messages (over gRPC)
-	buildBuddyServer, err := buildbuddy_server.NewBuildBuddyServer(env, sslService)
-	if err != nil {
-		log.Fatalf("Error initializing BuildBuddyServer: %s", err)
+	if err := buildbuddy_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Generate HTTP (protolet) handlers for the BuildBuddy API, so it
 	// can be called over HTTP(s).
-	protoletHandler, err := protolet.GenerateHTTPHandlers(buildBuddyServer)
+	protoletHandler, err := protolet.GenerateHTTPHandlers(env.GetBuildBuddyServer())
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
 
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
-	grpcServer := StartGRPCServiceOrDie(env, buildBuddyServer, GRPCPort, nil)
-
-	if sslService.IsEnabled() {
-		creds, err := sslService.GetGRPCSTLSCreds()
-		if err != nil {
-			log.Fatalf("Error getting SSL creds: %s", err)
-		}
-
-		StartGRPCServiceOrDie(env, buildBuddyServer, gRPCSPort, grpc.Creds(creds))
+	if err := grpc_server.RegisterGRPCServer(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := grpc_server.RegisterGRPCSServer(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	mux := env.GetMux()
@@ -388,7 +255,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
-	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, buildBuddyServer))
+	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
@@ -419,12 +286,12 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
-		sp.PrintSplashScreen(*port, *GRPCPort)
+		sp.PrintSplashScreen(*port, grpc_server.GRPCPort())
 	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
-		Handler: grpc_server.ServeGRPCOverHTTPPort(grpcServer, mux),
+		Handler: env.GetMux(),
 	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -432,8 +299,8 @@ func StartAndRunServices(env environment.Env) {
 		return err
 	})
 
-	if sslService.IsEnabled() {
-		tlsConfig, sslHandler := sslService.ConfigureTLS(server.Handler)
+	if env.GetSSLService().IsEnabled() {
+		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)
 		if err != nil {
 			log.Fatalf("Error configuring TLS: %s", err)
 		}

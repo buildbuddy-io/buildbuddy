@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -353,7 +354,7 @@ func main() {
 		realEnv.SetSchedulerService(schedulerServer)
 
 		// Fulfill internal remote execution requests locally.
-		conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", *libmain.GRPCPort))
+		conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.GRPCPort()))
 		if err != nil {
 			log.Fatalf("Error initializing remote execution client: %s", err)
 		}

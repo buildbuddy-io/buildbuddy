@@ -3,24 +3,118 @@ package grpc_server
 import (
 	"context"
 	"flag"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/reflection"
 
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
 var (
 	gRPCOverHTTPPortEnabled = flag.Bool("app.grpc_over_http_port_enabled", false, "Cloud-Only")
 	// Support large BEP messages: https://github.com/bazelbuild/bazel/issues/12050
 	gRPCMaxRecvMsgSizeBytes = flag.Int("app.grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
+
+	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
+	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 )
+
+func RegisterGRPCServer(env environment.Env) error {
+	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil)
+	if err != nil {
+		return err
+	}
+	env.SetGRPCServer(grpcServer)
+	if *gRPCOverHTTPPortEnabled {
+		env.SetMux(&gRPCMux{
+			env.GetMux(),
+			grpcServer,
+		})
+	}
+	return nil
+}
+
+func RegisterGRPCSServer(env environment.Env) error {
+	if !env.GetSSLService().IsEnabled() {
+		return nil
+	}
+	creds, err := env.GetSSLService().GetGRPCSTLSCreds()
+	if err != nil {
+		return status.InternalErrorf("Error getting SSL creds: %s", err)
+	}
+	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds))
+	if err != nil {
+		return err
+	}
+	env.SetGRPCSServer(grpcsServer)
+	return nil
+}
+
+func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption) (*grpc.Server, error) {
+	// Initialize our gRPC server (and fail early if that doesn't happen).
+	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
+
+	lis, err := net.Listen("tcp", hostAndPort)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to listen: %s", err)
+	}
+
+	grpcOptions := CommonGRPCServerOptions(env)
+	if credentialOption != nil {
+		grpcOptions = append(grpcOptions, credentialOption)
+		log.Printf("gRPCS listening on http://%s", hostAndPort)
+	} else {
+		log.Printf("gRPC listening on http://%s", hostAndPort)
+	}
+
+	grpcServer := grpc.NewServer(grpcOptions...)
+
+	// Support reflection so that tools like grpc-cli (aka stubby) can
+	// enumerate our services and call them.
+	reflection.Register(grpcServer)
+
+	// Support prometheus grpc metrics.
+	grpc_prometheus.Register(grpcServer)
+	// Enable prometheus latency metrics too.
+	grpc_prometheus.EnableHandlingTimeHistogram()
+
+	// Start Build-Event-Protocol and Remote-Cache services.
+	if err := build_event_server.Register(env, grpcServer); err != nil {
+		return nil, err
+	}
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
+
+	// Register API Server as a gRPC service.
+	apiConfig := env.GetConfigurator().GetAPIConfig()
+	if api := env.GetAPIService(); apiConfig != nil && apiConfig.EnableAPI && api != nil {
+		apipb.RegisterApiServiceServer(grpcServer, api)
+	}
+
+	// Register health check service.
+	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
+
+	go func() {
+		grpcServer.Serve(lis)
+	}()
+	env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(grpcServer))
+	return grpcServer, nil
+}
 
 func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {
 	// Attempt to graceful stop this grpcServer. Graceful stop will
@@ -75,13 +169,24 @@ func MaxRecvMsgSizeBytes() int {
 	return *gRPCMaxRecvMsgSizeBytes
 }
 
-func ServeGRPCOverHTTPPort(grpcServer *grpc.Server, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if *gRPCOverHTTPPortEnabled && r.ProtoMajor == 2 && strings.HasPrefix(
-			r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
-		} else {
-			next.ServeHTTP(w, r)
-		}
-	})
+type gRPCMux struct {
+	interfaces.HttpServeMux
+	grpcServer *grpc.Server
+}
+
+func (g *gRPCMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor == 2 && strings.HasPrefix(
+		r.Header.Get("Content-Type"), "application/grpc") {
+		g.grpcServer.ServeHTTP(w, r)
+	} else {
+		g.HttpServeMux.ServeHTTP(w, r)
+	}
+}
+
+func GRPCPort() int {
+	return *gRPCPort
+}
+
+func GRPCSPort() int {
+	return *gRPCSPort
 }

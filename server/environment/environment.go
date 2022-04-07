@@ -13,6 +13,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core
@@ -92,4 +93,15 @@ type Env interface {
 	// See server/util/fileresolver/fileresolver.go
 	GetFileResolver() fs.FS
 	GetMux() interfaces.HttpServeMux
+	SetMux(interfaces.HttpServeMux)
+	GetListenAddr() string
+	SetListenAddr(string)
+	GetBuildBuddyServer() interfaces.BuildBuddyServer
+	SetBuildBuddyServer(interfaces.BuildBuddyServer)
+	GetSSLService() interfaces.SSLService
+	SetSSLService(interfaces.SSLService)
+	GetGRPCServer() *grpc.Server
+	SetGRPCServer(*grpc.Server)
+	GetGRPCSServer() *grpc.Server
+	SetGRPCSServer(*grpc.Server)
 }

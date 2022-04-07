@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,11 +11,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
@@ -144,6 +147,19 @@ type Authenticator interface {
 	// AuthContextFromTrustedJWT returns an authenticated context using a JWT
 	// which has been previously authenticated.
 	AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context
+}
+
+type BuildBuddyServer interface {
+	bbspb.BuildBuddyServiceServer
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
+type SSLService interface {
+	IsEnabled() bool
+	IsCertGenerationEnabled() bool
+	ConfigureTLS(mux http.Handler) (*tls.Config, http.Handler)
+	GetGRPCSTLSCreds() (credentials.TransportCredentials, error)
+	GenerateCerts(apiKey string) (string, string, error)
 }
 
 type BuildEventChannel interface {

@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -79,6 +80,11 @@ type RealEnv struct {
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
 	mux                              interfaces.HttpServeMux
+	listenAddr                       string
+	buildbuddyServer                 interfaces.BuildBuddyServer
+	sslService                       interfaces.SSLService
+	grpcServer                       *grpc.Server
+	grpcsServer                      *grpc.Server
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
@@ -395,4 +401,44 @@ func (r *RealEnv) GetMux() interfaces.HttpServeMux {
 
 func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
 	r.mux = mux
+}
+
+func (r *RealEnv) GetListenAddr() string {
+	return r.listenAddr
+}
+
+func (r *RealEnv) SetListenAddr(listenAddr string) {
+	r.listenAddr = listenAddr
+}
+
+func (r *RealEnv) GetBuildBuddyServer() interfaces.BuildBuddyServer {
+	return r.buildbuddyServer
+}
+
+func (r *RealEnv) SetBuildBuddyServer(buildbuddyServer interfaces.BuildBuddyServer) {
+	r.buildbuddyServer = buildbuddyServer
+}
+
+func (r *RealEnv) GetSSLService() interfaces.SSLService {
+	return r.sslService
+}
+
+func (r *RealEnv) SetSSLService(sslService interfaces.SSLService) {
+	r.sslService = sslService
+}
+
+func (r *RealEnv) GetGRPCServer() *grpc.Server {
+	return r.grpcServer
+}
+
+func (r *RealEnv) SetGRPCServer(grpcServer *grpc.Server) {
+	r.grpcServer = grpcServer
+}
+
+func (r *RealEnv) GetGRPCSServer() *grpc.Server {
+	return r.grpcsServer
+}
+
+func (r *RealEnv) SetGRPCSServer(grpcsServer *grpc.Server) {
+	r.grpcsServer = grpcsServer
 }
