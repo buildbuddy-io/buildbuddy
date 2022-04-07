@@ -1334,6 +1334,17 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *
 	defer conn.Close()
 
 	client := vmxpb.NewExecClient(conn)
+
+	// Allocate some of the deadline towards collecting outputs. If we let the
+	// command take up the entire deadline, then we will just get a
+	// DeadlineExceeded error from the exec request instead of any debug output on
+	// stdout/stderr, and there won't be any time left to collect output files
+	// from the workspace which are also useful for debugging.
+	if deadline, ok := ctx.Deadline(); ok {
+		execDeadline := deadline.Add(-collectOutputsDuration)
+		req.Timeout = ptypes.DurationProto(time.Until(execDeadline))
+	}
+
 	return c.vmExec(ctx, client, req)
 }
 
@@ -1444,16 +1455,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
 			Name: ev.GetName(), Value: ev.GetValue(),
 		})
-	}
-
-	// Allocate some of the deadline towards collecting outputs. If we let the
-	// command take up the entire deadline, then we will just get a
-	// DeadlineExceeded error from the exec request instead of any debug output on
-	// stdout/stderr, and there won't be any time left to collect output files
-	// from the workspace which are also useful for debugging.
-	if deadline, ok := ctx.Deadline(); ok {
-		execDeadline := deadline.Add(-collectOutputsDuration)
-		execRequest.Timeout = ptypes.DurationProto(time.Until(execDeadline))
 	}
 
 	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
