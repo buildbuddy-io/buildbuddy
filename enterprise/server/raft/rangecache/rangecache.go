@@ -37,13 +37,6 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 
 	r := rc.rangeMap.Get(left, right)
 	if r == nil {
-		// Easy add, there were no overlaps.
-		_, err := rc.rangeMap.Add(left, right, newDescriptor)
-		if err == nil {
-			log.Debugf("rangeCache easy-add of [%q, %q) %+v", left, right, newDescriptor)
-			return nil
-		}
-
 		// If this range overlaps, we'll check it against the overlapping
 		// ranges and possibly delete them or if they are newer, then we'll
 		// ignore this update.
@@ -65,7 +58,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 			rc.rangeMap.Remove(overlappingRange.Left, overlappingRange.Right)
 		}
 		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), left, right)
-		_, err = rc.rangeMap.Add(left, right, newDescriptor)
+		_, err := rc.rangeMap.Add(left, right, newDescriptor)
 		return err
 	} else {
 		v, ok := r.Val.(*rfpb.RangeDescriptor)
@@ -74,8 +67,6 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		}
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
 			r.Val = newDescriptor
-		} else {
-			log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
 		}
 	}
 	return nil
