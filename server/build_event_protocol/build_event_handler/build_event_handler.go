@@ -66,6 +66,9 @@ const (
 
 	// Default number of actions shown by bazel
 	defaultActionsShown = 8
+
+	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
+	InterruptedExitCode = 8
 )
 
 var (
@@ -677,6 +680,16 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,
 		BuildEvent:     &bazelBuildEvent,
 		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
+	}
+
+	// Bazel sends an Interrupted exit code in the finished event if the user cancelled the build.
+	// Use that signal to cancel any actions that are currently in the remote execution system.
+	if f, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Finished); ok {
+		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
+			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
+				log.Warningf("Could not cancel executions for invocation %q: %s", iid, err)
+			}
+		}
 	}
 
 	// If this is the first event, keep track of the project ID and save any notification keywords.

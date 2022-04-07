@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -24,9 +26,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -891,8 +896,8 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 	rbe.AddSingleTaskExecutorWithOptions(&rbetest.ExecutorOptions{Name: "busyExecutor2"})
 
 	// Schedule 2 controlled commands to keep existing executors busy.
-	cmd1 := rbe.ExecuteControlledCommand("command1")
-	cmd2 := rbe.ExecuteControlledCommand("command2")
+	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{})
+	cmd2 := rbe.ExecuteControlledCommand("command2", &rbetest.ExecuteControlledOpts{})
 
 	// Wait until both the commands actually start running on the executors.
 	cmd1.WaitStarted()
@@ -940,7 +945,7 @@ func TestWaitExecution(t *testing.T) {
 
 	var cmds []*rbetest.ControlledCommand
 	for i := 0; i < 10; i++ {
-		cmds = append(cmds, rbe.ExecuteControlledCommand(fmt.Sprintf("command%d", i+1)))
+		cmds = append(cmds, rbe.ExecuteControlledCommand(fmt.Sprintf("command%d", i+1), &rbetest.ExecuteControlledOpts{}))
 	}
 
 	// Wait until all the commands have started running & have been accepted by the server.
@@ -1137,4 +1142,52 @@ func TestRedisRestart(t *testing.T) {
 		t, result.Stderr, "1 remote cache hit",
 		"sanity check: initial build shouldn't be cached",
 	)
+}
+
+func TestInvocationCancellation(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	bbServer := rbe.AddBuildBuddyServer()
+	rbe.AddExecutor()
+
+	iid := uuid.NewString()
+	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", iid)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	bep.Start(ctx)
+
+	startTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{
+				StartTimeMillis: startTime.UnixMilli(),
+				StartTime:       timestamppb.New(startTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	cmd1 := rbe.ExecuteControlledCommand("command1", &rbetest.ExecuteControlledOpts{InvocationID: iid})
+	cmd1.WaitStarted()
+
+	// Cancel the invocation.
+	finishTime := time.Now()
+	err = bep.Publish(&bespb.BuildEvent{
+		Payload: &bespb.BuildEvent_Finished{
+			Finished: &bespb.BuildFinished{
+				ExitCode:         &bespb.BuildFinished_ExitCode{Name: "INTERRUPTED", Code: build_event_handler.InterruptedExitCode},
+				FinishTimeMillis: finishTime.UnixMilli(),
+				FinishTime:       timestamppb.New(finishTime),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// Verify that command cancellation was reported.
+	err = cmd1.MustFail()
+	require.True(t, status.IsCanceledError(err))
+
+	// Also verify that the action itself was terminated.
+	cmd1.WaitDisconnected()
 }

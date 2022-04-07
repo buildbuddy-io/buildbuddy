@@ -322,14 +322,14 @@ type Execution struct {
 	Worker      string
 	// Command Snippet
 	CommandSnippet          string
-	InvocationID            string `gorm:"index:execution_invocation_id"`
+	InvocationID            string `gorm:"index:executions_invocation_id_stage"`
 	StatusMessage           string
 	SerializedStatusDetails []byte `gorm:"size:max"`
 
 	SerializedOperation []byte `gorm:"size:max"` // deprecated
 	Model
 
-	Stage int64
+	Stage int64 `gorm:"index:executions_invocation_id_stage"`
 
 	// IOStats
 	FileDownloadCount        int64
@@ -810,6 +810,12 @@ func PostAutoMigrate(db *gorm.DB) error {
 			if err := db.Migrator().DropIndex("Invocations", "invocations_test_grid_query_index"); err != nil {
 				log.Errorf("Error dropping deprecated index: %s", err)
 			}
+		}
+	}
+
+	if m.HasTable("Executions") && m.HasIndex("Executions", "execution_invocation_id") {
+		if err := db.Migrator().DropIndex("Invocations", "execution_invocation_id"); err != nil {
+			log.Errorf("Error dropping deprecated execution index: %s", err)
 		}
 	}
 

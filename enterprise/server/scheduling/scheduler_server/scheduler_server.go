@@ -961,8 +961,10 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 	return nil
 }
 
-func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) error {
-	return s.rdb.Del(ctx, redisKeyForTask(taskID)).Err()
+func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, error) {
+	key := redisKeyForTask(taskID)
+	n, err := s.rdb.Del(ctx, key).Result()
+	return n == 1, err
 }
 
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
@@ -1078,7 +1080,8 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
 	}
-	vals, err := s.rdb.HMGet(ctx, redisKeyForTask(taskID), fields...).Result()
+	key := redisKeyForTask(taskID)
+	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
 	if err != nil {
 		return nil, status.InternalErrorf("could not read task from redis: %v", err)
 	}
@@ -1217,6 +1220,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
 			queueWaitTimeMs.Observe(float64(ageInMillis))
 			rsp.SerializedTask = task.serializedTask
+		} else {
+			if _, err := s.readTask(ctx, req.GetTaskId()); status.IsNotFoundError(err) {
+				// No point re-enqueuing.
+				claimed = false
+				return status.NotFoundErrorf("task %q disappeared, possibly cancelled", req.GetTaskId())
+			}
 		}
 
 		done := req.GetFinalize() || req.GetRelease()
@@ -1434,6 +1443,10 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	return &scpb.ScheduleTaskResponse{}, nil
 }
 
+func (s *SchedulerServer) CancelTask(ctx context.Context, taskID string) (bool, error) {
+	return s.deleteTask(ctx, taskID)
+}
+
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// TODO(vadim): verify user is authorized to use executor pool
 
@@ -1457,7 +1470,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		return err
 	}
 	if task.attemptCount >= maxTaskAttemptCount {
-		if err := s.deleteTask(ctx, taskID); err != nil {
+		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
 		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, task.attemptCount)
