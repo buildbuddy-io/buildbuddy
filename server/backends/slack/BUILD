@@ -5,5 +5,9 @@ go_library(
     srcs = ["slack.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/slack",
     visibility = ["//visibility:public"],
-    deps = ["//proto:invocation_go_proto"],
+    deps = [
+        "//proto:invocation_go_proto",
+        "//server/endpoint_urls/build_buddy_url",
+        "//server/environment",
+    ],
 )

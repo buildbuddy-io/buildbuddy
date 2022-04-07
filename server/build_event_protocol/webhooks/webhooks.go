@@ -3,6 +3,7 @@ package webhooks
 import (
 	"compress/gzip"
 	"context"
+	"flag"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,6 +21,11 @@ import (
 	googleoauth "golang.org/x/oauth2/google"
 )
 
+var (
+	enabled            = flag.Bool("integrations.invocation_upload.enabled", false, "Whether to upload webhook data to the webhook URL configured per-Group. ** Enterprise only **")
+	gcsCredentialsJSON = flag.String("integrations.invocation_upload.gcs_credentials", "", "Credentials JSON for the Google service account used to authenticate when GCS is used as the invocation upload target. ** Enterprise only **")
+)
+
 const (
 	gcsDomain         = "storage.googleapis.com"
 	gcsReadWriteScope = "https://www.googleapis.com/auth/devstorage.read_write"
@@ -27,6 +33,15 @@ const (
 
 type invocationUploadHook struct {
 	env environment.Env
+}
+
+func Register(env environment.Env) error {
+	if *enabled {
+		env.SetWebhooks(
+			append(env.GetWebhooks(), NewInvocationUploadHook(env)),
+		)
+	}
+	return nil
 }
 
 // NewInvocationUploadHook returns a webhook that uploads the invocation proto
@@ -129,11 +144,10 @@ func (h *invocationUploadHook) getTokenSource(ctx context.Context, u *url.URL) (
 	if !strings.HasSuffix(u.Host, "."+gcsDomain) {
 		return nil, nil
 	}
-	credsJSON := h.env.GetConfigurator().GetIntegrationsInvocationUploadConfig().GCSCredentialsJSON
-	if credsJSON == "" {
+	if *gcsCredentialsJSON == "" {
 		return nil, nil
 	}
-	cfg, err := googleoauth.JWTConfigFromJSON([]byte(credsJSON), gcsReadWriteScope)
+	cfg, err := googleoauth.JWTConfigFromJSON([]byte(*gcsCredentialsJSON), gcsReadWriteScope)
 	if err != nil {
 		return nil, err
 	}

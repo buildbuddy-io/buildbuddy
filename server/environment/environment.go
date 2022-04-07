@@ -49,6 +49,7 @@ type Env interface {
 	GetAuthenticator() interfaces.Authenticator
 	SetAuthenticator(a interfaces.Authenticator)
 	GetWebhooks() []interfaces.Webhook
+	SetWebhooks([]interfaces.Webhook)
 	GetBuildEventHandler() interfaces.BuildEventHandler
 	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
 	SetBuildEventProxyClients([]pepb.PublishBuildEventClient)
