@@ -114,7 +114,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Warningf("RangeCache did not have meta range. This should not happen")
 			continue
 		}
-		err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
+		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
 		if err == nil {
 			return rangeDescriptor, nil
 		}
@@ -161,11 +161,11 @@ func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHea
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
-func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) error {
+func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		header := makeHeader(rd, i)
 		err = fn(client, header)
@@ -176,28 +176,19 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 				// range not found, no replicas are likely to have it; bail.
 				case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
 					log.Debugf("out of range: %s (skipping rangecache)", m)
-					return err
+					return 0, err
 				case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
 					log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
 					continue
 				default:
-					return err
+					return 0, err
 				}
 			}
-			return err
+			return 0, err
 		}
-		if i != 0 {
-			// If a replica served a request, mark it as the preferred
-			// replica in the rangecache.
-			if err := s.rangeCache.UpdateRange(rd); err == nil {
-				s.rangeCache.SetPreferredReplica(replica, rd)
-			} else {
-				log.Errorf("Error updating rangecache: %s", err)
-			}
-		}
-		return nil
+		return i, nil
 	}
-	return status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
+	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
 
 func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
@@ -209,7 +200,14 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 			log.Warningf("sender.Run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
 			continue
 		}
-		if err = s.tryReplicas(ctx, rangeDescriptor, fn); err == nil {
+		i, err := s.tryReplicas(ctx, rangeDescriptor, fn)
+		if err == nil {
+			replica := rangeDescriptor.GetReplicas()[i]
+			if err := s.rangeCache.UpdateRange(rangeDescriptor); err == nil {
+				s.rangeCache.SetPreferredReplica(replica, rangeDescriptor)
+			} else {
+				log.Errorf("Error updating rangecache: %s", err)
+			}
 			return nil
 		}
 		skipRangeCache = true

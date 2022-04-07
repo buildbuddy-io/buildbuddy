@@ -266,9 +266,7 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 		}
 	}
 
-	if alreadyValid {
-		log.Debugf("Renewed %s", l.String())
-	} else {
+	if !alreadyValid {
 		log.Debugf("Acquired %s", l.String())
 	}
 

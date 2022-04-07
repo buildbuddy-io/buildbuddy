@@ -161,9 +161,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 		}
 	}
 
-	if alreadyValid {
-		log.Debugf("Renewed %s", h.String())
-	} else {
+	if !alreadyValid {
 		log.Debugf("Acquired %s", h.String())
 	}
 

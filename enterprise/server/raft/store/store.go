@@ -31,6 +31,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/raftio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -67,7 +68,8 @@ type Store struct {
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
 
-	metaRangeData string
+	metaRangeData   string
+	leaderUpdatedCB listener.LeaderCB
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -89,9 +91,20 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 
 		metaRangeData: "",
 	}
+	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
 	s.gossipUsage()
+
+	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return s
+}
+
+func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
+	rd := s.lookupRange(info.ClusterID)
+	if rd == nil {
+		return
+	}
+	go s.maybeAcquireRangeLease(rd)
 }
 
 func (s *Store) Start(grpcAddress string) error {
@@ -114,6 +127,7 @@ func (s *Store) Start(grpcAddress string) error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	listener.DefaultListener().UnregisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
@@ -144,7 +158,6 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		return
 	}
 
-	start := time.Now()
 	rangeID := rd.GetRangeId()
 	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.sender, s.liveness, rd))
 	rl, ok := rlIface.(*rangelease.Lease)
@@ -159,7 +172,6 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		}
 		err := rl.Lease()
 		if err == nil {
-			log.Debugf("Succesfully leased range: %s in %s", rl, time.Since(start))
 			break
 		}
 		log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
@@ -249,6 +261,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		}
 		go s.gossipManager.SetTags(map[string]string{constants.MetaRangeTag: string(buf)})
 	}
+
+	// Start goroutines for these so that Adding ranges is quick.
 	go s.maybeAcquireRangeLease(rd)
 	go s.gossipUsage()
 }
@@ -266,6 +280,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	// Start goroutines for these so that Removing ranges is quick.
 	go s.releaseRangeLease(rd.GetRangeId())
 	go s.gossipUsage()
 }
@@ -660,7 +675,6 @@ func (s *Store) renewNodeLiveness() {
 		}
 		err := s.liveness.Lease()
 		if err == nil {
-			log.Printf("Node is now live: %s", s.liveness.String())
 			return
 		}
 		log.Errorf("Error leasing node liveness record: %s", err)
