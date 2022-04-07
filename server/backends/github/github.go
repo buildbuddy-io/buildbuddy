@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -21,7 +23,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
+)
+
+var (
+	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
+	clientSecret = flag.String("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **")
+	accessToken  = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **")
 )
 
 const (
@@ -70,6 +79,15 @@ type GithubClient struct {
 	tokenLookup sync.Once
 }
 
+func Register(env environment.Env) error {
+	githubClient := NewGithubClient(env, "")
+	env.GetMux().Handle(
+		"/auth/github/link/",
+		httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)),
+	)
+	return nil
+}
+
 func NewGithubClient(env environment.Env, token string) *GithubClient {
 	return &GithubClient{
 		env:         env,
@@ -78,9 +96,22 @@ func NewGithubClient(env environment.Env, token string) *GithubClient {
 	}
 }
 
+func ClientSecret() string {
+	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
+		return cs
+	}
+	return *clientSecret
+}
+
+func Enabled() bool {
+	if *clientID == "" && *clientSecret == "" && *accessToken == "" {
+		return false
+	}
+	return true
+}
+
 func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
-	githubConfig := c.env.GetConfigurator().GetGithubConfig()
-	if githubConfig == nil {
+	if !Enabled() {
 		redirectWithError(w, r, status.PermissionDeniedError("Missing GitHub config"))
 		return
 	}
@@ -102,7 +133,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 		url := fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
-			githubConfig.ClientID,
+			*clientID,
 			state,
 			build_buddy_url.WithPath("/auth/github/link/"),
 			"repo")
@@ -126,8 +157,8 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	url := fmt.Sprintf(
 		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s&redirect_uri=%s",
-		githubConfig.ClientID,
-		githubConfig.ClientSecret,
+		*clientID,
+		ClientSecret(),
 		code,
 		state,
 		redirectURL)
@@ -240,16 +271,12 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubToken != "" {
+	if c.githubToken != "" || !Enabled() {
 		return nil
 	}
 
-	if c.env.GetConfigurator().GetGithubConfig() == nil {
-		return nil
-	}
-
-	if accessToken := c.env.GetConfigurator().GetGithubConfig().AccessToken; accessToken != "" {
-		c.githubToken = accessToken
+	if *accessToken != "" {
+		c.githubToken = *accessToken
 		return nil
 	}
 
