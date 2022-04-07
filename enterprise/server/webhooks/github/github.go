@@ -191,6 +191,7 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		"Action",
 		"PullRequest.Base.Ref",
 		"PullRequest.Base.Repo.CloneURL",
+		"PullRequest.Base.Repo.Private",
 		"PullRequest.Head.Ref",
 		"PullRequest.Head.SHA",
 		"PullRequest.Head.Repo.CloneURL",
@@ -199,14 +200,16 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		return nil, err
 	}
 	isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
+	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
 	return &interfaces.WebhookData{
-		EventName:     webhook_data.EventName.PullRequest,
-		PushedRepoURL: v["PullRequest.Head.Repo.CloneURL"],
-		PushedBranch:  v["PullRequest.Head.Ref"],
-		SHA:           v["PullRequest.Head.SHA"],
-		TargetRepoURL: v["PullRequest.Base.Repo.CloneURL"],
-		TargetBranch:  v["PullRequest.Base.Ref"],
-		IsTrusted:     !isFork,
+		EventName:          webhook_data.EventName.PullRequest,
+		PushedRepoURL:      v["PullRequest.Head.Repo.CloneURL"],
+		PushedBranch:       v["PullRequest.Head.Ref"],
+		SHA:                v["PullRequest.Head.SHA"],
+		TargetRepoURL:      v["PullRequest.Base.Repo.CloneURL"],
+		IsTargetRepoPublic: isTargetRepoPublic,
+		TargetBranch:       v["PullRequest.Base.Ref"],
+		IsTrusted:          !isFork,
 	}, nil
 }
 
