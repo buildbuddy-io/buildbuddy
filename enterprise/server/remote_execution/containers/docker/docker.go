@@ -33,7 +33,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var (
+const (
 	// dockerExecSIGKILLExitCode is returned in the ExitCode field of a docker
 	// exec inspect result when an exec process is terminated due to receiving
 	// SIGKILL.
@@ -154,6 +154,13 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}()
 	}()
 
+	r.copyContainerLogs(ctx, cid, result)
+	if result.Error != nil {
+		return result
+	}
+
+	// The container should not be running at this point since we're done copying
+	// logs, but we need to call ContainerWait to get the exit code.
 	statusCh, errCh := r.client.ContainerWait(ctx, cid, dockercontainer.WaitConditionNotRunning)
 
 	select {
@@ -166,25 +173,28 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 			return result
 		}
 		result.ExitCode = int(s.StatusCode)
-		logOptions := dockertypes.ContainerLogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		}
-		logs, err := r.client.ContainerLogs(ctx, cid, logOptions)
-		if err != nil {
-			result.Error = wrapDockerErr(err, "failed to get docker container logs")
-			return result
-		}
-		err = copyOutputs(logs, result)
-		if closeErr := logs.Close(); closeErr != nil {
-			log.Warningf("Failed to close docker logs: %s", closeErr)
-		}
-		if err != nil {
-			result.Error = wrapDockerErr(err, "failed to read docker container logs")
-			return result
-		}
 	}
 	return result
+}
+
+func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid string, result *interfaces.CommandResult) {
+	logOptions := dockertypes.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	}
+	logs, err := r.client.ContainerLogs(ctx, cid, logOptions)
+	if err != nil {
+		result.Error = wrapDockerErr(err, "failed to get docker container logs")
+		return
+	}
+	err = copyOutputs(logs, result)
+	if closeErr := logs.Close(); closeErr != nil {
+		log.Warningf("Failed to close docker logs: %s", closeErr)
+	}
+	if err != nil {
+		result.Error = wrapDockerErr(err, "failed to read docker container logs")
+		return
+	}
 }
 
 func wrapDockerErr(err error, contextMsg string) error {
@@ -461,8 +471,21 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		go stdcopy.StdCopy(stdout, ioutil.Discard, r)
 	}
 
-	defer attachResp.Close() // note: Close() doesn't return an error.
+	// note: Close() doesn't return an error, and can be safely called more than once.
+	defer attachResp.Close()
+	go func() {
+		// If the context times out before we return from this func, close the
+		// attachResp -- otherwise copyOutputs() hangs.
+		<-ctx.Done()
+		attachResp.Close()
+	}()
 	if err := copyOutputs(responseReader, result); err != nil {
+		// If we timed out, ignore the "closed connection" error from copying
+		// outputs
+		if ctx.Err() == context.DeadlineExceeded {
+			result.Error = status.DeadlineExceededError("command timed out")
+			return result
+		}
 		result.Error = wrapDockerErr(err, "failed to get output of exec process")
 		return result
 	}

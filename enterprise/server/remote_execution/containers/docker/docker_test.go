@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -39,7 +41,7 @@ func TestDockerRun(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
-	cfg := &docker.DockerOptions{Socket: socket}
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
@@ -75,7 +77,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	writeFile(t, workDir, "world.txt", "world")
-	cfg := &docker.DockerOptions{Socket: socket}
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
 	ctx := context.Background()
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
@@ -153,4 +155,119 @@ func TestDockerLifecycleControl(t *testing.T) {
 
 	// No need for cleanup anymore, since removal was successful.
 	isContainerRunning = false
+}
+
+func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	writeFile(t, workDir, "world.txt", "world")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			echo "output" > output.txt
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+	// Ensure the image is cached
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
+}
+
+func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c", `
+			echo ExampleStdout >&1
+			echo ExampleStderr >&2
+			echo "output" > output.txt
+      # Wait for the context to be canceled
+			sleep 100
+		`,
+	}}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+	// Ensure the image is cached
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{}, "docker.io/library/busybox")
+	require.NoError(t, err)
+
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+	res := c.Exec(ctx, cmd, nil /*=stdin*/, nil /*=stdout*/)
+
+	assert.True(
+		t, status.IsDeadlineExceededError(res.Error),
+		"expected DeadlineExceeded error, got: %s", res.Error)
+	assert.Less(
+		t, res.ExitCode, 0,
+		"if timed out, exit code should be < 0 (unset)")
+	assert.Equal(
+		t, "ExampleStdout\n", string(res.Stdout),
+		"if timed out, should be able to see debug output on stdout")
+	assert.Equal(
+		t, "ExampleStderr\n", string(res.Stderr),
+		"if timed out, should be able to see debug output on stderr")
+	output := testfs.ReadFileAsString(t, workDir, "output.txt")
+	assert.Equal(
+		t, "output\n", output,
+		"if timed out, should be able to read debug output files")
 }
