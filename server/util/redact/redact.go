@@ -53,7 +53,7 @@ func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "")
 }
 
-func stripURLSecretsFromCmdLine(tokens []string) []string {
+func stripURLSecretsFromCmdLine(tokens []string) {
 	for i, token := range tokens {
 		// Prevent flag name from being included in redaction pattern.
 		if strings.HasPrefix(token, "--") {
@@ -67,7 +67,20 @@ func stripURLSecretsFromCmdLine(tokens []string) []string {
 		}
 		tokens[i] = stripURLSecrets(token)
 	}
-	return tokens
+}
+
+func stripRemoteHeadersFromCmdLine(tokens []string) {
+	for i, token := range tokens {
+		// Prevent flag name from being included in redaction pattern.
+		if strings.HasPrefix(token, "--remote_header=") {
+			tokens[i] = "--remote_header=<REDACTED>"
+		}
+	}
+}
+
+func redactCmdLine(tokens []string) {
+	stripURLSecretsFromCmdLine(tokens)
+	stripRemoteHeadersFromCmdLine(tokens)
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -280,8 +293,8 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_OptionsParsed:
 		{
-			p.OptionsParsed.CmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.CmdLine)
-			p.OptionsParsed.ExplicitCmdLine = stripURLSecretsFromCmdLine(p.OptionsParsed.ExplicitCmdLine)
+			redactCmdLine(p.OptionsParsed.CmdLine)
+			redactCmdLine(p.OptionsParsed.ExplicitCmdLine)
 		}
 	case *bespb.BuildEvent_WorkspaceStatus:
 		{
