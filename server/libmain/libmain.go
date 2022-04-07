@@ -405,9 +405,8 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
 	}
 
-	if githubConfig := env.GetConfigurator().GetGithubConfig(); githubConfig != nil {
-		githubClient := github.NewGithubClient(env, "")
-		mux.Handle("/auth/github/link/", httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)))
+	if err := github.Register(env); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	// Register API as an HTTP service.
