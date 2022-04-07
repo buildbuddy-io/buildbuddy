@@ -2,6 +2,7 @@ package build_status_reporter
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+)
+
+var (
+	statusNameSuffix    = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
+	statusPerTestTarget = flag.Bool("github.status_per_test_target", false, "If true, report status per test target. ** Enterprise only **")
 )
 
 type BuildStatusReporter struct {
@@ -40,18 +46,10 @@ type GroupStatus struct {
 }
 
 func NewBuildStatusReporter(env environment.Env, buildEventAccumulator *accumulator.BEValues) *BuildStatusReporter {
-	githubConfig := env.GetConfigurator().GetGithubConfig()
-	shouldReportStatusPerTest := false
-	statusNameSuffix := ""
-	if githubConfig != nil {
-		shouldReportStatusPerTest = githubConfig.StatusPerTestTarget
-		statusNameSuffix = githubConfig.StatusNameSuffix
-	}
-
 	return &BuildStatusReporter{
 		env:                       env,
-		shouldReportStatusPerTest: shouldReportStatusPerTest,
-		statusNameSuffix:          statusNameSuffix,
+		shouldReportStatusPerTest: *statusPerTestTarget,
+		statusNameSuffix:          *statusNameSuffix,
 		buildEventAccumulator:     buildEventAccumulator,
 		payloads:                  make([]*github.GithubStatusPayload, 0),
 		inFlight:                  make(map[string]bool),
