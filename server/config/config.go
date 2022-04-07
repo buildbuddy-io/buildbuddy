@@ -843,10 +843,3 @@ func (c *Configurator) GetGithubConfig() *GithubConfig {
 	}
 	return &ghc
 }
-
-func (c *Configurator) GetOrgConfig() *OrgConfig {
-	if c.gc.Org.Name != "" || c.gc.Org.Domain != "" {
-		return &c.gc.Org
-	}
-	return nil
-}

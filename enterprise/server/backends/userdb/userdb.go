@@ -37,6 +37,9 @@ var (
 	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
 	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
 
+	orgName   = flag.String("org.name", "", "The name of your organization, which is displayed on your organization's build history.")
+	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
+
 	// Don't change this ever. It's the default group that users
 	// are added to when the server is running on-prem and group
 	// management is not really an issue. If you change it, you'll
@@ -562,15 +565,11 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 	if apiConfig := d.env.GetConfigurator().GetAPIConfig(); apiConfig != nil && apiConfig.APIKey != "" {
 		c.apiKeyValue = apiConfig.APIKey
 	}
-	orgConfig := d.env.GetConfigurator().GetOrgConfig()
-	if orgConfig == nil {
-		return c
+	if *orgName != "" {
+		c.group.Name = *orgName
 	}
-	if name := orgConfig.Name; name != "" {
-		c.group.Name = name
-	}
-	if domain := orgConfig.Domain; domain != "" {
-		c.group.OwnedDomain = domain
+	if *orgDomain != "" {
+		c.group.OwnedDomain = *orgDomain
 	}
 	return c
 }
