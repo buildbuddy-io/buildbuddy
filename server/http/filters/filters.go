@@ -3,6 +3,7 @@ package filters
 import (
 	"compress/gzip"
 	"encoding/base64"
+	"flag"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -29,6 +30,8 @@ import (
 )
 
 var (
+	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https")
+
 	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
 
@@ -46,7 +49,7 @@ func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Ha
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		// Our k8s healthchecks set "server-type" header, but Google LB healthchecks don't support them so we check the UA.
 		isHealthCheck := r.Header.Get("server-type") != "" || strings.HasPrefix(r.Header.Get("User-Agent"), "GoogleHC/")
-		if sslConfig := env.GetConfigurator().GetSSLConfig(); sslConfig != nil && sslConfig.UpgradeInsecure && !isHealthCheck && protocol != "https" {
+		if *upgradeInsecure && !isHealthCheck && protocol != "https" {
 			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
