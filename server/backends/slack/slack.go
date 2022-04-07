@@ -4,11 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+)
+
+var (
+	webhookURL = flag.String("integrations.slack.webhook_url", "", "A Slack webhook url to post build update messages to.")
 )
 
 type Field struct {
@@ -73,6 +81,15 @@ type SlackWebhook struct {
 	client        *http.Client
 	callbackURL   string
 	buildBuddyURL string
+}
+
+func Register(env environment.Env) error {
+	if *webhookURL != "" {
+		env.SetWebhooks(
+			append(env.GetWebhooks(), NewSlackWebhook(*webhookURL, build_buddy_url.String())),
+		)
+	}
+	return nil
 }
 
 func NewSlackWebhook(callbackURL string, bbURL string) *SlackWebhook {
