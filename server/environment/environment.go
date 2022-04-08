@@ -66,17 +66,22 @@ type Env interface {
 	GetByteStreamClient() bspb.ByteStreamClient
 	GetSchedulerClient() scpb.SchedulerClient
 	GetRemoteExecutionClient() repb.ExecutionClient
+	SetRemoteExecutionClient(repb.ExecutionClient)
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
+	SetRemoteExecutionService(interfaces.RemoteExecutionService)
 	GetSchedulerService() interfaces.SchedulerService
+	SetSchedulerService(interfaces.SchedulerService)
 	GetTaskRouter() interfaces.TaskRouter
+	SetTaskRouter(interfaces.TaskRouter)
 	GetDefaultRedisClient() redis.UniversalClient
 	SetDefaultRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisClient() redis.UniversalClient
 	SetRemoteExecutionRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisPubSubClient() redis.UniversalClient
+	SetRemoteExecutionRedisPubSubClient(redis.UniversalClient)
 	GetMetricsCollector() interfaces.MetricsCollector
 	SetMetricsCollector(interfaces.MetricsCollector)
 	GetKeyValStore() interfaces.KeyValStore

@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -44,7 +43,7 @@ type taskRouter struct {
 	rdb redis.UniversalClient
 }
 
-func Register(env *real_environment.RealEnv) error {
+func Register(env environment.Env) error {
 	if env.GetRemoteExecutionRedisClient() == nil {
 		return nil
 	}

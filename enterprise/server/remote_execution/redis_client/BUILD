@@ -10,7 +10,7 @@ go_library(
         "//enterprise/server/remote_execution/config",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
-        "//server/real_environment",
+        "//server/environment",
         "//server/util/grpc_client",
         "//server/util/status",
     ],
