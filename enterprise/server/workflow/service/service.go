@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -431,7 +432,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 	invocationID := invocationUUID.String()
 	extraCIRunnerArgs := []string{
-		fmt.Sprintf("--invocation_id=%s", invocationID),
 		fmt.Sprintf("--visibility=%s", req.GetVisibility()),
 	}
 	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
@@ -462,7 +462,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if action == nil {
 		return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
 	}
-	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, action, extraCIRunnerArgs)
+	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, action, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +611,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, workflowAction *config.Action, extraArgs []string) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -659,6 +659,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			// buildbuddy_ci_runner binary exists at the workspace root. It does so
 			// whenever it sees the `workflow-id` platform property.
 			"./buildbuddy_ci_runner",
+			"--invocation_id=" + invocationID,
 			"--action_name=" + workflowAction.Name,
 			"--bes_backend=" + conf.GetAppEventsAPIURL(),
 			"--bes_results_url=" + conf.GetAppBuildBuddyURL() + "/invocation/",
@@ -828,7 +829,12 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		if !config.MatchesAnyTrigger(action, webhookData.EventName, webhookData.TargetBranch) {
 			continue
 		}
-		_, err := ws.executeWorkflow(ctx, apiKey, wf, webhookData, action, nil /*=extraCIRunnerArgs*/)
+		invocationUUID, err := guuid.NewRandom()
+		if err != nil {
+			return err
+		}
+		invocationID := invocationUUID.String()
+		_, err = ws.executeWorkflow(ctx, apiKey, wf, webhookData, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
 				if err := ws.createApprovalRequiredStatus(ctx, wf, webhookData, action.Name); err != nil {
@@ -843,19 +849,27 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 }
 
 // starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, workflowAction *config.Action, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
 	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd, workflowAction.Name)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, workflowAction, extraCIRunnerArgs)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, workflowAction, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
 	}
 
-	executionID, err := ws.env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{
+	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: invocationID})
+	if err != nil {
+		return "", err
+	}
+	execCtx, cancelRPC := context.WithCancel(execCtx)
+	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
+	defer cancelRPC()
+
+	opStream, err := ws.env.GetRemoteExecutionClient().Execute(execCtx, &repb.ExecuteRequest{
 		InstanceName:    in,
 		SkipCacheLookup: true,
 		ActionDigest:    ad,
@@ -863,11 +877,15 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution (ID: %q)", executionID)
+	op, err := opStream.Recv()
+	if err != nil {
+		return "", err
+	}
+	log.Infof("Started workflow execution (ID: %q)", op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
-	return executionID, nil
+	return op.GetName(), nil
 }
 
 func (ws *workflowService) createApprovalRequiredStatus(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionName string) error {
