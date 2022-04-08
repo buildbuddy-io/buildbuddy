@@ -865,6 +865,9 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
+	execCtx, cancelRPC := context.WithCancel(execCtx)
+	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
+	defer cancelRPC()
 
 	opStream, err := ws.env.GetRemoteExecutionClient().Execute(execCtx, &repb.ExecuteRequest{
 		InstanceName:    in,
