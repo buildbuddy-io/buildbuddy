@@ -77,7 +77,9 @@ type Env interface {
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService
+	SetUsageService(interfaces.UsageService)
 	GetUsageTracker() interfaces.UsageTracker
+	SetUsageTracker(interfaces.UsageTracker)
 	GetXcodeLocator() interfaces.XcodeLocator
 	// GetFileResolver returns an FS that can be used to read server-side
 	// resources that aren't intended to be directly served to end users. It first
