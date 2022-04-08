@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -123,7 +122,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 }
 
 func (s *ExecutionServer) pubSubChannelForExecutionID(executionID string) *pubsub.Channel {
-	if rbeutil.IsV2ExecutionID(executionID) {
+	if s.enableRedisAvailabilityMonitoring {
 		return s.streamPubSub.MonitoredChannel(redisKeyForMonitoredTaskStatusStream(executionID))
 	}
 	return s.streamPubSub.UnmonitoredChannel(redisKeyForTaskStatusStream(executionID))
@@ -282,12 +281,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionID, err := r.UploadString()
 	if err != nil {
 		return "", err
-	}
-
-	// When availability monitoring is enabled, some Redis resource names change as well. We modify the execution
-	// ID so that the any apps processing related updates know which scheme to use for a given execution.
-	if s.enableRedisAvailabilityMonitoring {
-		executionID = rbeutil.V2ExecutionIDPrefix + executionID
 	}
 
 	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
