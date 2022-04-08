@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/rbeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -687,6 +686,8 @@ type SchedulerServer struct {
 	// If enabled, executors will be required to present an API key with appropriate capabilities in order to register.
 	requireExecutorAuthorization bool
 
+	enableRedisAvailabilityMonitoring bool
+
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
 }
@@ -703,10 +704,12 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	enableUserOwnedExecutors := false
 	requireExecutorAuthorization := false
 	forceUserOwnedDarwinExecutors := false
+	enableRedisAvailabilityMonitoring := false
 	if conf := env.GetConfigurator().GetRemoteExecutionConfig(); conf != nil {
 		enableUserOwnedExecutors = conf.EnableUserOwnedExecutors
 		requireExecutorAuthorization = conf.RequireExecutorAuthorization
 		forceUserOwnedDarwinExecutors = conf.ForceUserOwnedDarwinExecutors
+		enableRedisAvailabilityMonitoring = conf.EnableRedisAvailabilityMonitoring
 	}
 
 	if options.RequireExecutorAuthorization {
@@ -737,15 +740,16 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	}
 
 	s := &SchedulerServer{
-		env:                           env,
-		pools:                         make(map[nodePoolKey]*nodePool),
-		rdb:                           env.GetRemoteExecutionRedisClient(),
-		taskRouter:                    taskRouter,
-		shuttingDown:                  shuttingDown,
-		enableUserOwnedExecutors:      enableUserOwnedExecutors,
-		forceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
-		requireExecutorAuthorization:  requireExecutorAuthorization,
-		ownHostPort:                   fmt.Sprintf("%s:%d", ownHostname, ownPort),
+		env:                               env,
+		pools:                             make(map[nodePoolKey]*nodePool),
+		rdb:                               env.GetRemoteExecutionRedisClient(),
+		taskRouter:                        taskRouter,
+		shuttingDown:                      shuttingDown,
+		enableUserOwnedExecutors:          enableUserOwnedExecutors,
+		forceUserOwnedDarwinExecutors:     forceUserOwnedDarwinExecutors,
+		requireExecutorAuthorization:      requireExecutorAuthorization,
+		enableRedisAvailabilityMonitoring: enableRedisAvailabilityMonitoring,
+		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(s.ownHostPort, s)
 	return s, nil
@@ -922,8 +926,8 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 	return nil
 }
 
-func redisKeyForTask(taskID string) string {
-	if rbeutil.IsV2ExecutionID(taskID) {
+func (s *SchedulerServer) redisKeyForTask(taskID string) string {
+	if s.enableRedisAvailabilityMonitoring {
 		// Use the taskID as the input to the Redis consistent hash function so that task information and pubsub
 		// channels end up on the same Redis shard.
 		return fmt.Sprintf("task/{%s}", taskID)
@@ -944,14 +948,14 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),
 		redisTaskAttempCountField: 0,
 	}
-	c, err := s.rdb.HSet(ctx, redisKeyForTask(taskID), props).Result()
+	c, err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), props).Result()
 	if err != nil {
 		return err
 	}
 	if c == 0 {
 		return status.AlreadyExistsErrorf("task %s already exists", taskID)
 	}
-	ok, err := s.rdb.Expire(ctx, redisKeyForTask(taskID), taskTTL).Result()
+	ok, err := s.rdb.Expire(ctx, s.redisKeyForTask(taskID), taskTTL).Result()
 	if err != nil {
 		return err
 	}
@@ -962,14 +966,14 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 }
 
 func (s *SchedulerServer) deleteTask(ctx context.Context, taskID string) (bool, error) {
-	key := redisKeyForTask(taskID)
+	key := s.redisKeyForTask(taskID)
 	n, err := s.rdb.Del(ctx, key).Result()
 	return n == 1, err
 }
 
 func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & has been deleted.
-	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{redisKeyForTask(taskID)}).Result()
+	r, err := redisDeleteClaimedTask.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
 	if err != nil {
 		return err
 	}
@@ -981,7 +985,7 @@ func (s *SchedulerServer) deleteClaimedTask(ctx context.Context, taskID string) 
 
 func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID string) error {
 	// The script will return 1 if the task is claimed & claim has been released.
-	r, err := redisReleaseClaim.Run(ctx, s.rdb, []string{redisKeyForTask(taskID)}).Result()
+	r, err := redisReleaseClaim.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
 	if err != nil {
 		return err
 	}
@@ -992,7 +996,7 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID string) error 
 }
 
 func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTime time.Time) error {
-	r, err := redisAcquireClaim.Run(ctx, s.rdb, []string{redisKeyForTask(taskID)}).Result()
+	r, err := redisAcquireClaim.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
 	if err != nil {
 		return err
 	}
@@ -1002,7 +1006,7 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		return status.NotFoundErrorf("unable to claim task: %q", taskID)
 	}
 
-	err = s.rdb.HIncrBy(ctx, redisKeyForTask(taskID), redisTaskAttempCountField, 1).Err()
+	err = s.rdb.HIncrBy(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, 1).Err()
 	if err != nil {
 		return err
 	}
@@ -1080,7 +1084,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
 	}
-	key := redisKeyForTask(taskID)
+	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
 	if err != nil {
 		return nil, status.InternalErrorf("could not read task from redis: %v", err)
