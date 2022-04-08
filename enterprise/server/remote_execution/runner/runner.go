@@ -878,7 +878,12 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 			continue
 		}
 
+		// TODO(bduffany): Find a way to unpause here without holding the lock.
 		if err := r.Container.Unpause(ctx); err != nil {
+			// If we fail to unpause, subsequent unpause attempts are also likely
+			// to fail, so remove the container from the pool.
+			p.remove(r)
+			r.RemoveInBackground()
 			return nil, err
 		}
 		r.state = ready
