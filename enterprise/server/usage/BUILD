@@ -10,7 +10,6 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//server/environment",
         "//server/interfaces",
-        "//server/real_environment",
         "//server/tables",
         "//server/util/db",
         "//server/util/log",
