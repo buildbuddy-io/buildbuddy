@@ -9,11 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core
@@ -100,6 +102,20 @@ type Env interface {
 	SetBuildBuddyServer(interfaces.BuildBuddyServer)
 	GetSSLService() interfaces.SSLService
 	SetSSLService(interfaces.SSLService)
+	GetBuildEventServer() pepb.PublishBuildEventServer
+	SetBuildEventServer(pepb.PublishBuildEventServer)
+	GetCASServer() repb.ContentAddressableStorageServer
+	SetCASServer(repb.ContentAddressableStorageServer)
+	GetByteStreamServer() bspb.ByteStreamServer
+	SetByteStreamServer(bspb.ByteStreamServer)
+	GetActionCacheServer() repb.ActionCacheServer
+	SetActionCacheServer(repb.ActionCacheServer)
+	GetPushServer() rapb.PushServer
+	SetPushServer(rapb.PushServer)
+	GetFetchServer() rapb.FetchServer
+	SetFetchServer(rapb.FetchServer)
+	GetCapabilitiesServer() repb.CapabilitiesServer
+	SetCapabilitiesServer(repb.CapabilitiesServer)
 	GetGRPCServer() *grpc.Server
 	SetGRPCServer(*grpc.Server)
 	GetGRPCSServer() *grpc.Server

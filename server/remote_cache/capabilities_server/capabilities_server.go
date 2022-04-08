@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 )
@@ -12,6 +14,17 @@ type CapabilitiesServer struct {
 	supportCAS        bool
 	supportRemoteExec bool
 	supportZstd       bool
+}
+
+func Register(env environment.Env) error {
+	// Register to handle GetCapabilities messages, which tell the client
+	// that this server supports CAS functionality.
+	env.SetCapabilitiesServer(NewCapabilitiesServer(
+		/*supportCAS=*/ env.GetCache() != nil,
+		/*supportRemoteExec=*/ env.GetRemoteExecutionService() != nil,
+		/*supportZstd=*/ env.GetConfigurator().GetCacheZstdTranscodingEnabled(),
+	))
+	return nil
 }
 
 func NewCapabilitiesServer(supportCAS, supportRemoteExec, supportZstd bool) *CapabilitiesServer {

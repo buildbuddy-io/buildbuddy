@@ -26,6 +26,19 @@ type ActionCacheServer struct {
 	cache interfaces.Cache
 }
 
+func Register(env environment.Env) error {
+	// OPTIONAL CACHE API -- only enable if configured.
+	if env.GetCache() == nil {
+		return nil
+	}
+	actionCacheServer, err := NewActionCacheServer(env)
+	if err != nil {
+		return status.InternalErrorf("Error initializing ActionCacheServer: %s", err)
+	}
+	env.SetActionCacheServer(actionCacheServer)
+	return nil
+}
+
 func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	cache := env.GetCache()
 	if cache == nil {

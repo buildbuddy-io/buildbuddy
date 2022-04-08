@@ -36,6 +36,19 @@ type ContentAddressableStorageServer struct {
 	cache interfaces.Cache
 }
 
+func Register(env environment.Env) error {
+	// OPTIONAL CACHE API -- only enable if configured.
+	if env.GetCache() == nil {
+		return nil
+	}
+	casServer, err := NewContentAddressableStorageServer(env)
+	if err != nil {
+		return status.InternalErrorf("Error initializing ContentAddressableStorageServer: %s", err)
+	}
+	env.SetCASServer(casServer)
+	return nil
+}
+
 func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressableStorageServer, error) {
 	cache := env.GetCache()
 	if cache == nil {

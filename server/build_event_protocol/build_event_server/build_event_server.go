@@ -7,12 +7,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/ptypes/empty"
@@ -20,74 +14,19 @@ import (
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type BuildEventProtocolServer struct {
 	env environment.Env
 }
 
-func Register(env environment.Env, grpcServer *grpc.Server) error {
+func Register(env environment.Env) error {
 	// Register to handle build event protocol messages.
 	buildEventServer, err := NewBuildEventProtocolServer(env)
 	if err != nil {
 		return status.InternalErrorf("Error initializing BuildEventProtocolServer: %s", err)
 	}
-	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
-
-	enableCache := env.GetCache() != nil
-	// OPTIONAL CACHE API -- only enable if configured.
-	if enableCache {
-		// Register to handle content addressable storage (CAS) messages.
-		casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
-		if err != nil {
-			return status.InternalErrorf("Error initializing ContentAddressableStorageServer: %s", err)
-		}
-		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-
-		// Register to handle bytestream (upload and download) messages.
-		byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-		if err != nil {
-			return status.InternalErrorf("Error initializing ByteStreamServer: %s", err)
-		}
-		bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-
-		// Register to handle action cache (upload and download) messages.
-		actionCacheServer, err := action_cache_server.NewActionCacheServer(env)
-		if err != nil {
-			return status.InternalErrorf("Error initializing ActionCacheServer: %s", err)
-		}
-		repb.RegisterActionCacheServer(grpcServer, actionCacheServer)
-
-		pushServer := push_server.NewPushServer(env)
-		rapb.RegisterPushServer(grpcServer, pushServer)
-
-		fetchServer, err := fetch_server.NewFetchServer(env)
-		if err != nil {
-			return status.InternalErrorf("Error initializing FetchServer: %s", err)
-		}
-		rapb.RegisterFetchServer(grpcServer, fetchServer)
-
-	}
-	enableRemoteExec := false
-	if rexec := env.GetRemoteExecutionService(); rexec != nil {
-		enableRemoteExec = true
-		repb.RegisterExecutionServer(grpcServer, rexec)
-	}
-	if scheduler := env.GetSchedulerService(); scheduler != nil {
-		scpb.RegisterSchedulerServer(grpcServer, scheduler)
-	}
-	// Register to handle GetCapabilities messages, which tell the client
-	// that this server supports CAS functionality.
-	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
-		/*supportCAS=*/ enableCache,
-		/*supportRemoteExec=*/ enableRemoteExec,
-		/*supportZstd=*/ env.GetConfigurator().GetCacheZstdTranscodingEnabled(),
-	)
-	repb.RegisterCapabilitiesServer(grpcServer, capabilitiesServer)
+	env.SetBuildEventServer(buildEventServer)
 	return nil
 }
 
