@@ -36,6 +36,19 @@ type ByteStreamServer struct {
 	bufferPool *bytebufferpool.Pool
 }
 
+func Register(env environment.Env) error {
+	// OPTIONAL CACHE API -- only enable if configured.
+	if env.GetCache() == nil {
+		return nil
+	}
+	byteStreamServer, err := NewByteStreamServer(env)
+	if err != nil {
+		return status.InternalErrorf("Error initializing ByteStreamServer: %s", err)
+	}
+	env.SetByteStreamServer(byteStreamServer)
+	return nil
+}
+
 func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 	cache := env.GetCache()
 	if cache == nil {

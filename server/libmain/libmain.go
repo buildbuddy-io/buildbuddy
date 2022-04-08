@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -27,6 +28,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/push_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
@@ -238,6 +245,28 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+
+	if err := build_event_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := content_addressable_storage_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := byte_stream_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := action_cache_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := push_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := fetch_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := capabilities_server.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	if err := grpc_server.RegisterGRPCServer(env); err != nil {
 		log.Fatalf("%v", err)

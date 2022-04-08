@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -83,6 +84,13 @@ type RealEnv struct {
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
 	sslService                       interfaces.SSLService
+	buildEventServer                 pepb.PublishBuildEventServer
+	casServer                        repb.ContentAddressableStorageServer
+	byteStreamServer                 bspb.ByteStreamServer
+	actionCacheServer                repb.ActionCacheServer
+	pushServer                       rapb.PushServer
+	fetchServer                      rapb.FetchServer
+	capabilitiesServer               repb.CapabilitiesServer
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
 }
@@ -425,6 +433,61 @@ func (r *RealEnv) GetSSLService() interfaces.SSLService {
 
 func (r *RealEnv) SetSSLService(sslService interfaces.SSLService) {
 	r.sslService = sslService
+}
+func (r *RealEnv) GetBuildEventServer() pepb.PublishBuildEventServer {
+	return r.buildEventServer
+}
+
+func (r *RealEnv) SetBuildEventServer(buildEventServer pepb.PublishBuildEventServer) {
+	r.buildEventServer = buildEventServer
+}
+
+func (r *RealEnv) GetCASServer() repb.ContentAddressableStorageServer {
+	return r.casServer
+}
+
+func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
+	r.casServer = casServer
+}
+
+func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
+	return r.byteStreamServer
+}
+
+func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
+	r.byteStreamServer = byteStreamServer
+}
+
+func (r *RealEnv) GetActionCacheServer() repb.ActionCacheServer {
+	return r.actionCacheServer
+}
+
+func (r *RealEnv) SetActionCacheServer(actionCacheServer repb.ActionCacheServer) {
+	r.actionCacheServer = actionCacheServer
+}
+
+func (r *RealEnv) GetPushServer() rapb.PushServer {
+	return r.pushServer
+}
+
+func (r *RealEnv) SetPushServer(pushServer rapb.PushServer) {
+	r.pushServer = pushServer
+}
+
+func (r *RealEnv) GetFetchServer() rapb.FetchServer {
+	return r.fetchServer
+}
+
+func (r *RealEnv) SetFetchServer(fetchServer rapb.FetchServer) {
+	r.fetchServer = fetchServer
+}
+
+func (r *RealEnv) GetCapabilitiesServer() repb.CapabilitiesServer {
+	return r.capabilitiesServer
+}
+
+func (r *RealEnv) SetCapabilitiesServer(capabilitiesServer repb.CapabilitiesServer) {
+	r.capabilitiesServer = capabilitiesServer
 }
 
 func (r *RealEnv) GetGRPCServer() *grpc.Server {

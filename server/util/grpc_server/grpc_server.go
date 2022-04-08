@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
@@ -22,7 +21,12 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
@@ -95,9 +99,34 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	grpc_prometheus.EnableHandlingTimeHistogram()
 
 	// Start Build-Event-Protocol and Remote-Cache services.
-	if err := build_event_server.Register(env, grpcServer); err != nil {
-		return nil, err
+	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
+
+	if casServer := env.GetCASServer(); casServer != nil {
+		// Register to handle content addressable storage (CAS) messages.
+		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	}
+	if bsServer := env.GetByteStreamServer(); bsServer != nil {
+		// Register to handle bytestream (upload and download) messages.
+		bspb.RegisterByteStreamServer(grpcServer, bsServer)
+	}
+	if acServer := env.GetActionCacheServer(); acServer != nil {
+		// Register to handle action cache (upload and download) messages.
+		repb.RegisterActionCacheServer(grpcServer, acServer)
+	}
+	if pushServer := env.GetPushServer(); pushServer != nil {
+		rapb.RegisterPushServer(grpcServer, pushServer)
+	}
+	if fetchServer := env.GetFetchServer(); fetchServer != nil {
+		rapb.RegisterFetchServer(grpcServer, fetchServer)
+	}
+	if rexec := env.GetRemoteExecutionService(); rexec != nil {
+		repb.RegisterExecutionServer(grpcServer, rexec)
+	}
+	if scheduler := env.GetSchedulerService(); scheduler != nil {
+		scpb.RegisterSchedulerServer(grpcServer, scheduler)
+	}
+	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 
 	// Register API Server as a gRPC service.

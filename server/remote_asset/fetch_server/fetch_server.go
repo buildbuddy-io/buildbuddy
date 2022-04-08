@@ -39,6 +39,19 @@ type FetchServer struct {
 	cache interfaces.Cache
 }
 
+func Register(env environment.Env) error {
+	// OPTIONAL CACHE API -- only enable if configured.
+	if env.GetCache() == nil {
+		return nil
+	}
+	fetchServer, err := NewFetchServer(env)
+	if err != nil {
+		return status.InternalErrorf("Error initializing FetchServer: %s", err)
+	}
+	env.SetFetchServer(fetchServer)
+	return nil
+}
+
 func NewFetchServer(env environment.Env) (*FetchServer, error) {
 	cache := env.GetCache()
 	if cache == nil {
