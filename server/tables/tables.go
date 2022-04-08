@@ -765,6 +765,14 @@ func postMigrateInvocationUUIDForSQLite(db *gorm.DB) error {
 	return nil
 }
 
+func dropIndexIfExists(m gorm.Migrator, table, indexName string) {
+	if m.HasTable(table) && m.HasIndex(table, indexName) {
+		if err := m.DropIndex(table, indexName); err != nil {
+			log.Errorf("Error dropping index %q on table %q: %s", indexName, table, err)
+		}
+	}
+}
+
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
 	indexes := map[string]string{
@@ -813,11 +821,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 		}
 	}
 
-	if m.HasTable("Executions") && m.HasIndex("Executions", "execution_invocation_id") {
-		if err := db.Migrator().DropIndex("Invocations", "execution_invocation_id"); err != nil {
-			log.Errorf("Error dropping deprecated execution index: %s", err)
-		}
-	}
+	dropIndexIfExists(m, "Executions", "execution_invocation_id")
 
 	type ColRef struct {
 		table  Table
