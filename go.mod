@@ -59,6 +59,7 @@ require (
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v1.14.11
 	github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
+	github.com/mitchellh/go-ps v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0

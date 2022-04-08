@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ps "github.com/mitchellh/go-ps"
 )
 
 const (
@@ -90,7 +92,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Re
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		cmd, stdoutBuf, stderrBuf = constructExecCommand(command, workDir, stdin, stdout)
-		return RunWithProcessGroupCleanup(ctx, cmd)
+		return RunWithProcessTreeCleanup(ctx, cmd)
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
@@ -104,28 +106,22 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdin io.Re
 	}
 }
 
-// RunWithProcessGroupCleanup runs the given command, ensuring that child
+// RunWithProcessTreeCleanup runs the given command, ensuring that child
 // processes are killed if the command times out.
 //
 // It is intended to be used with a command created via exec.Command(), not
 // exec.CommandContext(). Unlike exec.CommandContext.Run(), it kills the process
-// group when the context is done, instead of just killing the top-level
-// process. This helps ensure that orphaned processes aren't left running after
-// the command completes.
-//
-// It returns a FailedPrecondition error if cmd.SysProcAttr.Setpgid is not set
-// to true.
+// tree when the context is done, instead of just killing the top-level process.
+// This helps ensure that orphaned child processes aren't left running
+// after the command completes.
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
-func RunWithProcessGroupCleanup(ctx context.Context, cmd *exec.Cmd) error {
-	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
-		return status.FailedPreconditionError("process group cleanup requires SysProcAttr.Setpgid to be set")
-	}
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	pgid := cmd.Process.Pid
+	pid := cmd.Process.Pid
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -133,14 +129,71 @@ func RunWithProcessGroupCleanup(ctx context.Context, cmd *exec.Cmd) error {
 		case <-done:
 			return
 		case <-ctx.Done():
-			// TODO(bduffany): This works well if all child processes stay in the same
-			// process group as the parent, but this isn't guaranteed, so we might
-			// want to think about a more reliable solution here.
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			if err := KillProcessTree(pid); err != nil {
+				log.Warningf("Failed to kill process tree: %s", err)
+			}
 		}
 	}()
 
 	return cmd.Wait()
+}
+
+// KillProcessTree kills the given pid as well as any descendant processes.
+//
+// It tries to kill as many processes in the tree as possible. If it encounters
+// an error along the way, it proceeds to kill subsequent pids in the tree. It
+// returns the last error encountered, if any.
+func KillProcessTree(pid int) error {
+	var lastErr error
+
+	// Run a BFS on the process tree to build up a list of processes to kill.
+	// Before listing child processes for each pid, send SIGSTOP to prevent it
+	// from spawning new child processes. Otherwise the child process list has a
+	// chance to become stale if the pid forks a new child just after we list
+	// processes but before we send SIGKILL.
+
+	pidsToExplore := []int{pid}
+	pidsToKill := []int{}
+	for len(pidsToExplore) > 0 {
+		pid := pidsToExplore[0]
+		pidsToExplore = pidsToExplore[1:]
+		if err := syscall.Kill(pid, syscall.SIGSTOP); err != nil {
+			lastErr = err
+			// If we fail to SIGSTOP, proceed anyway; the more we can clean up,
+			// the better.
+		}
+		pidsToKill = append(pidsToKill, pid)
+
+		childPids, err := ChildPids(pid)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		pidsToExplore = append(pidsToExplore, childPids...)
+	}
+	for _, pid := range pidsToKill {
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+			lastErr = err
+		}
+	}
+
+	return lastErr
+}
+
+// ChildPids returns all *direct* child pids of a process identified by pid.
+func ChildPids(pid int) ([]int, error) {
+	procs, err := ps.Processes()
+	if err != nil {
+		return nil, err
+	}
+	var out []int
+	for _, proc := range procs {
+		if proc.PPid() != pid {
+			continue
+		}
+		out = append(out, proc.Pid())
+	}
+	return out, nil
 }
 
 func ErrorResult(err error) *interfaces.CommandResult {

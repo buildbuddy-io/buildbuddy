@@ -141,6 +141,27 @@ func TestRun_Timeout(t *testing.T) {
 	assert.Equal(t, "stderr\n", string(res.Stderr))
 }
 
+func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
+	ctx := context.Background()
+	wd := testfs.MakeTempDir(t)
+
+	cmd := &repb.Command{Arguments: []string{
+		"sh", "-c",
+		// Spawn a nested process inside the shell which becomes its own process group leader.
+		// Using a go binary here because sh does not have a straightforward
+		// way to make the setpgid system call.
+		testfs.RunfilePath(t, "enterprise/server/remote_execution/commandutil/test_binary/test_binary_/test_binary"),
+	}}
+	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+
+	res := commandutil.Run(ctx, cmd, wd, nil, nil)
+
+	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
+	assert.Equal(t, "stdout\n", string(res.Stdout))
+	assert.Equal(t, "stderr\n", string(res.Stderr))
+}
+
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
 	return commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)

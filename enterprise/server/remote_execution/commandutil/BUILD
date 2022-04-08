@@ -8,13 +8,16 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/log",
         "//server/util/status",
+        "@com_github_mitchellh_go_ps//:go-ps",
     ],
 )
 
 go_test(
     name = "commandutil_test",
     srcs = ["commandutil_test.go"],
+    data = ["//enterprise/server/remote_execution/commandutil/test_binary"],
     deps = [
         ":commandutil",
         "//proto:remote_execution_go_proto",
