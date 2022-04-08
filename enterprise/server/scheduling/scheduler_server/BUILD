@@ -16,7 +16,6 @@ go_library(
         "//proto:trace_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/real_environment",
         "//server/resources",
         "//server/util/background",
         "//server/util/grpc_client",
