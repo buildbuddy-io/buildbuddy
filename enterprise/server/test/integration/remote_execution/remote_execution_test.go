@@ -19,10 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -131,9 +133,9 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
-
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	invocationID := "testabc123"
 
 	cmd := rbe.Execute(
@@ -149,8 +151,8 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		},
 	)
 	err := cmd.MustFail()
-	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %s", err)
 
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %s", err)
 	ar, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
 	require.NoError(t, err)
 	assert.Less(t, ar.GetExitCode(), int32(0), "expecting exit code < 0 since command did not exit normally")
@@ -158,13 +160,15 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ExampleStdout\n", stdout, "stdout should be propagated")
 	assert.Equal(t, "ExampleStderr\n", stderr, "stderr should be propagated")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	cmd := rbe.ExecuteCustomCommand("/COMMAND_THAT_DOES_NOT_EXIST")
 	err := cmd.MustFail()
@@ -172,13 +176,15 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsFailedPreconditionError(err))
 	assert.Contains(t, status.Message(err), "no such file or directory")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestSimpleCommand_Abort_ReturnsExecutionErrorWithoutRetrying(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "kill -ABRT $$")
 	// TODO(bduffany): Expect a failed ActionResult here rather than a
@@ -190,7 +196,8 @@ func TestSimpleCommand_Abort_ReturnsExecutionErrorWithoutRetrying(t *testing.T) 
 		t, status.IsResourceExhaustedError(err),
 		"expecting RESOURCE_EXHAUSTED but got: %s", err)
 	assert.Contains(t, err.Error(), "signal: aborted")
-	assert.NotContains(t, err.Error(), "attempt", "task should not have been retried")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
@@ -476,9 +483,9 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 
 func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{Pool: "bar"})
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -500,6 +507,8 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 	err := cmd.MustFail()
 
 	require.Contains(t, err.Error(), `No registered executors in pool "foo"`)
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 0, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
@@ -1059,9 +1068,9 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 
 func TestCommandWithMissingInputRootDigest(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
-
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -1074,8 +1083,13 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 		Platform:  platform,
 	}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
 	err := cmd.MustFail()
+
 	require.Contains(t, err.Error(), "already attempted")
 	require.Contains(t, err.Error(), "not found in cache")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	// NotFound errors can be retried in case of a transient issue with the
+	// cache backend.
+	assert.Equal(t, 5, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestRedisRestart(t *testing.T) {
@@ -1149,6 +1163,7 @@ func TestInvocationCancellation(t *testing.T) {
 
 	bbServer := rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	iid := uuid.NewString()
 	bep, err := build_event_publisher.New(bbServer.GRPCAddress(), "", iid)
@@ -1190,4 +1205,7 @@ func TestInvocationCancellation(t *testing.T) {
 
 	// Also verify that the action itself was terminated.
 	cmd1.WaitDisconnected()
+
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
