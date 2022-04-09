@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -46,7 +47,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -56,6 +56,8 @@ import (
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	gstatus "google.golang.org/grpc/status"
 )
+
+var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -371,7 +373,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
-		mountWorkspaceFile: executor_config.Get().FirecrackerMountWorkspaceFile,
+		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 	}
 
 	if err := c.newID(); err != nil {

@@ -10,7 +10,6 @@ go_library(
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/executor",
-        "//enterprise/server/remote_execution/executor/config",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/scheduling/priority_task_scheduler",

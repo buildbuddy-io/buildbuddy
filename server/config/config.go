@@ -334,40 +334,6 @@ type ContainerRegistryConfig struct {
 	Password  string   `yaml:"password" json:"password"`
 }
 
-func (c *ExecutorConfig) GetAppTarget() string {
-	if c.AppTarget == "" {
-		return "grpcs://remote.buildbuddy.io"
-	}
-	return c.AppTarget
-}
-
-func (c *ExecutorConfig) GetRootDirectory() string {
-	if c.RootDirectory == "" {
-		return "/tmp/buildbuddy/remote_build"
-	}
-	return c.RootDirectory
-}
-
-func (c *ExecutorConfig) GetLocalCacheDirectory() string {
-	if c.DisableLocalCache {
-		return ""
-	}
-	if c.LocalCacheDirectory == "" {
-		return "/tmp/buildbuddy/filecache"
-	}
-	return c.LocalCacheDirectory
-}
-
-func (c *ExecutorConfig) GetLocalCacheSizeBytes() int64 {
-	if c.DisableLocalCache {
-		return 0
-	}
-	if c.LocalCacheSizeBytes == 0 {
-		return 1_000_000_000 // 1 GB
-	}
-	return c.LocalCacheSizeBytes
-}
-
 type RunnerPoolConfig struct {
 	MaxRunnerCount            int   `yaml:"max_runner_count" usage:"Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory."`
 	MaxRunnerDiskSizeBytes    int64 `yaml:"max_runner_disk_size_bytes" usage:"Maximum disk size for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 16GB."`

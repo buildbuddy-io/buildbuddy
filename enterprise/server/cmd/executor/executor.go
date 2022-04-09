@@ -44,7 +44,6 @@ import (
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	remote_executor "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -52,6 +51,12 @@ import (
 )
 
 var (
+	appTarget                = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
+	disableLocalCache        = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
+	localCacheDirectory      = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
+	localCacheSizeBytes      = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
+	startupWarmupMaxWaitSecs = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
+
 	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
 	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
@@ -107,10 +112,6 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
 	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
 
-	executorConfig := executor_config.Get()
-	if executorConfig.Pool != "" && resources.GetPoolName() != "" {
-		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
-	}
 	if err := resources.Configure(); err != nil {
 		log.Fatal(status.Message(err))
 	}
@@ -153,38 +154,36 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	}
 
 	useLocalCache := realEnv.GetCache() != nil
-	InitializeCacheClientsOrDie(executorConfig.GetAppTarget(), realEnv, useLocalCache)
+	InitializeCacheClientsOrDie(*appTarget, realEnv, useLocalCache)
 
-	if executorConfig.GetLocalCacheDirectory() != "" && executorConfig.GetLocalCacheSizeBytes() != 0 {
-		log.Infof("Enabling filecache in %q (size %d bytes)", executorConfig.GetLocalCacheDirectory(), executorConfig.GetLocalCacheSizeBytes())
-		if fc, err := filecache.NewFileCache(executorConfig.GetLocalCacheDirectory(), executorConfig.GetLocalCacheSizeBytes()); err == nil {
+	if !*disableLocalCache {
+		log.Infof("Enabling filecache in %q (size %d bytes)", *localCacheDirectory, *localCacheSizeBytes)
+		if fc, err := filecache.NewFileCache(*localCacheDirectory, *localCacheSizeBytes); err == nil {
 			realEnv.SetFileCache(fc)
 		}
 	}
 
-	if executorConfig.GetAppTarget() != "" {
-		conn, err := grpc_client.DialTarget(executorConfig.GetAppTarget())
-		if err != nil {
-			log.Fatalf("Unable to connect to app '%s': %s", executorConfig.GetAppTarget(), err)
-		}
-		log.Infof("Connecting to app target: %s", executorConfig.GetAppTarget())
-
-		realEnv.GetHealthChecker().AddHealthCheck(
-			"grpc_app_connection", interfaces.CheckerFunc(
-				func(ctx context.Context) error {
-					connState := conn.GetState()
-					if connState == connectivity.Ready {
-						return nil
-					} else if connState == connectivity.Idle {
-						conn.Connect()
-					}
-					return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
-				},
-			),
-		)
-		realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
-		realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
+	conn, err := grpc_client.DialTarget(*appTarget)
+	if err != nil {
+		log.Fatalf("Unable to connect to app '%s': %s", *appTarget, err)
 	}
+	log.Infof("Connecting to app target: %s", *appTarget)
+
+	realEnv.GetHealthChecker().AddHealthCheck(
+		"grpc_app_connection", interfaces.CheckerFunc(
+			func(ctx context.Context) error {
+				connState := conn.GetState()
+				if connState == connectivity.Ready {
+					return nil
+				} else if connState == connectivity.Idle {
+					conn.Connect()
+				}
+				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
+			},
+		),
+	)
+	realEnv.SetSchedulerClient(scpb.NewSchedulerClient(conn))
+	realEnv.SetRemoteExecutionClient(repb.NewExecutionClient(conn))
 
 	return realEnv
 }
@@ -228,7 +227,6 @@ func main() {
 	localServer := grpc.NewServer(grpcOptions...)
 
 	// Start Build-Event-Protocol and Remote-Cache services.
-	executorConfig := executor_config.Get()
 	executorUUID, err := uuid.NewRandom()
 	if err != nil {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
@@ -293,8 +291,7 @@ func main() {
 		close(warmupDone)
 	}()
 	go func() {
-		if executorConfig.StartupWarmupMaxWaitSecs != 0 {
-			warmupMaxWait := time.Duration(executorConfig.StartupWarmupMaxWaitSecs) * time.Second
+		if warmupMaxWait := time.Duration(*startupWarmupMaxWaitSecs) * time.Second; warmupMaxWait != 0 {
 			select {
 			case <-warmupDone:
 			case <-time.After(warmupMaxWait):

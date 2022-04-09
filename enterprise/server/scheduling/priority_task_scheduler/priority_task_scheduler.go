@@ -3,6 +3,7 @@ package priority_task_scheduler
 import (
 	"container/list"
 	"context"
+	"flag"
 	"sync"
 	"time"
 
@@ -20,12 +21,13 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
+
+var exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 
 const (
 	queueCheckSleepInterval = 10 * time.Millisecond
@@ -179,7 +181,6 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		cpuMillisCapacity = int64(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio)
 	}
 
-	executorConfig := executor_config.Get()
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:                     env,
@@ -193,7 +194,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		shuttingDown:            false,
 		ramBytesCapacity:        ramBytesCapacity,
 		cpuMillisCapacity:       cpuMillisCapacity,
-		exclusiveTaskScheduling: executorConfig.ExclusiveTaskScheduling,
+		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
