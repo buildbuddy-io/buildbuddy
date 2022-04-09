@@ -40,7 +40,11 @@ const (
 )
 
 var (
-	defaultCfg = &config.RunnerPoolConfig{}
+	defaultCfg = &config.RunnerPoolConfig{
+		MaxRunnerCount:            *maxRunnerCount,
+		MaxRunnerDiskSizeBytes:    *maxRunnerDiskSizeBytes,
+		MaxRunnerMemoryUsageBytes: *maxRunnerMemoryUsageBytes,
+	}
 
 	noLimitsCfg = &config.RunnerPoolConfig{
 		MaxRunnerCount:            unlimited,

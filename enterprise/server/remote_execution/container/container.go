@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,8 +31,13 @@ const (
 )
 
 var (
+	containerRegistries     = []config.ContainerRegistryConfig{}
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
+
+func init() {
+	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
+}
 
 // Stats holds represents a container's held resources.
 type Stats struct {
@@ -227,8 +233,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		}
 	}
 
-	regCfgs := executor_config.Get().ContainerRegistries
-	if len(regCfgs) == 0 {
+	if len(containerRegistries) == 0 {
 		return PullCredentials{}
 	}
 
@@ -238,7 +243,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		return PullCredentials{}
 	}
 	refHostname := reference.Domain(ref)
-	for _, cfg := range regCfgs {
+	for _, cfg := range containerRegistries {
 		for _, cfgHostname := range cfg.Hostnames {
 			if refHostname == cfgHostname {
 				return PullCredentials{

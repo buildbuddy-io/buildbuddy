@@ -2,19 +2,29 @@ package platform
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	dockerSocket         = flag.String("executor.docker_socket", "", "If set, run execution commands in docker using the provided socket.")
+	defaultXcodeVersion  = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
+	defaultIsolationType = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner")
+	enableBareRunner     = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
+	enablePodman         = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
+	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
+	defaultImage         = flag.String("executor.default_image", "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0", "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
+	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
 )
 
 const (
@@ -32,7 +42,6 @@ const (
 	DefaultPoolValue = "default"
 
 	containerImagePropertyName = "container-image"
-	DefaultContainerImage      = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	DockerPrefix               = "docker://"
 
 	containerRegistryUsernamePropertyName = "container-registry-username"
@@ -155,6 +164,9 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		pool = ""
 	}
 
+	// Only Enable VFS if it is also enabled via flags
+	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -169,7 +181,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
-		EnableVFS:                 boolProp(m, enableVFSPropertyName, false),
+		EnableVFS:                 vfsEnabled,
 		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
 		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
@@ -210,22 +222,22 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 // GetExecutorProperties returns a struct of properties that the configured
 // executor supports. These are matched against the properties sent by the
 // client.
-func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorProperties {
+func GetExecutorProperties() *ExecutorProperties {
 	p := &ExecutorProperties{
 		SupportedIsolationTypes: make([]ContainerType, 0),
-		DefaultXcodeVersion:     executorConfig.DefaultXcodeVersion,
+		DefaultXcodeVersion:     *defaultXcodeVersion,
 	}
 
 	// NB: order matters! this list will be used in order to determine the which
 	// isolation method to use if none was set.
-	if executorConfig.DockerSocket != "" {
+	if *dockerSocket != "" {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Docker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, DockerContainerType)
 		}
 	}
-	if executorConfig.EnableFirecracker {
+	if *enableFirecracker {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Firecracker was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
@@ -233,7 +245,7 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 		}
 	}
 
-	if executorConfig.EnablePodman {
+	if *enablePodman {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Podman was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
@@ -243,7 +255,7 @@ func GetExecutorProperties(executorConfig *config.ExecutorConfig) *ExecutorPrope
 
 	// Special case: for backwards compatibility, support bare-runners when docker
 	// is not enabled. Typically, this happens for macs.
-	if executorConfig.EnableBareRunner || len(p.SupportedIsolationTypes) == 0 {
+	if *enableBareRunner || len(p.SupportedIsolationTypes) == 0 {
 		p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, BareContainerType)
 	}
 
@@ -267,23 +279,17 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	if platformProps.WorkloadIsolationType == "" {
-		defaultIsolationType := executor_config.Get().DefaultIsolationType
-		if defaultIsolationType == "" {
+		if *defaultIsolationType == "" {
 			// Backward-compatibility: if no default isolation type was specified; use the first configured one.
 			platformProps.WorkloadIsolationType = string(executorProps.SupportedIsolationTypes[0])
 		} else {
-			platformProps.WorkloadIsolationType = string(defaultIsolationType)
+			platformProps.WorkloadIsolationType = string(*defaultIsolationType)
 		}
 	}
 
 	// Check that the selected isolation type is supported by this executor.
 	if !contains(executorProps.SupportedIsolationTypes, ContainerType(platformProps.WorkloadIsolationType)) {
 		return status.InvalidArgumentErrorf("The requested workload isolation type %q is unsupported by this executor. Supported types: %s)", platformProps.WorkloadIsolationType, executorProps.SupportedIsolationTypes)
-	}
-
-	defaultContainerImage := executor_config.Get().DefaultImage
-	if defaultContainerImage == "" {
-		defaultContainerImage = DefaultContainerImage
 	}
 
 	// Normalize the container image string
@@ -300,7 +306,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = defaultContainerImage
+			platformProps.ContainerImage = *defaultImage
 		} else if !strings.HasPrefix(platformProps.ContainerImage, DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
@@ -396,4 +402,12 @@ func FindValue(platform *repb.Platform, name string) string {
 // IsTrue returns whether the given platform property value is truthy.
 func IsTrue(value string) bool {
 	return strings.EqualFold(value, "true")
+}
+
+func DockerSocket() string {
+	return *dockerSocket
+}
+
+func DefaultImage() string {
+	return *defaultImage
 }

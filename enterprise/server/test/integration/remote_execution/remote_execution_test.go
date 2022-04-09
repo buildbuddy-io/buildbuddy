@@ -217,7 +217,7 @@ func TestWorkflowCommand_InternalError_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(status.InternalError("test error message"))
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
@@ -237,7 +237,7 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
-	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		RunInterceptor: rbetest.AlwaysReturn(errResult),
 	})
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)

@@ -583,6 +583,9 @@ type RunnerPool interface {
 
 	// Shutdown removes all runners from the pool.
 	Shutdown(ctx context.Context) error
+
+	// Returns the build root directory for this pool.
+	GetBuildRoot() string
 }
 
 // CommandResult captures the output and details of an executed command.

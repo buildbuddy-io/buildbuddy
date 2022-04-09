@@ -5,6 +5,7 @@ package rbetest
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -70,7 +71,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
-	executor_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/config"
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -725,14 +725,14 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	err = resources.Configure()
 	require.NoError(r.t, err)
 
-	executorConfig := executor_config.Get()
 	flags.Set(t, "executor.pool", options.Pool)
 	// Place executor data under the env root dir, since that dir gets removed
 	// only after all the executors have shutdown.
-	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
-	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
+	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
+	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
+	flags.Set(t, "executor.local_cache_directory", localCacheDirectory)
 
-	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
+	fc, err := filecache.NewFileCache(localCacheDirectory, reflect.ValueOf(flag.Lookup("executor.local_cache_size_bytes").Value).Convert(reflect.TypeOf((*int64)(nil))).Elem().Int())
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}
