@@ -109,16 +109,6 @@ func diffTimestampsToProto(startPb, endPb *tspb.Timestamp) *durationpb.Duration 
 	return ptypes.DurationProto(diffTimestamps(startPb, endPb))
 }
 
-func logActionResult(taskID string, md *repb.ExecutedActionMetadata) {
-	workTime := diffTimestamps(md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
-	fetchTime := diffTimestamps(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-	execTime := diffTimestamps(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-	uploadTime := diffTimestamps(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-	log.Debugf("%q completed action %q [work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
-		md.GetWorker(), taskID, workTime.Milliseconds(), fetchTime.Milliseconds(),
-		execTime.Milliseconds(), uploadTime.Milliseconds())
-}
-
 func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
@@ -152,7 +142,19 @@ func isBazelRetryableError(taskError error) bool {
 	return false
 }
 
+// isTaskMisconfigured returns whether a task failed to execute because of a
+// configuration error that will prevent the action from executing properly,
+// even if retried.
+func isTaskMisconfigured(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnauthenticatedError(err)
+}
+
 func shouldRetry(taskError error) bool {
+	if isTaskMisconfigured(taskError) {
+		return false
+	}
 	return !isBazelRetryableError(taskError)
 }
 
@@ -179,6 +181,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		if shouldRetry(finalErr) {
 			return true, finalErr
 		}
+		log.Warningf("Encountered non-retriable task error; relying on client to retry if needed: %s", finalErr)
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
 			return true, err
 		}
@@ -272,18 +275,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
-	// If we know that the command terminated due to receiving SIGKILL, make sure
-	// to retry, since this is not considered a clean termination.
-	//
-	// Other termination signals such as SIGABRT are treated as clean exits for
-	// now, since some tools intentionally raise SIGABRT to cause a fatal exit:
-	// https://github.com/bazelbuild/bazel/pull/14399
-	if cmdResult.Error == commandutil.ErrSIGKILL {
-		return finishWithErrFn(cmdResult.Error)
-	}
-	if cmdResult.Error != nil {
-		log.Warningf("Command execution returned non-retriable error: %s", cmdResult.Error)
-	}
+
+	// Note: we continue to upload outputs, stderr, etc. below even if
+	// cmdResult.Error is present, because these outputs are helpful
+	// for debugging.
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
@@ -340,9 +335,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		IoStats:                ioStats,
 		ExecutedActionMetadata: md,
 	}
+
+	// If the command didn't run to completion and we are not certain that the
+	// error was caused by a misconfigured task, allow the task to be retried.
+	if cmdResult.Error != nil && !isTaskMisconfigured(cmdResult.Error) {
+		return finishWithErrFn(cmdResult.Error)
+	}
+	// Otherwise, send the error back to the client via the ExecuteResponse
+	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {
-		logActionResult(taskID, md)
-		return finishWithErrFn(err) // CHECK (these errors should not happen).
+		log.Errorf("Failed to publish ExecuteResponse: %s", err)
+		return finishWithErrFn(err)
 	}
 	if cmdResult.Error == nil {
 		finishedCleanly = true
