@@ -22,6 +22,7 @@ go_library(
         "//server/util/healthcheck",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",
     ],
 )

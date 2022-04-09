@@ -33,12 +33,6 @@ func die(exitCode int, err error) {
 }
 
 func runBazelAndDie(ctx context.Context, args []string, opts *autoconfig.BazelOpts) {
-	// Now run bazel.
-	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
-
 	if opts.EnableRemoteBazel {
 		repoConfig, err := remotebazel.Config(".")
 		if err != nil {
@@ -46,15 +40,22 @@ func runBazelAndDie(ctx context.Context, args []string, opts *autoconfig.BazelOp
 		}
 
 		exitCode, err := remotebazel.Run(ctx, remotebazel.RunOpts{
-			Server: opts.BuildBuddyEndpoint,
-			APIKey: opts.APIKey,
-			Args:   args,
+			Server:            opts.BuildBuddyEndpoint,
+			APIKey:            opts.APIKey,
+			Args:              args,
+			WorkspaceFilePath: opts.WorkspaceFilePath,
+			SidecarSocket:     opts.SidecarSocket,
 		}, repoConfig)
 		if err != nil {
 			die(1, err)
 		}
 		die(exitCode, nil)
 	}
+
+	gcs := &repositories.GCSRepo{}
+	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
+	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
+	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	die(exitCode, err)
@@ -112,7 +113,10 @@ func main() {
 	}
 
 	bazelFlags := commandline.ExtractBazelFlags(filteredOSArgs)
-	bazelFlags, bazelOpts, filteredOSArgs := autoconfig.Configure(bazelFlags, filteredOSArgs)
+	bazelFlags, bazelOpts, filteredOSArgs, err := autoconfig.Configure(bazelFlags, filteredOSArgs)
+	if err != nil {
+		die(-1, err)
+	}
 	opts := parseBazelRCs(bazelFlags)
 
 	// Determine if cache or BES options are set.
@@ -126,7 +130,7 @@ func main() {
 	if subcommand == "version" {
 		fmt.Printf("bb %s\n", version.AppVersion())
 	}
-	if bazelOpts.EnableRemoteBazel || (besBackendFlag == "" && remoteCacheFlag == "") {
+	if besBackendFlag == "" && remoteCacheFlag == "" {
 		runBazelAndDie(ctx, filteredOSArgs, bazelOpts)
 	}
 
@@ -159,15 +163,20 @@ func main() {
 		sidecarSocket, err := sidecar.RestartSidecarIfNecessary(ctx, bbHome, sidecarArgs)
 		// TODO(tylerw): test the sidecar connection before passing it to bazel.
 		if err == nil {
-			if besBackendFlag != "" {
-				filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+			if !bazelOpts.EnableRemoteBazel {
+				if besBackendFlag != "" {
+					filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+				}
+				if remoteCacheFlag != "" && remoteExecFlag == "" {
+					filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+				}
+				if remoteExecFlag != "" {
+					filteredOSArgs = append(filteredOSArgs, remoteExecFlag)
+				}
 			}
-			if remoteCacheFlag != "" && remoteExecFlag == "" {
-				filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
-			}
-			if remoteExecFlag != "" {
-				filteredOSArgs = append(filteredOSArgs, remoteExecFlag)
-			}
+			bazelOpts.SidecarSocket = sidecarSocket
+		} else {
+			log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
 		}
 	}
 	bblog.Printf("Rewrote bazel command line to: %s", filteredOSArgs)

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
@@ -29,7 +30,9 @@ var (
 type BazelOpts struct {
 	APIKey             string
 	BuildBuddyEndpoint string
+	WorkspaceFilePath  string
 	EnableRemoteBazel  bool
+	SidecarSocket      string
 }
 
 func bbToolchainArgs() []string {
@@ -54,10 +57,15 @@ func remoteBazelArgs(besBackend, remoteExecutor string) []string {
 	return args
 }
 
-func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string) {
+func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string, error) {
 	serviceDomain := "buildbuddy.io"
 	if *dev {
 		serviceDomain = "buildbuddy.dev"
+	}
+
+	wsFilePath, err := findWorkspaceFile()
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	if *events && bazelFlags.BESBackend == "" {
@@ -66,40 +74,59 @@ func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*co
 	}
 
 	if (*remote == remoteExec || *remote == remoteBazel) && bazelFlags.RemoteExecutor == "" {
-		bazelFlags.RemoteExecutor = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
+		remoteExecTarget := fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 		if *remote == remoteExec {
 			filteredOSArgs = append(filteredOSArgs, bbToolchainArgs()...)
-			addToolchainsToWorkspaceIfNotPresent()
+			addToolchainsToWorkspaceIfNotPresent(wsFilePath)
+			bazelFlags.RemoteExecutor = remoteExecTarget
 		} else {
-			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, bazelFlags.RemoteExecutor)...)
+			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, remoteExecTarget)...)
 		}
 		filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
 		filteredOSArgs = append(filteredOSArgs, "--jobs=200")
 	}
 
-	if *cache && bazelFlags.RemoteCache == "" {
+	if (*cache || *remote == remoteBazel) && bazelFlags.RemoteCache == "" {
 		bazelFlags.RemoteCache = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 	}
 
 	bazelOpts := &BazelOpts{
 		BuildBuddyEndpoint: fmt.Sprintf("grpcs://remote.%s", serviceDomain),
+		WorkspaceFilePath:  wsFilePath,
 		EnableRemoteBazel:  *remote == remoteBazel,
 		APIKey:             *apiKey,
 	}
 
-	return bazelFlags, bazelOpts, filteredOSArgs
+	return bazelFlags, bazelOpts, filteredOSArgs, nil
 }
 
-func addToolchainsToWorkspaceIfNotPresent() {
-	workspaceFileName := "WORKSPACE.bazel"
-	workspaceBytes, err := ioutil.ReadFile(workspaceFileName)
+func findWorkspaceFile() (string, error) {
+	path, err := filepath.Abs(".")
 	if err != nil {
-		workspaceBytes, err = ioutil.ReadFile("WORKSPACE")
-		workspaceFileName = "WORKSPACE"
-		if err != nil {
-			log.Println(err)
-			return
+		return "", nil
+	}
+	for path != "/" {
+		for _, wsFilename := range []string{"WORKSPACE.bazel", "WORKSPACE"} {
+			wsFilePath := filepath.Join(path, wsFilename)
+			_, err := os.Stat(wsFilePath)
+			if err == nil {
+				return wsFilePath, nil
+			}
+			if err != nil && !os.IsNotExist(err) {
+				log.Printf("Could not check existence of workspace file at %q: %s\n", wsFilePath, err)
+				continue
+			}
 		}
+		path = filepath.Dir(path)
+	}
+	return "", fmt.Errorf("could not detect workspace root (are you running bb within a Bazel workspace?)")
+}
+
+func addToolchainsToWorkspaceIfNotPresent(workspaceFilePath string) {
+	workspaceBytes, err := ioutil.ReadFile(workspaceFilePath)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 
 	if strings.Contains(string(workspaceBytes), "buildbuddy_toolchain") {
@@ -125,7 +152,7 @@ func addToolchainsToWorkspaceIfNotPresent() {
 		buildbuddy(name = "buildbuddy_toolchain")
 `
 
-	workspaceFile, err := os.OpenFile(workspaceFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	workspaceFile, err := os.OpenFile(workspaceFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Println(err)
 		return

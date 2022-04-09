@@ -6,15 +6,17 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -24,13 +26,17 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
+	buildBuddyArtifactDir = "bb-out"
+
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
@@ -55,9 +61,11 @@ func consoleDeleteLines(n int) {
 }
 
 type RunOpts struct {
-	Server string
-	APIKey string
-	Args   []string
+	Server            string
+	APIKey            string
+	Args              []string
+	WorkspaceFilePath string
+	SidecarSocket     string
 }
 
 type RepoConfig struct {
@@ -223,7 +231,6 @@ func Config(path string) (*RepoConfig, error) {
 		repoConfig.Patches = append(repoConfig.Patches, []byte(patch))
 	}
 
-	// TODO(vadim): prompt user before uploading untracked files
 	untrackedFiles, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, err
@@ -231,6 +238,9 @@ func Config(path string) (*RepoConfig, error) {
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
 		for _, uf := range strings.Split(untrackedFiles, "\n") {
+			if strings.HasPrefix(uf, buildBuddyArtifactDir+"/") {
+				continue
+			}
 			patch, err := diffUntrackedFile(uf)
 			if err != nil {
 				return nil, err
@@ -264,56 +274,7 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
-func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
-	conn, err := grpc_client.DialTarget(opts.Server)
-	if err != nil {
-		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
-	}
-	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
-
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-
-	bblog.Printf("Requesting command execution on remote Bazel instance.")
-
-	instanceHash := sha256.New()
-	instanceHash.Write(uuid.NodeID())
-	instanceHash.Write([]byte(repoConfig.Root))
-
-	reqOS := runtime.GOOS
-	if *execOs != "" {
-		reqOS = *execOs
-	}
-	reqArch := runtime.GOARCH
-	if *execArch != "" {
-		reqArch = *execArch
-	}
-
-	req := &rnpb.RunRequest{
-		GitRepo: &rnpb.RunRequest_GitRepo{
-			RepoUrl: repoConfig.URL,
-		},
-		RepoState: &rnpb.RunRequest_RepoState{
-			CommitSha: repoConfig.CommitSHA,
-		},
-		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
-		BazelCommand:       strings.Join(opts.Args, " "),
-		Os:                 reqOS,
-		Arch:               reqArch,
-	}
-
-	for _, patch := range repoConfig.Patches {
-		req.GetRepoState().Patch = append(req.GetRepoState().Patch, patch)
-	}
-
-	rsp, err := bbClient.Run(ctx, req)
-	if err != nil {
-		return 0, status.UnknownErrorf("error running bazel: %s", err)
-	}
-
-	iid := rsp.GetInvocationId()
-
-	bblog.Printf("Invocation ID: %s", iid)
-
+func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	chunkID := ""
 	moveBack := 0
 
@@ -342,12 +303,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	wasLive := false
 	for {
 		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: iid,
+			InvocationId: invocationID,
 			ChunkId:      chunkID,
 			MinLines:     100,
 		})
 		if err != nil {
-			return 0, status.UnknownErrorf("error streaming logs: %s", err)
+			return status.UnknownErrorf("error streaming logs: %s", err)
 		}
 
 		chunks = append(chunks, l)
@@ -374,6 +335,148 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 		chunkID = l.GetNextChunkId()
 	}
+	return nil
+}
+
+func downloadOutput(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName string, outFile string) error {
+	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
+		return err
+	}
+	out, err := os.Create(outFile)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if err := cachetools.GetBlobByResourceName(ctx, bsClient, resourceName, out); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TODO(vadim): add interactive progress bar for downloads
+// TODO(vadim): parallelize downloads
+func downloadOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, bsClient bspb.ByteStreamClient, invocationID string, outputBaseDir string) ([]string, error) {
+	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve child invocation: %s", err)
+	}
+
+	fileSets := make(map[string][]*bespb.File)
+	fileSetsToFetch := make(map[string]struct{})
+	for _, e := range childInRsp.GetInvocation()[0].GetEvent() {
+		switch t := e.GetBuildEvent().GetPayload().(type) {
+		case *bespb.BuildEvent_NamedSetOfFiles:
+			fileSets[e.GetBuildEvent().GetId().GetNamedSet().GetId()] = t.NamedSetOfFiles.GetFiles()
+		case *bespb.BuildEvent_Completed:
+			for _, og := range t.Completed.GetOutputGroup() {
+				for _, fs := range og.GetFileSets() {
+					fileSetsToFetch[fs.GetId()] = struct{}{}
+				}
+			}
+		}
+	}
+
+	var localArtifacts []string
+	for fsID := range fileSetsToFetch {
+		fs, ok := fileSets[fsID]
+		if !ok {
+			return nil, fmt.Errorf("could not find file set with ID %q while fetching outputs", fsID)
+		}
+		for _, f := range fs {
+			u, err := url.Parse(f.GetUri())
+			if err != nil {
+				bblog.Printf("Invocation contains an output with an invalid URI %q", f.GetUri())
+				continue
+			}
+			r := strings.TrimPrefix(u.RequestURI(), "/")
+			outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
+			for _, p := range f.GetPathPrefix() {
+				outFile = filepath.Join(outFile, p)
+			}
+			outFile = filepath.Join(outFile, f.GetName())
+			if err := downloadOutput(ctx, bsClient, r, outFile); err != nil {
+				return nil, err
+			}
+			localArtifacts = append(localArtifacts, outFile)
+		}
+	}
+
+	// Format as relative paths with indentation for human consumption.
+	var relArtifacts []string
+	for _, a := range localArtifacts {
+		rp, err := filepath.Rel(outputBaseDir, a)
+		if err != nil {
+			return nil, err
+		}
+		relArtifacts = append(relArtifacts, "  "+rp)
+	}
+	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
+	return localArtifacts, nil
+}
+
+func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
+	conn, err := grpc_client.DialTarget(opts.Server)
+	if err != nil {
+		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
+	}
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
+
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+
+	bblog.Printf("Requesting command execution on remote Bazel instance.")
+
+	instanceHash := sha256.New()
+	instanceHash.Write(uuid.NodeID())
+	instanceHash.Write([]byte(repoConfig.Root))
+
+	reqOS := runtime.GOOS
+	if *execOs != "" {
+		reqOS = *execOs
+	}
+	reqArch := runtime.GOARCH
+	if *execArch != "" {
+		reqArch = *execArch
+	}
+
+	fetchOutputs := false
+	if len(opts.Args) > 0 && (opts.Args[0] == "build" || opts.Args[0] == "run") {
+		fetchOutputs = true
+	}
+	runOutput := false
+	if len(opts.Args) > 0 && opts.Args[0] == "run" {
+		opts.Args[0] = "build"
+		runOutput = true
+	}
+
+	req := &rnpb.RunRequest{
+		GitRepo: &rnpb.RunRequest_GitRepo{
+			RepoUrl: repoConfig.URL,
+		},
+		RepoState: &rnpb.RunRequest_RepoState{
+			CommitSha: repoConfig.CommitSHA,
+		},
+		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
+		BazelCommand:       strings.Join(opts.Args, " "),
+		Os:                 reqOS,
+		Arch:               reqArch,
+	}
+
+	for _, patch := range repoConfig.Patches {
+		req.GetRepoState().Patch = append(req.GetRepoState().Patch, patch)
+	}
+
+	rsp, err := bbClient.Run(ctx, req)
+	if err != nil {
+		return 0, status.UnknownErrorf("error running bazel: %s", err)
+	}
+
+	iid := rsp.GetInvocationId()
+
+	bblog.Printf("Invocation ID: %s", iid)
+
+	if err := streamLogs(ctx, bbClient, iid); err != nil {
+		return 0, err
+	}
 
 	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
@@ -382,10 +485,50 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	if len(inRsp.GetInvocation()) == 0 {
 		return 0, fmt.Errorf("invocation not found")
 	}
+
+	childIID := ""
+	exitCode := -1
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
-		if cic, ok := e.GetBuildEvent().GetPayload().(*build_event_stream.BuildEvent_ChildInvocationCompleted); ok {
-			return int(cic.ChildInvocationCompleted.ExitCode), nil
+		if cic, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
+			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
+			exitCode = int(cic.ChildInvocationCompleted.ExitCode)
 		}
 	}
-	return 0, fmt.Errorf("could not determine remote Bazel exit code")
+
+	if exitCode == -1 {
+		return 0, fmt.Errorf("could not determine remote Bazel exit code")
+	}
+
+	if fetchOutputs {
+		conn, err := grpc_client.DialTarget("unix://" + opts.SidecarSocket)
+		if err != nil {
+			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
+		}
+		bsClient := bspb.NewByteStreamClient(conn)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+		outputs, err := downloadOutputs(ctx, bbClient, bsClient, childIID, filepath.Dir(opts.WorkspaceFilePath))
+		if err != nil {
+			return 0, err
+		}
+		if runOutput {
+			if len(outputs) > 1 {
+				return 0, fmt.Errorf("run requested but target produced more than one artifact")
+			}
+			binPath := outputs[0]
+			if err := os.Chmod(binPath, 0755); err != nil {
+				return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+			}
+			bblog.Printf("Executing %q", binPath)
+			cmd := exec.CommandContext(ctx, binPath)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err = cmd.Run()
+			if e, ok := err.(*exec.ExitError); ok {
+				return e.ExitCode(), nil
+			}
+			return 0, err
+		}
+	}
+
+	return exitCode, nil
 }

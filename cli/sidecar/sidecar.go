@@ -183,7 +183,7 @@ func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 	// Check if a process is already running with this sock.
 	// If one is, we're all done!
 	if pathExists(sockPath) {
-		bblog.Printf("sidecar with args %s is already running.", args)
+		bblog.Printf("sidecar with args %s is already listening at %q.", args, sockPath)
 		return sockPath, nil
 	}
 

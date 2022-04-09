@@ -48,15 +48,15 @@ func (w *wrappedServerStreamWithContext) Context() context.Context {
 	return w.ctx
 }
 
-// contextReplacingStreamServerInterceptor is a helper to make a stream interceptor that modifies a context.
-func contextReplacingStreamServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.StreamServerInterceptor {
+// ContextReplacingStreamServerInterceptor is a helper to make a stream interceptor that modifies a context.
+func ContextReplacingStreamServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		return handler(srv, &wrappedServerStreamWithContext{stream, ctxFn(stream.Context())})
 	}
 }
 
-// contextReplacingStreamServerInterceptor is a helper to make a unary interceptor that modifies a context.
-func contextReplacingUnaryServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.UnaryServerInterceptor {
+// ContextReplacingStreamServerInterceptor is a helper to make a unary interceptor that modifies a context.
+func ContextReplacingUnaryServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		return handler(ctxFn(ctx), req)
 	}
@@ -117,7 +117,7 @@ func authStreamServerInterceptor(env environment.Env) grpc.StreamServerIntercept
 	ctxFn := func(ctx context.Context) context.Context {
 		return addAuthToContext(env, ctx)
 	}
-	return contextReplacingStreamServerInterceptor(ctxFn)
+	return ContextReplacingStreamServerInterceptor(ctxFn)
 }
 
 // authUnaryServerInterceptor is a server interceptor that applies the authenticator
@@ -126,7 +126,7 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 	ctxFn := func(ctx context.Context) context.Context {
 		return addAuthToContext(env, ctx)
 	}
-	return contextReplacingUnaryServerInterceptor(ctxFn)
+	return ContextReplacingUnaryServerInterceptor(ctxFn)
 }
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
@@ -156,13 +156,13 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 // requestIDStreamInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(addRequestIdToContext)
+	return ContextReplacingStreamServerInterceptor(addRequestIdToContext)
 }
 
 // requestIDUnaryInterceptor is a server interceptor that inserts a request ID
 // into the context if one is not already present.
 func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(addRequestIdToContext)
+	return ContextReplacingUnaryServerInterceptor(addRequestIdToContext)
 }
 
 // requestContextProtoUnaryServerInterceptor is a server interceptor that
@@ -201,13 +201,13 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 // copyHeadersStreamInterceptor is a server interceptor that copies certain
 // headers present in the grpc metadata into the context.
 func copyHeadersStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(copyHeadersToContext)
+	return ContextReplacingStreamServerInterceptor(copyHeadersToContext)
 }
 
 // copyHeadersUnaryInterceptor is a server interceptor that copies certain
 // headers present in the grpc metadata into the context.
 func copyHeadersUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(copyHeadersToContext)
+	return ContextReplacingUnaryServerInterceptor(copyHeadersToContext)
 }
 
 // setHeadersUnaryClientInterceptor is a client interceptor that copies certain
