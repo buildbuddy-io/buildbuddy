@@ -384,9 +384,14 @@ message ListClusterRequest {
   bool leased_only = 1;
 }
 
+message RangeReplica {
+  RangeDescriptor range = 1;
+  ReplicaUsage replica_usage = 2;
+}
+
 message ListClusterResponse {
   NodeDescriptor node = 1;
-  repeated RangeDescriptor ranges = 2;
+  repeated RangeReplica range_replicas = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

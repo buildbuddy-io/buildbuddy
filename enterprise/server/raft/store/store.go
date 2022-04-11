@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -93,7 +92,6 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
-	s.gossipUsage()
 
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return s
@@ -198,40 +196,6 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(clusterID)
 }
 
-func (s *Store) gossipUsage() {
-	usage := &rfpb.NodeUsage{
-		Nhid: s.nodeHost.ID(),
-	}
-
-	s.replicas.Range(func(key, value interface{}) bool {
-		r, ok := value.(*replica.Replica)
-		if !ok {
-			alert.UnexpectedEvent("unexpected_replicas_map_type_error")
-			return true
-		}
-		ru, err := r.Usage()
-		if err != nil {
-			log.Warningf("error getting replica usage: %s", err)
-			return true
-		}
-		usage.NumReplicas += 1
-		usage.ReplicaUsage = append(usage.ReplicaUsage, ru)
-		return true
-	})
-
-	du, err := disk.GetDirUsage(s.fileDir)
-	if err != nil {
-		log.Errorf("error getting fs usage for %q: %s", s.fileDir, err)
-		return
-	}
-	usage.DiskBytesTotal = int64(du.TotalBytes)
-	usage.DiskBytesUsed = int64(du.UsedBytes)
-	s.gossipManager.SetTags(map[string]string{
-		constants.NodeHostIDTag: string(s.nodeHost.ID()),
-		constants.NodeUsageTag:  proto.MarshalTextString(usage),
-	})
-}
-
 // We need to implement the RangeTracker interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
@@ -264,7 +228,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.maybeAcquireRangeLease(rd)
-	go s.gossipUsage()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -282,7 +245,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Removing ranges is quick.
 	go s.releaseRangeLease(rd.GetRangeId())
-	go s.gossipUsage()
 }
 
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
@@ -752,59 +714,6 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	return replicas, nil
 }
 
-func (s *Store) GetNodeUsage(ctx context.Context, replica *rfpb.ReplicaDescriptor) (*rfpb.NodeUsage, error) {
-	targetNHID, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
-	if err != nil {
-		return nil, err
-	}
-	for _, member := range s.membersInState(serf.StatusAlive) {
-		if member.Tags[constants.NodeHostIDTag] != targetNHID {
-			continue
-		}
-		if buf, ok := member.Tags[constants.NodeUsageTag]; ok {
-			usage := &rfpb.NodeUsage{}
-			if err := proto.UnmarshalText(buf, usage); err != nil {
-				return nil, err
-			}
-			return usage, nil
-		}
-	}
-	return nil, status.NotFoundErrorf("Usage not found for c%dn%d", replica.GetClusterId(), replica.GetNodeId())
-}
-
-func (s *Store) FindNodes(ctx context.Context, query *rfpb.PlacementQuery) ([]*rfpb.NodeDescriptor, error) {
-	buf, err := proto.Marshal(query)
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := s.gossipManager.Query(constants.PlacementDriverQueryEvent, buf, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	foundNodes := make([]*rfpb.NodeDescriptor, 0)
-	for nodeRsp := range rsp.ResponseCh() {
-		if nodeRsp.Payload == nil {
-			continue
-		}
-		node := &rfpb.NodeDescriptor{}
-		if err := proto.Unmarshal(nodeRsp.Payload, node); err == nil {
-			foundNodes = append(foundNodes, node)
-		}
-	}
-	return foundNodes, nil
-}
-
-func (s *Store) membersInState(memberStatus serf.MemberStatus) []serf.Member {
-	members := make([]serf.Member, 0)
-	for _, member := range s.gossipManager.Members() {
-		if member.Status == memberStatus {
-			members = append(members, member)
-		}
-	}
-	return members
-}
-
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
 	sourceRange := req.GetRange()
 	if sourceRange == nil {
@@ -1086,7 +995,16 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 				continue
 			}
 		}
-		rsp.Ranges = append(rsp.Ranges, rd)
+		rr := &rfpb.RangeReplica{
+			Range: rd,
+		}
+		if replica, err := s.GetReplica(rd.GetRangeId()); err == nil {
+			usage, err := replica.Usage()
+			if err == nil {
+				rr.ReplicaUsage = usage
+			}
+		}
+		rsp.RangeReplicas = append(rsp.RangeReplicas, rr)
 	}
 	return rsp, nil
 }

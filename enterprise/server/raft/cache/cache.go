@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -69,6 +70,7 @@ type RaftCache struct {
 	rangeCache     *rangecache.RangeCache
 	sender         *sender.Sender
 	clusterStarter *bringup.ClusterStarter
+	driver         *driver.Driver
 
 	isolation    *rfpb.Isolation
 	shutdown     chan struct{}
@@ -168,6 +170,11 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
 	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
 	if err := rc.store.Start(rc.grpcAddress); err != nil {
+		return nil, err
+	}
+
+	rc.driver = driver.New(rc.store, rc.gossipManager, driver.DefaultOpts())
+	if err := rc.driver.Start(); err != nil {
 		return nil, err
 	}
 
@@ -338,6 +345,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
+		rc.driver.Stop()
 		rc.store.Stop(context.Background())
 		rc.nodeHost.Stop()
 		rc.gossipManager.Leave()

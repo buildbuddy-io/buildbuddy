@@ -43,8 +43,7 @@ func metaRangeEvent(t *testing.T, nhid string, rangeDescriptor *rfpb.RangeDescri
 		Type: serf.EventMemberUpdate,
 		Members: []serf.Member{serf.Member{
 			Tags: map[string]string{
-				constants.MetaRangeTag:  string(buf),
-				constants.NodeHostIDTag: nhid,
+				constants.MetaRangeTag: string(buf),
 			},
 		}},
 	}

@@ -242,71 +242,6 @@ func TestGetClusterMembership(t *testing.T) {
 	require.Equal(t, 3, len(replicas))
 }
 
-func TestGetNodeUsage(t *testing.T) {
-	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
-	s3, nh3 := sf.NewStore(t)
-	ctx := context.Background()
-
-	stores := []*TestingStore{s1, s2, s3}
-	initialMembers := map[uint64]string{
-		1: nh1.ID(),
-		2: nh2.ID(),
-		3: nh3.ID(),
-	}
-	for i, s := range stores {
-		req := &rfpb.StartClusterRequest{
-			ClusterId:     uint64(1),
-			NodeId:        uint64(i + 1),
-			InitialMember: initialMembers,
-		}
-		_, err := s.StartCluster(ctx, req)
-		require.Nil(t, err)
-	}
-
-	usage, err := s1.GetNodeUsage(ctx, &rfpb.ReplicaDescriptor{
-		ClusterId: 1,
-		NodeId:    2,
-	})
-	require.Nil(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, nh2.ID(), usage.GetNhid())
-	require.Greater(t, usage.GetDiskBytesTotal(), usage.GetDiskBytesUsed())
-}
-
-func TestFindNodes(t *testing.T) {
-	sf := newStoreFactory(t)
-	s1, nh1 := sf.NewStore(t)
-	s2, nh2 := sf.NewStore(t)
-	s3, nh3 := sf.NewStore(t)
-	_, nh4 := sf.NewStore(t)
-	ctx := context.Background()
-
-	stores := []*TestingStore{s1, s2, s3}
-	initialMembers := map[uint64]string{
-		1: nh1.ID(),
-		2: nh2.ID(),
-		3: nh3.ID(),
-	}
-	for i, s := range stores {
-		req := &rfpb.StartClusterRequest{
-			ClusterId:     uint64(1),
-			NodeId:        uint64(i + 1),
-			InitialMember: initialMembers,
-		}
-		_, err := s.StartCluster(ctx, req)
-		require.Nil(t, err)
-	}
-
-	nds, err := s1.FindNodes(ctx, &rfpb.PlacementQuery{
-		TargetClusterId: 1,
-	})
-	require.Nil(t, err)
-	require.Equal(t, 1, len(nds))
-	require.Equal(t, nh4.ID(), nds[0].GetNhid())
-}
-
 func TestAddNodeToCluster(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -759,5 +694,5 @@ func TestListCluster(t *testing.T) {
 
 	list, err := s1.ListCluster(ctx, &rfpb.ListClusterRequest{})
 	require.Nil(t, err)
-	require.Equal(t, 1, len(list.GetRanges()))
+	require.Equal(t, 1, len(list.GetRangeReplicas()))
 }
