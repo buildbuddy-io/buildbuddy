@@ -17,21 +17,21 @@ const (
 	ModeWriteThrough                                  // Outer cache value set after successful write to inner
 )
 
-type composableCache struct {
+type ComposableCache struct {
 	inner interfaces.Cache
 	outer interfaces.Cache
 	mode  CacheMode
 }
 
 func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interfaces.Cache {
-	return &composableCache{
+	return &ComposableCache{
 		inner: inner,
 		outer: outer,
 		mode:  mode,
 	}
 }
 
-func (c *composableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "WithIsolation failed on inner cache")
@@ -40,14 +40,14 @@ func (c *composableCache) WithIsolation(ctx context.Context, cacheType interface
 	if err != nil {
 		return nil, status.WrapError(err, "WithIsolation failed on outer cache")
 	}
-	return &composableCache{
+	return &ComposableCache{
 		inner: newInner,
 		outer: newOuter,
 		mode:  c.mode,
 	}, nil
 }
 
-func (c *composableCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *ComposableCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	outerExists, err := c.outer.Contains(ctx, d)
 	if err != nil && outerExists {
 		return outerExists, nil
@@ -56,7 +56,7 @@ func (c *composableCache) Contains(ctx context.Context, d *repb.Digest) (bool, e
 	return c.inner.Contains(ctx, d)
 }
 
-func (c *composableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *ComposableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	missing, err := c.outer.FindMissing(ctx, digests)
 	if err != nil {
 		missing = digests
@@ -67,7 +67,7 @@ func (c *composableCache) FindMissing(ctx context.Context, digests []*repb.Diges
 	return c.inner.FindMissing(ctx, missing)
 }
 
-func (c *composableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *ComposableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	outerRsp, err := c.outer.Get(ctx, d)
 	if err == nil {
 		return outerRsp, nil
@@ -84,7 +84,7 @@ func (c *composableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	return innerRsp, nil
 }
 
-func (c *composableCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *ComposableCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	if outerFoundMap, err := c.outer.GetMulti(ctx, digests); err == nil {
 		for d, data := range outerFoundMap {
@@ -111,7 +111,7 @@ func (c *composableCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 	return foundMap, nil
 }
 
-func (c *composableCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *ComposableCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.
 	if err := c.inner.Set(ctx, d, data); err != nil {
@@ -123,7 +123,7 @@ func (c *composableCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 	return nil
 }
 
-func (c *composableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	if err := c.inner.SetMulti(ctx, kvs); err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (c *composableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]b
 	return nil
 }
 
-func (c *composableCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *ComposableCache) Delete(ctx context.Context, d *repb.Digest) error {
 	// Special case -- we call delete on the inner cache first (in case of
 	// error) and then if no error we'll maybe delete from the outer.
 	if err := c.inner.Delete(ctx, d); err != nil {
@@ -170,7 +170,7 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *composableCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
 	if outerReader, err := c.outer.Reader(ctx, d, offset); err == nil {
 		return outerReader, nil
 	}
@@ -217,7 +217,7 @@ func (d *doubleWriter) Close() error {
 	return err
 }
 
-func (c *composableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	innerWriter, err := c.inner.Writer(ctx, d)
 	if err != nil {
 		return nil, err

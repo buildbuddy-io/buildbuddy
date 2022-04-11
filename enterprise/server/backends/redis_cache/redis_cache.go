@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"path/filepath"
 	"time"
@@ -45,12 +44,12 @@ type Cache struct {
 }
 
 func Register(env environment.Env) error {
-	if fmt.Sprintf("%T", env.GetCache()) == fmt.Sprintf("%T", composable_cache.NewComposableCache(nil, nil, 0)) {
-		// Cache has already been composed, don't do it again.
-		return nil
-	}
 	crcc := redis_client.CacheRedisClientConfig()
 	if crcc == nil {
+		return nil
+	}
+	if _, ok := env.GetCache().(*composable_cache.ComposableCache); ok {
+		// Cache has already been composed, don't do it again.
 		return nil
 	}
 	if env.GetCache() == nil {

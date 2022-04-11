@@ -115,6 +115,12 @@ func Register(env environment.Env) error {
 	}
 	defer rc.Stop()
 	env.SetCache(rc)
+	env.GetHealthChecker().RegisterShutdownFunction(
+		func(ctx context.Context) error {
+			rc.Stop()
+			return nil
+		},
+	)
 	return nil
 }
 
