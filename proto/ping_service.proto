@@ -10,6 +10,5 @@ message PingResponse {
 }
 
 service Api {
-  // Raft Meta-API.
   rpc Ping(PingRequest) returns (PingResponse);
 }
