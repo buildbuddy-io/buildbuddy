@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "filters",
@@ -16,5 +16,20 @@ go_library(
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
+    ],
+)
+
+go_test(
+    name = "filters_test",
+    srcs = ["filters_test.go"],
+    deps = [
+        "//proto:ping_service_go_proto",
+        "//server/testutil/testenv",
+        "//server/testutil/testport",
+        "//server/util/grpc_client",
+        "//server/util/grpc_server",
+        "//server/util/log",
+        "//server/util/random",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )

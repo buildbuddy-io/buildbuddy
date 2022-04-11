@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package ping;
+
+message PingRequest {
+  uint64 tag = 1;
+}
+message PingResponse {
+  uint64 tag = 1;
+}
+
+service Api {
+  rpc Ping(PingRequest) returns (PingResponse);
+}

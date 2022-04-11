@@ -289,6 +289,11 @@ proto_library(
 )
 
 proto_library(
+    name = "ping_service_proto",
+    srcs = ["ping_service.proto"],
+)
+
+proto_library(
     name = "buildbuddy_service_proto",
     srcs = ["buildbuddy_service.proto"],
     deps = [
@@ -605,6 +610,13 @@ go_proto_library(
     deps = [
         ":raft_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "ping_service_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/ping_service",
+    proto = ":ping_service_proto",
 )
 
 go_proto_library(
