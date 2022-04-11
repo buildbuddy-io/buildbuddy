@@ -47,10 +47,6 @@ const (
 // Returns whatever blobstore is specified in the config.
 func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
-	if c.GetStorageDiskRootDir() != "" {
-		log.Debug("Disk blobstore configured")
-		return NewDiskBlobStore(c.GetStorageDiskRootDir())
-	}
 	if gcsConfig := c.GetStorageGCSConfig(); gcsConfig != nil && gcsConfig.Bucket != "" {
 		log.Debug("Configuring GCS blobstore")
 		opts := make([]option.ClientOption, 0)
@@ -60,7 +56,6 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 		}
 		return NewGCSBlobStore(gcsConfig.Bucket, gcsConfig.ProjectID, opts...)
 	}
-
 	if awsConfig := c.GetStorageAWSS3Config(); awsConfig != nil && awsConfig.Bucket != "" {
 		log.Debug("Configuring AWS blobstore")
 		return NewAwsS3BlobStore(awsConfig)
@@ -68,6 +63,10 @@ func GetConfiguredBlobstore(c *config.Configurator) (interfaces.Blobstore, error
 	if azureConfig := c.GetStorageAzureConfig(); azureConfig != nil && azureConfig.ContainerName != "" {
 		log.Debug("Configuring Azure blobstore")
 		return NewAzureBlobStore(azureConfig.ContainerName, azureConfig.AccountName, azureConfig.AccountKey)
+	}
+	if c.GetStorageDiskRootDir() != "" {
+		log.Debug("Disk blobstore configured")
+		return NewDiskBlobStore(c.GetStorageDiskRootDir())
 	}
 	return nil, fmt.Errorf("No storage backend configured -- please specify at least one in the config")
 }
