@@ -18,6 +18,7 @@ import (
 )
 
 type pingServer struct{}
+
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	return &pspb.PingResponse{
 		Tag: req.GetTag(),
@@ -26,7 +27,7 @@ func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.Pin
 
 func BenchmarkBare(b *testing.B) {
 	ctx := context.Background()
-	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(b))	
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(b))
 	grpcServer := grpc.NewServer()
 	ps := &pingServer{}
 	pspb.RegisterApiServer(grpcServer, ps)
@@ -47,21 +48,20 @@ func BenchmarkBare(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-                req := &pspb.PingRequest{
+		req := &pspb.PingRequest{
 			Tag: random.RandUint64(),
 		}
-                b.StartTimer()
+		b.StartTimer()
 		rsp, err := client.Ping(ctx, req)
 		if err != nil {
-                        b.Fatal(err)
+			b.Fatal(err)
 		}
 		if rsp.GetTag() != req.GetTag() {
 			b.Fatal("tag mismatch")
 		}
-        }
+	}
 	grpcServer.Stop()
 }
-
 
 func BenchmarkInstrumented(b *testing.B) {
 	*log.LogLevel = "error"
@@ -69,8 +69,8 @@ func BenchmarkInstrumented(b *testing.B) {
 	log.Configure()
 
 	ctx := context.Background()
-	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(b))	
-	
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(b))
+
 	env := testenv.GetTestEnv(b)
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -84,7 +84,7 @@ func BenchmarkInstrumented(b *testing.B) {
 	go func() {
 		grpcServer.Serve(lis)
 	}()
-	conn, err := grpc_client.DialTarget("grpc://"+listenAddr)
+	conn, err := grpc_client.DialTarget("grpc://" + listenAddr)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -92,18 +92,17 @@ func BenchmarkInstrumented(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-                req := &pspb.PingRequest{
+		req := &pspb.PingRequest{
 			Tag: random.RandUint64(),
 		}
-                b.StartTimer()
+		b.StartTimer()
 		rsp, err := client.Ping(ctx, req)
 		if err != nil {
-                        b.Fatal(err)
+			b.Fatal(err)
 		}
 		if rsp.GetTag() != req.GetTag() {
 			b.Fatal("tag mismatch")
 		}
-        }
+	}
 	grpcServer.Stop()
 }
-
