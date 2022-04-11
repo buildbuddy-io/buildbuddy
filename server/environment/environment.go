@@ -4,18 +4,16 @@ import (
 	"context"
 	"io/fs"
 
-	"github.com/go-redis/redis/v8"
-
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-
-	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 // The environment struct allows for easily injecting many of buildbuddy's core
