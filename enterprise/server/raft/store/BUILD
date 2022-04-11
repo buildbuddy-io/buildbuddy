@@ -23,7 +23,6 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/gossip",
         "//server/util/alert",
-        "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/status",
