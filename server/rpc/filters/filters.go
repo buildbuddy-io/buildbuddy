@@ -2,15 +2,25 @@ package filters
 
 import (
 	"context"
+	"flag"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/golang/protobuf/proto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -19,10 +29,22 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 )
 
+const (
+	traceHeader           = "x-buildbuddy-trace"
+	forceTraceHeaderValue = "force"
+)
+
 var (
 	headerContextKeys map[string]string
+	once              sync.Once
 
-	once sync.Once
+	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
+	traceFractionOverrides    = flagutil.StringSlice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
+	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
+
+	// bound overrides are parsed from the traceFractionOverrides flag.
+	initOverrideFractions sync.Once
+	overrideFractions     map[string]float64
 )
 
 func init() {
@@ -217,9 +239,87 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 	return contextReplacingStreamClientInterceptor(setHeadersFromContext)
 }
 
+func propagateInvocationIDToSpan(ctx context.Context) {
+	invocationId := bazel_request.GetInvocationID(ctx)
+	if invocationId == "" {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("invocation_id", invocationId))
+}
+
+func parseOverrides() error {
+	for _, override := range *traceFractionOverrides {
+		parts := strings.Split(override, "=")
+		if len(parts) != 2 {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
+		}
+		name := parts[0]
+		fraction, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, fraction not valid: %s", override, err)
+		}
+		overrideFractions[name] = fraction
+	}
+	return nil
+}
+
+// shouldTrace returns a boolean indicating if request should be traced because:
+//  - tracing was forced
+//  - some other service is tracing this request already
+//  - sampling indicates this request should be traced
+func shouldTrace(ctx context.Context, method string) bool {
+	grpcMD, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		// Check if this was a force-traced request.
+		vals := grpcMD[traceHeader]
+		if !*ignoreForcedTracingHeader && len(vals) > 0 && vals[0] == forceTraceHeaderValue {
+			return true
+		}
+
+		// Check if this is a request from some other service which has
+		// already enabled tracing.
+
+	}
+	initOverrideFractions.Do(func() {
+		if err := parseOverrides(); err != nil {
+			log.Errorf(err.Error())
+		}
+	})
+
+	fraction := *traceFraction
+	if f, ok := overrideFractions[method]; ok {
+		fraction = f
+	}
+	return float64(random.RandUint64())/math.MaxUint64 < fraction
+}
+
+func tracingUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	otelInterceptFn := otelgrpc.UnaryServerInterceptor()
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if shouldTrace(ctx, info.FullMethod) {
+			propagateInvocationIDToSpan(ctx)
+			return otelInterceptFn(ctx, req, info, handler)
+		}
+		return handler(ctx, req)
+	}
+}
+
+func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
+	otelInterceptFn := otelgrpc.StreamServerInterceptor()
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if shouldTrace(stream.Context(), info.FullMethod) {
+			propagateInvocationIDToSpan(stream.Context())
+			return otelInterceptFn(srv, stream, info, handler)
+		}
+		return handler(srv, stream)
+	}
+}
+
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
+		tracingUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
@@ -231,6 +331,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		requestIDStreamServerInterceptor(),
+		tracingStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),

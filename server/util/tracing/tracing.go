@@ -2,19 +2,15 @@ package tracing
 
 import (
 	"context"
-	"encoding/binary"
 	"flag"
 	"fmt"
-	"math"
 	"net/http"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
@@ -34,98 +30,17 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
-	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
-	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
-	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
-	traceFractionOverrides    = flagutil.StringSlice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
-	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
+	traceProjectID       = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
+	traceJaegerCollector = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
+	traceServiceName     = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
 )
 
 const (
 	resourceDetectionTimeout      = 5 * time.Second
-	traceHeader                   = "x-buildbuddy-trace"
-	forceTraceHeaderValue         = "force"
 	buildBuddyInstrumentationName = "buildbuddy.io"
 )
 
-// fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
-// Based on TraceIDRatioBased sampler from the OpenTelemetry library.
-type fractionSampler struct {
-	traceIDUpperBound          uint64
-	traceIDUpperBoundOverrides map[string]uint64
-	description                string
-	ignoreForcedTracingHeader  bool
-}
-
-func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
-	configDescription := fmt.Sprintf("default=%f", fraction)
-	boundOverrides := make(map[string]uint64)
-	for n, f := range fractionOverrides {
-		boundOverrides[n] = uint64(f * math.MaxInt64)
-		configDescription += fmt.Sprintf(",%s=%f", n, f)
-	}
-
-	return &fractionSampler{
-		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
-		traceIDUpperBoundOverrides: boundOverrides,
-		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
-		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
-	}
-}
-
-func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
-	if s.ignoreForcedTracingHeader {
-		return false
-	}
-	md, ok := metadata.FromIncomingContext(parameters.ParentContext)
-	if !ok {
-		// Not an incoming gRPC request
-		return false
-	}
-	hdrs, ok := md[traceHeader]
-	forced := ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
-	return forced
-}
-
-func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
-	psc := trace.SpanContextFromContext(parameters.ParentContext)
-
-	// Check if sampling is forced via gRPC header.
-	if s.checkForcedTrace(parameters) {
-		return sdktrace.SamplingResult{
-			Decision:   sdktrace.RecordAndSample,
-			Attributes: parameters.Attributes,
-			Tracestate: psc.TraceState(),
-		}
-	}
-
-	bound := s.traceIDUpperBound
-	if boundOverride, ok := s.traceIDUpperBoundOverrides[parameters.Name]; ok {
-		bound = boundOverride
-	}
-
-	x := binary.BigEndian.Uint64(parameters.TraceID[0:8]) >> 1
-	decision := sdktrace.Drop
-	if x < bound {
-		decision = sdktrace.RecordAndSample
-	}
-	return sdktrace.SamplingResult{
-		Decision:   decision,
-		Attributes: parameters.Attributes,
-		Tracestate: psc.TraceState(),
-	}
-}
-
-func (s *fractionSampler) Description() string {
-	return s.description
-}
-
 func Configure(healthChecker interfaces.HealthChecker) error {
-	if *traceFraction <= 0 {
-		return nil
-	}
-
 	if *traceJaegerCollector == "" {
 		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
 	}
@@ -135,21 +50,6 @@ func Configure(healthChecker interfaces.HealthChecker) error {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
 	}
-
-	fractionOverrides := make(map[string]float64)
-	for _, override := range *traceFractionOverrides {
-		parts := strings.Split(override, "=")
-		if len(parts) != 2 {
-			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
-		}
-		name := parts[0]
-		fraction, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, fraction not valid: %s", override, err)
-		}
-		fractionOverrides[name] = fraction
-	}
-	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
 
 	var resourceAttrs []attribute.KeyValue
 	if *traceServiceName != "" {
@@ -173,7 +73,7 @@ func Configure(healthChecker interfaces.HealthChecker) error {
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names
@@ -184,7 +84,7 @@ func Configure(healthChecker interfaces.HealthChecker) error {
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
-	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
+	log.Info("Tracing enabled.")
 	return nil
 }
 
