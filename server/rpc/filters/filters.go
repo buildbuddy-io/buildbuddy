@@ -232,9 +232,9 @@ func propagateInvocationIDToSpan(ctx context.Context) {
 }
 
 func tracingUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	otelInterceptFn := otelgrpc.UnaryServerInterceptor()
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if tracing.ShouldTrace(ctx, info.FullMethod) {
+			otelInterceptFn := otelgrpc.UnaryServerInterceptor()
 			propagateInvocationIDToSpan(ctx)
 			return otelInterceptFn(ctx, req, info, handler)
 		}
@@ -243,9 +243,9 @@ func tracingUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 }
 
 func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
-	otelInterceptFn := otelgrpc.StreamServerInterceptor()
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if tracing.ShouldTrace(stream.Context(), info.FullMethod) {
+			otelInterceptFn := otelgrpc.StreamServerInterceptor()
 			propagateInvocationIDToSpan(stream.Context())
 			return otelInterceptFn(srv, stream, info, handler)
 		}
@@ -254,9 +254,9 @@ func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
 }
 
 func tracingUnaryClientInterceptor() grpc.UnaryClientInterceptor {
-	otelInterceptFn := otelgrpc.UnaryClientInterceptor()
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if tracing.ShouldTrace(ctx, method) {
+			otelInterceptFn := otelgrpc.UnaryClientInterceptor()
 			propagateInvocationIDToSpan(ctx)
 			return otelInterceptFn(ctx, method, req, reply, cc, invoker, opts...)
 		}
@@ -265,9 +265,9 @@ func tracingUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 }
 
 func tracingStreamClientInterceptor() grpc.StreamClientInterceptor {
-	otelInterceptFn := otelgrpc.StreamClientInterceptor()
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		if tracing.ShouldTrace(ctx, method) {
+			otelInterceptFn := otelgrpc.StreamClientInterceptor()
 			propagateInvocationIDToSpan(ctx)
 			return otelInterceptFn(ctx, desc, cc, method, streamer, opts...)
 		}
