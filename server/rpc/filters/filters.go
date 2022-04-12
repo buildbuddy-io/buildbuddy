@@ -31,7 +31,9 @@ import (
 
 const (
 	traceHeader           = "x-buildbuddy-trace"
+	traceParentHeader     = "traceparent"
 	forceTraceHeaderValue = "force"
+	buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
 )
 
 var (
@@ -146,7 +148,6 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
 			if err := role_filter.AuthorizeRPC(stream.Context(), env, methodName); err != nil {
@@ -159,7 +160,6 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		const buildBuddyServicePrefix = "/buildbuddy.service.BuildBuddyService/"
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			methodName := strings.TrimPrefix(info.FullMethod, buildBuddyServicePrefix)
 			if err := role_filter.AuthorizeRPC(ctx, env, methodName); err != nil {
@@ -272,13 +272,17 @@ func shouldTrace(ctx context.Context, method string) bool {
 	grpcMD, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		// Check if this was a force-traced request.
-		vals := grpcMD[traceHeader]
-		if !*ignoreForcedTracingHeader && len(vals) > 0 && vals[0] == forceTraceHeaderValue {
+		forcedVals := grpcMD[traceHeader]
+		if !*ignoreForcedTracingHeader && len(forcedVals) > 0 && forcedVals[0] == forceTraceHeaderValue {
 			return true
 		}
 
 		// Check if this is a request from some other service which has
 		// already enabled tracing.
+		parentVals := grpcMD[traceParentHeader]
+		if len(parentVals) > 0 && len(parentVals[0]) > 0 {
+			return true
+		}
 
 	}
 	initOverrideFractions.Do(func() {
