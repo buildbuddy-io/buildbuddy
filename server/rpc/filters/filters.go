@@ -237,7 +237,7 @@ func setTracingDecision(ctx context.Context, tracingDecision bool) context.Conte
 
 func tracingUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		shouldTrace := tracing.ShouldTrace(ctx, info.FullMethod)
+		shouldTrace := tracing.ShouldTraceIncoming(ctx, info.FullMethod)
 		ctx = setTracingDecision(ctx, shouldTrace)
 		if shouldTrace {
 			propagateInvocationIDToSpan(ctx)
@@ -250,7 +250,7 @@ func tracingUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		shouldTrace := tracing.ShouldTrace(stream.Context(), info.FullMethod)
+		shouldTrace := tracing.ShouldTraceIncoming(stream.Context(), info.FullMethod)
 		ctx := setTracingDecision(stream.Context(), shouldTrace)
 		stream = &wrappedServerStreamWithContext{stream, ctx}
 		if shouldTrace {
@@ -264,7 +264,7 @@ func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 func tracingUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		shouldTrace := tracing.ShouldTrace(ctx, method)
+		shouldTrace := tracing.ShouldTraceOutgoing(ctx, method)
 		ctx = setTracingDecision(ctx, shouldTrace)
 		if shouldTrace {
 			propagateInvocationIDToSpan(ctx)
@@ -277,7 +277,7 @@ func tracingUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 
 func tracingStreamClientInterceptor() grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		shouldTrace := tracing.ShouldTrace(ctx, method)
+		shouldTrace := tracing.ShouldTraceOutgoing(ctx, method)
 		ctx = setTracingDecision(ctx, shouldTrace)
 		if shouldTrace {
 			propagateInvocationIDToSpan(ctx)

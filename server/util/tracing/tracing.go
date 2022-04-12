@@ -54,14 +54,14 @@ const (
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
 
-	TracingDecisionHeader         = "tracing-decision"
+	TracingDecisionHeader = "tracing-decision"
 )
 
 type fractionSampler struct{}
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
 	psc := trace.SpanContextFromContext(parameters.ParentContext)
-	if ShouldTrace(parameters.ParentContext, parameters.Name) {
+	if ShouldTraceIncoming(parameters.ParentContext, parameters.Name) {
 		return sdktrace.SamplingResult{
 			Decision:   sdktrace.RecordAndSample,
 			Attributes: parameters.Attributes,
@@ -265,21 +265,8 @@ func parseOverrides() error {
 	return nil
 }
 
-// shouldTrace returns a boolean indicating if request should be traced because:
-//  - tracing was forced
-//  - some other service is tracing this request already
-//  - sampling indicates this request should be traced
-func ShouldTrace(ctx context.Context, method string) bool {
-	// If this ctx was already selected for tracing by the rpc interceptor,
-	// use that decision.
-	if v := ctx.Value(TracingDecisionHeader); v != nil {
-		shouldTrace, ok := v.(bool)
-		if ok {
-			return shouldTrace
-		}
-	}
-	grpcMD, ok := metadata.FromIncomingContext(ctx)
-	if ok {
+func shouldTraceMD(grpcMD metadata.MD, method string) bool {
+	if len(grpcMD) > 0 {
 		// Check if this was a force-traced request.
 		forcedVals := grpcMD[traceHeader]
 		if !*ignoreForcedTracingHeader && len(forcedVals) > 0 && forcedVals[0] == forceTraceHeaderValue {
@@ -303,5 +290,41 @@ func ShouldTrace(ctx context.Context, method string) bool {
 	if f, ok := overrideFractions[method]; ok {
 		fraction = f
 	}
-	return  float64(random.RandUint64())/math.MaxUint64 < fraction
+	return float64(random.RandUint64())/math.MaxUint64 < fraction
+}
+
+// ShouldTraceIncoming returns a boolean indicating if request should be traced
+// because:
+//  - tracing was forced
+//  - some other service is tracing this request already
+//  - sampling indicates this request should be traced
+func ShouldTraceIncoming(ctx context.Context, method string) bool {
+	// If this ctx was already selected for tracing by the rpc interceptor,
+	// use that decision.
+	if v := ctx.Value(TracingDecisionHeader); v != nil {
+		shouldTrace, ok := v.(bool)
+		if ok {
+			return shouldTrace
+		}
+	}
+	grpcMD, _ := metadata.FromIncomingContext(ctx)
+	return shouldTraceMD(grpcMD, method)
+}
+
+//  ShouldTraceOutgoing returns a boolean indicating if request should be traced
+//  because:
+//  - tracing was forced
+//  - some other service is tracing this request already
+//  - sampling indicates this request should be traced
+func ShouldTraceOutgoing(ctx context.Context, method string) bool {
+	// If this ctx was already selected for tracing by the rpc interceptor,
+	// use that decision.
+	if v := ctx.Value(TracingDecisionHeader); v != nil {
+		shouldTrace, ok := v.(bool)
+		if ok {
+			return shouldTrace
+		}
+	}
+	grpcMD, _ := metadata.FromOutgoingContext(ctx)
+	return shouldTraceMD(grpcMD, method)
 }
