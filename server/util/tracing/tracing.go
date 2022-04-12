@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -42,7 +41,7 @@ const (
 
 func Configure(healthChecker interfaces.HealthChecker) error {
 	if *traceJaegerCollector == "" {
-		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
+		return nil
 	}
 
 	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
