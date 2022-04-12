@@ -37,6 +37,7 @@ const (
 type PodmanOptions struct {
 	ForceRoot bool
 	Network   string
+	CapAdd    string
 }
 
 // podmanCommandContainer containerizes a command's execution using a Podman container.
@@ -90,6 +91,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if strings.ToLower(c.options.Network) == "off" {
 		args = append(args, "--network=none")
+	}
+	if c.options.CapAdd == "" {
+		args = append(args, "--cap-add="+c.options.CapAdd)
 	}
 	return args
 }
