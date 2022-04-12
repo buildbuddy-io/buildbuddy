@@ -53,13 +53,15 @@ const (
 	traceHeader                   = "x-buildbuddy-trace"
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
+
+	TracingDecisionHeader         = "tracing-decision"
 )
 
 type fractionSampler struct{}
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
 	psc := trace.SpanContextFromContext(parameters.ParentContext)
-	if ShouldTrace(parameters.ParentContext, "") {
+	if ShouldTrace(parameters.ParentContext, parameters.Name) {
 		return sdktrace.SamplingResult{
 			Decision:   sdktrace.RecordAndSample,
 			Attributes: parameters.Attributes,
@@ -107,9 +109,10 @@ func Configure(healthChecker interfaces.HealthChecker) error {
 		res = resource.NewSchemaless(resourceAttrs...)
 	}
 
+	sampler := &fractionSampler{}
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
 		sdktrace.WithResource(res))
 	otel.SetTracerProvider(tp)
 	// Re-enable this if GCS tracing is fixed to not include blob names in span names
@@ -267,6 +270,14 @@ func parseOverrides() error {
 //  - some other service is tracing this request already
 //  - sampling indicates this request should be traced
 func ShouldTrace(ctx context.Context, method string) bool {
+	// If this ctx was already selected for tracing by the rpc interceptor,
+	// use that decision.
+	if v := ctx.Value(TracingDecisionHeader); v != nil {
+		shouldTrace, ok := v.(bool)
+		if ok {
+			return shouldTrace
+		}
+	}
 	grpcMD, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		// Check if this was a force-traced request.
@@ -281,7 +292,6 @@ func ShouldTrace(ctx context.Context, method string) bool {
 		if len(parentVals) > 0 && len(parentVals[0]) > 0 {
 			return true
 		}
-
 	}
 	initOverrideFractions.Do(func() {
 		if err := parseOverrides(); err != nil {
@@ -293,5 +303,5 @@ func ShouldTrace(ctx context.Context, method string) bool {
 	if f, ok := overrideFractions[method]; ok {
 		fraction = f
 	}
-	return float64(random.RandUint64())/math.MaxUint64 < fraction
+	return  float64(random.RandUint64())/math.MaxUint64 < fraction
 }
