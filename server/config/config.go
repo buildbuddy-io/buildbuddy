@@ -308,6 +308,7 @@ type ExecutorConfig struct {
 	DefaultIsolationType          string                    `yaml:"default_isolation_type" usage:"The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner"`
 	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
 	EnablePodman                  bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
+	PodmanRuntime                 string                    `yaml:"podman_runtime" usage:"Enables running podman with other runtimes, like gVisor (runsc)."`
 	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	FirecrackerMountWorkspaceFile bool                      `yaml:"firecracker_mount_workspace_file" usage:"Enables mounting workspace filesystem to improve performance of copying action outputs."`
 	ContainerRegistries           []ContainerRegistryConfig `yaml:"container_registries"`
