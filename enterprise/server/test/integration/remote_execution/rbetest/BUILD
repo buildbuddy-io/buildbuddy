@@ -32,6 +32,7 @@ go_library(
         "//server/build_event_protocol/build_event_server",
         "//server/buildbuddy_server",
         "//server/config",
+        "//server/environment",
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/action_cache_server",
