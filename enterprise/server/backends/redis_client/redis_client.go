@@ -18,7 +18,7 @@ var (
 	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")
 )
 
-func DefaultRedisClientConfigNoFallback() *config.RedisClientConfig {
+func defaultRedisClientConfigNoFallback() *config.RedisClientConfig {
 	if len(*defaultRedisShards) > 0 {
 		return &config.RedisClientConfig{
 			ShardedConfig: &config.ShardedRedisConfig{
@@ -36,22 +36,20 @@ func DefaultRedisClientConfigNoFallback() *config.RedisClientConfig {
 }
 
 func DefaultRedisClientConfig(env environment.Env) *config.RedisClientConfig {
-	if drcc := DefaultRedisClientConfigNoFallback(); drcc != nil {
-		return drcc
+	if cfg := defaultRedisClientConfigNoFallback(); cfg != nil {
+		return cfg
 	}
 
-	if crcc := env.GetConfigurator().GetCacheRedisClientConfig(); crcc != nil {
+	if cfg := env.GetConfigurator().GetCacheRedisClientConfig(); cfg != nil {
 		// Fall back to the cache redis client config if default redis target is not specified.
-		return crcc
+		return cfg
 	}
 
 	// Otherwise, fall back to the remote exec redis target.
 	return env.GetConfigurator().GetRemoteExecutionRedisClientConfig()
 }
 
-// TODO: make this `environment.Env` once Set methods are
-// defined for said interface.
-func RegisterDefaultRedisClient(env environment.Env) error {
+func RegisterDefault(env environment.Env) error {
 	redisConfig := DefaultRedisClientConfig(env)
 	if redisConfig == nil {
 		return nil

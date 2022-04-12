@@ -214,7 +214,7 @@ func main() {
 		realEnv.SetCacheRedisClient(redisClient)
 	}
 
-	if err := redis_client.RegisterDefaultRedisClient(realEnv); err != nil {
+	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := redis_kvstore.Register(realEnv); err != nil {
