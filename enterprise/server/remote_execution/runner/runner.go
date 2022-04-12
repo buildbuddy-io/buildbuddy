@@ -585,6 +585,7 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 		EnableSiblingContainers: cfg.DockerSiblingContainers,
 		UseHostNetwork:          cfg.DockerNetHost,
 		DockerMountMode:         cfg.DockerMountMode,
+		DockerCapAdd:            cfg.DockerCapAdd,
 		InheritUserIDs:          cfg.DockerInheritUserIDs,
 	}
 }
@@ -793,7 +794,8 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			p.hostBuildRoot(), opts,
 		)
 	case platform.PodmanContainerType:
-		opts := &podman.PodmanOptions{ForceRoot: props.DockerForceRoot, Network: props.DockerNetwork}
+		cfg := p.env.GetConfigurator().GetExecutorConfig()
+		opts := &podman.PodmanOptions{ForceRoot: props.DockerForceRoot, Network: props.DockerNetwork, CapAdd: cfg.DockerCapAdd}
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)

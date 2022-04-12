@@ -52,6 +52,7 @@ type DockerOptions struct {
 	DockerMountMode         string
 	InheritUserIDs          bool
 	DockerNetwork           string
+	DockerCapAdd            string
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -241,6 +242,10 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if strings.ToLower(r.options.DockerNetwork) == "off" {
 		networkMode = dockercontainer.NetworkMode("none")
 	}
+	capAdd := make([]string, 0)
+	if r.options.DockerCapAdd != "" {
+		capAdd = append(capAdd, strings.Split(r.options.DockerCapAdd, ",")...)
+	}
 	mountMode := ""
 	if r.options.DockerMountMode != "" {
 		mountMode = fmt.Sprintf(":%s", r.options.DockerMountMode)
@@ -262,6 +267,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,
+		CapAdd:      capAdd,
 		Resources: dockercontainer.Resources{
 			Ulimits: []*units.Ulimit{
 				&units.Ulimit{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
