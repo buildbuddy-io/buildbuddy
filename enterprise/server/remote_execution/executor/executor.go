@@ -9,12 +9,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -60,7 +56,7 @@ const (
 
 type Executor struct {
 	env        environment.Env
-	runnerPool *runner.Pool
+	runnerPool runner.Pool
 	id         string
 	hostID     string
 }
@@ -71,7 +67,7 @@ type Options struct {
 	NameOverride string
 }
 
-func NewExecutor(env environment.Env, id string, options *Options) (*Executor, error) {
+func NewExecutor(env environment.Env, id string, runnerPool runner.Pool, options *Options) (*Executor, error) {
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
@@ -88,22 +84,12 @@ func NewExecutor(env environment.Env, id string, options *Options) (*Executor, e
 			hostID = uuid.GetFailsafeHostID()
 		}
 	}
-	runnerPool, err := runner.NewPool(env)
-	if err != nil {
-		return nil, err
-	}
-	s := &Executor{
+	return &Executor{
 		env:        env,
 		id:         id,
 		hostID:     hostID,
 		runnerPool: runnerPool,
-	}
-	if hc := env.GetHealthChecker(); hc != nil {
-		hc.RegisterShutdownFunction(runnerPool.Shutdown)
-	} else {
-		return nil, status.FailedPreconditionError("Missing health checker in env")
-	}
-	return s, nil
+	}, nil
 }
 
 func (s *Executor) HostID() string {
@@ -111,7 +97,7 @@ func (s *Executor) HostID() string {
 }
 
 func (s *Executor) Warmup() {
-	s.runnerPool.WarmupImages()
+	s.runnerPool.Warmup(context.Background())
 }
 
 func diffTimestamps(startPb, endPb *tspb.Timestamp) time.Duration {
@@ -230,65 +216,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	finishedCleanly := false
 	defer func() {
-		go s.runnerPool.TryRecycle(r, finishedCleanly)
+		ctx := context.Background()
+		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
 	md.InputFetchStartTimestamp = ptypes.TimestampNow()
 
-	rootInstanceDigest := digest.NewResourceName(
-		task.GetAction().GetInputRootDigest(),
-		task.GetExecuteRequest().GetInstanceName(),
-	)
-	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, s.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+	rxInfo, err := r.DownloadInputs(ctx)
 	if err != nil {
 		return finishWithErrFn(err)
 	}
 
-	layout := &container.FileSystemLayout{
-		RemoteInstanceName: task.GetExecuteRequest().GetInstanceName(),
-		Inputs:             inputTree,
-		OutputDirs:         task.GetCommand().GetOutputDirectories(),
-		OutputFiles:        task.GetCommand().GetOutputFiles(),
-	}
-
-	if s.env.GetConfigurator().GetExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
-		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
-		// pass the layout information to the implementation.
-		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
-			fc.SetTaskFileSystemLayout(layout)
-		}
-	}
-
-	if r.VFSServer != nil {
-		p, err := vfs_server.NewCASLazyFileProvider(s.env, ctx, layout.RemoteInstanceName, layout.Inputs)
-		if err != nil {
-			return finishWithErrFn(err)
-		}
-		if err := r.VFSServer.Prepare(p); err != nil {
-			return finishWithErrFn(err)
-		}
-	}
-	if r.VFS != nil {
-		if err := r.VFS.PrepareForTask(ctx, task.GetExecutionId()); err != nil {
-			return finishWithErrFn(err)
-		}
-	}
-
-	rxInfo := &dirtools.TransferInfo{}
-	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
-	// enabled.
-	// TODO(vadim): integrate VFS stats
-	if r.VFS == nil {
-		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
-		if err != nil {
-			return finishWithErrFn(err)
-		}
-		if r.PlatformProperties.WorkflowID != "" {
-			if err := r.Workspace.AddCIRunner(ctx); err != nil {
-				return finishWithErrFn(err)
-			}
-		}
-	}
 	md.InputFetchCompletedTimestamp = ptypes.TimestampNow()
 
 	if err := stateChangeFn(repb.ExecutionStage_EXECUTING, operation.InProgressExecuteResponse()); err != nil {
@@ -357,7 +295,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
-	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+	txInfo, err := r.UploadOutputs(ctx, actionResult, cmdResult)
 	if err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
