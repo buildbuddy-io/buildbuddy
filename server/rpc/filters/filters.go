@@ -253,6 +253,28 @@ func tracingStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
+func tracingUnaryClientInterceptor() grpc.UnaryClientInterceptor {
+	otelInterceptFn := otelgrpc.UnaryClientInterceptor()
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if tracing.ShouldTrace(ctx, method) {
+			propagateInvocationIDToSpan(ctx)
+			return otelInterceptFn(ctx, method, req, reply, cc, invoker, opts...)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func tracingStreamClientInterceptor() grpc.StreamClientInterceptor {
+	otelInterceptFn := otelgrpc.StreamClientInterceptor()
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		if tracing.ShouldTrace(ctx, method) {
+			propagateInvocationIDToSpan(ctx)
+			return otelInterceptFn(ctx, desc, cc, method, streamer, opts...)
+		}
+		return streamer(ctx, desc, cc, method, opts...)
+	}
+}
+
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
@@ -278,7 +300,7 @@ func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
-		otelgrpc.UnaryClientInterceptor(),
+		tracingUnaryClientInterceptor(),
 		grpc_prometheus.UnaryClientInterceptor,
 		setHeadersUnaryClientInterceptor(),
 	)
@@ -286,7 +308,7 @@ func GetUnaryClientInterceptor() grpc.DialOption {
 
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
-		otelgrpc.StreamClientInterceptor(),
+		tracingStreamClientInterceptor(),
 		grpc_prometheus.StreamClientInterceptor,
 		setHeadersStreamClientInterceptor(),
 	)
