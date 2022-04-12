@@ -4,14 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -29,15 +35,46 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceProjectID       = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
-	traceJaegerCollector = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
-	traceServiceName     = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceProjectID            = flag.String("app.trace_project_id", "", "Optional GCP project ID to export traces to. If not specified, determined from default credentials or metadata server if running on GCP.")
+	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
+	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
+	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
+	traceFractionOverrides    = flagutil.StringSlice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
+	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
+
+	// bound overrides are parsed from the traceFractionOverrides flag.
+	initOverrideFractions sync.Once
+	overrideFractions     map[string]float64
 )
 
 const (
 	resourceDetectionTimeout      = 5 * time.Second
 	buildBuddyInstrumentationName = "buildbuddy.io"
+	traceHeader                   = "x-buildbuddy-trace"
+	traceParentHeader             = "traceparent"
+	forceTraceHeaderValue         = "force"
 )
+
+type fractionSampler struct{}
+
+func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
+	psc := trace.SpanContextFromContext(parameters.ParentContext)
+	if ShouldTrace(parameters.ParentContext, "") {
+		return sdktrace.SamplingResult{
+			Decision:   sdktrace.RecordAndSample,
+			Attributes: parameters.Attributes,
+			Tracestate: psc.TraceState(),
+		}
+	}
+	return sdktrace.SamplingResult{
+		Decision:   sdktrace.Drop,
+		Attributes: parameters.Attributes,
+		Tracestate: psc.TraceState(),
+	}
+}
+func (s *fractionSampler) Description() string {
+	return "FractionSampler"
+}
 
 func Configure(healthChecker interfaces.HealthChecker) error {
 	if *traceJaegerCollector == "" {
@@ -207,4 +244,54 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 		return
 	}
 	span.SetAttributes(attribute.String(key, value))
+}
+
+func parseOverrides() error {
+	for _, override := range *traceFractionOverrides {
+		parts := strings.Split(override, "=")
+		if len(parts) != 2 {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
+		}
+		name := parts[0]
+		fraction, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, fraction not valid: %s", override, err)
+		}
+		overrideFractions[name] = fraction
+	}
+	return nil
+}
+
+// shouldTrace returns a boolean indicating if request should be traced because:
+//  - tracing was forced
+//  - some other service is tracing this request already
+//  - sampling indicates this request should be traced
+func ShouldTrace(ctx context.Context, method string) bool {
+	grpcMD, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		// Check if this was a force-traced request.
+		forcedVals := grpcMD[traceHeader]
+		if !*ignoreForcedTracingHeader && len(forcedVals) > 0 && forcedVals[0] == forceTraceHeaderValue {
+			return true
+		}
+
+		// Check if this is a request from some other service which has
+		// already enabled tracing.
+		parentVals := grpcMD[traceParentHeader]
+		if len(parentVals) > 0 && len(parentVals[0]) > 0 {
+			return true
+		}
+
+	}
+	initOverrideFractions.Do(func() {
+		if err := parseOverrides(); err != nil {
+			log.Errorf(err.Error())
+		}
+	})
+
+	fraction := *traceFraction
+	if f, ok := overrideFractions[method]; ok {
+		fraction = f
+	}
+	return float64(random.RandUint64())/math.MaxUint64 < fraction
 }
