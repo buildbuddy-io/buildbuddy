@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -413,6 +414,88 @@ func TestCIRunner_PullRequest_MergeConflict_FailsWithMergeConflictMessage(t *tes
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict between branches "feature" and "master"`)
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
+	}
+}
+
+func TestCIRunner_StressTestGitRepoUpdates_CanAlwaysRecoverAndRunCommand(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	repoPath, _ := makeGitRepo(t, workspaceContentsWithBazelVersionAction)
+
+	// Create two branches which are incompatible with each other
+	testshell.Run(t, repoPath, `
+		git checkout -b incompatible1
+		printf 'echo "1" && exit 0\n' > pass.sh
+		git add . && git commit -m "Update pass.sh"
+		git checkout master
+
+		git checkout -b incompatible2
+		printf 'echo "2" && exit 0\n' > pass.sh
+		git add . && git commit -m "Update pass.sh"
+		git checkout master
+	`)
+
+	baseRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Show bazel version",
+		"--pushed_repo_url=file://" + repoPath,
+		"--target_repo_url=file://" + repoPath,
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	baseRunnerFlags = append(baseRunnerFlags, app.BESBazelFlags()...)
+
+	// Try running a bunch of times with various combinations of pushed/target branches
+	targetBranchChoices := []string{"master", "incompatible1", "incompatible2"}
+	pushedBranchChoices := []string{"incompatible1", "incompatible2"}
+	for i := 0; i < 10; i++ {
+		targetBranch := targetBranchChoices[rand.Intn(len(targetBranchChoices))]
+		pushedBranch := pushedBranchChoices[rand.Intn(len(pushedBranchChoices))]
+		triggerEvent := "pull_request"
+		if targetBranch == pushedBranch {
+			triggerEvent = "push"
+		}
+		// Randomly amend the pushed branch to simulate a force push
+		if rand.Intn(2) == 0 {
+			t.Log("Amending branch " + pushedBranch)
+			testshell.Run(t, repoPath, "git checkout "+pushedBranch+" && git commit --amend --no-edit")
+		}
+		// Randomly add a new commit containing a unique file
+		maybeCommitNewFile := func(branch string) {
+			if rand.Intn(2) == 0 {
+				t.Log("Committing a new file to " + branch)
+				testshell.Run(t, repoPath, `
+					git checkout `+branch+`
+					touch $RANDOM
+					git add . && git commit -m "Add new random file"
+				`)
+			}
+		}
+		maybeCommitNewFile(targetBranch)
+		maybeCommitNewFile(pushedBranch)
+		t.Logf("Running with target_branch=%s, pushed_branch=%s", targetBranch, pushedBranch)
+		commitSHA := strings.TrimSpace(testshell.Run(t, repoPath, `git rev-parse `+pushedBranch))
+
+		runnerFlags := append(baseRunnerFlags, []string{
+			"--pushed_branch=" + pushedBranch,
+			"--target_branch=" + targetBranch,
+			"--commit_sha=" + commitSHA,
+			"--trigger_event=" + triggerEvent,
+		}...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+		runnerInvocation := singleInvocation(t, app, result)
+		t.Log(runnerInvocation.ConsoleBuffer)
+		if pushedBranch != targetBranch && strings.HasPrefix(targetBranch, "incompatible") && strings.HasPrefix(pushedBranch, "incompatible") {
+			require.Contains(
+				t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict`,
+				"expected merge conflict when merging two incompatible branches",
+			)
+		} else {
+			require.Equal(t, 0, result.ExitCode)
+			require.NotContains(t, runnerInvocation.ConsoleBuffer, "Action failed")
+		}
 	}
 }
 
