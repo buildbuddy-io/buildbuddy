@@ -51,7 +51,7 @@ func NewTelemetryClient(env environment.Env) *TelemetryClient {
 		env:              env,
 		version:          getAppVersion(),
 		instanceUUID:     getInstanceUUID(),
-		installationUUID: getInstallationUUID(env),
+		installationUUID: getInstallationUUID(),
 		failedLogs:       []*telpb.TelemetryLog{},
 	}
 }
@@ -155,9 +155,9 @@ func getAppVersion() string {
 	return strings.TrimSpace(string(versionBytes))
 }
 
-func getInstallationUUID(env environment.Env) string {
+func getInstallationUUID() string {
 	ctx := context.Background()
-	store, err := blobstore.GetConfiguredBlobstore(env.GetConfigurator())
+	store, err := blobstore.GetConfiguredBlobstore()
 	if err != nil {
 		log.Debugf("Error getting blobstore: %s", err)
 		return unknownFieldValue

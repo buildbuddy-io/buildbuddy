@@ -72,6 +72,9 @@ const (
 )
 
 var (
+	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 0, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
 		"The time allowed for all metrics collectors across all apps to flush their "+
@@ -730,7 +733,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 			Attempt:          e.attempt,
 		}
-		if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+		if *enableChunkedEventLogs {
 			ti.LastChunkId = eventlog.EmptyId
 		}
 
@@ -746,7 +749,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return nil
 			}
 			e.attempt = ti.Attempt
-			chunkFileSizeBytes := e.env.GetConfigurator().GetStorageChunkFileSizeBytes()
+			chunkFileSizeBytes := *chunkFileSizeBytes
 			if chunkFileSizeBytes == 0 {
 				chunkFileSizeBytes = defaultChunkFileSizeBytes
 			}
@@ -755,7 +758,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
 				chunkFileSizeBytes,
 			)
-			if e.env.GetConfigurator().GetStorageEnableChunkedEventLogs() {
+			if *enableChunkedEventLogs {
 				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
 				if numLinesToRetain != 0 {
 					// the number of lines curses can overwrite is 3 + the ui_actions shown:

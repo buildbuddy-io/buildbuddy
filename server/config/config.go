@@ -301,6 +301,7 @@ type ExecutorConfig struct {
 	DockerMountMode               string                    `yaml:"docker_mount_mode" usage:"Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/"`
 	RunnerPool                    RunnerPoolConfig          `yaml:"runner_pool"`
 	DockerNetHost                 bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
+	DockerCapAdd                  string                    `yaml:"docker_cap_add" usage:"Sets --cap-add= on the docker command. Comma separated."`
 	DockerSiblingContainers       bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerInheritUserIDs          bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXcodeVersion           string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`
@@ -622,34 +623,6 @@ func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
 	return flagSet
 }
 
-func (c *Configurator) GetStorageEnableChunkedEventLogs() bool {
-	return c.gc.Storage.EnableChunkedEventLogs
-}
-
-func (c *Configurator) GetStorageTTLSeconds() int {
-	return c.gc.Storage.TTLSeconds
-}
-
-func (c *Configurator) GetStorageChunkFileSizeBytes() int {
-	return c.gc.Storage.ChunkFileSizeBytes
-}
-
-func (c *Configurator) GetStorageDiskRootDir() string {
-	return c.gc.Storage.Disk.RootDirectory
-}
-
-func (c *Configurator) GetStorageGCSConfig() *GCSConfig {
-	return &c.gc.Storage.GCS
-}
-
-func (c *Configurator) GetStorageAWSS3Config() *AwsS3Config {
-	return &c.gc.Storage.AwsS3
-}
-
-func (c *Configurator) GetStorageAzureConfig() *AzureConfig {
-	return &c.gc.Storage.Azure
-}
-
 func (c *Configurator) GetGRPCOverHTTPPortEnabled() bool {
 	return c.gc.App.GRPCOverHTTPPortEnabled
 }
@@ -687,14 +660,6 @@ func (c *Configurator) GetIntegrationsSlackConfig() *SlackConfig {
 
 func (c *Configurator) GetIntegrationsInvocationUploadConfig() *InvocationUploadConfig {
 	return &c.gc.Integrations.InvocationUpload
-}
-
-func (c *Configurator) GetBuildEventProxyHosts() []string {
-	return c.gc.BuildEventProxy.Hosts
-}
-
-func (c *Configurator) GetBuildEventProxyBufferSize() int {
-	return c.gc.BuildEventProxy.BufferSize
 }
 
 func (c *Configurator) GetCacheMaxSizeBytes() int64 {
@@ -878,11 +843,4 @@ func (c *Configurator) GetGithubConfig() *GithubConfig {
 		ghc.ClientSecret = cs
 	}
 	return &ghc
-}
-
-func (c *Configurator) GetOrgConfig() *OrgConfig {
-	if c.gc.Org.Name != "" || c.gc.Org.Domain != "" {
-		return &c.gc.Org
-	}
-	return nil
 }
