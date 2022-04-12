@@ -46,6 +46,7 @@ func Register(env environment.Env) error {
 	}
 	if _, ok := env.GetCache().(*composable_cache.ComposableCache); ok {
 		// Cache has already been composed, don't do it again.
+		log.Warning("Multiple cache compositions configured, ignoring memcache configuration.")
 		return nil
 	}
 	if env.GetCache() == nil {

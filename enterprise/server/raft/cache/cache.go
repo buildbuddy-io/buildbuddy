@@ -113,7 +113,6 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("Error enabling raft cache: %s", err.Error())
 	}
-	defer rc.Stop()
 	env.SetCache(rc)
 	env.GetHealthChecker().RegisterShutdownFunction(
 		func(ctx context.Context) error {

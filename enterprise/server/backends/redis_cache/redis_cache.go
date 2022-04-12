@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -50,6 +51,7 @@ func Register(env environment.Env) error {
 	}
 	if _, ok := env.GetCache().(*composable_cache.ComposableCache); ok {
 		// Cache has already been composed, don't do it again.
+		log.Warning("Multiple cache compositions configured, ignoring redis_cache configuration.")
 		return nil
 	}
 	if env.GetCache() == nil {

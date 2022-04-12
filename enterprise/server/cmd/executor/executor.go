@@ -142,17 +142,17 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 	realEnv.SetXcodeLocator(xl)
 
 	if err := gcs_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if err := s3_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	if err := memcache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	useLocalCache := realEnv.GetCache() != nil

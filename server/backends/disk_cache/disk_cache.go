@@ -155,19 +155,20 @@ type DiskCache struct {
 }
 
 func Register(env environment.Env) error {
-	if *rootDirectory == "" || env.GetCache() != nil {
+	if *rootDirectory == "" {
 		return nil
 	}
-	c, err := NewDiskCache(
-		env,
-		&config.DiskConfig{
-			RootDirectory:     *rootDirectory,
-			Partitions:        partitions,
-			PartitionMappings: partitionMappings,
-			UseV2Layout:       *useV2Layout,
-		},
-		cache_config.MaxSizeBytes(),
-	)
+	if env.GetCache() != nil {
+		log.Warning("A cache has already been registered, skipping registering disk_cache.")
+		return nil
+	}
+	dc := &config.DiskConfig{
+		RootDirectory:     *rootDirectory,
+		Partitions:        partitions,
+		PartitionMappings: partitionMappings,
+		UseV2Layout:       *useV2Layout,
+	}
+	c, err := NewDiskCache(env, dc, cache_config.MaxSizeBytes())
 	if err != nil {
 		return status.InternalErrorf("Error configuring cache: %s", err)
 	}

@@ -181,10 +181,10 @@ func main() {
 	convertToProdOrDie(rootContext, realEnv)
 
 	if err := gcs_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if err := s3_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
@@ -250,18 +250,18 @@ func main() {
 	}
 
 	if err := distributed.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	if err := raft_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	if err := memcache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if err := redis_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 
 	if remoteExecConfig := configurator.GetRemoteExecutionConfig(); remoteExecConfig != nil {
