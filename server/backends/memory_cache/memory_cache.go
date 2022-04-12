@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,7 +38,11 @@ func sizeFn(value interface{}) int64 {
 }
 
 func Register(env environment.Env) error {
-	if !*cacheInMemory || env.GetCache() != nil {
+	if !*cacheInMemory {
+		return nil
+	}
+	if env.GetCache() != nil {
+		log.Warning("A cache has already been registered, skipping registering memory_cache.")
 		return nil
 	}
 	maxSizeBytes := cache_config.MaxSizeBytes()

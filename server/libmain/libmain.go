@@ -165,10 +165,10 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 
 	// If configured, enable the cache.
 	if err := memory_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if err := disk_cache.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
+		log.Fatal(err.Error())
 	}
 	if realEnv.GetCache() != nil {
 		log.Printf("Cache: BuildBuddy cache API enabled!")
