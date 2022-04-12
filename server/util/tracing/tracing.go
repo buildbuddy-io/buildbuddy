@@ -250,6 +250,7 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 }
 
 func parseOverrides() error {
+	overrideFractions = make(map[string]float64, 0)
 	for _, override := range *traceFractionOverrides {
 		parts := strings.Split(override, "=")
 		if len(parts) != 2 {
