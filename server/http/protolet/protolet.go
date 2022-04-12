@@ -147,7 +147,9 @@ func GenerateHTTPHandlers(server interface{}) (*HTTPHandlers, error) {
 		// with the name: "POST /rpc/BuildBuddyService/GetUser".
 		ctx := r.Context()
 		span := trace.SpanFromContext(ctx)
-		span.SetName(fmt.Sprintf("%s %s", r.Method, r.RequestURI))
+		if span.IsRecording() {
+			span.SetName(fmt.Sprintf("%s %s", r.Method, r.RequestURI))
+		}
 
 		reqVal := reflect.ValueOf(ctx.Value(contextProtoMessageKey).(proto.Message))
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
