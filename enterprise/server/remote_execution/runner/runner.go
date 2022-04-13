@@ -797,9 +797,9 @@ func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		cfg := p.env.GetConfigurator().GetExecutorConfig()
 		opts := &podman.PodmanOptions{
 			ForceRoot: props.DockerForceRoot,
-			Network: props.DockerNetwork,
-			CapAdd: cfg.DockerCapAdd,
-			Runtime: cfg.PodmanRuntime,
+			Network:   props.DockerNetwork,
+			CapAdd:    cfg.DockerCapAdd,
+			Runtime:   cfg.PodmanRuntime,
 		}
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
 	case platform.FirecrackerContainerType:
