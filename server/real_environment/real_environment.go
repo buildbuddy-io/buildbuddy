@@ -1,6 +1,7 @@
 package real_environment
 
 import (
+	"context"
 	"io/fs"
 	"time"
 
@@ -36,6 +37,7 @@ type RealEnv struct {
 	schedulerService                 interfaces.SchedulerService
 	taskRouter                       interfaces.TaskRouter
 	healthChecker                    interfaces.HealthChecker
+	serverContext                    context.Context
 	workflowService                  interfaces.WorkflowService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
@@ -80,10 +82,22 @@ type RealEnv struct {
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
-	return &RealEnv{
-		configurator:  c,
-		healthChecker: h,
+	// Create a single "Background" context that will be cancelled 1 second
+	// before the server shuts down.
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	h.RegisterShutdownFunction(func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		if ok {
+			time.Sleep(deadline.Sub(time.Now()) - time.Second)
+		}
+		serverCancel()
+		return nil
+	})
 
+	return &RealEnv{
+		configurator:     c,
+		healthChecker:    h,
+		serverContext:    serverCtx,
 		executionClients: make(map[string]*executionClientConfig, 0),
 	}
 }
@@ -95,6 +109,10 @@ func (r *RealEnv) GetConfigurator() *config.Configurator {
 
 func (r *RealEnv) GetHealthChecker() interfaces.HealthChecker {
 	return r.healthChecker
+}
+
+func (r *RealEnv) GetServerContext() context.Context {
+	return r.serverContext
 }
 
 // Optional -- may not be set depending on environment configuration.

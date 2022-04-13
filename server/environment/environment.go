@@ -1,6 +1,7 @@
 package environment
 
 import (
+	"context"
 	"io/fs"
 
 	"github.com/go-redis/redis/v8"
@@ -31,6 +32,7 @@ import (
 type Env interface {
 	// The following dependencies are required.
 	GetConfigurator() *config.Configurator
+	GetServerContext() context.Context
 
 	// Optional dependencies below here. For example: enterprise-only things,
 	// or services that may not always be configured, like webhooks.
