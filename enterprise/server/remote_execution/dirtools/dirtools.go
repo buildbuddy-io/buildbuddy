@@ -257,7 +257,7 @@ func batchUploadFiles(ctx context.Context, env environment.Env, req *repb.BatchU
 }
 
 func uploadFiles(ctx context.Context, env environment.Env, instanceName string, filesToUpload []*fileToUpload) error {
-	uploader, err := cachetools.NewBatchCASUploader(ctx, env, instanceName)
+	uploader, err := cachetools.NewBatchCASUploader(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), env.GetFileCache(), instanceName)
 	if err != nil {
 		return err
 	}

@@ -318,21 +318,7 @@ type BatchCASUploader struct {
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string) (*BatchCASUploader, error) {
-	bsClient := env.GetByteStreamClient()
-	if bsClient == nil {
-		return nil, status.InvalidArgumentError("Missing bytestream client")
-	}
-	casClient := env.GetContentAddressableStorageClient()
-	if casClient == nil {
-		return nil, status.InvalidArgumentError("Missing CAS client")
-	}
-
-	var fileCache interfaces.FileCache
-	if env.GetFileCache() != nil {
-		fileCache = env.GetFileCache()
-	}
-
+func NewBatchCASUploader(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string) (*BatchCASUploader, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:              ctx,
@@ -466,7 +452,7 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
 func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul, err := NewBatchCASUploader(ctx, env, instanceName)
+	ul, err := NewBatchCASUploader(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), env.GetFileCache(), instanceName)
 	if err != nil {
 		return nil, nil, err
 	}

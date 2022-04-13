@@ -251,6 +251,10 @@ message BuildEventId {
     string invocation_id = 1;
   }
 
+  // Identifier of an event providing metadata on a runnable target such as
+  // default arguments and runtime files.
+  message RunTargetAnalyzedId {}
+
   oneof id {
     UnknownBuildEventId unknown = 1;
     ProgressId progress = 2;
@@ -287,6 +291,7 @@ message BuildEventId {
     WorkflowCommandCompletedId workflow_command_completed = 1001;
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
+    RunTargetAnalyzedId run_target_analyzed = 1004;
   }
 }
 
@@ -1248,6 +1253,16 @@ message ChildInvocationCompleted {
   google.protobuf.Duration duration = 5;
 }
 
+// Event describing the runtime properties of a runnable target.
+message RunTargetAnalyzed {
+  // Default arguments configured for the target, typically in the BUILD file.
+  repeated string arguments = 1;
+  // Path to the root of the runfiles directory.
+  string runfiles_root = 2;
+  // Any runtime dependencies for the runnable target.
+  repeated File runfiles = 3;
+}
+
 // Message describing a build event. Events will have an identifier that
 // is unique within a given build invocation; they also announce follow-up
 // events as children. More details, which are specific to the kind of event
@@ -1291,5 +1306,6 @@ message BuildEvent {
     WorkflowCommandCompleted workflow_command_completed = 1001;
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
+    RunTargetAnalyzed run_target_analyzed = 1004;
   }
 }
