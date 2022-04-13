@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"context"
 	"flag"
 	"io/ioutil"
 	"os"
@@ -51,7 +50,7 @@ func NewTelemetryClient(env environment.Env) *TelemetryClient {
 		env:              env,
 		version:          getAppVersion(),
 		instanceUUID:     getInstanceUUID(),
-		installationUUID: getInstallationUUID(),
+		installationUUID: getInstallationUUID(env),
 		failedLogs:       []*telpb.TelemetryLog{},
 	}
 }
@@ -87,7 +86,7 @@ func (t *TelemetryClient) Stop() {
 }
 
 func (t *TelemetryClient) logTelemetryData() {
-	ctx := context.Background()
+	ctx := t.env.GetServerContext()
 	conn, err := grpc_client.DialTarget(*telemetryEndpoint)
 	if err != nil {
 		log.Debugf("Error dialing endpoint: %s", err)
@@ -155,9 +154,9 @@ func getAppVersion() string {
 	return strings.TrimSpace(string(versionBytes))
 }
 
-func getInstallationUUID() string {
-	ctx := context.Background()
-	store, err := blobstore.GetConfiguredBlobstore()
+func getInstallationUUID(env environment.Env) string {
+	ctx := env.GetServerContext()
+	store, err := blobstore.GetConfiguredBlobstore(env)
 	if err != nil {
 		log.Debugf("Error getting blobstore: %s", err)
 		return unknownFieldValue

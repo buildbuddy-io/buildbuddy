@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:trace_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/util/flagutil",
         "//server/util/log",

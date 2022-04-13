@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -78,7 +78,7 @@ func (s *fractionSampler) Description() string {
 	return "FractionSampler"
 }
 
-func Configure(healthChecker interfaces.HealthChecker) error {
+func Configure(env environment.Env) error {
 	if *traceJaegerCollector == "" {
 		return nil
 	}
@@ -95,11 +95,11 @@ func Configure(healthChecker interfaces.HealthChecker) error {
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
-	healthChecker.RegisterShutdownFunction(func(ctx context.Context) error {
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return bsp.Shutdown(ctx)
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), resourceDetectionTimeout)
+	ctx, cancel := context.WithTimeout(env.GetServerContext(), resourceDetectionTimeout)
 	defer cancel()
 	res, err := resource.New(ctx,
 		resource.WithDetectors(&gcp.GKE{}, &gcp.GCE{}),

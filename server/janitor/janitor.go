@@ -1,7 +1,6 @@
 package janitor
 
 import (
-	"context"
 	"flag"
 	"time"
 
@@ -34,7 +33,7 @@ func NewJanitor(env environment.Env) *Janitor {
 }
 
 func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
-	ctx := context.Background()
+	ctx := j.env.GetServerContext()
 	if err := j.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil && *logDeletionErrors {
 		log.Warningf("Error deleting blob (%s): %s", invocation.BlobID, err)
 	}
@@ -46,7 +45,7 @@ func (j *Janitor) deleteInvocation(invocation *tables.Invocation) {
 }
 
 func (j *Janitor) deleteExpiredInvocations() {
-	ctx := context.Background()
+	ctx := j.env.GetServerContext()
 	cutoff := time.Now().Add(-1 * j.ttl)
 	expired, err := j.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, 10)
 	if err != nil && *logDeletionErrors {
