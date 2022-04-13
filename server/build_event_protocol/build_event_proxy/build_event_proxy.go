@@ -58,7 +58,7 @@ func Register(env environment.Env) error {
 func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventProxyClient {
 	c := &BuildEventProxyClient{
 		target:  target,
-		rootCtx: context.Background(),
+		rootCtx: env.GetServerContext(),
 	}
 	c.reconnectIfNecessary()
 	return c

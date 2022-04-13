@@ -24,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -84,8 +85,9 @@ const (
 )
 
 // Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore() (interfaces.Blobstore, error) {
+func GetConfiguredBlobstore(env environment.Env) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
+	ctx := env.GetServerContext()
 	if *gcsBucket != "" {
 		log.Debug("Configuring GCS blobstore")
 		opts := make([]option.ClientOption, 0)
@@ -93,15 +95,15 @@ func GetConfiguredBlobstore() (interfaces.Blobstore, error) {
 			log.Debugf("Found GCS credentials file: %q", *gcsCredentialsFile)
 			opts = append(opts, option.WithCredentialsFile(*gcsCredentialsFile))
 		}
-		return NewGCSBlobStore(*gcsBucket, *gcsProjectID, opts...)
+		return NewGCSBlobStore(ctx, *gcsBucket, *gcsProjectID, opts...)
 	}
 	if *awsS3Bucket != "" {
 		log.Debug("Configuring AWS blobstore")
-		return NewAwsS3BlobStore()
+		return NewAwsS3BlobStore(ctx)
 	}
 	if *azureContainerName != "" {
 		log.Debug("Configuring Azure blobstore")
-		return NewAzureBlobStore(*azureContainerName, *azureAccountName, *azureAccountKey)
+		return NewAzureBlobStore(ctx, *azureContainerName, *azureAccountName, *azureAccountKey)
 	}
 	if *rootDirectory != "" {
 		log.Debug("Disk blobstore configured")
@@ -295,8 +297,7 @@ type GCSBlobStore struct {
 	projectID    string
 }
 
-func NewGCSBlobStore(bucketName, projectID string, opts ...option.ClientOption) (*GCSBlobStore, error) {
-	ctx := context.Background()
+func NewGCSBlobStore(ctx context.Context, bucketName, projectID string, opts ...option.ClientOption) (*GCSBlobStore, error) {
 	gcsClient, err := storage.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -396,9 +397,7 @@ type AwsS3BlobStore struct {
 	uploader   *s3manager.Uploader
 }
 
-func NewAwsS3BlobStore() (*AwsS3BlobStore, error) {
-	ctx := context.Background()
-
+func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 	config := &aws.Config{
 		Region: aws.String(*awsS3Region),
 	}
@@ -605,9 +604,7 @@ type AzureBlobStore struct {
 	containerURL  *azblob.ContainerURL
 }
 
-func NewAzureBlobStore(containerName, accountName, accountKey string) (*AzureBlobStore, error) {
-	ctx := context.Background()
-
+func NewAzureBlobStore(ctx context.Context, containerName, accountName, accountKey string) (*AzureBlobStore, error) {
 	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
 		return nil, err

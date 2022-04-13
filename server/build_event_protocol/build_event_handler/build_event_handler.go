@@ -242,7 +242,7 @@ func readScoreCard(ctx context.Context, env environment.Env, invocationID string
 }
 
 func (r *statsRecorder) Start() {
-	ctx := context.Background()
+	ctx := r.env.GetServerContext()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
 		metrics.StatsRecorderWorkers.Inc()
 		r.eg.Go(func() error {
@@ -370,7 +370,7 @@ func newWebhookNotifier(env environment.Env, invocations <-chan *invocationJWT) 
 }
 
 func (w *webhookNotifier) Start() {
-	ctx := context.Background()
+	ctx := w.env.GetServerContext()
 
 	w.lookupGroup = errgroup.Group{}
 	for i := 0; i < numWebhookInvocationLookupWorkers; i++ {

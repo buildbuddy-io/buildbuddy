@@ -252,11 +252,11 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
 
-	if err := tracing.Configure(healthChecker); err != nil {
+	env := GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+
+	if err := tracing.Configure(env); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
-
-	env := GetConfiguredEnvironmentOrDie(configurator, healthChecker)
 
 	grpcOptions := grpc_server.CommonGRPCServerOptions(env)
 	localServer := grpc.NewServer(grpcOptions...)

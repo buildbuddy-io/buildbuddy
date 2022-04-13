@@ -147,22 +147,23 @@ func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChec
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	bs, err := blobstore.GetConfiguredBlobstore()
-	if err != nil {
-		log.Fatalf("Error configuring blobstore: %s", err)
-	}
+	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
+	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+	configureFilesystemsOrDie(realEnv)
+
 	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
-
-	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
-	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
-	configureFilesystemsOrDie(realEnv)
 	realEnv.SetDBHandle(dbHandle)
-	realEnv.SetBlobstore(bs)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
-	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
+
+	bs, err := blobstore.GetConfiguredBlobstore(realEnv)
+	if err != nil {
+		log.Fatalf("Error configuring blobstore: %s", err)
+	}
+	realEnv.SetBlobstore(bs)
 
 	hooks := make([]interfaces.Webhook, 0)
 	if sc := configurator.GetIntegrationsSlackConfig(); sc != nil {
