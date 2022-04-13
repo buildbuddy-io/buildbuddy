@@ -34,11 +34,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -451,7 +450,7 @@ func isWorkspaceStatusEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool
 func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
-		return ptypes.UnmarshalAny(buildEvent.BazelEvent, out)
+		return buildEvent.BazelEvent.UnmarshalTo(out)
 	}
 	return fmt.Errorf("Not a bazel event %s", obe)
 }

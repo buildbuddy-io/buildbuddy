@@ -1,9 +1,9 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"math/rand"
 	"os"
 	"path"
@@ -22,11 +22,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
@@ -532,24 +532,25 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 }
 
 func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse, count int) string {
-	if protocol == "json" {
-		marshaler := jsonpb.Marshaler{}
-		buf := new(bytes.Buffer)
-		for i := 0; i < count; i++ {
-			err := marshaler.Marshal(buf, resp)
+	buf := []byte{}
+	for i := 0; i < count; i++ {
+		if protocol == "json" {
+			out, err := protojson.Marshal(resp)
+			buf = append(buf, out...)
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			out, err := proto.Marshal(resp)
+			size := make([]byte, binary.MaxVarintLen64)
+			n := binary.PutUvarint(size, uint64(len(out)))
+			buf = append(append(buf, size[:n]...), out...)
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
-		return base64.StdEncoding.EncodeToString([]byte(buf.Bytes()))
 	}
-	buf := proto.NewBuffer( /* buf */ nil)
-	for i := 0; i < count; i++ {
-		if err := buf.EncodeMessage(resp); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return base64.StdEncoding.EncodeToString([]byte(buf.Bytes()))
+	return base64.StdEncoding.EncodeToString(buf)
 }
 
 func TestRunnerPool_PersistentWorker(t *testing.T) {

@@ -15,9 +15,8 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@go_googleapis//google/rpc:status_go_proto",
-        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

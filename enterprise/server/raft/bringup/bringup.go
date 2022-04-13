@@ -14,10 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"

@@ -14,8 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/jsonpb"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	googleoauth "golang.org/x/oauth2/google"
@@ -87,8 +87,12 @@ func (h *invocationUploadHook) NotifyComplete(ctx context.Context, in *inpb.Invo
 	// Set up a pipeline of proto -> jsonpb -> gzip -> request body
 	jsonpbPipeReader, jsonpbPipeWriter := io.Pipe()
 	go func() {
-		marshaler := &jsonpb.Marshaler{}
-		err := marshaler.Marshal(jsonpbPipeWriter, in)
+		jsonBytes, err := protojson.Marshal(in)
+		if err != nil {
+			jsonpbPipeWriter.CloseWithError(err)
+			return
+		}
+		_, err = jsonpbPipeWriter.Write(jsonBytes)
 		jsonpbPipeWriter.CloseWithError(err)
 	}()
 

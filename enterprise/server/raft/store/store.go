@@ -27,12 +27,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
-	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -747,7 +748,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 		return
 	}
 	usage := &rfpb.NodeUsage{}
-	if err := proto.UnmarshalText(usageBuf, usage); err != nil {
+	if err := prototext.Unmarshal([]byte(usageBuf), usage); err != nil {
 		return
 	}
 	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())

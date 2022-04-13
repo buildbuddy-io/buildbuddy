@@ -12,11 +12,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	anypb "github.com/golang/protobuf/ptypes/any"
 )
 
 var userMap = testauth.TestUsers("user1", "group1")

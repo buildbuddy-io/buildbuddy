@@ -30,25 +30,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	gstatus "google.golang.org/grpc/status"
 )
 
 var enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
-
-func timestampToMicros(tsPb *tspb.Timestamp) int64 {
-	ts, _ := ptypes.Timestamp(tsPb)
-	return ts.UnixMicro()
-}
 
 func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {
 	// IOStats
@@ -60,15 +54,15 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
 	// ExecutedActionMetadata
 	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
-	execution.QueuedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetQueuedTimestamp())
-	execution.WorkerStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetWorkerStartTimestamp())
-	execution.WorkerCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetWorkerCompletedTimestamp())
-	execution.InputFetchStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetInputFetchStartTimestamp())
-	execution.InputFetchCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetInputFetchCompletedTimestamp())
-	execution.ExecutionStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetExecutionStartTimestamp())
-	execution.ExecutionCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetExecutionCompletedTimestamp())
-	execution.OutputUploadStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetOutputUploadStartTimestamp())
-	execution.OutputUploadCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp())
+	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()
+	execution.WorkerStartTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerStartTimestamp().AsTime().UnixMicro()
+	execution.WorkerCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerCompletedTimestamp().AsTime().UnixMicro()
+	execution.InputFetchStartTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchStartTimestamp().AsTime().UnixMicro()
+	execution.InputFetchCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchCompletedTimestamp().AsTime().UnixMicro()
+	execution.ExecutionStartTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionStartTimestamp().AsTime().UnixMicro()
+	execution.ExecutionCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionCompletedTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadStartTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadStartTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
 }
 
 func generateCommandSnippet(command *repb.Command) string {
@@ -327,7 +321,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
 	}
 
-	executionTask.QueuedTimestamp = ptypes.TimestampNow()
+	executionTask.QueuedTimestamp = timestamppb.Now()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
 		// Should never happen.

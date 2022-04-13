@@ -11,13 +11,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -62,13 +61,6 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	return executions, nil
 }
 
-func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
-	if tp, err := ptypes.TimestampProto(time.UnixMicro(timeInUsec)); err == nil {
-		return tp
-	}
-	return nil
-}
-
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
 	if err != nil {
@@ -106,15 +98,15 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 		},
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,
-			QueuedTimestamp:                timestampProto(in.QueuedTimestampUsec),
-			WorkerStartTimestamp:           timestampProto(in.WorkerStartTimestampUsec),
-			WorkerCompletedTimestamp:       timestampProto(in.WorkerCompletedTimestampUsec),
-			InputFetchStartTimestamp:       timestampProto(in.InputFetchStartTimestampUsec),
-			InputFetchCompletedTimestamp:   timestampProto(in.InputFetchCompletedTimestampUsec),
-			ExecutionStartTimestamp:        timestampProto(in.ExecutionStartTimestampUsec),
-			ExecutionCompletedTimestamp:    timestampProto(in.ExecutionCompletedTimestampUsec),
-			OutputUploadStartTimestamp:     timestampProto(in.OutputUploadStartTimestampUsec),
-			OutputUploadCompletedTimestamp: timestampProto(in.OutputUploadCompletedTimestampUsec),
+			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
+			WorkerStartTimestamp:           timestamppb.New(time.UnixMicro(in.WorkerStartTimestampUsec)),
+			WorkerCompletedTimestamp:       timestamppb.New(time.UnixMicro(in.WorkerCompletedTimestampUsec)),
+			InputFetchStartTimestamp:       timestamppb.New(time.UnixMicro(in.InputFetchStartTimestampUsec)),
+			InputFetchCompletedTimestamp:   timestamppb.New(time.UnixMicro(in.InputFetchCompletedTimestampUsec)),
+			ExecutionStartTimestamp:        timestamppb.New(time.UnixMicro(in.ExecutionStartTimestampUsec)),
+			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
+			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
+			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
 		},
 		CommandSnippet: in.CommandSnippet,
 	}

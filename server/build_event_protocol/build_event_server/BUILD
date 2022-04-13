@@ -12,7 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
-        "@io_bazel_rules_go//proto/wkt:empty_go_proto",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )

@@ -12,8 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
@@ -210,14 +211,13 @@ func fetchTargetsFromDB(ctx context.Context, env environment.Env, q *query_build
 				})
 			}
 
-			tsPb, _ := ptypes.TimestampProto(time.UnixMicro(row.StartTimeUsec))
 			statuses[targetID] = append(statuses[targetID], &trpb.TargetStatus{
 				InvocationId: row.InvocationID,
 				CommitSha:    row.CommitSHA,
 				Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
 				Timing: &cmpb.Timing{
-					StartTime: tsPb,
-					Duration:  ptypes.DurationProto(time.Microsecond * time.Duration(row.DurationUsec)),
+					StartTime: timestamppb.New(time.UnixMicro(row.StartTimeUsec)),
+					Duration:  durationpb.New(time.Microsecond * time.Duration(row.DurationUsec)),
 				},
 				InvocationCreatedAtUsec: row.CreatedAtUsec,
 			})

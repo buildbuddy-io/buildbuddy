@@ -13,13 +13,13 @@ go_library(
         "//server/util/request_context",
         "//server/util/tracing",
         "//server/util/uuid",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

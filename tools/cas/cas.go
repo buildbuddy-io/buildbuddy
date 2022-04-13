@@ -11,8 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -96,7 +97,8 @@ func main() {
 				log.Fatal(err.Error())
 			}
 		}
-		fmt.Println(proto.MarshalTextString(ar))
+		out, _ := prototext.Marshal(ar)
+		fmt.Println(string(out))
 		return
 	}
 
@@ -113,5 +115,6 @@ func main() {
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
 		log.Fatal(err.Error())
 	}
-	fmt.Println(proto.MarshalTextString(msg))
+	out, _ := prototext.Marshal(msg)
+	fmt.Println(string(out))
 }

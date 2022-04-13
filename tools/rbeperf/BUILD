@@ -18,8 +18,6 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",
         "@com_github_mattn_go_shellwords//:go-shellwords",
         "@com_github_prometheus_client_golang//prometheus",
@@ -28,6 +26,8 @@ go_library(
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

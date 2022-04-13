@@ -10,7 +10,6 @@ go_library(
         "//proto:vmexec_go_proto",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sys//unix",

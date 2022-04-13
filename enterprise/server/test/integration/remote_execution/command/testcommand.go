@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 const (
@@ -78,7 +78,8 @@ func main() {
 		case req.ExitOp != nil:
 			os.Exit(int(req.GetExitOp().GetExitCode()))
 		default:
-			log.Printf("Unexpected op requested by controller: %s", proto.MarshalTextString(req))
+			out, _ := prototext.Marshal(req)
+			log.Printf("Unexpected op requested by controller: %s", out)
 			os.Exit(abnormalTerminationExitCode)
 		}
 	}

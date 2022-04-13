@@ -44,6 +44,6 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//proto/wkt:any_go_proto",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

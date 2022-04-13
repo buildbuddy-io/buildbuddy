@@ -40,12 +40,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1316,7 +1316,7 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *
 	// from the workspace which are also useful for debugging.
 	if deadline, ok := ctx.Deadline(); ok {
 		execDeadline := deadline.Add(-collectOutputsDuration)
-		req.Timeout = ptypes.DurationProto(time.Until(execDeadline))
+		req.Timeout = durationpb.New(time.Until(execDeadline))
 	}
 
 	return c.vmExec(ctx, client, req)

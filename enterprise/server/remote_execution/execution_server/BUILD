@@ -29,11 +29,10 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/tracing",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
-        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

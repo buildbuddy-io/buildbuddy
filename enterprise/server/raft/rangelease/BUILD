@@ -14,7 +14,7 @@ go_library(
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

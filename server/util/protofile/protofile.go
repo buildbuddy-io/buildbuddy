@@ -12,7 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"

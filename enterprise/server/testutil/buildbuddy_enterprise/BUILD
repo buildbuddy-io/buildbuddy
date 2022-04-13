@@ -16,7 +16,7 @@ go_library(
         "//proto:user_go_proto",
         "//server/testutil/app",
         "//server/testutil/testport",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )

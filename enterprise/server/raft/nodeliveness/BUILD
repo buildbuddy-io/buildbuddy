@@ -13,8 +13,8 @@ go_library(
         "//proto:raft_go_proto",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

@@ -16,8 +16,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -143,7 +143,8 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		}
 
 		if msg.EnqueueTaskReservationRequest == nil {
-			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", proto.MarshalTextString(msg))
+			out, _ := prototext.Marshal(msg)
+			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
 		}
 
 		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())

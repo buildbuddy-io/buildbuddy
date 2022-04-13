@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
@@ -108,12 +107,8 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		return nil, status.InvalidArgumentError("Arguments not specified")
 	}
 	if req.Timeout != nil {
-		timeout, err := ptypes.Duration(req.Timeout)
-		if err != nil {
-			return nil, status.InternalErrorf("failed to parse exec timeout: %s", err.Error())
-		}
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
+		ctx, cancel = context.WithTimeout(ctx, req.Timeout.AsDuration())
 		defer cancel()
 	}
 

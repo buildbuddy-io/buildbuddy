@@ -7,9 +7,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -20,7 +20,7 @@ func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceNa
 	if r == nil || er == nil {
 		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
 	}
-	metadata, err := ptypes.MarshalAny(&repb.ExecuteOperationMetadata{
+	metadata, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage:        stage,
 		ActionDigest: r.GetDigest(),
 	})
@@ -31,7 +31,7 @@ func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceNa
 		Name:     name,
 		Metadata: metadata,
 	}
-	result, err := ptypes.MarshalAny(er)
+	result, err := anypb.New(er)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func InProgressExecuteResponse() *repb.ExecuteResponse {
 
 func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 	md := &repb.ExecuteOperationMetadata{}
-	if err := ptypes.UnmarshalAny(op.GetMetadata(), md); err != nil {
+	if err := op.GetMetadata().UnmarshalTo(md); err != nil {
 		return repb.ExecutionStage_UNKNOWN
 	}
 	return md.GetStage()
@@ -135,7 +135,7 @@ func ExtractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {
 	er := &repb.ExecuteResponse{}
 	if result := op.GetResult(); result != nil {
 		if response, ok := result.(*longrunning.Operation_Response); ok {
-			if err := ptypes.UnmarshalAny(response.Response, er); err == nil {
+			if err := response.Response.UnmarshalTo(er); err == nil {
 				return er
 			}
 		}

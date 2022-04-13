@@ -12,12 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/ptypes"
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -198,7 +197,7 @@ func (p *BEPProxyServer) maybeInjectError(event *StreamEvent) error {
 	return nil
 }
 
-func (p *BEPProxyServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*empty.Empty, error) {
+func (p *BEPProxyServer) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest) (*emptypb.Empty, error) {
 	log.Info("Proxy: /PublishLifecycleEvent")
 
 	return p.backend.PublishLifecycleEvent(ctx, req)
@@ -310,7 +309,7 @@ func (r *clientRecv) String() string {
 		return fmt.Sprintf("<UnmarshalAny(BazelEvent) err! %s>", err)
 	}
 	if bazelEvent != nil {
-		idJSON, err := (&jsonpb.Marshaler{}).MarshalToString(bazelEvent.GetId())
+		idJSON, err := protojson.Marshal(bazelEvent.GetId())
 		if err != nil {
 			return fmt.Sprintf("<JSON marshal err! %s>", err)
 		}
@@ -328,7 +327,7 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent) (*bespb.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
 		out := &bespb.BuildEvent{}
-		if err := ptypes.UnmarshalAny(buildEvent.BazelEvent, out); err != nil {
+		if err := buildEvent.BazelEvent.UnmarshalTo(out); err != nil {
 			return nil, err
 		}
 		return out, nil

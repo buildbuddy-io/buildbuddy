@@ -12,7 +12,7 @@ go_library(
         "//server/util/db",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_oauth2//google",
     ],

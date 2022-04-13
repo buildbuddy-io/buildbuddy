@@ -25,8 +25,8 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/log",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//encoding/prototext",
     ],
 )

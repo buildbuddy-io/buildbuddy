@@ -18,16 +18,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	anypb "github.com/golang/protobuf/ptypes/any"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -147,9 +147,10 @@ func finishedEvent() *anypb.Any {
 }
 
 func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey string) {
-	txt := proto.MarshalTextString(invocation)
-	assert.NotContains(t, txt, apiKey, "API key %q should not appear in invocation", apiKey)
-	assert.NotContains(t, txt, "x-buildbuddy-api-key", "All remote headers should be redacted")
+	txt, err := prototext.Marshal(invocation)
+	require.NoError(t, err)
+	assert.NotContains(t, string(txt), apiKey, "API key %q should not appear in invocation", apiKey)
+	assert.NotContains(t, string(txt), "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
 type FakeUsageTracker struct {
@@ -437,11 +438,12 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "https://github.com/acme-inc/acme", invocation.RepoUrl)
-	txt := proto.MarshalTextString(invocation)
-	assert.NotContains(t, txt, "secret_env_value", "Env secrets should not appear in invocation")
-	assert.NotContains(t, txt, "githubToken", "URL secrets should not appear in invocation")
-	assert.Contains(t, txt, "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
-	assert.Contains(t, txt, "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
+	txt, err := prototext.Marshal(invocation)
+	require.NoError(t, err)
+	assert.NotContains(t, string(txt), "secret_env_value", "Env secrets should not appear in invocation")
+	assert.NotContains(t, string(txt), "githubToken", "URL secrets should not appear in invocation")
+	assert.Contains(t, string(txt), "--client_env=FOO_ALLOWED=public_env_value", "Values of allowed env vars should not be redacted")
+	assert.Contains(t, string(txt), "--client_env=FOO_SECRET=<REDACTED>", "Values of non-allowed env vars should be redacted")
 }
 
 func TestHandleEventWithUsageTracking(t *testing.T) {

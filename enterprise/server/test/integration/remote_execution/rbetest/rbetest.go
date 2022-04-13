@@ -64,11 +64,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
@@ -498,8 +498,13 @@ func (c *testCommandController) RegisterCommand(stream retpb.CommandController_R
 	for {
 		select {
 		case op := <-opChannel:
-			log.Infof("Sending request to command [%s]:\n%s", req.GetCommandName(), proto.MarshalTextString(req))
-			err := stream.Send(op)
+			reqText, err := prototext.Marshal(req)
+			if err != nil {
+				log.Warningf("Marshal failed: %v", err)
+				break
+			}
+			log.Infof("Sending request to command [%s]:\n%s", req.GetCommandName(), string(reqText))
+			err = stream.Send(op)
 			if err != nil {
 				log.Warningf("Send failed: %v", err)
 				break
