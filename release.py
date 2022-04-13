@@ -1,29 +1,14 @@
-#!/usr/bin/env python
-from __future__ import print_function
-
+#!/usr/bin/env python3
 import argparse
-import glob
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
 import time
-
-# Don't care about py2/py3 differences too much.
-try:
-    from urllib.parse import urlencode
-    from urllib.request import urlopen, Request
-    from urllib.error import HTTPError
-except ImportError:
-    from urllib import urlencode
-    from urllib2 import urlopen, Request
-    from urllib2 import HTTPError
-try:
-    input = raw_input
-except NameError:
-    pass
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 """
 release.py - A simple script to create a release.
@@ -44,15 +29,14 @@ def die(message):
 def run_or_die(cmd):
     print("(debug) running cmd: %s" % cmd)
     p = subprocess.Popen(cmd,
-                         shell=True, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
+                         shell=True,
+                         stdout=sys.stdout,
+                         stderr=sys.stderr,
                          universal_newlines=True)
     p.wait()
-    rsp = "\n".join(p.stdout.readlines())
-    print("(debug) response: %s" % rsp)
     if p.returncode != 0:
         print(p.returncode)
-        die("Command failed with code %s: %s" % (p.returncode, rsp))
+        die("Command failed with code %d" % (p.returncode))
 
 def workspace_is_clean():
     p = subprocess.Popen('git status --untracked-files=no --porcelain',
@@ -270,15 +254,17 @@ def main():
         update_version_in_file(old_version, new_version, version_file)
         commit_version_bump(old_version, new_version, version_file)
         create_and_push_tag(old_version, new_version, release_notes)
+        print("Pushed tag for new version %s" % new_version)
 
     update_docker_image(new_version, update_latest_tag)
+    print("Pushed docker image for new version %s" % new_version)
 
     ## Don't need this because github automatically creates a source archive when we
     ## make a new tag. Useful when we have artifacts to upload.
     #artifacts = build_artifacts(repo_name, new_version)
     #create_release_and_upload_artifacts("/".join([org_name, repo_name]), new_version, artifacts)
 
-    print("Release (%s) complete. Go enjoy a cold one!" % new_version)
+    print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
     main()
