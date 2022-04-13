@@ -13,6 +13,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:runner_go_proto",
         "//server/remote_cache/cachetools",
+        "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/status",
         "@com_github_alecaivazis_survey_v2//:survey",

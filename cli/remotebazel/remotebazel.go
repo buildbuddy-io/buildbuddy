@@ -17,6 +17,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
@@ -347,7 +348,11 @@ func downloadOutput(ctx context.Context, bsClient bspb.ByteStreamClient, resourc
 		return err
 	}
 	defer out.Close()
-	if err := cachetools.GetBlobByResourceName(ctx, bsClient, resourceName, out); err != nil {
+	rn, err := digest.ParseDownloadResourceName(resourceName)
+	if err != nil {
+		return err
+	}
+	if err := cachetools.GetBlob(ctx, bsClient, rn, out); err != nil {
 		return err
 	}
 	return nil

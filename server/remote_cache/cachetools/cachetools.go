@@ -28,38 +28,6 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-func GetBlobByResourceName(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName string, out io.Writer) error {
-	if bsClient == nil {
-		return status.FailedPreconditionError("ByteStreamClient not configured")
-	}
-	req := &bspb.ReadRequest{
-		ResourceName: resourceName,
-		ReadOffset:   0,
-		ReadLimit:    0,
-	}
-	stream, err := bsClient.Read(ctx, req)
-	if err != nil {
-		if gstatus.Code(err) == gcodes.NotFound {
-			return status.FailedPreconditionErrorf("Blob %q not found", resourceName)
-		}
-		return err
-	}
-
-	for {
-		rsp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if _, err := out.Write(rsp.Data); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
