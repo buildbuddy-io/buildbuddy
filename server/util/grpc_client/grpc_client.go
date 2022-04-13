@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
@@ -36,7 +35,10 @@ func DialTargetWithOptions(target string, grpcsBytestream bool, extraOptions ...
 		if u.Scheme == "grpcs" && u.Port() == "" {
 			u.Host += ":443"
 		}
-		target = u.Host
+
+		if u.Scheme != "unix" {
+			target = u.Host
+		}
 	}
 
 	// Connect to host/port and create a new client
