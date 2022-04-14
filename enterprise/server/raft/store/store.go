@@ -526,7 +526,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	return err
 }
 
-func (s *Store) Write(stream rfspb.Api_WriteServer) error {
+func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
 	var fileMetadataKey []byte
 	var writeCloser filestore.WriteCloserMetadata
@@ -584,6 +584,81 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 				return err
 			}
 			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+				return err
+			}
+			return stream.SendAndClose(&rfpb.WriteResponse{
+				CommittedSize: bytesWritten,
+			})
+		}
+	}
+	return nil
+}
+
+func (s *Store) Write(stream rfspb.Api_WriteServer) error {
+	return s.handleWrite(stream)
+}
+
+type raftWriteCloser struct {
+	io.WriteCloser
+	closeFn func() error
+}
+
+func (rwc *raftWriteCloser) Close() error {
+	if err := rwc.WriteCloser.Close(); err != nil {
+		return err
+	}
+	return rwc.closeFn()
+}
+
+func (s *Store) SyncWriter(stream rfspb.Api_SyncWriteServer) error {
+	// Write the file to all of our peers and ourself, and then
+	// SyncPropose a Write to ensure it was written.
+	ctx := stream.Context()
+	var bytesWritten int64
+	var fileMetadataKey []byte
+	var writeCloser io.WriteCloser
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if writeCloser == nil {
+			fmk, err := constants.FileMetadataKey(req.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			fileMetadataKey = fmk
+			peers, err := s.sender.GetAllNodes(ctx, fileMetadataKey)
+			if err != nil {
+				return err
+			}
+			mwc, err := s.apiClient.MultiWriter(ctx, peers, req.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			rwc := &raftWriteCloser{mwc, func() error {
+				writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+					FileRecord: req.GetFileRecord(),
+				}).ToProto()
+				if err != nil {
+					return err
+				}
+				clusterID := req.GetHeader().GetReplica().GetClusterId()
+				_, err = client.SyncProposeLocal(ctx, s.nodeHost, clusterID, writeReq)
+				return err
+			}}
+			writeCloser = rwc
+		}
+		n, err := writeCloser.Write(req.Data)
+		if err != nil {
+			return err
+		}
+		bytesWritten += int64(n)
+		if req.FinishWrite {
+			if err := writeCloser.Close(); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&rfpb.WriteResponse{

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -193,9 +192,6 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	// We are ready to serve when we know which nodes contain the meta range
 	// and can contact those nodes. We test this by doing a SyncRead of the
 	// initial cluster setup time key/val which is stored in the Meta Range.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
 	select {
 	case <-rc.shutdown:
 		return status.FailedPreconditionError("node is shutdown")
@@ -289,18 +285,6 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 	return readCloser, err
 }
 
-type raftWriteCloser struct {
-	io.WriteCloser
-	closeFn func() error
-}
-
-func (rwc *raftWriteCloser) Close() error {
-	if err := rwc.WriteCloser.Close(); err != nil {
-		return err
-	}
-	return rwc.closeFn()
-}
-
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
@@ -310,36 +294,17 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	peers, err := rc.sender.GetAllNodes(ctx, fileMetadataKey)
-	if err != nil {
-		return nil, err
-	}
-
-	mwc, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	rwc := &raftWriteCloser{mwc, func() error {
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: fileRecord,
-		}).ToProto()
+	var writeCloser io.WriteCloser
+	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		wc, err := client.RemoteSyncWriter(ctx, c, h, fileRecord)
 		if err != nil {
+			log.Printf("RemoteSyncWriter err: %s", err)
 			return err
 		}
-		err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-				Header: h,
-				Batch:  writeReq,
-			})
-			return err
-		})
-		if err != nil {
-			log.Errorf("rc.sender.Run (SyncPropose) returned err: %s", err)
-		}
-		return err
-	}}
-	return rwc, nil
+		writeCloser = wc
+		return nil
+	})
+	return writeCloser, err
 }
 
 func (rc *RaftCache) Stop() error {
