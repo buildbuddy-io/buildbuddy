@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
@@ -271,7 +272,14 @@ func main() {
 		log.Fatalf("Failed to generate executor instance ID: %s", err)
 	}
 	executorID := executorUUID.String()
-	executor, err := remote_executor.NewExecutor(env, executorID, &remote_executor.Options{})
+
+	runnerPool, err := runner.NewPool(env)
+	if err != nil {
+		log.Fatalf("Failed to initialize runner pool: %s", err)
+	}
+
+	opts := &remote_executor.Options{}
+	executor, err := remote_executor.NewExecutor(env, executorID, runnerPool, opts)
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}

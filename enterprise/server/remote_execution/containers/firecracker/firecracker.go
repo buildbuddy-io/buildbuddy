@@ -229,38 +229,6 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	return casPath, nil
 }
 
-// waitUntilExists waits, up to maxWait, for localPath to exist. If the provided
-// context is cancelled, this method returns immediately.
-func waitUntilExists(ctx context.Context, maxWait time.Duration, localPath string) {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	ctx, cancel := context.WithTimeout(ctx, maxWait)
-	defer cancel()
-
-	start := time.Now()
-	defer func() {
-		log.Debugf("Waited %s for %q to be created.", time.Since(start), localPath)
-	}()
-
-	ticker := time.NewTicker(1 * time.Millisecond)
-	defer func() {
-		cancel()
-		ticker.Stop()
-	}()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if _, err := os.Stat(localPath); err != nil {
-				continue
-			}
-			return
-		}
-	}
-}
-
 func getLogrusLogger(debugMode bool) *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
@@ -663,7 +631,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	// Wait for the jailer directory to be created. We have to do this because we
 	// are starting the command ourselves and loading a snapshot, rather than
 	// going through the normal flow and letting the library start the cmd.
-	waitUntilExists(ctx, jailerDirectoryCreationTimeout, c.getChroot())
+	waitOpts := disk.WaitOpts{Timeout: jailerDirectoryCreationTimeout}
+	if err := disk.WaitUntilExists(ctx, c.getChroot(), waitOpts); err != nil {
+		return status.UnavailableErrorf("error while waiting for jailer directory creation: %s", err)
+	}
 
 	// Wait until jailer directory exists because the host vsock socket is created in that directory.
 	if err := c.setupVFSServer(ctx); err != nil {

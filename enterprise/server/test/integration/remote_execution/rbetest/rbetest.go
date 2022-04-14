@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -768,7 +769,10 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		executorID = options.Name
 	}
 
-	exec, err := executor.NewExecutor(env, executorID, &executor.Options{NameOverride: options.Name})
+	runnerPool, err := runner.NewPool(env)
+	require.NoError(r.t, err)
+
+	exec, err := executor.NewExecutor(env, executorID, runnerPool, &executor.Options{NameOverride: options.Name})
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}

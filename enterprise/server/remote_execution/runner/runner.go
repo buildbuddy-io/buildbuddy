@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -33,7 +34,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -44,6 +47,7 @@ import (
 	"google.golang.org/grpc"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -126,11 +130,10 @@ func k8sPodID() (string, error) {
 	return "", nil
 }
 
-// State indicates the current state of a CommandContainer.
+// state indicates the current state of a commandRunner.
 type state int
 
-// CommandRunner represents a command container and attached workspace.
-type CommandRunner struct {
+type commandRunner struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
 
@@ -180,11 +183,11 @@ type CommandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *CommandRunner) pullCredentials() container.PullCredentials {
+func (r *commandRunner) pullCredentials() container.PullCredentials {
 	return container.GetPullCredentials(r.env, r.PlatformProperties)
 }
 
-func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
+func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	r.Workspace.SetTask(r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -211,8 +214,70 @@ func (r *CommandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
+func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error {
+	rootInstanceDigest := digest.NewResourceName(
+		r.task.GetAction().GetInputRootDigest(),
+		r.task.GetExecuteRequest().GetInstanceName(),
+	)
+	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+	if err != nil {
+		return err
+	}
+
+	layout := &container.FileSystemLayout{
+		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
+		Inputs:             inputTree,
+		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
+		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+	}
+
+	if r.env.GetConfigurator().GetExecutorConfig().EnableVFS && r.PlatformProperties.EnableVFS {
+		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
+		// pass the layout information to the implementation.
+		if fc, ok := r.Container.Delegate.(*firecracker.FirecrackerContainer); ok {
+			fc.SetTaskFileSystemLayout(layout)
+		}
+	}
+
+	if r.VFSServer != nil {
+		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.Inputs)
+		if err != nil {
+			return err
+		}
+		if err := r.VFSServer.Prepare(p); err != nil {
+			return err
+		}
+	}
+	if r.VFS != nil {
+		if err := r.VFS.PrepareForTask(ctx, r.task.GetExecutionId()); err != nil {
+			return err
+		}
+	}
+
+	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
+	// enabled.
+	// TODO(vadim): integrate VFS stats
+	if r.VFS != nil {
+		return nil
+	}
+
+	rxInfo, err := r.Workspace.DownloadInputs(ctx, inputTree)
+	if err != nil {
+		return err
+	}
+	if r.PlatformProperties.WorkflowID != "" {
+		if err := r.Workspace.AddCIRunner(ctx); err != nil {
+			return err
+		}
+	}
+	ioStats.FileDownloadCount = rxInfo.FileCount
+	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
+	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
+	return nil
+}
+
 // Run runs the task that is currently bound to the command runner.
-func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
+func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
@@ -262,11 +327,22 @@ func (r *CommandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return r.Container.Exec(ctx, command, nil, nil)
 }
 
+func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
+	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+	if err != nil {
+		return err
+	}
+	ioStats.FileUploadCount = txInfo.FileCount
+	ioStats.FileUploadDurationUsec = txInfo.TransferDuration.Microseconds()
+	ioStats.FileUploadSizeBytes = txInfo.BytesTransferred
+	return nil
+}
+
 // shutdown runs any manual cleanup required to clean up processes before
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them
 // automatically via `Container.Remove`.
-func (r *CommandRunner) shutdown(ctx context.Context) error {
+func (r *commandRunner) shutdown(ctx context.Context) error {
 	if r.PlatformProperties.WorkloadIsolationType != string(platform.BareContainerType) {
 		return nil
 	}
@@ -280,7 +356,7 @@ func (r *CommandRunner) shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (r *CommandRunner) Remove(ctx context.Context) error {
+func (r *commandRunner) Remove(ctx context.Context) error {
 	errs := []error{}
 	if s := r.state; s != initial && s != removed {
 		r.state = removed
@@ -308,13 +384,13 @@ func (r *CommandRunner) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (r *CommandRunner) RemoveWithTimeout(ctx context.Context) error {
+func (r *commandRunner) RemoveWithTimeout(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
 	defer cancel()
 	return r.Remove(ctx)
 }
 
-func (r *CommandRunner) RemoveInBackground() {
+func (r *commandRunner) RemoveInBackground() {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
 		if err := r.RemoveWithTimeout(context.Background()); err != nil {
@@ -325,12 +401,12 @@ func (r *CommandRunner) RemoveInBackground() {
 
 // isCIRunner returns whether the task assigned to this runner is a BuildBuddy
 // CI task.
-func (r *CommandRunner) isCIRunner() bool {
+func (r *commandRunner) isCIRunner() bool {
 	args := r.task.GetCommand().GetArguments()
 	return r.PlatformProperties.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
-func (r *CommandRunner) cleanupCIRunner(ctx context.Context) error {
+func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	// Run the currently assigned buildbuddy_ci_runner command, appending the
 	// --shutdown_and_exit argument. We use this approach because we want to
 	// preserve the configuration from the last run command, which may include the
@@ -354,12 +430,7 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 	return perms.ToACLProto(userID, groupID, permBits)
 }
 
-// Pool keeps track of command runners, both inactive (paused) and running.
-//
-// In the case of bare command execution, paused runners may not actually
-// have their execution suspended. The pool doesn't currently account for CPU
-// usage in this case.
-type Pool struct {
+type pool struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
 	podID          string
@@ -373,13 +444,17 @@ type Pool struct {
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
 	// runners holds all runners managed by the pool.
-	runners []*CommandRunner
+	runners []*commandRunner
 }
 
-func NewPool(env environment.Env) (*Pool, error) {
+func NewPool(env environment.Env) (*pool, error) {
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
+	}
+	hc := env.GetHealthChecker()
+	if hc == nil {
+		return nil, status.FailedPreconditionError("Missing health checker")
 	}
 
 	podID, err := k8sPodID()
@@ -404,15 +479,16 @@ func NewPool(env environment.Env) (*Pool, error) {
 		log.Info("Using docker for execution")
 	}
 
-	p := &Pool{
+	p := &pool{
 		env:            env,
 		imageCacheAuth: container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
 		podID:          podID,
 		dockerClient:   dockerClient,
 		buildRoot:      executorConfig.GetRootDirectory(),
-		runners:        []*CommandRunner{},
+		runners:        []*commandRunner{},
 	}
 	p.setLimits(&executorConfig.RunnerPool)
+	hc.RegisterShutdownFunction(p.Shutdown)
 	return p, nil
 }
 
@@ -421,7 +497,7 @@ func NewPool(env environment.Env) (*Pool, error) {
 //
 // If an error is returned, the runner was not successfully added to the pool,
 // and should be removed.
-func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
+func (p *pool) Add(ctx context.Context, r *commandRunner) error {
 	if err := p.add(ctx, r); err != nil {
 		metrics.RunnerPoolFailedRecycleAttempts.With(prometheus.Labels{
 			metrics.RunnerPoolFailedRecycleReason: err.Label,
@@ -431,7 +507,7 @@ func (p *Pool) Add(ctx context.Context, r *CommandRunner) error {
 	return nil
 }
 
-func (p *Pool) checkAddPreconditions(r *CommandRunner) *labeledError {
+func (p *pool) checkAddPreconditions(r *commandRunner) *labeledError {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -452,7 +528,7 @@ func (p *Pool) checkAddPreconditions(r *CommandRunner) *labeledError {
 	return nil
 }
 
-func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
+func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	if err := p.checkAddPreconditions(r); err != nil {
 		return err
 	}
@@ -562,7 +638,7 @@ func (p *Pool) add(ctx context.Context, r *CommandRunner) *labeledError {
 	return nil
 }
 
-func (p *Pool) hostBuildRoot() string {
+func (p *pool) hostBuildRoot() string {
 	// If host root dir is explicitly configured, prefer that.
 	if hd := p.env.GetConfigurator().GetExecutorConfig().HostRootDirectory; hd != "" {
 		return filepath.Join(hd, "remotebuilds")
@@ -578,7 +654,7 @@ func (p *Pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
-func (p *Pool) dockerOptions() *docker.DockerOptions {
+func (p *pool) dockerOptions() *docker.DockerOptions {
 	cfg := p.env.GetConfigurator().GetExecutorConfig()
 	return &docker.DockerOptions{
 		Socket:                  cfg.DockerSocket,
@@ -590,7 +666,7 @@ func (p *Pool) dockerOptions() *docker.DockerOptions {
 	}
 }
 
-func (p *Pool) warmupImage(ctx context.Context, containerType platform.ContainerType, image string) error {
+func (p *pool) warmupImage(ctx context.Context, containerType platform.ContainerType, image string) error {
 	start := time.Now()
 	plat := &repb.Platform{
 		Properties: []*repb.Platform_Property{
@@ -623,7 +699,7 @@ func (p *Pool) warmupImage(ctx context.Context, containerType platform.Container
 	return nil
 }
 
-func (p *Pool) WarmupImages() {
+func (p *pool) Warmup(ctx context.Context) {
 	config := p.env.GetConfigurator().GetExecutorConfig()
 	executorProps := platform.GetExecutorProperties(config)
 	// Give the pull up to 2 minute to succeed.
@@ -632,7 +708,7 @@ func (p *Pool) WarmupImages() {
 	if config.WarmupTimeoutSecs > 0 {
 		timeout = time.Duration(config.WarmupTimeoutSecs) * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	eg, ctx := errgroup.WithContext(ctx)
@@ -665,7 +741,7 @@ func (p *Pool) WarmupImages() {
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunner, error) {
+func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
@@ -760,7 +836,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 			return nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
 		}
 	}
-	r := &CommandRunner{
+	r := &commandRunner{
 		env:                p.env,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
@@ -782,7 +858,7 @@ func (p *Pool) Get(ctx context.Context, task *repb.ExecutionTask) (*CommandRunne
 	return r, nil
 }
 
-func (p *Pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ExecutionTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ExecutionTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -864,7 +940,7 @@ type query struct {
 
 // take finds the most recently used runner in the pool that matches the given
 // query. If one is found, it is unpaused and returned.
-func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
+func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -913,27 +989,27 @@ func (p *Pool) take(ctx context.Context, q *query) (*CommandRunner, error) {
 }
 
 // RunnerCount returns the total number of runners in the pool.
-func (p *Pool) RunnerCount() int {
+func (p *pool) RunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.runners)
 }
 
 // PausedRunnerCount returns the current number of paused runners in the pool.
-func (p *Pool) PausedRunnerCount() int {
+func (p *pool) PausedRunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.pausedRunnerCount()
 }
 
 // ActiveRunnerCount returns the number of non-paused runners in the pool.
-func (p *Pool) ActiveRunnerCount() int {
+func (p *pool) ActiveRunnerCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.runners) - p.pausedRunnerCount()
 }
 
-func (p *Pool) pausedRunnerCount() int {
+func (p *pool) pausedRunnerCount() int {
 	n := 0
 	for _, r := range p.runners {
 		if r.state == paused {
@@ -943,7 +1019,7 @@ func (p *Pool) pausedRunnerCount() int {
 	return n
 }
 
-func (p *Pool) pausedRunnerMemoryUsageBytes() int64 {
+func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 	b := int64(0)
 	for _, r := range p.runners {
 		if r.state == paused {
@@ -955,7 +1031,7 @@ func (p *Pool) pausedRunnerMemoryUsageBytes() int64 {
 
 // Shutdown removes all runners from the pool and prevents new ones from
 // being added.
-func (p *Pool) Shutdown(ctx context.Context) error {
+func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
 	runners := p.runners
@@ -985,7 +1061,7 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (p *Pool) remove(r *CommandRunner) {
+func (p *pool) remove(r *commandRunner) {
 	for i := range p.runners {
 		if p.runners[i] == r {
 			// Not using the "swap with last element" trick here because we need to
@@ -996,7 +1072,7 @@ func (p *Pool) remove(r *CommandRunner) {
 	}
 }
 
-func (p *Pool) finalize(r *CommandRunner) {
+func (p *pool) finalize(r *commandRunner) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.remove(r)
@@ -1005,29 +1081,35 @@ func (p *Pool) finalize(r *CommandRunner) {
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
-func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), runnerRecycleTimeout)
+func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	ctx, cancel := context.WithTimeout(ctx, runnerRecycleTimeout)
 	defer cancel()
+
+	cr, ok := r.(*commandRunner)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_runner_type", "unexpected runner type %T", r)
+		return
+	}
 
 	recycled := false
 	defer func() {
 		if !recycled {
-			p.finalize(r)
+			p.finalize(cr)
 		}
 	}()
 
-	if !r.PlatformProperties.RecycleRunner || !finishedCleanly || r.doNotReuse {
+	if !cr.PlatformProperties.RecycleRunner || !finishedCleanly || cr.doNotReuse {
 		return
 	}
 	// Clean the workspace once before adding it to the pool (to save on disk
 	// space).
-	if err := r.Workspace.Clean(); err != nil {
+	if err := cr.Workspace.Clean(); err != nil {
 		log.Errorf("Failed to clean workspace: %s", err)
 		return
 	}
 	// This call happens after we send the final stream event back to the
 	// client, so background context is appropriate.
-	if err := p.Add(ctx, r); err != nil {
+	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
 			log.Debug(err.Error())
 		} else {
@@ -1041,7 +1123,7 @@ func (p *Pool) TryRecycle(r *CommandRunner, finishedCleanly bool) {
 	recycled = true
 }
 
-func (p *Pool) setLimits(cfg *config.RunnerPoolConfig) {
+func (p *pool) setLimits(cfg *config.RunnerPoolConfig) {
 	totalRAMBytes := int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
 	estimatedRAMBytes := int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 
@@ -1114,7 +1196,7 @@ func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
 	return workerArgs, flagFiles
 }
 
-func (r *CommandRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
+func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
 	if r.PlatformProperties.PersistentWorkerKey != "" {
 		return true
 	}
@@ -1127,7 +1209,7 @@ func (r *CommandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
-func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -1209,7 +1291,7 @@ func (r *CommandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	return result
 }
 
-func (r *CommandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
+func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
 		marshaler := jsonpb.Marshaler{EmitDefaults: true}
@@ -1230,7 +1312,7 @@ func (r *CommandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 	return err
 }
 
-func (r *CommandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
+func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
 		unmarshaller := jsonpb.Unmarshaler{AllowUnknownFields: true}
@@ -1259,7 +1341,7 @@ func (r *CommandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, 
 // files. The @ itself can be escaped with @@. This deliberately does not expand --flagfile= style
 // arguments, because we want to get rid of the expansion entirely at some point in time.
 // Based on: https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
-func (r *CommandRunner) expandArguments(args []string) ([]string, error) {
+func (r *commandRunner) expandArguments(args []string) ([]string, error) {
 	expandedArgs := make([]string, 0)
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {

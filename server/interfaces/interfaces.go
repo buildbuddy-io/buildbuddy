@@ -494,6 +494,73 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// Runner represents an isolated execution environment.
+//
+// Runners are assigned a single task when they are retrieved from a Pool,
+// and may only be used to execute that task. When using runner recycling,
+// runners can be added back to the pool, then later retrieved from the pool
+// to execute a new task.
+type Runner interface {
+	// PrepareForTask prepares the filesystem for the task assigned to the runner,
+	// downloading the task's container image if applicable and cleaning up the
+	// workspace state from the previously assigned task if applicable.
+	PrepareForTask(ctx context.Context) error
+
+	// DownloadInputs downloads any input files associated with the task assigned
+	// to the runner.
+	//
+	// It populates the download stat fields in the given IOStats.
+	DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error
+
+	// Run runs the task that is currently assigned to the runner.
+	Run(ctx context.Context) *CommandResult
+
+	// UploadOutputs uploads any output files associated with the task assigned to
+	// the runner, as well as the result of the run.
+	//
+	// It populates the upload stat fields in the given IOStats.
+	UploadOutputs(ctx context.Context, ioStats *espb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+}
+
+// Pool is responsible for assigning tasks to runners.
+//
+// Pool keeps track of paused runners and active runners, allowing incoming
+// tasks to be assigned to paused runners (if runner recycling is enabled), as
+// well as evicting paused runners to free up resources for new runners.
+type RunnerPool interface {
+	// Warmup prepares any resources needed for commonly used execution
+	// environments, such as downloading container images.
+	Warmup(ctx context.Context)
+
+	// Get returns a runner bound to the the given task. The caller must call
+	// TryRecycle on the returned runner when done using it.
+	//
+	// If the task has runner recycling enabled then it attempts to find a runner
+	// from the pool that can execute the task. If runner recycling is disabled or
+	// if there are no eligible paused runners, it creates and returns a new
+	// runner.
+	//
+	// The returned runner is ready to execute tasks, and the caller is
+	// responsible for walking the runner through the task lifecycle.
+	Get(ctx context.Context, task *repb.ExecutionTask) (Runner, error)
+
+	// TryRecycle attempts to add the runner to the pool for use by subsequent
+	// tasks.
+	//
+	// If recycling is not enabled or if an error occurred while attempting to
+	// recycle, the runner is not added to the pool and any resources associated
+	// with the runner are freed up. Callers should never use the provided runner
+	// after calling TryRecycle, since it may possibly be removed.
+	//
+	// If the runner did not finish cleanly (as determined by the caller of
+	// runner.Run()) then it will not be recycled and instead forcibly removed,
+	// even if runner recycling is enabled.
+	TryRecycle(ctx context.Context, r Runner, finishedCleanly bool)
+
+	// Shutdown removes all runners from the pool.
+	Shutdown(ctx context.Context) error
+}
+
 // CommandResult captures the output and details of an executed command.
 type CommandResult struct {
 	// Error is populated only if the command was unable to be started, or if it was

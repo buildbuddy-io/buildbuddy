@@ -1,4 +1,4 @@
-package runner_test
+package runner
 
 import (
 	"bytes"
@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -109,29 +109,37 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, userID string) con
 	return context.WithValue(ctx, "x-buildbuddy-jwt", jwt)
 }
 
-func mustRun(t *testing.T, r *runner.CommandRunner) {
+func mustRun(t *testing.T, r *commandRunner) {
 	res := r.Run(context.Background())
 	require.NoError(t, res.Error)
 }
 
-func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *runner.Pool {
+func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *pool {
 	env.GetConfigurator().GetExecutorConfig().RunnerPool = *cfg
-	p, err := runner.NewPool(env)
+	p, err := NewPool(env)
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	return p
 }
 
-func mustGet(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+func get(ctx context.Context, p *pool, task *repb.ExecutionTask) (*commandRunner, error) {
+	r, err := p.Get(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return r.(*commandRunner), nil
+}
+
+func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
 	initialActiveCount := pool.ActiveRunnerCount()
-	r, err := pool.Get(ctx, task)
+	r, err := get(ctx, pool, task)
 	require.NoError(t, err)
 	require.Equal(t, initialActiveCount+1, pool.ActiveRunnerCount())
 	mustRun(t, r)
 	return r
 }
 
-func mustAdd(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+func mustAdd(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
 	initialActiveCount := pool.ActiveRunnerCount()
 
 	err := pool.Add(ctx, r)
@@ -140,7 +148,7 @@ func mustAdd(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.Com
 	require.Equal(t, initialActiveCount-1, pool.ActiveRunnerCount(), "active runner count should decrease when adding back to pool")
 }
 
-func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 
@@ -156,7 +164,7 @@ func mustAddWithoutEviction(t *testing.T, ctx context.Context, pool *runner.Pool
 	)
 }
 
-func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r *runner.CommandRunner) {
+func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *commandRunner) {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 
@@ -172,7 +180,7 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *runner.Pool, r
 	)
 }
 
-func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -181,7 +189,7 @@ func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *runner.Pool, t
 	return r
 }
 
-func mustGetNewRunner(t *testing.T, ctx context.Context, pool *runner.Pool, task *repb.ExecutionTask) *runner.CommandRunner {
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -299,7 +307,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 		tasksStarted := make(chan struct{}, numTasks)
 		errs := make(chan error, numTasks)
 		runTask := func() error {
-			r, err := pool.Get(ctx, newTask())
+			r, err := get(ctx, pool, newTask())
 			if err != nil {
 				return err
 			}
@@ -354,7 +362,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	pool := newRunnerPool(t, env, defaultCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	r, err := pool.Get(ctx, newTask())
+	r, err := get(ctx, pool, newTask())
 
 	require.NoError(t, err)
 
@@ -447,25 +455,16 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 
 	task := newTask()
 	task.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
-	r, err := pool.Get(ctx, task)
+	r, err := get(ctx, pool, task)
 
 	require.NoError(t, err)
 
 	go func() {
 		mustRun(t, r)
 	}()
-	// Poll for foo.txt to exist.
-	for {
-		_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-		if err == nil {
-			break
-		}
-		if os.IsNotExist(err) {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			require.FailNow(t, err.Error())
-		}
-	}
+	fooPath := path.Join(r.Workspace.Path(), "foo.txt")
+	err = disk.WaitUntilExists(ctx, fooPath, disk.WaitOpts{Timeout: 5 * time.Second})
+	require.NoError(t, err)
 
 	require.Equal(t, 1, pool.ActiveRunnerCount())
 
@@ -569,7 +568,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(r, true)
+		pool.TryRecycle(ctx, r, true)
 		assert.Equal(t, 1, pool.PausedRunnerCount())
 
 		// Reuse the persistent worker
@@ -579,7 +578,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(r, true)
+		pool.TryRecycle(ctx, r, true)
 		assert.Equal(t, 1, pool.PausedRunnerCount())
 
 		// Try a persistent worker with a new key
@@ -589,7 +588,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(r, true)
+		pool.TryRecycle(ctx, r, true)
 		assert.Equal(t, 2, pool.PausedRunnerCount())
 	}
 }
@@ -622,6 +621,6 @@ func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
 	require.Error(t, res.Error)
 
 	// Make sure that after trying to recycle doesn't put the worker back in the pool.
-	pool.TryRecycle(r, true)
+	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
