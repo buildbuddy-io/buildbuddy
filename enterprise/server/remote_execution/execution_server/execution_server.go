@@ -44,11 +44,6 @@ import (
 
 var enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 
-func timestampToMicros(tsPb *timestamppb.Timestamp) int64 {
-	ts := tsPb.AsTime()
-	return ts.UnixMicro()
-}
-
 func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {
 	// IOStats
 	execution.FileDownloadCount = summary.GetIoStats().GetFileDownloadCount()
@@ -59,15 +54,15 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
 	// ExecutedActionMetadata
 	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
-	execution.QueuedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetQueuedTimestamp())
-	execution.WorkerStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetWorkerStartTimestamp())
-	execution.WorkerCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetWorkerCompletedTimestamp())
-	execution.InputFetchStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetInputFetchStartTimestamp())
-	execution.InputFetchCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetInputFetchCompletedTimestamp())
-	execution.ExecutionStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetExecutionStartTimestamp())
-	execution.ExecutionCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetExecutionCompletedTimestamp())
-	execution.OutputUploadStartTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetOutputUploadStartTimestamp())
-	execution.OutputUploadCompletedTimestampUsec = timestampToMicros(summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp())
+	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()
+	execution.WorkerStartTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerStartTimestamp().AsTime().UnixMicro()
+	execution.WorkerCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerCompletedTimestamp().AsTime().UnixMicro()
+	execution.InputFetchStartTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchStartTimestamp().AsTime().UnixMicro()
+	execution.InputFetchCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchCompletedTimestamp().AsTime().UnixMicro()
+	execution.ExecutionStartTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionStartTimestamp().AsTime().UnixMicro()
+	execution.ExecutionCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionCompletedTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadStartTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadStartTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
 }
 
 func generateCommandSnippet(command *repb.Command) string {

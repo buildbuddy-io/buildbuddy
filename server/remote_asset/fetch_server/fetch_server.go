@@ -19,12 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
@@ -70,21 +70,13 @@ func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
 	return deadline.Sub(time.Now()), true
 }
 
-func timeoutFromProto(timeout *durationpb.Duration) (time.Duration, bool) {
-	if timeout != nil {
-		requestDuration := timeout.AsDuration()
-		return requestDuration, true
-	}
-	return 0, false
-}
-
 func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *http.Client {
 	timeout := time.Duration(0)
 	if ctxDuration, ok := timeoutFromContext(ctx); ok {
 		timeout = ctxDuration
 	}
-	if protoDuration, ok := timeoutFromProto(protoTimeout); ok {
-		timeout = protoDuration
+	if protoTimeout != nil {
+		timeout = protoTimeout.AsDuration()
 	}
 	if timeout == 0 || timeout > maxHTTPTimeout {
 		timeout = maxHTTPTimeout
