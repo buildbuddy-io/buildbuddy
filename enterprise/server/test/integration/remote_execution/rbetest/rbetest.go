@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -577,6 +578,8 @@ type ExecutorOptions struct {
 	APIKey string
 	// Optional Pool name for the executor
 	Pool string
+	// Optional interceptor for command execution results.
+	RunInterceptor
 	// Optional server to be used for task leasing, cache requests, etc
 	// If not specified the executor will connect to a random server.
 	Server                       *BuildBuddyServer
@@ -769,8 +772,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 		executorID = options.Name
 	}
 
-	runnerPool, err := runner.NewPool(env)
-	require.NoError(r.t, err)
+	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
 
 	exec, err := executor.NewExecutor(env, executorID, runnerPool, &executor.Options{NameOverride: options.Name})
 	if err != nil {
@@ -1157,6 +1159,75 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
 	return &Command{r, cmd, r.rbeClient, opts.UserID}
+}
+
+// RunFunc is the function signature for runner.Runner.Run().
+type RunFunc func(ctx context.Context) *interfaces.CommandResult
+
+// RunInterceptor returns a command result for testing purposes, optionally
+// delegating to the real runner implementation to execute the command and get a
+// real result.
+type RunInterceptor func(ctx context.Context, original RunFunc) *interfaces.CommandResult
+
+// AlwaysReturn returns a RunInterceptor that returns a fixed result on every
+// task attempt.
+func AlwaysReturn(result *interfaces.CommandResult) RunInterceptor {
+	return func(ctx context.Context, original RunFunc) *interfaces.CommandResult {
+		return result
+	}
+}
+
+// ReturnForFirstAttempt returns a RunInterceptor that returns the given result
+// only on the very first task attempt. Subsequent runs even across different
+// runners will return the real command result.
+func ReturnForFirstAttempt(result *interfaces.CommandResult) RunInterceptor {
+	attempt := int32(0)
+	return func(ctx context.Context, original RunFunc) *interfaces.CommandResult {
+		if n := atomic.AddInt32(&attempt, 1); n == 1 {
+			return result
+		}
+		return original(ctx)
+	}
+}
+
+// testRunnerPool returns runners whose Run() results can be controlled by the
+// test.
+type testRunnerPool struct {
+	interfaces.RunnerPool
+	runInterceptor RunInterceptor
+}
+
+func NewTestRunnerPool(t testing.TB, env environment.Env, runInterceptor RunInterceptor) interfaces.RunnerPool {
+	realPool, err := runner.NewPool(env)
+	require.NoError(t, err)
+	return &testRunnerPool{realPool, runInterceptor}
+}
+
+func (p *testRunnerPool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
+	realRunner, err := p.RunnerPool.Get(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	return &testRunner{realRunner, p.runInterceptor}, nil
+}
+
+func (p *testRunnerPool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	tr := r.(*testRunner)
+	p.RunnerPool.TryRecycle(ctx, tr.Runner, finishedCleanly)
+}
+
+// testRunner is a Runner implementation that allows injecting error results
+// for command execution.
+type testRunner struct {
+	interfaces.Runner
+	interceptor RunInterceptor
+}
+
+func (r *testRunner) Run(ctx context.Context) *interfaces.CommandResult {
+	if r.interceptor == nil {
+		return r.Runner.Run(ctx)
+	}
+	return r.interceptor(ctx, r.Runner.Run)
 }
 
 // WaitForAnyPooledRunner waits for the runner pool count across all executors
