@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,8 +29,6 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -130,18 +127,6 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func isBazelRetryableError(taskError error) bool {
-	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
-		return true
-	}
-	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
-		if len(gstatus.Convert(taskError).Details()) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // isTaskMisconfigured returns whether a task failed to execute because of a
 // configuration error that will prevent the action from executing properly,
 // even if retried.
@@ -151,11 +136,24 @@ func isTaskMisconfigured(err error) bool {
 		status.IsUnauthenticatedError(err)
 }
 
-func shouldRetry(taskError error) bool {
+func isClientBazel(task *repb.ExecutionTask) bool {
+	// TODO(bduffany): Find a more reliable way to determine this.
+	args := task.GetCommand().GetArguments()
+	return len(args) == 0 || args[0] != "./buildbuddy_ci_runner"
+}
+
+func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
+	// If the task is invalid / misconfigured, more attempts won't help.
 	if isTaskMisconfigured(taskError) {
 		return false
 	}
-	return !isBazelRetryableError(taskError)
+	// If the task timed out, respect the timeout and don't keep retrying.
+	if status.IsDeadlineExceededError(taskError) {
+		return false
+	}
+	// Bazel has retry functionality built in, so if we know the client is Bazel,
+	// let Bazel retry it instead of us doing it.
+	return !isClientBazel(task)
 }
 
 func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
@@ -178,10 +176,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		if shouldRetry(finalErr) {
+		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
-		log.Warningf("Encountered non-retriable task error; relying on client to retry if needed: %s", finalErr)
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
 			return true, err
 		}
@@ -210,7 +207,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
+		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
@@ -275,6 +272,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
+	if cmdResult.Error != nil {
+		log.Warningf("Command execution returned error: %q", cmdResult.Error)
+	}
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
@@ -336,9 +336,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		ExecutedActionMetadata: md,
 	}
 
-	// If the command didn't run to completion and we are not certain that the
-	// error was caused by a misconfigured task, allow the task to be retried.
-	if cmdResult.Error != nil && !isTaskMisconfigured(cmdResult.Error) {
+	// If there's an error that we know the client won't retry, return an error
+	// so that the scheduler can retry it.
+	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
 		return finishWithErrFn(cmdResult.Error)
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse

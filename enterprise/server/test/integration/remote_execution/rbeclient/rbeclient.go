@@ -175,8 +175,8 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 		c.mu.Unlock()
 		status.CommandName = name
 		statusChannel <- status
-		if status.Stage == repb.ExecutionStage_COMPLETED {
-			log.Debugf("Command [%s] finished: [%s]", name, status)
+		if status.Stage == repb.ExecutionStage_COMPLETED || status.Err != nil {
+			log.Debugf("Command [%q] finished: [%s]", name, status)
 			close(statusChannel)
 		}
 	}
@@ -225,17 +225,10 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 				Err:   status.InternalErrorf("invalid response proto: %v", err)})
 			return
 		}
-		err = gstatus.ErrorProto(response.GetStatus())
-		if err != nil {
-			sendStatus(&CommandResult{
-				Stage: repb.ExecutionStage_COMPLETED,
-				Err:   err,
-			})
-			return
-		}
 
 		res := &CommandResult{
 			Stage:        repb.ExecutionStage_COMPLETED,
+			Err:          gstatus.ErrorProto(response.GetStatus()),
 			Executor:     response.GetResult().GetExecutionMetadata().GetWorker(),
 			ExitCode:     int(response.GetResult().GetExitCode()),
 			InstanceName: c.actionResourceName.GetInstanceName(),

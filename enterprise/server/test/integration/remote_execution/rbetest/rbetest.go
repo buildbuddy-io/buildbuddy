@@ -237,9 +237,9 @@ func NewRBETestEnv(t *testing.T) *Env {
 			go func() {
 				log.Infof("Waiting for executor %q to shut down.", id)
 				e.env.GetHealthChecker().WaitForGracefulShutdown()
+				log.Infof("Shut down for executor %q completed.", id)
 				wg.Done()
 			}()
-			log.Infof("Shut down for executor %q completed.", id)
 		}
 		log.Warningf("Waiting for executor shutdown to finish...")
 		wg.Wait()
@@ -951,7 +951,7 @@ type CommandResult struct {
 // getResult blocks until the command either finishes executing or encounters
 // an execution error. It fails the test immediately if an error occurs that
 // is not a remote execution error.
-func (c *Command) getResult() (*CommandResult, error) {
+func (c *Command) getResult() *CommandResult {
 	timeout := time.NewTimer(defaultWaitTimeout)
 	for {
 		select {
@@ -963,42 +963,81 @@ func (c *Command) getResult() (*CommandResult, error) {
 				continue
 			}
 			timeout.Stop()
-			if result.Err != nil {
-				return nil, result.Err
-			}
-			ctx := context.Background()
-			ctx = c.env.WithUserID(ctx, c.userID)
-			stdout, stderr, err := c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
-			if err != nil {
-				assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
+			var stdout, stderr string
+			if result.ActionResult != nil {
+				ctx := context.Background()
+				ctx = c.env.WithUserID(ctx, c.userID)
+				var err error
+				stdout, stderr, err = c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
+				if err != nil {
+					assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
+				}
 			}
 			return &CommandResult{
 				CommandResult: result,
 				Stdout:        stdout,
 				Stderr:        stderr,
-			}, nil
+			}
 		case <-timeout.C:
 			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))
-			return nil, nil
+			return nil
 		}
 	}
 }
 
-// Wait blocks until the command has finished executing.
+// Wait blocks until the command has terminated with a normal exit. If the
+// command fails to be started or exits abnormally (timeout, killed, etc.)
+// then this will fail the test.
 func (c *Command) Wait() *CommandResult {
-	result, err := c.getResult()
-	require.NoError(c.env.t, err)
+	result := c.getResult()
+	require.NoError(c.env.t, result.Err)
 	return result
 }
 
-// MustFail asserts that the command encounters an execution error, and returns
-// the resulting error. Note that if the command runs to completion and returns
-// a non-zero exit code, this is considered a successful execution, not an
-// execution error.
-func (c *Command) MustFail() error {
-	_, err := c.getResult()
-	require.Error(c.env.t, err)
-	return err
+// MustFailToStart asserts that the command did not begin execution due to an
+// error such as a bad request (no executors registered, missing inputs, invalid
+// platform props, etc). This returns the raw error that was encountered.
+func (c *Command) MustFailToStart() error {
+	result := c.getResult()
+	require.Nil(c.env.t, result.ActionResult, "command unexpectedly return an action result")
+	require.Error(c.env.t, result.Err, "command should have failed to start")
+	return result.Err
+}
+
+// MustTerminateAbnormally asserts that the command began execution but did not
+// return an exit code, for example due to being killed mid-execution. In this
+// case, we expect both an error as well as any partial debug output from the
+// command. The Err field in the returned CommandResult will contain the error
+// that caused the command to terminate abnormally, and stdout/stderr can be
+// inspected to see any partial debug output from the command before it was
+// terminated.
+func (c *Command) MustTerminateAbnormally() *CommandResult {
+	result := c.getResult()
+	require.NotNil(
+		c.env.t, result.ActionResult,
+		"expected action result with debug outputs to help diagnose abnormal termination")
+	require.Error(c.env.t, result.Err, "expected abnormal termination")
+	return result
+}
+
+// MustBeCancelled asserts that the command was cancelled by the execution
+// service. An ExecuteResponse is not made available to clients in this case.
+func (c *Command) MustBeCancelled() {
+	result := c.getResult()
+	require.True(
+		c.env.t, status.IsCanceledError(result.Err),
+		"expected Canceled error but got: %s", result.Err)
+}
+
+// MustFailAfterSchedulerRetry asserts that the command failed after exhausting
+// all scheduler-level retry attempts. An ExecuteResponse is not made available
+// to the client in this case. This is only useful for tasks which will not be
+// retried by Bazel (currently just CI runner tasks).
+func (c *Command) MustFailAfterSchedulerRetry() error {
+	result := c.getResult()
+	require.Error(c.env.t, result.Err)
+	require.Contains(c.env.t, result.Err.Error(), "already attempted")
+	return result.Err
 }
 
 func (c *Command) WaitAccepted() {
