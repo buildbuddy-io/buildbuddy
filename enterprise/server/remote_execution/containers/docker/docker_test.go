@@ -271,3 +271,33 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		t, "output\n", output,
 		"if timed out, should be able to read debug output files")
 }
+
+func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "Hello world"
+			sleep 0.5
+			echo "Hello again"
+		`},
+	}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
