@@ -96,22 +96,10 @@ type RealEnv struct {
 }
 
 func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
-	// Create a single "Background" context that will be cancelled 1 second
-	// before the server shuts down.
-	serverCtx, serverCancel := context.WithCancel(context.Background())
-	h.RegisterShutdownFunction(func(ctx context.Context) error {
-		deadline, ok := ctx.Deadline()
-		if ok {
-			time.Sleep(deadline.Sub(time.Now()) - time.Second)
-		}
-		serverCancel()
-		return nil
-	})
-
 	return &RealEnv{
 		configurator:     c,
 		healthChecker:    h,
-		serverContext:    serverCtx,
+		serverContext:    context.Background(),
 		executionClients: make(map[string]*executionClientConfig, 0),
 	}
 }
