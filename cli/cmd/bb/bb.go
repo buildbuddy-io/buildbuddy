@@ -113,7 +113,7 @@ func main() {
 	}
 
 	bazelFlags := commandline.ExtractBazelFlags(filteredOSArgs)
-	bazelFlags, bazelOpts, filteredOSArgs, err := autoconfig.Configure(bazelFlags, filteredOSArgs)
+	bazelFlags, bazelOpts, filteredOSArgs, err := autoconfig.Configure(ctx, bazelFlags, filteredOSArgs)
 	if err != nil {
 		die(-1, err)
 	}

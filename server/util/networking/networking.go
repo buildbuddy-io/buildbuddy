@@ -254,6 +254,23 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	}, nil
 }
 
+func DefaultInterface(ctx context.Context) (*net.Interface, error) {
+	defaultDevName, err := findDefaultDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, iface := range ifaces {
+		if iface.Name == defaultDevName {
+			return &iface, nil
+		}
+	}
+	return nil, status.NotFoundErrorf("could not find interface %q", defaultDevName)
+}
+
 // findDefaultDevice find's the device used for the default route.
 // Equivalent to "ip route | grep default | awk '{print $5}'"
 func findDefaultDevice(ctx context.Context) (string, error) {

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
@@ -67,4 +69,28 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 		InvocationID: stderrHandler.invocationID,
 		Error:        err,
 	}
+}
+
+// FindWorkspaceFile finds the location of the Bazel workspace file (either WORKSPACE.bazel or WORKSPACE) in which the
+// startDir is located.
+func FindWorkspaceFile(startDir string) (string, error) {
+	path, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", nil
+	}
+	for path != "/" {
+		for _, wsFilename := range []string{"WORKSPACE.bazel", "WORKSPACE"} {
+			wsFilePath := filepath.Join(path, wsFilename)
+			_, err := os.Stat(wsFilePath)
+			if err == nil {
+				return wsFilePath, nil
+			}
+			if !os.IsNotExist(err) {
+				log.Warningf("Could not check existence of workspace file at %q: %s\n", wsFilePath, err)
+				continue
+			}
+		}
+		path = filepath.Dir(path)
+	}
+	return "", status.NotFoundError("could not detect workspace root (WORKSPACE.bazel or WORKSPACE file not found)")
 }

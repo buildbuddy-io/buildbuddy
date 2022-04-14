@@ -1,15 +1,18 @@
 package autoconfig
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 )
 
 const (
@@ -23,7 +26,7 @@ var (
 	events = flag.Bool("events", true, "If false, disable sending build events to buildbuddy.")
 	remote = flag.String("remote", "", "A value of 'exec' enables remote execution of actions and 'bazel' enables running both bazel and actions remotely.")
 	cache  = flag.Bool("cache", false, "If true, perform build with remote caching.")
-	dev    = flag.Bool("dev", false, "If true, point at buildbuddy dev cluster.")
+	env    = flag.String("env", "prod", "The BuildBuddy environment to use. One of prod, dev or local.")
 	apiKey = flag.String("api_key", "", "API key to use for BuildBuddy services.")
 )
 
@@ -57,69 +60,83 @@ func remoteBazelArgs(besBackend, remoteExecutor string) []string {
 	return args
 }
 
-func Configure(bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string, error) {
-	serviceDomain := "buildbuddy.io"
-	if *dev {
-		serviceDomain = "buildbuddy.dev"
+func defaultIP(ctx context.Context) (net.IP, error) {
+	netIface, err := networking.DefaultInterface(ctx)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err := netIface.Addrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range addrs {
+		if v, ok := a.(*net.IPNet); ok {
+			return v.IP, nil
+		}
+	}
+	return nil, fmt.Errorf("could not determine host's default IP")
+}
+
+// TODO(vadim): reduce # of return values
+func Configure(ctx context.Context, bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string, error) {
+	grpcEndpoint := ""
+	webURL := ""
+	switch *env {
+	case "prod":
+		grpcEndpoint = "grpcs://remote.buildbuddy.io"
+		webURL = "https://app.buildbuddy.io"
+	case "dev":
+		grpcEndpoint = "grpcs://remote.buildbuddy.dev"
+		webURL = "https://app.buildbuddy.dev"
+	case "local":
+		// we need to use an IP that's reachable from within the firecracker VMs
+		ip, err := defaultIP(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		grpcEndpoint = fmt.Sprintf("grpc://%s:1985", ip)
+		webURL = "http://localhost:8080"
+	default:
+		return nil, nil, nil, fmt.Errorf("unknown environment %q", *env)
 	}
 
-	wsFilePath, err := findWorkspaceFile()
+	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	if *events && bazelFlags.BESBackend == "" {
-		bazelFlags.BESBackend = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
-		filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_results_url=https://app.%s/invocation/", serviceDomain))
+		bazelFlags.BESBackend = grpcEndpoint
+		filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_results_url=%s/invocation/", webURL))
 	}
 
 	if (*remote == remoteExec || *remote == remoteBazel) && bazelFlags.RemoteExecutor == "" {
-		remoteExecTarget := fmt.Sprintf("grpcs://remote.%s", serviceDomain)
 		if *remote == remoteExec {
 			filteredOSArgs = append(filteredOSArgs, bbToolchainArgs()...)
 			addToolchainsToWorkspaceIfNotPresent(wsFilePath)
-			bazelFlags.RemoteExecutor = remoteExecTarget
+			bazelFlags.RemoteExecutor = grpcEndpoint
+			filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
 		} else {
-			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, remoteExecTarget)...)
+			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, grpcEndpoint)...)
+			// --remote_download_minimal is supposed to be enough for `bazel run` to work, but it's not the case in
+			// practice. Use --remote_download_toplevel to make sure the top level binary is available for running.
+			filteredOSArgs = append(filteredOSArgs, "--remote_download_toplevel")
 		}
-		filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
 		filteredOSArgs = append(filteredOSArgs, "--jobs=200")
 	}
 
 	if (*cache || *remote == remoteBazel) && bazelFlags.RemoteCache == "" {
-		bazelFlags.RemoteCache = fmt.Sprintf("grpcs://remote.%s", serviceDomain)
+		bazelFlags.RemoteCache = grpcEndpoint
 	}
 
 	bazelOpts := &BazelOpts{
-		BuildBuddyEndpoint: fmt.Sprintf("grpcs://remote.%s", serviceDomain),
+		BuildBuddyEndpoint: grpcEndpoint,
 		WorkspaceFilePath:  wsFilePath,
 		EnableRemoteBazel:  *remote == remoteBazel,
 		APIKey:             *apiKey,
 	}
 
 	return bazelFlags, bazelOpts, filteredOSArgs, nil
-}
-
-func findWorkspaceFile() (string, error) {
-	path, err := filepath.Abs(".")
-	if err != nil {
-		return "", nil
-	}
-	for path != "/" {
-		for _, wsFilename := range []string{"WORKSPACE.bazel", "WORKSPACE"} {
-			wsFilePath := filepath.Join(path, wsFilename)
-			_, err := os.Stat(wsFilePath)
-			if err == nil {
-				return wsFilePath, nil
-			}
-			if err != nil && !os.IsNotExist(err) {
-				log.Printf("Could not check existence of workspace file at %q: %s\n", wsFilePath, err)
-				continue
-			}
-		}
-		path = filepath.Dir(path)
-	}
-	return "", fmt.Errorf("could not detect workspace root (are you running bb within a Bazel workspace?)")
 }
 
 func addToolchainsToWorkspaceIfNotPresent(workspaceFilePath string) {
