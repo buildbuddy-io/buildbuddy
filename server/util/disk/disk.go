@@ -9,12 +9,21 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sys/unix"
+)
+
+const (
+	// default timeout for WaitUntilExists
+	defaultWaitTimeout = 1 * time.Second
+
+	// default poll interval for WaitUntilExists.
+	defaultWaitPollInterval = 1 * time.Millisecond
 )
 
 func EnsureDirectoryExists(dir string) error {
@@ -83,6 +92,53 @@ func FileExists(ctx context.Context, fullPath string) (bool, error) {
 		return false, nil
 	} else {
 		return false, err
+	}
+}
+
+type WaitOpts struct {
+	// Timeout specifies how long to wait for a file to exist before returning
+	// context.DeadlineExceeded.
+	Timeout time.Duration
+
+	// PollInterval specifies how often to poll the filesystem to check whether
+	// the file exists.
+	PollInterval time.Duration
+}
+
+// WaitUntilExists polls the filesystem for a given path to be created. It
+// returns an error if the provided timeout is exceeded or if the context is
+// cancelled.
+func WaitUntilExists(ctx context.Context, path string, opts WaitOpts) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	if opts.Timeout == 0 {
+		opts.Timeout = defaultWaitTimeout
+	}
+	if opts.PollInterval == 0 {
+		opts.PollInterval = defaultWaitPollInterval
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(opts.PollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			_, err := os.Stat(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			return nil
+		}
 	}
 }
 

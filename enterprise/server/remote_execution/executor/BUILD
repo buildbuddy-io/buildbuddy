@@ -9,7 +9,6 @@ go_library(
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/operation",
-        "//enterprise/server/remote_execution/runner",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",

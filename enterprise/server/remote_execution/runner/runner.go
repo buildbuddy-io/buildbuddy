@@ -47,6 +47,7 @@ import (
 	"google.golang.org/grpc"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -127,69 +128,6 @@ func k8sPodID() (string, error) {
 		return m[2], nil
 	}
 	return "", nil
-}
-
-// Runner represents an isolated execution environment.
-//
-// Runners are assigned a single task when they are retrieved from a Pool,
-// and may only be used to execute that task. When using runner recycling,
-// runners can be added back to the pool, then later retrieved from the pool
-// to execute a new task.
-type Runner interface {
-	// PrepareForTask prepares the filesystem for the task assigned to the runner,
-	// downloading the task's container image if applicable and cleaning up the
-	// workspace state from the previously assigned task if applicable.
-	PrepareForTask(ctx context.Context) error
-
-	// DownloadInputs downloads any input files associated with the task assigned
-	// to the runner.
-	DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error)
-
-	// Run runs the task that is currently assigned to the runner.
-	Run(ctx context.Context) *interfaces.CommandResult
-
-	// UploadOutputs uploads any output files associated with the task assigned to
-	// the runner, as well as the result of the run.
-	UploadOutputs(ctx context.Context, ar *repb.ActionResult, cr *interfaces.CommandResult) (*dirtools.TransferInfo, error)
-}
-
-// Pool is responsible for assigning tasks to runners.
-//
-// Pool keeps track of paused runners and active runners, allowing incoming
-// tasks to be assigned to paused runners (if runner recycling is enabled), as
-// well as evicting paused runners to free up resources for new runners.
-type Pool interface {
-	// Warmup prepares any resources needed for commonly used execution
-	// environments, such as downloading container images.
-	Warmup(ctx context.Context)
-
-	// Get returns a runner bound to the the given task. The caller must call
-	// TryRecycle on the returned runner when done using it.
-	//
-	// If the task has runner recycling enabled then it attempts to find a runner
-	// from the pool that can execute the task. If runner recycling is disabled or
-	// if there are no eligible paused runners, it creates and returns a new
-	// runner.
-	//
-	// The returned runner is ready to execute tasks, and the caller is
-	// responsible for walking the runner through the task lifecycle.
-	Get(ctx context.Context, task *repb.ExecutionTask) (Runner, error)
-
-	// TryRecycle attempts to add the runner to the pool for use by subsequent
-	// tasks.
-	//
-	// If recycling is not enabled or if an error occurred while attempting to
-	// recycle, the runner is not added to the pool and any resources associated
-	// with the runner are freed up. Callers should never use the provided runner
-	// after calling TryRecycle, since it may possibly be removed.
-	//
-	// If the runner did not finish cleanly (as determined by the caller of
-	// runner.Run()) then it will not be recycled and instead forcibly removed,
-	// even if runner recycling is enabled.
-	TryRecycle(ctx context.Context, r Runner, finishedCleanly bool)
-
-	// Shutdown removes all runners from the pool.
-	Shutdown(ctx context.Context) error
 }
 
 // state indicates the current state of a commandRunner.
@@ -276,14 +214,14 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) DownloadInputs(ctx context.Context) (*dirtools.TransferInfo, error) {
+func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 	)
 	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	layout := &container.FileSystemLayout{
@@ -304,35 +242,38 @@ func (r *commandRunner) DownloadInputs(ctx context.Context) (*dirtools.TransferI
 	if r.VFSServer != nil {
 		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.Inputs)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := r.VFSServer.Prepare(p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if r.VFS != nil {
 		if err := r.VFS.PrepareForTask(ctx, r.task.GetExecutionId()); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	rxInfo := &dirtools.TransferInfo{}
 	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
 	// enabled.
 	// TODO(vadim): integrate VFS stats
-	if r.VFS == nil {
-		rxInfo, err = r.Workspace.DownloadInputs(ctx, inputTree)
-		if err != nil {
-			return nil, err
-		}
-		if r.PlatformProperties.WorkflowID != "" {
-			if err := r.Workspace.AddCIRunner(ctx); err != nil {
-				return nil, err
-			}
-		}
+	if r.VFS != nil {
+		return nil
 	}
 
-	return rxInfo, nil
+	rxInfo, err := r.Workspace.DownloadInputs(ctx, inputTree)
+	if err != nil {
+		return err
+	}
+	if r.PlatformProperties.WorkflowID != "" {
+		if err := r.Workspace.AddCIRunner(ctx); err != nil {
+			return err
+		}
+	}
+	ioStats.FileDownloadCount = rxInfo.FileCount
+	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
+	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
+	return nil
 }
 
 // Run runs the task that is currently bound to the command runner.
@@ -386,8 +327,15 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return r.Container.Exec(ctx, command, nil, nil)
 }
 
-func (r *commandRunner) UploadOutputs(ctx context.Context, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
-	return r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
+	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
+	if err != nil {
+		return err
+	}
+	ioStats.FileUploadCount = txInfo.FileCount
+	ioStats.FileUploadDurationUsec = txInfo.TransferDuration.Microseconds()
+	ioStats.FileUploadSizeBytes = txInfo.BytesTransferred
+	return nil
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
@@ -504,6 +452,10 @@ func NewPool(env environment.Env) (*pool, error) {
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
 	}
+	hc := env.GetHealthChecker()
+	if hc == nil {
+		return nil, status.FailedPreconditionError("Missing health checker")
+	}
 
 	podID, err := k8sPodID()
 	if err != nil {
@@ -536,6 +488,7 @@ func NewPool(env environment.Env) (*pool, error) {
 		runners:        []*commandRunner{},
 	}
 	p.setLimits(&executorConfig.RunnerPool)
+	hc.RegisterShutdownFunction(p.Shutdown)
 	return p, nil
 }
 
@@ -787,7 +740,7 @@ func (p *pool) Warmup(ctx context.Context) {
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (Runner, error) {
+func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
 	executorProps := platform.GetExecutorProperties(p.env.GetConfigurator().GetExecutorConfig())
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
@@ -1121,7 +1074,7 @@ func (p *pool) finalize(r *commandRunner) {
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
-func (p *pool) TryRecycle(ctx context.Context, r Runner, finishedCleanly bool) {
+func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
 	ctx, cancel := context.WithTimeout(ctx, runnerRecycleTimeout)
 	defer cancel()
 

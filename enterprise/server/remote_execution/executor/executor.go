@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -56,7 +55,7 @@ const (
 
 type Executor struct {
 	env        environment.Env
-	runnerPool runner.Pool
+	runnerPool interfaces.RunnerPool
 	id         string
 	hostID     string
 }
@@ -67,7 +66,7 @@ type Options struct {
 	NameOverride string
 }
 
-func NewExecutor(env environment.Env, id string, runnerPool runner.Pool, options *Options) (*Executor, error) {
+func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
 	executorConfig := env.GetConfigurator().GetExecutorConfig()
 	if executorConfig == nil {
 		return nil, status.FailedPreconditionError("No executor config found")
@@ -222,8 +221,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	md.InputFetchStartTimestamp = ptypes.TimestampNow()
 
-	rxInfo, err := r.DownloadInputs(ctx)
-	if err != nil {
+	ioStats := &espb.IOStats{}
+	if err := r.DownloadInputs(ctx, ioStats); err != nil {
 		return finishWithErrFn(err)
 	}
 
@@ -295,8 +294,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
-	txInfo, err := r.UploadOutputs(ctx, actionResult, cmdResult)
-	if err != nil {
+	if err := r.UploadOutputs(ctx, ioStats, actionResult, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = ptypes.TimestampNow()
@@ -320,12 +318,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
 		metrics.ExitCodeLabel: fmt.Sprintf("%d", actionResult.ExitCode),
 	}).Inc()
-	metrics.FileDownloadCount.Observe(float64(rxInfo.FileCount))
-	metrics.FileDownloadSizeBytes.Observe(float64(rxInfo.BytesTransferred))
-	metrics.FileDownloadDurationUsec.Observe(float64(rxInfo.TransferDuration.Microseconds()))
-	metrics.FileUploadCount.Observe(float64(txInfo.FileCount))
-	metrics.FileUploadSizeBytes.Observe(float64(txInfo.BytesTransferred))
-	metrics.FileUploadDurationUsec.Observe(float64(txInfo.TransferDuration.Microseconds()))
+	metrics.FileDownloadCount.Observe(float64(ioStats.FileDownloadCount))
+	metrics.FileDownloadSizeBytes.Observe(float64(ioStats.FileDownloadSizeBytes))
+	metrics.FileDownloadDurationUsec.Observe(float64(ioStats.FileDownloadDurationUsec))
+	metrics.FileUploadCount.Observe(float64(ioStats.FileUploadCount))
+	metrics.FileUploadSizeBytes.Observe(float64(ioStats.FileUploadSizeBytes))
+	metrics.FileUploadDurationUsec.Observe(float64(ioStats.FileUploadDurationUsec))
 
 	groupID := interfaces.AuthAnonymousUser
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
@@ -339,16 +337,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 
 	execSummary := &espb.ExecutionSummary{
-		IoStats: &espb.IOStats{
-			// Download
-			FileDownloadCount:        rxInfo.FileCount,
-			FileDownloadSizeBytes:    rxInfo.BytesTransferred,
-			FileDownloadDurationUsec: rxInfo.TransferDuration.Microseconds(),
-			// Upload
-			FileUploadCount:        txInfo.FileCount,
-			FileUploadSizeBytes:    txInfo.BytesTransferred,
-			FileUploadDurationUsec: txInfo.TransferDuration.Microseconds(),
-		},
+		IoStats:                ioStats,
 		ExecutedActionMetadata: md,
 	}
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
@@ -461,26 +462,9 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	go func() {
 		mustRun(t, r)
 	}()
-	// Poll for foo.txt to exist.
-	{
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		for {
-			_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-			if err == nil {
-				break
-			}
-			if os.IsNotExist(err) {
-				select {
-				case <-ctx.Done():
-					require.FailNow(t, err.Error(), "context deadline exceeded waiting for foo.txt to be written")
-				case <-time.After(10 * time.Millisecond):
-				}
-			} else {
-				require.FailNow(t, err.Error())
-			}
-		}
-	}
+	fooPath := path.Join(r.Workspace.Path(), "foo.txt")
+	err = disk.WaitUntilExists(ctx, fooPath, disk.WaitOpts{Timeout: 5 * time.Second})
+	require.NoError(t, err)
 
 	require.Equal(t, 1, pool.ActiveRunnerCount())
 

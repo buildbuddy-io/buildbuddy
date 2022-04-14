@@ -277,7 +277,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}
-	healthChecker.RegisterShutdownFunction(runnerPool.Shutdown)
 
 	opts := &remote_executor.Options{}
 	executor, err := remote_executor.NewExecutor(env, executorID, runnerPool, opts)

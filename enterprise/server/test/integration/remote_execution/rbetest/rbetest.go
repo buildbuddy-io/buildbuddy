@@ -770,10 +770,7 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	}
 
 	runnerPool, err := runner.NewPool(env)
-	if err != nil {
-		log.Fatalf("Failed to initialize runner pool: %s", err)
-	}
-	env.GetHealthChecker().RegisterShutdownFunction(runnerPool.Shutdown)
+	require.NoError(r.t, err)
 
 	exec, err := executor.NewExecutor(env, executorID, runnerPool, &executor.Options{NameOverride: options.Name})
 	if err != nil {
