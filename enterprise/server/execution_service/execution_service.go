@@ -61,6 +61,10 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	return executions, nil
 }
 
+func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
+	return timestamppb.New(time.UnixMicro(timeInUsec))
+}
+
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
 	if err != nil {
@@ -98,15 +102,15 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 		},
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,
-			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
-			WorkerStartTimestamp:           timestamppb.New(time.UnixMicro(in.WorkerStartTimestampUsec)),
-			WorkerCompletedTimestamp:       timestamppb.New(time.UnixMicro(in.WorkerCompletedTimestampUsec)),
-			InputFetchStartTimestamp:       timestamppb.New(time.UnixMicro(in.InputFetchStartTimestampUsec)),
-			InputFetchCompletedTimestamp:   timestamppb.New(time.UnixMicro(in.InputFetchCompletedTimestampUsec)),
-			ExecutionStartTimestamp:        timestamppb.New(time.UnixMicro(in.ExecutionStartTimestampUsec)),
-			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
-			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
-			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
+			QueuedTimestamp:                timestampProto(in.QueuedTimestampUsec),
+			WorkerStartTimestamp:           timestampProto(in.WorkerStartTimestampUsec),
+			WorkerCompletedTimestamp:       timestampProto(in.WorkerCompletedTimestampUsec),
+			InputFetchStartTimestamp:       timestampProto(in.InputFetchStartTimestampUsec),
+			InputFetchCompletedTimestamp:   timestampProto(in.InputFetchCompletedTimestampUsec),
+			ExecutionStartTimestamp:        timestampProto(in.ExecutionStartTimestampUsec),
+			ExecutionCompletedTimestamp:    timestampProto(in.ExecutionCompletedTimestampUsec),
+			OutputUploadStartTimestamp:     timestampProto(in.OutputUploadStartTimestampUsec),
+			OutputUploadCompletedTimestamp: timestampProto(in.OutputUploadCompletedTimestampUsec),
 		},
 		CommandSnippet: in.CommandSnippet,
 	}

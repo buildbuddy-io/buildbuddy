@@ -38,7 +38,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -542,8 +541,26 @@ type remoteStats struct {
 	totalDuration         time.Duration
 }
 
-func durationFromTimes(start, end *timestamppb.Timestamp) time.Duration {
-	return end.AsTime().Sub(start.AsTime())
+func parseRemoteStats(stats *repb.ExecutedActionMetadata) (*remoteStats, error) {
+	parsedStats := &remoteStats{}
+
+	fetchStart := stats.InputFetchStartTimestamp.AsTime()
+	fetchEnd := stats.InputFetchCompletedTimestamp.AsTime()
+	parsedStats.fetchInputsDuration = fetchEnd.Sub(fetchStart)
+
+	execStart := stats.ExecutionStartTimestamp.AsTime()
+	execEnd := stats.ExecutionCompletedTimestamp.AsTime()
+	parsedStats.executeDuration = execEnd.Sub(execStart)
+
+	uploadStart := stats.OutputUploadStartTimestamp.AsTime()
+	uploadEnd := stats.OutputUploadCompletedTimestamp.AsTime()
+	parsedStats.uploadOutputsDuration = uploadEnd.Sub(uploadStart)
+
+	totalStart := stats.QueuedTimestamp.AsTime()
+	totalEnd := stats.WorkerCompletedTimestamp.AsTime()
+	parsedStats.totalDuration = totalEnd.Sub(totalStart)
+
+	return parsedStats, nil
 }
 
 type rawResultsWriter struct {
@@ -651,11 +668,14 @@ func (g *runner) run(ctx context.Context) error {
 
 	numErrors := 0
 	for _, res := range results {
-		remoteStats := &remoteStats{
-			fetchInputsDuration:   durationFromTimes(res.RemoteStats.GetInputFetchStartTimestamp(), res.RemoteStats.GetInputFetchCompletedTimestamp()),
-			executeDuration:       durationFromTimes(res.RemoteStats.GetExecutionStartTimestamp(), res.RemoteStats.GetExecutionCompletedTimestamp()),
-			uploadOutputsDuration: durationFromTimes(res.RemoteStats.GetOutputUploadStartTimestamp(), res.RemoteStats.GetOutputUploadCompletedTimestamp()),
-			totalDuration:         durationFromTimes(res.RemoteStats.GetQueuedTimestamp(), res.RemoteStats.GetWorkerCompletedTimestamp()),
+		remoteStats := &remoteStats{}
+		if res.RemoteStats != nil {
+			remoteStats, err = parseRemoteStats(res.RemoteStats)
+			if err != nil {
+				log.Warningf("Could not parse remote stats: %s", err)
+				numErrors++
+				continue
+			}
 		}
 
 		if resultsWriter != nil {
