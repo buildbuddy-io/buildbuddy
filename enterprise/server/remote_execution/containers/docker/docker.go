@@ -182,6 +182,7 @@ func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid stri
 	logOptions := dockertypes.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
+		Follow:     true,
 	}
 	logs, err := r.client.ContainerLogs(ctx, cid, logOptions)
 	if err != nil {
