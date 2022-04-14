@@ -610,7 +610,7 @@ func (rwc *raftWriteCloser) Close() error {
 	return rwc.closeFn()
 }
 
-func (s *Store) SyncWriter(stream rfspb.Api_SyncWriteServer) error {
+func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 	// Write the file to all of our peers and ourself, and then
 	// SyncPropose a Write to ensure it was written.
 	ctx := stream.Context()
