@@ -79,8 +79,7 @@ func defaultIP(ctx context.Context) (net.IP, error) {
 
 // TODO(vadim): reduce # of return values
 func Configure(ctx context.Context, bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string, error) {
-	grpcEndpoint := ""
-	webURL := ""
+	var grpcEndpoint, webURL string
 	switch *env {
 	case "prod":
 		grpcEndpoint = "grpcs://remote.buildbuddy.io"
