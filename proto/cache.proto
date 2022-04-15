@@ -51,9 +51,9 @@ message GetCacheScoreCardRequest {
     int64 index = 1;
   }
 
-  // A string representation of the page token, which must be a value returned
-  // by a previous response.
-  string page_token = 3;
+  // A string representation of the next page token, which must be a value
+  // returned by a previous response.
+  string next_page_token = 3;
 
   // TODO(bduffany): add sorting/filtering options
 }
