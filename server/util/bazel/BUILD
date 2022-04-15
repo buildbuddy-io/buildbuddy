@@ -49,5 +49,8 @@ go_library(
     srcs = ["bazel.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bazel",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
+    deps = [
+        "//server/util/log",
+        "//server/util/status",
+    ],
 )

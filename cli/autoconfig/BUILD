@@ -5,5 +5,9 @@ go_library(
     srcs = ["autoconfig.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/autoconfig",
     visibility = ["//visibility:public"],
-    deps = ["//cli/commandline"],
+    deps = [
+        "//cli/commandline",
+        "//server/util/bazel",
+        "//server/util/networking",
+    ],
 )
