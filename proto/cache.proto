@@ -43,14 +43,30 @@ message GetCacheScoreCardRequest {
   // The invocation ID for which to look up cache stats.
   string invocation_id = 2;
 
-  // TODO(bduffany): Add paging
+  // Pagination token. Not intended for direct client usage.
+  message PageToken {
+    // The start index in the scorecard results list, after sorting and
+    // filtering results. Number of results to fetch is determined by the
+    // server.
+    int64 index = 1;
+  }
+
+  // A string representation of the page token, which must be a value returned
+  // by a previous response.
+  string page_token = 3;
+
+  // TODO(bduffany): add sorting/filtering options
 }
 
 message GetCacheScoreCardResponse {
   context.ResponseContext response_context = 1;
 
-  // The cache scorecard containing detailed per-request stats.
-  ScoreCard scorecard = 2;
+  // The cache results for the current page.
+  repeated ScoreCard.Result results = 2;
+
+  // A token used to fetch more results. If empty, there are no results
+  // remaining.
+  string page_token = 3;
 }
 
 // CacheType represents the type of cache being written to.
@@ -113,8 +129,5 @@ message ScoreCard {
   }
 
   // In the interest of saving space, we only show cache misses.
-  // TODO(bduffany): use flat `results` list and deprecate this
   repeated Result misses = 1;
-
-  repeated Result results = 2;
 }
