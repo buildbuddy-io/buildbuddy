@@ -53,7 +53,7 @@ message GetCacheScoreCardRequest {
 
   // A string representation of the next page token, which must be a value
   // returned by a previous response.
-  string next_page_token = 3;
+  string page_token = 3;
 
   // TODO(bduffany): add sorting/filtering options
 }
@@ -66,7 +66,7 @@ message GetCacheScoreCardResponse {
 
   // A token used to fetch more results. If empty, there are no results
   // remaining.
-  string page_token = 3;
+  string next_page_token = 3;
 }
 
 // CacheType represents the type of cache being written to.
