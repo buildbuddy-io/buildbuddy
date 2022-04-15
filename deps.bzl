@@ -2679,6 +2679,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.5.0",
     )
     go_repository(
+        name = "com_github_matoous_go_nanoid",
+        importpath = "github.com/matoous/go-nanoid",
+        sum = "h1:VRorl6uCngneC4oUQqOYtO3S0H5QKFtKuKycFG3euek=",
+        version = "v1.5.0",
+    )
+    go_repository(
+        name = "com_github_matoous_go_nanoid_v2",
+        importpath = "github.com/matoous/go-nanoid/v2",
+        sum = "h1:d19kur2QuLeHmJBkvYkFdhFBzLoo1XVm2GgTpL+9Tj0=",
+        version = "v2.0.0",
+    )
+
+    go_repository(
         name = "com_github_matoous_godox",
         importpath = "github.com/matoous/godox",
         sum = "h1:RHba4YImhrUVQDHUCe2BNSOz4tVy2yGyXhvYDvxGgeE=",
