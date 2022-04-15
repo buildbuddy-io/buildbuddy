@@ -358,16 +358,14 @@ func downloadOutput(ctx context.Context, bsClient bspb.ByteStreamClient, resourc
 	return nil
 }
 
-// TODO(vadim): add interactive progress bar for downloads
-// TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, bsClient bspb.ByteStreamClient, invocationID string, outputBaseDir string) ([]string, error) {
+func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
 	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
 	if err != nil {
-		return nil, fmt.Errorf("could not retrieve child invocation: %s", err)
+		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
 	}
 
 	fileSets := make(map[string][]*bespb.File)
-	fileSetsToFetch := make(map[string]struct{})
+	outputFileSetNames := make(map[string]struct{})
 	for _, e := range childInRsp.GetInvocation()[0].GetEvent() {
 		switch t := e.GetBuildEvent().GetPayload().(type) {
 		case *bespb.BuildEvent_NamedSetOfFiles:
@@ -375,40 +373,64 @@ func downloadOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient
 		case *bespb.BuildEvent_Completed:
 			for _, og := range t.Completed.GetOutputGroup() {
 				for _, fs := range og.GetFileSets() {
-					fileSetsToFetch[fs.GetId()] = struct{}{}
+					outputFileSetNames[fs.GetId()] = struct{}{}
 				}
 			}
 		}
 	}
 
-	var localArtifacts []string
-	for fsID := range fileSetsToFetch {
+	var outputs []*bespb.File
+	for fsID := range outputFileSetNames {
 		fs, ok := fileSets[fsID]
 		if !ok {
 			return nil, fmt.Errorf("could not find file set with ID %q while fetching outputs", fsID)
 		}
 		for _, f := range fs {
-			u, err := url.Parse(f.GetUri())
-			if err != nil {
-				bblog.Printf("Invocation contains an output with an invalid URI %q", f.GetUri())
-				continue
-			}
-			r := strings.TrimPrefix(u.RequestURI(), "/")
-			outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
-			for _, p := range f.GetPathPrefix() {
-				outFile = filepath.Join(outFile, p)
-			}
-			outFile = filepath.Join(outFile, f.GetName())
-			if err := downloadOutput(ctx, bsClient, r, outFile); err != nil {
-				return nil, err
-			}
-			localArtifacts = append(localArtifacts, outFile)
+			outputs = append(outputs, f)
+		}
+	}
+
+	return outputs, nil
+}
+
+// TODO(vadim): add interactive progress bar for downloads
+// TODO(vadim): parallelize downloads
+func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, outputBaseDir string) ([]string, error) {
+	var mainLocalArtifacts []string
+	download := func(f *bespb.File) (string, error) {
+		u, err := url.Parse(f.GetUri())
+		if err != nil {
+			bblog.Printf("Invocation contains an output with an invalid URI %q", f.GetUri())
+			return "", nil
+		}
+		r := strings.TrimPrefix(u.RequestURI(), "/")
+		outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
+		for _, p := range f.GetPathPrefix() {
+			outFile = filepath.Join(outFile, p)
+		}
+		outFile = filepath.Join(outFile, f.GetName())
+		if err := downloadOutput(ctx, bsClient, r, outFile); err != nil {
+			return "", err
+		}
+		return outFile, nil
+	}
+	for _, f := range mainOutputs {
+		outFile, err := download(f)
+		if err != nil {
+			return nil, err
+		}
+		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
+	}
+	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
+	for _, f := range supportingOutputs {
+		if _, err := download(f); err != nil {
+			return nil, err
 		}
 	}
 
 	// Format as relative paths with indentation for human consumption.
 	var relArtifacts []string
-	for _, a := range localArtifacts {
+	for _, a := range mainLocalArtifacts {
 		rp, err := filepath.Rel(outputBaseDir, a)
 		if err != nil {
 			return nil, err
@@ -416,7 +438,7 @@ func downloadOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
 	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
-	return localArtifacts, nil
+	return mainLocalArtifacts, nil
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
@@ -444,13 +466,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	fetchOutputs := false
+	runOutput := false
 	if len(opts.Args) > 0 && (opts.Args[0] == "build" || opts.Args[0] == "run") {
 		fetchOutputs = true
-	}
-	runOutput := false
-	if len(opts.Args) > 0 && opts.Args[0] == "run" {
-		opts.Args[0] = "build"
-		runOutput = true
+		if opts.Args[0] == "run" {
+			runOutput = true
+		}
 	}
 
 	req := &rnpb.RunRequest{
@@ -493,10 +514,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	childIID := ""
 	exitCode := -1
+	runfilesRoot := ""
+	var runfiles []*bespb.File
+	var defaultRunArgs []string
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
 		if cic, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
 			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
 			exitCode = int(cic.ChildInvocationCompleted.ExitCode)
+		}
+		if runOutput {
+			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
+				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
+				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
+			}
 		}
 	}
 
@@ -504,14 +535,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 0, fmt.Errorf("could not determine remote Bazel exit code")
 	}
 
-	if fetchOutputs {
+	if fetchOutputs && exitCode == 0 {
 		conn, err := grpc_client.DialTarget("unix://" + opts.SidecarSocket)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
 		bsClient := bspb.NewByteStreamClient(conn)
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-		outputs, err := downloadOutputs(ctx, bbClient, bsClient, childIID, filepath.Dir(opts.WorkspaceFilePath))
+
+		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+		if err != nil {
+			return 0, err
+		}
+		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
+		outputs, err := downloadOutputs(ctx, bsClient, mainOutputs, runfiles, outputsBaseDir)
 		if err != nil {
 			return 0, err
 		}
@@ -523,8 +560,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if err := os.Chmod(binPath, 0755); err != nil {
 				return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
 			}
-			bblog.Printf("Executing %q", binPath)
-			cmd := exec.CommandContext(ctx, binPath)
+			args := defaultRunArgs
+			bblog.Printf("Executing %q with arguments %s", binPath, args)
+			cmd := exec.CommandContext(ctx, binPath, args...)
+			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			err = cmd.Run()
