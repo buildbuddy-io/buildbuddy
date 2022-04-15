@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -99,7 +100,8 @@ func parallelShutdown(caches ...*raft_cache.RaftCache) {
 }
 
 func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
-	timeout := 2 * time.Second * time.Duration(len(caches))
+	start := time.Now()
+	timeout := 10 * time.Second
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -113,14 +115,14 @@ func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
 
 	select {
 	case <-done:
-		break
+		log.Printf("%d caches became healthy in %s", len(caches), time.Since(start))
 	case <-time.After(timeout):
 		t.Fatalf("Caches [%d] did not become healthy after %s, %+v", len(caches), timeout, caches[0])
 	}
 }
 
 func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
-	timeout := 6 * time.Second * time.Duration(len(caches))
+	timeout := 10 * time.Second
 	done := make(chan struct{})
 	go func() {
 		parallelShutdown(caches...)

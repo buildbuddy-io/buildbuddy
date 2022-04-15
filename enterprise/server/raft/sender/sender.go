@@ -111,7 +111,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	for retrier.Next() {
 		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
 		if metaRangeDescriptor == nil {
-			log.Warningf("RangeCache did not have meta range. This should not happen")
+			log.Warningf("RangeCache did not have meta range yet (key %q)", key)
 			continue
 		}
 		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)

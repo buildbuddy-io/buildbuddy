@@ -24,5 +24,6 @@ service Api {
   // Data API.
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc SyncWriter(stream WriteRequest) returns (WriteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
 }
