@@ -662,6 +662,7 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 		UseHostNetwork:          cfg.DockerNetHost,
 		DockerMountMode:         cfg.DockerMountMode,
 		DockerCapAdd:            cfg.DockerCapAdd,
+		DockerDevices:           cfg.DockerDevices,
 		InheritUserIDs:          cfg.DockerInheritUserIDs,
 	}
 }
@@ -875,6 +876,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			ForceRoot: props.DockerForceRoot,
 			Network:   props.DockerNetwork,
 			CapAdd:    cfg.DockerCapAdd,
+			Devices:   cfg.DockerDevices,
 			Runtime:   cfg.PodmanRuntime,
 		}
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)

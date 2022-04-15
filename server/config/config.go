@@ -288,6 +288,12 @@ type RemoteExecutionConfig struct {
 	EnableRedisAvailabilityMonitoring bool               `yaml:"enable_redis_availability_monitoring" usage:"If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions."`
 }
 
+type DockerDeviceMapping struct {
+	PathOnHost         string  `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`
+	PathInContainer    string  `yaml:"path_in_container" usage:"path under which the device will be present in container."`
+	CgroupPermissions  string  `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assinged to device."`
+}
+
 type ExecutorConfig struct {
 	AppTarget                     string                    `yaml:"app_target" usage:"The GRPC url of a buildbuddy app server."`
 	Pool                          string                    `yaml:"pool" usage:"Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified."`
@@ -302,6 +308,7 @@ type ExecutorConfig struct {
 	RunnerPool                    RunnerPoolConfig          `yaml:"runner_pool"`
 	DockerNetHost                 bool                      `yaml:"docker_net_host" usage:"Sets --net=host on the docker command. Intended for local development only."`
 	DockerCapAdd                  string                    `yaml:"docker_cap_add" usage:"Sets --cap-add= on the docker command. Comma separated."`
+	DockerDevices                 []DockerDeviceMapping     `yaml:"docker_devices" usage:"Sets --device= on the docker command."`
 	DockerSiblingContainers       bool                      `yaml:"docker_sibling_containers" usage:"If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code."`
 	DockerInheritUserIDs          bool                      `yaml:"docker_inherit_user_ids" usage:"If set, run docker containers using the same uid and gid as the user running the executor process."`
 	DefaultXcodeVersion           string                    `yaml:"default_xcode_version" usage:"Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used."`

@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -38,6 +39,7 @@ type PodmanOptions struct {
 	ForceRoot bool
 	Network   string
 	CapAdd    string
+	Devices   []config.DockerDeviceMapping
 	Runtime   string
 }
 
@@ -95,6 +97,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if c.options.CapAdd != "" {
 		args = append(args, "--cap-add="+c.options.CapAdd)
+	}
+	for _, device := range c.options.Devices {
+		args = append(args, "--device="+device.PathOnHost)
 	}
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)

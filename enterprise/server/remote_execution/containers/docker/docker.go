@@ -25,6 +25,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 
+	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
@@ -53,6 +54,7 @@ type DockerOptions struct {
 	InheritUserIDs          bool
 	DockerNetwork           string
 	DockerCapAdd            string
+	DockerDevices           []config.DockerDeviceMapping
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -247,6 +249,14 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.DockerCapAdd != "" {
 		capAdd = append(capAdd, strings.Split(r.options.DockerCapAdd, ",")...)
 	}
+	devices := make([]dockercontainer.DeviceMapping, 0)
+	for _, device := range r.options.DockerDevices {
+		devices = append(devices, dockercontainer.DeviceMapping{
+			PathOnHost: device.PathOnHost,
+			PathInContainer: device.PathInContainer,
+			CgroupPermissions: device.CgroupPermissions,
+		})
+	}
 	mountMode := ""
 	if r.options.DockerMountMode != "" {
 		mountMode = fmt.Sprintf(":%s", r.options.DockerMountMode)
@@ -270,6 +280,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 		Binds:       binds,
 		CapAdd:      capAdd,
 		Resources: dockercontainer.Resources{
+			Devices: devices,
 			Ulimits: []*units.Ulimit{
 				&units.Ulimit{Name: "nofile", Soft: defaultDockerUlimit, Hard: defaultDockerUlimit},
 			},
