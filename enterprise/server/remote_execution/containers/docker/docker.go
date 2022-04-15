@@ -25,8 +25,8 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 
-	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerclient "github.com/docker/docker/client"
@@ -252,8 +252,8 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	devices := make([]dockercontainer.DeviceMapping, 0)
 	for _, device := range r.options.DockerDevices {
 		devices = append(devices, dockercontainer.DeviceMapping{
-			PathOnHost: device.PathOnHost,
-			PathInContainer: device.PathInContainer,
+			PathOnHost:        device.PathOnHost,
+			PathInContainer:   device.PathInContainer,
 			CgroupPermissions: device.CgroupPermissions,
 		})
 	}

@@ -289,9 +289,9 @@ type RemoteExecutionConfig struct {
 }
 
 type DockerDeviceMapping struct {
-	PathOnHost         string  `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`
-	PathInContainer    string  `yaml:"path_in_container" usage:"path under which the device will be present in container."`
-	CgroupPermissions  string  `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
+	PathOnHost        string `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`
+	PathInContainer   string `yaml:"path_in_container" usage:"path under which the device will be present in container."`
+	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
 type ExecutorConfig struct {

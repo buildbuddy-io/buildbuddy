@@ -18,8 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	config "github.com/buildbuddy-io/buildbuddy/server/config"
 )
 
 var (
@@ -99,7 +99,17 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		args = append(args, "--cap-add="+c.options.CapAdd)
 	}
 	for _, device := range c.options.Devices {
-		args = append(args, "--device="+device.PathOnHost)
+		deviceSpecs := make([]string, 0)
+		if device.PathOnHost != "" {
+			deviceSpecs = append(deviceSpecs, device.PathOnHost)
+		}
+		if device.PathInContainer != "" {
+			deviceSpecs = append(deviceSpecs, device.PathInContainer)
+		}
+		if device.CgroupPermissions != "" {
+			deviceSpecs = append(deviceSpecs, device.CgroupPermissions)
+		}
+		args = append(args, "--device="+strings.Join(deviceSpecs, ":"))
 	}
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)
