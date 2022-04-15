@@ -113,7 +113,7 @@ var (
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	patchDigests       = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and store it in the build event stream.")
+	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -764,9 +764,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err != nil {
 				return err
 			}
-			defer func() {
-				_ = os.RemoveAll(tmpDir)
-			}()
+			os.RemoveAll(tmpDir)
 			runScript = filepath.Join(tmpDir, "run.sh")
 			args = append(args, "--script_path="+runScript)
 		}
@@ -854,7 +852,7 @@ type runInfo struct {
 	runfilesRoot string
 }
 
-func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, error) {
+func collectRunfiles(runfilesDir string) (map[digest.Key]string, error) {
 	digestMap := make(map[digest.Key]string)
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -886,6 +884,14 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	})
 	if err != nil && !os.IsNotExist(err) {
 		return nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+	}
+	return digestMap, err
+}
+
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, error) {
+	digestMap, err := collectRunfiles(runfilesDir)
+	if err != nil {
+		return nil, err
 	}
 	conn, err := grpc_client.DialTarget(*cacheBackend)
 	if err != nil {
