@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -21,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -37,6 +40,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -109,6 +113,7 @@ var (
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	patchDigests       = flagutil.StringSlice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -751,10 +756,43 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// BuildBuddy invocation URL for each bazel_command that is executed.
 		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
 
+		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
+		// extract run options (i.e. args, runfile information) from the generated run script.
+		runScript := ""
+		if *recordRunMetadata {
+			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
+			if err != nil {
+				return err
+			}
+			os.RemoveAll(tmpDir)
+			runScript = filepath.Join(tmpDir, "run.sh")
+			args = append(args, "--script_path="+runScript)
+		}
+
 		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+		}
+
+		// If this is a successfully "bazel run" invocation from which we are extracting run information via
+		// --script_path, go ahead and extract run information from the script and send it via the event stream.
+		if exitCode == 0 && runScript != "" {
+			runInfo, err := processRunScript(ctx, runScript)
+			if err != nil {
+				return err
+			}
+			e := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunTargetAnalyzed{}},
+				Payload: &bespb.BuildEvent_RunTargetAnalyzed{RunTargetAnalyzed: &bespb.RunTargetAnalyzed{
+					Arguments:    runInfo.args,
+					RunfilesRoot: runInfo.runfilesRoot,
+					Runfiles:     runInfo.runfiles,
+				}},
+			}
+			if err := ar.reporter.Publish(e); err != nil {
+				break
+			}
 		}
 
 		// Publish the status of each command as well as the finish time.
@@ -806,6 +844,177 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 	return nil
+}
+
+type runInfo struct {
+	args         []string
+	runfiles     []*bespb.File
+	runfilesRoot string
+}
+
+func collectRunfiles(runfilesDir string) (map[digest.Key]string, error) {
+	digestMap := make(map[digest.Key]string)
+	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			t, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			fi, err := os.Stat(t)
+			if err != nil {
+				return err
+			}
+			// TODO(vadim): process symlinked directories
+			if fi.IsDir() {
+				return nil
+			}
+		}
+		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName)
+		if err != nil {
+			return err
+		}
+		digestMap[digest.NewKey(rn.GetDigest())] = path
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+	}
+	return digestMap, err
+}
+
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, error) {
+	digestMap, err := collectRunfiles(runfilesDir)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := grpc_client.DialTarget(*cacheBackend)
+	if err != nil {
+		return nil, err
+	}
+	bsClient := bspb.NewByteStreamClient(conn)
+	casClient := repb.NewContentAddressableStorageClient(conn)
+
+	var digests []*repb.Digest
+	for d := range digestMap {
+		digests = append(digests, d.ToDigest())
+	}
+	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName: *remoteInstanceName,
+		BlobDigests:  digests,
+	})
+	if err != nil {
+		return nil, status.UnknownErrorf("could not check digest existence: %s", err)
+	}
+	missingDigests := rsp.GetMissingBlobDigests()
+
+	backendURL, err := url.Parse(*cacheBackend)
+	if err != nil {
+		return nil, err
+	}
+	bytestreamURIPrefix := "bytestream://" + backendURL.Host
+
+	u, err := cachetools.NewBatchCASUploader(ctx, bsClient, casClient, nil /*=fileCache*/, *remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+	var runFiles []*bespb.File
+	for _, d := range missingDigests {
+		runfilePath, ok := digestMap[digest.NewKey(d)]
+		if !ok {
+			// not supposed to happen...
+			return nil, status.InternalErrorf("missing digest not in our digest map")
+		}
+		f, err := os.Open(runfilePath)
+		if err != nil {
+			return nil, err
+		}
+		if err := u.Upload(d, f); err != nil {
+			return nil, err
+		}
+		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
+		if err != nil {
+			return nil, err
+		}
+		runFiles = append(runFiles, &bespb.File{
+			Name: relPath,
+			File: &bespb.File_Uri{
+				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(d, *remoteInstanceName).DownloadString()),
+			},
+		})
+	}
+	if err := u.Wait(); err != nil {
+		return nil, err
+	}
+	return runFiles, nil
+}
+
+// processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
+// information about the default binary arguments as well as about supporting files (runfiles).
+func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
+	runScriptBytes, err := os.ReadFile(runScript)
+	if err != nil {
+		return nil, status.UnknownErrorf("error reading run script: %s", err)
+	}
+	runScriptLines := strings.Split(string(runScriptBytes), "\n")
+	if len(runScriptLines) < 3 {
+		return nil, status.UnknownErrorf("run script not in expected format, too short")
+	}
+
+	// The last line contains the name of the binary as well as the default arguments.
+	binAndArgs, err := shlex.Split(runScriptLines[len(runScriptLines)-1])
+	if err != nil {
+		return nil, status.UnknownErrorf("error parsing run script: %s", err)
+	}
+	bin := binAndArgs[0]
+	var args []string
+	for _, a := range binAndArgs[1:] {
+		if a != "$@" {
+			args = append(args, a)
+		}
+	}
+
+	wsFile, err := bazel.FindWorkspaceFile(filepath.Dir(bin))
+	if err != nil {
+		return nil, status.UnknownErrorf("could not detect binary workspace root: %s", err)
+	}
+	wsRoot := filepath.Dir(wsFile)
+
+	// The second line changes the working directory to within the runfiles directory.
+	cdLine := runScriptLines[1]
+	l := shlex.NewLexer(bytes.NewReader([]byte(cdLine)))
+	k, err := l.Next()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse working directory line: %s", err)
+	}
+	if k != "cd" {
+		return nil, status.UnknownErrorf("run script not in expected format: directory change not found")
+	}
+	k, err = l.Next()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not parse working directory line: %s", err)
+	}
+	runfilesRoot, err := filepath.Rel(wsRoot, k)
+	if err != nil {
+		return nil, err
+	}
+
+	runFilesDir := bin + ".runfiles"
+	runfiles, err := uploadRunfiles(ctx, wsRoot, runFilesDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &runInfo{
+		args:         args,
+		runfiles:     runfiles,
+		runfilesRoot: runfilesRoot,
+	}, nil
 }
 
 func printCommandLine(out io.Writer, command string, args ...string) {
