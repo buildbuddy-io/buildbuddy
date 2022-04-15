@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -140,6 +141,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_repo_url=" + repoURL.String(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
+	}
+	if strings.HasPrefix(req.GetBazelCommand(), "run ") {
+		args = append(args, "--record_run_metadata")
 	}
 	if req.GetRepoState().GetCommitSha() != "" {
 		args = append(args, "--target_commit_sha="+req.GetRepoState().GetCommitSha())
