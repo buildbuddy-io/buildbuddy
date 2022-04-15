@@ -273,7 +273,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
 	if cmdResult.Error != nil {
-		log.Warningf("Command execution returned error: %q", cmdResult.Error)
+		log.Warningf("Command execution returned error: %s", cmdResult.Error)
 	}
 
 	// Note: we continue to upload outputs, stderr, etc. below even if

@@ -26,10 +26,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testproto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,8 +169,8 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 	ar, err = rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
 	require.NoError(t, err)
-	testproto.AssertEqual(
-		t, res.ActionResult, ar,
+	assert.True(
+		t, proto.Equal(res.ActionResult, ar),
 		"failed action result should match what was sent in the ExecuteResponse")
 }
 
