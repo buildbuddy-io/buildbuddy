@@ -227,7 +227,14 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
+	var provider trace.TracerProvider
+	if decision, ok := tracingDecision(ctx); ok && !decision {
+		provider = trace.NewNoopTracerProvider()
+	} else {
+		provider = otel.GetTracerProvider()
+	}
+
+	ctx, span := provider.Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
@@ -294,6 +301,16 @@ func shouldTraceMD(grpcMD metadata.MD, method string) bool {
 	return float64(random.RandUint64())/math.MaxUint64 < fraction
 }
 
+func tracingDecision(ctx context.Context) (bool, bool) {
+	if v := ctx.Value(TracingDecisionHeader); v != nil {
+		shouldTrace, ok := v.(bool)
+		if ok {
+			return shouldTrace, true
+		}
+	}
+	return false, false
+}
+
 // ShouldTraceIncoming returns a boolean indicating if request should be traced
 // because:
 //  - tracing was forced
@@ -302,11 +319,8 @@ func shouldTraceMD(grpcMD metadata.MD, method string) bool {
 func ShouldTraceIncoming(ctx context.Context, method string) bool {
 	// If this ctx was already selected for tracing by the rpc interceptor,
 	// use that decision.
-	if v := ctx.Value(TracingDecisionHeader); v != nil {
-		shouldTrace, ok := v.(bool)
-		if ok {
-			return shouldTrace
-		}
+	if decision, ok := tracingDecision(ctx); ok {
+		return decision
 	}
 	grpcMD, _ := metadata.FromIncomingContext(ctx)
 	return shouldTraceMD(grpcMD, method)
@@ -320,11 +334,8 @@ func ShouldTraceIncoming(ctx context.Context, method string) bool {
 func ShouldTraceOutgoing(ctx context.Context, method string) bool {
 	// If this ctx was already selected for tracing by the rpc interceptor,
 	// use that decision.
-	if v := ctx.Value(TracingDecisionHeader); v != nil {
-		shouldTrace, ok := v.(bool)
-		if ok {
-			return shouldTrace
-		}
+	if decision, ok := tracingDecision(ctx); ok {
+		return decision
 	}
 	grpcMD, _ := metadata.FromOutgoingContext(ctx)
 	return shouldTraceMD(grpcMD, method)
