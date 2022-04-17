@@ -25,6 +25,7 @@ import (
 
 const (
 	indexTemplateFilename = "index.html"
+	stylePathTemplate     = "/app/style.css?hash={APP_BUNDLE_HASH}"
 )
 
 var (
@@ -66,16 +67,14 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 			return nil, err
 		}
 
-		jsPath := *jsEntryPointPath
-		if appBundleHash != "" {
-			jsPath = strings.ReplaceAll(jsPath, "{APP_BUNDLE_HASH}", appBundleHash)
-		}
+		jsPath := strings.ReplaceAll(*jsEntryPointPath, "{APP_BUNDLE_HASH}", appBundleHash)
+		stylePath := strings.ReplaceAll(stylePathTemplate, "{APP_BUNDLE_HASH}", appBundleHash)
 
 		if strings.HasPrefix(jsPath, "http://") || strings.HasPrefix(jsPath, "https://") {
 			env.GetHealthChecker().AddHealthCheck("app_static_file_server", &healthChecker{jsPath: jsPath})
 		}
 
-		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, handler)
+		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, stylePath, handler)
 	}
 	return &StaticFileServer{
 		handler: setCacheHeaders(handler),
@@ -87,7 +86,7 @@ func (s *StaticFileServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.ServeHTTP(w, r)
 }
 
-func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version string, jsPath string, h http.Handler) http.Handler {
+func handleRootPaths(env environment.Env, rootPaths []string, template *template.Template, version, jsPath, stylePath string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for _, rootPath := range rootPaths {
 			if strings.HasPrefix(r.URL.Path, rootPath) {
@@ -96,7 +95,7 @@ func handleRootPaths(env environment.Env, rootPaths []string, template *template
 		}
 
 		if r.URL.Path == "/" {
-			serveIndexTemplate(env, template, version, jsPath, w)
+			serveIndexTemplate(env, template, version, jsPath, stylePath, w)
 			return
 		}
 
@@ -115,6 +114,8 @@ func setCacheHeaders(h http.Handler) http.Handler {
 }
 
 type FrontendTemplateData struct {
+	// StylePath is the path to the main styles for the app.
+	StylePath string
 	// JsEntryPointPath is the path to the main script that bootstraps the app.
 	JsEntryPointPath string
 	// GaEnabled decides whether to render the Google Analytics script.
@@ -123,7 +124,7 @@ type FrontendTemplateData struct {
 	Config template.JS
 }
 
-func serveIndexTemplate(env environment.Env, tpl *template.Template, version string, jsPath string, w http.ResponseWriter) {
+func serveIndexTemplate(env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
 	issuers := make([]string, 0)
 	if env.GetConfigurator().GetSelfAuthEnabled() {
 		issuers = append(issuers, build_buddy_url.String())
@@ -176,6 +177,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version str
 		return
 	}
 	err := tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
+		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
 		Config:           template.JS(configJSON.String()),

@@ -82,5 +82,8 @@ genrule(
 
 sha(
     name = "sha",
-    srcs = ["//enterprise/app:app_bundle"],
+    srcs = [
+        ":style.css",
+        "//enterprise/app:app_bundle",
+    ],
 )

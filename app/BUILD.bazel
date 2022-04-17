@@ -76,5 +76,8 @@ genrule(
 
 sha(
     name = "sha",
-    srcs = ["//app:app_bundle"],
+    srcs = [
+        ":style.css",
+        "//app:app_bundle",
+    ],
 )
