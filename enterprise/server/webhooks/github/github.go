@@ -133,9 +133,6 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 			TargetRepoURL:      v["Repo.CloneURL"],
 			TargetBranch:       branch,
 			IsTargetRepoPublic: v["Repo.Private"] == "false",
-			// The push handler will not receive events from forked repositories,
-			// so if a commit was pushed to this repo then it is trusted.
-			IsTrusted: true,
 		}, nil
 
 	case *gh.PullRequestEvent:
@@ -155,21 +152,11 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		if event.GetReview().GetState() != "approved" {
 			return nil, nil
 		}
-		if !isTrustedAssociation(event.GetReview().GetAuthorAssociation()) {
-			return nil, nil
-		}
-		// If the PR author is trusted, we don't need an approving review to run
-		// the workflow -- the workflow will already have been run as part of the
-		// pull_request synchronize event.
-		if isTrustedAssociation(event.GetPullRequest().GetAuthorAssociation()) {
-			return nil, nil
-		}
 		wd, err := parsePullRequestOrReview(event)
 		if err != nil {
 			return nil, err
 		}
-		// We now trust the state that the PR is in, since we have an approved review.
-		wd.IsTrusted = true
+		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
 		return wd, nil
 
 	default:
@@ -177,29 +164,22 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	}
 }
 
-// isTrustedAssociation returns whether a user should be allowed to execute
-// trusted workflows for a repo, given their association to the repo.
-func isTrustedAssociation(association string) bool {
-	return association == "OWNER" || association == "MEMBER" || association == "COLLABORATOR"
-}
-
 // parsePullRequestOrReview extracts WebhookData from a pull_request or
 // pull_request_review event.
 func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error) {
 	v, err := fieldgetter.ExtractValues(
 		event,
-		"Action",
-		"PullRequest.Base.Ref",
-		"PullRequest.Base.Repo.CloneURL",
-		"PullRequest.Base.Repo.Private",
+		"PullRequest.Head.Repo.CloneURL",
 		"PullRequest.Head.Ref",
 		"PullRequest.Head.SHA",
-		"PullRequest.Head.Repo.CloneURL",
+		"PullRequest.Base.Repo.CloneURL",
+		"PullRequest.Base.Repo.Private",
+		"PullRequest.Base.Ref",
+		"PullRequest.User.Login",
 	)
 	if err != nil {
 		return nil, err
 	}
-	isFork := v["PullRequest.Base.Repo.CloneURL"] != v["PullRequest.Head.Repo.CloneURL"]
 	isTargetRepoPublic := v["PullRequest.Base.Repo.Private"] == "false"
 	return &interfaces.WebhookData{
 		EventName:          webhook_data.EventName.PullRequest,
@@ -209,7 +189,7 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 		TargetRepoURL:      v["PullRequest.Base.Repo.CloneURL"],
 		IsTargetRepoPublic: isTargetRepoPublic,
 		TargetBranch:       v["PullRequest.Base.Ref"],
-		IsTrusted:          !isFork,
+		PullRequestAuthor:  v["PullRequest.User.Login"],
 	}, nil
 }
 
@@ -235,6 +215,19 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 		return nil, err
 	}
 	return []byte(s), nil
+}
+
+func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return false, err
+	}
+	client := newGitHubClient(ctx, accessToken)
+	isCollaborator, _, err := client.Repositories.IsCollaborator(ctx, owner, repo, user)
+	if err != nil {
+		return false, status.InternalErrorf("failed to determine whether %s is a collaborator in %s: %s", user, repoURL, err)
+	}
+	return isCollaborator, nil
 }
 
 func webhookJSONPayload(r *http.Request) ([]byte, error) {

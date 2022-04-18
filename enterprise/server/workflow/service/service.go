@@ -422,7 +422,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		TargetRepoURL: req.GetTargetRepoUrl(),
 		TargetBranch:  req.GetTargetBranch(),
 		SHA:           req.GetCommitSha(),
-		IsTrusted:     req.GetTargetRepoUrl() == req.GetPushedRepoUrl(),
 		// Don't set IsTargetRepoPublic here; instead set visibility directly
 		// from build metadata.
 	}
@@ -462,7 +461,10 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if action == nil {
 		return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
 	}
-	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, action, invocationID, extraCIRunnerArgs)
+	// The workflow execution is trusted since we're authenticated as a member of
+	// the BuildBuddy org that owns the workflow.
+	isTrusted := true
+	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -611,7 +613,7 @@ func (ws *workflowService) readWorkflowForWebhook(ctx context.Context, webhookID
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -621,7 +623,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
-	if wd.IsTrusted {
+	if isTrusted {
 		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
 			{Name: "REPO_USER", Value: wf.Username},
@@ -642,7 +644,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"})
 		}
 	}
-	if os == platform.DarwinOperatingSystemName && !wd.IsTrusted {
+	if os == platform.DarwinOperatingSystemName && !isTrusted {
 		return nil, ApprovalRequired
 	}
 	// Make the "outer" workflow invocation public if the target repo is public,
@@ -754,7 +756,7 @@ func (ws *workflowService) apiKeyForWorkflow(ctx context.Context, wf *tables.Wor
 	qStr, qArgs := q.Build()
 	k := &tables.APIKey{}
 	if err := ws.env.GetDBHandle().DB(ctx).Raw(qStr, qArgs...).Take(&k).Error; err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "failed to get API key for workflow")
 	}
 	return k, nil
 }
@@ -775,7 +777,7 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 	if ws.env.GetAuthenticator() == nil {
 		return status.FailedPreconditionError("anonymous workflow access is not supported")
 	}
-	if ws.env.GetRemoteExecutionService() == nil {
+	if ws.env.GetRemoteExecutionClient() == nil {
 		return status.UnavailableError("Remote execution not configured.")
 	}
 	return nil
@@ -794,6 +796,21 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 	return config.NewConfig(bytes.NewReader(b))
 }
 
+func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (bool, error) {
+	// If the commit was pushed directly to the target repo then the commit must
+	// already be trusted.
+	isFork := wd.PushedRepoURL != wd.TargetRepoURL
+	if !isFork {
+		return true, nil
+	}
+	if wd.PullRequestAuthor == "" {
+		return false, status.FailedPreconditionErrorf("missing pull request author for %s event (workflow %s)", wd.EventName, wf.WorkflowID)
+	}
+	// Otherwise make an API call to check whether the user is a trusted
+	// collaborator.
+	return gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestAuthor)
+}
+
 func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
 	ctx := r.Context()
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
@@ -803,16 +820,41 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	webhookData, err := gitProvider.ParseWebhookData(r)
+	wd, err := gitProvider.ParseWebhookData(r)
 	if err != nil {
 		return err
 	}
-	if webhookData == nil {
+	if wd == nil {
 		return nil
 	}
+	log.Debugf(
+		"Parsed webhook data: event=%q, target=%q, pushed=%q pr_author=%q, pr_approver=%q",
+		wd.EventName, wd.TargetRepoURL, wd.PushedRepoURL, wd.PullRequestAuthor, wd.PullRequestApprover)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return err
+	}
+	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
+	if err != nil {
+		return err
+	}
+	// If this is a PR approval event and the PR is untrusted, then re-run the
+	// workflow as a trusted workflow, but only if the approver is trusted, and
+	// only if the PR is not already trusted (to avoid unnecessary re-runs).
+	if wd.PullRequestApprover != "" {
+		if isTrusted {
+			log.Debugf("Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
+			return nil
+		}
+		isApproverTrusted, err := gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestApprover)
+		if err != nil {
+			return err
+		}
+		if !isApproverTrusted {
+			log.Debugf("Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
+			return nil
+		}
+		isTrusted = true
 	}
 	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
@@ -820,12 +862,12 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	}
 	// Fetch the workflow config (buildbuddy.yaml) and start a CI runner execution
 	// for each action matching the webhook event.
-	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, webhookData)
+	cfg, err := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return err
 	}
 	for _, action := range cfg.Actions {
-		if !config.MatchesAnyTrigger(action, webhookData.EventName, webhookData.TargetBranch) {
+		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
 			continue
 		}
 		invocationUUID, err := guuid.NewRandom()
@@ -833,29 +875,32 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 			return err
 		}
 		invocationID := invocationUUID.String()
-		_, err = ws.executeWorkflow(ctx, apiKey, wf, webhookData, action, invocationID, nil /*=extraCIRunnerArgs*/)
+		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
-				if err := ws.createApprovalRequiredStatus(ctx, wf, webhookData, action.Name); err != nil {
-					log.Warningf("Failed to create workflow action status: %s", err)
+				log.Infof("Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
+				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
+					log.Warningf("Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
 				}
 				continue
 			}
-			return err
+			// TODO: Create a UI for these errors instead of just logging on the
+			// server.
+			log.Warningf("Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 		}
 	}
 	return nil
 }
 
 // starts a CI runner execution and returns the execution ID.
-func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
+func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string) (string, error) {
 	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
 	if err != nil {
 		return "", err
 	}
 	in := instanceName(wf, wd, workflowAction.Name)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, key, in, workflowAction, invocationID, extraCIRunnerArgs)
+	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
 	}
