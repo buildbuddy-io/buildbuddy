@@ -28,6 +28,7 @@ type FakeProvider struct {
 	UnregisteredWebhookID string
 	WebhookData           *interfaces.WebhookData
 	FileContents          map[string]string
+	TrustedUsers          []string
 }
 
 func NewFakeProvider() *FakeProvider {
@@ -60,6 +61,14 @@ func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL
 		return nil, status.NotFoundError("Not found")
 	}
 	return []byte(contents), nil
+}
+func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
+	for _, u := range p.TrustedUsers {
+		if u == user {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // MakeTempRepo initializes a Git repository with the given file contents, and

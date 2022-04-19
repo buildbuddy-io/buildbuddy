@@ -201,7 +201,6 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 		SHA:           commitSHA,
 		TargetRepoURL: repoURL,
 		TargetBranch:  "master",
-		IsTrusted:     true,
 	}
 
 	req, err := http.NewRequest("POST", createResp.GetWebhookUrl(), nil /*=body*/)
