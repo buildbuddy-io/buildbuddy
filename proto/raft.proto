@@ -276,7 +276,7 @@ message ReplicaUsage {
 }
 
 message NodeUsage {
-  string nhid = 1;
+  NodeDescriptor node = 1;
 
   int64 num_replicas = 2;
   int64 disk_bytes_total = 3;
@@ -363,13 +363,19 @@ message AddClusterNodeRequest {
   RangeDescriptor range = 1;
   NodeDescriptor node = 2;
 }
-message AddClusterNodeResponse {}
+message AddClusterNodeResponse {
+  // The range with the new node added.
+  RangeDescriptor range = 1;
+}
 
 message RemoveClusterNodeRequest {
   RangeDescriptor range = 1;
   uint64 node_id = 2;
 }
-message RemoveClusterNodeResponse {}
+message RemoveClusterNodeResponse {
+  // The range with the specified node removed.
+  RangeDescriptor range = 1;
+}
 
 message SplitClusterRequest {
   RangeDescriptor range = 1;

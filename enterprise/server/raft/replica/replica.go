@@ -381,7 +381,7 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
 		md, err := sm.readFileFromPeer(context.TODO(), req.GetFileRecord(), wb)
 		if err != nil {
-			log.Errorf("Error recovering file %v from peer: %s", md.GetFileRecord(), err)
+			log.Errorf("Error recovering file %v from peer: %s", req.GetFileRecord(), err)
 			return nil, err
 		}
 		protoBytes, err := proto.Marshal(md)
