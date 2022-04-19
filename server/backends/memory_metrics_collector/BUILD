@@ -5,7 +5,10 @@ go_library(
     srcs = ["memory_metrics_collector.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_hashicorp_golang_lru//:golang-lru"],
+    deps = [
+        "//server/util/status",
+        "@com_github_hashicorp_golang_lru//:golang-lru",
+    ],
 )
 
 go_test(

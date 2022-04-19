@@ -649,6 +649,9 @@ type MetricsCollector interface {
 	IncrementCount(ctx context.Context, key, field string, n int64) error
 	SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error
 	SetAdd(ctx context.Context, key string, members ...string) error
+	SetMembers(ctx context.Context, key string) ([]string, error)
+	Set(ctx context.Context, key, value string, expiration time.Duration) error
+	GetAll(ctx context.Context, key ...string) ([]string, error)
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
 	Flush(ctx context.Context) error

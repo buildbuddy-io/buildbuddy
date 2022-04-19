@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -55,7 +57,6 @@ func (m *MemoryMetricsCollector) IncrementCounts(ctx context.Context, key string
 	}
 	m.l.Add(key, existingMap)
 	return nil
-
 }
 
 func (m *MemoryMetricsCollector) IncrementCountsWithExpiry(ctx context.Context, key string, counts map[string]int64, expiry time.Duration) error {
@@ -75,7 +76,6 @@ func (m *MemoryMetricsCollector) IncrementCount(ctx context.Context, key, field 
 	}
 	m.l.Add(key, map[string]int64{field: n})
 	return nil
-
 }
 
 func (m *MemoryMetricsCollector) IncrementCountWithExpiry(ctx context.Context, key, field string, n int64, expiry time.Duration) error {
@@ -104,11 +104,66 @@ func (m *MemoryMetricsCollector) SetAdd(ctx context.Context, key string, members
 	}
 	m.l.Add(key, existingMap)
 	return nil
-
 }
 
 func (m *MemoryMetricsCollector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
 	return m.SetAdd(ctx, key, members...)
+}
+
+func (m *MemoryMetricsCollector) SetMembers(ctx context.Context, key string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var existingMap map[string]struct{}
+	if existingValIface, ok := m.l.Get(key); ok {
+		if existingVal, ok := existingValIface.(map[string]struct{}); ok {
+			existingMap = existingVal
+		}
+	}
+	if existingMap == nil {
+		return nil, nil
+	}
+	// Convert string set to string slice
+	members := make([]string, 0, len(existingMap))
+	for k := range existingMap {
+		members = append(members, k)
+	}
+	return members, nil
+}
+
+func (m *MemoryMetricsCollector) Set(ctx context.Context, key string, value string, _ time.Duration) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.l.Add(key, value)
+	return nil
+}
+
+func (m *MemoryMetricsCollector) get(ctx context.Context, key string) (string, error) {
+	iface, ok := m.l.Get(key)
+	if !ok {
+		return "", status.NotFoundError("not found")
+	}
+	str, ok := iface.(string)
+	if !ok {
+		return "", status.InternalErrorf("cannot get non-string type %T stored at key %q", iface, key)
+	}
+	return str, nil
+}
+
+func (m *MemoryMetricsCollector) GetAll(ctx context.Context, keys ...string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	vals := make([]string, 0, len(keys))
+	for _, key := range keys {
+		val, err := m.get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, val)
+	}
+	return vals, nil
 }
 
 func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {

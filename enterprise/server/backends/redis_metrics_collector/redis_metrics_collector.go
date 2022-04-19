@@ -88,6 +88,36 @@ func (c *collector) SetAdd(ctx context.Context, key string, members ...string) e
 	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
 }
 
+func (c *collector) SetMembers(ctx context.Context, key string) ([]string, error) {
+	return c.rdb.SMembers(ctx, key).Result()
+}
+
+func (c *collector) Set(ctx context.Context, key, value string, expiration time.Duration) error {
+	return c.rbuf.Set(ctx, key, value, expiration)
+}
+
+func (c *collector) GetAll(ctx context.Context, keys ...string) ([]string, error) {
+	pipe := c.rdb.Pipeline()
+	cmds := make([]*redis.StringCmd, 0, len(keys))
+	for _, k := range keys {
+		cmd := pipe.Get(ctx, k)
+		cmds = append(cmds, cmd)
+	}
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(cmds))
+	for _, cmd := range cmds {
+		val, err := cmd.Result()
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, val)
+	}
+	return values, nil
+}
+
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	h, err := c.rdb.HGetAll(ctx, key).Result()
 	if err != nil {
