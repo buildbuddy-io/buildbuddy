@@ -283,3 +283,24 @@ func TestForceRoot(t *testing.T) {
 		assert.Equal(t, 0, result.ExitCode, "should exit with success")
 	}
 }
+
+func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "Hello world"
+			sleep 0.5
+			echo "Hello again"
+		`},
+	}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
