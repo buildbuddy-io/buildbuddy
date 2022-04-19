@@ -108,6 +108,11 @@ proto_library(
 )
 
 proto_library(
+    name = "pagination_proto",
+    srcs = [":pagination.proto"],
+)
+
+proto_library(
     name = "publish_build_event_proto",
     srcs = [
         "publish_build_event.proto",

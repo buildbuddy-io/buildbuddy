@@ -38,34 +38,26 @@ message CacheStats {
 
 // Request to retrieve detailed per-request cache stats.
 message GetCacheScoreCardRequest {
+  // The request context, including the page token from the previous response.
   context.RequestContext request_context = 1;
 
   // The invocation ID for which to look up cache stats.
   string invocation_id = 2;
 
-  // Pagination token. Not intended for direct client usage.
-  message PageToken {
-    // The start index in the scorecard results list, after sorting and
-    // filtering results. Number of results to fetch is determined by the
-    // server.
-    int64 index = 1;
-  }
-
-  // A string representation of the next page token, which must be a value
-  // returned by a previous response.
+  // A page token returned from the previous response, or an empty string
+  // initially.
   string page_token = 3;
-
-  // TODO(bduffany): add sorting/filtering options
 }
 
 message GetCacheScoreCardResponse {
+  // The response context, including the next_page_token.
   context.ResponseContext response_context = 1;
 
   // The cache results for the current page.
   repeated ScoreCard.Result results = 2;
 
-  // A token used to fetch more results. If empty, there are no results
-  // remaining.
+  // An opaque token that can be included in a subsequent request to fetch more
+  // results from the server. If empty, there are no more results available.
   string next_page_token = 3;
 }
 
