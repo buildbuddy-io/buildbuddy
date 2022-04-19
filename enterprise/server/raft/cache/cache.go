@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -207,15 +208,21 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
-	rc.driver = driver.New(rc.store, rc.gossipManager, driver.DefaultOpts())
-	if err := rc.driver.Start(); err != nil {
-		return nil, err
-	}
-
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager, rc.apiClient)
 	rc.clusterStarter.InitializeClusters()
+
+	// start the driver once bringup is complete.
+	rc.driver = driver.New(rc.store, rc.gossipManager, driver.TestingOpts())
+	go func() {
+		for !rc.clusterStarter.Done() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if err := rc.driver.Start(); err != nil {
+			log.Errorf("Error starting driver: %s", err)
+		}
+	}()
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop()

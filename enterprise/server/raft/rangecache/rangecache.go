@@ -66,6 +66,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 			return status.FailedPreconditionError("Val was not a rangeVal")
 		}
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
+			log.Debugf("Updated generation of range: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
 			r.Val = newDescriptor
 		}
 	}

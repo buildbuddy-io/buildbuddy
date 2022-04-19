@@ -2,7 +2,10 @@ package driver
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
 	"github.com/hashicorp/serf/serf"
 
@@ -65,30 +69,131 @@ type observation struct {
 	sizeBytes int64
 }
 
+type moveInstruction struct {
+	from    string
+	to      string
+	replica replicaStruct
+}
+
+type uint64Set map[uint64]struct{}
+
+func (s uint64Set) Contains(id uint64) bool {
+	_, ok := s[id]
+	return ok
+}
+
 type replicaSet map[replicaStruct]struct{}
 
+func (rs replicaSet) Add(r replicaStruct) {
+	rs[r] = struct{}{}
+}
+func (rs replicaSet) Remove(r replicaStruct) {
+	delete(rs, r)
+}
+func (rs replicaSet) Contains(r replicaStruct) bool {
+	_, ok := rs[r]
+	return ok
+}
+func (rs replicaSet) ContainsCluster(clusterID uint64) bool {
+	for r := range rs {
+		if r.clusterID == clusterID {
+			return true
+		}
+	}
+	return false
+}
+
+func variance(samples []float64, mean float64) float64 {
+	if len(samples) <= 1 {
+		return 0
+	}
+	var diffSquaredSum float64
+	for _, s := range samples {
+		diffSquaredSum += math.Pow(s-mean, 2)
+	}
+	return diffSquaredSum / float64(len(samples)-1)
+}
+
 type clusterMap struct {
-	mu           *sync.RWMutex
-	nodeReplicas map[string]replicaSet
-	observations map[replicaStruct]observation
+	mu              *sync.RWMutex
+	nodeDescriptors map[string]*rfpb.NodeDescriptor
+	nodeReplicas    map[string]replicaSet
+	observations    map[replicaStruct]observation
 }
 
 func NewClusterMap() *clusterMap {
 	return &clusterMap{
-		mu:           &sync.RWMutex{},
-		nodeReplicas: make(map[string]replicaSet, 0),
-		observations: make(map[replicaStruct]observation, 0),
+		mu:              &sync.RWMutex{},
+		nodeDescriptors: make(map[string]*rfpb.NodeDescriptor, 0),
+		nodeReplicas:    make(map[string]replicaSet, 0),
+		observations:    make(map[replicaStruct]observation, 0),
 	}
 }
 
-func (cm *clusterMap) ObserveNode(nhid string) {
+func (cm *clusterMap) String() string {
+	nodeStrings := make(map[string][]string, 0)
+	nhids := make([]string, 0, len(cm.nodeReplicas))
+	for nhid, set := range cm.nodeReplicas {
+		nhids = append(nhids, nhid)
+		replicas := make([]string, 0, len(set))
+		for rs := range set {
+			obs := cm.observations[rs]
+			replicas = append(replicas, fmt.Sprintf("c%dn%d [%2.2f MB]", rs.clusterID, rs.nodeID, float64(obs.sizeBytes)/1e6))
+		}
+		sort.Strings(replicas)
+		nodeStrings[nhid] = replicas
+	}
+	sort.Strings(nhids)
+	buf := ""
+	for _, nhid := range nhids {
+		buf += fmt.Sprintf("%q: %s\n", nhid, strings.Join(nodeStrings[nhid], ", "))
+	}
+	return buf
+}
+
+func (cm *clusterMap) RemoveNode(nodeID uint64) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for _, set := range cm.nodeReplicas {
+		for rs := range set {
+			if rs.nodeID == nodeID {
+				set.Remove(rs)
+			}
+		}
+	}
+	for rs, _ := range cm.observations {
+		if rs.nodeID == nodeID {
+			delete(cm.observations, rs)
+		}
+	}
+}
+
+func (cm *clusterMap) LookupNodehost(nhid string) *rfpb.NodeDescriptor {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	return cm.nodeDescriptors[nhid]
+}
+
+func (cm *clusterMap) LookupNodehostForReplica(rs replicaStruct) *rfpb.NodeDescriptor {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	for nhid, replicas := range cm.nodeReplicas {
+		if replicas.Contains(rs) {
+			return cm.nodeDescriptors[nhid]
+		}
+	}
+	return nil
+}
+
+func (cm *clusterMap) ObserveNode(node *rfpb.NodeDescriptor) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	_, ok := cm.nodeReplicas[nhid]
+	_, ok := cm.nodeReplicas[node.GetNhid()]
 	if !ok {
-		cm.nodeReplicas[nhid] = make(replicaSet, 0)
+		cm.nodeReplicas[node.GetNhid()] = make(replicaSet, 0)
 	}
+	cm.nodeDescriptors[node.GetNhid()] = node
 }
 
 func (cm *clusterMap) ObserveReplica(nhid string, ru *rfpb.ReplicaUsage) {
@@ -103,56 +208,53 @@ func (cm *clusterMap) ObserveReplica(nhid string, ru *rfpb.ReplicaUsage) {
 		cm.nodeReplicas[nhid] = make(replicaSet, 0)
 	}
 
-	cm.nodeReplicas[nhid][rs] = struct{}{}
+	cm.nodeReplicas[nhid].Add(rs)
 	cm.observations[rs] = observation{
 		seen:      time.Now(),
 		sizeBytes: ru.GetEstimatedDiskBytesUsed(),
 	}
 }
 
-func (cm *clusterMap) DeadReplicas(leasedClusterIDs []uint64, timeout time.Duration) []replicaStruct {
+// DeadReplicas returns a slice of replicaStructs that:
+//   - Are members of clusters this node manages
+//   - Have not been seen in the last `timeout`
+func (cm *clusterMap) DeadReplicas(myClusters uint64Set, timeout time.Duration) replicaSet {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	clusterSet := make(map[uint64]struct{}, len(leasedClusterIDs))
-	for _, clusterID := range leasedClusterIDs {
-		clusterSet[clusterID] = struct{}{}
-	}
-
-	dead := make([]replicaStruct, 0)
+	dead := make(replicaSet, 0)
 	now := time.Now()
 	for rs, observation := range cm.observations {
-		if _, ok := clusterSet[rs.clusterID]; !ok {
+		if !myClusters.Contains(rs.clusterID) {
 			// Skip clusters that this node does not hold the lease
 			// for.
 			continue
 		}
 		if now.Sub(observation.seen) > timeout {
-			dead = append(dead, rs)
+			dead.Add(rs)
 		}
 	}
 	return dead
 }
 
-func (cm *clusterMap) OverloadedReplicas(leasedClusterIDs []uint64, maxSizeBytes int64) []replicaStruct {
+// OverloadedReplicas returns a slice of replicaStructs that:
+//   - Are members of clusters this node manages
+//   - Report sizes greater than `maxSizeBytes`
+func (cm *clusterMap) OverloadedReplicas(myClusters uint64Set, maxSizeBytes int64) replicaSet {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	clusterSet := make(map[uint64]struct{}, len(leasedClusterIDs))
-	for _, clusterID := range leasedClusterIDs {
-		clusterSet[clusterID] = struct{}{}
-	}
-
-	overloaded := make([]replicaStruct, 0)
+	overloaded := make(replicaSet, 0)
 	for rs, observation := range cm.observations {
-		if _, ok := clusterSet[rs.clusterID]; !ok {
+		if !myClusters.Contains(rs.clusterID) {
 			// Skip clusters that this node does not hold the lease
 			// for.
 			continue
 		}
 		if observation.sizeBytes > maxSizeBytes {
-			overloaded = append(overloaded, rs)
+			overloaded.Add(rs)
 		}
+		// TODO(tylerw): also split if QPS > 1000.
 	}
 	return overloaded
 }
@@ -160,8 +262,6 @@ func (cm *clusterMap) OverloadedReplicas(leasedClusterIDs []uint64, maxSizeBytes
 func (cm *clusterMap) idealReplicaCount() float64 {
 	totalNumReplicas := len(cm.observations)
 	numNodes := len(cm.nodeReplicas)
-
-	log.Printf("totalNumReplicas: %d, numNodes: %d", totalNumReplicas, numNodes)
 	return float64(totalNumReplicas) / float64(numNodes)
 }
 
@@ -171,26 +271,31 @@ type replicaSize struct {
 	sizeBytes     int64
 }
 
-func (cm *clusterMap) ExcessReplicas(leasedClusterIDs []uint64, nhid string) []replicaStruct {
+// MoveableReplicas returns a slice of replicaStructs that:
+//   - Are members of clusters this node manages
+//   - Are not located on this node
+//   - If moved, would bring this node back within the ideal # of replicas
+//     threshold.
+func (cm *clusterMap) MoveableReplicas(myClusters, myNodes uint64Set, nhid string) replicaSet {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
 	ideal := cm.idealReplicaCount()
 	numReplicas := len(cm.nodeReplicas[nhid])
-	if numReplicas <= int(ideal*replicaMoveThreshold) {
+	moveThreshold := int(ideal * replicaMoveThreshold)
+	if numReplicas <= moveThreshold {
 		return nil
 	}
-
 	excessReplicaQuota := numReplicas - int(ideal)
-	clusterSet := make(map[uint64]struct{}, len(leasedClusterIDs))
-	for _, clusterID := range leasedClusterIDs {
-		clusterSet[clusterID] = struct{}{}
-	}
 
 	replicaSizes := make([]replicaSize, 0)
 	for rs, obs := range cm.observations {
-		if _, ok := clusterSet[rs.clusterID]; ok {
-			// Skip replicas whose leader resides on this node.
+		// Skip clusters not managed by us.
+		if !myClusters.Contains(rs.clusterID) {
+			continue
+		}
+		// Skip nodes on this machine.
+		if myNodes.Contains(rs.nodeID) {
 			continue
 		}
 		replicaSizes = append(replicaSizes, replicaSize{
@@ -202,14 +307,68 @@ func (cm *clusterMap) ExcessReplicas(leasedClusterIDs []uint64, nhid string) []r
 		// Sort in *descending* order of size.
 		return replicaSizes[i].sizeBytes > replicaSizes[j].sizeBytes
 	})
-	excess := make([]replicaStruct, 0, excessReplicaQuota)
+	misplaced := make(replicaSet, excessReplicaQuota)
 	for _, replicaSize := range replicaSizes {
-		if len(excess) == excessReplicaQuota {
+		if len(misplaced) == excessReplicaQuota {
 			break
 		}
-		excess = append(excess, replicaSize.replicaStruct)
+		misplaced.Add(replicaSize.replicaStruct)
 	}
-	return excess
+	return misplaced
+}
+
+func (cm *clusterMap) FindHome(clusterID uint64) []string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	potentialHomes := make([]string, 0)
+
+	ideal := cm.idealReplicaCount()
+	for nhid, replicaSet := range cm.nodeReplicas {
+		numReplicas := len(replicaSet)
+		if numReplicas > int(ideal) {
+			continue
+		}
+		if replicaSet.ContainsCluster(clusterID) {
+			continue
+		}
+		potentialHomes = append(potentialHomes, nhid)
+	}
+
+	// Sort the potential homes in order of *increasing* fullness.
+	// This prefers moving replicas to the least loaded nodes first.
+	sort.Slice(potentialHomes, func(i, j int) bool {
+		iNHID := potentialHomes[i]
+		jNHID := potentialHomes[j]
+		return len(cm.nodeReplicas[iNHID]) < len(cm.nodeReplicas[jNHID])
+	})
+	return potentialHomes
+}
+
+func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	moveOffsets := make(map[string]int, 0)
+	for _, move := range potentialMoves {
+		if move.to != "" {
+			moveOffsets[move.to] += 1
+		}
+		if move.from != "" {
+			moveOffsets[move.from] -= 1
+		}
+	}
+	samples := make([]float64, 0, len(cm.nodeReplicas))
+	for nhid, replicaSet := range cm.nodeReplicas {
+		count := len(replicaSet)
+		if offset, ok := moveOffsets[nhid]; ok {
+			count += offset
+		}
+		samples = append(samples, float64(count))
+	}
+
+	vari := variance(samples, cm.idealReplicaCount())
+	return vari
 }
 
 func DefaultOpts() Opts {
@@ -317,6 +476,8 @@ func (d *Driver) manageLoop() {
 	}
 }
 
+// broadcasts a proto containing usage information about this store's
+// replicas.
 func (d *Driver) broadcast() error {
 	ctx := context.Background()
 	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{})
@@ -336,7 +497,7 @@ func (d *Driver) broadcast() error {
 	numReplicas := len(rsp.GetRangeReplicas())
 	gossiped := false
 	for start := 0; start < numReplicas; start += batchSize {
-		nu := &rfpb.NodeUsage{Nhid: rsp.GetNode().GetNhid()}
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
 		end := start + batchSize
 		if end > numReplicas {
 			end = numReplicas
@@ -358,7 +519,7 @@ func (d *Driver) broadcast() error {
 	// have gossiped anything. In that case, gossip an "empty" usage event
 	// now.
 	if !gossiped {
-		nu := &rfpb.NodeUsage{Nhid: rsp.GetNode().GetNhid()}
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
 		buf, err := proto.Marshal(nu)
 		if err != nil {
 			return err
@@ -370,6 +531,7 @@ func (d *Driver) broadcast() error {
 	return nil
 }
 
+// OnEvent listens for other nodes' gossip events and handles them.
 func (d *Driver) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
 	case serf.EventUser:
@@ -380,6 +542,7 @@ func (d *Driver) OnEvent(updateType serf.EventType, event serf.Event) {
 	}
 }
 
+// handleEvent parses and ingests the data from other nodes' gossip events.
 func (d *Driver) handleEvent(event *serf.UserEvent) {
 	if event.Name != constants.NodeUsageEvent {
 		return
@@ -388,48 +551,225 @@ func (d *Driver) handleEvent(event *serf.UserEvent) {
 	if err := proto.Unmarshal(event.Payload, nu); err != nil {
 		return
 	}
-	if nu.GetNhid() == "" {
+	if nu.GetNode() == nil {
 		log.Warningf("Ignoring malformed driver node usage: %+v", nu)
 		return
 	}
-	d.clusterMap.ObserveNode(nu.GetNhid())
+	node := nu.GetNode()
+	d.clusterMap.ObserveNode(node)
 	for _, ru := range nu.GetReplicaUsage() {
-		d.clusterMap.ObserveReplica(nu.GetNhid(), ru)
+		d.clusterMap.ObserveReplica(node.GetNhid(), ru)
 	}
 	atomic.AddInt64(&d.numSamples, 1)
 }
 
-func (d *Driver) manageClusters() error {
-	if ns := atomic.LoadInt64(&d.numSamples); ns < 5 {
-		log.Debugf("Not managing cluster yet, sample count: %d", ns)
-		return nil
-	}
-	ctx := context.Background()
+type clusterState struct {
+	node *rfpb.NodeDescriptor
+	// Information about our own replicas.
+	myClusters uint64Set
+	myNodes    uint64Set
+
+	// map of clusterID -> RangeDescriptor
+	managedRanges map[uint64]*rfpb.RangeDescriptor
+}
+
+func (cs *clusterState) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
+	return cs.managedRanges[clusterID]
+}
+
+func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{
 		LeasedOnly: true,
 	})
 	if err != nil {
-		return err
+		return nil, err
+	}
+	state := &clusterState{
+		node:       rsp.GetNode(),
+		myClusters: make(uint64Set, len(rsp.GetRangeReplicas())),
+		myNodes:    make(uint64Set, len(rsp.GetRangeReplicas())),
+		// clusterID -> range
+		managedRanges: make(map[uint64]*rfpb.RangeDescriptor, 0),
 	}
 
-	leasedClusterIDs := make([]uint64, 0, len(rsp.GetRangeReplicas()))
 	for _, rr := range rsp.GetRangeReplicas() {
 		for _, replica := range rr.GetRange().GetReplicas() {
-			leasedClusterIDs = append(leasedClusterIDs, replica.GetClusterId())
+			state.myClusters[replica.GetClusterId()] = struct{}{}
+			state.managedRanges[replica.GetClusterId()] = rr.GetRange()
 			break
 		}
+		state.myNodes[rr.GetReplicaUsage().GetReplica().GetNodeId()] = struct{}{}
 	}
-	deadReplicas := d.clusterMap.DeadReplicas(leasedClusterIDs, d.opts.ReplicaTimeout)
-	log.Printf("Dead replicas: %+v, my clusters: %+v", deadReplicas, leasedClusterIDs)
-	// AddClusterNode()
+	return state, nil
+}
 
-	overloadedReplicas := d.clusterMap.OverloadedReplicas(leasedClusterIDs, d.opts.MaxReplicaSizeBytes)
-	log.Printf("Overloaded replicas: %+v, my clusters: %+v", overloadedReplicas, leasedClusterIDs)
-	// SplitCluster()
+type clusterChanges struct {
+	// split these
+	overloadedReplicas replicaSet
 
-	excessReplicas := d.clusterMap.ExcessReplicas(leasedClusterIDs, rsp.GetNode().GetNhid())
-	log.Printf("Excess replicas: %+v, my clusters: %+v", excessReplicas, leasedClusterIDs)
-	// AddClusterNode && RemoveClusterNode
+	// replace these
+	deadReplicas replicaSet
 
+	// maybe (if it results in a better fit score), move these
+	moveableReplicas replicaSet
+}
+
+func (d *Driver) proposeChanges(state *clusterState) *clusterChanges {
+	changes := &clusterChanges{
+		overloadedReplicas: d.clusterMap.OverloadedReplicas(state.myClusters, d.opts.MaxReplicaSizeBytes),
+		deadReplicas:       d.clusterMap.DeadReplicas(state.myClusters, d.opts.ReplicaTimeout),
+		moveableReplicas:   d.clusterMap.MoveableReplicas(state.myClusters, state.myNodes, state.node.GetNhid()),
+	}
+	return changes
+}
+
+func (d *Driver) makeMoveInstructions(replicas replicaSet) []moveInstruction {
+	// Simulate some potential moves and apply them if they
+	// result in a lower overall cluster score than our current score.
+	// TODO(tylerw): use beam search or something better here..
+	moves := make([]moveInstruction, 0)
+	for rs := range replicas {
+		currentLocation := d.clusterMap.LookupNodehostForReplica(rs)
+		potentialHomes := d.clusterMap.FindHome(rs.clusterID)
+		if len(potentialHomes) == 0 {
+			continue
+		}
+		sort.Slice(potentialHomes, func(i, j int) bool {
+			iMove := moveInstruction{
+				to:   potentialHomes[i],
+				from: currentLocation.GetNhid(),
+			}
+			jMove := moveInstruction{
+				to:   potentialHomes[j],
+				from: currentLocation.GetNhid(),
+			}
+			// Sort in *descending* order of size.
+			return d.clusterMap.FitScore(append(moves, iMove)...) < d.clusterMap.FitScore(append(moves, jMove)...)
+		})
+		moves = append(moves, moveInstruction{
+			to:      potentialHomes[0],
+			from:    currentLocation.GetNhid(),
+			replica: rs,
+		})
+	}
+	return moves
+}
+
+func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clusterState) error {
+	toNode := d.clusterMap.LookupNodehost(move.to)
+	if toNode == nil {
+		return status.FailedPreconditionErrorf("toNode %q not found", move.to)
+	}
+	rd := state.GetRange(move.replica.clusterID)
+	if rd == nil {
+		return status.FailedPreconditionErrorf("rd %+v not found", rd)
+	}
+	rsp, err := d.store.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+		Range: rd,
+		Node:  toNode,
+	})
+	if err != nil {
+		log.Errorf("AddClusterNode err: %s", err)
+		// if the move failed, don't try the remove
+		return err
+	}
+	log.Printf("AddClusterNode succeeded")
+
+	// apply the remove, and if it succeeds, remove the node
+	// from the clusterMap to avoid spuriously doing this again.
+	_, err = d.store.RemoveClusterNode(ctx, &rfpb.RemoveClusterNodeRequest{
+		Range:  rsp.GetRange(),
+		NodeId: move.replica.nodeID,
+	})
+	if err == nil {
+		log.Printf("RemoveClusterNode succeeded")
+		d.clusterMap.RemoveNode(move.replica.nodeID)
+	}
+	return err
+}
+
+// modifyCluster applies `changes` to the cluster when possible.
+func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
+	// Splits are going to happen before anything else.
+	for rs, _ := range changes.overloadedReplicas {
+		rd, ok := state.managedRanges[rs.clusterID]
+		if !ok {
+			continue
+		}
+		_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+			Range: rd,
+		})
+		if err != nil {
+			log.Warningf("Error splitting cluster: %s", err)
+		} else {
+			log.Printf("Successfully split %+v", rs)
+		}
+		time.Sleep(10 * time.Second)
+		if err := d.updateState(ctx, state); err != nil {
+			return err
+		}
+	}
+
+	requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
+	for _, move := range requiredMoves {
+		log.Printf("Making required move: %+v", move)
+		if err := d.applyMove(ctx, move, state); err != nil {
+			log.Warningf("Error applying move: %s", err)
+		}
+		time.Sleep(10 * time.Second)
+		if err := d.updateState(ctx, state); err != nil {
+			return err
+		}
+	}
+
+	optionalMoves := d.makeMoveInstructions(changes.moveableReplicas)
+	currentFitScore := d.clusterMap.FitScore()
+	for _, move := range optionalMoves {
+		if d.clusterMap.FitScore(move) >= currentFitScore {
+			continue
+		}
+		log.Printf("Making optional move: %+v", move)
+		if err := d.applyMove(ctx, move, state); err != nil {
+			log.Warningf("Error applying move: %s", err)
+		}
+		time.Sleep(10 * time.Second)
+		if err := d.updateState(ctx, state); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (d *Driver) updateState(ctx context.Context, state *clusterState) error {
+	s, err := d.computeState(ctx)
+	if err == nil {
+		state = s
+	}
+	return err
+}
+
+func (d *Driver) manageClusters() error {
+	if ns := atomic.LoadInt64(&d.numSamples); ns < 10 {
+		return nil
+	}
+	ctx := context.Background()
+	state, err := d.computeState(ctx)
+	if err != nil {
+		return err
+	}
+	if len(state.myClusters) == 0 {
+		// If we don't manage any clusters, exit now.
+		return nil
+	}
+	log.Printf("state: %+v", state)
+	log.Printf("cluster map:\n%s", d.clusterMap.String())
+
+	changes := d.proposeChanges(state)
+	s := len(changes.overloadedReplicas) + len(changes.deadReplicas) + len(changes.moveableReplicas)
+	if s == 0 {
+		return nil
+	}
+
+	log.Printf("proposed changes: %+v", changes)
+	return d.modifyCluster(ctx, state, changes)
 }
