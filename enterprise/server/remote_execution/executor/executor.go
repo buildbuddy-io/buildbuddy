@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,8 +29,6 @@ import (
 	durationpb "github.com/golang/protobuf/ptypes/duration"
 	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -109,16 +106,6 @@ func diffTimestampsToProto(startPb, endPb *tspb.Timestamp) *durationpb.Duration 
 	return ptypes.DurationProto(diffTimestamps(startPb, endPb))
 }
 
-func logActionResult(taskID string, md *repb.ExecutedActionMetadata) {
-	workTime := diffTimestamps(md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
-	fetchTime := diffTimestamps(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
-	execTime := diffTimestamps(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
-	uploadTime := diffTimestamps(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
-	log.Debugf("%q completed action %q [work: %02dms, fetch: %02dms, exec: %02dms, upload: %02dms]",
-		md.GetWorker(), taskID, workTime.Milliseconds(), fetchTime.Milliseconds(),
-		execTime.Milliseconds(), uploadTime.Milliseconds())
-}
-
 func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
@@ -140,20 +127,33 @@ func parseTimeout(timeout *durationpb.Duration, maxDuration time.Duration) (time
 	return requestDuration, nil
 }
 
-func isBazelRetryableError(taskError error) bool {
-	if gstatus.Code(taskError) == gcodes.ResourceExhausted {
-		return true
-	}
-	if gstatus.Code(taskError) == gcodes.FailedPrecondition {
-		if len(gstatus.Convert(taskError).Details()) > 0 {
-			return true
-		}
-	}
-	return false
+// isTaskMisconfigured returns whether a task failed to execute because of a
+// configuration error that will prevent the action from executing properly,
+// even if retried.
+func isTaskMisconfigured(err error) bool {
+	return status.IsInvalidArgumentError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnauthenticatedError(err)
 }
 
-func shouldRetry(taskError error) bool {
-	return !isBazelRetryableError(taskError)
+func isClientBazel(task *repb.ExecutionTask) bool {
+	// TODO(bduffany): Find a more reliable way to determine this.
+	args := task.GetCommand().GetArguments()
+	return len(args) == 0 || args[0] != "./buildbuddy_ci_runner"
+}
+
+func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
+	// If the task is invalid / misconfigured, more attempts won't help.
+	if isTaskMisconfigured(taskError) {
+		return false
+	}
+	// If the task timed out, respect the timeout and don't keep retrying.
+	if status.IsDeadlineExceededError(taskError) {
+		return false
+	}
+	// Bazel has retry functionality built in, so if we know the client is Bazel,
+	// let Bazel retry it instead of us doing it.
+	return !isClientBazel(task)
 }
 
 func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
@@ -176,7 +176,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		if shouldRetry(finalErr) {
+		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
 		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
@@ -207,7 +207,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error creating runner for command: %s", err.Error()))
+		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
@@ -272,18 +272,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
-	// If we know that the command terminated due to receiving SIGKILL, make sure
-	// to retry, since this is not considered a clean termination.
-	//
-	// Other termination signals such as SIGABRT are treated as clean exits for
-	// now, since some tools intentionally raise SIGABRT to cause a fatal exit:
-	// https://github.com/bazelbuild/bazel/pull/14399
-	if cmdResult.Error == commandutil.ErrSIGKILL {
-		return finishWithErrFn(cmdResult.Error)
-	}
 	if cmdResult.Error != nil {
-		log.Warningf("Command execution returned non-retriable error: %s", cmdResult.Error)
+		log.Warningf("Command execution returned error: %s", cmdResult.Error)
 	}
+
+	// Note: we continue to upload outputs, stderr, etc. below even if
+	// cmdResult.Error is present, because these outputs are helpful
+	// for debugging.
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
@@ -340,9 +335,17 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		IoStats:                ioStats,
 		ExecutedActionMetadata: md,
 	}
+
+	// If there's an error that we know the client won't retry, return an error
+	// so that the scheduler can retry it.
+	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
+		return finishWithErrFn(cmdResult.Error)
+	}
+	// Otherwise, send the error back to the client via the ExecuteResponse
+	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {
-		logActionResult(taskID, md)
-		return finishWithErrFn(err) // CHECK (these errors should not happen).
+		log.Errorf("Failed to publish ExecuteResponse: %s", err)
+		return finishWithErrFn(err)
 	}
 	if cmdResult.Error == nil {
 		finishedCleanly = true

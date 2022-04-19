@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +37,10 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	maxSchedulerAttempts = 5
 )
 
 func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
@@ -150,11 +156,10 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 			InvocationID:  invocationID,
 		},
 	)
-	err := cmd.MustFail()
+	res := cmd.MustTerminateAbnormally()
 
-	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got: %s", err)
-	ar, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
-	require.NoError(t, err)
+	require.True(t, status.IsDeadlineExceededError(res.Err), "expected DeadlineExceeded, got: %s", res.Err)
+	ar := res.ActionResult
 	assert.Less(t, ar.GetExitCode(), int32(0), "expecting exit code < 0 since command did not exit normally")
 	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, ar, "")
 	require.NoError(t, err)
@@ -162,6 +167,11 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(t, "ExampleStderr\n", stderr, "stderr should be propagated")
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
+	ar, err = rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
+	require.NoError(t, err)
+	assert.True(
+		t, proto.Equal(res.ActionResult, ar),
+		"failed action result should match what was sent in the ExecuteResponse")
 }
 
 func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
@@ -171,7 +181,8 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
 	cmd := rbe.ExecuteCustomCommand("/COMMAND_THAT_DOES_NOT_EXIST")
-	err := cmd.MustFail()
+	res := cmd.MustTerminateAbnormally()
+	err := res.Err
 
 	require.Error(t, err)
 	assert.True(t, status.IsFailedPreconditionError(err))
@@ -180,24 +191,65 @@ func TestSimpleCommand_CommandNotFound_FailedPrecondition(t *testing.T) {
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
-func TestSimpleCommand_Abort_ReturnsExecutionErrorWithoutRetrying(t *testing.T) {
+func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor()
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 
-	cmd := rbe.ExecuteCustomCommand("sh", "-c", "kill -ABRT $$")
-	// TODO(bduffany): Expect a failed ActionResult here rather than a
-	// RESOURCE_EXHAUSTED error, since some tools use abort() as a normal
-	// exit condition.
-	err := cmd.MustFail()
+	cmd := rbe.ExecuteCustomCommand("sh", "-c", `
+		echo >&2 "Debug message to help diagnose abort()"
+		kill -ABRT $$
+	`)
+	res := cmd.MustTerminateAbnormally()
+	err := res.Err
 
-	assert.True(
-		t, status.IsResourceExhaustedError(err),
-		"expecting RESOURCE_EXHAUSTED but got: %s", err)
+	// TODO(bduffany): Aborted probably makes a bit more sense here
+	assert.True(t, status.IsResourceExhaustedError(err), "expecting ResourceExhausted error but got: %s", err)
 	assert.Contains(t, err.Error(), "signal: aborted")
+	assert.Equal(t, "Debug message to help diagnose abort()\n", res.Stderr)
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	// The executor thinks this is a Bazel task, so will let bazel retry.
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
+}
+
+func TestWorkflowCommand_InternalError_RetriedByScheduler(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	errResult := commandutil.ErrorResult(status.InternalError("test error message"))
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
+		RunInterceptor: rbetest.AlwaysReturn(errResult),
+	})
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+
+	// Args here don't matter since we stub out the result, but the CI runner
+	// command identifies this as a CI runner task.
+	cmd := rbe.ExecuteCustomCommand("./buildbuddy_ci_runner", "...")
+	err := cmd.MustFailAfterSchedulerRetry()
+
+	require.True(t, status.IsInternalError(err), "expected Internal error, got: %s", err)
+	require.Contains(t, err.Error(), "test error message")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, maxSchedulerAttempts, int(taskCount-initialTaskCount), "scheduler should have retried the task")
+}
+
+func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
+	rbe.AddExecutorWithOptions(&rbetest.ExecutorOptions{
+		RunInterceptor: rbetest.AlwaysReturn(errResult),
+	})
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+
+	// Args here don't matter since we stub out the result, but the CI runner
+	// command identifies this as a CI runner task.
+	cmd := rbe.ExecuteCustomCommand("./buildbuddy_ci_runner", "...")
+	err := cmd.MustFailAfterSchedulerRetry()
+
+	require.Contains(t, err.Error(), "command was terminated by SIGKILL, likely due to executor shutdown or OOM")
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, maxSchedulerAttempts, int(taskCount-initialTaskCount), "scheduler should have retried the task")
 }
 
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
@@ -504,7 +556,7 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 		OutputDirectories: []string{"output_dir"},
 		OutputFiles:       []string{"output.txt"},
 	}, opts)
-	err := cmd.MustFail()
+	err := cmd.MustFailToStart()
 
 	require.Contains(t, err.Error(), `No registered executors in pool "foo"`)
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
@@ -1082,14 +1134,13 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 		Arguments: []string{"echo"},
 		Platform:  platform,
 	}, &rbetest.ExecuteOpts{SimulateMissingDigest: true})
-	err := cmd.MustFail()
+	err := cmd.MustFailToStart()
 
-	require.Contains(t, err.Error(), "already attempted")
 	require.Contains(t, err.Error(), "not found in cache")
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
-	// NotFound errors can be retried in case of a transient issue with the
-	// cache backend.
-	assert.Equal(t, 5, int(taskCount-initialTaskCount), "unexpected number of tasks started")
+	// NotFound errors should not be retried by the scheduler, since this test
+	// is simulating a bazel task, and bazel will retry on its own.
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 }
 
 func TestRedisRestart(t *testing.T) {
@@ -1200,8 +1251,7 @@ func TestInvocationCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify that command cancellation was reported.
-	err = cmd1.MustFail()
-	require.True(t, status.IsCanceledError(err))
+	cmd1.MustBeCancelled()
 
 	// Also verify that the action itself was terminated.
 	cmd1.WaitDisconnected()

@@ -252,7 +252,7 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 			return exitCode, status.DeadlineExceededErrorf("Command timed out: %s", err.Error())
 		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
-		return exitCode, status.ResourceExhaustedErrorf("Command `%s` was killed: %s", cmd.String(), err.Error())
+		return exitCode, status.ResourceExhaustedErrorf("Command was killed: %s", err.Error())
 	}
 
 	return exitCode, nil

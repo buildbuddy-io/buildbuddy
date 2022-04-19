@@ -7,9 +7,10 @@ go_test(
     data = [
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
-    shard_count = 4,
+    shard_count = 32,
     deps = [
         "//enterprise/server/build_event_publisher",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/buildbuddy_enterprise",
@@ -28,6 +29,7 @@ go_test(
         "//server/util/bazel",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

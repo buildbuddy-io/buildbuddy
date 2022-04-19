@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auth",
-        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/operation",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
@@ -27,7 +26,5 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_bazel_rules_go//proto/wkt:duration_go_proto",
         "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )
