@@ -228,6 +228,11 @@ func (r *redlock) Unlock(ctx context.Context) error {
 	return err
 }
 
+type valueExpiration struct {
+	value      interface{}
+	expiration time.Duration
+}
+
 // CommandBuffer buffers and aggregates Redis commands in-memory and allows
 // periodically flushing the aggregate results in batch. This is useful for
 // reducing the load placed on Redis in cases where a high volume of commands
@@ -256,6 +261,8 @@ type CommandBuffer struct {
 	stopFlush chan struct{}
 
 	mu sync.Mutex // protects all fields below
+	// Buffer for SET commands.
+	set map[string]valueExpiration
 	// Buffer for INCRBY commands.
 	incr map[string]int64
 	// Buffer for HINCRBY commands.
@@ -276,6 +283,7 @@ func NewCommandBuffer(rdb redis.UniversalClient) *CommandBuffer {
 }
 
 func (c *CommandBuffer) init() {
+	c.set = map[string]valueExpiration{}
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
 	c.sadd = map[string]map[interface{}]struct{}{}
@@ -322,6 +330,23 @@ func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, incremen
 		c.hincr[key] = h
 	}
 	h[field] += increment
+	return nil
+}
+
+// Set adds a SET operation to the buffer.
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	c.mu.Lock()
+	if c.shouldFlushSynchronously() {
+		c.mu.Unlock()
+		return c.rdb.Set(ctx, key, value, expiration).Err()
+	}
+	defer c.mu.Unlock()
+
+	c.set[key] = valueExpiration{value, expiration}
 	return nil
 }
 
@@ -387,6 +412,7 @@ func (c *CommandBuffer) Expire(ctx context.Context, key string, duration time.Du
 // is dropped from the buffer.
 func (c *CommandBuffer) Flush(ctx context.Context) error {
 	c.mu.Lock()
+	set := c.set
 	incr := c.incr
 	hincr := c.hincr
 	sadd := c.sadd
@@ -398,6 +424,9 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 
 	pipe := c.rdb.Pipeline()
 
+	for key, args := range set {
+		pipe.Set(ctx, key, args.value, args.expiration)
+	}
 	for key, increment := range incr {
 		pipe.IncrBy(ctx, key, increment)
 	}
@@ -408,7 +437,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	}
 	for key, set := range sadd {
 		members := []interface{}{}
-		for member, _ := range set {
+		for member := range set {
 			members = append(members, member)
 		}
 		pipe.SAdd(ctx, key, members...)
