@@ -2,6 +2,12 @@ syntax = "proto3";
 
 package cache;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "proto/context.proto";
+import "proto/remote_execution.proto";
+
 // Next Tag: 14
 message CacheStats {
   // Server-side Action-cache stats.
@@ -30,11 +36,88 @@ message CacheStats {
   int64 total_cached_action_exec_usec = 11;
 }
 
+// Request to retrieve detailed per-request cache stats.
+message GetCacheScoreCardRequest {
+  // The request context, including the page token from the previous response.
+  context.RequestContext request_context = 1;
+
+  // The invocation ID for which to look up cache stats.
+  string invocation_id = 2;
+
+  // A page token returned from the previous response, or an empty string
+  // initially.
+  string page_token = 3;
+}
+
+message GetCacheScoreCardResponse {
+  // The response context, including the next_page_token.
+  context.ResponseContext response_context = 1;
+
+  // The cache results for the current page.
+  repeated ScoreCard.Result results = 2;
+
+  // An opaque token that can be included in a subsequent request to fetch more
+  // results from the server. If empty, there are no more results available.
+  string next_page_token = 3;
+}
+
+// CacheType represents the type of cache being written to.
+enum CacheType {
+  UNKNOWN_CACHE_TYPE = 0;
+  // Content addressable storage (CAS) cache.
+  CAS = 1;
+  // Action cache (AC).
+  AC = 2;
+}
+
+// RequestType represents the type of cache request being performed: read or
+// write.
+enum RequestType {
+  UNKNOWN_REQUEST_TYPE = 0;
+  // Cache read.
+  READ = 1;
+  // Cache write.
+  WRITE = 2;
+}
+
 message ScoreCard {
+  // Result holds details about the result of a single cache request.
   message Result {
+    // The short action name of the action relevant to the transfer,
+    // such as "GoCompile".
     string action_mnemonic = 1;
+
+    // The Bazel target label relevant to the transfer, such as "//foo:bar".
     string target_id = 2;
+
+    // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
+
+    // The type of cache relevant to this result.
+    CacheType cache_type = 4;
+
+    // The type of cache request described by this result (read or write).
+    RequestType request_type = 5;
+
+    // Response status of the cache request. For example, a cache miss is
+    // represented by a READ request_type with a NotFound status code.
+    google.rpc.Status status = 6;
+
+    // The digest of the requested contents.
+    build.bazel.remote.execution.v2.Digest digest = 7;
+
+    // The timestamp at which the server received the request from the client.
+    google.protobuf.Timestamp start_time = 8;
+
+    // The time needed for the transfer to complete, starting from start_time.
+    google.protobuf.Duration duration = 9;
+
+    // Whether the transferred payload was compressed.
+    bool compressed = 10;
+
+    // The compressed size of the transferred payload. Should be ignored if
+    // `compressed` is false.
+    int64 compressed_size_bytes = 11;
   }
 
   // In the interest of saving space, we only show cache misses.

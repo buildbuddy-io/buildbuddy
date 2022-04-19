@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// This package contains internal pagination protos for use on the server. It is
+// not intended for client usage, and clients should not assume any relationship
+// between these protos and page tokens returned by the server.
+package pagination;
+
+// OffsetLimit represents an offset into a collection of results along with a
+// maximum number of results to return starting at the offset.
+message OffsetLimit {
+  // The offset into the ordered list of results from the original request.
+  int64 offset = 1;
+
+  // The maximum number of results to return, starting at the offset.
+  int64 limit = 2;
+}
