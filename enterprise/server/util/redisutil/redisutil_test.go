@@ -19,6 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	// noExpiration is a duration constant used to indicate to redis that a value
+	// should not expire.
+	noExpiration time.Duration = 0
+)
+
 func genOptions(scheme, user, password, addr, database string) *redis.Options {
 	if scheme != "redis" && scheme != "rediss" && scheme != "unix" {
 		return nil
@@ -282,7 +288,14 @@ func TestCommandBuffer(t *testing.T) {
 
 	buf := redisutil.NewCommandBuffer(rdb)
 
-	err := buf.HIncrBy(ctx, "hash1", "h1_field1", 1)
+	err := buf.Set(ctx, "key1", "val1", noExpiration)
+	require.NoError(t, err)
+	err = buf.Set(ctx, "key1", "val1_override", noExpiration)
+	require.NoError(t, err)
+	err = buf.Set(ctx, "key2", "val2", noExpiration)
+	require.NoError(t, err)
+
+	err = buf.HIncrBy(ctx, "hash1", "h1_field1", 1)
 	require.NoError(t, err)
 	err = buf.HIncrBy(ctx, "hash1", "h1_field1", 10)
 	require.NoError(t, err)
@@ -313,13 +326,23 @@ func TestCommandBuffer(t *testing.T) {
 	// Now add 2 EXPIRE commands to the buffer: the first key should expire
 	// immediately but the second should expire long after the test completes.
 	err = buf.Expire(ctx, "expiring1", 0)
+	require.NoError(t, err)
 	err = buf.Expire(ctx, "expiring2", 24*time.Hour)
+	require.NoError(t, err)
 
 	// Flush all buffered values.
 	err = buf.Flush(ctx)
 	require.NoError(t, err)
 
 	// Assert Redis has the values we're expecting.
+
+	val1, err := rdb.Get(ctx, "key1").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "val1_override", val1)
+	val2, err := rdb.Get(ctx, "key2").Result()
+	require.NoError(t, err)
+	assert.Equal(t, "val2", val2)
+
 	h1, err := rdb.HGetAll(ctx, "hash1").Result()
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
