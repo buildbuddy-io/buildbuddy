@@ -143,12 +143,8 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = runPodman(ctx, "run", nil, nil, podmanRunArgs...)
-	if isStorageCorrupted(result) {
-		result.Error = status.UnavailableError("podman run failed because of storage corruption")
-		err = removeImage(ctx, c.image)
-		if err != nil {
-			log.Warningf("Failed to remove corrupted image: %s", err)
-		}
+	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
+		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
 		err = killContainerIfRunning(ctx, containerName)
@@ -170,15 +166,12 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := runPodman(ctx, "create", nil, nil, podmanRunArgs...)
+	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
+		log.Warningf("Failed to remove corrupted image: %s", err)
+	}
+
 	if err = createResult.Error; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
-	}
-	if isStorageCorrupted(createResult) {
-		createResult.Error = status.UnavailableError("podman create failed because of storage corruption")
-		err = removeImage(ctx, c.image)
-		if err != nil {
-			log.Warningf("Failed to remove corrupted image: %s", err)
-		}
 	}
 
 	startResult := runPodman(ctx, "start", nil, nil, c.name)
@@ -304,14 +297,18 @@ func killContainerIfRunning(ctx context.Context, containerName string) error {
 	return status.UnknownErrorf("podman kill failed: %s", string(result.Stderr))
 }
 
-// Check if the podman run command hit a warning indicating a storage corruption
-// More details can be found at
-// https://github.com/containers/storage/issues/1136
-func isStorageCorrupted(result *interfaces.CommandResult) bool {
+// An image can be corrupted if "podman pull" command is killed when pulling a parent layer.
+// More details can be found at https://github.com/containers/storage/issues/1136. When this
+// happens when need to remove the image before re-pulling the image in order to fix it.
+func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context, result *interfaces.CommandResult) error {
 	if result.ExitCode != podmanInternalExitCode {
-		return false
+		return nil
 	}
-	return storageErrorRegex.MatchString(string(result.Stderr))
+	if !storageErrorRegex.MatchString(string(result.Stderr)) {
+		return nil
+	}
+	result.Error = status.UnavailableError("a storage corruption occurred for podman")
+	return removeImage(ctx, c.image)
 }
 
 func removeImage(ctx context.Context, imageName string) error {
