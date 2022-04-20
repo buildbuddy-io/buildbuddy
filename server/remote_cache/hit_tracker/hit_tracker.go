@@ -66,6 +66,10 @@ const (
 	// New counter types go here!
 )
 
+func DetailedStatsEnabled() bool {
+	return *detailedStatsEnabled
+}
+
 func cacheTypePrefix(actionCache bool, name string) string {
 	if actionCache {
 		return "action-cache-" + name

@@ -843,7 +843,7 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 }
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	return build_event_handler.GetCacheScoreCard(ctx, s.env, req)
 }
 
 type bsLookup struct {
