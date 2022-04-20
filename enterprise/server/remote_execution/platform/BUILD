@@ -6,8 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/auth",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/interfaces",
+        "//server/util/bazel_request",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",

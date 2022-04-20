@@ -303,9 +303,20 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Jwt = jwt
 	}
 
-	platformPropOverrides := platform.RemoteHeaderOverrides(ctx)
-	if len(platformPropOverrides) > 0 {
-		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
+	overrides := make([]*repb.Platform_Property, 0)
+	if headerOverrides := platform.RemoteHeaderOverrides(ctx); len(headerOverrides) > 0 {
+		overrides = append(overrides, headerOverrides...)
+	}
+	internalOverrides, err := platform.InternalOverrides(ctx, s.env)
+	if err != nil {
+		log.Warningf("Internal overrides error: %s", err)
+	} else {
+		if len(internalOverrides) > 0 {
+			overrides = append(overrides, internalOverrides...)
+		}
+	}
+	if len(overrides) > 0 {
+		executionTask.PlatformOverrides = &repb.Platform{Properties: overrides}
 	}
 
 	executionTask.QueuedTimestamp = ptypes.TimestampNow()

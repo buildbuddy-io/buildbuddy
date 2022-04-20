@@ -8,7 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -192,6 +195,55 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
 	}
+}
+
+func MakeInternalOverrideKey(groupID, actionMnemonic, targetID string) string {
+	return fmt.Sprintf("platform-override/%s-%s(%s)", groupID, actionMnemonic, targetID)
+}
+
+func InternalOverrides(ctx context.Context, env environment.Env) ([]*repb.Platform_Property, error) {
+	rdb := env.GetRemoteExecutionRedisClient()
+	if rdb == nil {
+		return nil, status.InternalError("cannot lookup internal overrides: remote exec redis client not found")
+	}
+	rmd := bazel_request.GetRequestMetadata(ctx)
+	if rmd == nil {
+		return nil, status.FailedPreconditionError("no request metadata found")
+	}
+	groupID := interfaces.AuthAnonymousUser
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		groupID = u.GetGroupID()
+	}
+	if rmd.GetActionMnemonic() == "" || rmd.GetTargetId() == "" {
+		return nil, status.FailedPreconditionError("action_mnemonic or target_id were blank")
+	}
+	key := MakeInternalOverrideKey(groupID, rmd.GetActionMnemonic(), rmd.GetTargetId())
+	buf, err := rdb.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	props := []*repb.Platform_Property{}
+	pairs := strings.Split(string(buf), ",")
+	for _, pair := range pairs {
+		pieces := strings.Split(pair, "=")
+		if len(pieces) != 2 {
+			log.Warningf("Malformed internal override pair: %q", pair)
+			continue
+		}
+		headerName := pieces[0]
+		if !strings.HasPrefix(headerName, overrideHeaderPrefix) {
+			log.Warningf("Skipping internal override value: %q", headerName)
+			continue
+		}
+		propName := strings.TrimPrefix(headerName, overrideHeaderPrefix)
+		props = append(props, &repb.Platform_Property{
+			Name:  propName,
+			Value: pieces[1],
+		})
+		log.Debugf("Found internal override for %q: %s", key, pair)
+	}
+	return props, nil
 }
 
 // RemoteHeaderOverrides returns the platform properties that should override
