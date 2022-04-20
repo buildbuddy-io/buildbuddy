@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/golang/protobuf/jsonpb"
@@ -169,6 +170,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		UserManagementEnabled:         *userManagementEnabled,
 		ForceUserOwnedDarwinExecutors: forceUserOwnedDarwinExecutors,
 		TestGridV2Enabled:             *testGridV2Enabled,
+		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
 	}
 
 	configJSON := &bytes.Buffer{}

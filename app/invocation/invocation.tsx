@@ -32,6 +32,8 @@ import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
 import { eventlog } from "../../proto/eventlog_ts_proto";
+import capabilities from "../capabilities/capabilities";
+import CacheRequestsCardComponent from "./cache_requests_card";
 
 interface State {
   loading: boolean;
@@ -299,9 +301,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
             <CacheCardComponent model={this.state.model} />
           )}
-          {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
-            <ScorecardCardComponent model={this.state.model} />
-          )}
+          {isBazelInvocation &&
+            (activeTab === "all" || activeTab == "cache") &&
+            !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
+          {isBazelInvocation &&
+            (activeTab === "all" || activeTab == "cache") &&
+            capabilities.config.detailedCacheStatsEnabled && <CacheRequestsCardComponent model={this.state.model} />}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent

@@ -15,6 +15,7 @@ ts_library(
         "//app/components/dialog",
         "//app/components/digest",
         "//app/components/input",
+        "//app/components/link",
         "//app/components/menu",
         "//app/components/modal",
         "//app/components/popup",
