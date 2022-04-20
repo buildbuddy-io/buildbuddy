@@ -88,7 +88,7 @@ func (c *collector) SetAdd(ctx context.Context, key string, members ...string) e
 	return c.SetAddWithExpiry(ctx, key, countExpiration, members...)
 }
 
-func (c *collector) SetMembers(ctx context.Context, key string) ([]string, error) {
+func (c *collector) SetGetMembers(ctx context.Context, key string) ([]string, error) {
 	return c.rdb.SMembers(ctx, key).Result()
 }
 

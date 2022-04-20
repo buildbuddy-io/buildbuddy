@@ -110,7 +110,7 @@ func (m *MemoryMetricsCollector) SetAddWithExpiry(ctx context.Context, key strin
 	return m.SetAdd(ctx, key, members...)
 }
 
-func (m *MemoryMetricsCollector) SetMembers(ctx context.Context, key string) ([]string, error) {
+func (m *MemoryMetricsCollector) SetGetMembers(ctx context.Context, key string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
