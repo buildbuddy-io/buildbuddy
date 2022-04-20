@@ -471,6 +471,12 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "pagination_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/pagination",
+    proto = ":pagination_proto",
+)
+
+go_proto_library(
     name = "publish_build_event_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event",
