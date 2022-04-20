@@ -147,7 +147,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
-		err = killContainerIfRunning(ctx, containerName)
+		err = c.killContainerIfRunning(ctx)
 	}
 	if err != nil {
 		log.Warningf("Failed to shut down docker container: %s\n", err.Error())
@@ -174,8 +174,18 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		return status.UnavailableErrorf("failed to create container: %s", err)
 	}
 
+	if createResult.ExitCode != 0 {
+		return status.UnknownErrorf("podman create failed: exit code %d, stderr: %s", createResult.ExitCode, createResult.Stderr)
+	}
+
 	startResult := runPodman(ctx, "start", nil, nil, c.name)
-	return startResult.Error
+	if startResult.Error != nil {
+		return startResult.Error
+	}
+	if startResult.ExitCode != 0 {
+		return status.UnknownErrorf("podman start failed: exit code %d, stderr: %s", startResult.ExitCode, startResult.Stderr)
+	}
+	return nil
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
@@ -239,6 +249,9 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
+	if pullResult.ExitCode != 0 {
+		return status.UnknownErrorf("podman pull failed: exit code %d, stderr: %s", pullResult.ExitCode, string(pullResult.Stderr))
+	}
 	return nil
 }
 
@@ -247,17 +260,32 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	res := runPodman(ctx, "kill", nil /*=stdin*/, nil /*=stdout*/, "--signal=KILL", c.name)
-	return res.Error
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.ExitCode == 0 || strings.Contains(string(res.Stderr), "no such container") {
+		return nil
+	}
+	return status.UnknownErrorf("podman remove failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
 }
 
 func (c *podmanCommandContainer) Pause(ctx context.Context) error {
 	res := runPodman(ctx, "pause", nil /*=stdin*/, nil /*=stdout*/, c.name)
-	return res.Error
+	if res.ExitCode != 0 {
+		return status.UnknownErrorf("podman pause failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
+	}
+	return nil
 }
 
 func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 	res := runPodman(ctx, "unpause", nil /*=stdin*/, nil /*=stdout*/, c.name)
-	return res.Error
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.ExitCode != 0 {
+		return status.UnknownErrorf("podman unpause failed: exit code %d, stderr: %s", res.ExitCode, string(res.Stderr))
+	}
+	return nil
 }
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
@@ -283,18 +311,11 @@ func generateContainerName() (string, error) {
 	return "buildbuddy_exec_" + suffix, nil
 }
 
-func killContainerIfRunning(ctx context.Context, containerName string) error {
+func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) error {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
 	defer cancel()
 
-	result := runPodman(ctx, "kill", nil, nil, containerName)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.ExitCode == 0 || strings.Contains(string(result.Stderr), "No such container: "+containerName) {
-		return nil
-	}
-	return status.UnknownErrorf("podman kill failed: %s", string(result.Stderr))
+	return c.Remove(ctx)
 }
 
 // An image can be corrupted if "podman pull" command is killed when pulling a parent layer.
