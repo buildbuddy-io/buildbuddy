@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,16 +24,17 @@ import (
 )
 
 var (
-	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
-	// process is killed due to the parent container being removed.
-	podmanExecSIGKILLExitCode = 137
-
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
+
+	storageErrorRegex = regexp.MustCompile(`(?s)A storage corruption might have occurred.*Error: readlink.*no such file or directory`)
 )
 
 const (
 	podmanInternalExitCode = 125
+	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
+	// process is killed due to the parent container being removed.
+	podmanExecSIGKILLExitCode = 137
 )
 
 type PodmanOptions struct {
@@ -141,6 +143,13 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = runPodman(ctx, "run", nil, nil, podmanRunArgs...)
+	if isStorageCorrupted(result) {
+		result.Error = status.UnavailableError("podman run failed because of storage corruption")
+		err = removeImage(ctx, c.image)
+		if err != nil {
+			log.Warningf("Failed to remove corrupted image: %s", err)
+		}
+	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
 		err = killContainerIfRunning(ctx, containerName)
 	}
@@ -163,6 +172,13 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	createResult := runPodman(ctx, "create", nil, nil, podmanRunArgs...)
 	if err = createResult.Error; err != nil {
 		return status.UnavailableErrorf("failed to create container: %s", err)
+	}
+	if isStorageCorrupted(createResult) {
+		createResult.Error = status.UnavailableError("podman create failed because of storage corruption")
+		err = removeImage(ctx, c.image)
+		if err != nil {
+			log.Warningf("Failed to remove corrupted image: %s", err)
+		}
 	}
 
 	startResult := runPodman(ctx, "start", nil, nil, c.name)
@@ -286,4 +302,28 @@ func killContainerIfRunning(ctx context.Context, containerName string) error {
 		return nil
 	}
 	return status.UnknownErrorf("podman kill failed: %s", string(result.Stderr))
+}
+
+// Check if the podman run command hit a warning indicating a storage corruption
+// More details can be found at
+// https://github.com/containers/storage/issues/1136
+func isStorageCorrupted(result *interfaces.CommandResult) bool {
+	if result.ExitCode != podmanInternalExitCode {
+		return false
+	}
+	return storageErrorRegex.MatchString(string(result.Stderr))
+}
+
+func removeImage(ctx context.Context, imageName string) error {
+	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
+	defer cancel()
+
+	result := runPodman(ctx, "rmi", nil, nil, imageName)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.ExitCode == 0 || strings.Contains(string(result.Stderr), "image not known") {
+		return nil
+	}
+	return status.UnknownErrorf("podman rmi failed: %s", string(result.Stderr))
 }
