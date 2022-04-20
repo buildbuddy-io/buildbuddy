@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "redis_metrics_collector",
@@ -12,5 +12,17 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//server/environment",
         "@com_github_go_redis_redis_v8//:redis",
+    ],
+)
+
+go_test(
+    name = "redis_metrics_collector_test",
+    srcs = ["redis_metrics_collector_test.go"],
+    deps = [
+        ":redis_metrics_collector",
+        "//enterprise/server/testutil/testredis",
+        "//enterprise/server/util/redisutil",
+        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_stretchr_testify//require",
     ],
 )
