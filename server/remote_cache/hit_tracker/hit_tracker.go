@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/golang/protobuf/ptypes"
-	"github.com/matoous/go-nanoid/v2"
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -220,12 +220,12 @@ func (h *HitTracker) TrackEmptyHit() error {
 }
 
 func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, startTime time.Time, duration time.Duration) error {
-	rid, err := gonanoid.New()
+	rid, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 
-	if err := h.c.SetAdd(h.ctx, resultIDsKey(h.iid), rid); err != nil {
+	if err := h.c.SetAdd(h.ctx, resultIDsKey(h.iid), rid.String()); err != nil {
 		return err
 	}
 
@@ -266,7 +266,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, sta
 	if err != nil {
 		return err
 	}
-	return h.c.Set(h.ctx, rid, string(b), 0)
+	return h.c.Set(h.ctx, rid.String(), string(b), 0)
 }
 
 func cacheEventTypeLabel(c counterType) string {
@@ -475,7 +475,7 @@ func readResults(ctx context.Context, env environment.Env, iid string) *capb.Sco
 
 	resultIDs, err := c.SetGetMembers(ctx, resultIDsKey(iid))
 	if err != nil {
-		log.Warningf("Failed to read detailed scorecard: %s", err)
+		log.Warningf("Failed to read detailed scorecard for invocation %s: %s", iid, err)
 		return sc
 	}
 	// TODO(bduffany): remove this limit
@@ -487,7 +487,7 @@ func readResults(ctx context.Context, env environment.Env, iid string) *capb.Sco
 
 	serializedResults, err := c.GetAll(ctx, resultIDs...)
 	if err != nil {
-		log.Warningf("Failed to read cache scorecard: %s", err)
+		log.Warningf("Failed to read cache scorecard for invocation %s: %s", iid, err)
 		return sc
 	}
 
@@ -512,7 +512,7 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 
 	counts, err := c.ReadCounts(ctx, counterKey(iid))
 	if err != nil {
-		log.Warningf("Failed to collect cache stats: %s", err)
+		log.Warningf("Failed to collect cache stats for invocation %s: %s", iid, err)
 		return cs
 	}
 	if counts == nil {
@@ -547,6 +547,6 @@ func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 	}
 
 	if err := c.Delete(ctx, counterKey(iid)); err != nil {
-		log.Warningf("Failed to clean up cache stats: %s", err)
+		log.Warningf("Failed to clean up cache stats for invocation %s: %s", iid, err)
 	}
 }

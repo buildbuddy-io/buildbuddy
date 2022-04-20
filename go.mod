@@ -56,7 +56,6 @@ require (
 	github.com/lestrrat-go/jwx v1.2.11
 	github.com/lni/dragonboat/v3 v3.3.4
 	github.com/logrusorgru/aurora v2.0.3+incompatible
-	github.com/matoous/go-nanoid/v2 v2.0.0
 	github.com/mattn/go-shellwords v1.0.11
 	github.com/mattn/go-sqlite3 v1.14.11
 	github.com/mdlayher/vsock v0.0.0-20210303205602-10d591861736
