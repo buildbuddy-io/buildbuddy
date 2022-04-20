@@ -308,6 +308,7 @@ func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context
 		return nil
 	}
 	result.Error = status.UnavailableError("a storage corruption occurred for podman")
+	result.ExitCode = commandutil.NoExitCode
 	return removeImage(ctx, c.image)
 }
 
