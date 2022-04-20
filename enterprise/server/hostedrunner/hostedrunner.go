@@ -162,12 +162,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
-	pool := platform.DefaultPoolValue
 	// Hosted Bazel shares the same pool with workflows.
-	if cfg := r.env.GetConfigurator().GetRemoteExecutionConfig(); cfg != nil && cfg.WorkflowsPoolName != "" {
-		pool = cfg.WorkflowsPoolName
-	}
-
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "BUILDBUDDY_API_KEY", Value: apiKey},
@@ -180,7 +175,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		Arguments: args,
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: pool},
+				{Name: "Pool", Value: r.env.GetWorkflowService().WorkflowsPoolName()},
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: RunnerContainerImage},
 				{Name: "recycle-runner", Value: "true"},
