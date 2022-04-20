@@ -368,6 +368,9 @@ type WorkflowService interface {
 	// GetLinkedWorkflows returns any workflows linked with the given repo access
 	// token.
 	GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error)
+
+	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
+	WorkflowsPoolName() string
 }
 
 type RunnerService interface {

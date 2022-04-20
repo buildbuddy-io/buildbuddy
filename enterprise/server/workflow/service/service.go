@@ -684,7 +684,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				{Name: "Pool", Value: ws.workflowsPoolName()},
+				{Name: "Pool", Value: ws.WorkflowsPoolName()},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
 				{Name: "workload-isolation-type", Value: isolationType},
@@ -715,7 +715,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	return actionDigest, err
 }
 
-func (ws *workflowService) workflowsPoolName() string {
+func (ws *workflowService) WorkflowsPoolName() string {
 	if remote_execution_config.RemoteExecutionEnabled() && *workflowsPoolName != "" {
 		return *workflowsPoolName
 	}
