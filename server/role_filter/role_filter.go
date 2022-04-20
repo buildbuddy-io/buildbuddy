@@ -27,6 +27,7 @@ var (
 		// done purely using perms bits attached to each row.
 		"GetInvocation",
 		"GetEventLogChunk",
+		"GetCacheScoreCard",
 		"GetTarget",
 		"GetExecution",
 		// Users do not need any particular role within their current group to be

@@ -81,7 +81,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 
 	env.GetConfigurator().ReconcileFlagsAndConfig()
 
-	env.AddExecutors(10)
+	env.AddExecutors(t, 10)
 	return env, workflowService
 }
 
@@ -201,7 +201,6 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 		SHA:           commitSHA,
 		TargetRepoURL: repoURL,
 		TargetBranch:  "master",
-		IsTrusted:     true,
 	}
 
 	req, err := http.NewRequest("POST", createResp.GetWebhookUrl(), nil /*=body*/)

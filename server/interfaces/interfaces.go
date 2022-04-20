@@ -403,6 +403,10 @@ type GitProvider interface {
 	// status.NotFoundError if the file does not exist.
 	GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error)
 
+	// IsTrusted returns whether the given user is a trusted collaborator on the
+	// repository.
+	IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error)
+
 	// TODO(bduffany): CreateStatus, ListRepos
 }
 
@@ -442,11 +446,15 @@ type WebhookData struct {
 	// the git provider.
 	IsTargetRepoPublic bool
 
-	// IsTrusted returns whether the committed code came from a trusted actor.
-	// For example, this will be true for members of the organization that owns
-	// the repo, and false for forked repositories sending pull requests to the
-	// repo.
-	IsTrusted bool
+	// PullRequestAuthor is the user name of the author of the pull request,
+	// if applicable.
+	// Ex: "externaldev123"
+	PullRequestAuthor string
+
+	// PullRequestApprover is the user name of a user that approved the pull
+	// request, if applicable.
+	// Ex: "acmedev123"
+	PullRequestApprover string
 }
 
 type SplashPrinter interface {
@@ -575,6 +583,9 @@ type RunnerPool interface {
 
 	// Shutdown removes all runners from the pool.
 	Shutdown(ctx context.Context) error
+
+	// Returns the build root directory for this pool.
+	GetBuildRoot() string
 }
 
 // CommandResult captures the output and details of an executed command.

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -55,6 +56,8 @@ import (
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	gstatus "google.golang.org/grpc/status"
 )
+
+var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -370,7 +373,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
-		mountWorkspaceFile: env.GetConfigurator().GetExecutorConfig().FirecrackerMountWorkspaceFile,
+		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 	}
 
 	if err := c.newID(); err != nil {

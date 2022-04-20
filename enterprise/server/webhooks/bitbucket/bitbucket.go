@@ -56,10 +56,7 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			PushedBranch:  branch,
 			TargetRepoURL: v["Repository.Links.HTML.Href"],
 			TargetBranch:  branch,
-			// The push handler will not receive events from forked repositories,
-			// so if a commit was pushed to this repo then it is trusted.
-			IsTrusted: true,
-			SHA:       v["Push.Changes.0.New.Target.Hash"],
+			SHA:           v["Push.Changes.0.New.Target.Hash"],
 		}, nil
 	case "pullrequest:created", "pullrequest:updated":
 		payload := &PullRequestEventPayload{}
@@ -79,7 +76,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 		if err != nil {
 			return nil, err
 		}
-		isFork := v["PullRequest.Source.Repository.UUID"] != v["PullRequest.Destination.Repository.UUID"]
 		return &interfaces.WebhookData{
 			EventName:     webhook_data.EventName.PullRequest,
 			PushedRepoURL: v["PullRequest.Source.Repository.Links.HTML.Href"],
@@ -87,7 +83,6 @@ func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webh
 			SHA:           v["PullRequest.Source.Commit.Hash"],
 			TargetRepoURL: v["PullRequest.Destination.Repository.Links.HTML.Href"],
 			TargetBranch:  v["PullRequest.Destination.Branch.Name"],
-			IsTrusted:     !isFork,
 		}, nil
 	default:
 		log.Printf("Ignoring webhook event: %s", eventName)
@@ -113,6 +108,10 @@ func (*bitbucketGitProvider) UnregisterWebhook(ctx context.Context, accessToken,
 
 func (*bitbucketGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (*bitbucketGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
+	return false, status.UnimplementedError("Not implemented")
 }
 
 func unmarshalBody(r *http.Request, payload interface{}) error {

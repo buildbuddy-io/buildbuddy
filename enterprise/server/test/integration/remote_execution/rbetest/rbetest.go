@@ -5,6 +5,7 @@ package rbetest
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -61,6 +62,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
@@ -633,8 +635,8 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 
 // AddExecutorWithOptions brings up an executor with custom options.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutorWithOptions(opts *ExecutorOptions) *Executor {
-	executor := r.addExecutor(opts)
+func (r *Env) AddExecutorWithOptions(t testing.TB, opts *ExecutorOptions) *Executor {
+	executor := r.addExecutor(t, opts)
 	r.waitForExecutorRegistration()
 	return executor
 }
@@ -643,21 +645,21 @@ func (r *Env) AddExecutorWithOptions(opts *ExecutorOptions) *Executor {
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddExecutor() *Executor {
+func (r *Env) AddExecutor(t testing.TB) *Executor {
 	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddExecutorWithOptions(&ExecutorOptions{Name: name})
+	return r.AddExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
 // AddSingleTaskExecutorWithOptions brings up an executor with custom options that is configured with capacity to
 // accept only a single "default" sized task.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Executor {
+func (r *Env) AddSingleTaskExecutorWithOptions(t testing.TB, options *ExecutorOptions) *Executor {
 	optionsCopy := *options
 	optionsCopy.priorityTaskSchedulerOptions = priority_task_scheduler.Options{
 		RAMBytesCapacityOverride:  tasksize.DefaultMemEstimate,
 		CPUMillisCapacityOverride: tasksize.DefaultCPUEstimate,
 	}
-	executor := r.addExecutor(&optionsCopy)
+	executor := r.addExecutor(t, &optionsCopy)
 	r.waitForExecutorRegistration()
 	return executor
 }
@@ -667,19 +669,19 @@ func (r *Env) AddSingleTaskExecutorWithOptions(options *ExecutorOptions) *Execut
 // Use this function in tests where it's not important on which executor tasks are executed,
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
-func (r *Env) AddSingleTaskExecutor() *Executor {
+func (r *Env) AddSingleTaskExecutor(t testing.TB) *Executor {
 	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
-	return r.AddSingleTaskExecutorWithOptions(&ExecutorOptions{Name: name})
+	return r.AddSingleTaskExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
 // AddNamedExecutors brings up N named executors with default settings.
 // Use this function if it matters for the test on which executor tasks are executed, otherwise
 // use AddExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddNamedExecutors(names []string) []*Executor {
+func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
 	var executors []*Executor
 	for _, name := range names {
-		executors = append(executors, r.addExecutor(&ExecutorOptions{Name: name}))
+		executors = append(executors, r.addExecutor(t, &ExecutorOptions{Name: name}))
 	}
 	r.waitForExecutorRegistration()
 	return executors
@@ -689,16 +691,16 @@ func (r *Env) AddNamedExecutors(names []string) []*Executor {
 // Use this function in tests where it's not important on which executor tasks are exected,
 // otherwise use AddNamedExecutors.
 // Blocks until all executors register with the scheduler.
-func (r *Env) AddExecutors(n int) []*Executor {
+func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 	var names []string
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
 		names = append(names, name)
 	}
-	return r.AddNamedExecutors(names)
+	return r.AddNamedExecutors(t, names)
 }
 
-func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
+func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	buildBuddyServer := options.Server
 	if buildBuddyServer == nil {
 		buildBuddyServer = r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
@@ -720,17 +722,17 @@ func (r *Env) addExecutor(options *ExecutorOptions) *Executor {
 	bundleFS, err := bundle.Get()
 	require.NoError(r.t, err)
 	env.SetFileResolver(fileresolver.New(bundleFS, "enterprise"))
-	err = resources.Configure(env)
+	err = resources.Configure()
 	require.NoError(r.t, err)
 
-	executorConfig := env.GetConfigurator().GetExecutorConfig()
-	executorConfig.Pool = options.Pool
+	flags.Set(t, "executor.pool", options.Pool)
 	// Place executor data under the env root dir, since that dir gets removed
 	// only after all the executors have shutdown.
-	executorConfig.RootDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
-	executorConfig.LocalCacheDirectory = filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
+	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
+	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
+	flags.Set(t, "executor.local_cache_directory", localCacheDirectory)
 
-	fc, err := filecache.NewFileCache(executorConfig.LocalCacheDirectory, executorConfig.LocalCacheSizeBytes)
+	fc, err := filecache.NewFileCache(localCacheDirectory, reflect.ValueOf(flag.Lookup("executor.local_cache_size_bytes").Value).Convert(reflect.TypeOf((*int64)(nil))).Elem().Int())
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}

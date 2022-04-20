@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/scheduling/priority_task_scheduler",
+        "//enterprise/server/scheduling/task_leaser",
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/resources",

@@ -7,10 +7,14 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
+)
+
+var (
+	memoryBytes = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
+	milliCPU    = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
 )
 
 const (
@@ -63,19 +67,18 @@ func setSysMilliCPUCapacity() {
 	allocatedCPUMillis = int64(numCores * 1000)
 }
 
-func Configure(env environment.Env) error {
-	cfg := env.GetConfigurator().GetExecutorConfig()
-	if cfg.MemoryBytes > 0 {
+func Configure() error {
+	if *memoryBytes > 0 {
 		if os.Getenv(memoryEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.memory_bytes' config option and 'SYS_MEMORY_BYTES' environment variable may be set")
 		}
-		allocatedRAMBytes = cfg.MemoryBytes
+		allocatedRAMBytes = *memoryBytes
 	}
-	if cfg.MilliCPU > 0 {
+	if *milliCPU > 0 {
 		if os.Getenv(cpuEnvVarName) != "" {
 			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and 'SYS_MILLICPU' environment variable may be set")
 		}
-		allocatedCPUMillis = cfg.MilliCPU
+		allocatedCPUMillis = *milliCPU
 	}
 
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)

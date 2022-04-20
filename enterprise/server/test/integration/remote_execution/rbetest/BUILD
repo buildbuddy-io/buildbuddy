@@ -57,6 +57,7 @@ go_library(
         "//server/util/retry",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/testing/flags",
         "//server/xcode",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",

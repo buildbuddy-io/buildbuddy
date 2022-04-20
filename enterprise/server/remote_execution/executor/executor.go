@@ -64,13 +64,6 @@ type Options struct {
 }
 
 func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPool, options *Options) (*Executor, error) {
-	executorConfig := env.GetConfigurator().GetExecutorConfig()
-	if executorConfig == nil {
-		return nil, status.FailedPreconditionError("No executor config found")
-	}
-	if err := disk.EnsureDirectoryExists(executorConfig.GetRootDirectory()); err != nil {
-		return nil, err
-	}
 	hostID := options.NameOverride
 	if hostID == "" {
 		if h, err := uuid.GetHostID(); err == nil {
@@ -79,6 +72,9 @@ func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPoo
 			log.Warningf("Unable to get stable BuildBuddy HostID. Falling back to failsafe ID. %s", err)
 			hostID = uuid.GetFailsafeHostID()
 		}
+	}
+	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
+		return nil, err
 	}
 	return &Executor{
 		env:        env,

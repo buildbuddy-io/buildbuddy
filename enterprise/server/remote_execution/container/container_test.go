@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -239,18 +241,26 @@ func TestImageCacheAuthenticator(t *testing.T) {
 func TestGetPullCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 
-	env.GetConfigurator().GetExecutorConfig().ContainerRegistries = []config.ContainerRegistryConfig{
-		{
-			Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
-			Username:  "gcruser",
-			Password:  "gcrpass",
+	cr, err := json.Marshal(
+		[]config.ContainerRegistryConfig{
+			{
+				Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
+				Username:  "gcruser",
+				Password:  "gcrpass",
+			},
+			{
+				Hostnames: []string{"docker.io"},
+				Username:  "dockeruser",
+				Password:  "dockerpass",
+			},
 		},
-		{
-			Hostnames: []string{"docker.io"},
-			Username:  "dockeruser",
-			Password:  "dockerpass",
-		},
-	}
+	)
+	require.NoError(t, err)
+	flags.Set(
+		t,
+		"executor.container_registries",
+		string(cr),
+	)
 
 	for _, testCase := range []struct {
 		imageRef            string

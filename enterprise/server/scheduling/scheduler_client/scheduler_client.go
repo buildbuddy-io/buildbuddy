@@ -3,12 +3,14 @@ package scheduler_client
 import (
 	"context"
 	"errors"
+	"flag"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -19,6 +21,8 @@ import (
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
+
+var pool = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
 
 const (
 	schedulerCheckInInterval         = 5 * time.Second
@@ -236,15 +240,17 @@ func (r *Registration) Start(ctx context.Context) {
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
 func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
-	pool := env.GetConfigurator().GetExecutorConfig().Pool
-	if pool == "" {
-		pool = resources.GetPoolName()
+	poolName := *pool
+	if poolName == "" {
+		poolName = resources.GetPoolName()
+	} else if resources.GetPoolName() != "" {
+		log.Fatal("Only one of the `MY_POOL` environment variable and `executor.pool` config option may be set")
 	}
-	node, err := makeExecutionNode(pool, executorID, executorHostID, options)
+	node, err := makeExecutionNode(poolName, executorID, executorHostID, options)
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
-	apiKey := env.GetConfigurator().GetExecutorConfig().APIKey
+	apiKey := task_leaser.APIKey()
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}

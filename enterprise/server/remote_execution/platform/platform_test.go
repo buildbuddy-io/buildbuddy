@@ -1,11 +1,10 @@
-package platform_test
+package platform
 
 import (
 	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,13 +13,13 @@ import (
 )
 
 var (
-	bare   = &platform.ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.BareContainerType}}
-	docker = &platform.ExecutorProperties{SupportedIsolationTypes: []platform.ContainerType{platform.DockerContainerType}}
+	bare   = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{BareContainerType}}
+	docker = &ExecutorProperties{SupportedIsolationTypes: []ContainerType{DockerContainerType}}
 )
 
 func TestParse_ContainerImage_Success(t *testing.T) {
 	for _, testCase := range []struct {
-		execProps         *platform.ExecutorProperties
+		execProps         *ExecutorProperties
 		imageProp         string
 		containerImageKey string
 		expected          string
@@ -31,12 +30,12 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		{bare, "none", "Container-Image", ""},
 		{bare, "None", "container-image", ""},
 		{bare, "None", "Container-Image", ""},
-		{docker, "", "container-image", platform.DefaultContainerImage},
-		{docker, "", "Container-Image", platform.DefaultContainerImage},
-		{docker, "none", "container-image", platform.DefaultContainerImage},
-		{docker, "none", "Container-Image", platform.DefaultContainerImage},
-		{docker, "None", "container-image", platform.DefaultContainerImage},
-		{docker, "None", "Container-Image", platform.DefaultContainerImage},
+		{docker, "", "container-image", *defaultImage},
+		{docker, "", "Container-Image", *defaultImage},
+		{docker, "none", "container-image", *defaultImage},
+		{docker, "none", "Container-Image", *defaultImage},
+		{docker, "None", "container-image", *defaultImage},
+		{docker, "None", "Container-Image", *defaultImage},
 		{docker, "docker://alpine", "container-image", "alpine"},
 		{docker, "docker://alpine", "Container-Image", "alpine"},
 		{docker, "docker://caseSensitiveUrl", "container-image", "caseSensitiveUrl"},
@@ -45,10 +44,10 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 			{Name: testCase.containerImageKey, Value: testCase.imageProp},
 		}}
 
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
-		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err := ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -56,7 +55,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 
 func TestParse_ContainerImage_Error(t *testing.T) {
 	for _, testCase := range []struct {
-		execProps *platform.ExecutorProperties
+		execProps *ExecutorProperties
 		imageProp string
 	}{
 		{bare, "docker://alpine"},
@@ -69,10 +68,10 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 			{Name: "container-image", Value: testCase.imageProp},
 		}}
 
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		env := testenv.GetTestEnv(t)
 		env.RealEnv.SetXcodeLocator(&xcodeLocator{})
-		err := platform.ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err := ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
 }
@@ -89,13 +88,13 @@ func TestParse_OS(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "OSFamily", Value: testCase.rawValue},
 		}}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		assert.Equal(t, testCase.expectedValue, platformProps.OS)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	assert.Equal(t, "linux", platformProps.OS)
 }
 
@@ -111,13 +110,13 @@ func TestParse_Arch(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "Arch", Value: testCase.rawValue},
 		}}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		assert.Equal(t, testCase.expectedValue, platformProps.Arch)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	assert.Equal(t, "amd64", platformProps.Arch)
 }
 
@@ -133,13 +132,13 @@ func TestParse_Pool(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "Pool", Value: testCase.rawValue},
 		}}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		assert.Equal(t, testCase.expectedValue, platformProps.Pool)
 	}
 
 	// Empty case
 	plat := &repb.Platform{Properties: []*repb.Platform_Property{}}
-	platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	assert.Equal(t, "", platformProps.Pool)
 }
 
@@ -159,7 +158,7 @@ func TestParse_EstimatedBCU(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedComputeUnits)
 	}
 }
@@ -180,7 +179,7 @@ func TestParse_EstimatedFreeDisk(t *testing.T) {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},
 		}}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedFreeDiskBytes)
 	}
 }
@@ -343,7 +342,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		},
 	} {
 		plat := &repb.Platform{Properties: testCase.platformProps}
-		platformProps := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 		execProps := bare
 		execProps.DefaultXcodeVersion = testCase.defaultXcodeVersion
 		command := &repb.Command{EnvironmentVariables: testCase.startingEnvVars}
@@ -368,7 +367,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err := platform.ApplyOverrides(env, execProps, platformProps, command)
+		err := ApplyOverrides(env, execProps, platformProps, command)
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {

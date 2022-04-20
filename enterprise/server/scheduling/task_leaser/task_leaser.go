@@ -2,6 +2,7 @@ package task_leaser
 
 import (
 	"context"
+	"flag"
 	"io"
 	"sync"
 	"time"
@@ -14,6 +15,8 @@ import (
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
+
+var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.")
 
 type TaskLeaser struct {
 	env        environment.Env
@@ -61,8 +64,8 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 		TaskId: t.taskID,
 		Reason: reason,
 	}
-	if apiKey := t.env.GetConfigurator().GetExecutorConfig().APIKey; apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, apiKey)
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, *apiKey)
 	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
 	return err
@@ -90,8 +93,8 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
 	leaseTaskCtx := ctx
-	if apiKey := t.env.GetConfigurator().GetExecutorConfig().APIKey; apiKey != "" {
-		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, apiKey)
+	if *apiKey != "" {
+		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, *apiKey)
 	}
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
 	if err != nil {
@@ -168,4 +171,8 @@ func (t *TaskLeaser) Close(taskErr error, retry bool) {
 	}
 
 	t.closed = true
+}
+
+func APIKey() string {
+	return *apiKey
 }

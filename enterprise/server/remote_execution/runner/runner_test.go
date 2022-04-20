@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
@@ -38,7 +40,11 @@ const (
 )
 
 var (
-	defaultCfg = &config.RunnerPoolConfig{}
+	defaultCfg = &config.RunnerPoolConfig{
+		MaxRunnerCount:            *maxRunnerCount,
+		MaxRunnerDiskSizeBytes:    *maxRunnerDiskSizeBytes,
+		MaxRunnerMemoryUsageBytes: *maxRunnerMemoryUsageBytes,
+	}
 
 	noLimitsCfg = &config.RunnerPoolConfig{
 		MaxRunnerCount:            unlimited,
@@ -115,7 +121,9 @@ func mustRun(t *testing.T, r *commandRunner) {
 }
 
 func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *pool {
-	env.GetConfigurator().GetExecutorConfig().RunnerPool = *cfg
+	flags.Set(t, "executor.runner_pool.max_runner_count", strconv.Itoa(cfg.MaxRunnerCount))
+	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", strconv.FormatInt(cfg.MaxRunnerDiskSizeBytes, 10))
+	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", strconv.FormatInt(cfg.MaxRunnerMemoryUsageBytes, 10))
 	p, err := NewPool(env)
 	require.NoError(t, err)
 	require.NotNil(t, p)
