@@ -29,10 +29,10 @@ go_test(
         "//server/util/bazel",
         "//server/util/status",
         "//server/util/testing/flags",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

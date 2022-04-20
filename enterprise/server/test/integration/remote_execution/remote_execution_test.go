@@ -29,10 +29,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"

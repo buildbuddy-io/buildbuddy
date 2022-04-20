@@ -9,7 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"

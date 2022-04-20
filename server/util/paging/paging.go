@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )

@@ -15,12 +15,13 @@ go_library(
         "//server/tables",
         "//server/util/bazel_request",
         "//server/util/log",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -35,9 +36,9 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/bazel_request",
         "//server/util/testing/flags",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )

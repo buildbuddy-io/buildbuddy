@@ -15,11 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -248,11 +249,8 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, sta
 	if status == Miss {
 		statusCode = codes.NotFound
 	}
-	startTimeProto, err := ptypes.TimestampProto(startTime)
-	if err != nil {
-		return err
-	}
-	durationProto := ptypes.DurationProto(duration)
+	startTimeProto := timestamppb.New(startTime)
+	durationProto := durationpb.New(duration)
 
 	result := &capb.ScoreCard_Result{
 		ActionMnemonic: h.requestMetadata.ActionMnemonic,
