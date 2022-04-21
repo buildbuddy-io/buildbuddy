@@ -44,13 +44,14 @@ var (
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = []config.OauthProvider{}
 	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
-	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 0, "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
+	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", time.Duration(5)*time.Minute, "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 )
 
+// Initialize the oauth providers flag to point to `oauthProviders`.
 func init() {
-	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "")
+	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "The list of oauth providers to use to authenticate.")
 }
 
 const (
@@ -102,8 +103,6 @@ const (
 	// BuildBuddy JWT duration maximum.
 	defaultBuildBuddyJWTDuration = 6 * time.Hour
 
-	// Maximum amount of time we will cache Group information for an API key.
-	defaultAPIKeyGroupCacheTTL = 5 * time.Minute
 	// Maximum number of entries in API Key -> Group cache.
 	apiKeyGroupCacheSize = 10000
 
@@ -360,11 +359,6 @@ type apiKeyGroupCache struct {
 }
 
 func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
-	ttl := defaultAPIKeyGroupCacheTTL
-	if *apiKeyGroupCacheTTL != time.Duration(0) {
-		ttl = *apiKeyGroupCacheTTL
-	}
-
 	config := &lru.Config{
 		MaxSize: apiKeyGroupCacheSize,
 		SizeFn:  func(v interface{}) int64 { return 1 },
@@ -373,7 +367,7 @@ func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, 
 	if err != nil {
 		return nil, status.InternalErrorf("error initializing API Key -> Group cache: %v", err)
 	}
-	return &apiKeyGroupCache{lru: lru, ttl: ttl}, nil
+	return &apiKeyGroupCache{lru: lru, ttl: *apiKeyGroupCacheTTL}, nil
 }
 
 func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
@@ -758,7 +752,7 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 	return groupClaims(akg), nil
 }
 
-func ClaimsFromSubID(env environment.Env, ctx context.Context, subID string) (*Claims, error) {
+func ClaimsFromSubID(env environment.Env, ctx context.Context, a interfaces.Authenticator, subID string) (*Claims, error) {
 	authDB := env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
@@ -923,7 +917,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
-		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
 		return claims, ut, err
 	}
 
@@ -945,7 +939,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	}
 	if jwt, ok := newToken.Extra("id_token").(string); ok {
 		setLoginCookie(a.env, w, jwt, issuer, sessionID)
-		claims, err := ClaimsFromSubID(a.env, ctx, ut.GetSubID())
+		claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
 		return claims, ut, err
 	}
 	return nil, nil, status.PermissionDeniedErrorf("%s: could not refresh token", loggedOutMsg)
