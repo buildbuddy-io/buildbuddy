@@ -478,10 +478,11 @@ func readResults(ctx context.Context, env environment.Env, iid string) *capb.Sco
 		log.Warningf("Failed to read detailed scorecard for invocation %s: %s", iid, err)
 		return sc
 	}
-	// TODO(bduffany): remove this limit
-	const limit = 100_000
+	// This limit is a safeguard against buffering too many results in memory.
+	// We expect to hit this rarely (if ever) in production usage.
+	const limit = 500_000
 	if len(resultIDs) > limit {
-		log.Warningf("Truncating cache scorecard for invocation %s", iid)
+		log.Warningf("Truncating cache scorecard for invocation %s from %d to %d results", iid, len(resultIDs), limit)
 		resultIDs = resultIDs[:limit]
 	}
 
