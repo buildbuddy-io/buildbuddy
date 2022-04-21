@@ -7,8 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,12 +23,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
@@ -41,12 +39,10 @@ import (
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -73,9 +69,6 @@ const (
 
 	// Exit code in Finished event indicating that the build was interrupted (i.e. killed by user).
 	InterruptedExitCode = 8
-
-	// How many results to return at a time for the cache scorecard.
-	scoreCardPageSize = 250
 )
 
 var (
@@ -220,34 +213,6 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 	}
 }
 
-func scoreCardBlobName(invocationID string) string {
-	blobFileName := invocationID + "-scorecard.pb"
-	return filepath.Join(invocationID, blobFileName)
-}
-
-func writeScoreCard(ctx context.Context, env environment.Env, invocationID string, scoreCard *capb.ScoreCard) error {
-	scoreCardBuf, err := proto.Marshal(scoreCard)
-	if err != nil {
-		return err
-	}
-	blobStore := env.GetBlobstore()
-	_, err = blobStore.WriteBlob(ctx, scoreCardBlobName(invocationID), scoreCardBuf)
-	return err
-}
-
-func readScoreCard(ctx context.Context, env environment.Env, invocationID string) (*capb.ScoreCard, error) {
-	blobStore := env.GetBlobstore()
-	buf, err := blobStore.ReadBlob(ctx, scoreCardBlobName(invocationID))
-	if err != nil {
-		return nil, err
-	}
-	sc := &capb.ScoreCard{}
-	if err := proto.Unmarshal(buf, sc); err != nil {
-		return nil, err
-	}
-	return sc, nil
-}
-
 func (r *statsRecorder) Start() {
 	ctx := r.env.GetServerContext()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
@@ -279,8 +244,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
 		// Store results using the default sort order so we don't have to sort on
 		// each request.
-		sortScoreCardResults(scoreCard.Results)
-		if err := writeScoreCard(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
+		scorecard.SortResults(scoreCard.Results)
+		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
 			log.Errorf("Error writing scorecard blob: %s", err)
 		}
 	}
@@ -997,7 +962,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
 				scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
 			} else {
-				if sc, err := readScoreCard(ctx, env, iid); err == nil {
+				if sc, err := scorecard.Read(ctx, env, iid); err == nil {
 					scoreCard = sc
 				}
 			}
@@ -1046,82 +1011,6 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		return nil, err
 	}
 	return invocation, nil
-}
-
-func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
-	page := &pgpb.OffsetLimit{Offset: 0, Limit: scoreCardPageSize}
-	if req.PageToken != "" {
-		var err error
-		page, err = paging.DecodeOffsetLimit(req.PageToken)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	scorecard, err := readScoreCard(ctx, env, req.InvocationId)
-	if err != nil {
-		return nil, err
-	}
-
-	end := page.Offset + page.Limit
-	scorecard.Results = scorecard.Results[int(page.Offset):end]
-
-	nextPageToken := &pgpb.OffsetLimit{
-		Offset: int64(end),
-		Limit:  scoreCardPageSize,
-	}
-	if end > int64(len(scorecard.Results)) {
-		end = int64(len(scorecard.Results))
-		nextPageToken = nil
-	}
-	nextPageTokenStr := ""
-	if nextPageToken != nil {
-		nextPageTokenStr, err = paging.EncodeOffsetLimit(nextPageToken)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &capb.GetCacheScoreCardResponse{
-		Results:       scorecard.Results,
-		NextPageToken: nextPageTokenStr,
-	}, nil
-}
-
-func isTimestampLess(a, b *timestamppb.Timestamp) bool {
-	if a.Seconds != b.Seconds {
-		return a.Seconds < b.Seconds
-	}
-	return a.Nanos < b.Nanos
-}
-
-func sortScoreCardResults(results []*capb.ScoreCard_Result) {
-	minStartTimeByActionID := map[string]*timestamppb.Timestamp{}
-	for _, result := range results {
-		existing, ok := minStartTimeByActionID[result.ActionId]
-		if !ok {
-			minStartTimeByActionID[result.ActionId] = result.StartTime
-			continue
-		}
-		if isTimestampLess(result.StartTime, existing) {
-			minStartTimeByActionID[result.ActionId] = result.StartTime
-		}
-	}
-	sort.Slice(results, func(i, j int) bool {
-		// Sort first by action min start time
-		msti := minStartTimeByActionID[results[i].ActionId]
-		mstj := minStartTimeByActionID[results[j].ActionId]
-		if isTimestampLess(msti, mstj) {
-			return true
-		}
-		// If two different actions have the same start time, break the tie using
-		// their action ID, so that results stay grouped by action ID.
-		if !isTimestampLess(mstj, msti) && results[i].ActionId != results[j].ActionId {
-			return results[i].ActionId < results[j].ActionId
-		}
-		// Within a single action, sort by start time.
-		return isTimestampLess(results[i].StartTime, results[j].StartTime)
-	})
 }
 
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {

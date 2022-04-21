@@ -29,6 +29,7 @@ go_library(
         "//server/environment",
         "//server/eventlog",
         "//server/interfaces",
+        "//server/remote_cache/scorecard",
         "//server/role_filter",
         "//server/tables",
         "//server/target",
