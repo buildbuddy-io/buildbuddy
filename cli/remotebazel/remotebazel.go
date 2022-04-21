@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -64,7 +65,7 @@ func consoleDeleteLines(n int) {
 type RunOpts struct {
 	Server            string
 	APIKey            string
-	Args              []string
+	Args              *commandline.BazelArgs
 	WorkspaceFilePath string
 	SidecarSocket     string
 }
@@ -467,9 +468,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	fetchOutputs := false
 	runOutput := false
-	if len(opts.Args) > 0 && (opts.Args[0] == "build" || opts.Args[0] == "run") {
+	var bazelArgs []string
+	bazelArgs = append(bazelArgs, opts.Args.Filtered...)
+	bazelArgs = append(bazelArgs, opts.Args.Added...)
+	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || bazelArgs[0] == "run") {
 		fetchOutputs = true
-		if opts.Args[0] == "run" {
+		if bazelArgs[0] == "run" {
 			runOutput = true
 		}
 	}
@@ -482,7 +486,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 		},
 		SessionAffinityKey: fmt.Sprintf("%x", instanceHash.Sum(nil)),
-		BazelCommand:       strings.Join(opts.Args, " "),
+		BazelCommand:       strings.Join(bazelArgs, " "),
 		Os:                 reqOS,
 		Arch:               reqArch,
 	}
@@ -560,9 +564,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if err := os.Chmod(binPath, 0755); err != nil {
 				return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
 			}
-			args := defaultRunArgs
-			bblog.Printf("Executing %q with arguments %s", binPath, args)
-			cmd := exec.CommandContext(ctx, binPath, args...)
+			execArgs := defaultRunArgs
+			// Pass through extra arguments (-- --foo=bar) from the command line.
+			execArgs = append(execArgs, opts.Args.Passthrough...)
+			bblog.Printf("Executing %q with arguments %s", binPath, execArgs)
+			cmd := exec.CommandContext(ctx, binPath, execArgs...)
 			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
