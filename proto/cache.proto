@@ -38,7 +38,6 @@ message CacheStats {
 
 // Request to retrieve detailed per-request cache stats.
 message GetCacheScoreCardRequest {
-  // The request context, including the page token from the previous response.
   context.RequestContext request_context = 1;
 
   // The invocation ID for which to look up cache stats.
@@ -50,7 +49,6 @@ message GetCacheScoreCardRequest {
 }
 
 message GetCacheScoreCardResponse {
-  // The response context, including the next_page_token.
   context.ResponseContext response_context = 1;
 
   // The cache results for the current page.
@@ -121,5 +119,8 @@ message ScoreCard {
   }
 
   // In the interest of saving space, we only show cache misses.
+  // TODO(bduffany): use flat `results` list and deprecate this
   repeated Result misses = 1;
+
+  repeated Result results = 2;
 }

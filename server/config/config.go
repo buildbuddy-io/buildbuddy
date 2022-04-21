@@ -225,6 +225,7 @@ type cacheConfig struct {
 	MaxSizeBytes           int64                  `yaml:"max_size_bytes" usage:"How big to allow the cache to be (in bytes)."`
 	InMemory               bool                   `yaml:"in_memory" usage:"Whether or not to use the in_memory cache."`
 	ZstdTranscodingEnabled bool                   `yaml:"zstd_transcoding_enabled" usage:"Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly."`
+	DetailedStatsEnabled   bool                   `yaml:"detailed_stats_enabled" usage:"Whether to enable detailed stats recording for all cache requests."`
 }
 
 type authConfig struct {
