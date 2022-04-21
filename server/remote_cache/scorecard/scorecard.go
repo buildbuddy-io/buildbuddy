@@ -4,12 +4,12 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
@@ -68,47 +68,46 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 	}, nil
 }
 
-func isTimestampLess(a, b *timestamppb.Timestamp) bool {
-	if a.Seconds != b.Seconds {
-		return a.Seconds < b.Seconds
-	}
-	return a.Nanos < b.Nanos
-}
-
 // SortResults sorts scorecard results, grouping by actions sorted by min
 // request start timestamp, and sorting the requests within each action by start
 // time.
 // TODO(bduffany): More sorting options
 func SortResults(results []*capb.ScoreCard_Result) {
-	minStartTimeByActionID := map[string]*timestamppb.Timestamp{}
+	// Compute the min result start for each action. (Each result belongs to
+	// an action, identified by action ID).
+	minStartTime := make(map[string]time.Time)
 	for _, result := range results {
-		existing, ok := minStartTimeByActionID[result.ActionId]
+		t := result.StartTime.AsTime()
+		existing, ok := minStartTime[result.ActionId]
 		if !ok {
-			minStartTimeByActionID[result.ActionId] = result.StartTime
+			minStartTime[result.ActionId] = t
 			continue
 		}
-		if isTimestampLess(result.StartTime, existing) {
-			minStartTimeByActionID[result.ActionId] = result.StartTime
+		if result.StartTime.AsTime().Before(existing) {
+			minStartTime[result.ActionId] = t
 		}
 	}
 	sort.Slice(results, func(i, j int) bool {
-		// Sort first by action min start time
-		ti := minStartTimeByActionID[results[i].ActionId]
-		tj := minStartTimeByActionID[results[j].ActionId]
-		if isTimestampLess(ti, tj) {
-			return true
+		// For results with different parent actions, sort results earlier if
+		// their parent action's min start time comes first.
+		if results[i].ActionId != results[j].ActionId {
+			ti := minStartTime[results[i].ActionId]
+			tj := minStartTime[results[j].ActionId]
+			if ti.Equal(tj) {
+				// If two actions happen to have exactly the same start time, break the
+				// tie by action ID so that the sort is deterministic.
+				return results[i].ActionId < results[j].ActionId
+			}
+			return ti.Before(tj)
 		}
-		// If two different actions have the same start time, break the tie using
-		// their action ID, so that results stay grouped by action ID.
-		if !isTimestampLess(tj, ti) && results[i].ActionId != results[j].ActionId {
-			return results[i].ActionId < results[j].ActionId
-		}
-		// Within a single action, sort by start time.
-		return isTimestampLess(results[i].StartTime, results[j].StartTime)
+		// Within actions, sort by start time.
+		return results[i].StartTime.AsTime().Before(results[j].StartTime.AsTime())
 	})
 }
 
 func blobName(invocationID string) string {
+	// WARNING: Things will break if this is changed, because we use this name
+	// to lookup data from historical invocations.
 	blobFileName := invocationID + "-scorecard.pb"
 	return filepath.Join(invocationID, blobFileName)
 }

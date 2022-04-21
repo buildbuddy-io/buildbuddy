@@ -962,7 +962,10 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
 				scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
 			} else {
-				if sc, err := scorecard.Read(ctx, env, iid); err == nil {
+				sc, err := scorecard.Read(ctx, env, iid)
+				if err != nil {
+					log.Warningf("Failed to read scorecard for invocation %s: %s", iid, err)
+				} else {
 					scoreCard = sc
 				}
 			}
