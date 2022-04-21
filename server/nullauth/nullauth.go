@@ -29,18 +29,6 @@ func (a *NullAuthenticator) AnonymousUsageEnabled() bool {
 	return !a.anonymousUsageDisabled
 }
 
-func (a *NullAuthenticator) EnableAnonymousUsage() {
-	a.anonymousUsageDisabled = false
-}
-
-func (a *NullAuthenticator) DisableAnonymousUsage() {
-	a.anonymousUsageDisabled = true
-}
-
-func (a *NullAuthenticator) SetAdminGroupID(adminGroupID string) {
-	a.adminGroupID = adminGroupID
-}
-
 func (a *NullAuthenticator) PublicIssuers() []string {
 	return []string{}
 }

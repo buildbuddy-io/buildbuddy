@@ -231,7 +231,7 @@ type cacheConfig struct {
 type authConfig struct {
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
 	APIKeyGroupCacheTTL  time.Duration   `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
-	OauthProviders       []OauthProvider `yaml:"oauth_providers"`
+	OauthProviders       []OauthProvider `yaml:"oauth_providers" usage:"The list of oauth providers to use to authenticate."`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
 	EnableSelfAuth       bool            `yaml:"enable_self_auth" usage:"If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **"`
