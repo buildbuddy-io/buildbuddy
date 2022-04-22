@@ -10,6 +10,7 @@ go_library(
         "//cli/devnull",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:sidecar_go_proto",
         "//server/backends/disk_cache",
         "//server/build_event_protocol/build_event_proxy",
         "//server/build_event_protocol/build_event_server",

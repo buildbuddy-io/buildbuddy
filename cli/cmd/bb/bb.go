@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"time"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
@@ -16,9 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
 )
 
 var (
@@ -86,6 +89,43 @@ func parseBazelRCs(bazelFlags *commandline.BazelFlags) []*parser.BazelOption {
 	}
 	return opts
 
+}
+
+// keepaliveSidecar validates the connection to the sidecar and keeps the
+// sidecar alive as long as this process is alive by issuing background ping
+// requests.
+func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
+	conn, err := grpc_client.DialTarget("unix://" + sidecarSocket)
+	if err != nil {
+		return err
+	}
+	s := scpb.NewSidecarClient(conn)
+	connected := make(chan struct{})
+	go func() {
+		connectionValidated := false
+		for {
+			_, err := s.Ping(ctx, &scpb.PingRequest{})
+			if connectionValidated && err != nil {
+				fmt.Printf("sidecar did not response to ping request: %s\n", err)
+				return
+			}
+			if !connectionValidated && err == nil {
+				close(connected)
+				connectionValidated = true
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+		}
+	}()
+	select {
+	case <-connected:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("could not connect to sidecar")
+	}
 }
 
 func main() {
@@ -161,7 +201,9 @@ func main() {
 
 	if len(sidecarArgs) > 0 {
 		sidecarSocket, err := sidecar.RestartSidecarIfNecessary(ctx, bbHome, sidecarArgs)
-		// TODO(tylerw): test the sidecar connection before passing it to bazel.
+		if err == nil {
+			err = keepaliveSidecar(ctx, sidecarSocket)
+		}
 		if err == nil {
 			if !bazelOpts.EnableRemoteBazel {
 				if besBackendFlag != "" {

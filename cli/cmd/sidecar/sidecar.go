@@ -27,6 +27,7 @@ import (
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
 	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -178,6 +179,17 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	repb.RegisterCapabilitiesServer(grpcServer, cacheProxy)
 }
 
+type sidecarService struct {
+}
+
+func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb.PingResponse, error) {
+	return &scpb.PingResponse{}, nil
+}
+
+func registerSidecarService(grpcServer *grpc.Server) {
+	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
+}
+
 func normalizeGrpcTarget(target string) string {
 	if strings.HasPrefix(target, "grpc://") || strings.HasPrefix(target, "grpcs://") {
 		return target
@@ -231,5 +243,8 @@ func main() {
 	if *besBackend == "" && *remoteCache == "" {
 		log.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
 	}
+
+	registerSidecarService(grpcServer)
+
 	grpcServer.Serve(lis)
 }

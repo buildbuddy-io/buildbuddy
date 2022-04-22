@@ -15,6 +15,8 @@ go_library(
         "//cli/parser",
         "//cli/remotebazel",
         "//cli/sidecar",
+        "//proto:sidecar_go_proto",
+        "//server/util/grpc_client",
         "//server/version",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
