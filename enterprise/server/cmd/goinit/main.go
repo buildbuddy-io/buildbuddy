@@ -45,6 +45,7 @@ var (
 	logLevel        = flag.String("log_level", "info", "The loglevel to emit logs at")
 	setDefaultRoute = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd     = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
+	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -352,7 +353,7 @@ func main() {
 			return err
 		}
 		log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
-		server := grpc.NewServer()
+		server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
 		vmService, err := vmexec.NewServer(&reapMutex)
 		if err != nil {
 			return err
