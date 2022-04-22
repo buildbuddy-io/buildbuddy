@@ -1180,7 +1180,7 @@ func TestRedisRestart(t *testing.T) {
 
 	// Wait for the remote execution to start by looking for the presence of a
 	// redis task key on one of the shards. This shard will become the victim.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	var victimShard *testredis.Handle
 	for time.Now().Before(deadline) && victimShard == nil {
 		for _, shard := range redisShards {
