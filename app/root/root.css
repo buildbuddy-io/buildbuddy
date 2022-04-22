@@ -229,15 +229,11 @@ button {
   margin-bottom: 8px;
 }
 
-.breadcrumbs span:after {
+.breadcrumbs > :not(:last-child)::after {
   content: "›";
   padding: 0 8px;
   color: #ccc;
   font-weight: 600;
-}
-
-.breadcrumbs span:last-of-type:after {
-  content: "";
 }
 
 .shelf .details {
