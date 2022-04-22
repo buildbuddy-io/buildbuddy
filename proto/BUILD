@@ -51,6 +51,7 @@ proto_library(
         ":context_proto",
         ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
