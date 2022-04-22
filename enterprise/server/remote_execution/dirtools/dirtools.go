@@ -728,7 +728,7 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -737,10 +737,10 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	return downloadTree(ctx, env, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
+	return downloadTree(ctx, bsClient, casClient, fileCache, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
 }
 
-func downloadTree(ctx context.Context, env environment.Env, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func downloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	trackTransfersFn := func(relPath string, node *repb.FileNode) {}
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
 	if opts.TrackTransfers {
@@ -817,7 +817,7 @@ func downloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, instanceName, env.GetFileCache(), env.GetByteStreamClient(), env.GetContentAddressableStorageClient())
+	ff := NewBatchFileFetcher(ctx, instanceName, fileCache, bsClient, casClient)
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
@@ -457,8 +456,8 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
-func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul, err := NewBatchCASUploader(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), env.GetFileCache(), instanceName)
+func UploadDirectoryToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
+	ul, err := NewBatchCASUploader(ctx, bsClient, casClient, fileCache, instanceName)
 	if err != nil {
 		return nil, nil, err
 	}
