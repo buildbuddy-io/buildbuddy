@@ -403,6 +403,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:4ZrkT/RzpnROylmoQL57iVUL57wGKTR5O6KpVnbm2tA=",
         version = "v0.0.0-20160919175755-f7c97cef3b4e",
     )
+    go_repository(
+        name = "com_github_cavaliergopher_cpio",
+        importpath = "github.com/cavaliergopher/cpio",
+        sum = "h1:KQFSeKmZhv0cr+kawA3a0xTQCU4QxXF1vhU7P7av2KM=",
+        version = "v1.0.1",
+    )
 
     go_repository(
         name = "com_github_census_instrumentation_opencensus_proto",
