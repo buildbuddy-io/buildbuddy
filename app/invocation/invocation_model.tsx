@@ -391,8 +391,18 @@ export default class InvocationModel {
     return patterns.join(", ");
   }
 
-  getStartTimeDate() {
+  getStartTimeDate(): Date {
     return timestampToDateWithFallback(this.started?.startTime, this.started?.startTimeMillis);
+  }
+
+  getEndTimeDate(): Date {
+    let durationMillis = 0;
+    if (!this.finished && this.started) {
+      durationMillis = Math.max(0, new Date().getTime() - this.getStartTimeDate().getTime());
+    } else {
+      durationMillis = Number(this.toolLogMap.get("elapsed time") || 0) * 1_000;
+    }
+    return new Date(this.getStartTimeDate().getTime() + durationMillis);
   }
 
   getFormattedStartedDate() {
@@ -461,6 +471,10 @@ export default class InvocationModel {
       default:
         return "";
     }
+  }
+
+  isComplete() {
+    return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
   getFaviconType() {

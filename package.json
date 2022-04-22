@@ -46,7 +46,7 @@
     "jsdoc": "^3.6.2",
     "lint-staged": "^10.2.13",
     "long": "^4.0.0",
-    "lucide-react": "^0.16.19",
+    "lucide-react": "^0.16.29",
     "minimist": "^1.2.6",
     "moment": "^2.24.0",
     "monaco-editor": "^0.25.2",

@@ -56,4 +56,7 @@ message FrontendConfig {
 
   // Whether test grid V2 is enabled.
   bool test_grid_v2_enabled = 18;
+
+  // Whether detailed cache stats are enabled (scorecard V2).
+  bool detailed_cache_stats_enabled = 19;
 }

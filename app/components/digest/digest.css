@@ -17,7 +17,14 @@
   transition: all 0.5s ease;
 }
 
-.digest-component-hash:hover {
+.digest-component .digest-component-hash.fixed-width,
+.digest-component .digest-component-size.fixed-width {
+  max-width: initial;
+  min-width: initial;
+  box-sizing: border-box;
+}
+
+.digest-component.expand-on-hover .digest-component-hash:hover {
   max-width: 500px;
 }
 

@@ -14,6 +14,7 @@ go_library(
         "//server/build_event_protocol/target_tracker",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/remote_cache/hit_tracker",
         "//server/util/status",
         "//server/version",
         "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
