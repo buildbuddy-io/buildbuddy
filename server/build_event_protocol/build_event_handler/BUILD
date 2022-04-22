@@ -22,6 +22,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/hit_tracker",
+        "//server/remote_cache/scorecard",
         "//server/tables",
         "//server/terminal",
         "//server/util/alert",

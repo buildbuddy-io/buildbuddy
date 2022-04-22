@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -213,34 +213,6 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 	}
 }
 
-func scoreCardBlobName(invocationID string) string {
-	blobFileName := invocationID + "-scorecard.pb"
-	return filepath.Join(invocationID, blobFileName)
-}
-
-func writeScoreCard(ctx context.Context, env environment.Env, invocationID string, scoreCard *capb.ScoreCard) error {
-	scoreCardBuf, err := proto.Marshal(scoreCard)
-	if err != nil {
-		return err
-	}
-	blobStore := env.GetBlobstore()
-	_, err = blobStore.WriteBlob(ctx, scoreCardBlobName(invocationID), scoreCardBuf)
-	return err
-}
-
-func readScoreCard(ctx context.Context, env environment.Env, invocationID string) (*capb.ScoreCard, error) {
-	blobStore := env.GetBlobstore()
-	buf, err := blobStore.ReadBlob(ctx, scoreCardBlobName(invocationID))
-	if err != nil {
-		return nil, err
-	}
-	sc := &capb.ScoreCard{}
-	if err := proto.Unmarshal(buf, sc); err != nil {
-		return nil, err
-	}
-	return sc, nil
-}
-
 func (r *statsRecorder) Start() {
 	ctx := r.env.GetServerContext()
 	for i := 0; i < numStatsRecorderWorkers; i++ {
@@ -270,7 +242,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		fillInvocationFromCacheStats(stats, ti)
 	}
 	if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
-		if err := writeScoreCard(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
+		// Store results using the default sort order so we don't have to sort on
+		// each request.
+		scorecard.SortResults(scoreCard.Results)
+		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
 			log.Errorf("Error writing scorecard blob: %s", err)
 		}
 	}
@@ -979,13 +954,20 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var scoreCard *capb.ScoreCard
-		// The cache ScoreCard is not stored in the table invocation, so we do this lookup
-		// after converting the table invocation to a proto invocation.
-		if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
-			scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
-		} else {
-			if sc, err := readScoreCard(ctx, env, iid); err == nil {
-				scoreCard = sc
+		// When detailed stats are enabled, the scorecard is not inlined in the
+		// invocation.
+		if !hit_tracker.DetailedStatsEnabled() {
+			// The cache ScoreCard is not stored in the table invocation, so we do this lookup
+			// after converting the table invocation to a proto invocation.
+			if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+				scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
+			} else {
+				sc, err := scorecard.Read(ctx, env, iid)
+				if err != nil {
+					log.Warningf("Failed to read scorecard for invocation %s: %s", iid, err)
+				} else {
+					scoreCard = sc
+				}
 			}
 		}
 		if scoreCard != nil {
