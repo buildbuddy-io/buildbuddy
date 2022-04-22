@@ -34,7 +34,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
   return (
     <a
       ref={ref}
-      className={`link-wrapper ${className}`}
+      className={`link-wrapper ${className || ""}`}
       onClick={onClickWrapped}
       href={href}
       {...externalProps}
