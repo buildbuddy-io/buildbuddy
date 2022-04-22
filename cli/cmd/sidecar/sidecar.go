@@ -179,15 +179,10 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	repb.RegisterCapabilitiesServer(grpcServer, cacheProxy)
 }
 
-type sidecarService struct {
-}
+type sidecarService struct{}
 
 func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb.PingResponse, error) {
 	return &scpb.PingResponse{}, nil
-}
-
-func registerSidecarService(grpcServer *grpc.Server) {
-	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
 }
 
 func normalizeGrpcTarget(target string) string {
@@ -244,7 +239,7 @@ func main() {
 		log.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
 	}
 
-	registerSidecarService(grpcServer)
+	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
 
 	grpcServer.Serve(lis)
 }

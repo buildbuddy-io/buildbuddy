@@ -106,7 +106,7 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 		for {
 			_, err := s.Ping(ctx, &scpb.PingRequest{})
 			if connectionValidated && err != nil {
-				fmt.Printf("sidecar did not response to ping request: %s\n", err)
+				bblog.Printf("sidecar did not respond to ping request: %s\n", err)
 				return
 			}
 			if !connectionValidated && err == nil {
