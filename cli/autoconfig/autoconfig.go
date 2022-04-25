@@ -37,8 +37,10 @@ type BazelOpts struct {
 	EnableRemoteBazel  bool
 	SidecarSocket      string
 
-	// If the user is trying to use build events, remote caching or execution but did not specify the endpoints on the
-	// command line, these fields will contain the automatically configured values that should be passed to Bazel.
+	// If the user is trying to use build events, remote caching or execution
+	// but did not specify the endpoints on the command line, these fields will
+	// contain the automatically configured values that should be passed to
+	// Bazel.
 	BESBackendOverride     string
 	RemoteExecutorOverride string
 	RemoteCacheOverride    string
