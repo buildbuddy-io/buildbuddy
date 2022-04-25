@@ -317,6 +317,7 @@ type ExecutorConfig struct {
 	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
 	EnablePodman                  bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
 	PodmanRuntime                 string                    `yaml:"podman_runtime" usage:"Enables running podman with other runtimes, like gVisor (runsc)."`
+	EnableSandbox                 bool                      `yaml:"enable_sandbox" usage:"Enables running execution commands inside of sandbox-exec."`
 	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	FirecrackerMountWorkspaceFile bool                      `yaml:"firecracker_mount_workspace_file" usage:"Enables mounting workspace filesystem to improve performance of copying action outputs."`
 	ContainerRegistries           []ContainerRegistryConfig `yaml:"container_registries"`
