@@ -8,15 +8,6 @@ realpath() {
   [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
 }
 
-NODE=$(realpath "${1?}")
-shift
-PRETTIER=$(realpath "${1?}")
-shift
-
-# note: BUILD_WORKSPACE_DIRECTORY points to the workspace root (containing all the
-# source code) and is set by `bazel run`.
-cd "${BUILD_WORKSPACE_DIRECTORY?}"
-
 # Diagram showing what `git merge-base HEAD refs/remotes/origin/master` is doing:
 #
 # o <- fetched remote master branch (refs/remotes/origin/master)
@@ -49,4 +40,12 @@ if [[ -z "${paths[*]}" ]]; then
   exit 0
 fi
 
-"$NODE" "$PRETTIER" "$@" "${paths[@]}"
+# Run bazel quietly; see: https://github.com/bazelbuild/bazel/issues/4867#issuecomment-796208829
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
+  cat "$tmp/build.log" >&2
+  exit 1
+}
+chmod +x "$tmp/run.sh"
+"$tmp/run.sh" --bazel_node_working_dir="$PWD" "${paths[@]}" "$@"
