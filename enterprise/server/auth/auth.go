@@ -44,7 +44,7 @@ var (
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = []config.OauthProvider{}
 	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
-	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", time.Duration(5)*time.Minute, "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
+	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "Override for the TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 )
