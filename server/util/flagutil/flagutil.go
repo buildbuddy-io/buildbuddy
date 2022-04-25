@@ -4,18 +4,46 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
 	// Change only for testing purposes
 	defaultFlagSet = flag.CommandLine
+
+	// Used for type conversions between flags and YAML
+	flagTypeMap = map[reflect.Type]reflect.Type{
+		flagTypeFromFlagFuncName("Bool"):     reflect.TypeOf((*bool)(nil)),
+		flagTypeFromFlagFuncName("Duration"): reflect.TypeOf((*time.Duration)(nil)),
+		flagTypeFromFlagFuncName("Float64"):  reflect.TypeOf((*float64)(nil)),
+		flagTypeFromFlagFuncName("Int"):      reflect.TypeOf((*int)(nil)),
+		flagTypeFromFlagFuncName("Int64"):    reflect.TypeOf((*int64)(nil)),
+		flagTypeFromFlagFuncName("Uint"):     reflect.TypeOf((*uint)(nil)),
+		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
+		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
+
+		reflect.TypeOf((*stringSliceFlag)(nil)): reflect.TypeOf((*[]string)(nil)),
+		reflect.TypeOf((*URLFlag)(nil)):         reflect.TypeOf((*URLFlag)(nil)),
+	}
 )
+
+func flagTypeFromFlagFuncName(name string) reflect.Type {
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	ff := reflect.ValueOf(fs).MethodByName(name)
+	in := make([]reflect.Value, ff.Type().NumIn())
+	for i := range in {
+		in[i] = reflect.New(ff.Type().In(i)).Elem()
+	}
+	ff.Call(in)
+	return reflect.TypeOf(fs.Lookup("").Value)
+}
 
 // TODO: When we get generics, we can replace these function with Slice and use
 // it for all types of slices (currently just strings and structs).
@@ -38,7 +66,7 @@ func StructSliceVar(structSlicePtr interface{}, name, usage string) {
 
 // String flag that gets validated as a URL
 // TODO: just use the URL directly (not the string) once we can generate the
-// yaml map from the flags instead of the other way around.
+// YAML map from the flags instead of the other way around.
 func URLString(name, value, usage string) *string {
 	u := NewURLFlag(&value)
 	defaultFlagSet.Var(u, name, usage)
@@ -239,4 +267,92 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	_, err = url.Parse(string(*f))
 	return err
+}
+
+func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
+	yamlMap := make(map[interface{}]interface{})
+	var errors []error
+	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
+		keys := strings.Split(flg.Name, ".")
+		m := yamlMap
+		for k := range keys[:len(keys)-1] {
+			v := make(map[interface{}]interface{})
+			m[k], m = v, v
+		}
+		if v, ok := flg.Value.(*structSliceFlag); ok {
+			m[keys[len(keys)-1]] = reflect.MakeSlice(v.dstSlice.Type(), 0, 0)
+			return
+		} else if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
+			m[keys[len(keys)-1]] = reflect.New(t).Elem()
+			return
+		}
+		errors = append(errors, status.FailedPreconditionErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
+	})
+	if errors != nil {
+		return nil, status.InternalErrorf("Errors encountered when converting flags to YAML map: %v", errors)
+	}
+	return yamlMap, nil
+}
+
+func PopulateFlagsFromYAMLMap(m map[interface{}]interface{}) error {
+	setFlags := make(map[string]struct{})
+	defaultFlagSet.Visit(func(flg *flag.Flag) {
+		setFlags[flg.Name] = struct{}{}
+	})
+
+	return populateFlagsFromYAML(m, []string{}, setFlags)
+}
+
+func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]struct{}) error {
+	if m, ok := i.(map[interface{}]interface{}); ok {
+		for k, v := range m {
+			suffix, ok := k.(string)
+			if !ok {
+				return status.FailedPreconditionErrorf("non-string key in YAML map at %s.", strings.Join(prefix, "."))
+			}
+			if err := populateFlagsFromYAML(v, append(prefix, suffix), setFlags); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return SetValueForFlagName(strings.Join(prefix, "."), i, setFlags, true, false)
+}
+
+func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
+	flg := defaultFlagSet.Lookup(name)
+	if flg == nil {
+		if strict {
+			return status.FailedPreconditionErrorf("No flag exists for %s.", name)
+		}
+		return nil
+	}
+	// For slice flags, append the YAML values to the existing values if appendSlice is true
+	if v, ok := flg.Value.(SliceFlag); ok && appendSlice {
+		v.AppendSlice(i)
+		return nil
+	}
+	// For non-append flags, skip the YAML values if it was set on the command line
+	if _, ok := setFlags[name]; ok {
+		return nil
+	}
+	t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]
+	if !ok {
+		return status.FailedPreconditionErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+	}
+	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i))
+	return nil
+}
+
+func DereferencedValueFromFlagName(name string) (interface{}, error) {
+	flg := defaultFlagSet.Lookup(name)
+	if flg == nil {
+		return nil, status.FailedPreconditionErrorf("Undefined flag: %s", name)
+	}
+	addr := reflect.ValueOf(flg.Value)
+	t, ok := flagTypeMap[addr.Type()]
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("Unsupported flag type at %s: %s", name, addr.Type())
+	}
+	return addr.Convert(t).Elem().Interface(), nil
 }
