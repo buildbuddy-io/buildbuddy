@@ -19,6 +19,10 @@ go_library(
 go_test(
     name = "sandbox_test",
     srcs = ["sandbox_test.go"],
+    tags = [
+        "no-sandbox",  # sandbox-exec is not compatible with Bazel's sandbox environment
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
     deps = [
         ":sandbox",
         "//enterprise/server/remote_execution/container",

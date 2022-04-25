@@ -148,9 +148,9 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	dirs = append(dirs, darwinUserCache)
 
 	// Add some user specific dirs as well.
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	homeDir := "/"
+	if h, err := os.UserHomeDir(); err == nil {
+		homeDir = h
 	}
 	dirs = append(dirs, filepath.Join(homeDir, "Library/Caches"))
 	dirs = append(dirs, filepath.Join(homeDir, "Library/Logs"))
@@ -272,7 +272,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 	// slash, so make sure it does not!
 	inaccessiblePaths := []sbxPath{NewSubPath(filepath.Dir(strings.TrimRight(workDir, "/")))}
 	writablePaths := append(alwaysWritableDirs, NewSubPath(workDir))
-	
+
 	sandboxConfigPath := filepath.Join(workDir, "sandbox.sb")
 	sandboxConfigBuf := makeSandboxConfig(writablePaths, inaccessiblePaths, c.enableNetwork)
 	if err := os.WriteFile(sandboxConfigPath, sandboxConfigBuf, 0660); err != nil {
