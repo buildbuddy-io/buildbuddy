@@ -49,6 +49,9 @@ const (
 	subPath
 )
 
+// sbxPath represents a path and the associated sandbox path type. Calling
+// String() on a sbxPath will return a tinyScheme sandbox statement that can
+// be used in a sandbox config.
 type sbxPath struct {
 	expression string
 	pathType   sbxPathType
@@ -106,13 +109,15 @@ func getConfString(ctx context.Context, confVar string) (string, error) {
 	return strings.TrimSpace(string(result.Stdout)), nil
 }
 
-func resolveSymlink(path string, fileInfo os.FileInfo) string {
+func resolveSymlink(path string, fileInfo os.FileInfo) (string, error) {
 	if fileInfo.Mode()&os.ModeSymlink != 0 {
-		if absPath, err := os.Readlink(path); err == nil {
-			return absPath
+		absPath, err := os.Readlink(path)
+		if err != nil {
+			return "", err
 		}
+		return absPath, nil
 	}
-	return path
+	return path, nil
 }
 
 func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
@@ -158,8 +163,12 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	dirs = append(dirs, filepath.Join(homeDir, "Library/Developer"))
 
 	for _, path := range dirs {
+		// If the path exists...
 		if fileInfo, err := os.Lstat(path); !os.IsNotExist(err) {
-			absPath := resolveSymlink(path, fileInfo)
+			absPath, err := resolveSymlink(path, fileInfo)
+			if err != nil {
+				return nil, err
+			}
 			dirSet[absPath] = struct{}{}
 		}
 	}
@@ -224,7 +233,7 @@ func sandboxPrereqs(ctx context.Context) error {
 		sandboxingSupported = computeSandboxingSupported(ctx)
 	})
 	if !sandboxingSupported {
-		return status.UnavailableError("sandboxing is not supported")
+		return status.FailedPreconditionError("sandboxing is not supported")
 	}
 
 	alwaysWritableDirsOnce.Do(func() {
