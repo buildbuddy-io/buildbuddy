@@ -106,7 +106,7 @@ func getConfString(ctx context.Context, confVar string) (string, error) {
 	return strings.TrimSpace(string(result.Stdout)), nil
 }
 
-func resolveSymlinks(path string, fileInfo os.FileInfo) string {
+func resolveSymlink(path string, fileInfo os.FileInfo) string {
 	if fileInfo.Mode()&os.ModeSymlink != 0 {
 		if absPath, err := os.Readlink(path); err == nil {
 			return absPath
@@ -124,8 +124,9 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 		"/private/var/tmp",
 	}
 
-	// On macOS, processes may write to not only $TMPDIR but also to two other temporary
-	// directories. We have to get their location by calling "getconf".
+	// On macOS, processes may write to not only $TMPDIR but also to two
+	// other temporary directories. We have to get their location by calling
+	// "getconf".
 	darwinUserTmp, err := getConfString(ctx, "DARWIN_USER_TEMP_DIR")
 	if err != nil {
 		return nil, err
@@ -158,7 +159,7 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 
 	for _, path := range dirs {
 		if fileInfo, err := os.Lstat(path); !os.IsNotExist(err) {
-			absPath := resolveSymlinks(path, fileInfo)
+			absPath := resolveSymlink(path, fileInfo)
 			dirSet[absPath] = struct{}{}
 		}
 	}
@@ -170,8 +171,8 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	return alwaysWritable, nil
 }
 
-// See https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf for
-// docs on how sandboxing works.
+// See https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf
+// for docs on how sandboxing works.
 func makeSandboxConfig(writeable, inaccessible []sbxPath, enableNetworking bool) []byte {
 	buf := &bytes.Buffer{}
 	buf.WriteString("(version 1)\n")
@@ -268,8 +269,8 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 		return result
 	}
 
-	// filepath.Dir will return the parent dir if the arg does not contain a trailing
-	// slash, so make sure it does not!
+	// filepath.Dir will return the parent dir if the arg does not contain a
+	// trailing slash, so make sure it does not!
 	inaccessiblePaths := []sbxPath{NewSubPath(filepath.Dir(strings.TrimRight(workDir, "/")))}
 	writablePaths := append(alwaysWritableDirs, NewSubPath(workDir))
 
