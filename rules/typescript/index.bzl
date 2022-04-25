@@ -1,8 +1,4 @@
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
+load("@npm//@bazel/concatjs:index.bzl", _ts_library = "ts_library")
 
-def ts_library(**kwargs):
-    ts_project(
-        tsconfig = "//:tsconfig",
-        composite = True,
-        **kwargs
-    )
+# TODO(bduffany): ts_library is semi-deprecated; migrate to ts_project
+ts_library = _ts_library
