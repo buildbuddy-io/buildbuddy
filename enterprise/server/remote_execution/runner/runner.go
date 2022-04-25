@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -913,6 +914,11 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			return nil, err
 		}
 		ctr = c
+	case platform.SandboxContainerType:
+		opts := &sandbox.Options{
+			Network: props.DockerNetwork,
+		}
+		ctr = sandbox.New(opts)
 	default:
 		ctr = bare.NewBareCommandContainer()
 	}

@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/containers/podman",
+        "//enterprise/server/remote_execution/containers/sandbox",
         "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
