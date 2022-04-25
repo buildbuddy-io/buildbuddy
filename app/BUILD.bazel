@@ -1,4 +1,4 @@
-load("@npm//@bazel/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("//rules/sha:index.bzl", "sha")
 

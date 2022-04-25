@@ -1,4 +1,4 @@
-load("@npm//@bazel/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -46,6 +46,7 @@ ts_library(
         "//proto:remote_execution_ts_proto",
         "//proto:user_ts_proto",
         "//proto:workflow_ts_proto",
+        "@npm//@types/dagre-d3",
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/pako",

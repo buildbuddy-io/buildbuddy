@@ -100,6 +100,9 @@ def ts_proto_library(name, proto, **kwargs):
     # )
 
     # Expose the results as js_library which provides DeclarationInfo for interop with other rules
+    if "deps" not in kwargs:
+        kwargs["deps"] = []
+    kwargs["deps"].append("@npm//protobufjs")
     js_library(
         name = name,
         srcs = [

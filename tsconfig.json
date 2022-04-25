@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "composite": true,
     "jsx": "react",
     "esModuleInterop": true,
     "noImplicitAny": true,
@@ -7,15 +8,22 @@
     "moduleResolution": "node",
     "module": "commonjs",
     "sourceMap": false,
-    "outDir": "dist",
+    "isolatedModules": true,
+    "downlevelIteration": true,
     "target": "ES2016",
     "baseUrl": ".",
     "lib": ["es2017", "es2019", "dom", "dom.iterable"],
-    "rootDirs": [".", "bazel-bin"],
-    "paths": {
-      "buildbuddy/*": ["*", "bazel-bin/*"],
-      "*": ["node_modules/*"]
-    }
+    "rootDirs": [
+      ".",
+      "./bazel-out/host/bin",
+      "./bazel-out/darwin-fastbuild/bin",
+      "./bazel-out/darwin_arm64-fastbuild/bin",
+      "./bazel-out/k8-fastbuild/bin",
+      "./bazel-out/x64_windows-fastbuild/bin",
+      "./bazel-out/darwin-dbg/bin",
+      "./bazel-out/k8-dbg/bin",
+      "./bazel-out/x64_windows-dbg/bin"
+    ]
   },
   "exclude": ["bazel-out", "bazel-bin"]
 }
