@@ -145,7 +145,7 @@ func TestTrackTargetsForEvents(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
-	flags.Set(t, "app.enable_target_tracking", "true")
+	flags.Set(t, "app.enable_target_tracking", true)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
 	require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(ta)
-	flags.Set(t, "app.enable_target_tracking", "true")
+	flags.Set(t, "app.enable_target_tracking", true)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
 	require.NoError(t, err)

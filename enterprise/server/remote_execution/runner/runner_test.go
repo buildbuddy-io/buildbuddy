@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"path"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -121,9 +120,9 @@ func mustRun(t *testing.T, r *commandRunner) {
 }
 
 func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *pool {
-	flags.Set(t, "executor.runner_pool.max_runner_count", strconv.Itoa(cfg.MaxRunnerCount))
-	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", strconv.FormatInt(cfg.MaxRunnerDiskSizeBytes, 10))
-	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", strconv.FormatInt(cfg.MaxRunnerMemoryUsageBytes, 10))
+	flags.Set(t, "executor.runner_pool.max_runner_count", cfg.MaxRunnerCount)
+	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", cfg.MaxRunnerDiskSizeBytes)
+	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", cfg.MaxRunnerMemoryUsageBytes)
 	p, err := NewPool(env)
 	require.NoError(t, err)
 	require.NotNil(t, p)

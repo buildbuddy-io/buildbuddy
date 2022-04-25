@@ -552,6 +552,9 @@ func (cc *RedisClientConfig) String() string {
 // value will be consistent.
 func (c *Configurator) ReconcileFlagsAndConfig() {
 	c.GenerateFlagSet().VisitAll(func(flg *flag.Flag) {
+		if flag.Lookup(flg.Name) == nil {
+			return
+		}
 		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {
 			if flagSlice, ok := flag.Lookup(flg.Name).Value.(flagutil.SliceFlag); ok {
 				if originalSliceLen, ok := originalSliceLens[flg.Name]; ok {

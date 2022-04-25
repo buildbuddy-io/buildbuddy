@@ -69,7 +69,7 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// typically use far less RAM. To enable this test to run on machines smaller
 	// than 8Gi, force-set the executor memory_bytes to 10Gi so the workflow
 	// tasks will schedule.
-	flags.Set(t, "executor.memory_bytes", fmt.Sprintf("%d", 10_000_000_000))
+	flags.Set(t, "executor.memory_bytes", 10_000_000_000)
 	// Use bare execution -- Docker isn't supported in tests yet.
 	flags.Set(t, "remote_execution.workflows_default_image", "none")
 	// Use a pre-built bazel instead of invoking bazelisk, which significantly
@@ -78,8 +78,6 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	// Set events_api_url to point to the test BB app server (this gets
 	// propagated to the CI runner so it knows where to publish build events).
 	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
-
-	env.GetConfigurator().ReconcileFlagsAndConfig()
 
 	env.AddExecutors(t, 10)
 	return env, workflowService

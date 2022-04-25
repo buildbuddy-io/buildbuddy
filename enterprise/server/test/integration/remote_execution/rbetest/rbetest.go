@@ -36,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -80,6 +79,9 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+
+	// included to define flags
+	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor"
 )
 
 const (
@@ -141,10 +143,6 @@ func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorag
 
 func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
-}
-
-func (r *Env) GetConfigurator() *config.Configurator {
-	return r.testEnv.GetConfigurator()
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {

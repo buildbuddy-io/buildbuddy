@@ -17,9 +17,9 @@ go_test(
     srcs = ["url_test.go"],
     deps = [
         ":url",
-        "//server/config",
         "//server/environment",
         "//server/real_environment",
         "//server/util/healthcheck",
+        "//server/util/testing/flags",
     ],
 )

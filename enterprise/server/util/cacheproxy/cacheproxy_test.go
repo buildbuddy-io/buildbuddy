@@ -78,8 +78,8 @@ func copyAndClose(wc io.WriteCloser, r io.Reader) error {
 
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -160,8 +160,8 @@ func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 
 func TestWriteAlreadyExistsCAS(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -215,8 +215,8 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 
 func TestWriteAlreadyExistsAC(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -271,8 +271,8 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 
 func TestReader(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -329,8 +329,8 @@ func TestReader(t *testing.T) {
 
 func TestWriter(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -392,8 +392,8 @@ func TestWriter(t *testing.T) {
 
 func TestWriteAlreadyExists(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -446,8 +446,8 @@ func TestWriteAlreadyExists(t *testing.T) {
 
 func TestContains(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -517,8 +517,8 @@ func TestContains(t *testing.T) {
 
 func TestOversizeBlobs(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -589,8 +589,8 @@ func TestOversizeBlobs(t *testing.T) {
 
 func TestFindMissing(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -657,8 +657,8 @@ func TestFindMissing(t *testing.T) {
 
 func TestGetMulti(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
@@ -719,8 +719,8 @@ func TestGetMulti(t *testing.T) {
 
 func TestEmptyRead(t *testing.T) {
 	ctx := context.Background()
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {

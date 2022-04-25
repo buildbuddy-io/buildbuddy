@@ -242,10 +242,10 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 }
 
 func TestRPCWriteAndReadCompressed(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
-	flags.Set(t, "cache.detailed_stats_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	te.SetMetricsCollector(mc)
@@ -318,9 +318,9 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 }
 
 func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
@@ -392,9 +392,9 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 }
 
 func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)

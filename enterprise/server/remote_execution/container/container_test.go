@@ -2,7 +2,6 @@ package container_test
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"testing"
 	"time"
@@ -240,8 +239,9 @@ func TestImageCacheAuthenticator(t *testing.T) {
 
 func TestGetPullCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-
-	cr, err := json.Marshal(
+	flags.Set(
+		t,
+		"executor.container_registries",
 		[]config.ContainerRegistryConfig{
 			{
 				Hostnames: []string{"gcr.io", "us.gcr.io", "eu.gcr.io", "asia.gcr.io", "marketplace.gcr.io"},
@@ -254,12 +254,6 @@ func TestGetPullCredentials(t *testing.T) {
 				Password:  "dockerpass",
 			},
 		},
-	)
-	require.NoError(t, err)
-	flags.Set(
-		t,
-		"executor.container_registries",
-		string(cr),
 	)
 
 	for _, testCase := range []struct {

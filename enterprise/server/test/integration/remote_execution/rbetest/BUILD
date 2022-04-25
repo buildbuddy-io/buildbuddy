@@ -8,6 +8,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
+        "//enterprise/server/cmd/executor:executor_lib",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/filecache",
@@ -31,7 +32,6 @@ go_library(
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/build_event_server",
         "//server/buildbuddy_server",
-        "//server/config",
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",

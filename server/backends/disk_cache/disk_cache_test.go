@@ -32,8 +32,8 @@ var (
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "auth.enable_anonymous_usage", true)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te
 }

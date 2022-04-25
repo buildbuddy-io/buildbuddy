@@ -2,7 +2,6 @@ package usage_test
 
 import (
 	"context"
-	"flag"
 	"reflect"
 	"testing"
 	"time"
@@ -37,10 +36,6 @@ var (
 	usage1Collection3Start = usage1Start.Add(2 * collectionPeriodDuration)
 	usage1Collection4Start = usage1Start.Add(3 * collectionPeriodDuration)
 )
-
-func init() {
-	flag.Set("app.usage_tracking_enabled", "true")
-}
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
@@ -114,6 +109,7 @@ func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
 func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
@@ -197,6 +193,7 @@ func TestUsageTracker_Increment_MultipleCollectionPeriodsInSameUsagePeriod(t *te
 func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
 	flags.Set(t, "app.region", "us-west1")
@@ -270,6 +267,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
@@ -312,6 +310,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, usage.NewFlushLock(te))
@@ -340,6 +339,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	clock := testclock.StartingAt(usage1Collection1Start)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
 
 	flags.Set(t, "app.region", "us-west1")
@@ -398,6 +398,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	// Redis instances should be different.
 	te1 := setupEnv(t)
 	te2 := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
@@ -447,6 +448,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	counts1 := increasingCountsStartingAt(100)
 	counts2 := increasingCountsStartingAt(10000)
 	te := setupEnv(t)
+	flags.Set(t, "app.usage_tracking_enabled", true)
 	clock := testclock.StartingAt(usage1Collection1Start)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
