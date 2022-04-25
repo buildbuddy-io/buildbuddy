@@ -36,6 +36,17 @@ type BazelOpts struct {
 	WorkspaceFilePath  string
 	EnableRemoteBazel  bool
 	SidecarSocket      string
+
+	// If the user is trying to use build events, remote caching or execution
+	// but did not specify the endpoints on the command line, these fields will
+	// contain the automatically configured values that should be passed to
+	// Bazel.
+	BESBackendOverride     string
+	RemoteExecutorOverride string
+	RemoteCacheOverride    string
+
+	// Additional arguments to pass to Bazel.
+	ExtraArgs []string
 }
 
 func bbToolchainArgs() []string {
@@ -51,12 +62,12 @@ func bbToolchainArgs() []string {
 	return args
 }
 
-func remoteBazelArgs(besBackend, remoteExecutor string) []string {
+func remoteBazelArgs(grpcURL string) []string {
 	var args []string
 	args = append(args, "--remote_default_exec_properties=container-image=docker://gcr.io/flame-public/buildbuddy-ci-runner:latest")
 	args = append(args, "--remote_header=x-buildbuddy-api-key="+*apiKey)
-	args = append(args, "--bes_backend="+besBackend)
-	args = append(args, "--remote_executor="+remoteExecutor)
+	args = append(args, "--bes_backend="+grpcURL)
+	args = append(args, "--remote_executor="+grpcURL)
 	return args
 }
 
@@ -77,65 +88,81 @@ func defaultIP(ctx context.Context) (net.IP, error) {
 	return nil, fmt.Errorf("could not determine host's default IP")
 }
 
-// TODO(vadim): reduce # of return values
-func Configure(ctx context.Context, bazelFlags *commandline.BazelFlags, filteredOSArgs []string) (*commandline.BazelFlags, *BazelOpts, []string, error) {
-	var grpcEndpoint, webURL string
+type remoteEndpoints struct {
+	grpcURL    string
+	webBaseURL string
+}
+
+func configRemoteEndpoints(ctx context.Context) (*remoteEndpoints, error) {
 	switch *env {
 	case "prod":
-		grpcEndpoint = "grpcs://remote.buildbuddy.io"
-		webURL = "https://app.buildbuddy.io"
+		return &remoteEndpoints{
+			grpcURL:    "grpcs://remote.buildbuddy.io",
+			webBaseURL: "https://app.buildbuddy.io",
+		}, nil
 	case "dev":
-		grpcEndpoint = "grpcs://remote.buildbuddy.dev"
-		webURL = "https://app.buildbuddy.dev"
+		return &remoteEndpoints{
+			grpcURL:    "grpcs://remote.buildbuddy.dev",
+			webBaseURL: "https://app.buildbuddy.dev",
+		}, nil
 	case "local":
 		// we need to use an IP that's reachable from within the firecracker VMs
 		ip, err := defaultIP(ctx)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
-		grpcEndpoint = fmt.Sprintf("grpc://%s:1985", ip)
-		webURL = "http://localhost:8080"
+		return &remoteEndpoints{
+			grpcURL:    fmt.Sprintf("grpc://%s:1985", ip),
+			webBaseURL: "http://localhost:8080",
+		}, nil
 	default:
-		return nil, nil, nil, fmt.Errorf("unknown environment %q", *env)
+		return nil, fmt.Errorf("unknown environment %q", *env)
+	}
+}
+
+func Configure(ctx context.Context, bazelFlags *commandline.BazelFlags) (*BazelOpts, error) {
+	endpoints, err := configRemoteEndpoints(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	if *events && bazelFlags.BESBackend == "" {
-		bazelFlags.BESBackend = grpcEndpoint
-		filteredOSArgs = append(filteredOSArgs, fmt.Sprintf("--bes_results_url=%s/invocation/", webURL))
-	}
-
-	if (*remote == remoteExec || *remote == remoteBazel) && bazelFlags.RemoteExecutor == "" {
-		if *remote == remoteExec {
-			filteredOSArgs = append(filteredOSArgs, bbToolchainArgs()...)
-			addToolchainsToWorkspaceIfNotPresent(wsFilePath)
-			bazelFlags.RemoteExecutor = grpcEndpoint
-			filteredOSArgs = append(filteredOSArgs, "--remote_download_minimal")
-		} else {
-			filteredOSArgs = append(filteredOSArgs, remoteBazelArgs(bazelFlags.BESBackend, grpcEndpoint)...)
-			// --remote_download_minimal is supposed to be enough for `bazel run` to work, but it's not the case in
-			// practice. Use --remote_download_toplevel to make sure the top level binary is available for running.
-			filteredOSArgs = append(filteredOSArgs, "--remote_download_toplevel")
-		}
-		filteredOSArgs = append(filteredOSArgs, "--jobs=200")
-	}
-
-	if (*cache || *remote == remoteBazel) && bazelFlags.RemoteCache == "" {
-		bazelFlags.RemoteCache = grpcEndpoint
+		return nil, err
 	}
 
 	bazelOpts := &BazelOpts{
-		BuildBuddyEndpoint: grpcEndpoint,
+		BuildBuddyEndpoint: endpoints.grpcURL,
 		WorkspaceFilePath:  wsFilePath,
 		EnableRemoteBazel:  *remote == remoteBazel,
 		APIKey:             *apiKey,
 	}
 
-	return bazelFlags, bazelOpts, filteredOSArgs, nil
+	if *events && bazelFlags.BESBackend == "" {
+		bazelOpts.BESBackendOverride = endpoints.grpcURL
+		bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, fmt.Sprintf("--bes_results_url=%s/invocation/", endpoints.webBaseURL))
+	}
+
+	if (*remote == remoteExec || *remote == remoteBazel) && bazelFlags.RemoteExecutor == "" {
+		if *remote == remoteExec {
+			bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, bbToolchainArgs()...)
+			addToolchainsToWorkspaceIfNotPresent(wsFilePath)
+			bazelOpts.RemoteExecutorOverride = endpoints.grpcURL
+			bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, "--remote_download_minimal")
+		} else {
+			bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, remoteBazelArgs(endpoints.grpcURL)...)
+			// --remote_download_minimal is supposed to be enough for `bazel run` to work, but it's not the case in
+			// practice. Use --remote_download_toplevel to make sure the top level binary is available for running.
+			bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, "--remote_download_toplevel")
+		}
+		bazelOpts.ExtraArgs = append(bazelOpts.ExtraArgs, "--jobs=200")
+	}
+
+	if (*cache || *remote == remoteBazel) && bazelFlags.RemoteCache == "" {
+		bazelOpts.RemoteCacheOverride = endpoints.grpcURL
+	}
+
+	return bazelOpts, nil
 }
 
 func addToolchainsToWorkspaceIfNotPresent(workspaceFilePath string) {

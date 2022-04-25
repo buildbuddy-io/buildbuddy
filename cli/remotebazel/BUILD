@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/commandline",
         "//cli/logging",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

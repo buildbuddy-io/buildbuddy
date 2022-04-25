@@ -764,7 +764,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err != nil {
 				return err
 			}
-			os.RemoveAll(tmpDir)
+			defer os.RemoveAll(tmpDir)
 			runScript = filepath.Join(tmpDir, "run.sh")
 			args = append(args, "--script_path="+runScript)
 		}

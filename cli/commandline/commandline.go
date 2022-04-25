@@ -2,6 +2,7 @@ package commandline
 
 import (
 	"flag"
+	"fmt"
 	"strings"
 
 	gflags "github.com/jessevdk/go-flags"
@@ -22,15 +23,44 @@ type BazelFlags struct {
 
 func ExtractBazelFlags(args []string) *BazelFlags {
 	bf := &BazelFlags{}
-	parser := gflags.NewParser(bf, gflags.IgnoreUnknown)
-	parser.ParseArgs(args) // ignore error
+	parser := gflags.NewParser(bf, gflags.IgnoreUnknown|gflags.PassDoubleDash)
+	_, _ = parser.ParseArgs(args) // ignore error
 	return bf
 }
 
-// Parsing bazel flags is hard, so instead we look for our specific flags, in
-// "--flagName=value" form, and if present, we pull them out of the os.Args
-// slice, so that bazel never gets them.
-func ParseFlagsAndRewriteArgs(args []string) []string {
+type BazelArgs struct {
+	// Arguments passed to the CLI binary after removing flags that are meant for the CLI itself.
+	Filtered []string
+	// Arguments appearing after a bare "--" argument.
+	Passthrough []string
+	// Arguments for Bazel added by the CLI.
+	Added []string
+}
+
+func (a *BazelArgs) Add(arg ...string) {
+	a.Added = append(a.Added, arg...)
+}
+
+// ExecArgs returns a combined list of all the arguments.
+func (a *BazelArgs) ExecArgs() []string {
+	var args []string
+	args = append(args, a.Filtered...)
+	args = append(args, a.Added...)
+	if len(a.Passthrough) > 0 {
+		args = append(args, "--")
+		args = append(args, a.Passthrough...)
+	}
+	return args
+}
+
+func (a *BazelArgs) String() string {
+	return fmt.Sprintf("%s", a.ExecArgs())
+}
+
+// ParseFlagsAndRewriteArgs returns the argument list after removing known BuildBuddy CLI flags.
+// The filtered arguments are returned via two slices, one for the normal args and one for any "passthrough" args
+// (i.e. those appearing after a bare "--" argument).
+func ParseFlagsAndRewriteArgs(args []string) *BazelArgs {
 	ourFlagNames := []string{}
 	flag.CommandLine.VisitAll(func(f *flag.Flag) {
 		ourFlagNames = append(ourFlagNames, "--"+f.Name)
@@ -50,8 +80,13 @@ func ParseFlagsAndRewriteArgs(args []string) []string {
 			newArgs = append(newArgs, arg)
 		}
 	}
-	flag.CommandLine.Parse(ourArgs) // ignore error.
-	return newArgs
+	_ = flag.CommandLine.Parse(ourArgs) // ignore error.
+	for i, a := range newArgs {
+		if a == "--" {
+			return &BazelArgs{Filtered: newArgs[:i], Passthrough: newArgs[i+1:]}
+		}
+	}
+	return &BazelArgs{Filtered: newArgs}
 }
 
 // Bazel has many subcommands, each with their own args. To know which options
