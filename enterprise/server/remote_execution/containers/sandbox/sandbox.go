@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -111,11 +112,14 @@ func getConfString(ctx context.Context, confVar string) (string, error) {
 
 func resolveSymlink(path string, fileInfo os.FileInfo) (string, error) {
 	if fileInfo.Mode()&os.ModeSymlink != 0 {
-		absPath, err := os.Readlink(path)
+		linkPath, err := os.Readlink(path)
 		if err != nil {
 			return "", err
 		}
-		return absPath, nil
+		if !filepath.IsAbs(linkPath) {
+			linkPath = filepath.Join(filepath.Dir(path), linkPath)
+		}
+		return linkPath, nil
 	}
 	return path, nil
 }
@@ -163,6 +167,9 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	dirs = append(dirs, filepath.Join(homeDir, "Library/Developer"))
 
 	for _, path := range dirs {
+		if strings.HasSuffix(path, "/") {
+			path = path[:len(path)-1]
+		}
 		// If the path exists...
 		if fileInfo, err := os.Lstat(path); !os.IsNotExist(err) {
 			absPath, err := resolveSymlink(path, fileInfo)
@@ -177,6 +184,9 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 	for path := range dirSet {
 		alwaysWritable = append(alwaysWritable, NewSubPath(path))
 	}
+	sort.Slice(alwaysWritable, func(i, j int) bool {
+		return alwaysWritable[i].String() < alwaysWritable[j].String()
+	})
 	return alwaysWritable, nil
 }
 
