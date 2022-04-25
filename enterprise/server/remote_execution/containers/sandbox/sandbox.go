@@ -67,7 +67,7 @@ func (s *sbxPath) typeString() string {
 	case subPath:
 		return "subpath"
 	default:
-		return "unknwon-sbx-path-type"
+		return "unknown-sbx-path-type"
 	}
 }
 
