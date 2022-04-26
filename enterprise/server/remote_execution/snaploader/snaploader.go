@@ -133,7 +133,7 @@ func (l *Loader) unpackManifest() error {
 
 	manifestPath := filepath.Join(tmpDir, ManifestFileName)
 	if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(manifestDigest), manifestPath) {
-		return status.FailedPreconditionErrorf("No manifest file found for snapshot: %s/%d", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
+		return status.UnavailableErrorf("snapshot manifest not found in local cache (digest: %s/%d)", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
 	}
 	buf, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -162,7 +162,7 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 	}
 	for filename, dk := range l.manifest.CachedFiles {
 		if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(dk.ToDigest()), filepath.Join(outputDirectory, filename)) {
-			return status.FailedPreconditionErrorf("File %q missing from snapshot.", filename)
+			return status.UnavailableErrorf("snapshot artifact %q not found in local cache", filename)
 		}
 	}
 	return nil
