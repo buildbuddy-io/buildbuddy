@@ -1,5 +1,6 @@
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
+load("@npm//@bazel/typescript:index.bzl", "ts_config")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -58,11 +59,15 @@ nogo(
 gazelle(name = "gazelle")
 
 exports_files([
-    "tsconfig.json",
     "package.json",
     "yarn.lock",
     "VERSION",
 ])
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
 
 filegroup(
     name = "config_files",
