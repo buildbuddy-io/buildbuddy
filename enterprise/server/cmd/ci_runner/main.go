@@ -119,6 +119,7 @@ var (
 
 	bazelCommand      = flag.String("bazel_command", "", "Bazel command to use.")
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
+	extraBazelArgs    = flag.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
 	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	// Test-only flags
@@ -1050,6 +1051,13 @@ func bazelArgs(cmd string) ([]string, error) {
 	}
 	if exists := (err == nil); exists {
 		startupFlags = append(startupFlags, "--noworkspace_rc", "--bazelrc=.bazelrc")
+	}
+	if *extraBazelArgs != "" {
+		extras, err := shlex.Split(*extraBazelArgs)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, extras...)
 	}
 	return append(startupFlags, tokens...), nil
 }
