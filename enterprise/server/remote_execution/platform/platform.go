@@ -65,6 +65,8 @@ const (
 	enableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
+	extraArgsPropertyName                = "extra-args"
+	envOverridesPropertyName             = "env-overrides"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -136,6 +138,11 @@ type Properties struct {
 	WorkflowID               string
 	HostedBazelAffinityKey   string
 	UseSelfHostedExecutors   bool
+	// ExtraArgs contains arguments to append to the action.
+	ExtraArgs []string
+	// EnvOverrides contains environment variables in the form NAME=VALUE to be
+	// applied as overrides to the action.
+	EnvOverrides []string
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -193,6 +200,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
+		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
+		EnvOverrides:              stringListProp(m, envOverridesPropertyName),
 	}
 }
 
@@ -354,6 +363,21 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 			{Name: "SDKROOT", Value: sdkRoot},
 		}...)
 	}
+
+	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
+	for _, e := range platformProps.EnvOverrides {
+		parts := strings.Split(e, "=")
+		if len(parts) == 0 {
+			continue
+		}
+		name := parts[0]
+		value := strings.Join(parts[1:], "=")
+		command.EnvironmentVariables = append(command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+			Name:  name,
+			Value: value,
+		})
+	}
+
 	return nil
 }
 
