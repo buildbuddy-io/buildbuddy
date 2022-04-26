@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -45,12 +44,8 @@ var (
 )
 
 func getToolEnv() *real_environment.RealEnv {
-	configurator, err := config.NewConfigurator("")
-	if err != nil {
-		log.Fatalf("This should never happen.")
-	}
 	healthChecker := healthcheck.NewHealthChecker("tool")
-	re := real_environment.NewRealEnv(configurator, healthChecker)
+	re := real_environment.NewRealEnv(healthChecker)
 
 	fc, err := filecache.NewFileCache(*snapshotDir, *snapshotDirMaxBytes)
 	if err != nil {

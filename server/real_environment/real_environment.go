@@ -7,7 +7,6 @@ import (
 
 	"github.com/go-redis/redis/v8"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -69,7 +68,6 @@ type RealEnv struct {
 	APIService                       interfaces.ApiService
 	fileCache                        interfaces.FileCache
 	remoteExecutionService           interfaces.RemoteExecutionService
-	configurator                     *config.Configurator
 	executionClients                 map[string]*executionClientConfig
 	cacheRedisClient                 redis.UniversalClient
 	defaultRedisClient               redis.UniversalClient
@@ -95,9 +93,8 @@ type RealEnv struct {
 	grpcsServer                      *grpc.Server
 }
 
-func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
+func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 	return &RealEnv{
-		configurator:     c,
 		healthChecker:    h,
 		serverContext:    context.Background(),
 		executionClients: make(map[string]*executionClientConfig, 0),
@@ -105,10 +102,6 @@ func NewRealEnv(c *config.Configurator, h interfaces.HealthChecker) *RealEnv {
 }
 
 // Required -- no SETTERs for these.
-func (r *RealEnv) GetConfigurator() *config.Configurator {
-	return r.configurator
-}
-
 func (r *RealEnv) GetHealthChecker() interfaces.HealthChecker {
 	return r.healthChecker
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
@@ -32,7 +31,6 @@ import (
 
 type Env interface {
 	// The following dependencies are required.
-	GetConfigurator() *config.Configurator
 	GetServerContext() context.Context
 
 	// Optional dependencies below here. For example: enterprise-only things,

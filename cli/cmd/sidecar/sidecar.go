@@ -115,9 +115,9 @@ func propagateAPIKeyStreamInterceptor() grpc.StreamServerInterceptor {
 	return rpcfilters.ContextReplacingStreamServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
 }
 
-func initializeEnv(configurator *config.Configurator) *real_environment.RealEnv {
+func initializeEnv() *real_environment.RealEnv {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := real_environment.NewRealEnv(configurator, healthChecker)
+	env := real_environment.NewRealEnv(healthChecker)
 	env.SetAuthenticator(&nullauth.NullAuthenticator{})
 	env.SetBuildEventHandler(&devnull.BuildEventHandler{})
 	return env
@@ -207,16 +207,14 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 func main() {
 	// Can remove all this configurator stuff once all flags the sidecar uses are
 	// defined outside the configurator.
-	config.RegisterAndParseFlags()
-	configurator, err := config.NewConfiguratorFromData([]byte{})
-	if err != nil {
+	flag.Parse()
+	if err := config.PopulateFlagsFromData([]byte{}); err != nil {
 		log.Fatalf("Error initializing Configurator: %s", err.Error())
 	}
-	configurator.ReconcileFlagsAndConfig()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	env := initializeEnv(configurator)
+	env := initializeEnv()
 	grpcServer, lis := initializeGRPCServer(env)
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
 
