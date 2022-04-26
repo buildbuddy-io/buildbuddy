@@ -5,7 +5,10 @@ go_library(
     srcs = ["flagutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flagutil",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/alert"],
+    deps = [
+        "//server/util/alert",
+        "//server/util/status",
+    ],
 )
 
 go_test(

@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/url"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -286,10 +286,10 @@ func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
 			m[keys[len(keys)-1]] = reflect.New(t).Elem()
 			return
 		}
-		errors = append(errors, status.FailedPreconditionErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
+		errors = append(errors, fmt.Errorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
 	})
 	if errors != nil {
-		return nil, status.InternalErrorf("Errors encountered when converting flags to YAML map: %v", errors)
+		return nil, fmt.Errorf("Errors encountered when converting flags to YAML map: %v", errors)
 	}
 	return yamlMap, nil
 }
@@ -308,7 +308,7 @@ func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]s
 		for k, v := range m {
 			suffix, ok := k.(string)
 			if !ok {
-				return status.FailedPreconditionErrorf("non-string key in YAML map at %s.", strings.Join(prefix, "."))
+				return fmt.Errorf("non-string key in YAML map at %s.", strings.Join(prefix, "."))
 			}
 			if err := populateFlagsFromYAML(v, append(prefix, suffix), setFlags); err != nil {
 				return err
@@ -323,7 +323,7 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
 		if strict {
-			return status.FailedPreconditionErrorf("No flag exists for %s.", name)
+			return status.NotFoundErrorf("Undefined flag: %s", name)
 		}
 		return nil
 	}
@@ -336,23 +336,36 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	if _, ok := setFlags[name]; ok {
 		return nil
 	}
+	if v, ok := flg.Value.(*structSliceFlag); ok {
+		v.SetTo(i)
+		return nil
+	}
 	t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]
 	if !ok {
-		return status.FailedPreconditionErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+		return status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
 	}
-	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i))
+	fmt.Printf("Setting value %v for flag %s.", i, name)
+	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i).Convert(t.Elem()))
 	return nil
 }
 
 func DereferencedValueFromFlagName(name string) (interface{}, error) {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
-		return nil, status.FailedPreconditionErrorf("Undefined flag: %s", name)
+		return nil, status.NotFoundErrorf("Undefined flag: %s", name)
+	}
+	if v, ok := flg.Value.(*structSliceFlag); ok {
+		return v.UnderlyingSlice(), nil
 	}
 	addr := reflect.ValueOf(flg.Value)
 	t, ok := flagTypeMap[addr.Type()]
 	if !ok {
-		return nil, status.FailedPreconditionErrorf("Unsupported flag type at %s: %s", name, addr.Type())
+		return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %s", name, addr.Type())
 	}
 	return addr.Convert(t).Elem().Interface(), nil
+}
+
+// FOR TESTING PURPOSES ONLY
+func AddTestFlagTypeForTesting(flagValue interface{}, value interface{}) {
+	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }
