@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
@@ -360,25 +359,7 @@ type OrgConfig struct {
 }
 
 func PopulateFlagsFromData(data []byte) error {
-	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
-
-	strictMap, err := flagutil.GenerateYAMLMapFromFlags()
-	if err != nil {
-		return err
-	}
-
-	// Unmarshal in strict mode once and warn about invalid fields.
-	if err := yaml.UnmarshalStrict([]byte(expandedData), strictMap); err != nil {
-		log.Warningf("Unknown fields in config: %s", err)
-	}
-
-	permissiveMap := make(map[interface{}]interface{})
-	if err := yaml.Unmarshal([]byte(expandedData), permissiveMap); err != nil {
-		return fmt.Errorf("Error parsing config file: %s", err)
-	}
-
-	return flagutil.PopulateFlagsFromYAMLMap(permissiveMap)
+	return flagutil.PopulateFlagsFromData(data)
 }
 
 func PopulateFlagsFromFile() error {

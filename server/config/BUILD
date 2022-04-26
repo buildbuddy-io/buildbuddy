@@ -8,6 +8,5 @@ go_library(
     deps = [
         "//server/util/flagutil",
         "//server/util/log",
-        "@in_gopkg_yaml_v2//:yaml_v2",
     ],
 )

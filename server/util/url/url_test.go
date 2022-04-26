@@ -18,7 +18,7 @@ func init() {
 func envWithAppURL(t *testing.T, appUrl string) environment.Env {
 	flags.Set(t, "app.build_buddy_url", appUrl)
 	healthChecker := healthcheck.NewHealthChecker("test")
-	return real_environment.NewRealEnv(nil, healthChecker)
+	return real_environment.NewRealEnv(healthChecker)
 }
 
 func TestValidateRedirect(t *testing.T) {
