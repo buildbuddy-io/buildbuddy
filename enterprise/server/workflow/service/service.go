@@ -61,6 +61,8 @@ var (
 	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", "", "The default docker image to use for running workflows.")
 	workflowsCIRunnerDebug        = flag.Bool("remote_execution.workflows_ci_runner_debug", false, "Whether to run the CI runner in debug mode.")
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
+	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
+	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -638,8 +640,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
+	computeUnits := *workflowsMacComputeUnits
 	// Use the CI runner image if the OS supports containerized actions.
 	if os == "" || os == platform.LinuxOperatingSystemName {
+		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.workflowsImage()
 		if *enableFirecracker {
 			isolationType = string(platform.FirecrackerContainerType)
@@ -697,7 +701,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
-				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
 		},
