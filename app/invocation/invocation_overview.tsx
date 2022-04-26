@@ -11,7 +11,7 @@ import {
   Cloud,
   HardDrive,
   LayoutGrid,
-  Link,
+  Link as LinkIcon,
   Target,
   User as UserIcon,
   Wrench,
@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { User } from "../auth/auth_service";
+import { Link } from "../components/link/link";
 import format from "../format/format";
 import router from "../router/router";
 import InvocationButtons from "./invocation_buttons";
@@ -30,10 +31,6 @@ interface Props {
   user?: User;
 }
 export default class InvocationOverviewComponent extends React.Component<Props> {
-  handleOrganizationClicked() {
-    router.navigateHome();
-  }
-
   handleUserClicked() {
     router.navigateToUserHistory(this.props.model.getUser(false));
   }
@@ -81,6 +78,8 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
     const roleLabel = format.formatRole(this.props.model.getRole());
+    const parentInvocationId = this.props.model.buildMetadataMap.get("PARENT_INVOCATION_ID");
+    const parentWorkflowId = this.props.model.buildMetadataMap.get("WORKFLOW_ID");
 
     return (
       <div className="container">
@@ -88,13 +87,14 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           <div className="breadcrumbs">
             {this.props.user && ownerGroup && (
               <>
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                  {ownerGroup.name}
-                </span>
-                <span onClick={this.handleOrganizationClicked.bind(this)} className="clickable">
-                  Builds
-                </span>
+                <Link href="/">{ownerGroup.name}</Link>
+                <Link href="/">Builds</Link>
               </>
+            )}
+            {parentInvocationId && (
+              <Link href={`/invocation/${parentInvocationId}`}>
+                {parentWorkflowId ? "Workflow" : "Bazel invocation"} {parentInvocationId}
+              </Link>
             )}
             <span>Invocation {this.props.invocationId}</span>
           </div>
@@ -218,7 +218,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           )}
           {this.props.model.getLinks().map((link) => (
             <a className="detail clickable" href={link.linkUrl} target="_blank">
-              <Link className="icon" />
+              <LinkIcon className="icon" />
               {link.linkText}
             </a>
           ))}

@@ -43,7 +43,7 @@ const (
 	// a firecracker VM, multiplied by ~3X.
 	DockerInFirecrackerAdditionalDiskEstimateBytes = int64(12 * 1e9) // 12 GB
 
-	MaxEstimatedFreeDisk = int64(20 * 1e9) // 20GB
+	MaxEstimatedFreeDisk = int64(100 * 1e9) // 100GB
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 0.8

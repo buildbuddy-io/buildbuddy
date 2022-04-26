@@ -22,6 +22,7 @@ var (
 	defaultIsolationType = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, firecracker, podman, or barerunner")
 	enableBareRunner     = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman         = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
+	enableSandbox        = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	defaultImage         = flag.String("executor.default_image", "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0", "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
@@ -92,6 +93,7 @@ const (
 	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
 	FirecrackerContainerType ContainerType = "firecracker"
+	SandboxContainerType     ContainerType = "sandbox"
 )
 
 // Properties represents the platform properties parsed from a command.
@@ -250,6 +252,14 @@ func GetExecutorProperties() *ExecutorProperties {
 			log.Warning("Podman was enabled, but is unsupported on darwin. Ignoring.")
 		} else {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, PodmanContainerType)
+		}
+	}
+
+	if *enableSandbox {
+		if runtime.GOOS == "darwin" {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, SandboxContainerType)
+		} else {
+			log.Warning("Sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
 		}
 	}
 

@@ -20,6 +20,7 @@ require (
 	github.com/bazelbuild/rules_webtesting v0.2.0
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
+	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/cockroachdb/pebble v0.0.0-20210406181039-e3809b89b488
 	github.com/coreos/go-oidc v2.2.1+incompatible

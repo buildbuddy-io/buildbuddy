@@ -451,7 +451,7 @@ func run() error {
 		return status.WrapError(err, "ensure PATH")
 	}
 	// Write default bazelrc
-	if err := writeBazelrc(buildbuddyBazelrcPath); err != nil {
+	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
 	// Delete bazelrc before exiting. Use abs path since we might cd after this
@@ -764,7 +764,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err != nil {
 				return err
 			}
-			os.RemoveAll(tmpDir)
+			defer os.RemoveAll(tmpDir)
 			runScript = filepath.Join(tmpDir, "run.sh")
 			args = append(args, "--script_path="+runScript)
 		}
@@ -1385,7 +1385,7 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func writeBazelrc(path string) error {
+func writeBazelrc(path, invocationID string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -1397,6 +1397,7 @@ func writeBazelrc(path string) error {
 
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
+		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
 		// for the workflow invocation. In addition, for PRs, we first merge with
@@ -1405,6 +1406,9 @@ func writeBazelrc(path string) error {
 		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
 		"build --bes_backend=" + *besBackend,
 		"build --bes_results_url=" + *besResultsURL,
+	}
+	if *workflowID != "" {
+		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
 		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)

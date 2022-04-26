@@ -230,7 +230,7 @@ type cacheConfig struct {
 
 type authConfig struct {
 	JWTKey               string          `yaml:"jwt_key" usage:"The key to use when signing JWT tokens."`
-	APIKeyGroupCacheTTL  time.Duration   `yaml:"api_key_group_cache_ttl" usage:"Override for the TTL for API Key to Group caching. Set to '0' to disable cache."`
+	APIKeyGroupCacheTTL  time.Duration   `yaml:"api_key_group_cache_ttl" usage:"TTL for API Key to Group caching. Set to '0' to disable cache."`
 	OauthProviders       []OauthProvider `yaml:"oauth_providers" usage:"The list of oauth providers to use to authenticate."`
 	EnableAnonymousUsage bool            `yaml:"enable_anonymous_usage" usage:"If true, unauthenticated build uploads will still be allowed but won't be associated with your organization."`
 	SAMLConfig           SAMLConfig      `yaml:"saml" usage:"Configuration for setting up SAML auth support."`
@@ -317,6 +317,7 @@ type ExecutorConfig struct {
 	EnableBareRunner              bool                      `yaml:"enable_bare_runner" usage:"Enables running execution commands directly on the host without isolation."`
 	EnablePodman                  bool                      `yaml:"enable_podman" usage:"Enables running execution commands inside podman container."`
 	PodmanRuntime                 string                    `yaml:"podman_runtime" usage:"Enables running podman with other runtimes, like gVisor (runsc)."`
+	EnableSandbox                 bool                      `yaml:"enable_sandbox" usage:"Enables running execution commands inside of sandbox-exec."`
 	EnableFirecracker             bool                      `yaml:"enable_firecracker" usage:"Enables running execution commands inside of firecracker VMs"`
 	FirecrackerMountWorkspaceFile bool                      `yaml:"firecracker_mount_workspace_file" usage:"Enables mounting workspace filesystem to improve performance of copying action outputs."`
 	ContainerRegistries           []ContainerRegistryConfig `yaml:"container_registries"`
