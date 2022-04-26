@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -375,6 +376,38 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		}
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))
 	}
+}
+
+func TestEnvAndArgOverrides(t *testing.T) {
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: "env-overrides", Value: "A=1,B=2,A=3"},
+		{Name: "extra-args", Value: "--foo,--bar=baz"},
+	}}
+	platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	execProps := bare
+	command := &repb.Command{
+		Arguments: []string{"./some_cmd"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "A", Value: "0"},
+		},
+	}
+	env := testenv.GetTestEnv(t)
+	err := ApplyOverrides(env, execProps, platformProps, command)
+	require.NoError(t, err)
+
+	expectedCmd := &repb.Command{
+		Arguments: []string{"./some_cmd", "--foo", "--bar=baz"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			// Should just tack on env vars as-is. Runner implementations will ensure
+			// that if there are multiple with the same name, the last one wins.
+			{Name: "A", Value: "0"},
+			{Name: "A", Value: "1"},
+			{Name: "B", Value: "2"},
+			{Name: "A", Value: "3"},
+		},
+	}
+
+	require.Equal(t, proto.MarshalTextString(expectedCmd), proto.MarshalTextString(command))
 }
 
 type xcodeLocator struct {

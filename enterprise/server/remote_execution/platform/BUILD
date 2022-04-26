@@ -21,6 +21,7 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
