@@ -28,6 +28,7 @@ esbuild(
     entry_points = [
         "app.tsx",
     ],
+    metafile = False,
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,
