@@ -10,6 +10,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
@@ -420,8 +421,8 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 // Returns the API key hard-coded in the BuildBuddy config file / config flags,
 // or "" if there is no key configured.
 func getAPIKeyFromBuildBuddyConfig(env environment.Env) string {
-	if apiConfig := env.GetConfigurator().GetAPIConfig(); apiConfig != nil {
-		return apiConfig.APIKey
+	if api_config.Enabled() {
+		return api_config.Key()
 	}
 	return ""
 }

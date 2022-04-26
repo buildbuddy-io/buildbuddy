@@ -13,6 +13,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto/api/v1:api_v1_go_proto",
+        "//server/api/config",
         "//server/environment",
         "//server/interfaces",
         "//server/rpc/filters",

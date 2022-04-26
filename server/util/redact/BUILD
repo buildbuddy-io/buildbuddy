@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
+        "//server/api/config",
         "//server/environment",
         "//server/util/git",
         "@com_github_golang_protobuf//proto:go_default_library",
