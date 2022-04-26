@@ -12,6 +12,7 @@ go_library(
         "//server/config",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/alert",
         "//server/util/background",
         "//server/util/log",
         "//server/util/random",
