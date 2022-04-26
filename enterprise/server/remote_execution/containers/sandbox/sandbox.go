@@ -171,7 +171,7 @@ func resolveAlwaysWritableDirs(ctx context.Context) ([]sbxPath, error) {
 			path = path[:len(path)-1]
 		}
 		// If the path exists...
-		if fileInfo, err := os.Lstat(path); !os.IsNotExist(err) {
+		if fileInfo, err := os.Lstat(path); err == nil {
 			absPath, err := resolveSymlink(path, fileInfo)
 			if err != nil {
 				return nil, err
