@@ -344,7 +344,6 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	if !ok {
 		return status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
 	}
-	fmt.Printf("Setting value %v for flag %s.", i, name)
 	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i).Convert(t.Elem()))
 	return nil
 }
