@@ -21,15 +21,18 @@ build:cache --remote_cache=grpcs://remote.buildbuddy.io
 build:cache --remote_upload_local_results
 
 # Flags shared across remote configs
+build:remote-shared --enable_platform_specific_config
 build:remote-shared --remote_upload_local_results
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform
-build:remote-shared --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --experimental_repo_remote_exec
 build:remote-shared --jobs=100
 build:remote-shared --verbose_failures
+
+# Flags used for Linux remote builds (via --enable_platform_specific_config)
+build:linux --host_platform=@buildbuddy_toolchain//:platform
+build:linux --platforms=@buildbuddy_toolchain//:platform
+build:linux --crosstool_top=@buildbuddy_toolchain//:toolchain
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
@@ -75,9 +78,6 @@ build:workflows --config=buildbuddy_bes_backend
 build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
 build:workflows --config=buildbuddy_remote_executor
-
-build:workflows-darwin-amd64 --config=workflows
-build:workflows-darwin-amd64 --remote_executor=
 
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote

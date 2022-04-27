@@ -19,7 +19,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - build //... --config=workflows-darwin-amd64
+      - build //... --config=workflows
   - name: Benchmark
     triggers:
       push:
