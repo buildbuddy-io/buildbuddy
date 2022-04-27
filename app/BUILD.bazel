@@ -21,6 +21,7 @@ esbuild(
     },
     define = {"process.env.NODE_ENV": '"production"'},
     entry_points = ["app.tsx"],
+    metafile = False,
     minify = select({
         ":fastbuild": False,
         "//conditions:default": True,
