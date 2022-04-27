@@ -889,7 +889,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
 			ForceRoot: props.DockerForceRoot,
-			User: 	   props.DockerUser,
+			User:      props.DockerUser,
 			Network:   props.DockerNetwork,
 			CapAdd:    *dockerCapAdd,
 			Devices:   dockerDevices,

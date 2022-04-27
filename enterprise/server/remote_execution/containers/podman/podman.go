@@ -29,7 +29,7 @@ var (
 	containerFinalizationTimeout = 10 * time.Second
 
 	storageErrorRegex = regexp.MustCompile(`(?s)A storage corruption might have occurred.*Error: readlink.*no such file or directory`)
-	userRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(:[a-z0-9_-]*)?$`)
+	userRegex         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*(:[a-z0-9_-]*)?$`)
 
 	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
 	pullOperations sync.Map
@@ -49,7 +49,7 @@ type pullStatus struct {
 
 type PodmanOptions struct {
 	ForceRoot bool
-	User   	  string
+	User      string
 	Network   string
 	CapAdd    string
 	Devices   []config.DockerDeviceMapping
@@ -105,7 +105,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	if c.options.ForceRoot {
 		args = append(args, "--user=0:0")
 	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
-		args = append(args, "--user=" + c.options.User)
+		args = append(args, "--user="+c.options.User)
 	}
 	if strings.ToLower(c.options.Network) == "off" {
 		args = append(args, "--network=none")
@@ -209,7 +209,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	if c.options.ForceRoot {
 		podmanRunArgs = append(podmanRunArgs, "--user=0:0")
 	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
-		podmanRunArgs = append(podmanRunArgs, "--user=" + c.options.User)
+		podmanRunArgs = append(podmanRunArgs, "--user="+c.options.User)
 	}
 	if strings.ToLower(c.options.Network) == "off" {
 		podmanRunArgs = append(podmanRunArgs, "--network=none")

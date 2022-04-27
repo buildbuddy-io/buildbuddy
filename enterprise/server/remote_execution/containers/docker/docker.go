@@ -50,7 +50,7 @@ type DockerOptions struct {
 	EnableSiblingContainers bool
 	UseHostNetwork          bool
 	ForceRoot               bool
-	DockerUser				string
+	DockerUser              string
 	DockerMountMode         string
 	InheritUserIDs          bool
 	DockerNetwork           string

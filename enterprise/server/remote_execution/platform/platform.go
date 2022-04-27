@@ -111,7 +111,7 @@ type Properties struct {
 	ContainerRegistryPassword string
 	WorkloadIsolationType     string
 	DockerForceRoot           bool
-	DockerUser           	  string
+	DockerUser                string
 	DockerNetwork             string
 	RecycleRunner             bool
 	EnableVFS                 bool
