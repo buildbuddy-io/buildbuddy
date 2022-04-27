@@ -789,7 +789,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace,
+		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
 	}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
@@ -880,6 +880,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	case platform.DockerContainerType:
 		opts := p.dockerOptions()
 		opts.ForceRoot = props.DockerForceRoot
+		opts.DockerUser = props.DockerUser
 		opts.DockerNetwork = props.DockerNetwork
 		ctr = docker.NewDockerContainer(
 			p.env, p.imageCacheAuth, p.dockerClient, props.ContainerImage,
@@ -888,6 +889,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
 			ForceRoot: props.DockerForceRoot,
+			User:      props.DockerUser,
 			Network:   props.DockerNetwork,
 			CapAdd:    *dockerCapAdd,
 			Devices:   dockerDevices,

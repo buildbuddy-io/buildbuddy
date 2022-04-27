@@ -50,6 +50,7 @@ type DockerOptions struct {
 	EnableSiblingContainers bool
 	UseHostNetwork          bool
 	ForceRoot               bool
+	DockerUser              string
 	DockerMountMode         string
 	InheritUserIDs          bool
 	DockerNetwork           string
@@ -219,7 +220,7 @@ func (r *dockerCommandContainer) getUser() (string, error) {
 		}
 		return fmt.Sprintf("%s:%s", user.Uid, user.Gid), nil
 	}
-	return "", nil
+	return r.options.DockerUser, nil
 }
 
 func (r *dockerCommandContainer) containerConfig(args, env []string, workDir string) (*dockercontainer.Config, error) {
