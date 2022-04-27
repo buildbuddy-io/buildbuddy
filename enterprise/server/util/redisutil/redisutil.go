@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -50,6 +49,31 @@ func TargetToOptions(redisTarget string) *redis.Options {
 				"SOCKET_PATH[?db=DATABASE]\nIf using a socket path, "+
 				"path must be an absolute unix path.", redisTarget, err)
 		return &redis.Options{}
+	}
+}
+
+func TargetToOpts(redisTarget string) *Opts {
+	if redisTarget == "" {
+		return nil
+	}
+	libOpts := TargetToOptions(redisTarget)
+	return &Opts{
+		Addrs:    []string{libOpts.Addr},
+		Network:  libOpts.Network,
+		Username: libOpts.Username,
+		Password: libOpts.Password,
+		DB:       libOpts.DB,
+	}
+}
+
+func ShardsToOpts(shards []string, username, password string) *Opts {
+	if len(shards) == 0 {
+		return nil
+	}
+	return &Opts{
+		Addrs:    shards,
+		Username: username,
+		Password: password,
 	}
 }
 
@@ -134,29 +158,6 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 	return opts, nil
 }
 
-func ConfigToOpts(redisConfig *config.RedisClientConfig) (*Opts, error) {
-	if redisConfig.SimpleTarget != "" {
-		libOpts := TargetToOptions(redisConfig.SimpleTarget)
-		return &Opts{
-			Addrs:    []string{libOpts.Addr},
-			Network:  libOpts.Network,
-			Username: libOpts.Username,
-			Password: libOpts.Password,
-			DB:       libOpts.DB,
-		}, nil
-	}
-
-	if sc := redisConfig.ShardedConfig; sc != nil {
-		return &Opts{
-			Addrs:    sc.Shards,
-			Username: sc.Username,
-			Password: sc.Password,
-		}, nil
-	}
-
-	return nil, status.FailedPreconditionErrorf("config should have either a single target or a sharded config")
-}
-
 func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheckName string) (redis.UniversalClient, error) {
 	var redisClient redis.UniversalClient
 	if len(opts.Addrs) <= 1 {
@@ -175,14 +176,6 @@ func NewClientWithOpts(opts *Opts, checker interfaces.HealthChecker, healthCheck
 	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient, nil
-}
-
-func NewClientFromConfig(redisConfig *config.RedisClientConfig, checker interfaces.HealthChecker, healthCheckName string) (redis.UniversalClient, error) {
-	opts, err := ConfigToOpts(redisConfig)
-	if err != nil {
-		return nil, err
-	}
-	return NewClientWithOpts(opts, checker, healthCheckName)
 }
 
 func NewSimpleClient(redisTarget string, checker interfaces.HealthChecker, healthCheckName string) *redis.Client {

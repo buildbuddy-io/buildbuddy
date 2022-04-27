@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -39,18 +38,24 @@ const (
 )
 
 var (
-	defaultCfg = &config.RunnerPoolConfig{
+	defaultCfg = &RunnerPoolOptions{
 		MaxRunnerCount:            *maxRunnerCount,
 		MaxRunnerDiskSizeBytes:    *maxRunnerDiskSizeBytes,
 		MaxRunnerMemoryUsageBytes: *maxRunnerMemoryUsageBytes,
 	}
 
-	noLimitsCfg = &config.RunnerPoolConfig{
+	noLimitsCfg = &RunnerPoolOptions{
 		MaxRunnerCount:            unlimited,
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	}
 )
+
+type RunnerPoolOptions struct {
+	MaxRunnerCount            int
+	MaxRunnerDiskSizeBytes    int64
+	MaxRunnerMemoryUsageBytes int64
+}
 
 func newTask() *repb.ExecutionTask {
 	return &repb.ExecutionTask{
@@ -119,7 +124,7 @@ func mustRun(t *testing.T, r *commandRunner) {
 	require.NoError(t, res.Error)
 }
 
-func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *config.RunnerPoolConfig) *pool {
+func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *pool {
 	flags.Set(t, "executor.runner_pool.max_runner_count", cfg.MaxRunnerCount)
 	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", cfg.MaxRunnerDiskSizeBytes)
 	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", cfg.MaxRunnerMemoryUsageBytes)
@@ -383,7 +388,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 
 func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
 		MaxRunnerCount:            2,
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
@@ -413,7 +418,7 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
 		MaxRunnerCount:            unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 		// At least one byte should be needed for the workspace root dir.
@@ -431,7 +436,7 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 
 func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, &config.RunnerPoolConfig{
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
 		MaxRunnerCount:            unlimited,
 		MaxRunnerMemoryUsageBytes: 5200e6,
 		MaxRunnerDiskSizeBytes:    unlimited,

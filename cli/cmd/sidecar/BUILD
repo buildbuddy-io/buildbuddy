@@ -14,7 +14,6 @@ go_library(
         "//server/backends/disk_cache",
         "//server/build_event_protocol/build_event_proxy",
         "//server/build_event_protocol/build_event_server",
-        "//server/config",
         "//server/nullauth",
         "//server/real_environment",
         "//server/rpc/filters",

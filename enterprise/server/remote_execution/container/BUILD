@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
-        "//server/config",
         "//server/environment",
         "//server/interfaces",
         "//server/util/flagutil",
@@ -29,7 +28,6 @@ go_test(
         ":container",
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
-        "//server/config",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

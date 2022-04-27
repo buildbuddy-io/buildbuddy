@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	config "github.com/buildbuddy-io/buildbuddy/server/config"
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerclient "github.com/docker/docker/client"
@@ -55,7 +54,7 @@ type DockerOptions struct {
 	InheritUserIDs          bool
 	DockerNetwork           string
 	DockerCapAdd            string
-	DockerDevices           []config.DockerDeviceMapping
+	DockerDevices           []container.DockerDeviceMapping
 	Volumes                 []string
 }
 

@@ -23,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -41,8 +40,8 @@ import (
 var (
 	// Disk flags
 	rootDirectory     = flag.String("storage.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        []config.DiskCachePartition
-	partitionMappings []config.DiskCachePartitionMapping
+	partitions        []disk.Partition
+	partitionMappings []disk.PartitionMapping
 	useV2Layout       = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	// GCS flags

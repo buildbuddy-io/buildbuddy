@@ -9,7 +9,6 @@ go_library(
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
-        "//server/config",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/filters",

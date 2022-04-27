@@ -33,13 +33,12 @@ func RegisterRemoteExecutionClient(env environment.Env) error {
 }
 
 func RegisterRemoteExecutionRedisPubSubClient(env environment.Env) error {
-	redisConfig := redis_client.RemoteExecutionRedisClientConfig()
-	if redisConfig == nil || !remote_execution_config.RemoteExecutionEnabled() {
-		return nil
-	}
-	opts, err := redisutil.ConfigToOpts(redisConfig)
-	if err != nil {
-		return status.InternalErrorf("Invalid Remote Execution Redis config: %s", err)
+	opts := redis_client.RemoteExecutionRedisClientOpts()
+	if opts == nil {
+		if !remote_execution_config.RemoteExecutionEnabled() {
+			return nil
+		}
+		return status.InternalErrorf("Invalid Remote Execution Redis config.")
 	}
 	// This Redis client is used for potentially long running blocking operations.
 	// We ideally would not want to  have an upper bound on the # of connections but the redis client library

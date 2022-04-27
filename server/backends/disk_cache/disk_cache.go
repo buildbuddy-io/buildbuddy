@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -53,12 +52,19 @@ const (
 
 var (
 	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        = []config.DiskCachePartition{}
-	partitionMappings = []config.DiskCachePartitionMapping{}
+	partitions        = []disk.Partition{}
+	partitionMappings = []disk.PartitionMapping{}
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 )
+
+type Options struct {
+	RootDirectory     string
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
+	UseV2Layout       bool
+}
 
 func init() {
 	flagutil.StructSliceVar(&partitions, "cache.disk.partitions", "")
@@ -146,7 +152,7 @@ func MigrateToV2Layout(rootDir string) error {
 type DiskCache struct {
 	env               environment.Env
 	partitions        map[string]*partition
-	partitionMappings []config.DiskCachePartitionMapping
+	partitionMappings []disk.PartitionMapping
 	// The currently selected partition. Initialized to the default partition.
 	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
 	partition          *partition
@@ -162,7 +168,7 @@ func Register(env environment.Env) error {
 		log.Warning("A cache has already been registered, skipping registering disk_cache.")
 		return nil
 	}
-	dc := &config.DiskConfig{
+	dc := &Options{
 		RootDirectory:     *rootDirectory,
 		Partitions:        partitions,
 		PartitionMappings: partitionMappings,
@@ -176,9 +182,9 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSizeBytes int64) (*DiskCache, error) {
+func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (*DiskCache, error) {
 	if *migrateDiskCacheToV2AndExit {
-		if err := MigrateToV2Layout(config.RootDirectory); err != nil {
+		if err := MigrateToV2Layout(opts.RootDirectory); err != nil {
 			log.Errorf("Migration failed: %s", err)
 			os.Exit(1)
 		}
@@ -187,20 +193,20 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
-	for _, pc := range config.Partitions {
-		rootDir := config.RootDirectory
-		if config.UseV2Layout {
+	for _, pc := range opts.Partitions {
+		rootDir := opts.RootDirectory
+		if opts.UseV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir)
 		}
 
-		if pc.ID != DefaultPartitionID || config.UseV2Layout {
+		if pc.ID != DefaultPartitionID || opts.UseV2Layout {
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, config.UseV2Layout)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -210,11 +216,11 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 		}
 	}
 	if defaultPartition == nil {
-		rootDir := config.RootDirectory
-		if config.UseV2Layout {
+		rootDir := opts.RootDirectory
+		if opts.UseV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, config.UseV2Layout)
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -225,7 +231,7 @@ func NewDiskCache(env environment.Env, config *config.DiskConfig, defaultMaxSize
 	c := &DiskCache{
 		env:                env,
 		partitions:         partitions,
-		partitionMappings:  config.PartitionMappings,
+		partitionMappings:  opts.PartitionMappings,
 		partition:          defaultPartition,
 		cacheType:          interfaces.CASCacheType,
 		remoteInstanceName: "",

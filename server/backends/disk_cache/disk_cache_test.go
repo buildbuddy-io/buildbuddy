@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -50,7 +49,7 @@ func TestGetSet(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +94,7 @@ func TestMultiGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +130,7 @@ func TestReadWrite(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +167,7 @@ func TestReadOffset(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +200,7 @@ func TestSizeLimit(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +239,7 @@ func TestLRU(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +294,7 @@ func TestFileAtomicity(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +344,7 @@ func TestAsyncLoading(t *testing.T) {
 	}
 	// Create a new disk cache (this will start async processing of
 	// the data we just wrote above ^)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +387,7 @@ func TestJanitorThread(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +404,7 @@ func TestJanitorThread(t *testing.T) {
 
 	// Make a new disk cache with a smaller size. The
 	// janitor should clean extra data up, oldest first.
-	dc, err = disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes/2) // 5MB
+	dc, err = disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes/2) // 5MB
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +450,7 @@ func TestZeroLengthFiles(t *testing.T) {
 
 	// Create a new disk cache (this will start async processing of
 	// the data we just wrote above ^)
-	dc, err := disk_cache.NewDiskCache(te, &config.DiskConfig{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,9 +487,9 @@ func TestNonDefaultPartition(t *testing.T) {
 
 	otherPartitionID := "other"
 	otherPartitionPrefix := "myteam/"
-	diskConfig := &config.DiskConfig{
+	diskConfig := &disk_cache.Options{
 		RootDirectory: rootDir,
-		Partitions: []config.DiskCachePartition{
+		Partitions: []disk.Partition{
 			{
 				ID:           "default",
 				MaxSizeBytes: 10_000_000,
@@ -500,7 +499,7 @@ func TestNonDefaultPartition(t *testing.T) {
 				MaxSizeBytes: 10_000_000,
 			},
 		},
-		PartitionMappings: []config.DiskCachePartitionMapping{
+		PartitionMappings: []disk.PartitionMapping{
 			{
 				GroupID:     testGroup2,
 				Prefix:      otherPartitionPrefix,
@@ -585,7 +584,7 @@ func TestV2Layout(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 
-	diskConfig := &config.DiskConfig{
+	diskConfig := &disk_cache.Options{
 		RootDirectory: rootDir,
 		UseV2Layout:   true,
 	}
@@ -661,10 +660,10 @@ func TestV2LayoutMigration(t *testing.T) {
 	testfs.AssertExactFileContents(t, rootDir, expectedContents)
 
 	// Now create a cache on top of the migrated files and verify it works as expected.
-	diskConfig := &config.DiskConfig{
+	diskConfig := &disk_cache.Options{
 		RootDirectory: rootDir,
 		UseV2Layout:   true,
-		Partitions: []config.DiskCachePartition{
+		Partitions: []disk.Partition{
 			{
 				ID:           "default",
 				MaxSizeBytes: 10_000_000,
@@ -674,7 +673,7 @@ func TestV2LayoutMigration(t *testing.T) {
 				MaxSizeBytes: 10_000_000,
 			},
 		},
-		PartitionMappings: []config.DiskCachePartitionMapping{
+		PartitionMappings: []disk.PartitionMapping{
 			{
 				GroupID:     testGroup,
 				Prefix:      "",

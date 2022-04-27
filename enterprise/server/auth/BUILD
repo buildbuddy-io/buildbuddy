@@ -11,7 +11,6 @@ go_library(
     deps = [
         "//enterprise/server/selfauth",
         "//proto:api_key_go_proto",
-        "//server/config",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/interfaces",

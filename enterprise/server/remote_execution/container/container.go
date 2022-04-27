@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -31,12 +30,24 @@ const (
 )
 
 var (
-	containerRegistries     = []config.ContainerRegistryConfig{}
+	containerRegistries     = []ContainerRegistry{}
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
 
 func init() {
 	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
+}
+
+type ContainerRegistry struct {
+	Hostnames []string `yaml:"hostnames" json:"hostnames"`
+	Username  string   `yaml:"username" json:"username"`
+	Password  string   `yaml:"password" json:"password"`
+}
+
+type DockerDeviceMapping struct {
+	PathOnHost        string `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`
+	PathInContainer   string `yaml:"path_in_container" usage:"path under which the device will be present in container."`
+	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
 // Stats holds represents a container's held resources.
