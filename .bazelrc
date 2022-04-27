@@ -64,6 +64,8 @@ build:untrusted-ci --flaky_test_attempts=2
 
 # Configuration used for BuildBuddy workflows
 build:workflows --config=remote-shared
+build:workflows --build_metadata=ROLE=CI
+build:workflows --build_metadata=VISIBILITY=PUBLIC
 build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 build:workflows --color=yes
 build:workflows --disk_cache=
