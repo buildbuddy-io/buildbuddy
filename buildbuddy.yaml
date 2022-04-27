@@ -9,6 +9,17 @@ actions:
           - "master"
     bazel_commands:
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+  - name: Build (darwin_amd64)
+    os: "darwin"
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "master"
+    bazel_commands:
+      - build //... --config=workflows
   - name: Benchmark
     triggers:
       push:
