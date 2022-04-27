@@ -7,10 +7,13 @@ go_library(
         "firecracker.go",
         "firecracker_darwin.go",
     ],
-    data = [
-        "//enterprise/vmsupport/bin:initrd.cpio",
-        "//enterprise/vmsupport/bin:vmlinux",
-    ],
+    data = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/vmsupport/bin:initrd.cpio",
+            "//enterprise/vmsupport/bin:vmlinux",
+        ],
+        "//conditions:default": [],
+    }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     visibility = ["//visibility:public"],
     deps = [

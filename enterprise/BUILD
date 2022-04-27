@@ -42,8 +42,6 @@ go_library(
         "//enterprise:licenses",
         "//:config_files",
         "//static",
-        "//enterprise/vmsupport/bin:vmlinux",
-        "//enterprise/vmsupport/bin:initrd.cpio",
     ] + select({
         ":fastbuild": [],
         "//conditions:default": [
@@ -52,6 +50,12 @@ go_library(
             "//enterprise/app:sha",
             "//enterprise/server/cmd/ci_runner:buildbuddy_ci_runner",
         ],
+    }) + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/vmsupport/bin:initrd.cpio",
+            "//enterprise/vmsupport/bin:vmlinux",
+        ],
+        "//conditions:default": [],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise",
     visibility = ["//enterprise:__subpackages__"],
