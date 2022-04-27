@@ -1431,6 +1431,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		})
 	}
 
+	defer func() {
+		// TODO(bduffany): Figure out a good way to surface this in the command result.
+		if err := c.parseOOMError(); err != nil {
+			log.Warningf("OOM error occurred during task execution: %s", err)
+		}
+	}()
 	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
 	if err != nil {
 		result.Error = err
@@ -1646,6 +1652,25 @@ func (c *FirecrackerContainer) parseFatalInitError() error {
 		}
 	}
 	return nil
+}
+
+// parseOOMError looks for oom-kill entries in the kernel logs and returns an
+// error if found.
+func (c *FirecrackerContainer) parseOOMError() error {
+	tail := string(c.vmLog.Tail())
+	if !strings.Contains(tail, "oom-kill:") {
+		return nil
+	}
+	// Logs contain "\r\n"; convert these to universal line endings.
+	tail = strings.ReplaceAll(tail, "\r\n", "\n")
+	lines := strings.Split(tail, "\n")
+	oomLines := ""
+	for _, line := range lines {
+		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
+			oomLines += line + "\n"
+		}
+	}
+	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
 }
 
 // VMLog retains the tail of the VM log.
