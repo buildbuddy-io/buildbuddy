@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -28,6 +29,9 @@ var (
 	containerFinalizationTimeout = 10 * time.Second
 
 	storageErrorRegex = regexp.MustCompile(`(?s)A storage corruption might have occurred.*Error: readlink.*no such file or directory`)
+
+	// A map from image name to pull status. This is used to avoid parallel pulling of the same image.
+	pullOperations sync.Map
 )
 
 const (
@@ -36,6 +40,11 @@ const (
 	// process is killed due to the parent container being removed.
 	podmanExecSIGKILLExitCode = 137
 )
+
+type pullStatus struct {
+	mu     *sync.RWMutex
+	pulled bool
+}
 
 type PodmanOptions struct {
 	ForceRoot bool
@@ -236,6 +245,31 @@ func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error
 }
 
 func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.PullCredentials) error {
+	psi, _ := pullOperations.LoadOrStore(c.image, &pullStatus{&sync.RWMutex{}, false})
+	ps, ok := psi.(*pullStatus)
+	if !ok {
+		alert.UnexpectedEvent("psi cannot be cast to *pullStatus")
+		return status.InternalError("PullImage failed: cannot get pull status")
+	}
+
+	ps.mu.RLock()
+	alreadyPulled := ps.pulled
+	ps.mu.RUnlock()
+
+	if alreadyPulled {
+		return c.pullImage(creds)
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if err := c.pullImage(creds); err != nil {
+		return err
+	}
+	ps.pulled = true
+	return nil
+}
+
+func (c *podmanCommandContainer) pullImage(creds container.PullCredentials) error {
 	podmanArgs := make([]string, 0, 2)
 	if !creds.IsEmpty() {
 		podmanArgs = append(podmanArgs, fmt.Sprintf(
@@ -245,7 +279,10 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 		))
 	}
 	podmanArgs = append(podmanArgs, c.image)
-	pullResult := runPodman(ctx, "pull", nil /*=stdin*/, nil /*=stdout*/, podmanArgs...)
+	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
+	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
+	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
+	pullResult := runPodman(c.env.GetServerContext(), "pull", nil /*=stdin*/, nil /*=stdout*/, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
