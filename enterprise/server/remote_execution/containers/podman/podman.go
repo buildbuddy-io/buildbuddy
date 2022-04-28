@@ -160,10 +160,9 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
-		err = c.killContainerIfRunning(ctx)
-	}
-	if err != nil {
-		log.Warningf("Failed to shut down docker container: %s\n", err.Error())
+		if err = c.killContainerIfRunning(ctx); err != nil {
+			log.Warningf("Failed to shut down podman container: %s", err)
+		}
 	}
 	return result
 }
@@ -358,7 +357,12 @@ func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) err
 	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
 	defer cancel()
 
-	return c.Remove(ctx)
+	err := c.Remove(ctx)
+	if strings.Contains(err.Error(), "Error: can only kill running containers.") {
+		// This is expected.
+		return nil
+	}
+	return err
 }
 
 // An image can be corrupted if "podman pull" command is killed when pulling a parent layer.
