@@ -47,6 +47,7 @@ go_library(
         "//server/static",
         "//server/telemetry",
         "//server/util/fileresolver",
+        "//server/util/flagutil",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",

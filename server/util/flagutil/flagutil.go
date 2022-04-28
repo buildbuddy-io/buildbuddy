@@ -34,6 +34,10 @@ var (
 		reflect.TypeOf((*stringSliceFlag)(nil)): reflect.TypeOf((*[]string)(nil)),
 		reflect.TypeOf((*URLFlag)(nil)):         reflect.TypeOf((*URLFlag)(nil)),
 	}
+
+	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
+	// the flag specifying the path to the config file)
+	ignoreSet = make(map[string]struct{})
 )
 
 func flagTypeFromFlagFuncName(name string) reflect.Type {
@@ -271,6 +275,12 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
+// IgnoreFlag ignores the flag with this name when generating YAML and when
+// populating flags from YAML input.
+func IgnoreFlag(name string) {
+	ignoreSet[name] = struct{}{}
+}
+
 // GenerateYAMLTypeMapFromFlags generates a map of the type that should be
 // marshaled from YAML for each flag name at the corresponding nested map index.
 func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
@@ -278,6 +288,11 @@ func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 	var errors []error
 	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
 		keys := strings.Split(flg.Name, ".")
+		for i := range keys {
+			if _, ok := ignoreSet[strings.Join(keys[:i+1], ".")]; ok {
+				return
+			}
+		}
 		m := yamlMap
 		for i, k := range keys[:len(keys)-1] {
 			v, ok := m[k]
@@ -381,6 +396,28 @@ func PopulateFlagsFromData(data []byte) error {
 	return PopulateFlagsFromYAMLMap(yamlMap)
 }
 
+// PopulateFlagsFromData takes the path to some YAML file, reads it, and
+// unmarshals it, then uses the umnarshaled data to populate the unset flags
+// with names corresponding to the keys.
+func PopulateFlagsFromFile(configFile string) error {
+	log.Infof("Reading buildbuddy config from '%s'", configFile)
+
+	_, err := os.Stat(configFile)
+
+	// If the file does not exist then skip it.
+	if os.IsNotExist(err) {
+		log.Warningf("No config file found at %s.", configFile)
+		return nil
+	}
+
+	fileBytes, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("Error reading config file: %s", err)
+	}
+
+	return PopulateFlagsFromData(fileBytes)
+}
+
 // PopulateFlagsFromYAMLMap takes a map populated by YAML from some YAML input
 // and iterates over it, finding flags with names corresponding to the keys and
 // setting the flag to the YAML value if the flag was not set on the command
@@ -397,13 +434,21 @@ func PopulateFlagsFromYAMLMap(m map[string]interface{}) error {
 func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]struct{}) error {
 	if m, ok := i.(map[string]interface{}); ok {
 		for k, v := range m {
-			if err := populateFlagsFromYAML(v, append(prefix, k), setFlags); err != nil {
+			p := append(prefix, k)
+			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
+				return nil
+			}
+			if err := populateFlagsFromYAML(v, p, setFlags); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return SetValueForFlagName(strings.Join(prefix, "."), i, setFlags, true, false)
+	name := strings.Join(prefix, ".")
+	if _, ok := ignoreSet[name]; ok {
+		return nil
+	}
+	return SetValueForFlagName(name, i, setFlags, true, false)
 }
 
 // SetValueForFlagName sets the value for a flag by name.

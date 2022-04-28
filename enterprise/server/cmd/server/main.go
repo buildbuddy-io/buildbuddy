@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -152,7 +153,7 @@ func main() {
 	version.Print()
 
 	flag.Parse()
-	if err := config.PopulateFlagsFromFile(); err != nil {
+	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)

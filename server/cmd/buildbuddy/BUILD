@@ -53,6 +53,7 @@ go_library(
         "//server/janitor",
         "//server/libmain",
         "//server/telemetry",
+        "//server/util/flagutil",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/version",

@@ -5,8 +5,5 @@ go_library(
     srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/flagutil",
-        "//server/util/log",
-    ],
+    deps = ["//server/util/flagutil"],
 )
