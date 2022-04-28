@@ -533,11 +533,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		HasChunkedEventLogs: e.logWriter != nil,
 	}
 
-	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
-		log.Warningf("Reporting disconnected status for invocation %s.", iid)
-		e.statusReporter.ReportDisconnect(ctx)
-	}
-
 	if e.pw != nil {
 		if err := e.pw.Flush(ctx); err != nil {
 			return err
@@ -571,6 +566,14 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if !updated {
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
+	}
+
+	// Report a disconnect only if we successfully updated the invocation.
+	// This reduces the likelihood that the disconnected invocation's status
+	// will overwrite any statuses written by a more recent attempt.
+	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+		log.Warningf("Reporting disconnected status for invocation %s.", iid)
+		e.statusReporter.ReportDisconnect(ctx)
 	}
 
 	e.statsRecorder.Enqueue(ctx, invocation)
