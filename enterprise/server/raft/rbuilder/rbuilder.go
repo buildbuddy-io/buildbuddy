@@ -4,7 +4,8 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	gstatus "google.golang.org/grpc/status"
@@ -99,7 +100,8 @@ func (bb *BatchBuilder) ToBuf() ([]byte, error) {
 func (bb *BatchBuilder) String() string {
 	builder := fmt.Sprintf("Builder(err: %s)", bb.err)
 	for i, v := range bb.cmd.Union {
-		builder += fmt.Sprintf(" [%d]: %+v", i, proto.CompactTextString(v))
+		out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(v)
+		builder += fmt.Sprintf(" [%d]: %+v", i, string(out))
 	}
 	return builder
 }

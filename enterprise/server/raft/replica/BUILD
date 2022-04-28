@@ -16,10 +16,11 @@ go_library(
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -37,8 +38,8 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )

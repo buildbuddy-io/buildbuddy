@@ -1,7 +1,6 @@
 package static
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"html/template"
@@ -18,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-	"github.com/golang/protobuf/jsonpb"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
@@ -129,8 +128,7 @@ type FrontendTemplateData struct {
 }
 
 func serveIndexTemplate(env environment.Env, tpl *template.Template, version, jsPath, stylePath string, w http.ResponseWriter) {
-	configJSON := &bytes.Buffer{}
-	err := (&jsonpb.Marshaler{}).Marshal(configJSON, &cfgpb.FrontendConfig{
+	config := cfgpb.FrontendConfig{
 		Version:                       version,
 		ConfiguredIssuers:             env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:            *defaultToDenseMode,
@@ -149,7 +147,9 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ForceUserOwnedDarwinExecutors: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:             *testGridV2Enabled,
 		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
-	})
+	}
+
+	configJSON, err := protojson.Marshal(&config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -158,7 +158,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
-		Config:           template.JS(configJSON.String()),
+		Config:           template.JS(configJSON),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

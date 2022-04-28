@@ -11,9 +11,9 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/anypb",
     ],
 )

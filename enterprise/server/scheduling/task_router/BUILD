@@ -14,6 +14,6 @@ go_library(
         "//server/util/perms",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_golang_protobuf//proto:go_default_library",
+        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -8,12 +8,12 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/rpc:errdetails_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

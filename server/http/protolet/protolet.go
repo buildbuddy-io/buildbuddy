@@ -1,7 +1,6 @@
 package protolet
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -10,9 +9,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	"github.com/golang/protobuf/jsonpb"
-	"github.com/golang/protobuf/proto"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -51,11 +51,11 @@ func ReadRequestToProto(r *http.Request, req proto.Message) error {
 
 	switch ct := r.Header.Get("Content-Type"); ct {
 	case "", "application/json":
-		return jsonpb.Unmarshal(bytes.NewReader(body), req)
+		return protojson.Unmarshal(body, req)
 	case "application/proto", "application/protobuf":
 		return proto.Unmarshal(body, req)
 	case "application/protobuf-text":
-		return proto.UnmarshalText(string(body), req)
+		return prototext.Unmarshal(body, req)
 	default:
 		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
 	}
@@ -64,8 +64,11 @@ func ReadRequestToProto(r *http.Request, req proto.Message) error {
 func WriteProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Request) error {
 	switch ct := r.Header.Get("Content-Type"); ct {
 	case "", "application/json":
-		marshaler := jsonpb.Marshaler{}
-		marshaler.Marshal(w, rsp)
+		jsonBytes, err := protojson.Marshal(rsp)
+		if err != nil {
+			return err
+		}
+		w.Write(jsonBytes)
 		w.Header().Set("Content-Type", "application/json")
 		return nil
 	case "application/proto", "application/protobuf":
@@ -77,8 +80,13 @@ func WriteProtoToResponse(rsp proto.Message, w http.ResponseWriter, r *http.Requ
 		w.Header().Set("Content-Type", ct)
 		return nil
 	case "application/protobuf-text":
+		protoText, err := prototext.Marshal(rsp)
+		if err != nil {
+			return err
+		}
+		w.Write(protoText)
 		w.Header().Set("Content-Type", ct)
-		return proto.MarshalText(w, rsp)
+		return nil
 	default:
 		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
 	}

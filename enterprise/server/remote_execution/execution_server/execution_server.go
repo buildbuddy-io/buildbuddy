@@ -30,23 +30,22 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	tspb "github.com/golang/protobuf/ptypes/timestamp"
 	gstatus "google.golang.org/grpc/status"
 )
 
 var enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 
-func timestampToMicros(tsPb *tspb.Timestamp) int64 {
-	ts, _ := ptypes.Timestamp(tsPb)
+func timestampToMicros(tsPb *timestamppb.Timestamp) int64 {
+	ts := tsPb.AsTime()
 	return ts.UnixMicro()
 }
 
@@ -327,7 +326,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
 	}
 
-	executionTask.QueuedTimestamp = ptypes.TimestampNow()
+	executionTask.QueuedTimestamp = timestamppb.Now()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
 		// Should never happen.

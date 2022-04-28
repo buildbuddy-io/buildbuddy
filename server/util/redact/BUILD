@@ -11,7 +11,7 @@ go_library(
         "//server/api/config",
         "//server/environment",
         "//server/util/git",
-        "@com_github_golang_protobuf//proto:go_default_library",
+        "@org_golang_google_protobuf//encoding/prototext",
     ],
 )
 

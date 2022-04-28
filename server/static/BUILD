@@ -18,7 +18,7 @@ go_library(
         "//server/remote_cache/hit_tracker",
         "//server/util/status",
         "//server/version",
-        "@com_github_golang_protobuf//jsonpb:go_default_library_gen",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

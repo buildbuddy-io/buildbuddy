@@ -27,13 +27,14 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//reflection",
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -61,10 +62,10 @@ go_test(
         "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/random",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )

@@ -11,13 +11,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	timestamppb "github.com/golang/protobuf/ptypes/timestamp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -63,10 +62,7 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 }
 
 func timestampProto(timeInUsec int64) *timestamppb.Timestamp {
-	if tp, err := ptypes.TimestampProto(time.UnixMicro(timeInUsec)); err == nil {
-		return tp
-	}
-	return nil
+	return timestamppb.New(time.UnixMicro(timeInUsec))
 }
 
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {

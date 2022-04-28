@@ -14,8 +14,9 @@ go_library(
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
-        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

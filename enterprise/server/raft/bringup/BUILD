@@ -15,10 +15,10 @@ go_library(
         "//server/gossip",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//statemachine",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

@@ -19,11 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	durationpb "github.com/golang/protobuf/ptypes/duration"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
 )
@@ -73,9 +72,8 @@ func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
 
 func timeoutFromProto(timeout *durationpb.Duration) (time.Duration, bool) {
 	if timeout != nil {
-		if requestDuration, err := ptypes.Duration(timeout); err == nil {
-			return requestDuration, true
-		}
+		requestDuration := timeout.AsDuration()
+		return requestDuration, true
 	}
 	return 0, false
 }

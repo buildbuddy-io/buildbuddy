@@ -30,8 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes"
 	"github.com/google/uuid"
 	"github.com/mattn/go-shellwords"
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/push"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -544,56 +543,21 @@ type remoteStats struct {
 
 func parseRemoteStats(stats *repb.ExecutedActionMetadata) (*remoteStats, error) {
 	parsedStats := &remoteStats{}
-	fetchStart, err := ptypes.Timestamp(stats.InputFetchStartTimestamp)
-	if err != nil {
-		log.Warningf("Invalid input fetch start timestamp: %s", err)
-		return nil, err
-	}
-	fetchEnd, err := ptypes.Timestamp(stats.InputFetchCompletedTimestamp)
-	if err != nil {
-		log.Warningf("Invalid input fetch completed timestamp: %s", err)
-		return nil, err
-	}
 
+	fetchStart := stats.InputFetchStartTimestamp.AsTime()
+	fetchEnd := stats.InputFetchCompletedTimestamp.AsTime()
 	parsedStats.fetchInputsDuration = fetchEnd.Sub(fetchStart)
 
-	execStart, err := ptypes.Timestamp(stats.ExecutionStartTimestamp)
-	if err != nil {
-		log.Warningf("Invalid execution start timestamp: %s", err)
-		return nil, err
-	}
-	execEnd, err := ptypes.Timestamp(stats.ExecutionCompletedTimestamp)
-	if err != nil {
-		log.Warningf("Invalid execution completed timestamp: %s", err)
-		return nil, err
-	}
-
+	execStart := stats.ExecutionStartTimestamp.AsTime()
+	execEnd := stats.ExecutionCompletedTimestamp.AsTime()
 	parsedStats.executeDuration = execEnd.Sub(execStart)
 
-	uploadStart, err := ptypes.Timestamp(stats.OutputUploadStartTimestamp)
-	if err != nil {
-		log.Warningf("Invalid output upload start timestamp: %s", err)
-		return nil, err
-	}
-	uploadEnd, err := ptypes.Timestamp(stats.OutputUploadCompletedTimestamp)
-	if err != nil {
-		log.Warningf("Invalid output upload completed timestamp: %s", err)
-		return nil, err
-	}
-
+	uploadStart := stats.OutputUploadStartTimestamp.AsTime()
+	uploadEnd := stats.OutputUploadCompletedTimestamp.AsTime()
 	parsedStats.uploadOutputsDuration = uploadEnd.Sub(uploadStart)
 
-	totalStart, err := ptypes.Timestamp(stats.QueuedTimestamp)
-	if err != nil {
-		log.Warningf("Invalid queued timestamp: %s", err)
-		return nil, err
-	}
-	totalEnd, err := ptypes.Timestamp(stats.WorkerCompletedTimestamp)
-	if err != nil {
-		log.Warningf("Invalid worked completed timestamp: %s", err)
-		return nil, err
-	}
-
+	totalStart := stats.QueuedTimestamp.AsTime()
+	totalEnd := stats.WorkerCompletedTimestamp.AsTime()
 	parsedStats.totalDuration = totalEnd.Sub(totalStart)
 
 	return parsedStats, nil

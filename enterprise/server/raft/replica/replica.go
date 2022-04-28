@@ -21,7 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
@@ -655,7 +656,9 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	sm.rangeMu.Unlock()
 
 	if !proto.Equal(rd, req.GetLeft()) {
-		return nil, status.OutOfRangeErrorf("split %q (current) != %q (req)", proto.CompactTextString(rd), proto.CompactTextString(req.GetLeft()))
+		rdText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(rd)
+		leftText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(req.GetLeft())
+		return nil, status.OutOfRangeErrorf("split %q (current) != %q (req)", string(rdText), string(leftText))
 	}
 
 	rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())

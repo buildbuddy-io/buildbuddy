@@ -13,10 +13,10 @@ go_library(
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
-        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

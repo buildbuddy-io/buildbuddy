@@ -20,8 +20,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/golang/protobuf/proto"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
@@ -103,7 +103,8 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 }
 
 func protoID(beid *build_event_stream.BuildEventId) string {
-	return proto.CompactTextString(beid)
+	out, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(beid)
+	return string(out)
 }
 
 func targetTypeFromRuleType(ruleType string) cmpb.TargetType {

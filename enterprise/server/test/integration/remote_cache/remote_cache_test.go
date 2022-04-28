@@ -10,10 +10,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -226,7 +226,11 @@ func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 				},
 			},
 		}
-		require.Equal(t, proto.MarshalTextString(expectedSC), proto.MarshalTextString(sc))
+		expectedText, err := prototext.Marshal(expectedSC)
+		require.NoError(t, err)
+		scText, err := prototext.Marshal(sc)
+		require.NoError(t, err)
+		require.Equal(t, string(expectedText), string(scText))
 	}
 
 	// Clear the local cache so we can try for a remote cache hit.
@@ -245,7 +249,11 @@ func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 		expected := &capb.ScoreCard{
 			Misses: []*capb.ScoreCard_Result{},
 		}
-		require.Equal(t, proto.MarshalTextString(expected), proto.MarshalTextString(sc))
+		expectedText, err := prototext.Marshal(expected)
+		require.NoError(t, err)
+		scText, err := prototext.Marshal(sc)
+		require.NoError(t, err)
+		require.Equal(t, string(expectedText), string(scText))
 	}
 }
 

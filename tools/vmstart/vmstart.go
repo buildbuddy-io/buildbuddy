@@ -22,8 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
@@ -172,8 +172,10 @@ func main() {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		log.Infof("Action:\n%s", proto.MarshalTextString(action))
-		log.Infof("Command:\n%s", proto.MarshalTextString(cmd))
+		out, _ := prototext.Marshal(action)
+		log.Infof("Action:\n%s", string(out))
+		out, _ = prototext.Marshal(cmd)
+		log.Infof("Command:\n%s", string(out))
 
 		tree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName))
 		if err != nil {

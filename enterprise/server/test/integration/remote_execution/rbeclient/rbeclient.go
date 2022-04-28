@@ -14,11 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/golang/protobuf/ptypes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type GRPCClientSource interface {
@@ -192,7 +192,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 		}
 
 		metadata := &repb.ExecuteOperationMetadata{}
-		err = ptypes.UnmarshalAny(op.GetMetadata(), metadata)
+		err = op.GetMetadata().UnmarshalTo(metadata)
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
@@ -218,7 +218,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 		finishedTime := time.Now()
 
 		response := &repb.ExecuteResponse{}
-		err = ptypes.UnmarshalAny(op.GetResponse(), response)
+		err = op.GetResponse().UnmarshalTo(response)
 		if err != nil {
 			sendStatus(&CommandResult{
 				Stage: repb.ExecutionStage_COMPLETED,
@@ -257,7 +257,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 		InputRootDigest: inputRootDigest,
 	}
 	if timeout != 0 {
-		action.Timeout = ptypes.DurationProto(timeout)
+		action.Timeout = durationpb.New(timeout)
 	}
 	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, action)
 	if err != nil {

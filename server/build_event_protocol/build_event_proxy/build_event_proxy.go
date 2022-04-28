@@ -10,8 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
@@ -64,7 +64,7 @@ func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventPro
 	return c
 }
 
-func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*empty.Empty, error) {
+func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	c.reconnectIfNecessary()
 	go func() {
 		_, err := c.client.PublishLifecycleEvent(c.rootCtx, req)
@@ -72,7 +72,7 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pe
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
 	}()
-	return &empty.Empty{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 type asyncStreamProxy struct {

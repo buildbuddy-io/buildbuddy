@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -407,7 +407,11 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 
-	require.Equal(t, proto.MarshalTextString(expectedCmd), proto.MarshalTextString(command))
+	expectedCmdText, err := prototext.Marshal(expectedCmd)
+	require.NoError(t, err)
+	commandText, err := prototext.Marshal(command)
+	require.NoError(t, err)
+	require.Equal(t, expectedCmdText, commandText)
 }
 
 type xcodeLocator struct {
