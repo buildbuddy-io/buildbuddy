@@ -67,7 +67,14 @@ func ParseFlagsAndRewriteArgs(args []string) *BazelArgs {
 	})
 	ourArgs := make([]string, 0, len(ourFlagNames))
 	newArgs := make([]string, 0, len(args))
-	for _, arg := range args {
+	for i, arg := range args {
+		// Don't remove anything after "--" delimiter, even if it looks like one
+		// of our flags.
+		if arg == "--" {
+			newArgs = append(newArgs, args[i:]...)
+			break
+		}
+
 		wasOurs := false
 		for _, flagName := range ourFlagNames {
 			if strings.HasPrefix(arg, flagName+"=") || arg == flagName {

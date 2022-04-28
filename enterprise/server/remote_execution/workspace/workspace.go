@@ -148,7 +148,10 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
+	bsClient := ws.env.GetByteStreamClient()
+	casClient := ws.env.GetContentAddressableStorageClient()
+	fileCache := ws.env.GetFileCache()
+	txInfo, err := dirtools.DownloadTree(ctx, bsClient, casClient, fileCache, ws.task.GetExecuteRequest().GetInstanceName(), tree, ws.rootDir, opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err

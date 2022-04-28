@@ -148,10 +148,9 @@ func (r *Env) GetConfigurator() *config.Configurator {
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
-	r.testEnv.SetByteStreamClient(r.GetByteStreamClient())
-	r.testEnv.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
-
-	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, r.testEnv, "" /*=instanceName*/, rootDir)
+	bsClient := r.GetByteStreamClient()
+	casClient := r.GetContentAddressableStorageClient()
+	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, bsClient, casClient, nil /*=fileCache*/, "" /*=instanceName*/, rootDir)
 	if err != nil {
 		assert.FailNow(r.t, err.Error())
 	}

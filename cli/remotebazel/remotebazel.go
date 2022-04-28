@@ -17,6 +17,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -32,6 +33,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -340,7 +342,7 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	return nil
 }
 
-func downloadOutput(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName string, outFile string) error {
+func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.ResourceName, outFile string) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
 		return err
 	}
@@ -349,11 +351,7 @@ func downloadOutput(ctx context.Context, bsClient bspb.ByteStreamClient, resourc
 		return err
 	}
 	defer out.Close()
-	rn, err := digest.ParseDownloadResourceName(resourceName)
-	if err != nil {
-		return err
-	}
-	if err := cachetools.GetBlob(ctx, bsClient, rn, out); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return err
 	}
 	return nil
@@ -394,23 +392,34 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 	return outputs, nil
 }
 
+func bytestreamURIToResourceName(uri string) (*digest.ResourceName, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil, err
+	}
+	r := strings.TrimPrefix(u.RequestURI(), "/")
+	rn, err := digest.ParseDownloadResourceName(r)
+	if err != nil {
+		return nil, err
+	}
+	return rn, nil
+}
+
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
 	var mainLocalArtifacts []string
 	download := func(f *bespb.File) (string, error) {
-		u, err := url.Parse(f.GetUri())
+		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
-			bblog.Printf("Invocation contains an output with an invalid URI %q", f.GetUri())
 			return "", nil
 		}
-		r := strings.TrimPrefix(u.RequestURI(), "/")
 		outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
 		for _, p := range f.GetPathPrefix() {
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
-		if err := downloadOutput(ctx, bsClient, r, outFile); err != nil {
+		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
 			return "", err
 		}
 		return outFile, nil
@@ -425,6 +434,23 @@ func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, mainOu
 	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
 	for _, f := range supportingOutputs {
 		if _, err := download(f); err != nil {
+			return nil, err
+		}
+	}
+	for _, d := range supportingDirs {
+		rn, err := bytestreamURIToResourceName(d.GetUri())
+		if err != nil {
+			return nil, err
+		}
+		tree := &repb.Tree{}
+		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
+			return nil, err
+		}
+		outDir := filepath.Join(outputBaseDir, buildBuddyArtifactDir, d.GetName())
+		if err := os.MkdirAll(outDir, 0755); err != nil {
+			return nil, err
+		}
+		if _, err := dirtools.DownloadTree(ctx, bsClient, casClient, nil, rn.GetInstanceName(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
 			return nil, err
 		}
 	}
@@ -520,6 +546,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	exitCode := -1
 	runfilesRoot := ""
 	var runfiles []*bespb.File
+	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
 		if cic, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
@@ -530,6 +557,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
 				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
 				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
 			}
 		}
@@ -545,6 +573,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
 		bsClient := bspb.NewByteStreamClient(conn)
+		casClient := repb.NewContentAddressableStorageClient(conn)
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
 		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
@@ -552,7 +581,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return 0, err
 		}
 		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-		outputs, err := downloadOutputs(ctx, bsClient, mainOutputs, runfiles, outputsBaseDir)
+		outputs, err := downloadOutputs(ctx, bsClient, casClient, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 		if err != nil {
 			return 0, err
 		}

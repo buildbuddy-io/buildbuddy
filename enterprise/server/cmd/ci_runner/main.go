@@ -34,6 +34,7 @@ import (
 	"github.com/google/shlex"
 	"github.com/google/uuid"
 	"github.com/logrusorgru/aurora"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -786,9 +787,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			e := &bespb.BuildEvent{
 				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunTargetAnalyzed{}},
 				Payload: &bespb.BuildEvent_RunTargetAnalyzed{RunTargetAnalyzed: &bespb.RunTargetAnalyzed{
-					Arguments:    runInfo.args,
-					RunfilesRoot: runInfo.runfilesRoot,
-					Runfiles:     runInfo.runfiles,
+					Arguments:          runInfo.args,
+					RunfilesRoot:       runInfo.runfilesRoot,
+					Runfiles:           runInfo.runfiles,
+					RunfileDirectories: runInfo.runfileDirs,
 				}},
 			}
 			if err := ar.reporter.Publish(e); err != nil {
@@ -850,11 +852,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 type runInfo struct {
 	args         []string
 	runfiles     []*bespb.File
+	runfileDirs  []*bespb.Tree
 	runfilesRoot string
 }
 
-func collectRunfiles(runfilesDir string) (map[digest.Key]string, error) {
-	digestMap := make(map[digest.Key]string)
+func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
+	fileDigestMap := make(map[digest.Key]string)
+	dirsToUpload := make(map[string]string)
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -871,8 +875,8 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, error) {
 			if err != nil {
 				return err
 			}
-			// TODO(vadim): process symlinked directories
 			if fi.IsDir() {
+				dirsToUpload[path] = t
 				return nil
 			}
 		}
@@ -880,79 +884,113 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, error) {
 		if err != nil {
 			return err
 		}
-		digestMap[digest.NewKey(rn.GetDigest())] = path
+		fileDigestMap[digest.NewKey(rn.GetDigest())] = path
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
-		return nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
 	}
-	return digestMap, err
+	return fileDigestMap, dirsToUpload, err
 }
 
-func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, error) {
-	digestMap, err := collectRunfiles(runfilesDir)
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, error) {
+	fileDigestMap, dirs, err := collectRunfiles(runfilesDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	conn, err := grpc_client.DialTarget(*cacheBackend)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 
+	backendURL, err := url.Parse(*cacheBackend)
+	if err != nil {
+		return nil, nil, err
+	}
+	bytestreamURIPrefix := "bytestream://" + backendURL.Host
+
 	var digests []*repb.Digest
-	for d := range digestMap {
+	var runfiles []*bespb.File
+	for d, runfilePath := range fileDigestMap {
 		digests = append(digests, d.ToDigest())
+		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
+		if err != nil {
+			return nil, nil, err
+		}
+		runfiles = append(runfiles, &bespb.File{
+			Name: relPath,
+			File: &bespb.File_Uri{
+				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(d.ToDigest(), *remoteInstanceName).DownloadString()),
+			},
+		})
 	}
 	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		InstanceName: *remoteInstanceName,
 		BlobDigests:  digests,
 	})
 	if err != nil {
-		return nil, status.UnknownErrorf("could not check digest existence: %s", err)
+		return nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
 	}
 	missingDigests := rsp.GetMissingBlobDigests()
 
-	backendURL, err := url.Parse(*cacheBackend)
-	if err != nil {
-		return nil, err
-	}
-	bytestreamURIPrefix := "bytestream://" + backendURL.Host
+	eg, ctx := errgroup.WithContext(ctx)
 
 	u, err := cachetools.NewBatchCASUploader(ctx, bsClient, casClient, nil /*=fileCache*/, *remoteInstanceName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var runFiles []*bespb.File
 	for _, d := range missingDigests {
-		runfilePath, ok := digestMap[digest.NewKey(d)]
+		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
 		if !ok {
 			// not supposed to happen...
-			return nil, status.InternalErrorf("missing digest not in our digest map")
+			return nil, nil, status.InternalErrorf("missing digest not in our digest map")
 		}
 		f, err := os.Open(runfilePath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := u.Upload(d, f); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
-		if err != nil {
-			return nil, err
-		}
-		runFiles = append(runFiles, &bespb.File{
-			Name: relPath,
-			File: &bespb.File_Uri{
-				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(d, *remoteInstanceName).DownloadString()),
-			},
+	}
+
+	eg.Go(func() error {
+		return u.Wait()
+	})
+
+	var runfileDirs []*bespb.Tree
+	var mu sync.Mutex
+	// Output directories in runfiles are symlinks to physical directories.
+	// We upload the real directory, but return the logical directory that the binary expects.
+	for placePath, realPath := range dirs {
+		placePath := placePath
+		realPath := realPath
+		eg.Go(func() error {
+			_, td, err := cachetools.UploadDirectoryToCAS(ctx, bsClient, casClient, nil, *remoteInstanceName, realPath)
+			if err != nil {
+				return err
+			}
+			relPath, err := filepath.Rel(workspaceRoot, placePath)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			runfileDirs = append(runfileDirs, &bespb.Tree{
+				Name: relPath,
+				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(td, *remoteInstanceName).DownloadString()),
+			})
+			mu.Unlock()
+			return nil
 		})
 	}
-	if err := u.Wait(); err != nil {
-		return nil, err
+
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
 	}
-	return runFiles, nil
+
+	return runfiles, runfileDirs, nil
 }
 
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
@@ -1005,8 +1043,8 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 		return nil, err
 	}
 
-	runFilesDir := bin + ".runfiles"
-	runfiles, err := uploadRunfiles(ctx, wsRoot, runFilesDir)
+	runfilesDir := bin + ".runfiles"
+	runfiles, runfileDirs, err := uploadRunfiles(ctx, wsRoot, runfilesDir)
 	if err != nil {
 		return nil, err
 	}
@@ -1014,6 +1052,7 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	return &runInfo{
 		args:         args,
 		runfiles:     runfiles,
+		runfileDirs:  runfileDirs,
 		runfilesRoot: runfilesRoot,
 	}, nil
 }
