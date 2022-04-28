@@ -52,15 +52,18 @@ message GetCacheScoreCardRequest {
     // Field mask selecting filters to be applied.
     google.protobuf.FieldMask mask = 1;
 
+    // Return only results with this cache type.
+    CacheType cache_type = 2;
+
     // Return only results with this request type.
-    RequestType request_type = 2;
+    RequestType request_type = 3;
 
-    // Return only results with this RPC response status code.
-    int32 status_code = 3;
+    // Return only results matching this response type.
+    ResponseType response_type = 4;
 
-    // Return only results whose target ID or action mnemonic
-    // contain this string.
-    string action_match = 4;
+    // Return only results whose target ID, action mnemonic, action ID, or
+    // digest hash contain this string.
+    string search = 5;
   }
 
   // Optional filter for returned results.
@@ -93,7 +96,6 @@ message GetCacheScoreCardRequest {
   bool group_by_action = 7;
 }
 
-// Next ID: 5
 message GetCacheScoreCardResponse {
   context.ResponseContext response_context = 1;
 
@@ -122,6 +124,19 @@ enum RequestType {
   READ = 1;
   // Cache write.
   WRITE = 2;
+}
+
+// ResponseType represents a category of RPC response codes. This is used
+// instead of raw response codes since NOT_FOUND errors are quite common and it
+// is helpful to have a category representing "all other errors".
+enum ResponseType {
+  UNKNOWN_RESPONSE_TYPE = 0;
+  // Show only successful responses (OK response).
+  OK = 1;
+  // Show only NOT_FOUND responses.
+  NOT_FOUND = 2;
+  // Show only error responses (excluding NOT_FOUND).
+  ERROR = 3;
 }
 
 message ScoreCard {
