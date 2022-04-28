@@ -90,16 +90,6 @@ func (s *Executor) Warmup() {
 	s.runnerPool.Warmup(context.Background())
 }
 
-func diffTimestamps(startPb, endPb *timestamppb.Timestamp) time.Duration {
-	start := startPb.AsTime()
-	end := endPb.AsTime()
-	return end.Sub(start)
-}
-
-func diffTimestampsToProto(startPb, endPb *timestamppb.Timestamp) *durationpb.Duration {
-	return durationpb.New(diffTimestamps(startPb, endPb))
-}
-
 func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }

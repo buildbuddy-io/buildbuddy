@@ -1337,7 +1337,7 @@ func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, 
 		if err := r.jsonDecoder.Decode(&raw); err != nil {
 			return err
 		}
-		return (&protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(raw, responseProto)
+		return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, responseProto)
 	}
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
