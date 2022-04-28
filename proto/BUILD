@@ -333,6 +333,11 @@ proto_library(
 )
 
 proto_library(
+    name = "sidecar_proto",
+    srcs = ["sidecar.proto"],
+)
+
+proto_library(
     name = "remote_asset_proto",
     srcs = ["remote_asset.proto"],
     deps = [
@@ -666,6 +671,13 @@ go_proto_library(
     name = "semver_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/semver",
     proto = ":semver_proto",
+)
+
+go_proto_library(
+    name = "sidecar_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/sidecar",
+    proto = ":sidecar_proto",
 )
 
 go_proto_library(

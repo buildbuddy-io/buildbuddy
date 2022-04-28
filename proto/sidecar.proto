@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package sidecar;
+
+message PingRequest {}
+message PingResponse {}
+
+service Sidecar {
+  // Checks if the sidecar is alive and resets the inactivity timer.
+  rpc Ping(PingRequest) returns (PingResponse);
+}
