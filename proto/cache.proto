@@ -3,6 +3,7 @@ syntax = "proto3";
 package cache;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/context.proto";
@@ -46,6 +47,53 @@ message GetCacheScoreCardRequest {
   // A page token returned from the previous response, or an empty string
   // initially.
   string page_token = 3;
+
+  message Filter {
+    // Field mask selecting filters to be applied.
+    google.protobuf.FieldMask mask = 1;
+
+    // Return only results with this cache type.
+    CacheType cache_type = 2;
+
+    // Return only results with this request type.
+    RequestType request_type = 3;
+
+    // Return only results matching this response type.
+    ResponseType response_type = 4;
+
+    // Return only results whose target ID, action mnemonic, action ID, or
+    // digest hash contain this string.
+    string search = 5;
+  }
+
+  // Optional filter for returned results.
+  Filter filter = 4;
+
+  enum OrderBy {
+    UNKNOWN_ORDER_BY = 0;
+    // Order by start time.
+    ORDER_BY_START_TIME = 1;
+    // Order by request duration.
+    ORDER_BY_DURATION = 2;
+  }
+
+  // OrderBy specifies how to group results.
+  OrderBy order_by = 5;
+
+  // Whether to sort in descending order.
+  bool descending = 6;
+
+  // Whether to group results by action. When grouping by action, the results
+  // are grouped by first sorting all results by the OrderBy field, then
+  // effectively re-sorting so that results with the same action ID are in
+  // contiguous runs, while still preserving the original relative ordering
+  // within actions.
+  //
+  // For example, when grouping by action and sorting by start time in ascending
+  // order, the results will be grouped into contiguous runs of results where
+  // each run is sorted in ascending order of start time, and the runs
+  // themselves are ordered by earliest result start time.
+  bool group_by_action = 7;
 }
 
 message GetCacheScoreCardResponse {
@@ -76,6 +124,19 @@ enum RequestType {
   READ = 1;
   // Cache write.
   WRITE = 2;
+}
+
+// ResponseType represents a category of RPC response codes. This is used
+// instead of raw response codes since NOT_FOUND errors are quite common and it
+// is helpful to have a category representing "all other errors".
+enum ResponseType {
+  UNKNOWN_RESPONSE_TYPE = 0;
+  // Show only successful responses (OK response).
+  OK = 1;
+  // Show only NOT_FOUND responses.
+  NOT_FOUND = 2;
+  // Show only error responses (excluding NOT_FOUND).
+  ERROR = 3;
 }
 
 message ScoreCard {
