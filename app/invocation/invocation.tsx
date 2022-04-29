@@ -306,7 +306,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
             !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
           {isBazelInvocation &&
             (activeTab === "all" || activeTab == "cache") &&
-            capabilities.config.detailedCacheStatsEnabled && <CacheRequestsCardComponent model={this.state.model} />}
+            capabilities.config.detailedCacheStatsEnabled && (
+              <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
+            )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent

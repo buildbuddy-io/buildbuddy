@@ -107,6 +107,20 @@
   flex-direction: column;
 }
 
+.cache-requests-card .controls {
+  gap: 8px;
+}
+
+.cache-requests-card .controls .separator {
+  border-left: 1px solid #eee;
+  align-self: stretch;
+}
+
+.cache-requests-card .controls button {
+  font-weight: inherit;
+  font-size: inherit;
+}
+
 .cache-requests-card .result-row {
   display: flex;
   align-items: center;
@@ -221,18 +235,20 @@
   align-items: center;
   align-self: stretch;
   flex-grow: 1;
+  --min-bar-width: 2px;
 }
 
 .cache-requests-card div.waterfall-column.waterfall-column {
   padding-left: 0;
-  padding-right: 0;
+  /* prevent bars from rendering slightly outside the table */
+  padding-right: var(--min-bar-width);
   position: relative;
 }
 
 .cache-requests-card .waterfall-bar {
   background-color: #2196f3;
   border-radius: 2px;
-  min-width: 2px;
+  min-width: var(--min-bar-width);
   height: 8px;
 }
 

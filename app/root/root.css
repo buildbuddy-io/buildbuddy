@@ -437,7 +437,7 @@ svg.icon.orange {
   padding-left: 20px;
 }
 
-.filter-input {
+.filter .filter-input {
   outline: 0;
   border: 0;
   background: transparent;
@@ -448,7 +448,7 @@ svg.icon.orange {
   width: 100%;
 }
 
-.filter-input::placeholder {
+.filter .filter-input::placeholder {
   color: #aaa;
 }
 
@@ -564,7 +564,8 @@ svg.icon.orange {
   font-size: 16px;
 }
 
-.card .icon {
+.card > .icon,
+.card .title .icon {
   margin-right: 16px;
   padding-top: 1px;
 }
@@ -1778,7 +1779,8 @@ code .comment {
   margin-top: 0px;
 }
 
-.dense .card .icon {
+.dense .card > .icon,
+.dense .card .title .icon {
   display: none;
 }
 
