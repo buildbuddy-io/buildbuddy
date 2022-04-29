@@ -117,12 +117,12 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 				return nil, status.InvalidArgumentErrorf("invalid response type %d", req.GetFilter().GetResponseType())
 			}
 		case "search":
+			s := strings.ToLower(req.GetFilter().GetSearch())
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
-				s := req.GetFilter().GetSearch()
-				return strings.Contains(result.GetActionId(), s) ||
-					strings.Contains(result.GetActionMnemonic(), s) ||
-					strings.Contains(result.GetTargetId(), s) ||
-					strings.Contains(result.GetDigest().GetHash(), s)
+				return strings.Contains(strings.ToLower(result.GetActionId()), s) ||
+					strings.Contains(strings.ToLower(result.GetActionMnemonic()), s) ||
+					strings.Contains(strings.ToLower(result.GetTargetId()), s) ||
+					strings.Contains(strings.ToLower(result.GetDigest().GetHash()), s)
 			})
 		default:
 			return nil, status.InvalidArgumentErrorf("invalid field path %q", path)
