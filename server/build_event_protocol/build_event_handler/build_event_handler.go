@@ -241,9 +241,6 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		fillInvocationFromCacheStats(stats, ti)
 	}
 	if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
-		// Store results using the default sort order so we don't have to sort on
-		// each request.
-		scorecard.SortResults(scoreCard.Results)
 		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
 			log.Errorf("Error writing scorecard blob: %s", err)
 		}
