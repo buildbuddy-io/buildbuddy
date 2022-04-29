@@ -928,6 +928,32 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		"should get partial output files even if the exec times out")
 }
 
+func TestFirecrackerLargeResult(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		EnableNetworking:       false,
+		ScratchDiskSizeMB:      100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	require.NoError(t, err)
+	const stdoutSize = 10_000_000
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, string(res.Stderr), "")
+	assert.Len(t, res.Stdout, stdoutSize)
+}
+
 func tree(label string) {
 	fmt.Println("jailer root", label, ":")
 	b, err := exec.Command("tree", "-A", "-C", "--inodes", "/tmp/buildbuddy-test-jailer-root", "-I", "executor").CombinedOutput()
