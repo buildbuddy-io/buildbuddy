@@ -64,9 +64,12 @@ exports_files([
     "VERSION",
 ])
 
-ts_config(
+load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
+
+# See note in //rules/typescript:index.bzl about why this is copied to bin.
+copy_to_bin(
     name = "tsconfig",
-    src = "tsconfig.json",
+    srcs = [":tsconfig.json"],
 )
 
 filegroup(

@@ -7,15 +7,13 @@
     "moduleResolution": "node",
     "module": "commonjs",
     "sourceMap": false,
-    "outDir": "dist",
+    "isolatedModules": true,
+    "downlevelIteration": true,
+    "composite": true,
     "target": "ES2016",
     "baseUrl": ".",
     "lib": ["es2017", "es2019", "dom", "dom.iterable"],
-    "rootDirs": [".", "bazel-bin"],
-    "paths": {
-      "buildbuddy/*": ["*", "bazel-bin/*"],
-      "*": ["node_modules/*"]
-    }
+    "rootDirs": [".", "bazel-bin"]
   },
   "exclude": ["bazel-out", "bazel-bin"]
 }
