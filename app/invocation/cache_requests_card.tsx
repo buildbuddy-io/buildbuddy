@@ -31,6 +31,48 @@ interface State {
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
 
 /**
+ * Represents a labeled collection of cache request filters.
+ */
+type PresetFilter = {
+  label: string;
+  values: {
+    cache: cache.CacheType;
+    request: cache.RequestType;
+    response: cache.ResponseType;
+  };
+};
+
+// Preset filters presented to the user, to avoid presenting too many query options as separate dropdowns.
+const filters: PresetFilter[] = [
+  {
+    label: "All",
+    values: { cache: 0, request: 0, response: 0 },
+  },
+  {
+    label: "AC Hits",
+    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+  },
+  {
+    label: "AC Misses",
+    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
+  },
+  {
+    label: "CAS Hits",
+    values: { cache: cache.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+  },
+  {
+    label: "CAS Writes",
+    values: { cache: cache.CacheType.CAS, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
+  },
+  {
+    label: "Errors",
+    values: { cache: 0, request: 0, response: cache.ResponseType.ERROR },
+  },
+];
+
+const defaultFilterIndex = 2; // AC Misses
+
+/**
  * CacheRequestsCardComponent shows all BuildBuddy cache requests for an invocation in a tabular form.
  */
 export default class CacheRequestsCardComponent extends React.Component<CacheRequestsCardProps, State> {
@@ -68,9 +110,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     this.setState({ loading: true });
 
     const filterFields: string[] = [];
-    if (this.getCacheType()) filterFields.push("cache_type");
-    if (this.getRequestType()) filterFields.push("request_type");
-    if (this.getResponseType()) filterFields.push("response_type");
+
+    const filter = filters[this.getFilterIndex()].values;
+    if (filter.cache) filterFields.push("cache_type");
+    if (filter.request) filterFields.push("request_type");
+    if (filter.response) filterFields.push("response_type");
+
     if (this.getSearch()) filterFields.push("search");
 
     rpc_service.service
@@ -81,9 +126,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         groupByAction: this.getGroupByAction(),
         filter: {
           mask: { paths: filterFields },
-          cacheType: this.getCacheType(),
-          requestType: this.getRequestType(),
-          responseType: this.getResponseType(),
+          cacheType: filter.cache,
+          requestType: filter.request,
+          responseType: filter.response,
           search: this.getSearch(),
         },
         pageToken,
@@ -157,14 +202,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getDescending() {
     return (this.props.search.get("desc") || "false") === "true";
   }
-  private getCacheType() {
-    return Number(this.props.search.get("cache")) as cache.CacheType;
-  }
-  private getRequestType() {
-    return Number(this.props.search.get("request")) as cache.RequestType;
-  }
-  private getResponseType() {
-    return Number(this.props.search.get("response")) as cache.ResponseType;
+  private getFilterIndex() {
+    return Number(this.props.search.get("filter") || defaultFilterIndex);
   }
   private getGroupByAction() {
     return (this.props.search.get("groupByAction") || "true") === "true";
@@ -188,14 +227,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private onToggleDescending() {
     router.setQueryParam("desc", !this.getDescending());
   }
-  private onChangeCacheType(event: React.ChangeEvent<HTMLSelectElement>) {
-    router.setQueryParam("cache", event.target.value);
-  }
-  private onChangeRequestType(event: React.ChangeEvent<HTMLSelectElement>) {
-    router.setQueryParam("request", event.target.value);
-  }
-  private onChangeResponseType(event: React.ChangeEvent<HTMLSelectElement>) {
-    router.setQueryParam("response", event.target.value);
+  private onChangeFilter(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam("filter", event.target.value);
   }
   private onToggleGroupByAction() {
     router.setQueryParam("groupByAction", !this.getGroupByAction());
@@ -232,21 +265,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           </OutlinedButton>
           {/* Filtering controls */}
           <div className="separator" />
-          <Select value={this.getCacheType()} onChange={this.onChangeCacheType.bind(this)}>
-            <Option value={cache.CacheType.UNKNOWN_CACHE_TYPE}>CAS and AC</Option>
-            <Option value={cache.CacheType.CAS}>CAS only</Option>
-            <Option value={cache.CacheType.AC}>AC only</Option>
-          </Select>
-          <Select value={this.getRequestType()} onChange={this.onChangeRequestType.bind(this)}>
-            <Option value={cache.RequestType.UNKNOWN_REQUEST_TYPE}>Reads and writes</Option>
-            <Option value={cache.RequestType.READ}>Reads only</Option>
-            <Option value={cache.RequestType.WRITE}>Writes only</Option>
-          </Select>
-          <Select value={this.getResponseType()} onChange={this.onChangeResponseType.bind(this)}>
-            <Option value={cache.ResponseType.UNKNOWN_RESPONSE_TYPE}>Any status</Option>
-            <Option value={cache.ResponseType.OK}>OK only</Option>
-            <Option value={cache.ResponseType.NOT_FOUND}>NotFound only</Option>
-            <Option value={cache.ResponseType.ERROR}>Errors only</Option>
+          <label>Show</label>
+          <Select value={this.getFilterIndex()} onChange={this.onChangeFilter.bind(this)}>
+            {filters.map((filter, i) => (
+              <Option key={filter.label} value={i}>
+                {filter.label}
+              </Option>
+            ))}
           </Select>
           {/* Grouping controls */}
           <div className="separator" />
@@ -409,7 +434,7 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
     return (
       <>
         <ArrowDown className="icon green" />
-        <span>Read</span>
+        <span>Hit</span>
       </>
     );
   }
