@@ -9,7 +9,6 @@
   "devDependencies": {
     "@bazel/bazelisk": "^1.6.1",
     "@bazel/buildifier": "^3.4.0",
-    "@bazel/concatjs": "^5.4.0",
     "@bazel/esbuild": "^5.4.0",
     "@bazel/ibazel": "^0.13.2",
     "@bazel/jasmine": "^5.4.0",
@@ -69,7 +68,7 @@
     "semver": "^7.1.2",
     "tmp": "^0.2.0",
     "tslib": "^2.1.0",
-    "typescript": "^3.4.5",
+    "typescript": "^4.6.3",
     "uglify-js": "^3.6.0",
     "uuid": "^8.3.0"
   },
