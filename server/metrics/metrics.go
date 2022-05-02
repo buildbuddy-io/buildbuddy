@@ -426,11 +426,13 @@ var (
 	/// quantile(0.5, buildbuddy_remote_execution_queue_length)
 	/// ```
 
-	RemoteExecutionTasksExecuting = promauto.NewGauge(prometheus.GaugeOpts{
+	RemoteExecutionTasksExecuting = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "tasks_executing",
 		Help:      "Number of tasks currently being executed by the executor.",
+	}, []string{
+		ExecutedActionStageLabel,
 	})
 
 	/// #### Examples

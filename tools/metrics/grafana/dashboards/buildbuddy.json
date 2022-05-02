@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 2,
-  "iteration": 1646843514723,
+  "iteration": 1651515516154,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -2851,10 +2851,6 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
-          },
           "description": "Chart is stacked, so values always add up to 100%.",
           "fill": 1,
           "fillGradient": 0,
@@ -2892,6 +2888,11 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
               "expr": "count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Working",
@@ -2899,6 +2900,10 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "1 - count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}) > 0) / count(sum by (pod_name) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Idle",
@@ -3146,97 +3151,89 @@
           }
         },
         {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prom"
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
           },
-          "description": "",
-          "fill": 0,
-          "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
             "y": 18
           },
-          "hiddenSeries": false,
-          "id": 178,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": true
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
+          "id": 1209,
           "options": {
-            "alertThreshold": true
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
           },
-          "percentage": false,
-          "pluginVersion": "8.3.2",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
           "targets": [
             {
-              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
-              "legendFormat": "Avg CPU assigned",
-              "queryType": "randomWalk",
+              "legendFormat": "{{stage}}",
               "refId": "A"
-            },
-            {
-              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
-              "interval": "",
-              "legendFormat": "Avg RAM assigned",
-              "refId": "B"
             }
           ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Avg resources allocated to tasks",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:582",
-              "format": "percentunit",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:583",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
+          "title": "Tasks executing by stage",
+          "type": "timeseries"
         },
         {
           "aliasColors": {},
@@ -3325,9 +3322,7 @@
           }
         },
         {
-          "aliasColors": {
-            "Value": "yellow"
-          },
+          "aliasColors": {},
           "bars": false,
           "dashLength": 10,
           "dashes": false,
@@ -3335,7 +3330,8 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "fill": 1,
+          "description": "",
+          "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
@@ -3344,15 +3340,16 @@
             "y": 26
           },
           "hiddenSeries": false,
-          "id": 35,
+          "id": 178,
           "legend": {
+            "alignAsTable": true,
             "avg": false,
-            "current": false,
+            "current": true,
             "max": false,
             "min": false,
-            "show": false,
+            "show": true,
             "total": false,
-            "values": false
+            "values": true
           },
           "lines": true,
           "linewidth": 1,
@@ -3371,16 +3368,22 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
+              "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "Avg CPU assigned",
               "queryType": "randomWalk",
               "refId": "A"
+            },
+            {
+              "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
+              "interval": "",
+              "legendFormat": "Avg RAM assigned",
+              "refId": "B"
             }
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Total uploaded bytes per second",
+          "title": "Avg resources allocated to tasks",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -3394,14 +3397,14 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:738",
-              "format": "binBps",
+              "$$hashKey": "object:582",
+              "format": "percentunit",
               "logBase": 1,
               "min": "0",
               "show": true
             },
             {
-              "$$hashKey": "object:739",
+              "$$hashKey": "object:583",
               "format": "short",
               "logBase": 1,
               "show": true
@@ -3498,7 +3501,9 @@
           }
         },
         {
-          "aliasColors": {},
+          "aliasColors": {
+            "Value": "yellow"
+          },
           "bars": false,
           "dashLength": 10,
           "dashes": false,
@@ -3506,8 +3511,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "description": "Number of actions waiting to be executed",
-          "fill": 0,
+          "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
@@ -3516,16 +3520,15 @@
             "y": 34
           },
           "hiddenSeries": false,
-          "id": 102,
+          "id": 35,
           "legend": {
-            "alignAsTable": true,
             "avg": false,
-            "current": true,
+            "current": false,
             "max": false,
             "min": false,
-            "show": true,
+            "show": false,
             "total": false,
-            "values": true
+            "values": false
           },
           "lines": true,
           "linewidth": 1,
@@ -3544,16 +3547,16 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
+              "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
-              "legendFormat": "{{pod_name}}",
+              "legendFormat": "",
               "queryType": "randomWalk",
               "refId": "A"
             }
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Executor queue length by pod",
+          "title": "Total uploaded bytes per second",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -3567,15 +3570,14 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:893",
-              "decimals": 0,
-              "format": "short",
+              "$$hashKey": "object:738",
+              "format": "binBps",
               "logBase": 1,
               "min": "0",
               "show": true
             },
             {
-              "$$hashKey": "object:894",
+              "$$hashKey": "object:739",
               "format": "short",
               "logBase": 1,
               "show": true
@@ -3681,7 +3683,8 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "fill": 1,
+          "description": "Number of actions waiting to be executed",
+          "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
@@ -3690,16 +3693,14 @@
             "y": 42
           },
           "hiddenSeries": false,
-          "id": 180,
+          "id": 102,
           "legend": {
             "alignAsTable": true,
             "avg": false,
             "current": true,
             "max": false,
             "min": false,
-            "show": false,
-            "sort": "current",
-            "sortDesc": true,
+            "show": true,
             "total": false,
             "values": true
           },
@@ -3720,16 +3721,16 @@
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
+              "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{pod_name}}",
               "queryType": "randomWalk",
               "refId": "A"
             }
           ],
           "thresholds": [],
           "timeRegions": [],
-          "title": "Total CPU usage (CPU seconds)",
+          "title": "Executor queue length by pod",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -3743,14 +3744,15 @@
           },
           "yaxes": [
             {
-              "$$hashKey": "object:1049",
-              "format": "s",
+              "$$hashKey": "object:893",
+              "decimals": 0,
+              "format": "short",
               "logBase": 1,
               "min": "0",
               "show": true
             },
             {
-              "$$hashKey": "object:1050",
+              "$$hashKey": "object:894",
               "format": "short",
               "logBase": 1,
               "show": true
@@ -3848,118 +3850,92 @@
           "type": "timeseries"
         },
         {
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "axisSoftMin": 0,
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "µs"
-            },
-            "overrides": [
-              {
-                "__systemRef": "hideSeriesFrom",
-                "matcher": {
-                  "id": "byNames",
-                  "options": {
-                    "mode": "exclude",
-                    "names": [
-                      "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{instance=\"host.docker.internal:9091\", job=\"executor\"}"
-                    ],
-                    "prefix": "All except:",
-                    "readOnly": true
-                  }
-                },
-                "properties": [
-                  {
-                    "id": "custom.hideFrom",
-                    "value": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": true
-                    }
-                  }
-                ]
-              }
-            ]
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
           },
+          "fill": 1,
+          "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
             "y": 50
           },
-          "id": 1196,
-          "options": {
-            "legend": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "displayMode": "table",
-              "placement": "bottom"
-            },
-            "tooltip": {
-              "mode": "multi"
-            }
+          "hiddenSeries": false,
+          "id": 180,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "max": false,
+            "min": false,
+            "show": false,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
           },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "8.3.2",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prom"
-              },
-              "exemplar": true,
-              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\"}",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{pod}}",
+              "queryType": "randomWalk",
               "refId": "A"
             }
           ],
-          "title": "File cache last eviction age",
-          "type": "timeseries"
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Total CPU usage (CPU seconds)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:1049",
+              "format": "s",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:1050",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
         },
         {
           "fieldConfig": {
@@ -4084,6 +4060,120 @@
             }
           ],
           "title": "File cache added file size",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "axisSoftMin": 0,
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "µs"
+            },
+            "overrides": [
+              {
+                "__systemRef": "hideSeriesFrom",
+                "matcher": {
+                  "id": "byNames",
+                  "options": {
+                    "mode": "exclude",
+                    "names": [
+                      "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{instance=\"host.docker.internal:9091\", job=\"executor\"}"
+                    ],
+                    "prefix": "All except:",
+                    "readOnly": true
+                  }
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom",
+                    "value": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": true
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 58
+          },
+          "id": 1196,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region=\"${region}\", job=\"${pool}\"}",
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "File cache last eviction age",
           "type": "timeseries"
         }
       ],

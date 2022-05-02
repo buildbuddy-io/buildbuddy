@@ -148,6 +148,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	defer span.End()
 
 	metrics.RemoteExecutionTasksStartedCount.Inc()
+	stage := &stagedGauge{}
+	defer stage.End()
 
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
@@ -190,6 +192,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
+	stage.Set("pull_image")
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
 	}
@@ -202,6 +205,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	md.InputFetchStartTimestamp = timestamppb.Now()
 
+	stage.Set("input_fetch")
 	ioStats := &espb.IOStats{}
 	if err := r.DownloadInputs(ctx, ioStats); err != nil {
 		return finishWithErrFn(err)
@@ -225,6 +229,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
+	stage.Set("execution")
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
 		cmdResultChan <- r.Run(ctx)
@@ -270,6 +275,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
+	stage.Set("output_upload")
 	if err := r.UploadOutputs(ctx, ioStats, actionResult, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
@@ -366,4 +372,29 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 		metrics.GroupID:                  groupID,
 		metrics.ExecutedActionStageLabel: stage,
 	}).Observe(float64(duration / time.Microsecond))
+}
+
+// stagedGauge manages the "tasks executing by stage" gauge for a single task,
+// ensuring that the gauge counts are correctly updated on each stage
+// transition.
+type stagedGauge struct {
+	stage string
+}
+
+func (g *stagedGauge) Set(stage string) {
+	if prev := g.stage; prev != "" {
+		metrics.RemoteExecutionTasksExecuting.
+			With(prometheus.Labels{metrics.ExecutedActionStageLabel: prev}).
+			Dec()
+	}
+	if stage != "" {
+		metrics.RemoteExecutionTasksExecuting.
+			With(prometheus.Labels{metrics.ExecutedActionStageLabel: stage}).
+			Inc()
+	}
+	g.stage = stage
+}
+
+func (g *stagedGauge) End() {
+	g.Set("")
 }
