@@ -299,7 +299,6 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeTaskCancelFuncs[cancel] = struct{}{}
-	metrics.RemoteExecutionTasksExecuting.Set(float64(len(q.activeTaskCancelFuncs)))
 	if size := res.GetTaskSize(); size != nil {
 		q.ramBytesUsed += size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
@@ -310,7 +309,6 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	delete(q.activeTaskCancelFuncs, cancel)
-	metrics.RemoteExecutionTasksExecuting.Set(float64(len(q.activeTaskCancelFuncs)))
 	if size := res.GetTaskSize(); size != nil {
 		q.ramBytesUsed -= size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
