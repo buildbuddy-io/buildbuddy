@@ -93,6 +93,14 @@ class Router {
   setQuery(query: Record<string, string>) {
     window.history.replaceState({}, "", getModifiedUrl({ query }));
   }
+  /**
+   * Replaces a single query param, preserving all other params.
+   */
+  setQueryParam(key: string, value: any) {
+    const url = new URL(window.location.href);
+    url.searchParams.set(key, String(value));
+    window.history.pushState({}, "", url.href);
+  }
 
   navigateHome(hash?: string) {
     this.navigateTo("/" + (hash || ""));

@@ -1,0 +1,41 @@
+.filter-input-container {
+  border-radius: 21px;
+  height: 42px;
+  background-color: #f3f3f3;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.filter-input-container .icon {
+  width: 16px;
+  height: 100%;
+  position: absolute;
+  left: 20px;
+  pointer-events: none;
+  transition: stroke 300ms ease-out;
+}
+
+.filter-input-container .filter-input {
+  outline: 0;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  padding: 0 42px;
+  height: 100%;
+  font-family: inherit;
+  font-size: 14px;
+  color: black;
+  width: 100%;
+}
+
+.filter-input-container .filter-input::placeholder {
+  color: #aaa;
+}
+
+.filter-input-container.is-filtering .icon {
+  stroke: #1e88e5;
+}
