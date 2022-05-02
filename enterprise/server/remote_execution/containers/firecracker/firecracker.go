@@ -149,6 +149,10 @@ const (
 	// This deadline isn't used for the Exec() codepath because removal is handled
 	// in the background by the runner pool.
 	finalizationTimeout = 10 * time.Second
+
+	// Max recv message size for Exec() requests, which can have lots of stderr/
+	// stdout in the response.
+	grpcMaxRecvMsgSizeBytes = 50_000_000
 )
 
 var (
@@ -1349,7 +1353,8 @@ func (c *FirecrackerContainer) vmExec(ctx context.Context, client vmxpb.ExecClie
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	rsp, err := client.Exec(ctx, req)
+	opt := grpc.MaxRecvMsgSizeCallOption{MaxRecvMsgSize: grpcMaxRecvMsgSizeBytes}
+	rsp, err := client.Exec(ctx, req, opt)
 	if err != nil {
 		return nil, status.WrapError(err, "Firecracker exec failed")
 	}
