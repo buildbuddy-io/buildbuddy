@@ -14,6 +14,8 @@ import { formatTimestampMillis, durationMillis } from "../format/format";
 import CheckboxButton from "../components/button/checkbox_button";
 import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
+import * as format from "../format/format";
+import * as proto from "../util/proto";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -296,6 +298,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {renderCacheType(result.cacheType)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
+        <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
       </div>
     ));
