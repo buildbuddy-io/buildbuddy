@@ -111,10 +111,18 @@ func GetTestEnv(t testing.TB) *TestEnv {
 
 	flags.PopulateFlagsFromData(t, []byte(testConfigData))
 	testRootDir := testfs.MakeTempDir(t)
-	flags.Set(t, "storage.disk.root_directory", fmt.Sprintf("%s/storage", testRootDir))
-	flags.Set(t, "cache.disk.root_directory", fmt.Sprintf("%s/cache", testRootDir))
-	flags.Set(t, "executor.root_directory", fmt.Sprintf("%s/remote_execution/builds", testRootDir))
-	flags.Set(t, "executor.local_cache_directory", fmt.Sprintf("%s/remote_execution/cache", testRootDir))
+	if flag.Lookup("storage.disk.root_directory") != nil {
+		flags.Set(t, "storage.disk.root_directory", fmt.Sprintf("%s/storage", testRootDir))
+	}
+	if flag.Lookup("cache.disk.root_directory") != nil {
+		flags.Set(t, "cache.disk.root_directory", fmt.Sprintf("%s/cache", testRootDir))
+	}
+	if flag.Lookup("executor.root_directory") != nil {
+		flags.Set(t, "executor.root_directory", fmt.Sprintf("%s/remote_execution/builds", testRootDir))
+	}
+	if flag.Lookup("executor.local_cache_directory") != nil {
+		flags.Set(t, "executor.local_cache_directory", fmt.Sprintf("%s/remote_execution/cache", testRootDir))
+	}
 
 	healthChecker := healthcheck.NewHealthChecker("test")
 	te := &TestEnv{

@@ -499,7 +499,6 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ut := &FakeUsageTracker{}
 	te.SetUsageTracker(ut)
-	flags.Set(t, "app.usage_tracking_enabled", true)
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()

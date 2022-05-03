@@ -553,6 +553,9 @@ func (cc *RedisClientConfig) String() string {
 func (c *Configurator) ReconcileFlagsAndConfig() {
 	c.GenerateFlagSet().VisitAll(func(flg *flag.Flag) {
 		if flag.Lookup(flg.Name) == nil {
+			// If a flag exists in the config but not in the flags, skip it. This can
+			// easily happen when the same config is used with different buildbuddy
+			// binaries (e. g. the free server and the enterprise server)
 			return
 		}
 		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {

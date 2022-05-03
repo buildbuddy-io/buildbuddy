@@ -30,6 +30,5 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/prefix",
-        "//server/util/testing/flags",
     ],
 )

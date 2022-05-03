@@ -5,7 +5,6 @@ package rbetest
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -79,9 +78,6 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-
-	// included to define flags
-	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor"
 )
 
 const (
@@ -732,9 +728,8 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	// only after all the executors have shutdown.
 	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
 	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
-	flags.Set(t, "executor.local_cache_directory", localCacheDirectory)
 
-	fc, err := filecache.NewFileCache(localCacheDirectory, reflect.ValueOf(flag.Lookup("executor.local_cache_size_bytes").Value).Convert(reflect.TypeOf((*int64)(nil))).Elem().Int())
+	fc, err := filecache.NewFileCache(localCacheDirectory, 1_000_000_000 /* Default cache size value */)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}

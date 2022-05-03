@@ -1,6 +1,7 @@
 package enterprise_testenv
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
@@ -22,12 +23,16 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	if opts.RedisTarget != "" {
 		healthChecker := healthcheck.NewTestingHealthChecker()
-		flags.Set(t, "cache.distributed_cache.redis_target", opts.RedisTarget)
+		if flag.Lookup("cache.distributed_cache.redis_target") != nil {
+			flags.Set(t, "cache.distributed_cache.redis_target", opts.RedisTarget)
+		}
 		redisClient := redisutil.NewSimpleClient(opts.RedisTarget, healthChecker, "cache_redis")
 		env.SetRemoteExecutionRedisClient(redisClient)
 		env.SetRemoteExecutionRedisPubSubClient(redisClient)
 		log.Info("Using redis cache")
-		flags.Set(t, "cache.redis.max_value_size_bytes", 500_000_000)
+		if flag.Lookup("cache.redis.max_value_size_bytes") != nil {
+			flags.Set(t, "cache.redis.max_value_size_bytes", 500_000_000)
+		}
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
 	}

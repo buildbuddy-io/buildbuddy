@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -48,7 +47,6 @@ func getTestEnv(t testing.TB, users map[string]interfaces.UserInfo) *testenv.Tes
 }
 
 func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
-	flags.Set(t, "auth.enable_anonymous_usage", true)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	if err != nil {
 		t.Fatalf("error attaching user prefix: %v", err)

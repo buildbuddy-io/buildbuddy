@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -99,7 +98,6 @@ func TestIsGranted_TestUserWithCapability_True(t *testing.T) {
 		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	flags.Set(t, "auth.enable_anonymous_usage", false)
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
 	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
@@ -115,7 +113,6 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 		Capabilities: []akpb.ApiKey_Capability{},
 	}
 	te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
-	flags.Set(t, "auth.enable_anonymous_usage", false)
 	authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
 
 	canWrite, err := capabilities.IsGranted(authCtx, te, akpb.ApiKey_CACHE_WRITE_CAPABILITY)

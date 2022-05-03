@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,10 +24,6 @@ func PopulateFlagsFromData(t testing.TB, testConfigData []byte) {
 // to its original value after the given test is complete.
 func Set(t testing.TB, name string, value interface{}) {
 	origValue, err := flagutil.DereferencedValueFromFlagName(name)
-	if status.IsNotFoundError(err) {
-		log.Warningf("Attempted to set %s to %v, but %s was not found.", name, value, name)
-		return
-	}
 	require.NoError(t, err)
 	err = flagutil.SetValueForFlagName(name, value, nil, false, true)
 	require.NoError(t, err)
