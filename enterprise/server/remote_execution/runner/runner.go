@@ -79,7 +79,8 @@ var (
 )
 
 func init() {
-	flagutil.StructSliceVar(&dockerDevices, "docker_devices", "Sets --device= on the docker command.")
+	flagutil.StructSliceVar(&dockerDevices, "executor.docker_devices", `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContaine
+r":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
 }
 
 const (
