@@ -206,6 +206,11 @@
   width: 32px;
 }
 
+.cache-requests-card .duration-column {
+  width: 52px;
+  text-align: right;
+}
+
 .cache-requests-card .status-column {
   width: 60px;
 }

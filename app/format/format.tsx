@@ -55,6 +55,10 @@ export function durationSec(duration: number | Long) {
   return `${(seconds * 1000).toPrecision(3)}ms`;
 }
 
+export function compactDurationMillis(duration: number | Long) {
+  return compactDurationSec(Number(duration) / 1000);
+}
+
 export function compactDurationSec(duration: number | Long) {
   let seconds = +duration;
   if (!seconds || seconds < 0) {
@@ -81,7 +85,11 @@ export function compactDurationSec(duration: number | Long) {
   if (seconds >= 1) {
     return `${seconds.toFixed(0)}s`;
   }
-  return `${(seconds * 1000).toFixed(0)}ms`;
+  const ms = seconds * 1000;
+  if (ms >= 1) {
+    return `${(seconds * 1000).toFixed(0)}ms`;
+  }
+  return `${(ms * 1000).toFixed(0)}µs`;
 }
 
 /**
