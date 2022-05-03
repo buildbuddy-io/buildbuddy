@@ -275,15 +275,29 @@ func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
 	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
 		keys := strings.Split(flg.Name, ".")
 		m := yamlMap
-		for k := range keys[:len(keys)-1] {
-			v := make(map[interface{}]interface{})
-			m[k], m = v, v
+		for i, k := range keys[:len(keys)-1] {
+			v, ok := m[k]
+			if !ok {
+				v := make(map[interface{}]interface{})
+				m[k], m = v, v
+				continue
+			}
+			m, ok = v.(map[interface{}]interface{})
+			if !ok {
+				errors = append(errors, fmt.Errorf("When trying to create YAML map hierarchy for %s, encountered non-map value of type %T at %s", flg.Name, v, strings.Join(keys[:i+1], ".")))
+				return
+			}
+		}
+		k := keys[len(keys)-1]
+		if v, ok := m[k]; ok {
+			errors = append(errors, fmt.Errorf("When trying to create YAML value for %s, encountered pre-existing value of type %T.", flg.Name, v))
+			return
 		}
 		if v, ok := flg.Value.(*structSliceFlag); ok {
-			m[keys[len(keys)-1]] = reflect.MakeSlice(v.dstSlice.Type(), 0, 0)
+			m[k] = reflect.New(v.dstSlice.Type()).Elem().Interface()
 			return
 		} else if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
-			m[keys[len(keys)-1]] = reflect.New(t).Elem()
+			m[k] = reflect.New(t.Elem()).Elem().Interface()
 			return
 		}
 		errors = append(errors, fmt.Errorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
@@ -329,7 +343,10 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	}
 	// For slice flags, append the YAML values to the existing values if appendSlice is true
 	if v, ok := flg.Value.(SliceFlag); ok && appendSlice {
-		v.AppendSlice(i)
+		if reflect.TypeOf(i) != reflect.TypeOf(v.UnderlyingSlice()) {
+			return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag %s of type %T.", i, i, flg.Name, v.UnderlyingSlice())
+		}
+		v.SetTo(v.AppendSlice(i))
 		return nil
 	}
 	// For non-append flags, skip the YAML values if it was set on the command line
@@ -337,12 +354,18 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 		return nil
 	}
 	if v, ok := flg.Value.(*structSliceFlag); ok {
+		if reflect.TypeOf(i) != reflect.TypeOf(v.UnderlyingSlice()) {
+			return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag %s of type %T.", i, i, flg.Name, v.UnderlyingSlice())
+		}
 		v.SetTo(i)
 		return nil
 	}
 	t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]
 	if !ok {
 		return status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+	}
+	if !reflect.ValueOf(i).CanConvert(t.Elem()) {
+		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", i, i, t, flg.Name)
 	}
 	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i).Convert(t.Elem()))
 	return nil
