@@ -1,4 +1,4 @@
-def yarn(name, srcs, package, command = "build", deps = [], yarn = "@nodejs//:yarn_bin", node = "@nodejs//:node_bin", **kwargs):
+def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn_bin", node = "@nodejs_host//:node_bin", **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":
