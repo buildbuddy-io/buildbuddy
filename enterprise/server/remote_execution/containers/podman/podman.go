@@ -358,7 +358,7 @@ func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) err
 	defer cancel()
 
 	err := c.Remove(ctx)
-	if strings.Contains(err.Error(), "Error: can only kill running containers.") {
+	if err != nil && strings.Contains(err.Error(), "Error: can only kill running containers.") {
 		// This is expected.
 		return nil
 	}
