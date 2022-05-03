@@ -283,6 +283,7 @@ func readPaginatedTargets(ctx context.Context, env environment.Env, req *trpb.Ge
 	}
 	commitQuery.AddWhereClause("role = ?", ciRole)
 	commitQuery.AddWhereClause("command = ?", testCommand)
+	commitQuery.AddWhereClause("commit_sha != ''")
 	paginationToken, err := NewTokenFromRequest(req)
 	if err != nil {
 		return nil, err
