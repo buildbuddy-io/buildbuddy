@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -164,7 +165,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		uploadTracker := ht.TrackUpload(uploadDigest)
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
-		defer uploadTracker.Close()
+		defer uploadTracker.CloseWithBytesTransferred(int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -258,7 +259,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
+	type closeTrackerFunc func(res *repb.BatchReadBlobsResponse_Response)
 	cacheRequest := make([]*repb.Digest, 0, len(req.Digests))
+	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	for _, readDigest := range req.GetDigests() {
@@ -267,9 +270,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			return nil, err
 		}
 		downloadTracker := ht.TrackDownload(readDigest)
-		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
-		// so doing 100-1000 or so in this loop is fine.
-		defer downloadTracker.Close()
+		closeTrackerFuncs = append(closeTrackerFuncs, func(res *repb.BatchReadBlobsResponse_Response) {
+			downloadTracker.CloseWithBytesTransferred(int64(len(res.Data)), res.Compressor)
+		})
+
 		if readDigest.GetHash() != digest.EmptySha256 {
 			cacheRequest = append(cacheRequest, readDigest)
 		}
@@ -306,6 +310,15 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 
 		rsp.Responses = append(rsp.Responses, blobRsp)
 	}
+
+	if len(closeTrackerFuncs) == len(rsp.Responses) {
+		for i, closeFn := range closeTrackerFuncs {
+			closeFn(rsp.Responses[i])
+		}
+	} else {
+		alert.UnexpectedEvent("cas_batch_response_length_mismatch", "Unexpected batch read response length (%d expected, got %d)", len(closeTrackerFuncs), len(rsp.Responses))
+	}
+
 	return rsp, nil
 }
 

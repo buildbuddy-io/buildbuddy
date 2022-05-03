@@ -153,10 +153,8 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	if err == nil {
-		downloadTracker.Close()
-	}
+	n, err := io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	downloadTracker.CloseWithBytesTransferred(n, r.GetCompressor())
 	return err
 }
 
@@ -191,8 +189,8 @@ type writeState struct {
 	cacheCloser        io.Closer
 
 	checksum           *Checksum
-	d                  *repb.Digest
-	activeResourceName string
+	resourceName       *digest.ResourceName
+	resourceNameString string
 	offset             int64
 }
 
@@ -208,8 +206,8 @@ func checkInitialPreconditions(req *bspb.WriteRequest) error {
 
 func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error {
 	if req.ResourceName != "" {
-		if req.ResourceName != ws.activeResourceName {
-			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.activeResourceName)
+		if req.ResourceName != ws.resourceNameString {
+			return status.InvalidArgumentErrorf("ResourceName '%s' does not match initial ResourceName: '%s'", req.ResourceName, ws.resourceNameString)
 		}
 	}
 	if req.WriteOffset != ws.offset {
@@ -236,8 +234,8 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	ws := &writeState{
-		activeResourceName: req.ResourceName,
-		d:                  r.GetDigest(),
+		resourceName:       r,
+		resourceNameString: req.ResourceName,
 	}
 
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -305,7 +303,7 @@ func (w *writeState) Close() error {
 func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
 	// not closed, since that commits the file to cache.
-	if err := w.checksum.Check(w.d); err != nil {
+	if err := w.checksum.Check(w.resourceName.GetDigest()); err != nil {
 		return err
 	}
 
@@ -352,8 +350,10 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				}
 			}()
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-			uploadTracker := ht.TrackUpload(streamState.d)
-			defer uploadTracker.Close()
+			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
+			defer func() {
+				uploadTracker.CloseWithBytesTransferred(streamState.offset, streamState.resourceName.GetCompressor())
+			}()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
 				return err
@@ -428,9 +428,8 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.
 			// size, count it as an upload.
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(r.GetDigest())
-			defer uploadTracker.Close()
-
 			remainingSize, err = s.recvAll(stream)
+			uploadTracker.CloseWithBytesTransferred(int64(len(firstRequest.Data))+remainingSize, r.GetCompressor())
 			if err != nil {
 				return err
 			}

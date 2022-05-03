@@ -9,15 +9,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -239,8 +243,12 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 
 func TestRPCWriteAndReadCompressed(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
+	flags.Set(t, "cache.detailed_stats_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	te.SetMetricsCollector(mc)
 
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
@@ -263,12 +271,28 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "error code should be NOT_FOUND")
 
-		// Upload compressed blob.
-		uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+		// Upload compressed blob with metadata.
+		// Use an invocation context scoped just to this upload.
+		{
+			rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t)}
+			ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+			require.NoError(t, err)
+			uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
 
-		// Read back the compressed blob we just uploaded. After decompressing, should
-		// get back the original blob contents.
+			mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+
+			sc := hit_tracker.ScoreCard(ctx, te, rmd.ToolInvocationId)
+			require.Len(t, sc.Results, 1)
+			assert.Equal(t, d.GetHash(), sc.Results[0].Digest.Hash)
+			assert.Equal(t, repb.Compressor_ZSTD, sc.Results[0].Compressor)
+			assert.Equal(t, int64(len(compressedBlob)), sc.Results[0].TransferredSizeBytes)
+		}
+
+		// Read back the compressed blob we just uploaded, using a new invocation
+		// context. After decompressing, should get back the original blob contents.
+		rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t)}
+		ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+		require.NoError(t, err)
 		downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
 		downloadBuf := []byte{}
 		downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
@@ -285,6 +309,11 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 		}
 		decompressedBlob := zstdDecompress(t, downloadBuf)
 		require.Equal(t, blob, decompressedBlob)
+		sc := hit_tracker.ScoreCard(ctx, te, rmd.ToolInvocationId)
+		require.Len(t, sc.Results, 1)
+		assert.Equal(t, d.GetHash(), sc.Results[0].Digest.Hash)
+		assert.Equal(t, repb.Compressor_ZSTD, sc.Results[0].Compressor)
+		assert.Equal(t, int64(len(downloadBuf)), sc.Results[0].TransferredSizeBytes)
 	}
 }
 

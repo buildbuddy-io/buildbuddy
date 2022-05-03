@@ -192,7 +192,12 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 		return err
 	}
 	if *detailedStatsEnabled {
-		if err := h.recordDetailedStats(d, Miss, start, 0); err != nil {
+		stats := &detailedStats{
+			Status:    Miss,
+			StartTime: start,
+			Duration:  time.Since(start),
+		}
+		if err := h.recordDetailedStats(d, stats); err != nil {
 			return err
 		}
 	} else if h.actionCache {
@@ -217,14 +222,19 @@ func (h *HitTracker) TrackEmptyHit() error {
 	}
 	if *detailedStatsEnabled {
 		emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
-		if err := h.recordDetailedStats(emptyDigest, Miss, start, 0); err != nil {
+		stats := &detailedStats{
+			Status:    Miss,
+			StartTime: start,
+			Duration:  time.Since(start),
+		}
+		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, startTime time.Time, duration time.Duration) error {
+func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
 	rid, err := uuid.NewRandom()
 	if err != nil {
 		return err
@@ -241,34 +251,45 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, status counterType, sta
 		cacheType = capb.CacheType_AC
 	}
 	requestType := capb.RequestType_READ
-	if status == Upload {
+	if stats.Status == Upload {
 		requestType = capb.RequestType_WRITE
 	}
 	// TODO(bduffany): Set response code explicitly
 	statusCode := codes.OK
-	if status == Miss {
+	if stats.Status == Miss {
 		statusCode = codes.NotFound
 	}
-	startTimeProto := timestamppb.New(startTime)
-	durationProto := durationpb.New(duration)
+	startTimeProto := timestamppb.New(stats.StartTime)
+	durationProto := durationpb.New(stats.Duration)
 
 	result := &capb.ScoreCard_Result{
-		ActionMnemonic: h.requestMetadata.ActionMnemonic,
-		TargetId:       h.requestMetadata.TargetId,
-		ActionId:       h.requestMetadata.ActionId,
-		CacheType:      cacheType,
-		RequestType:    requestType,
-		Digest:         d,
-		Status:         &statuspb.Status{Code: int32(statusCode)},
-		StartTime:      startTimeProto,
-		Duration:       durationProto,
-		// TODO(bduffany): Compressed, CompressedSizebytes, Committed
+		ActionMnemonic:       h.requestMetadata.ActionMnemonic,
+		TargetId:             h.requestMetadata.TargetId,
+		ActionId:             h.requestMetadata.ActionId,
+		CacheType:            cacheType,
+		RequestType:          requestType,
+		Digest:               d,
+		Status:               &statuspb.Status{Code: int32(statusCode)},
+		StartTime:            startTimeProto,
+		Duration:             durationProto,
+		Compressor:           stats.Compressor,
+		TransferredSizeBytes: stats.TransferredSizeBytes,
+		// TODO(bduffany): Committed
 	}
 	b, err := proto.Marshal(result)
 	if err != nil {
 		return err
 	}
 	return h.c.Set(h.ctx, rid.String(), string(b), 0)
+}
+
+// detailedStats holds detailed cache stats for a transfer.
+type detailedStats struct {
+	Status               counterType
+	StartTime            time.Time
+	Duration             time.Duration
+	Compressor           repb.Compressor_Value
+	TransferredSizeBytes int64
 }
 
 func cacheEventTypeLabel(c counterType) string {
@@ -303,11 +324,14 @@ type transferTimer struct {
 	actionCounter,
 	sizeCounter,
 	timeCounter counterType
-
-	// TODO(bduffany): Add response code, compression mode, compressed size
+	// TODO(bduffany): response code
 }
 
 func (t *transferTimer) Close() error {
+	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
+}
+
+func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, compressor repb.Compressor_Value) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -342,7 +366,14 @@ func (t *transferTimer) Close() error {
 		return err
 	}
 	if *detailedStatsEnabled {
-		if err := h.recordDetailedStats(t.d, t.actionCounter, t.start, dur); err != nil {
+		stats := &detailedStats{
+			Status:               t.actionCounter,
+			StartTime:            t.start,
+			Duration:             dur,
+			Compressor:           compressor,
+			TransferredSizeBytes: transferredSizeBytes,
+		}
+		if err := h.recordDetailedStats(t.d, stats); err != nil {
 			return err
 		}
 	} else if h.actionCache && t.actionCounter == Miss {
