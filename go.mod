@@ -36,7 +36,6 @@ require (
 	github.com/go-redis/redis/v8 v8.10.0
 	github.com/go-redsync/redsync/v4 v4.4.1
 	github.com/go-sql-driver/mysql v1.6.0
-	github.com/go-test/deep v1.0.8
 	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/go-cmp v0.5.7

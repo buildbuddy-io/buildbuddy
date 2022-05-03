@@ -2,11 +2,10 @@ package flagutil
 
 import (
 	"flag"
-	"testing"
-
-	"github.com/go-test/deep"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 type unsupportedFlagValue struct{}
@@ -162,7 +161,7 @@ func TestGenerateYAMLMapFromFlags(t *testing.T) {
 			},
 		},
 	}
-	if diff := deep.Equal(expected, actual); diff != nil {
+	if diff := cmp.Diff(expected, actual); diff != "" {
 		t.Error(diff)
 	}
 }

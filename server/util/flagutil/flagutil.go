@@ -269,6 +269,8 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
+// Generates a map to be populated by YAML that contains a zero-value of
+// the appropriate type at each index with a corresponding flag name.
 func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
 	yamlMap := make(map[interface{}]interface{})
 	var errors []error
@@ -308,6 +310,9 @@ func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
 	return yamlMap, nil
 }
 
+// Takes a map populated by YAML from some YAML input and iterates over it,
+// finding flags with names corresponding to the keys and setting the flag to
+// the YAML value if the flag was not set on the command line.
 func PopulateFlagsFromYAMLMap(m map[interface{}]interface{}) error {
 	setFlags := make(map[string]struct{})
 	defaultFlagSet.Visit(func(flg *flag.Flag) {
@@ -333,6 +338,7 @@ func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]s
 	return SetValueForFlagName(strings.Join(prefix, "."), i, setFlags, true, false)
 }
 
+// Sets the value for a flag by name
 func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
@@ -371,6 +377,7 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	return nil
 }
 
+// Returns the value pointed to by a flag.Value for a given flag name
 func DereferencedValueFromFlagName(name string) (interface{}, error) {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
@@ -388,6 +395,7 @@ func DereferencedValueFromFlagName(name string) (interface{}, error) {
 }
 
 // FOR TESTING PURPOSES ONLY
+// Adds a type correspondence to the internal flagTypeMap
 func AddTestFlagTypeForTesting(flagValue interface{}, value interface{}) {
 	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }
