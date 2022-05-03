@@ -585,6 +585,8 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.CasCacheUploads = cacheStats.GetCasCacheUploads()
 	ti.TotalDownloadSizeBytes = cacheStats.GetTotalDownloadSizeBytes()
 	ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
+	ti.TotalCompressedDownloadSizeBytes = cacheStats.GetTotalCompressedDownloadSizeBytes()
+	ti.TotalCompressedUploadSizeBytes = cacheStats.GetTotalCompressedUploadSizeBytes()
 	ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
 	ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
 	ti.DownloadThroughputBytesPerSecond = cacheStats.GetDownloadThroughputBytesPerSecond()

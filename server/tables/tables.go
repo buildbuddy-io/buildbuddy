@@ -125,6 +125,8 @@ type Invocation struct {
 	CasCacheUploads                  int64
 	TotalDownloadSizeBytes           int64
 	TotalUploadSizeBytes             int64
+	TotalCompressedDownloadSizeBytes int64
+	TotalCompressedUploadSizeBytes   int64
 	TotalDownloadUsec                int64
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64

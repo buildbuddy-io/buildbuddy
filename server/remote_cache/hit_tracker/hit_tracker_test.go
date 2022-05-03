@@ -37,12 +37,13 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 		Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
 		SizeBytes: 1234,
 	}
+	compressedSize := int64(123)
 	ctx = withRequestMetadata(t, ctx, rmd)
 	require.NoError(t, err)
 	ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 	dl := ht.TrackDownload(d)
-	dl.Close()
+	dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD)
 
 	sc := hit_tracker.ScoreCard(ctx, env, iid)
 	require.Len(t, sc.Results, 1, "expected exactly one cache result")
@@ -56,6 +57,15 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, capb.RequestType_READ, actual.RequestType)
 	assert.Equal(t, d.Hash, actual.GetDigest().GetHash())
 	assert.Equal(t, d.SizeBytes, actual.GetDigest().GetSizeBytes())
+	assert.Equal(t, repb.Compressor_ZSTD, actual.GetCompressor())
+	assert.Equal(t, compressedSize, actual.GetTransferredSizeBytes())
+	stats := hit_tracker.CollectCacheStats(ctx, env, iid)
+	assert.Equal(t, int64(1), stats.GetCasCacheHits())
+	assert.Equal(t, d.SizeBytes, stats.GetTotalDownloadSizeBytes())
+	assert.Equal(t, compressedSize, stats.GetTotalCompressedDownloadSizeBytes())
+	assert.Equal(t, int64(0), stats.GetCasCacheUploads())
+	assert.Equal(t, int64(0), stats.GetTotalUploadSizeBytes())
+	assert.Equal(t, int64(0), stats.GetTotalCompressedUploadSizeBytes())
 }
 
 // Note: Can't use bazel_request.WithRequestMetadata here since it sets the
