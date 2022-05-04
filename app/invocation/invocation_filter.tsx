@@ -1,6 +1,6 @@
 import React from "react";
-import { Filter } from "lucide-react";
 import router from "../router/router";
+import { FilterInput } from "../components/filter_input/filter_input";
 
 interface Props {
   hash: string;
@@ -41,15 +41,12 @@ export default class InvocationFilterComponent extends React.Component<Props> {
 
   render() {
     return (
-      <div className="filter">
-        <Filter className="icon" />
-        <input
-          value={this.props.search.get(this.filterType())}
-          className="filter-input"
-          placeholder={this.props.placeholder ? this.props.placeholder : "Filter..."}
-          onChange={this.handleFilterChange.bind(this)}
-        />
-      </div>
+      <FilterInput
+        className="invocation-filter"
+        value={this.props.search.get(this.filterType())}
+        placeholder={this.props.placeholder ? this.props.placeholder : "Filter..."}
+        onChange={this.handleFilterChange.bind(this)}
+      />
     );
   }
 }

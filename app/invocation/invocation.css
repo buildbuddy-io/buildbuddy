@@ -1,3 +1,14 @@
+.invocation .invocation-filter,
+.invocation .raw-logs-filter {
+  margin-top: 24px;
+}
+
+.dense .invocation .filter-input-container {
+  border-radius: 0;
+  margin-top: 0;
+  height: 36px;
+}
+
 .input-tree {
   width: 200px;
   border: 1px solid #eee;

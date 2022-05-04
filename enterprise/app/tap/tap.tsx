@@ -10,9 +10,10 @@ import { Subscription } from "rxjs";
 import router from "../../../app/router/router";
 import format from "../../../app/format/format";
 import { clamp } from "../../../app/util/math";
+import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
-import { ChevronsRight, Filter, ArrowLeft } from "lucide-react";
+import { ChevronsRight } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
@@ -491,15 +492,7 @@ export default class TapComponent extends React.Component<Props, State> {
             </div>
 
             <div className="target-controls">
-              <div className="filter">
-                <Filter className="icon" />
-                <input
-                  value={filter}
-                  className="filter-input"
-                  placeholder="Filter..."
-                  onChange={this.handleFilterChange.bind(this)}
-                />
-              </div>
+              <FilterInput value={filter} placeholder="Filter..." onChange={this.handleFilterChange.bind(this)} />
               {!this.isV2 && moreInvocationsButton}
             </div>
           </div>
