@@ -94,28 +94,20 @@ def update_docker_image(new_version, update_latest_tag):
     clean_cmd = 'bazel clean --expunge'
     run_or_die(clean_cmd)
 
-    # build the open source app
-    version_build_cmd = 'bazel run -c opt --stamp --define version=%s --define release=true deployment:release_onprem' % new_version
-    run_or_die(version_build_cmd)
+    build_oss_app_cmd = 'bazel run -c opt --stamp --define version=%s --define release=true deployment:release_onprem' % new_version
+    run_or_die(build_oss_app_cmd)
 
-    # build the enterprise app
-    version_build_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_enterprise' % new_version
-    run_or_die(version_build_cmd)
+    build_enterprise_app_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_enterprise' % new_version
+    run_or_die(build_enterprise_app_cmd)
 
-    # build the executor
-    version_build_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_executor_enterprise' % new_version
-    run_or_die(version_build_cmd)
+    build_executor_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_executor_enterprise' % new_version
+    run_or_die(build_executor_cmd)
 
     # update "latest" tags
     if update_latest_tag:
-        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem'
-        run_or_die(latest_build_cmd)
-
-        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_enterprise'
-        run_or_die(latest_build_cmd)
-
-        latest_build_cmd = 'bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_executor_enterprise'
-        run_or_die(latest_build_cmd)
+        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem')
+        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_enterprise')
+        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_executor_enterprise')
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
