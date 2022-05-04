@@ -83,8 +83,7 @@ message GetCacheScoreCardRequest {
   // Whether to sort in descending order.
   bool descending = 6;
 
-  // TODO(bduffany): Delete this
-  bool group_by_action = 7 [deprecated = true];
+  reserved 7;
 
   enum GroupBy {
     UNKNOWN_GROUP_BY = 0;
