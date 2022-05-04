@@ -278,6 +278,9 @@ func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLi
 	if sha, ok := envVarMap["COMMIT_SHA"]; ok && sha != "" {
 		invocation.CommitSha = sha
 	}
+	if sha, ok := envVarMap["VOLATILE_GIT_COMMIT"]; ok && sha != "" {
+		invocation.CommitSha = sha
+	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
 		invocation.Role = "CI"
 	}

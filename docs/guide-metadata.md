@@ -90,7 +90,7 @@ Then you'll need to add a `workspace_status.sh` file to the root of your workspa
 
 ### Environment variables
 
-BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `TRAVIS_COMMIT`, `GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA` and `BUILDKITE_COMMIT`.
+BuildBuddy will automatically pull your commit SHA from environment variables if you're using a common CI platform like Github Actions, CircleCI, Travis, Jenkins, Gitlab CI, or BuildKite. The environment variables currently supported are `GITHUB_SHA`, `CIRCLE_SHA1`, `TRAVIS_COMMIT`, `VOLATILE_GIT_COMMIT`, `CI_COMMIT_SHA`, `COMMIT_SHA` and `BUILDKITE_COMMIT`.
 
 ## Role
 

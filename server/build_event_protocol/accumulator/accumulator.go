@@ -209,7 +209,7 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 				if strings.HasPrefix(value, "refs/heads/") && v.getStringValue(branchNameFieldName) == "" {
 					v.setStringValue(branchNameFieldName, strings.TrimPrefix(value, "refs/heads/"))
 				}
-			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA":
+			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA", "VOLATILE_GIT_COMMIT":
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
 				v.setStringValue(roleFieldName, "CI")
