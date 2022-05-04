@@ -416,42 +416,6 @@ svg.icon.orange {
   border-bottom: 4px solid rgba(0, 0, 0, 0.2);
 }
 
-/** Filter **/
-
-.filter {
-  margin-top: 24px;
-  border-radius: 21px;
-  height: 42px;
-  background-color: #f3f3f3;
-  box-sizing: border-box;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.filter svg {
-  width: 16px;
-  height: 16px;
-  padding-left: 20px;
-}
-
-.filter .filter-input {
-  outline: 0;
-  border: 0;
-  background: transparent;
-  padding: 0 32px 0 8px;
-  font-family: inherit;
-  font-size: 14px;
-  color: #888;
-  width: 100%;
-}
-
-.filter .filter-input::placeholder {
-  color: #aaa;
-}
-
 /** Card **/
 
 .card {
