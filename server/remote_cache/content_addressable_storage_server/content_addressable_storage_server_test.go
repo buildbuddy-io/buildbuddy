@@ -7,14 +7,18 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -86,8 +90,12 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
+	flags.Set(t, "cache.detailed_stats_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	te.SetMetricsCollector(mc)
 	clientConn := runCASServer(ctx, te, t)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
@@ -107,15 +115,27 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	require.Equal(t, digestStrings(d), digestStrings(missingResp.MissingBlobDigests...))
 
 	// Upload compressed blob via BatchUpdate.
-	batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
-		Requests: []*repb.BatchUpdateBlobsRequest_Request{
-			{Digest: d, Data: compressedBlob, Compressor: repb.Compressor_ZSTD},
-		},
-	})
-	require.NoError(t, err)
-	for i, resp := range batchUpdateResp.Responses {
-		require.Equal(t, "", resp.Status.Message)
-		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
+	// Use an invocation context scoped just to this request.
+	{
+		iid, err := uuid.NewRandom()
+		require.NoError(t, err)
+		rmd := &repb.RequestMetadata{ToolInvocationId: iid.String()}
+		ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+		require.NoError(t, err)
+		batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+			Requests: []*repb.BatchUpdateBlobsRequest_Request{
+				{Digest: d, Data: compressedBlob, Compressor: repb.Compressor_ZSTD},
+			},
+		})
+		require.NoError(t, err)
+		for i, resp := range batchUpdateResp.Responses {
+			require.Equal(t, "", resp.Status.Message)
+			require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i)
+		}
+		sc := hit_tracker.ScoreCard(ctx, te, iid.String())
+		require.Len(t, sc.Results, 1)
+		assert.Equal(t, repb.Compressor_ZSTD, sc.Results[0].Compressor)
+		assert.Equal(t, int64(len(compressedBlob)), sc.Results[0].TransferredSizeBytes)
 	}
 
 	// FindMissingBlobs should not report the blob missing after uploading.
@@ -130,15 +150,24 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 
 	// Read back the blob we just uploaded, indicating that we accept zstd.
 	// After decompressing, should get back the original blob contents.
+	// Use a new invocation context to get a new cache scorecard.
+	iid, err := uuid.NewRandom()
+	require.NoError(t, err)
+	rmd := &repb.RequestMetadata{ToolInvocationId: iid.String()}
+	ctx, err = bazel_request.WithRequestMetadata(ctx, rmd)
+	require.NoError(t, err)
 	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
 		Digests:               []*repb.Digest{d},
 		AcceptableCompressors: []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD},
 	})
 
 	require.NoError(t, err)
+	sc := hit_tracker.ScoreCard(ctx, te, iid.String())
+	require.Len(t, sc.Results, len(readResp.Responses))
 	decompressedBlobs := make([][]byte, len(readResp.Responses))
 	for i, resp := range readResp.Responses {
 		require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i)
+		assert.Equal(t, int64(len(resp.Data)), sc.Results[i].TransferredSizeBytes)
 		decompressedBlobs[i] = zstdDecompress(t, resp.Data)
 	}
 	require.Equal(t, [][]byte{blob}, decompressedBlobs)

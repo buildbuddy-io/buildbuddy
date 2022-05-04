@@ -1,7 +1,8 @@
 import React from "react";
+import { PauseCircle } from "lucide-react";
 import InvocationModel from "./invocation_model";
 import { invocation } from "../../proto/invocation_ts_proto";
-import { Filter, PauseCircle } from "lucide-react";
+import { FilterInput } from "../components/filter_input/filter_input";
 
 interface Props {
   model: InvocationModel;
@@ -54,15 +55,12 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
     );
     return (
       <>
-        <div className="filter">
-          <Filter className="icon" />
-          <input
-            value={this.state.filterString || ""}
-            className="filter-input"
-            placeholder="Filter..."
-            onChange={this.handleFilterChange.bind(this)}
-          />
-        </div>
+        <FilterInput
+          className="raw-logs-filter"
+          value={this.state.filterString || ""}
+          placeholder="Filter..."
+          onChange={this.handleFilterChange.bind(this)}
+        />
         <div className="card">
           <PauseCircle className="icon rotate-90" />
           <div className="content">

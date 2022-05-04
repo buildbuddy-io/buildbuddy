@@ -11,6 +11,7 @@ ts_library(
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
+        "//app/components/filter_input",
         "//app/components/select",
         "//app/components/spinner",
         "//app/errors",
