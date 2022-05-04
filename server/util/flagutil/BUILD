@@ -7,7 +7,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/alert",
+        "//server/util/log",
         "//server/util/status",
+        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )
 
@@ -19,5 +21,6 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )

@@ -2,10 +2,13 @@ package flagutil
 
 import (
 	"flag"
+	"reflect"
+	"testing"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
+	"gopkg.in/yaml.v3"
 )
 
 type unsupportedFlagValue struct{}
@@ -128,7 +131,7 @@ func TestStructSliceFlag(t *testing.T) {
 	assert.Equal(t, 8, testFlag.Len())
 }
 
-func TestGenerateYAMLMapFromFlags(t *testing.T) {
+func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 
 	flags.Bool("bool", true, "")
@@ -138,55 +141,160 @@ func TestGenerateYAMLMapFromFlags(t *testing.T) {
 	StructSliceVar(&[]testStruct{{Field: 4, Meadow: "Great"}}, "one.two.three.struct_slice", "")
 	flags.String("a.b.string", "xxx", "")
 	URLString("a.b.url", "https://www.example.com", "")
-	actual, err := GenerateYAMLMapFromFlags()
+	actual, err := GenerateYAMLTypeMapFromFlags()
 	require.NoError(t, err)
-	expected := map[interface{}]interface{}{
-		"bool": false,
-		"one": map[interface{}]interface{}{
-			"two": map[interface{}]interface{}{
-				"int":          int(0),
-				"string_slice": ([]string)(nil),
-				"two_and_a_half": map[interface{}]interface{}{
-					"float64": float64(0),
+	expected := map[string]interface{}{
+		"bool": reflect.TypeOf(false),
+		"one": map[string]interface{}{
+			"two": map[string]interface{}{
+				"int":          reflect.TypeOf(int(0)),
+				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"two_and_a_half": map[string]interface{}{
+					"float64": reflect.TypeOf(float64(0)),
 				},
-				"three": map[interface{}]interface{}{
-					"struct_slice": ([]testStruct)(nil),
+				"three": map[string]interface{}{
+					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
 				},
 			},
 		},
-		"a": map[interface{}]interface{}{
-			"b": map[interface{}]interface{}{
-				"string": "",
-				"url":    URLFlag(""),
+		"a": map[string]interface{}{
+			"b": map[string]interface{}{
+				"string": reflect.TypeOf(""),
+				"url":    reflect.TypeOf(URLFlag("")),
 			},
 		},
 	}
-	if diff := cmp.Diff(expected, actual); diff != "" {
+	if diff := cmp.Diff(expected, actual, cmp.Comparer(func(x, y reflect.Type) bool { return x == y })); diff != "" {
 		t.Error(diff)
 	}
 }
 
-func TestBadGenerateYAMLMapFromFlags(t *testing.T) {
+func TestBadGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 
 	flags.Int("one.two.int", 10, "")
 	flags.Int("one.two", 10, "")
-	_, err := GenerateYAMLMapFromFlags()
+	_, err := GenerateYAMLTypeMapFromFlags()
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Int("one.two", 10, "")
 	flags.Int("one.two.int", 10, "")
-	_, err = GenerateYAMLMapFromFlags()
+	_, err = GenerateYAMLTypeMapFromFlags()
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	_, err = GenerateYAMLMapFromFlags()
+	_, err = GenerateYAMLTypeMapFromFlags()
 	require.Error(t, err)
 
+}
+
+func TestRetypeAndFilterYAMLMap(t *testing.T) {
+	typeMap := map[string]interface{}{
+		"bool": reflect.TypeOf(false),
+		"one": map[string]interface{}{
+			"two": map[string]interface{}{
+				"int":          reflect.TypeOf(int(0)),
+				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"two_and_a_half": map[string]interface{}{
+					"float64": reflect.TypeOf(float64(0)),
+				},
+				"three": map[string]interface{}{
+					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
+				},
+			},
+		},
+		"a": map[string]interface{}{
+			"b": map[string]interface{}{
+				"string": reflect.TypeOf(""),
+				"url":    reflect.TypeOf(URLFlag("")),
+			},
+		},
+		"foo": map[string]interface{}{
+			"bar": reflect.TypeOf(int64(0)),
+		},
+	}
+	yamlData := `
+bool: true
+one:
+  two:
+    int: 1
+    string_slice:
+      - "string1"
+      - "string2"
+    two_and_a_half:
+      float64: 9.4
+    three:
+      struct_slice:
+        - field: 9
+          meadow: "Eternal"
+        - field: 5
+a:
+  b:
+    url: "www.example.com"
+foo: 7
+first:
+  second:
+    unknown: 9009
+    no: "definitely not"
+`
+	yamlMap := make(map[string]interface{})
+	err := yaml.Unmarshal([]byte(yamlData), yamlMap)
+	require.NoError(t, err)
+	err = RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{})
+	require.NoError(t, err)
+	expected := map[string]interface{}{
+		"bool": true,
+		"one": map[string]interface{}{
+			"two": map[string]interface{}{
+				"int":          int(1),
+				"string_slice": []string{"string1", "string2"},
+				"two_and_a_half": map[string]interface{}{
+					"float64": float64(9.4),
+				},
+				"three": map[string]interface{}{
+					"struct_slice": []testStruct{{Field: 9, Meadow: "Eternal"}, {Field: 5}},
+				},
+			},
+		},
+		"a": map[string]interface{}{
+			"b": map[string]interface{}{
+				"url": URLFlag("www.example.com"),
+			},
+		},
+	}
+	if diff := cmp.Diff(expected, yamlMap); diff != "" {
+		t.Error(diff)
+	}
+}
+
+func TestBadRetypeAndFilterYAMLMap(t *testing.T) {
+	typeMap := map[string]interface{}{
+		"bool": reflect.TypeOf(false),
+	}
+	yamlData := `
+bool: 7
+`
+	yamlMap := make(map[string]interface{})
+	err := yaml.Unmarshal([]byte(yamlData), yamlMap)
+	require.NoError(t, err)
+	err = RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{})
+	require.Error(t, err)
+
+	typeMap = map[string]interface{}{
+		"bool": false,
+	}
+	yamlData = `
+bool: true
+`
+	yamlMap = make(map[string]interface{})
+	err = yaml.Unmarshal([]byte(yamlData), yamlMap)
+	require.NoError(t, err)
+	err = RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{})
+	require.Error(t, err)
 }
 
 func TestPopulateFlagsFromYAML(t *testing.T) {
@@ -202,21 +310,21 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
 	StructSliceVar(&flagABStructSlice, "a.b.struct_slice", "")
 	flagABURL := URLString("a.b.url", "https://www.example.com", "")
-	input := map[interface{}]interface{}{
+	input := map[string]interface{}{
 		"bool": false,
-		"one": map[interface{}]interface{}{
-			"two": map[interface{}]interface{}{
+		"one": map[string]interface{}{
+			"two": map[string]interface{}{
 				"string_slice": []string{"meow", "woof"},
-				"two_and_a_half": map[interface{}]interface{}{
+				"two_and_a_half": map[string]interface{}{
 					"float64": float64(7),
 				},
-				"three": map[interface{}]interface{}{
+				"three": map[string]interface{}{
 					"struct_slice": ([]testStruct)(nil),
 				},
 			},
 		},
-		"a": map[interface{}]interface{}{
-			"b": map[interface{}]interface{}{
+		"a": map[string]interface{}{
+			"b": map[string]interface{}{
 				"string":       "",
 				"struct_slice": []testStruct{{Field: 9}},
 				"url":          URLFlag("https://www.example.com:8080"),
@@ -240,21 +348,16 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 func TestBadPopulateFlagsFromYAML(t *testing.T) {
 	_ = replaceFlagsForTesting(t)
 
-	err := PopulateFlagsFromYAMLMap(map[interface{}]interface{}{
-		struct{}{}: "invalid key type",
-	})
-	require.Error(t, err)
-
 	flags := replaceFlagsForTesting(t)
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	err = PopulateFlagsFromYAMLMap(map[interface{}]interface{}{
+	err := PopulateFlagsFromYAMLMap(map[string]interface{}{
 		"unsupported": 0,
 	})
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 	flags.Bool("bool", false, "")
-	err = PopulateFlagsFromYAMLMap(map[interface{}]interface{}{
+	err = PopulateFlagsFromYAMLMap(map[string]interface{}{
 		"bool": 0,
 	})
 	require.Error(t, err)

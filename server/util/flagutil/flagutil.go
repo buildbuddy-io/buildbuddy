@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -269,10 +270,10 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
-// Generates a map to be populated by YAML that contains a zero-value of
-// the appropriate type at each index with a corresponding flag name.
-func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
-	yamlMap := make(map[interface{}]interface{})
+// Generates a map of the type that should be marshaled from YAML for each flag
+// name at the corresponding nested map index.
+func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
+	yamlMap := make(map[string]interface{})
 	var errors []error
 	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
 		keys := strings.Split(flg.Name, ".")
@@ -280,40 +281,86 @@ func GenerateYAMLMapFromFlags() (map[interface{}]interface{}, error) {
 		for i, k := range keys[:len(keys)-1] {
 			v, ok := m[k]
 			if !ok {
-				v := make(map[interface{}]interface{})
+				v := make(map[string]interface{})
 				m[k], m = v, v
 				continue
 			}
-			m, ok = v.(map[interface{}]interface{})
+			m, ok = v.(map[string]interface{})
 			if !ok {
-				errors = append(errors, fmt.Errorf("When trying to create YAML map hierarchy for %s, encountered non-map value of type %T at %s", flg.Name, v, strings.Join(keys[:i+1], ".")))
+				errors = append(errors, status.FailedPreconditionErrorf("When trying to create YAML type map hierarchy for %s, encountered non-map value of type %T at %s", flg.Name, v, strings.Join(keys[:i+1], ".")))
 				return
 			}
 		}
 		k := keys[len(keys)-1]
 		if v, ok := m[k]; ok {
-			errors = append(errors, fmt.Errorf("When trying to create YAML value for %s, encountered pre-existing value of type %T.", flg.Name, v))
+			errors = append(errors, status.FailedPreconditionErrorf("When trying to create type for %s for YAML type map, encountered pre-existing value of type %T.", flg.Name, v))
 			return
 		}
 		if v, ok := flg.Value.(*structSliceFlag); ok {
-			m[k] = reflect.New(v.dstSlice.Type()).Elem().Interface()
+			m[k] = v.dstSlice.Type()
 			return
 		} else if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
-			m[k] = reflect.New(t.Elem()).Elem().Interface()
+			m[k] = t.Elem()
 			return
 		}
-		errors = append(errors, fmt.Errorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
+		errors = append(errors, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
 	})
 	if errors != nil {
-		return nil, fmt.Errorf("Errors encountered when converting flags to YAML map: %v", errors)
+		return nil, status.InternalErrorf("Errors encountered when converting flags to YAML map: %v", errors)
 	}
 	return yamlMap, nil
+}
+
+// Un-marshals yaml from the input yamlMap and then re-marshals it into the types
+// specified by the type map, replacing the original value in the input map.
+// Filters out any values not specified by the flags.
+func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]interface{}, prefix []string) error {
+	for k := range yamlMap {
+		label := append(prefix, k)
+		if _, ok := typeMap[k]; !ok {
+			// No flag corresponds to this, warn and delete.
+			log.Warningf("No flags correspond to YAML input at '%s'.", strings.Join(label, "."))
+			delete(yamlMap, k)
+			continue
+		}
+		switch t := typeMap[k].(type) {
+		case reflect.Type:
+			// this is a value, populate it from the YAML
+			yamlData, err := yaml.Marshal(yamlMap[k])
+			if err != nil {
+				return status.InternalErrorf("Encountered error marshaling %v to YAML at %s: %s", yamlMap[k], strings.Join(label, "."), err)
+			}
+			v := reflect.New(t).Elem()
+			err = yaml.Unmarshal(yamlData, v.Addr().Interface())
+			if err != nil {
+				return status.InternalErrorf("Encountered error marshaling %s to YAML for type %v at %s: %s", string(yamlData), v.Type(), strings.Join(label, "."), err)
+			}
+			if v.Type() != t {
+				return status.InternalErrorf("Failed to unmarshal YAML to the specified type at %s: wanted %v, got %T", strings.Join(label, "."), t, v.Type())
+			}
+			yamlMap[k] = v.Interface()
+		case map[string]interface{}:
+			yamlSubmap, ok := yamlMap[k].(map[string]interface{})
+			if !ok {
+				// this is a value, not a map, and there is no corresponding type
+				alert.UnexpectedEvent("Input YAML contained non-map value %v of type %T at label %s", yamlMap[k], yamlMap[k], strings.Join(label, "."))
+				delete(yamlMap, k)
+			}
+			err := RetypeAndFilterYAMLMap(yamlSubmap, t, label)
+			if err != nil {
+				return err
+			}
+		default:
+			return status.InvalidArgumentErrorf("typeMap contained invalid type %T at %s.", typeMap[k], strings.Join(label, "."))
+		}
+	}
+	return nil
 }
 
 // Takes a map populated by YAML from some YAML input and iterates over it,
 // finding flags with names corresponding to the keys and setting the flag to
 // the YAML value if the flag was not set on the command line.
-func PopulateFlagsFromYAMLMap(m map[interface{}]interface{}) error {
+func PopulateFlagsFromYAMLMap(m map[string]interface{}) error {
 	setFlags := make(map[string]struct{})
 	defaultFlagSet.Visit(func(flg *flag.Flag) {
 		setFlags[flg.Name] = struct{}{}
@@ -323,13 +370,9 @@ func PopulateFlagsFromYAMLMap(m map[interface{}]interface{}) error {
 }
 
 func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]struct{}) error {
-	if m, ok := i.(map[interface{}]interface{}); ok {
+	if m, ok := i.(map[string]interface{}); ok {
 		for k, v := range m {
-			suffix, ok := k.(string)
-			if !ok {
-				return fmt.Errorf("non-string key in YAML map at %s.", strings.Join(prefix, "."))
-			}
-			if err := populateFlagsFromYAML(v, append(prefix, suffix), setFlags); err != nil {
+			if err := populateFlagsFromYAML(v, append(prefix, k), setFlags); err != nil {
 				return err
 			}
 		}
