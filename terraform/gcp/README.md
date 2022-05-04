@@ -21,6 +21,7 @@ To use these configs, you'll need the `terraform` command installed.
 	 gcloud services enable container.googleapis.com
 	 gcloud services enable domains.googleapis.com
 	 gcloud services enable dns.googleapis.com
+     gcloud services enable servicenetworking.googleapis.com
  ```
  * Create a new tfvars file from the template and enter  your cluster
    details.

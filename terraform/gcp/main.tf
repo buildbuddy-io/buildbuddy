@@ -1,5 +1,7 @@
 data "google_client_config" "default" {}
 
+## COMMON
+
 locals {
   zones = ["${var.region}-a", "${var.region}-b", "${var.region}-c"]
 }
@@ -9,6 +11,8 @@ resource "random_password" "password" {
   special          = true
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
+
+## CLUSTER
 
 provider "kubernetes" {
   host                   = "https://${module.gke.endpoint}"
@@ -76,6 +80,34 @@ module "gke" {
   }
 }
 
+## NETWORK
+
+resource "google_compute_network" "private_network" {
+//  provider = google-beta
+  project       = var.project_id
+  name = "private-network"
+}
+
+resource "google_compute_global_address" "private_ip_address" {
+//  provider = google-beta
+  project       = var.project_id
+  name          = "private-ip-address"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.private_network.id
+}
+
+resource "google_service_networking_connection" "private_vpc_connection" {
+//  provider = google-beta
+
+  network                 = google_compute_network.private_network.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
+}
+
+## SQL
+
 resource "google_sql_database_instance" "main" {
   name                = var.mysql_ha_name
   project             = var.project_id
@@ -83,10 +115,16 @@ resource "google_sql_database_instance" "main" {
   region              = var.region
   deletion_protection = false
 
+  depends_on = [google_service_networking_connection.private_vpc_connection]
+
   settings {
     tier              = "db-n1-standard-16"
     availability_type = "REGIONAL"
     disk_type         = "PD_SSD"
+    ip_configuration {
+      ipv4_enabled    = false
+      private_network = google_compute_network.private_network.id
+    }
     maintenance_window {
       day          = 7
       hour         = 12
@@ -107,28 +145,49 @@ resource "google_sql_database_instance" "main" {
         retention_unit   = "COUNT"
       }
     }
-    collation = "utf8mb4_general_ci"
   }
 }
 
+resource "google_sql_database" "buildbuddy" {
+  instance = google_sql_database_instance.main.name
+  project       = var.project_id
+  name     = "buildbuddy_${var.env}"
+  charset   = "utf8mb4"
+  collation = "utf8mb4_general_ci"
+}
 
-//   ip_configuration = {
-//     ipv4_enabled       = true
-//     require_ssl        = true
-//     private_network    = null
-//     allocated_ip_range = null
-//     authorized_networks = [
-//       {
-//         name  = "${var.project_id}-cidr"
-//         value = var.mysql_ha_external_ip_range
-//       },
-//     ]
-//   }
+resource "google_sql_user" "users" {
+  instance = google_sql_database_instance.main.name
+  project       = var.project_id
+  name     = "buildbuddy-${var.env}"
+  password = random_password.password.result
+}
 
+## BUCKETS
 
-//   db_name      = "$buildbuddy_{var.env}"
-//   db_charset   = "utf8mb4"
-//   db_
-//   user_name     = "$buildbuddy-{var.env}"
-//   user_password = random_password.password.result
-// }
+resource "google_storage_bucket" "static" {
+  name          = "buildbuddy-${var.env}-static"
+  project       = var.project_id
+  location      = "US"
+  force_destroy = true
+
+  cors {
+    origin          = ["*"]
+    method          = ["GET", "HEAD",]
+    response_header = ["Content-Type"]
+    max_age_seconds = 3600
+  }
+}
+
+resource "google_storage_bucket_iam_member" "member" {
+  bucket = "buildbuddy-${var.env}-static"
+  role = "roles/storage.objectViewer"
+  member = "allUsers"
+}
+
+resource "google_storage_bucket" "blobs" {
+  name          = "buildbuddy-${var.env}-blobs"
+  project       = var.project_id
+  location      = "US"
+  force_destroy = true
+}
