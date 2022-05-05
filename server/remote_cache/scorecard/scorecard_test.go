@@ -2,6 +2,8 @@ package scorecard_test
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -81,7 +83,7 @@ var (
 
 func TestGetCacheScoreCard_Filter_Search(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:   &fieldmaskpb.FieldMask{Paths: []string{"search"}},
@@ -97,7 +99,7 @@ func TestGetCacheScoreCard_Filter_Search(t *testing.T) {
 
 func TestGetCacheScoreCard_Filter_CacheType(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:      &fieldmaskpb.FieldMask{Paths: []string{"cache_type"}},
@@ -113,7 +115,7 @@ func TestGetCacheScoreCard_Filter_CacheType(t *testing.T) {
 
 func TestGetCacheScoreCard_Filter_RequestType(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:        &fieldmaskpb.FieldMask{Paths: []string{"request_type"}},
@@ -129,7 +131,7 @@ func TestGetCacheScoreCard_Filter_RequestType(t *testing.T) {
 
 func TestGetCacheScoreCard_Filter_ResponseType(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:         &fieldmaskpb.FieldMask{Paths: []string{"response_type"}},
@@ -145,7 +147,7 @@ func TestGetCacheScoreCard_Filter_ResponseType(t *testing.T) {
 
 func TestGetCacheScoreCard_Sort_StartTime(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_START_TIME,
 	}
@@ -158,7 +160,7 @@ func TestGetCacheScoreCard_Sort_StartTime(t *testing.T) {
 
 func TestGetCacheScoreCard_Sort_Duration(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
 		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
 	}
@@ -171,17 +173,56 @@ func TestGetCacheScoreCard_Sort_Duration(t *testing.T) {
 
 func TestGetCacheScoreCard_GroupByActionOrderByDurationDesc(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
+	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
-		OrderBy:       capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
-		GroupByAction: true,
-		Descending:    true,
+		OrderBy:    capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
+		GroupBy:    capb.GetCacheScoreCardRequest_GROUP_BY_ACTION,
+		Descending: true,
 	}
 
 	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
 	require.NoError(t, err)
 
 	assertResults(t, res, besUpload, casUpload, acMiss, casDownload)
+}
+
+func TestGetCacheScoreCard_GroupByTargetOrderByDuration(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+	expectedResults := []*capb.ScoreCard_Result{}
+	// Set up results so that expected action IDs alternate within each target
+	// group, and so that durations across groups have some overlap.
+	for target := 0; target < 2; target++ {
+		dur := time.Duration(target) * time.Millisecond
+		for i := 0; i < 4; i++ {
+			expectedResults = append(expectedResults, &capb.ScoreCard_Result{
+				TargetId: fmt.Sprintf("%d", target),
+				ActionId: fmt.Sprintf("%d%d", target, i%2),
+				Duration: durationpb.New(dur),
+			})
+			dur += 1 * time.Millisecond
+		}
+	}
+	// Shuffle results but keep the original slice untouched since it already has
+	// the order we expect.
+	sc := &capb.ScoreCard{
+		Results: make([]*capb.ScoreCard_Result, len(expectedResults)),
+	}
+	copy(sc.Results, expectedResults)
+	rand.Shuffle(len(sc.Results), func(i, j int) {
+		sc.Results[i], sc.Results[j] = sc.Results[j], sc.Results[i]
+	})
+
+	ctx := context.Background()
+	env := setupEnv(t, sc)
+	req := &capb.GetCacheScoreCardRequest{
+		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
+		GroupBy: capb.GetCacheScoreCardRequest_GROUP_BY_TARGET,
+	}
+
+	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
+	require.NoError(t, err)
+
+	assertResults(t, res, expectedResults...)
 }
 
 func assertResults(t *testing.T, res *capb.GetCacheScoreCardResponse, msg ...*capb.ScoreCard_Result) {
@@ -195,16 +236,17 @@ func assertResults(t *testing.T, res *capb.GetCacheScoreCardResponse, msg ...*ca
 	assert.True(t, proto.Equal(expected, res), "unexpected response")
 }
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
+func setupEnv(t *testing.T, scorecard *capb.ScoreCard) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetBlobstore(&fakeBlobStore{})
+	te.SetBlobstore(&fakeBlobStore{ScoreCard: scorecard})
 	return te
 }
 
 type fakeBlobStore struct {
 	interfaces.Blobstore
+	ScoreCard *capb.ScoreCard
 }
 
-func (*fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
-	return proto.Marshal(testScorecard)
+func (bs *fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
+	return proto.Marshal(bs.ScoreCard)
 }
