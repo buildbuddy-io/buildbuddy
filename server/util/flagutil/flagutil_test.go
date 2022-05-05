@@ -297,6 +297,80 @@ bool: true
 	require.Error(t, err)
 }
 
+func TestPopulateFlagsFromData(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+
+	flagBool := flags.Bool("bool", true, "")
+	flagOneTwoInt := flags.Int("one.two.int", 10, "")
+	flagOneTwoStringSlice := StringSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
+	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
+	StructSliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", "")
+	flagABString := flags.String("a.b.string", "xxx", "")
+	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
+	StructSliceVar(&flagABStructSlice, "a.b.struct_slice", "")
+	flagABURL := URLString("a.b.url", "https://www.example.com", "")
+	yamlData := `
+bool: true
+one:
+  two:
+    int: 1
+    string_slice:
+      - "string1"
+      - "string2"
+    two_and_a_half:
+      float64: 9.4
+    three:
+      struct_slice:
+        - field: 9
+          meadow: "Eternal"
+        - field: 5
+a:
+  b:
+    url: "www.example.com:8080"
+foo: 7
+first:
+  second:
+    unknown: 9009
+    no: "definitely not"
+`
+	err := PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, true, *flagBool)
+	assert.Equal(t, int(1), *flagOneTwoInt)
+	assert.Equal(t, []string{"hi", "hello", "string1", "string2"}, *flagOneTwoStringSlice)
+	assert.Equal(t, float64(9.4), *flagOneTwoTwoAndAHalfFloat)
+	assert.Equal(t, []testStruct{{Field: 4, Meadow: "Great"}, {Field: 9, Meadow: "Eternal"}, {Field: 5}}, flagOneTwoThreeStructSlice)
+	assert.Equal(t, "xxx", *flagABString)
+	assert.Equal(t, []testStruct{{Field: 7, Meadow: "Chimney"}}, flagABStructSlice)
+	assert.Equal(t, "www.example.com:8080", *flagABURL)
+}
+
+func TestBadPopulateFlagsFromData(t *testing.T) {
+	_ = replaceFlagsForTesting(t)
+
+	yamlData := `
+	bool: true
+`
+	err := PopulateFlagsFromData([]byte(yamlData))
+	require.Error(t, err)
+
+	flags := replaceFlagsForTesting(t)
+
+	flags.Var(&unsupportedFlagValue{}, "bad", "")
+	err = PopulateFlagsFromData([]byte{})
+	require.Error(t, err)
+
+	flags = replaceFlagsForTesting(t)
+
+	_ = flags.Bool("bool", false, "")
+	yamlData = `
+bool: 7
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.Error(t, err)
+}
+
 func TestPopulateFlagsFromYAML(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 

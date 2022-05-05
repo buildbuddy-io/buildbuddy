@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -355,6 +356,25 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]i
 		}
 	}
 	return nil
+}
+
+func PopulateFlagsFromData(data []byte) error {
+	// expand environment variables
+	expandedData := []byte(os.ExpandEnv(string(data)))
+
+	yamlMap := make(map[string]interface{})
+	if err := yaml.Unmarshal([]byte(expandedData), yamlMap); err != nil {
+		return status.InternalErrorf("Error parsing config file: %s", err)
+	}
+	typeMap, err := GenerateYAMLTypeMapFromFlags()
+	if err != nil {
+		return err
+	}
+	if err := RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{}); err != nil {
+		return status.InternalErrorf("Error encountered retyping YAML map: %s", err)
+	}
+
+	return PopulateFlagsFromYAMLMap(yamlMap)
 }
 
 // Takes a map populated by YAML from some YAML input and iterates over it,
