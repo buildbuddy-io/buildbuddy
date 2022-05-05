@@ -100,8 +100,9 @@ func publishStarted(t *testing.T, bep *build_event_publisher.Publisher) {
 	err := bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				StartTimeMillis: startTime.UnixMilli(),
-				StartTime:       timestamppb.New(startTime),
+				StartTimeMillis:    startTime.UnixMilli(),
+				StartTime:          timestamppb.New(startTime),
+				OptionsDescription: "--bes_backend=foo",
 			},
 		},
 	})

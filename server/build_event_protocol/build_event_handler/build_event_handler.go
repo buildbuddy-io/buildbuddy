@@ -118,19 +118,19 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 
 	return &EventChannel{
-		env:                     b.env,
-		statsRecorder:           b.statsRecorder,
-		ctx:                     ctx,
-		pw:                      nil,
-		beValues:                buildEventAccumulator,
-		redactor:                redact.NewStreamingRedactor(b.env),
-		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
-		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
-		hasReceivedStartedEvent: false,
-		eventsBeforeStarted:     make([]*inpb.InvocationEvent, 0),
-		logWriter:               nil,
-		onClose:                 onClose,
-		attempt:                 1,
+		env:                         b.env,
+		statsRecorder:               b.statsRecorder,
+		ctx:                         ctx,
+		pw:                          nil,
+		beValues:                    buildEventAccumulator,
+		redactor:                    redact.NewStreamingRedactor(b.env),
+		statusReporter:              build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
+		targetTracker:               target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
+		hasReceivedEventWithOptions: false,
+		eventsBeforeOptions:         make([]*inpb.InvocationEvent, 0),
+		logWriter:                   nil,
+		onClose:                     onClose,
+		attempt:                     1,
 	}
 }
 
@@ -428,10 +428,12 @@ func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
 	return false
 }
 
-func isStartedEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool {
-	switch bazelBuildEvent.Payload.(type) {
+func (e *EventChannel) isFirstEventWithOptions(bazelBuildEvent *build_event_stream.BuildEvent) bool {
+	switch p := bazelBuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
-		return true
+		return p.Started.OptionsDescription != "" && !e.hasReceivedEventWithOptions
+	case *build_event_stream.BuildEvent_OptionsParsed:
+		return !e.hasReceivedEventWithOptions
 	}
 	return false
 }
@@ -453,19 +455,19 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 }
 
 type EventChannel struct {
-	ctx                     context.Context
-	env                     environment.Env
-	pw                      *protofile.BufferedProtoWriter
-	beValues                *accumulator.BEValues
-	redactor                *redact.StreamingRedactor
-	statusReporter          *build_status_reporter.BuildStatusReporter
-	targetTracker           *target_tracker.TargetTracker
-	statsRecorder           *statsRecorder
-	eventsBeforeStarted     []*inpb.InvocationEvent
-	hasReceivedStartedEvent bool
-	logWriter               *eventlog.EventLogWriter
-	onClose                 func()
-	attempt                 uint64
+	ctx                         context.Context
+	env                         environment.Env
+	pw                          *protofile.BufferedProtoWriter
+	beValues                    *accumulator.BEValues
+	redactor                    *redact.StreamingRedactor
+	statusReporter              *build_status_reporter.BuildStatusReporter
+	targetTracker               *target_tracker.TargetTracker
+	statsRecorder               *statsRecorder
+	eventsBeforeOptions         []*inpb.InvocationEvent
+	hasReceivedEventWithOptions bool
+	logWriter                   *eventlog.EventLogWriter
+	onClose                     func()
+	attempt                     uint64
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
 	// incomplete but was created too far in the past.
@@ -670,15 +672,18 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			}
 		}
 	}
+	if seqNo == 1 {
+		log.Debugf("First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+	}
 
-	// If this is the first event, keep track of the project ID and save any notification keywords.
-	if isStartedEvent(&bazelBuildEvent) {
-		isFirstStartedEvent := !e.hasReceivedStartedEvent
-		e.hasReceivedStartedEvent = true
-		log.Debugf("Started event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+	// If this is the first event with options, keep track of the project ID and save any notification keywords.
+	if e.isFirstEventWithOptions(&bazelBuildEvent) {
+		isFirstEventWithOptions := !e.hasReceivedEventWithOptions
+		e.hasReceivedEventWithOptions = true
+		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
-			options, err := extractOptionsFromStartedBuildEvent(&bazelBuildEvent)
+			options, err := extractOptions(&bazelBuildEvent)
 			if err != nil {
 				return err
 			}
@@ -713,7 +718,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			ti.LastChunkId = eventlog.EmptyId
 		}
 
-		if isFirstStartedEvent {
+		if isFirstEventWithOptions {
 			created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, ti)
 			if err != nil {
 				return err
@@ -735,7 +740,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				chunkFileSizeBytes,
 			)
 			if *enableChunkedEventLogs {
-				numLinesToRetain := getNumActionsShownFromStartedBuildEvent(&bazelBuildEvent)
+				numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
 				if numLinesToRetain != 0 {
 					// the number of lines curses can overwrite is 3 + the ui_actions shown:
 					// 1 for the progress tracker, 1 for each action, and 2 blank lines.
@@ -750,7 +755,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 					numLinesToRetain,
 				)
 			}
-			// Since this is the first Started event and we just parsed the API key,
+			// Since this is the first event with options and we just parsed the API key,
 			// now is a good time to record invocation usage for the group. Check that
 			// this is the first attempt of this invocation, to guarantee that we
 			// don't increment the usage on invocation retries.
@@ -772,22 +777,22 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
 			}
 		}
-	} else if !e.hasReceivedStartedEvent {
-		e.eventsBeforeStarted = append(e.eventsBeforeStarted, invocationEvent)
-		if len(e.eventsBeforeStarted) > 10 {
-			log.Warningf("We got over 10 build events before the started event for invocation %s, dropping %+v", iid, e.eventsBeforeStarted[0])
-			e.eventsBeforeStarted = e.eventsBeforeStarted[1:]
+	} else if !e.hasReceivedEventWithOptions {
+		e.eventsBeforeOptions = append(e.eventsBeforeOptions, invocationEvent)
+		if len(e.eventsBeforeOptions) > 100 {
+			log.Warningf("We got over 100 build events before an event with options for invocation %s, dropping %+v", iid, e.eventsBeforeOptions[0])
+			e.eventsBeforeOptions = e.eventsBeforeOptions[1:]
 		}
 		return nil
 	}
 
 	// Process buffered events.
-	for _, event := range e.eventsBeforeStarted {
+	for _, event := range e.eventsBeforeOptions {
 		if err := e.processSingleEvent(event, iid); err != nil {
 			return err
 		}
 	}
-	e.eventsBeforeStarted = nil
+	e.eventsBeforeOptions = nil
 
 	// Process regular events.
 	return e.processSingleEvent(invocationEvent, iid)
@@ -877,16 +882,18 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	return nil
 }
 
-func extractOptionsFromStartedBuildEvent(event *build_event_stream.BuildEvent) (string, error) {
+func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return p.Started.OptionsDescription, nil
+	case *build_event_stream.BuildEvent_OptionsParsed:
+		return strings.Join(p.OptionsParsed.CmdLine, " "), nil
 	}
 	return "", nil
 }
 
-func getNumActionsShownFromStartedBuildEvent(event *build_event_stream.BuildEvent) int {
-	options, err := extractOptionsFromStartedBuildEvent(event)
+func getNumActionsFromOptions(event *build_event_stream.BuildEvent) int {
+	options, err := extractOptions(event)
 	if err != nil {
 		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
 		return defaultActionsShown
