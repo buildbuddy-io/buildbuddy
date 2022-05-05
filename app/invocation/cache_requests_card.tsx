@@ -11,7 +11,6 @@ import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
 import Spinner from "../components/spinner/spinner";
 import { formatTimestampMillis, durationMillis } from "../format/format";
-import CheckboxButton from "../components/button/checkbox_button";
 import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
 import * as format from "../format/format";
@@ -125,7 +124,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         invocationId: this.props.model.getId(),
         orderBy: this.getOrderBy(),
         descending: this.getDescending(),
-        groupByAction: this.getGroupByAction(),
+        groupBy: this.getGroupBy(),
         filter: {
           mask: { paths: filterFields },
           cacheType: filter.cache,
@@ -207,8 +206,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getFilterIndex() {
     return Number(this.props.search.get("filter") || defaultFilterIndex);
   }
-  private getGroupByAction() {
-    return (this.props.search.get("groupByAction") || "true") === "true";
+  private getGroupBy() {
+    return Number(
+      this.props.search.get("groupBy") || cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET
+    ) as cache.GetCacheScoreCardRequest.GroupBy;
   }
   private getSearch() {
     return this.props.search.get("search") || "";
@@ -232,8 +233,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private onChangeFilter(event: React.ChangeEvent<HTMLSelectElement>) {
     router.setQueryParam("filter", event.target.value);
   }
-  private onToggleGroupByAction() {
-    router.setQueryParam("groupByAction", !this.getGroupByAction());
+  private onChangeGroupBy(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam("groupBy", event.target.value);
   }
   private searchTimeout = 0;
   private onChangeSearch(event: React.ChangeEvent<HTMLInputElement>) {
@@ -277,9 +278,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           </Select>
           {/* Grouping controls */}
           <div className="separator" />
-          <CheckboxButton checked={this.getGroupByAction()} onClick={this.onToggleGroupByAction.bind(this)}>
-            Group by action
-          </CheckboxButton>
+          <label>Group by</label>
+          <Select value={this.getGroupBy()} onChange={this.onChangeGroupBy.bind(this)}>
+            <Option value={0}>(None)</Option>
+            <Option value={cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET}>Target</Option>
+            <Option value={cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION}>Action</Option>
+          </Select>
         </div>
         <div className="controls row">
           <FilterInput value={this.state.searchText} onChange={this.onChangeSearch.bind(this)} />
@@ -288,7 +292,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
-  private renderResults(results: cache.ScoreCard.IResult[], startTimeMillis: number, durationMillis: number) {
+  private renderResults(
+    results: cache.ScoreCard.IResult[],
+    startTimeMillis: number,
+    durationMillis: number,
+    groupTarget: string | null = null,
+    groupActionId: string | null = null
+  ) {
     return results.map((result) => (
       <div className="row">
         <div>
@@ -298,6 +308,20 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {renderCacheType(result.cacheType)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
+        {(groupTarget === null || groupActionId === null) && (
+          <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
+            {/* bes-upload events don't have a target ID or action mnemonic. */}
+            {result.targetId || result.actionMnemonic ? (
+              <>
+                {groupTarget === null && result.targetId}
+                {groupTarget === null && groupActionId === null && " › "}
+                {groupActionId === null && result.actionMnemonic}
+              </>
+            ) : (
+              result.actionId
+            )}
+          </div>
+        )}
         <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
       </div>
@@ -323,7 +347,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       );
     }
 
-    const groups = this.getGroupByAction() ? groupResultsByActionId(this.state.results) : null;
+    const groups = this.getGroupBy() ? groupResults(this.state.results, this.getGroupBy()) : null;
     const [startTimeMillis, durationMillis] = this.getStartTimestampAndDurationMillis();
 
     return (
@@ -337,7 +361,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         {groups?.map((group) => (
           <div className="group">
             <div className="group-title action-id row">
-              {looksLikeDigest(group.actionId) ? (
+              {group.actionId !== null && looksLikeDigest(group.actionId) && (
                 <Link className="action-id" href={this.getActionUrl(group.results[0]?.actionId)}>
                   <DigestComponent
                     hashWidth="168px"
@@ -345,12 +369,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                     expandOnHover={false}
                   />
                 </Link>
-              ) : (
-                <span className="action-id">{group.actionId}</span>
               )}
               <div className="row action-label">
-                <div>{group.results[0]?.targetId}</div>
-                {group.results[0]?.actionMnemonic && (
+                <div>{group.results[0]?.targetId || group.results[0]?.actionId}</div>
+                {group.actionId && group.results[0]?.actionMnemonic && (
                   <>
                     <ChevronRight className="icon chevron" />
                     <div className="action-mnemonic">{group.results[0]?.actionMnemonic}</div>
@@ -359,7 +381,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
               </div>
             </div>
             <div className="group-contents results-list column">
-              {this.renderResults(group.results, startTimeMillis, durationMillis)}
+              {this.renderResults(group.results, startTimeMillis, durationMillis, group.targetId, group.actionId)}
             </div>
           </div>
         ))}
@@ -454,21 +476,40 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
   return "";
 }
 
-type ActionResults = {
-  actionId: string;
+type ResultGroup = {
+  // Target ID or null if not grouping by anything.
+  targetId: string | null;
+  // Action ID or null if not grouping by anything / grouping only by target.
+  actionId: string | null;
   results: cache.ScoreCard.IResult[];
 };
 
+function getGroupKey(result: cache.ScoreCard.IResult, groupBy: cache.GetCacheScoreCardRequest.GroupBy): string | null {
+  if (!groupBy) return null;
+  if (groupBy === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION) return result.actionId;
+  return result.targetId;
+}
+
 /**
- * The server groups into contiguous runs of results with the same action ID.
+ * The server groups into contiguous runs of results with the same group key.
  * This un-flattens the runs into a list of groups.
  */
-function groupResultsByActionId(results: cache.ScoreCard.IResult[]): ActionResults[] {
-  const out: ActionResults[] = [];
-  let curRun: ActionResults | null = null;
+function groupResults(
+  results: cache.ScoreCard.IResult[],
+  groupBy: cache.GetCacheScoreCardRequest.GroupBy
+): ResultGroup[] {
+  const out: ResultGroup[] = [];
+  let curRun: ResultGroup | null = null;
+  let curGroup: string | null = null;
   for (const result of results) {
-    if (!curRun || result.actionId !== curRun.actionId) {
-      curRun = { actionId: result.actionId, results: [] };
+    const groupKey = getGroupKey(result, groupBy);
+    if (!curRun || groupKey !== curGroup) {
+      curRun = {
+        targetId: groupBy ? result.targetId : null,
+        actionId: groupBy === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION ? result.actionId : null,
+        results: [],
+      };
+      curGroup = groupKey;
       out.push(curRun);
     }
     curRun.results.push(result);

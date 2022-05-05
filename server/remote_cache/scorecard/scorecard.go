@@ -69,9 +69,9 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 	}
 
 	sortResults(results, &sortOpts{
-		GroupByAction: req.GroupByAction,
-		OrderBy:       req.OrderBy,
-		Descending:    req.Descending,
+		GroupBy:    req.GroupBy,
+		OrderBy:    req.OrderBy,
+		Descending: req.Descending,
 	})
 	return &capb.GetCacheScoreCardResponse{
 		Results:       results[start:end],
@@ -149,9 +149,9 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 }
 
 type sortOpts struct {
-	GroupByAction bool
-	OrderBy       capb.GetCacheScoreCardRequest_OrderBy
-	Descending    bool
+	GroupBy    capb.GetCacheScoreCardRequest_GroupBy
+	OrderBy    capb.GetCacheScoreCardRequest_OrderBy
+	Descending bool
 }
 
 // SortResults sorts scorecard results according to the provided SortOpts.
@@ -179,33 +179,52 @@ func sortResults(results []*capb.ScoreCard_Result, opts *sortOpts) {
 		}
 	}
 
-	// If grouping by action, compute each action's order as its min result order.
-	// (Each result belongs to an action, identified by action ID).
-	actionOrder := make(map[string]int64)
-	if opts.GroupByAction {
+	// groupKeyFunc maps each result to a unique ID for its containing group
+	// (either action or target that the result was a part of).
+	var groupKeyFunc func(res *capb.ScoreCard_Result) string
+	switch opts.GroupBy {
+	case capb.GetCacheScoreCardRequest_GROUP_BY_ACTION:
+		groupKeyFunc = func(res *capb.ScoreCard_Result) string {
+			return res.ActionId
+		}
+	case capb.GetCacheScoreCardRequest_GROUP_BY_TARGET:
+		groupKeyFunc = func(res *capb.ScoreCard_Result) string {
+			return res.TargetId
+		}
+	default:
+		break
+	}
+
+	// If grouping results, compute each group's order as its min result order.
+	// (Each result belongs to a group, identified by groupKeyFunc).
+	groupOrder := make(map[string]int64)
+	if groupKeyFunc != nil {
 		for _, result := range results {
+			groupKey := groupKeyFunc(result)
 			order := orderFunc(result)
-			existing, ok := actionOrder[result.ActionId]
+			existing, ok := groupOrder[groupKey]
 			if !ok {
-				actionOrder[result.ActionId] = order
+				groupOrder[groupKey] = order
 				continue
 			}
 			if order < existing {
-				actionOrder[result.ActionId] = order
+				groupOrder[groupKey] = order
 			}
 		}
 	}
 	sort.Slice(results, func(i, j int) bool {
-		if opts.GroupByAction {
-			// For results with different parent actions, sort results earlier if
-			// their parent action's min start time comes first.
-			if results[i].ActionId != results[j].ActionId {
-				oi := actionOrder[results[i].ActionId]
-				oj := actionOrder[results[j].ActionId]
+		if groupKeyFunc != nil {
+			gi := groupKeyFunc(results[i])
+			gj := groupKeyFunc(results[j])
+			// For results with different parent groups, sort results earlier if
+			// their parent group's min start time comes first.
+			if gi != gj {
+				oi := groupOrder[gi]
+				oj := groupOrder[gj]
 				if oi == oj {
-					// If two actions happen to have exactly the same order, break the
-					// tie by action ID so that the sort is deterministic.
-					return results[i].ActionId < results[j].ActionId
+					// If two groups happen to have exactly the same order, break the
+					// tie by group key so that the sort is deterministic.
+					return gi < gj
 				}
 				return oi < oj
 			}

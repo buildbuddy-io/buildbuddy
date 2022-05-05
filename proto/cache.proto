@@ -83,17 +83,26 @@ message GetCacheScoreCardRequest {
   // Whether to sort in descending order.
   bool descending = 6;
 
-  // Whether to group results by action. When grouping by action, the results
-  // are grouped by first sorting all results by the OrderBy field, then
-  // effectively re-sorting so that results with the same action ID are in
-  // contiguous runs, while still preserving the original relative ordering
-  // within actions.
+  reserved 7;
+
+  enum GroupBy {
+    UNKNOWN_GROUP_BY = 0;
+    // Group by action ID.
+    GROUP_BY_ACTION = 1;
+    // Group by target ID.
+    GROUP_BY_TARGET = 2;
+  }
+
+  // Specifies how to group results. When grouping, the results are grouped by
+  // first sorting all results by the OrderBy field, then effectively re-sorting
+  // so that results with the same group key are in contiguous runs, while still
+  // preserving the original relative ordering within groups.
   //
   // For example, when grouping by action and sorting by start time in ascending
   // order, the results will be grouped into contiguous runs of results where
   // each run is sorted in ascending order of start time, and the runs
   // themselves are ordered by earliest result start time.
-  bool group_by_action = 7;
+  GroupBy group_by = 8;
 }
 
 message GetCacheScoreCardResponse {
