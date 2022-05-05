@@ -132,13 +132,6 @@
   font-size: inherit;
 }
 
-.cache-requests-card .result-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-}
-
 .cache-requests-card .row.action-label {
   gap: 4px;
   overflow: hidden;
@@ -195,6 +188,12 @@
 
 .cache-requests-card .results-list > :nth-child(2n + 1) {
   background: #fafafa;
+}
+
+.cache-requests-card .result-row:hover {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 100ms;
+  z-index: 1;
 }
 
 .cache-requests-card .results-list > .row {
@@ -299,6 +298,32 @@
 
 .cache-requests-card .load-more-button {
   gap: 8px;
+}
+
+.cache-result-hovercard {
+  margin: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-size: 14px;
+  backdrop-filter: blur(3px);
+
+  display: grid;
+  grid-template-columns: min-content auto;
+  grid-gap: 0 8px;
+}
+
+.cache-result-hovercard > * {
+  white-space: nowrap;
+}
+
+.cache-result-hovercard .compression-savings.positive {
+  color: #43a047;
+}
+
+.cache-result-hovercard .compression-savings.negative {
+  color: #757575;
 }
 
 .action-timeline {
