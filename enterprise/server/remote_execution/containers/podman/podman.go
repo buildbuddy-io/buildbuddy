@@ -53,7 +53,7 @@ type PodmanOptions struct {
 	Network   string
 	CapAdd    string
 	Devices   []config.DockerDeviceMapping
-	Mounts    []string
+	Volumes   []string
 	Runtime   string
 }
 
@@ -127,8 +127,8 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		}
 		args = append(args, "--device="+strings.Join(deviceSpecs, ":"))
 	}
-	for _, mount := range c.options.Mounts {
-		args = append(args, "--mount="+mount)
+	for _, volume := range c.options.Volumes {
+		args = append(args, "--volume="+volume)
 	}
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)

@@ -56,7 +56,7 @@ type DockerOptions struct {
 	DockerNetwork           string
 	DockerCapAdd            string
 	DockerDevices           []config.DockerDeviceMapping
-	Binds                   []string
+	Volumes                 []string
 }
 
 // dockerCommandContainer containerizes a command's execution using a Docker container.
@@ -277,7 +277,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	if r.options.EnableSiblingContainers {
 		binds = append(binds, fmt.Sprintf("%s:%s%s", r.options.Socket, r.options.Socket, mountMode))
 	}
-	binds = append(binds, r.options.Binds...)
+	binds = append(binds, r.options.Volumes...)
 	return &dockercontainer.HostConfig{
 		NetworkMode: networkMode,
 		Binds:       binds,

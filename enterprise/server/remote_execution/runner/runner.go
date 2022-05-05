@@ -66,7 +66,7 @@ var (
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
 	dockerDevices           []config.DockerDeviceMapping
-	mountsConfig            []string
+	volumesConfig           []string
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
@@ -82,7 +82,7 @@ var (
 func init() {
 	flagutil.StructSliceVar(&dockerDevices, "executor.docker_devices", `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContaine
 r":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-	flagutil.StructSliceVar(&mountsConfig, "executor.mounts", "Sets --mount= (podman), --volume= (docker) or similar one-line mountpoint config int the action sandbox.")
+	flagutil.StructSliceVar(&volumesConfig, "executor.volumes", "Sets --volume= option for the action sandbox container.")
 }
 
 const (
@@ -685,7 +685,7 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 		DockerMountMode:         *dockerMountMode,
 		DockerCapAdd:            *dockerCapAdd,
 		DockerDevices:           dockerDevices,
-		Binds:                   mountsConfig,
+		Volumes:                 volumesConfig,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
 }
@@ -897,7 +897,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			Network:   props.DockerNetwork,
 			CapAdd:    *dockerCapAdd,
 			Devices:   dockerDevices,
-			Mounts:    mountsConfig,
+			Volumes:   volumesConfig,
 			Runtime:   *podmanRuntime,
 		}
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
