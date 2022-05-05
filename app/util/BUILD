@@ -1,5 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
-load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -29,20 +28,13 @@ ts_library(
     ],
 )
 
-ts_library(
-    name = "async_test_ts",
+ts_jasmine_node_test(
+    name = "async_test",
     srcs = ["async_test.ts"],
     deps = [
         ":async",
-        "@npm//@types/jasmine",
         "@npm//tslib",
     ],
-)
-
-jasmine_node_test(
-    name = "async_test",
-    templated_args = ["--bazel_patch_module_resolver"],
-    deps = [":async_test_ts"],
 )
 
 ts_library(

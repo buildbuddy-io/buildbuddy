@@ -25,6 +25,7 @@ build:remote-shared --remote_upload_local_results
 build:remote-shared --host_platform=@buildbuddy_toolchain//:platform
 build:remote-shared --platforms=@buildbuddy_toolchain//:platform
 build:remote-shared --crosstool_top=@buildbuddy_toolchain//:toolchain
+build:remote-shared --extra_toolchains=//:sh_toolchain
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
 build:remote-shared --experimental_repo_remote_exec
@@ -112,6 +113,9 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
+
+# rules_nodejs needs runfiles to be explicitly enabled.
+build --enable_runfiles
 
 # Don't build or run Docker tests by default, to avoid a hard dependency
 # on Docker for development.
