@@ -440,7 +440,6 @@
 
 .cache-chart-label {
   display: flex;
-  align-items: center;
 }
 
 .color-swatch {
@@ -448,8 +447,22 @@
   height: 16px;
   border-radius: 4px;
   margin-right: 8px;
+  margin-top: 3px;
   display: block;
   background-color: #eee;
+}
+
+.cache-chart-label .compressed-size {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.cache-chart-label .size-savings.positive {
+  color: #388e3c;
+}
+
+.cache-chart-label .size-savings.negative {
+  color: #888;
 }
 
 .header {

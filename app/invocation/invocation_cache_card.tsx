@@ -79,16 +79,18 @@ export default class CacheCardComponent extends React.Component<Props> {
                           "#607D8B"
                         )}
                         <div>
-                          <div className="cache-chart-label">
-                            <span className="color-swatch download-color-swatch"></span>
-                            <span className="cache-stat">{format.bytes(cacheStat.totalDownloadSizeBytes)} </span>
-                            downloaded
-                          </div>
-                          <div className="cache-chart-label">
-                            <span className="color-swatch upload-color-swatch"></span>
-                            <span className="cache-stat">{format.bytes(cacheStat.totalUploadSizeBytes)} </span>
-                            uploaded
-                          </div>
+                          {this.renderVolumeChartLabel(
+                            "downloaded",
+                            "download-color-swatch",
+                            Number(cacheStat.totalDownloadSizeBytes),
+                            Number(cacheStat.totalCompressedDownloadSizeBytes)
+                          )}
+                          {this.renderVolumeChartLabel(
+                            "uploaded",
+                            "upload-color-swatch",
+                            Number(cacheStat.totalUploadSizeBytes),
+                            Number(cacheStat.totalCompressedUploadSizeBytes)
+                          )}
                         </div>
                       </div>
                     </div>
@@ -115,6 +117,29 @@ export default class CacheCardComponent extends React.Component<Props> {
               })}
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  renderVolumeChartLabel(label: string, swatch: string, sizeBytes: number, compressedSizeBytes: number) {
+    const savings = 1 - compressedSizeBytes / sizeBytes;
+    return (
+      <div className="cache-chart-label">
+        <span className={`color-swatch ${swatch}`}></span>
+        <div>
+          <div>
+            <span className="cache-stat">{format.bytes(sizeBytes)}</span> {label}
+          </div>
+          {this.props.model.isCacheCompressionEnabled() && compressedSizeBytes ? (
+            <div className="compressed-size">
+              <span className="cache-stat">{format.bytes(compressedSizeBytes)}</span> compressed{" "}
+              <span className={`size-savings ${savings < 0 ? "negative" : "positive"}`}>
+                {savings < 0 && "+"}
+                {(-savings * 100).toPrecision(3)}%
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     );
