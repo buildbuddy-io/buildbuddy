@@ -269,6 +269,10 @@ export default class InvocationModel {
     return rawVal;
   }
 
+  isCacheCompressionEnabled() {
+    return this.optionsMap.get("experimental_remote_cache_compression") === "1";
+  }
+
   getCache() {
     if (!this.optionsMap.get("remote_cache") && !this.optionsMap.get("remote_executor")) {
       return "Cache off";
