@@ -233,11 +233,15 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	}
 	r.startTime = startTime
 
-	optionsDescription := ""
+	options := []string{}
+	if *besBackend != "" {
+		options = append(options, fmt.Sprintf("--bes_backend=%s'", *besBackend))
+	}
 	if r.apiKey != "" {
-		optionsDescription = fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey)
+		options = append(options, fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey))
 	}
 
+	optionsDescription := strings.Join(options, " ")
 	cmd := ""
 	patterns := []string{}
 	if !r.isWorkflow {
