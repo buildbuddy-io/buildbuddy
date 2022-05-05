@@ -37,3 +37,26 @@ output "blobs_bucket_name" {
   description = "The blobs bucket name"
   value       = google_storage_bucket.blobs.name
 }
+
+output "DEV_APP_CLUSTER" {
+  description = "The full name of the dev app cluster"
+  value       = "gke_${var.project_id}_${var.region}_${var.cluster_name_prefix}cluster"
+}
+
+output "ENV" {
+  description = "The environment to use"
+  value       = "${var.env}"
+}
+
+output "LOCATION" {
+  description = "The region the cluster is hosted in"
+  value       = "${var.region}"
+}
+
+
+// ZONE = "us-west1-b"
+// LOCATION = "us-west1"
+// BUILDBUDDY_BACKEND_FQDN = "am.buildbuddy.dev"
+// EXECUTOR_APP_BACKEND_FQDN = "am.buildbuddy.dev"
+// CACHE_GCS_BUCKET = "buildbuddy_dev_cache"
+// DOMAIN = "buildbuddy.dev"
