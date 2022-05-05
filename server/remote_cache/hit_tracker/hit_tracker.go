@@ -58,6 +58,8 @@ const (
 
 	DownloadSizeBytes
 	UploadSizeBytes
+	CompressedDownloadSizeBytes
+	CompressedUploadSizeBytes
 
 	DownloadUsec
 	UploadUsec
@@ -109,6 +111,10 @@ func counterField(actionCache bool, ct counterType) string {
 		return "download-size-bytes"
 	case UploadSizeBytes:
 		return "upload-size-bytes"
+	case CompressedDownloadSizeBytes:
+		return "compressed-download-size-bytes"
+	case CompressedUploadSizeBytes:
+		return "compressed-upload-size-bytes"
 	case DownloadUsec:
 		return "download-usec"
 	case UploadUsec:
@@ -362,6 +368,15 @@ func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, co
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.sizeCounter), t.d.GetSizeBytes()); err != nil {
 		return err
 	}
+	if compressor != repb.Compressor_IDENTITY {
+		compressedSizeCounter := CompressedDownloadSizeBytes
+		if t.sizeCounter == UploadSizeBytes {
+			compressedSizeCounter = CompressedUploadSizeBytes
+		}
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), transferredSizeBytes); err != nil {
+			return err
+		}
+	}
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
 		return err
 	}
@@ -563,6 +578,8 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 
 	cs.TotalDownloadSizeBytes = counts[counterField(false, DownloadSizeBytes)]
 	cs.TotalUploadSizeBytes = counts[counterField(false, UploadSizeBytes)]
+	cs.TotalCompressedDownloadSizeBytes = counts[counterField(false, CompressedDownloadSizeBytes)]
+	cs.TotalCompressedUploadSizeBytes = counts[counterField(false, CompressedUploadSizeBytes)]
 	cs.TotalDownloadUsec = counts[counterField(false, DownloadUsec)]
 	cs.TotalUploadUsec = counts[counterField(false, UploadUsec)]
 
