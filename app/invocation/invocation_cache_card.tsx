@@ -83,13 +83,13 @@ export default class CacheCardComponent extends React.Component<Props> {
                             "downloaded",
                             "download-color-swatch",
                             Number(cacheStat.totalDownloadSizeBytes),
-                            Number(cacheStat.totalCompressedDownloadSizeBytes)
+                            Number(cacheStat.totalDownloadTransferredSizeBytes)
                           )}
                           {this.renderVolumeChartLabel(
                             "uploaded",
                             "upload-color-swatch",
                             Number(cacheStat.totalUploadSizeBytes),
-                            Number(cacheStat.totalCompressedUploadSizeBytes)
+                            Number(cacheStat.totalUploadTransferredSizeBytes)
                           )}
                         </div>
                       </div>

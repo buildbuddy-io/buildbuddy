@@ -25,8 +25,8 @@ message CacheStats {
   // many concurrent uploads.
   int64 total_download_size_bytes = 7;
   int64 total_upload_size_bytes = 8;
-  int64 total_compressed_download_size_bytes = 14;
-  int64 total_compressed_upload_size_bytes = 15;
+  int64 total_download_transferred_size_bytes = 14;
+  int64 total_upload_transferred_size_bytes = 15;
   int64 total_download_usec = 9;
   int64 total_upload_usec = 10;
 

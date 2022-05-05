@@ -585,8 +585,8 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 	ti.CasCacheUploads = cacheStats.GetCasCacheUploads()
 	ti.TotalDownloadSizeBytes = cacheStats.GetTotalDownloadSizeBytes()
 	ti.TotalUploadSizeBytes = cacheStats.GetTotalUploadSizeBytes()
-	ti.TotalCompressedDownloadSizeBytes = cacheStats.GetTotalCompressedDownloadSizeBytes()
-	ti.TotalCompressedUploadSizeBytes = cacheStats.GetTotalCompressedUploadSizeBytes()
+	ti.TotalDownloadTransferredSizeBytes = cacheStats.GetTotalDownloadTransferredSizeBytes()
+	ti.TotalUploadTransferredSizeBytes = cacheStats.GetTotalUploadTransferredSizeBytes()
 	ti.TotalDownloadUsec = cacheStats.GetTotalDownloadUsec()
 	ti.TotalUploadUsec = cacheStats.GetTotalUploadUsec()
 	ti.DownloadThroughputBytesPerSecond = cacheStats.GetDownloadThroughputBytesPerSecond()
@@ -1080,21 +1080,21 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
-		ActionCacheHits:                  i.ActionCacheHits,
-		ActionCacheMisses:                i.ActionCacheMisses,
-		ActionCacheUploads:               i.ActionCacheUploads,
-		CasCacheHits:                     i.CasCacheHits,
-		CasCacheMisses:                   i.CasCacheMisses,
-		CasCacheUploads:                  i.CasCacheUploads,
-		TotalDownloadSizeBytes:           i.TotalDownloadSizeBytes,
-		TotalCompressedDownloadSizeBytes: i.TotalCompressedDownloadSizeBytes,
-		TotalUploadSizeBytes:             i.TotalUploadSizeBytes,
-		TotalCompressedUploadSizeBytes:   i.TotalCompressedUploadSizeBytes,
-		TotalDownloadUsec:                i.TotalDownloadUsec,
-		TotalUploadUsec:                  i.TotalUploadUsec,
-		TotalCachedActionExecUsec:        i.TotalCachedActionExecUsec,
-		DownloadThroughputBytesPerSecond: i.DownloadThroughputBytesPerSecond,
-		UploadThroughputBytesPerSecond:   i.UploadThroughputBytesPerSecond,
+		ActionCacheHits:                   i.ActionCacheHits,
+		ActionCacheMisses:                 i.ActionCacheMisses,
+		ActionCacheUploads:                i.ActionCacheUploads,
+		CasCacheHits:                      i.CasCacheHits,
+		CasCacheMisses:                    i.CasCacheMisses,
+		CasCacheUploads:                   i.CasCacheUploads,
+		TotalDownloadSizeBytes:            i.TotalDownloadSizeBytes,
+		TotalDownloadTransferredSizeBytes: i.TotalDownloadTransferredSizeBytes,
+		TotalUploadSizeBytes:              i.TotalUploadSizeBytes,
+		TotalUploadTransferredSizeBytes:   i.TotalUploadTransferredSizeBytes,
+		TotalDownloadUsec:                 i.TotalDownloadUsec,
+		TotalUploadUsec:                   i.TotalUploadUsec,
+		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
+		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
 	}
 	out.LastChunkId = i.LastChunkId
 	if i.LastChunkId != "" {
