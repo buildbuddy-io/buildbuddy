@@ -33,11 +33,12 @@ output "static_bucket_name" {
   value       = google_storage_bucket.static.name
 }
 
-output "blobs_bucket_name" {
+output "CACHE_GCS_BUCKET" {
   description = "The blobs bucket name"
   value       = google_storage_bucket.blobs.name
 }
 
+# TODO(tylerw): use cluster output?
 output "DEV_APP_CLUSTER" {
   description = "The full name of the dev app cluster"
   value       = "gke_${var.project_id}_${var.region}_${var.cluster_name_prefix}cluster"
@@ -45,18 +46,10 @@ output "DEV_APP_CLUSTER" {
 
 output "ENV" {
   description = "The environment to use"
-  value       = "${var.env}"
+  value       = var.env
 }
 
 output "LOCATION" {
   description = "The region the cluster is hosted in"
-  value       = "${var.region}"
+  value       = var.region
 }
-
-
-// ZONE = "us-west1-b"
-// LOCATION = "us-west1"
-// BUILDBUDDY_BACKEND_FQDN = "am.buildbuddy.dev"
-// EXECUTOR_APP_BACKEND_FQDN = "am.buildbuddy.dev"
-// CACHE_GCS_BUCKET = "buildbuddy_dev_cache"
-// DOMAIN = "buildbuddy.dev"

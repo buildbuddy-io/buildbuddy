@@ -83,13 +83,11 @@ module "gke" {
 ## NETWORK
 
 resource "google_compute_network" "private_network" {
-//  provider = google-beta
-  project       = var.project_id
-  name = "private-network"
+  project = var.project_id
+  name    = "private-network"
 }
 
 resource "google_compute_global_address" "private_ip_address" {
-//  provider = google-beta
   project       = var.project_id
   name          = "private-ip-address"
   purpose       = "VPC_PEERING"
@@ -99,8 +97,6 @@ resource "google_compute_global_address" "private_ip_address" {
 }
 
 resource "google_service_networking_connection" "private_vpc_connection" {
-//  provider = google-beta
-
   network                 = google_compute_network.private_network.id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
@@ -149,16 +145,16 @@ resource "google_sql_database_instance" "main" {
 }
 
 resource "google_sql_database" "buildbuddy" {
-  instance = google_sql_database_instance.main.name
-  project       = var.project_id
-  name     = "buildbuddy_${var.env}"
+  instance  = google_sql_database_instance.main.name
+  project   = var.project_id
+  name      = "buildbuddy_${var.env}"
   charset   = "utf8mb4"
   collation = "utf8mb4_general_ci"
 }
 
 resource "google_sql_user" "users" {
   instance = google_sql_database_instance.main.name
-  project       = var.project_id
+  project  = var.project_id
   name     = "buildbuddy-${var.env}"
   password = random_password.password.result
 }
@@ -173,7 +169,7 @@ resource "google_storage_bucket" "static" {
 
   cors {
     origin          = ["*"]
-    method          = ["GET", "HEAD",]
+    method          = ["GET", "HEAD", ]
     response_header = ["Content-Type"]
     max_age_seconds = 3600
   }
@@ -181,7 +177,7 @@ resource "google_storage_bucket" "static" {
 
 resource "google_storage_bucket_iam_member" "member" {
   bucket = "buildbuddy-${var.env}-static"
-  role = "roles/storage.objectViewer"
+  role   = "roles/storage.objectViewer"
   member = "allUsers"
 }
 
