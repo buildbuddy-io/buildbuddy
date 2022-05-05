@@ -271,8 +271,8 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
-// Generates a map of the type that should be marshaled from YAML for each flag
-// name at the corresponding nested map index.
+// GenerateYAMLTypeMapFromFlags generates a map of the type that should be
+// marshaled from YAML for each flag name at the corresponding nested map index.
 func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 	yamlMap := make(map[string]interface{})
 	var errors []error
@@ -312,9 +312,10 @@ func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 	return yamlMap, nil
 }
 
-// Un-marshals yaml from the input yamlMap and then re-marshals it into the types
-// specified by the type map, replacing the original value in the input map.
-// Filters out any values not specified by the flags.
+// RetypeAndFilterYAMLMap un-marshals yaml from the input yamlMap and then
+// re-marshals it into the types specified by the type map, replacing the
+// original value in the input map. Filters out any values not specified by the
+// flags.
 func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]interface{}, prefix []string) error {
 	for k := range yamlMap {
 		label := append(prefix, k)
@@ -358,6 +359,9 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]i
 	return nil
 }
 
+// PopulateFlagsFromData takes some YAML input and unmarshals it, then uses the
+// umnarshaled data to populate the unset flags with names corresponding to the
+// keys.
 func PopulateFlagsFromData(data []byte) error {
 	// expand environment variables
 	expandedData := []byte(os.ExpandEnv(string(data)))
@@ -377,9 +381,10 @@ func PopulateFlagsFromData(data []byte) error {
 	return PopulateFlagsFromYAMLMap(yamlMap)
 }
 
-// Takes a map populated by YAML from some YAML input and iterates over it,
-// finding flags with names corresponding to the keys and setting the flag to
-// the YAML value if the flag was not set on the command line.
+// PopulateFlagsFromYAMLMap takes a map populated by YAML from some YAML input
+// and iterates over it, finding flags with names corresponding to the keys and
+// setting the flag to the YAML value if the flag was not set on the command
+// line.
 func PopulateFlagsFromYAMLMap(m map[string]interface{}) error {
 	setFlags := make(map[string]struct{})
 	defaultFlagSet.Visit(func(flg *flag.Flag) {
@@ -401,7 +406,7 @@ func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]s
 	return SetValueForFlagName(strings.Join(prefix, "."), i, setFlags, true, false)
 }
 
-// Sets the value for a flag by name
+// SetValueForFlagName sets the value for a flag by name.
 func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
@@ -440,7 +445,8 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 	return nil
 }
 
-// Returns the value pointed to by a flag.Value for a given flag name
+// DereferencedValueFromFlagName returns the value pointed to by a flag.Value
+// for a given flag name.
 func DereferencedValueFromFlagName(name string) (interface{}, error) {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
@@ -458,7 +464,8 @@ func DereferencedValueFromFlagName(name string) (interface{}, error) {
 }
 
 // FOR TESTING PURPOSES ONLY
-// Adds a type correspondence to the internal flagTypeMap
+// AddTestFlagTypeForTesting adds a type correspondence to the internal
+// flagTypeMap.
 func AddTestFlagTypeForTesting(flagValue interface{}, value interface{}) {
 	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }
