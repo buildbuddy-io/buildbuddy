@@ -10,11 +10,11 @@ import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
 import Spinner from "../components/spinner/spinner";
-import { formatTimestampMillis, durationMillis } from "../format/format";
 import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
 import * as format from "../format/format";
 import * as proto from "../util/proto";
+import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -156,11 +156,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const resultStartTimeMillis = timestampToDate(result.startTime).getTime();
     const resultDurationMillis = durationToMillis(result.duration);
     const beforeDurationMillis = resultStartTimeMillis - timelineStartTimeMillis;
-    // TODO(bduffany): Show a nicer hovercard for the whole row
     return (
-      <div
-        className="waterfall-column"
-        title={`${formatTimestampMillis(resultStartTimeMillis)} for ${durationMillis(resultDurationMillis)}`}>
+      <div className="waterfall-column">
         <div className="waterfall-gridlines">
           <div />
           <div />
@@ -300,7 +297,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     groupActionId: string | null = null
   ) {
     return results.map((result) => (
-      <div className="row">
+      <Tooltip
+        className="row result-row"
+        pin={pinBottomMiddleToMouse}
+        renderContent={() => this.renderResultHovercard(result, startTimeMillis)}>
         <div>
           <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
         </div>
@@ -324,8 +324,50 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         )}
         <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
-      </div>
+      </Tooltip>
     ));
+  }
+
+  private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
+    const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
+    return (
+      <div className="cache-result-hovercard">
+        {result.targetId && (
+          <>
+            <b>Target</b> <span>{result.targetId}</span>
+          </>
+        )}
+        {result.actionMnemonic && (
+          <>
+            <b>Action</b> <span>{result.actionMnemonic}</span>
+          </>
+        )}
+        <>
+          <b>Size</b>
+          <span>{format.bytes(result.digest.sizeBytes)}</span>
+        </>
+        {result.compressor ? (
+          <>
+            <b>Compressed</b>{" "}
+            <span>
+              {format.bytes(result.transferredSizeBytes)}{" "}
+              <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
+                {compressionSavings <= 0 ? "+" : ""}
+                {(-compressionSavings * 100).toPrecision(3)}%
+              </span>
+            </span>
+          </>
+        ) : null}
+        <>
+          {/* Timestamp relative to the invocation start time */}
+          <b>Started at</b>{" "}
+          <span>{format.durationMillis(proto.timestampToDate(result.startTime).getTime() - startTimeMillis)}</span>
+        </>
+        <>
+          <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
+        </>
+      </div>
+    );
   }
 
   render() {

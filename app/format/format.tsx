@@ -52,7 +52,11 @@ export function durationSec(duration: number | Long) {
   if (seconds >= 1) {
     return `${seconds.toPrecision(3)}s`;
   }
-  return `${(seconds * 1000).toPrecision(3)}ms`;
+  const milliseconds = seconds * 1000;
+  if (milliseconds >= 1) {
+    return `${(seconds * 1000).toPrecision(3)}ms`;
+  }
+  return `${(milliseconds * 1000).toPrecision(3)}µs`;
 }
 
 export function compactDurationMillis(duration: number | Long) {

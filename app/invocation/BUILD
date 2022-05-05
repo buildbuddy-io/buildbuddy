@@ -23,6 +23,7 @@ ts_library(
         "//app/components/popup",
         "//app/components/select",
         "//app/components/spinner",
+        "//app/components/tooltip",
         "//app/docs",
         "//app/errors",
         "//app/favicon",

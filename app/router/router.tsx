@@ -99,7 +99,7 @@ class Router {
   setQueryParam(key: string, value: any) {
     const url = new URL(window.location.href);
     url.searchParams.set(key, String(value));
-    window.history.pushState({}, "", url.href);
+    window.history.replaceState({}, "", url.href);
   }
 
   navigateHome(hash?: string) {
