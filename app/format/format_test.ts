@@ -42,8 +42,12 @@ describe("durationSec", () => {
     expect(format.durationSec(null)).toEqual("0s");
     expect(format.durationSec(0)).toEqual("0s");
   });
+  it("should format < 1 ms as microseconds", () => {
+    expect(format.durationSec(0.000001)).toEqual("1.00µs");
+    expect(format.durationSec(0.0001)).toEqual("100µs");
+    expect(format.durationSec(0.000999)).toEqual("999µs");
+  });
   it("should format < 1 second as ms", () => {
-    expect(format.durationSec(0.0001)).toEqual("0.100ms");
     expect(format.durationSec(0.001)).toEqual("1.00ms");
     expect(format.durationSec(0.999)).toEqual("999ms");
   });

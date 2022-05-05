@@ -155,10 +155,10 @@ class TooltipContent extends React.Component<TooltipContentProps> {
     if (this.portalElement) return this.portalElement;
 
     // Note: all tooltips share a single portal.
-    let portal = document.querySelector(".tooltip-portal") as HTMLDivElement | null;
+    let portal = document.getElementById("tooltip-portal") as HTMLDivElement | null;
     if (!portal) {
       portal = document.createElement("div");
-      portal.className = "tooltip-portal";
+      portal.id = "tooltip-portal";
       portal.style.position = "fixed";
       portal.style.zIndex = "1";
       document.body.appendChild(portal);
