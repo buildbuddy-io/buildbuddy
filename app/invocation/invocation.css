@@ -226,6 +226,14 @@
   width: 60px;
 }
 
+.cache-requests-card .name-column {
+  width: 20%;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .cache-requests-card .column-with-icon {
   position: relative;
 }
@@ -275,6 +283,10 @@
   right: 0;
   bottom: 0;
   display: flex;
+}
+
+.cache-requests-card .waterfall-gridlines > :first-child {
+  border-left: 1px solid #eee;
 }
 
 .cache-requests-card .waterfall-gridlines > div:not(:last-child) {
