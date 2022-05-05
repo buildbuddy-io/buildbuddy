@@ -2,6 +2,7 @@ package networking
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"os/exec"
@@ -11,6 +12,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/unix"
+)
+
+var (
+	devicePrefix = flag.String("device_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -179,7 +184,7 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 //  # add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //  $ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
-	defaultDevice, err := findDefaultDevice(ctx)
+	defaultDevice, err := findDevice(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +260,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 }
 
 func DefaultInterface(ctx context.Context) (*net.Interface, error) {
-	defaultDevName, err := findDefaultDevice(ctx)
+	defaultDevName, err := findDevice(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -271,15 +276,15 @@ func DefaultInterface(ctx context.Context) (*net.Interface, error) {
 	return nil, status.NotFoundErrorf("could not find interface %q", defaultDevName)
 }
 
-// findDefaultDevice find's the device used for the default route.
+// findDevice find's the device used for the default route.
 // Equivalent to "ip route | grep default | awk '{print $5}'"
-func findDefaultDevice(ctx context.Context) (string, error) {
+func findDevice(ctx context.Context) (string, error) {
 	out, err := sudoCommand(ctx, "ip", "route")
 	if err != nil {
 		return "", err
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, "default") {
+		if strings.HasPrefix(line, *devicePrefix) {
 			if parts := strings.Split(line, " "); len(parts) > 5 {
 				return parts[4], nil
 			}
@@ -310,7 +315,7 @@ func FindDefaultRouteIP(ctx context.Context) (string, error) {
 // EnableMasquerading turns on ipmasq for the default device. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
-	defaultDevice, err := findDefaultDevice(ctx)
+	defaultDevice, err := findDevice(ctx)
 	if err != nil {
 		return err
 	}
