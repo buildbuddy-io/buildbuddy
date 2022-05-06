@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -197,7 +198,7 @@ func main() {
 	rootContext := context.Background()
 
 	flag.Parse()
-	if err := config.PopulateFlagsFromFile(); err != nil {
+	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 

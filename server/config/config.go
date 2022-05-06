@@ -2,37 +2,20 @@ package config
 
 import (
 	"flag"
-	"fmt"
-	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-var (
-	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
-)
+const pathFlagName = "config_file"
 
-func PopulateFlagsFromData(data []byte) error {
-	return flagutil.PopulateFlagsFromData(data)
+var configPath = flag.String(pathFlagName, "/config.yaml", "The path to a buildbuddy config file")
+
+func init() {
+	// As this flag determines the YAML file we read the config from, it can't
+	// meaningfully be specified in the YAML config file.
+	flagutil.IgnoreFlagForYAML(pathFlagName)
 }
 
-func PopulateFlagsFromFile() error {
-	log.Infof("Reading buildbuddy config from '%s'", *configFile)
-
-	_, err := os.Stat(*configFile)
-
-	// If the file does not exist then skip it.
-	if os.IsNotExist(err) {
-		log.Warningf("No config file found at %s.", *configFile)
-		return nil
-	}
-
-	fileBytes, err := os.ReadFile(*configFile)
-	if err != nil {
-		return fmt.Errorf("Error reading config file: %s", err)
-	}
-
-	return PopulateFlagsFromData(fileBytes)
+func Path() string {
+	return *configPath
 }
