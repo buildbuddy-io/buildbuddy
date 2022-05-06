@@ -291,7 +291,7 @@
   stroke: #4caf50;
 }
 
-.cache-requests-card .results-list .waterfall-column {
+.cache-requests-card .results-list div.waterfall-column {
   display: flex;
   align-items: center;
   align-self: stretch;
@@ -304,7 +304,7 @@
 }
 
 @media (max-width: 1300px) {
-  .cache-requests-card .waterfall-column {
+  .cache-requests-card div.waterfall-column.waterfall-column {
     display: none;
   }
 }
