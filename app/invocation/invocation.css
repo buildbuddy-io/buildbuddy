@@ -212,6 +212,11 @@
   text-align: right;
 }
 
+.cache-requests-card .compressed-size-column {
+  width: 138px;
+  text-align: right;
+}
+
 .cache-requests-card .cache-type-column {
   width: 32px;
 }
@@ -226,8 +231,8 @@
 }
 
 .cache-requests-card .name-column {
-  width: 20%;
-  max-width: 180px;
+  width: 28%;
+  max-width: 300px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -237,16 +242,25 @@
   position: relative;
 }
 
-.cache-requests-card .column-with-icon span {
+.cache-requests-card .column-with-icon > span {
   padding-left: 20px;
 }
 
 .cache-requests-card .column-with-icon .icon {
   /* remove icon from normal flow */
   position: absolute;
+  left: 4px;
   width: 16px;
   height: 16px;
   padding-top: 3px;
+}
+
+.cache-requests-card .compressed-size-column .icon {
+  stroke: #bdbdbd;
+}
+
+.cache-requests-card .compressed-size-column.uncompressed {
+  color: #bdbdbd;
 }
 
 .cache-requests-card .icon.green {
@@ -259,6 +273,12 @@
   align-self: stretch;
   flex-grow: 1;
   --min-bar-width: 2px;
+}
+
+@media (max-width: 1300px) {
+  .cache-requests-card .waterfall-column {
+    display: none;
+  }
 }
 
 .cache-requests-card div.waterfall-column.waterfall-column {
@@ -318,11 +338,13 @@
   white-space: nowrap;
 }
 
-.cache-result-hovercard .compression-savings.positive {
+.cache-result-hovercard .compression-savings.positive,
+.cache-requests-card .compression-savings.positive {
   color: #43a047;
 }
 
-.cache-result-hovercard .compression-savings.negative {
+.cache-result-hovercard .compression-savings.negative,
+.cache-requests-card .compression-savings.negative {
   color: #757575;
 }
 

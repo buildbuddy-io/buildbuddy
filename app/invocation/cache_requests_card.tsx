@@ -1,7 +1,17 @@
 import React from "react";
 import router from "../router/router";
 import InvocationModel from "./invocation_model";
-import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
+import {
+  X,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeftRight,
+  ChevronRight,
+  Check,
+  SortAsc,
+  SortDesc,
+  ArrowRight,
+} from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -304,6 +314,20 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <div>
           <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
         </div>
+        {this.isCompressedSizeColumnVisible() && (
+          <div className={`compressed-size-column column-with-icon ${!result.compressor ? "uncompressed" : ""}`}>
+            {(console.log(result), result.compressor) ? (
+              <>
+                <ArrowRight className="icon" />
+                <span>
+                  {format.bytes(result.transferredSizeBytes)} {renderCompressionSavings(result)}
+                </span>
+              </>
+            ) : (
+              <>&nbsp;</>
+            )}
+          </div>
+        )}
         <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
           {renderCacheType(result.cacheType)}
         </div>
@@ -329,7 +353,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
-    const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
     return (
       <div className="cache-result-hovercard">
         {result.targetId && (
@@ -350,11 +373,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <>
             <b>Compressed</b>{" "}
             <span>
-              {format.bytes(result.transferredSizeBytes)}{" "}
-              <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
-                {compressionSavings <= 0 ? "+" : ""}
-                {(-compressionSavings * 100).toPrecision(3)}%
-              </span>
+              {format.bytes(result.transferredSizeBytes)} {renderCompressionSavings(result)}
             </span>
           </>
         ) : null}
@@ -367,6 +386,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
         </>
       </div>
+    );
+  }
+
+  private isCompressedSizeColumnVisible() {
+    return (
+      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== cache.CacheType.AC
     );
   }
 
@@ -475,6 +500,16 @@ function cacheTypeTitle(cacheType: cache.CacheType): string | undefined {
     default:
       return undefined;
   }
+}
+
+function renderCompressionSavings(result: cache.ScoreCard.IResult) {
+  const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
+  return (
+    <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
+      {compressionSavings <= 0 ? "+" : ""}
+      {(-compressionSavings * 100).toPrecision(3)}%
+    </span>
+  );
 }
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
