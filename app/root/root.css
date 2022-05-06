@@ -495,8 +495,33 @@ svg.icon.orange {
   box-shadow: none;
 }
 
-.grid-block:hover .card-hover {
+.history .card-hover {
   display: flex;
+}
+
+.history .card-hover .details {
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+}
+
+.history .card-hover .details.details {
+  margin-top: 4px;
+}
+
+.history .card-hover .details .detail {
+  margin-right: 0;
+  margin-top: 0;
+}
+
+.history .card-hover .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.history .card .details:empty {
+  display: none;
 }
 
 .card-hovered.card-success {
@@ -508,24 +533,19 @@ svg.icon.orange {
 }
 
 .card-hover {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 1;
-  margin: 8px 0;
-  min-width: 360px;
+  margin: 8px;
+  min-width: 400px;
   padding: 16px 24px;
   box-sizing: border-box;
 }
 
-.card.card-hover .title {
-  font-size: 20px;
+.card.card-hover .title.title {
+  font-size: 16px;
   margin-right: 16px;
 }
 
 .card.card-hover .subtitle {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .card > .icon,
@@ -1610,7 +1630,6 @@ code .comment {
   border-radius: 2px;
   flex-shrink: 0;
   box-sizing: border-box;
-  position: relative;
 }
 
 .grid-block-success {
@@ -1633,23 +1652,23 @@ code .comment {
   background-color: #03a9f4;
 }
 
-.grid-block-success.grid-block-hover {
+.grid-block-success:hover {
   background-color: #7cb342;
 }
 
-.grid-block-failure.grid-block-hover {
+.grid-block-failure:hover {
   background-color: #e53935;
 }
 
-.grid-block-neutral.grid-block-hover {
+.grid-block-neutral:hover {
   background-color: #666;
 }
 
-.grid-block-disconnected.grid-block-hover {
+.grid-block-disconnected:hover {
   background-color: #bbb;
 }
 
-.grid-block-in-progress.grid-block-hover {
+.grid-block-in-progress:hover {
   background-color: #039be5;
 }
 

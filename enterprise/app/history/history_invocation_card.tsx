@@ -203,80 +203,82 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
             {roleLabel && <div className={`role-badge ${this.props.invocation.role}`}>{roleLabel}</div>}
             <div className="subtitle">{format.formatTimestampUsec(this.props.invocation.createdAtUsec)}</div>
           </div>
-          {!this.props.hover && (
-            <div className="details">
+          <div className="details">
+            {!this.props.hover && (
               <div className="detail">
                 {this.renderStatusIcon()}
                 {this.getStatusLabel()}
               </div>
+            )}
+            {!this.props.hover && (
               <div className="detail">
                 <Clock className="icon" />
                 {this.getDuration()}
               </div>
-              {this.props.invocation.user && (
-                <div
-                  className="detail clickable"
-                  onClick={(e) => {
-                    this.handleUserClicked(e, this.props.invocation);
-                  }}>
-                  <User className="icon" />
-                  {this.props.invocation.user}
-                </div>
-              )}
-              {this.props.invocation.host && (
-                <div
-                  className="detail clickable"
-                  onClick={(e) => {
-                    this.handleHostClicked(e, this.props.invocation);
-                  }}>
-                  <HardDrive className="icon" />
-                  {this.props.invocation.host}
-                </div>
-              )}
-              {this.props.invocation.command && (
-                <div className="detail">
-                  <Wrench className="icon" />
-                  {this.props.invocation.command}
-                </div>
-              )}
-              {this.props.invocation.pattern.length > 0 && (
-                <div className="detail">
-                  <LayoutGrid className="icon" />
-                  {format.truncateList(this.props.invocation.pattern)}
-                </div>
-              )}
-              {this.props.invocation.repoUrl && (
-                <div
-                  className="detail clickable"
-                  onClick={(e) => {
-                    this.handleRepoClicked(e, this.props.invocation);
-                  }}>
-                  <Github className="icon" />
-                  {format.formatGitUrl(this.props.invocation.repoUrl)}
-                </div>
-              )}
-              {this.props.invocation.branchName && (
-                <div
-                  className="detail clickable"
-                  onClick={(e) => {
-                    this.handleBranchClicked(e, this.props.invocation);
-                  }}>
-                  <GitBranch className="icon" />
-                  {this.props.invocation.branchName}
-                </div>
-              )}
-              {this.props.invocation.commitSha && (
-                <div
-                  className="detail clickable"
-                  onClick={(e) => {
-                    this.handleCommitClicked(e, this.props.invocation);
-                  }}>
-                  <GitCommit className="icon" />
-                  {format.formatCommitHash(this.props.invocation.commitSha)}
-                </div>
-              )}
-            </div>
-          )}
+            )}
+            {!this.props.hover && this.props.invocation.user && (
+              <div
+                className="detail clickable"
+                onClick={(e) => {
+                  this.handleUserClicked(e, this.props.invocation);
+                }}>
+                <User className="icon" />
+                {this.props.invocation.user}
+              </div>
+            )}
+            {!this.props.hover && this.props.invocation.host && (
+              <div
+                className="detail clickable"
+                onClick={(e) => {
+                  this.handleHostClicked(e, this.props.invocation);
+                }}>
+                <HardDrive className="icon" />
+                {this.props.invocation.host}
+              </div>
+            )}
+            {!this.props.hover && this.props.invocation.command && (
+              <div className="detail">
+                <Wrench className="icon" />
+                {this.props.invocation.command}
+              </div>
+            )}
+            {!this.props.hover && this.props.invocation.pattern.length > 0 && (
+              <div className="detail">
+                <LayoutGrid className="icon" />
+                {format.truncateList(this.props.invocation.pattern)}
+              </div>
+            )}
+            {this.props.invocation.repoUrl && (
+              <div
+                className="detail clickable"
+                onClick={(e) => {
+                  this.handleRepoClicked(e, this.props.invocation);
+                }}>
+                <Github className="icon" />
+                {format.formatGitUrl(this.props.invocation.repoUrl)}
+              </div>
+            )}
+            {this.props.invocation.branchName && (
+              <div
+                className="detail clickable"
+                onClick={(e) => {
+                  this.handleBranchClicked(e, this.props.invocation);
+                }}>
+                <GitBranch className="icon" />
+                {this.props.invocation.branchName}
+              </div>
+            )}
+            {!this.props.hover && this.props.invocation.commitSha && (
+              <div
+                className="detail clickable"
+                onClick={(e) => {
+                  this.handleCommitClicked(e, this.props.invocation);
+                }}>
+                <GitCommit className="icon" />
+                {format.formatCommitHash(this.props.invocation.commitSha)}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
