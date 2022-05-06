@@ -132,6 +132,12 @@
   font-size: inherit;
 }
 
+.cache-requests-card .column-headers > div {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .cache-requests-card .row.action-label {
   gap: 4px;
   overflow: hidden;
@@ -163,7 +169,7 @@
   align-items: baseline;
   width: 100%;
   box-sizing: border-box;
-  padding-left: 1px;
+  background: #eee;
 }
 
 .cache-requests-card .group-title > * {
@@ -178,12 +184,19 @@
   font-size: 14px;
 }
 
-.cache-requests-card .results-list {
-  display: flex;
-  width: 100%;
-
+.cache-requests-card .results-table {
   border: 1px solid #eee;
   border-radius: 4px;
+}
+
+.cache-requests-card .column-headers {
+  border-bottom: 1px solid #eee;
+}
+
+.cache-requests-card .results-list,
+.cache-requests-card .column-headers {
+  display: flex;
+  width: 100%;
 }
 
 .cache-requests-card .results-list > :nth-child(2n + 1) {
@@ -200,12 +213,17 @@
   gap: 0;
 }
 
-.cache-requests-card .results-list > .row > div {
+.cache-requests-card .results-list > .row > div,
+.cache-requests-card .row.column-headers > div {
   padding: 4px;
 }
 
-.cache-requests-card .results-list .row > div:not(:first-child) {
+.cache-requests-card :is(.results-list .row, .column-headers.row) > div:not(:first-child) {
   border-left: 1px solid #eee;
+}
+
+.cache-requests-card .digest-column {
+  width: 168px;
 }
 
 .cache-requests-card .digest-component-size {
@@ -213,16 +231,16 @@
 }
 
 .cache-requests-card .compressed-size-column {
-  width: 138px;
+  width: 88px;
   text-align: right;
 }
 
 .cache-requests-card .cache-type-column {
-  width: 32px;
+  width: 42px;
 }
 
 .cache-requests-card .duration-column {
-  width: 52px;
+  width: 60px;
   text-align: right;
 }
 
@@ -236,6 +254,12 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.cache-requests-card.group-by-target .name-column {
+  /* When showing only action mnemonic, make the name column a bit smaller */
+  width: 20%;
+  max-width: 220px;
 }
 
 .cache-requests-card .column-with-icon {
@@ -267,25 +291,22 @@
   stroke: #4caf50;
 }
 
-.cache-requests-card .waterfall-column {
+.cache-requests-card .results-list .waterfall-column {
   display: flex;
   align-items: center;
   align-self: stretch;
   flex-grow: 1;
   --min-bar-width: 2px;
+  padding-left: 0;
+  /* prevent bars from rendering slightly outside the table */
+  padding-right: var(--min-bar-width);
+  position: relative;
 }
 
 @media (max-width: 1300px) {
   .cache-requests-card .waterfall-column {
     display: none;
   }
-}
-
-.cache-requests-card div.waterfall-column.waterfall-column {
-  padding-left: 0;
-  /* prevent bars from rendering slightly outside the table */
-  padding-right: var(--min-bar-width);
-  position: relative;
 }
 
 .cache-requests-card .waterfall-bar {
