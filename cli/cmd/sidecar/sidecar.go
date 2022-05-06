@@ -205,12 +205,7 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 }
 
 func main() {
-	// Can remove all this configurator stuff once all flags the sidecar uses are
-	// defined outside the configurator.
 	flag.Parse()
-	if err := config.PopulateFlagsFromData([]byte{}); err != nil {
-		log.Fatalf("Error initializing Configurator: %s", err.Error())
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
