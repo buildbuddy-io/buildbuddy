@@ -275,9 +275,9 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
-// IgnoreFlag ignores the flag with this name when generating YAML and when
+// IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
-func IgnoreFlag(name string) {
+func IgnoreFlagForYAML(name string) {
 	ignoreSet[name] = struct{}{}
 }
 
