@@ -21,12 +21,23 @@ message CacheStats {
   int64 cas_cache_misses = 5;
   int64 cas_cache_uploads = 6;
 
-  // Do not use these numbers to compute throughput, they are the sum total of
-  // many concurrent uploads.
+  // NOTE: Do not use size / time fields to compute throughput; use the
+  // throughput fields instead which are intended to be more accurate.
+
+  // Sum of digest sizes for all cache download requests.
   int64 total_download_size_bytes = 7;
+
+  // Sum of digest sizes for all cache upload requests.
   int64 total_upload_size_bytes = 8;
+
+  //  Sum of payload sizes (compressed, if applicable) for all cache download
+  // requests.
   int64 total_download_transferred_size_bytes = 14;
+
+  // Sum of payload sizes (compressed, if applicable) for all cache upload
+  // requests.
   int64 total_upload_transferred_size_bytes = 15;
+
   int64 total_download_usec = 9;
   int64 total_upload_usec = 10;
 
