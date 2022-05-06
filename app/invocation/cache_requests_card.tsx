@@ -15,6 +15,7 @@ import { FilterInput } from "../components/filter_input/filter_input";
 import * as format from "../format/format";
 import * as proto from "../util/proto";
 import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
+import { BuildBuddyError } from "../util/errors";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -27,9 +28,13 @@ interface State {
   loading: boolean;
   results: cache.ScoreCard.IResult[];
   nextPageToken: string;
+  didInitialFetch: boolean;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
+
+/** How long to wait before retrying the initial fetch. */
+const RETRY_FETCH_DELAY_MS = 1000;
 
 /**
  * Represents a labeled collection of cache request filters.
@@ -82,6 +87,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     loading: true,
     results: [],
     nextPageToken: "",
+    didInitialFetch: false,
   };
 
   constructor(props: CacheRequestsCardProps) {
@@ -119,6 +125,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
     if (this.getSearch()) filterFields.push("search");
 
+    const isInitialFetch = !this.state.didInitialFetch;
+
     rpc_service.service
       .getCacheScoreCard({
         invocationId: this.props.model.getId(),
@@ -140,8 +148,27 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           nextPageToken: response.nextPageToken,
         });
       })
-      .catch((e: any) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .catch((e: any) => this.handleFetchError(e, isInitialFetch))
+      .finally(() => this.setState({ loading: false, didInitialFetch: true }));
+  }
+
+  private handleFetchError(e: any, isInitialFetch: boolean) {
+    const error = BuildBuddyError.parse(e);
+
+    // Retry NotFound errors on initial page load up to once, since stats may
+    // still be getting finalized. If that still fails, just log to the console
+    // since this is non-critical.
+    if (error.code === "NotFound") {
+      console.warn(e);
+      if (isInitialFetch) {
+        setTimeout(() => {
+          this.fetchResults();
+        }, RETRY_FETCH_DELAY_MS);
+      }
+      return;
+    }
+
+    error_service.handleError(e);
   }
 
   private getActionUrl(digestHash: string) {
