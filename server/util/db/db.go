@@ -51,7 +51,7 @@ const (
 )
 
 var (
-	dataSource             = flag.String("database.data_source", "", "The SQL database to connect to, specified as a connection string.")
+	dataSource             = flag.String("database.data_source", "sqlite3:///tmp/buildbuddy.db", "The SQL database to connect to, specified as a connection string.")
 	readReplica            = flag.String("database.read_replica", "", "A secondary, read-only SQL database to connect to, specified as a connection string.")
 	statsPollInterval      = flag.Duration("database.stats_poll_interval", 5*time.Second, "How often to poll the DB client for connection stats (default: '5s').")
 	maxOpenConns           = flag.Int("database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")

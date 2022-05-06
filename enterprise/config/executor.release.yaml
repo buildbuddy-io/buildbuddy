@@ -2,5 +2,3 @@ executor:
   app_target: "grpc://localhost:1985"
   root_directory: "/buildbuddy/remotebuilds/"
   local_cache_directory: "/buildbuddy/filecache"
-  local_cache_size_bytes: 1000000000 # 1GB
-

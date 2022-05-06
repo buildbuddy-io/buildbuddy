@@ -66,7 +66,7 @@ var (
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
 	dockerDevices           []container.DockerDeviceMapping
 	dockerVolumes           = flagutil.StringSlice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
-	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
+	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", true, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
 	maxRunnerCount          = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")

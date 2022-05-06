@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 )
 
-var buildBuddyURL = flagutil.URLString("app.build_buddy_url", "", "The external URL where your BuildBuddy instance can be found.")
+var buildBuddyURL = flagutil.URLString("app.build_buddy_url", "http://localhost:8080", "The external URL where your BuildBuddy instance can be found.")
 
 func WithPath(path string) *url.URL {
 	u, err := url.Parse(*buildBuddyURL)

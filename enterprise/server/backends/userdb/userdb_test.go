@@ -110,9 +110,10 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 }
 
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
-	env := newTestEnv(t)
+	flags.Set(t, "app.add_user_to_domain_group", false)
 	flags.Set(t, "app.create_group_per_user", false)
 	flags.Set(t, "app.no_default_user_group", false)
+	env := newTestEnv(t)
 	udb := env.GetUserDB()
 	ctx := context.Background()
 
