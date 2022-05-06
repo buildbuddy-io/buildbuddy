@@ -151,12 +151,12 @@ func main() {
 	rootContext := context.Background()
 	version.Print()
 
-	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
-	if err != nil {
+	flag.Parse()
+	if err := config.PopulateFlagsFromFile(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	realEnv := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	realEnv := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
 	if err := tracing.Configure(realEnv); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
 	}
@@ -180,7 +180,7 @@ func main() {
 	if err := redis_metrics_collector.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err = usage.RegisterTracker(realEnv); err != nil {
+	if err := usage.RegisterTracker(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -1,24 +1,19 @@
 package config
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"gopkg.in/yaml.v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 var (
-	configFile = flag.String("config_file", "", "The path to a buildbuddy config file")
+	configFile = flag.String("config_file", "/config.yaml", "The path to a buildbuddy config file")
 )
 
 // When adding new storage fields, always be explicit about their yaml field
@@ -363,176 +358,27 @@ type OrgConfig struct {
 	Domain string `yaml:"domain" usage:"Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account."`
 }
 
-var (
-	sharedConfigurator = &Configurator{gc: &generalConfig{}}
-
-	// Contains the string slices originally defined by the flags
-	originalSliceLens = make(map[string]int)
-	defineFlagsOnce   sync.Once
-
-	// Set of the flags that were explicitly set on the command line
-	originalSetFlags = make(map[string]struct{})
-)
-
-func RegisterAndParseFlags() {
-	defineFlagsOnce.Do(func() {
-		defineFlagsForMembers([]string{}, reflect.ValueOf(&generalConfig{}).Elem(), flag.CommandLine)
-		flag.Parse()
-		flag.Visit(func(flg *flag.Flag) {
-			originalSetFlags[flg.Name] = struct{}{}
-		})
-	})
+func PopulateFlagsFromData(data []byte) error {
+	return flagutil.PopulateFlagsFromData(data)
 }
 
-// FOR TESTING PURPOSES ONLY!!!
-func TestOnlySetFlag(flagName string, set bool) bool {
-	_, wasSet := originalSetFlags[flagName]
-	if set {
-		originalSetFlags[flagName] = struct{}{}
-	} else {
-		delete(originalSetFlags, flagName)
-	}
-	return wasSet
-}
+func PopulateFlagsFromFile() error {
+	log.Infof("Reading buildbuddy config from '%s'", *configFile)
 
-// If configSet is nil, defines all global flags present in the config that have
-// not been elsewhere defined. If configSet isn't nil, defines flags in the
-// provided FlagSet for the config.
-func defineFlagsForMembers(parentStructNames []string, T reflect.Value, flagSet *flag.FlagSet) {
-	typeOfT := T.Type()
-	for i := 0; i < T.NumField(); i++ {
-		f := T.Field(i)
-		fieldName := typeOfT.Field(i).Tag.Get("yaml")
-		fqFieldName := strings.ToLower(strings.Join(append(parentStructNames, fieldName), "."))
-		docString := typeOfT.Field(i).Tag.Get("usage")
+	_, err := os.Stat(*configFile)
 
-		// Only define missing flags
-		if flagSet.Lookup(fqFieldName) == nil {
-			switch f.Type().Kind() {
-			case reflect.Ptr:
-				log.Fatal("The config should not contain pointers!")
-			case reflect.Struct:
-				defineFlagsForMembers(append(parentStructNames, fieldName), f, flagSet)
-			case reflect.Bool:
-				flagSet.BoolVar(f.Addr().Convert(reflect.TypeOf((*bool)(nil))).Interface().(*bool), fqFieldName, f.Bool(), docString)
-			case reflect.String:
-				flagSet.StringVar(f.Addr().Convert(reflect.TypeOf((*string)(nil))).Interface().(*string), fqFieldName, f.String(), docString)
-			case reflect.Int:
-				flagSet.IntVar(f.Addr().Convert(reflect.TypeOf((*int)(nil))).Interface().(*int), fqFieldName, int(f.Int()), docString)
-			case reflect.Int64:
-				if f.Addr().Type() == reflect.TypeOf((*time.Duration)(nil)) {
-					flagSet.DurationVar(f.Addr().Interface().(*time.Duration), fqFieldName, time.Duration(f.Int()), docString)
-					continue
-				}
-				flagSet.Int64Var(f.Addr().Convert(reflect.TypeOf((*int64)(nil))).Interface().(*int64), fqFieldName, int64(f.Int()), docString)
-			case reflect.Float64:
-				flagSet.Float64Var(f.Addr().Convert(reflect.TypeOf((*float64)(nil))).Interface().(*float64), fqFieldName, f.Float(), docString)
-			case reflect.Slice:
-				if sf, err := flagutil.NewSliceFlag(f.Addr().Interface()); err == nil {
-					flagSet.Var(sf, fqFieldName, docString)
-					continue
-				}
-				fallthrough
-			default:
-				log.Warningf("Skipping flag: --%s, kind: %s", fqFieldName, f.Type().Kind())
-			}
-		}
-	}
-}
-
-func populateYamlPresenceMap(yamlMap map[interface{}]interface{}) map[string]struct{} {
-	var check func(key []string, value interface{})
-	presenceMap := make(map[string]struct{})
-	check = func(key []string, value interface{}) {
-		if m, ok := value.(map[interface{}]interface{}); ok {
-			for k, v := range m {
-				if newKey, ok := k.(string); ok {
-					check(append(key, strings.ToLower(newKey)), v)
-					continue
-				}
-				log.Warningf("Non-string key encountered in yaml map in field: %s", key)
-			}
-			return
-		}
-		presenceMap[strings.Join(key, ".")] = struct{}{}
-	}
-	check([]string{}, yamlMap)
-	return presenceMap
-}
-
-type Configurator struct {
-	gc          *generalConfig
-	presenceMap map[string]struct{}
-	reconciled  bool
-}
-
-func NewConfiguratorFromData(data []byte) (*Configurator, error) {
-	// expand environment variables
-	expandedData := []byte(os.ExpandEnv(string(data)))
-
-	// Unmarshal in strict mode once and warn about invalid fields.
-	var syntaxValidationConfig generalConfig
-	if err := yaml.UnmarshalStrict([]byte(expandedData), &syntaxValidationConfig); err != nil {
-		log.Warningf("Unknown fields in config: %s", err)
-	}
-
-	gc := &generalConfig{}
-	if err := yaml.Unmarshal([]byte(expandedData), gc); err != nil {
-		return nil, fmt.Errorf("Error parsing config file: %s", err)
-	}
-
-	generalConfigMap := make(map[interface{}]interface{})
-	if err := yaml.Unmarshal([]byte(expandedData), &generalConfigMap); err != nil {
-		return nil, fmt.Errorf("Error parsing config file: %s", err)
-	}
-
-	// The shared config caches the last config parsed from a file so that a call to
-	// `readConfig` with an empty `configFile` can return the cached config.
-	sharedConfigurator = &Configurator{gc, populateYamlPresenceMap(generalConfigMap), false}
-
-	return sharedConfigurator, nil
-}
-
-func NewConfigurator(configFilePath string) (*Configurator, error) {
-	if configFilePath == "" {
-		return sharedConfigurator, nil
-	}
-	log.Infof("Reading buildbuddy config from '%s'", configFilePath)
-
-	_, err := os.Stat(configFilePath)
-
-	// If the file does not exist then we are SOL.
+	// If the file does not exist then skip it.
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("Config file %s not found", configFilePath)
+		log.Warningf("No config file found at %s.", *configFile)
+		return nil
 	}
 
-	fileBytes, err := os.ReadFile(configFilePath)
+	fileBytes, err := os.ReadFile(*configFile)
 	if err != nil {
-		return nil, fmt.Errorf("Error reading config file: %s", err)
+		return fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	return NewConfiguratorFromData(fileBytes)
-}
-
-func ParseAndReconcileFlagsAndConfig(configFilePath string) (*Configurator, error) {
-	RegisterAndParseFlags()
-	if configFilePath == "" {
-		configFilePath = *configFile
-	}
-	if configFilePath == "" {
-		_, err := os.Stat("/config.yaml")
-		if err == nil {
-			configFilePath = "/config.yaml"
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, status.UnknownErrorf("could not load config file: %s", err)
-		}
-	}
-	configurator, err := NewConfigurator(configFilePath)
-	if err != nil {
-		return nil, err
-	}
-	configurator.ReconcileFlagsAndConfig()
-	return configurator, nil
+	return PopulateFlagsFromData(fileBytes)
 }
 
 type RedisClientConfig struct {
@@ -545,65 +391,4 @@ func (cc *RedisClientConfig) String() string {
 		return "sharded across " + strings.Join(cc.ShardedConfig.Shards, ", ")
 	}
 	return cc.SimpleTarget
-}
-
-// After calling this function, the generalConfig in the Configurator and the
-// flags in the default flag set (flag.Commandline) with a corresponding config
-// value will be consistent.
-func (c *Configurator) ReconcileFlagsAndConfig() {
-	c.GenerateFlagSet().VisitAll(func(flg *flag.Flag) {
-		if flag.Lookup(flg.Name) == nil {
-			// If a flag exists in the config but not in the flags, skip it. This can
-			// easily happen when the same config is used with different buildbuddy
-			// binaries (e. g. the free server and the enterprise server)
-			return
-		}
-		if configSlice, ok := flg.Value.(flagutil.SliceFlag); ok {
-			if flagSlice, ok := flag.Lookup(flg.Name).Value.(flagutil.SliceFlag); ok {
-				if originalSliceLen, ok := originalSliceLens[flg.Name]; ok {
-					// reset flagSlice if it has been modified
-					// in this case, flagSliceLen is the sum of the length of the slices
-					// defined in the config and those defined on the command line, and
-					// the config slice comes first.
-					flagSlice.SetTo(flagSlice.Slice(flagSlice.Len()-originalSliceLen, flagSlice.Len()))
-					if c.reconciled {
-						// reset configSlice if it has been modified
-						configSlice.SetTo(configSlice.Slice(0, configSlice.Len()-originalSliceLen))
-					}
-				} else {
-					originalSliceLens[flg.Name] = flagSlice.Len()
-				}
-				// Slices from flags are appended to the values in the config, as
-				// opposed to one overriding the other, so no conflict check is needed.
-				concatSlice := configSlice.AppendSlice(flagSlice.UnderlyingSlice())
-				configSlice.SetTo(concatSlice)
-				flagSlice.SetTo(concatSlice)
-				return
-			}
-			log.Warningf("yaml defines %s as %T, but flags do not.", flg.Name, configSlice.UnderlyingSlice())
-		}
-		_, setInFlags := originalSetFlags[flg.Name]
-		_, presentInYaml := c.presenceMap[flg.Name]
-		if !setInFlags {
-			// reset flag to default value if it was not initially set
-			flag.Set(flg.Name, flag.Lookup(flg.Name).DefValue)
-		}
-		// If the flag was set on the command line or there is no value specified in
-		// the config, we use the value defined by the flags and update the config
-		// with that value. Otherwise (which is to say, if there was no flag
-		// explicitly set on the command line and there is a value present in the
-		// config), use the config value and update the flags with that value.
-		if setInFlags || !presentInYaml {
-			flg.Value.Set(flag.Lookup(flg.Name).Value.String())
-			return
-		}
-		flag.Set(flg.Name, flg.Value.String())
-	})
-	c.reconciled = true
-}
-
-func (c *Configurator) GenerateFlagSet() *flag.FlagSet {
-	flagSet := flag.NewFlagSet("", flag.ContinueOnError)
-	defineFlagsForMembers([]string{}, reflect.ValueOf(c.gc).Elem(), flagSet)
-	return flagSet
 }

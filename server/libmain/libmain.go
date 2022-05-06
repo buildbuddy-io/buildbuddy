@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -128,12 +127,12 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 // the environments used by the open-core version and the enterprise version are
 // not substantially different enough yet to warrant the extra complexity of
 // always updating both main files.
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
-	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+	realEnv := real_environment.NewRealEnv(healthChecker)
 	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 	configureFilesystemsOrDie(realEnv)

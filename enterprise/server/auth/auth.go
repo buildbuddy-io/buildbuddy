@@ -358,7 +358,7 @@ type apiKeyGroupCache struct {
 	mu  sync.RWMutex
 }
 
-func newAPIKeyGroupCache(configurator *config.Configurator) (*apiKeyGroupCache, error) {
+func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 	config := &lru.Config{
 		MaxSize: apiKeyGroupCacheSize,
 		SizeFn:  func(v interface{}) int64 { return 1 },
@@ -481,7 +481,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 	// Initialize API Key -> Group cache unless it's disabled by config.
 	var akgCache *apiKeyGroupCache
 	if *apiKeyGroupCacheTTL != time.Duration(0) {
-		akgCache, err = newAPIKeyGroupCache(env.GetConfigurator())
+		akgCache, err = newAPIKeyGroupCache()
 		if err != nil {
 			return nil, err
 		}

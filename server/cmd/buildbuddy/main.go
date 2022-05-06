@@ -23,12 +23,13 @@ var (
 
 func main() {
 	version.Print()
-	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
-	if err != nil {
+
+	flag.Parse()
+	if err := config.PopulateFlagsFromFile(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := libmain.GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
 
 	telemetryClient := telemetry.NewTelemetryClient(env)
 	telemetryClient.Start()

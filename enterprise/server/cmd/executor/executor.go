@@ -108,8 +108,8 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
 }
 
-func GetConfiguredEnvironmentOrDie(configurator *config.Configurator, healthChecker *healthcheck.HealthChecker) environment.Env {
-	realEnv := real_environment.NewRealEnv(configurator, healthChecker)
+func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) environment.Env {
+	realEnv := real_environment.NewRealEnv(healthChecker)
 
 	if err := resources.Configure(); err != nil {
 		log.Fatal(status.Message(err))
@@ -196,8 +196,8 @@ func main() {
 
 	rootContext := context.Background()
 
-	configurator, err := config.ParseAndReconcileFlagsAndConfig("")
-	if err != nil {
+	flag.Parse()
+	if err := config.PopulateFlagsFromFile(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
@@ -209,7 +209,7 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	localListener = bufconn.Listen(1024 * 1024 * 10 /* 10MB buffer? Seems ok. */)
 
-	env := GetConfiguredEnvironmentOrDie(configurator, healthChecker)
+	env := GetConfiguredEnvironmentOrDie(healthChecker)
 
 	if err := tracing.Configure(env); err != nil {
 		log.Fatalf("Could not configure tracing: %s", err)
