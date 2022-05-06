@@ -718,9 +718,8 @@ func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 }
 
 func TestRedisAvailabilityMonitoring(t *testing.T) {
-	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", "true")
-
 	rbe := rbetest.NewRBETestEnv(t)
+	flags.Set(t, "remote_execution.enable_redis_availability_monitoring", true)
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutors(t, 5)

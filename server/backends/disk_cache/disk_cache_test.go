@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -32,7 +31,6 @@ var (
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
 	return te

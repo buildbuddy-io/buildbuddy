@@ -1,25 +1,24 @@
 package url_test
 
 import (
-	"fmt"
+	"flag"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
+func init() {
+	flag.Parse()
+}
+
 func envWithAppURL(t *testing.T, appUrl string) environment.Env {
-	config.RegisterAndParseFlags()
-	c, err := config.NewConfiguratorFromData([]byte(fmt.Sprintf("app:\n  build_buddy_url: %s\n", appUrl)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.ReconcileFlagsAndConfig()
+	flags.Set(t, "app.build_buddy_url", appUrl)
 	healthChecker := healthcheck.NewHealthChecker("test")
-	return real_environment.NewRealEnv(c, healthChecker)
+	return real_environment.NewRealEnv(nil, healthChecker)
 }
 
 func TestValidateRedirect(t *testing.T) {

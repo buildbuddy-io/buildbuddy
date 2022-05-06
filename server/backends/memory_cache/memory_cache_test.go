@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -29,7 +28,6 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 }
 
 func getAnonContext(t *testing.T) context.Context {
-	flags.Set(t, "auth.enable_anonymous_usage", "true")
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	if err != nil {

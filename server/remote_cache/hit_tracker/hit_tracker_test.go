@@ -19,8 +19,8 @@ import (
 )
 
 func TestHitTracker_RecordsDetailedStats(t *testing.T) {
-	flags.Set(t, "cache.detailed_stats_enabled", "true")
 	env := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	env.SetMetricsCollector(mc)

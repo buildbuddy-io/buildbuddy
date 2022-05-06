@@ -3,7 +3,6 @@ package build_event_handler_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -500,7 +499,6 @@ func TestHandleEventWithUsageTracking(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ut := &FakeUsageTracker{}
 	te.SetUsageTracker(ut)
-	flags.Set(t, "app.usage_tracking_enabled", "true")
 	auth := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
 	ctx := context.Background()
@@ -714,7 +712,7 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
 	chunkSize := 128
-	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
+	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -788,7 +786,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
 	chunkSize := 128
-	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
+	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -895,7 +893,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
 	chunkSize := 128
-	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
+	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
@@ -1073,7 +1071,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
 	chunkSize := 128
-	flags.Set(t, "storage.chunk_file_size_bytes", strconv.Itoa(chunkSize))
+	flags.Set(t, "storage.chunk_file_size_bytes", chunkSize)
 
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)

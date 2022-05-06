@@ -5,7 +5,6 @@ package rbetest
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -36,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -141,10 +139,6 @@ func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorag
 
 func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
-}
-
-func (r *Env) GetConfigurator() *config.Configurator {
-	return r.testEnv.GetConfigurator()
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
@@ -734,9 +728,8 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	// only after all the executors have shutdown.
 	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
 	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
-	flags.Set(t, "executor.local_cache_directory", localCacheDirectory)
 
-	fc, err := filecache.NewFileCache(localCacheDirectory, reflect.ValueOf(flag.Lookup("executor.local_cache_size_bytes").Value).Convert(reflect.TypeOf((*int64)(nil))).Elem().Int())
+	fc, err := filecache.NewFileCache(localCacheDirectory, 1_000_000_000 /* Default cache size value */)
 	if err != nil {
 		assert.FailNow(r.t, "create file cache", err)
 	}

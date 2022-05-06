@@ -10,7 +10,6 @@ go_library(
         "//server/backends/blobstore",
         "//server/backends/invocationdb",
         "//server/backends/memory_cache",
-        "//server/config",
         "//server/nullauth",
         "//server/real_environment",
         "//server/rpc/filters",

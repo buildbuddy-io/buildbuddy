@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
@@ -91,11 +91,4 @@ container_image(
     base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
     visibility = ["//visibility:public"],
-)
-
-go_test(
-    name = "executor_test",
-    srcs = ["main_test.go"],
-    embed = [":executor_lib"],
-    deps = ["//server/util/testing/flags"],
 )

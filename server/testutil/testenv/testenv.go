@@ -1,20 +1,16 @@
 package testenv
 
 import (
-	"bytes"
 	"context"
 	"flag"
-	"io/ioutil"
+	"fmt"
 	"net"
-	"path/filepath"
 	"sync"
 	"testing"
-	"text/template"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -40,23 +36,17 @@ type ConfigTemplateParams struct {
 	TestRootDir string
 }
 
-const testConfigFileTemplate string = `
+const testConfigData string = `
 app:
   build_buddy_url: "http://localhost:8080"
 database:
   data_source: "sqlite3://:memory:"
 storage:
   enable_chunked_event_logs: true
-  disk:
-    root_directory: "{{.TestRootDir}}/storage"
 cache:
   max_size_bytes: 1000000000  # 1 GB
-  disk:
-    root_directory: "{{.TestRootDir}}/cache"
 executor:
-  root_directory: "{{.TestRootDir}}/remote_execution/builds"
   app_target: "grpc://localhost:1985"
-  local_cache_directory: "{{.TestRootDir}}/remote_execution/cache"
   local_cache_size_bytes: 1000000000  # 1GB
   # Guarantee that we can fit at least one workflow task.
   # If we don't actually have the memory, we'll OOM, which is OK
@@ -112,52 +102,31 @@ func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 	return srv, runFunc
 }
 
-func writeTmpConfigFile(testRootDir string) (string, error) {
-	tmpl, err := template.New("config").Parse(testConfigFileTemplate)
-	if err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, &ConfigTemplateParams{TestRootDir: testRootDir}); err != nil {
-		return "", err
-	}
-	configPath := filepath.Join(testRootDir, "config.yaml")
-	if err := ioutil.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
-		return "", err
-	}
-	return configPath, nil
-}
-
-// All instances of the configurator use the same config struct instance in order to support flag overrides.
-// We instantiate a single configurator per test to avoid triggering the race detector.
-var currentConfigurator *config.Configurator
-
 func GetTestEnv(t testing.TB) *TestEnv {
-
 	configureLoggerOnce.Do(func() {
 		*log.LogLevel = "debug"
 		*log.IncludeShortFileName = true
 		log.Configure()
 	})
 
+	flags.PopulateFlagsFromData(t, []byte(testConfigData))
 	testRootDir := testfs.MakeTempDir(t)
-	tmpConfigFile, err := writeTmpConfigFile(testRootDir)
-	if err != nil {
-		t.Fatal(err)
+	if flag.Lookup("storage.disk.root_directory") != nil {
+		flags.Set(t, "storage.disk.root_directory", fmt.Sprintf("%s/storage", testRootDir))
 	}
-	if currentConfigurator == nil {
-		configurator, err := config.ParseAndReconcileFlagsAndConfig(tmpConfigFile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		currentConfigurator = configurator
-		t.Cleanup(func() {
-			currentConfigurator = nil
-		})
+	if flag.Lookup("cache.disk.root_directory") != nil {
+		flags.Set(t, "cache.disk.root_directory", fmt.Sprintf("%s/cache", testRootDir))
 	}
+	if flag.Lookup("executor.root_directory") != nil {
+		flags.Set(t, "executor.root_directory", fmt.Sprintf("%s/remote_execution/builds", testRootDir))
+	}
+	if flag.Lookup("executor.local_cache_directory") != nil {
+		flags.Set(t, "executor.local_cache_directory", fmt.Sprintf("%s/remote_execution/cache", testRootDir))
+	}
+
 	healthChecker := healthcheck.NewHealthChecker("test")
 	te := &TestEnv{
-		RealEnv: real_environment.NewRealEnv(currentConfigurator, healthChecker),
+		RealEnv: real_environment.NewRealEnv(nil, healthChecker),
 	}
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
@@ -168,7 +137,6 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	if *useMySQL {
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t))
 	}
-	currentConfigurator.ReconcileFlagsAndConfig()
 	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
 	if err != nil {
 		t.Fatal(err)

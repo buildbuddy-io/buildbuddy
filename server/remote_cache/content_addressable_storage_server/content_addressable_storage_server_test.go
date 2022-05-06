@@ -89,10 +89,10 @@ func TestBatchUpdateBlobs(t *testing.T) {
 }
 
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", "true")
-	flags.Set(t, "cache.detailed_stats_enabled", "true")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
 	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
 	require.NoError(t, err)
 	te.SetMetricsCollector(mc)
@@ -188,9 +188,9 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 }
 
 func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", "false")
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.zstd_transcoding_enabled", false)
 	clientConn := runCASServer(ctx, te, t)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
 
