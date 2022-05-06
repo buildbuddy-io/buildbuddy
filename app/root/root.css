@@ -507,7 +507,14 @@ svg.icon.orange {
 }
 
 .history .card-hover .details.details {
-  margin-top: 4px;
+  margin-top: 8px;
+  gap: 4px;
+}
+
+.history .card-hover .role-badge {
+  font-size: 13px;
+  padding: 1px 8px;
+  border-radius: 12px;
 }
 
 .history .card-hover .details .detail {
@@ -855,6 +862,7 @@ code .comment {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
+  gap: 4px 0;
 }
 
 .history .card .title {
