@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	config "github.com/buildbuddy-io/buildbuddy/server/config"
 )
 
 var (
@@ -52,7 +51,7 @@ type PodmanOptions struct {
 	User      string
 	Network   string
 	CapAdd    string
-	Devices   []config.DockerDeviceMapping
+	Devices   []container.DockerDeviceMapping
 	Volumes   []string
 	Runtime   string
 }

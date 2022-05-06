@@ -45,8 +45,8 @@ type Cache struct {
 }
 
 func Register(env environment.Env) error {
-	crcc := redis_client.CacheRedisClientConfig()
-	if crcc == nil {
+	opts := redis_client.CacheRedisClientOpts()
+	if opts == nil {
 		return nil
 	}
 	if _, ok := env.GetCache().(*composable_cache.ComposableCache); ok {
@@ -57,7 +57,7 @@ func Register(env environment.Env) error {
 	if env.GetCache() == nil {
 		return status.FailedPreconditionErrorf("Redis layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
 	}
-	rc, err := redisutil.NewClientFromConfig(crcc, env.GetHealthChecker(), "cache_redis")
+	rc, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "cache_redis")
 	if err != nil {
 		return status.InternalErrorf("Error configuring cache Redis client: %s", err)
 	}

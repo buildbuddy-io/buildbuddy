@@ -26,6 +26,17 @@ const (
 	defaultWaitPollInterval = 1 * time.Millisecond
 )
 
+type Partition struct {
+	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+}
+
+type PartitionMapping struct {
+	GroupID     string `yaml:"group_id" json:"group_id" usage:"The Group ID to which this mapping applies."`
+	Prefix      string `yaml:"prefix" json:"prefix" usage:"The remote instance name prefix used to select this partition."`
+	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
+}
+
 func EnsureDirectoryExists(dir string) error {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return os.MkdirAll(dir, 0755)

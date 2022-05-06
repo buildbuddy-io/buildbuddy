@@ -20,7 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -71,20 +70,7 @@ func Register(env environment.Env) error {
 	if *bucket == "" {
 		return nil
 	}
-	s3Cache, err := NewS3Cache(&config.S3CacheConfig{
-		Region:                   *region,
-		Bucket:                   *bucket,
-		CredentialsProfile:       *credentialsProfile,
-		TTLDays:                  *ttlDays,
-		WebIdentityTokenFilePath: *webIdentityTokenFilePath,
-		RoleARN:                  *roleARN,
-		RoleSessionName:          *roleSessionName,
-		Endpoint:                 *endpoint,
-		StaticCredentialsID:      *staticCredentialsID,
-		StaticCredentialsSecret:  *staticCredentialsSecret,
-		DisableSSL:               *disableSSL,
-		S3ForcePathStyle:         *forcePathStyle,
-	})
+	s3Cache, err := NewS3Cache()
 	if err != nil {
 		status.InternalErrorf("Error configuring S3 cache: %s", err)
 	}
@@ -92,58 +78,58 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewS3Cache(awsConfig *config.S3CacheConfig) (*S3Cache, error) {
+func NewS3Cache() (*S3Cache, error) {
 	ctx := context.Background()
 
 	config := &aws.Config{
-		Region: aws.String(awsConfig.Region),
+		Region: aws.String(*region),
 	}
 	// See https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html#specifying-credentials
-	if awsConfig.CredentialsProfile != "" {
-		config.Credentials = credentials.NewSharedCredentials("", awsConfig.CredentialsProfile)
+	if *credentialsProfile != "" {
+		config.Credentials = credentials.NewSharedCredentials("", *credentialsProfile)
 	}
-	if awsConfig.StaticCredentialsID != "" && awsConfig.StaticCredentialsSecret != "" {
-		config.Credentials = credentials.NewStaticCredentials(awsConfig.StaticCredentialsID, awsConfig.StaticCredentialsSecret, awsConfig.StaticCredentialsToken)
+	if *staticCredentialsID != "" && *staticCredentialsSecret != "" {
+		config.Credentials = credentials.NewStaticCredentials(*staticCredentialsID, *staticCredentialsSecret, *staticCredentialsToken)
 	}
-	if awsConfig.Endpoint != "" {
-		config.Endpoint = aws.String(awsConfig.Endpoint)
+	if *endpoint != "" {
+		config.Endpoint = aws.String(*endpoint)
 	}
-	if awsConfig.DisableSSL {
-		config.DisableSSL = aws.Bool(awsConfig.DisableSSL)
+	if *disableSSL {
+		config.DisableSSL = aws.Bool(*disableSSL)
 	}
-	if awsConfig.S3ForcePathStyle {
-		config.S3ForcePathStyle = aws.Bool(awsConfig.S3ForcePathStyle)
+	if *forcePathStyle {
+		config.S3ForcePathStyle = aws.Bool(*forcePathStyle)
 	}
 	sess, err := session.NewSession(config)
 	if err != nil {
 		return nil, err
 	}
 
-	if awsConfig.WebIdentityTokenFilePath != "" {
-		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), awsConfig.RoleARN, awsConfig.RoleSessionName, awsConfig.WebIdentityTokenFilePath))
+	if *webIdentityTokenFilePath != "" {
+		config.Credentials = credentials.NewCredentials(stscreds.NewWebIdentityRoleProvider(sts.New(sess), *roleARN, *roleSessionName, *webIdentityTokenFilePath))
 	}
 
 	// Create S3 service client
 	svc := s3.New(sess)
 	s3c := &S3Cache{
 		s3:         svc,
-		bucket:     aws.String(awsConfig.Bucket),
+		bucket:     aws.String(*bucket),
 		downloader: s3manager.NewDownloader(sess),
 		uploader:   s3manager.NewUploader(sess),
-		ttlInDays:  awsConfig.TTLDays,
+		ttlInDays:  *ttlDays,
 	}
 
 	// S3 access points can't modify or delete buckets
 	// https://github.com/awsdocs/amazon-s3-developer-guide/blob/master/doc_source/access-points.md
 	const s3AccessPointPrefix = "arn:aws:s3"
-	if strings.HasPrefix(awsConfig.Bucket, s3AccessPointPrefix) {
-		log.Printf("Encountered an S3 access point %s...not creating bucket", awsConfig.Bucket)
+	if strings.HasPrefix(*bucket, s3AccessPointPrefix) {
+		log.Printf("Encountered an S3 access point %s...not creating bucket", *bucket)
 	} else {
-		if err := s3c.createBucketIfNotExists(ctx, awsConfig.Bucket); err != nil {
+		if err := s3c.createBucketIfNotExists(ctx, *bucket); err != nil {
 			return nil, err
 		}
-		if awsConfig.TTLDays > 0 {
-			if err := s3c.setBucketTTL(ctx, awsConfig.Bucket, awsConfig.TTLDays); err != nil {
+		if *ttlDays > 0 {
+			if err := s3c.setBucketTTL(ctx, *bucket, *ttlDays); err != nil {
 				log.Printf("Error setting bucket TTL: %s", err)
 			}
 		}

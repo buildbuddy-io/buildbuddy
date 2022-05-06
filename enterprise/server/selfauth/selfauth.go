@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -61,15 +60,17 @@ const (
 415611243927536855210038614935566984835254900497766783308172151277711`
 )
 
-func Provider() *config.OauthProvider {
-	if !*enableSelfAuth {
-		return nil
-	}
-	return &config.OauthProvider{
-		IssuerURL:    build_buddy_url.String(),
-		ClientID:     "buildbuddy",
-		ClientSecret: "secret",
-	}
+const (
+	ClientID     = "buildbuddy"
+	ClientSecret = "secret"
+)
+
+func IssuerURL() string {
+	return build_buddy_url.String()
+}
+
+func Enabled() bool {
+	return *enableSelfAuth
 }
 
 type selfAuth struct {
@@ -95,7 +96,7 @@ type tokenJSON struct {
 }
 
 func Register(env environment.Env) error {
-	if !*enableSelfAuth {
+	if !Enabled() {
 		return nil
 	}
 	oauth, err := NewSelfAuth()

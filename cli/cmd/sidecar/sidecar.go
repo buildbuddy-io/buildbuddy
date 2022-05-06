@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -197,7 +196,7 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 	if *cacheMaxSizeBytes != 0 {
 		maxSizeBytes = *cacheMaxSizeBytes
 	}
-	c, err := disk_cache.NewDiskCache(env, &config.DiskConfig{RootDirectory: *cacheDir}, maxSizeBytes)
+	c, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: *cacheDir}, maxSizeBytes)
 	if err != nil {
 		log.Fatalf("Error configuring cache: %s", err)
 	}

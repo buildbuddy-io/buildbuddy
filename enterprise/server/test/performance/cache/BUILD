@@ -12,7 +12,6 @@ go_test(
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/backends/memory_cache",
-        "//server/config",
         "//server/environment",
         "//server/interfaces",
         "//server/testutil/testauth",

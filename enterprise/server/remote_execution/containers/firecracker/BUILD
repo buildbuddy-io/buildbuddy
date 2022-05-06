@@ -77,7 +77,6 @@ go_test(
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
-        "//server/config",
         "//server/interfaces",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/byte_stream_server",

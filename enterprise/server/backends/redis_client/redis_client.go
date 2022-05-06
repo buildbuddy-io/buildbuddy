@@ -5,7 +5,6 @@ import (
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,99 +33,76 @@ var (
 	remoteExecShardedRedisPassword = flag.String("remote_execution.sharded_redis.password", "", "Redis password")
 )
 
-func defaultRedisClientConfigNoFallback() *config.RedisClientConfig {
-	if len(*defaultRedisShards) > 0 {
-		return &config.RedisClientConfig{
-			ShardedConfig: &config.ShardedRedisConfig{
-				Shards:   *defaultRedisShards,
-				Username: *defaultShardedRedisUsername,
-				Password: *defaultShardedRedisPassword,
-			},
-		}
-	}
-
-	if *defaultRedisTarget != "" {
-		return &config.RedisClientConfig{SimpleTarget: *defaultRedisTarget}
-	}
-	return nil
+type ShardedRedisConfig struct {
+	Shards   []string `yaml:"shards" usage:"Ordered list of Redis shard addresses."`
+	Username string   `yaml:"username" usage:"Redis username"`
+	Password string   `yaml:"password" usage:"Redis password"`
 }
 
-func cacheRedisClientConfigNoFallback() *config.RedisClientConfig {
+func defaultRedisClientOptsNoFallback() *redisutil.Opts {
+	if opts := redisutil.ShardsToOpts(*defaultRedisShards, *defaultShardedRedisUsername, *defaultShardedRedisPassword); opts != nil {
+		return opts
+	}
+	return redisutil.TargetToOpts(*defaultRedisTarget)
+}
+
+func cacheRedisClientOptsNoFallback() *redisutil.Opts {
 	// Prefer the client configs from Redis sub-config, is present.
-	if len(*cacheRedisShards) > 0 {
-		return &config.RedisClientConfig{
-			ShardedConfig: &config.ShardedRedisConfig{
-				Shards:   *cacheRedisShards,
-				Username: *cacheShardedRedisUsername,
-				Password: *cacheShardedRedisPassword,
-			},
-		}
+	if opts := redisutil.ShardsToOpts(*cacheRedisShards, *cacheShardedRedisUsername, *cacheShardedRedisPassword); opts != nil {
+		return opts
 	}
-	if *cacheRedisTarget != "" {
-		return &config.RedisClientConfig{SimpleTarget: *cacheRedisTarget}
+	if opts := redisutil.TargetToOpts(*cacheRedisTarget); opts != nil {
+		return opts
 	}
-
-	if *cacheRedisTargetFallback != "" {
-		return &config.RedisClientConfig{SimpleTarget: *cacheRedisTargetFallback}
-	}
-	return nil
+	return redisutil.TargetToOpts(*cacheRedisTargetFallback)
 }
 
-func remoteExecutionRedisClientConfigNoFallback() *config.RedisClientConfig {
+func remoteExecutionRedisClientOptsNoFallback() *redisutil.Opts {
 	if !remote_execution_config.RemoteExecutionEnabled() {
 		return nil
 	}
-	if len(*remoteExecRedisShards) > 0 {
-		return &config.RedisClientConfig{
-			ShardedConfig: &config.ShardedRedisConfig{
-				Shards:   *remoteExecRedisShards,
-				Username: *remoteExecShardedRedisUsername,
-				Password: *remoteExecShardedRedisPassword,
-			},
-		}
+	if opts := redisutil.ShardsToOpts(*remoteExecRedisShards, *remoteExecShardedRedisUsername, *remoteExecShardedRedisPassword); opts != nil {
+		return opts
 	}
-	if *remoteExecRedisTarget != "" {
-		return &config.RedisClientConfig{SimpleTarget: *remoteExecRedisTarget}
-	}
-	return nil
+	return redisutil.TargetToOpts(*remoteExecRedisTarget)
 }
 
-func DefaultRedisClientConfig() *config.RedisClientConfig {
-	if cfg := defaultRedisClientConfigNoFallback(); cfg != nil {
+func DefaultRedisClientOpts() *redisutil.Opts {
+	if cfg := defaultRedisClientOptsNoFallback(); cfg != nil {
 		return cfg
 	}
 
-	if cfg := cacheRedisClientConfigNoFallback(); cfg != nil {
+	if cfg := cacheRedisClientOptsNoFallback(); cfg != nil {
 		// Fall back to the cache redis client config if default redis target is not specified.
 		return cfg
 	}
 
 	// Otherwise, fall back to the remote exec redis target.
-	return remoteExecutionRedisClientConfigNoFallback()
+	return remoteExecutionRedisClientOptsNoFallback()
 }
 
-func CacheRedisClientConfig() *config.RedisClientConfig {
-	return cacheRedisClientConfigNoFallback()
+func CacheRedisClientOpts() *redisutil.Opts {
+	return cacheRedisClientOptsNoFallback()
 }
 
-func RemoteExecutionRedisClientConfig() *config.RedisClientConfig {
-	if cfg := remoteExecutionRedisClientConfigNoFallback(); cfg != nil {
+func RemoteExecutionRedisClientOpts() *redisutil.Opts {
+	if cfg := remoteExecutionRedisClientOptsNoFallback(); cfg != nil {
 		return cfg
 	}
 
-	if cfg := defaultRedisClientConfigNoFallback(); cfg != nil {
+	if cfg := defaultRedisClientOptsNoFallback(); cfg != nil {
 		return cfg
 	}
 
-	return CacheRedisClientConfig()
+	return CacheRedisClientOpts()
 }
 
 func RegisterRemoteExecutionRedisClient(env environment.Env) error {
-	redisConfig := RemoteExecutionRedisClientConfig()
-	if redisConfig == nil {
+	opts := RemoteExecutionRedisClientOpts()
+	if opts == nil {
 		return nil
 	}
-	redisClient, err := redisutil.NewClientFromConfig(redisConfig, env.GetHealthChecker(), "remote_execution_redis")
+	redisClient, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "remote_execution_redis")
 	if err != nil {
 		return status.InternalErrorf("Failed to create Remote Execution redis client: %s", err)
 	}
@@ -135,11 +111,11 @@ func RegisterRemoteExecutionRedisClient(env environment.Env) error {
 }
 
 func RegisterDefault(env environment.Env) error {
-	redisConfig := DefaultRedisClientConfig()
-	if redisConfig == nil {
+	opts := DefaultRedisClientOpts()
+	if opts == nil {
 		return nil
 	}
-	rdb, err := redisutil.NewClientFromConfig(redisConfig, env.GetHealthChecker(), "default_redis")
+	rdb, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "default_redis")
 	if err != nil {
 		return status.InvalidArgumentErrorf("Invalid redis config: %s", err)
 	}

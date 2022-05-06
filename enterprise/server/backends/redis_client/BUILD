@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/config",
         "//enterprise/server/util/redisutil",
-        "//server/config",
         "//server/environment",
         "//server/util/flagutil",
         "//server/util/status",
