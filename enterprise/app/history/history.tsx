@@ -1,9 +1,11 @@
 import React from "react";
-import { from, fromEvent, Subscription } from "rxjs";
+import { fromEvent, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Button from "../../../app/components/button/button";
 import LinkButton from "../../../app/components/button/link_button";
+import { Tooltip } from "../../../app/components/tooltip/tooltip";
+import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
@@ -251,10 +253,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
     }
 
     this.fetch();
-  }
-
-  handleInvocationClicked(invocation: invocation.Invocation) {
-    router.navigateToInvocation(invocation.invocationId);
   }
 
   handleOrganizationClicked() {
@@ -506,20 +504,17 @@ export default class HistoryComponent extends React.Component<Props, State> {
             <div className="container nopadding-dense">
               <div className={`grid ${this.state.invocations.length < 20 ? "grid-grow" : ""}`}>
                 {this.state.invocations.map((invocation) => (
-                  <a href={`/invocation/${invocation.invocationId}`} onClick={(e) => e.preventDefault()}>
-                    <div
-                      key={invocation.invocationId}
-                      onClick={this.handleInvocationClicked.bind(this, invocation)}
-                      onMouseOver={this.handleMouseOver.bind(this, invocation)}
-                      onMouseOut={this.handleMouseOut.bind(this, invocation)}
-                      className={`clickable grid-block ${this.getInvocationStatusClass(invocation)} ${
-                        this.state.hoveredInvocationId == invocation.invocationId ? "grid-block-hover" : ""
-                      }`}>
-                      {this.state.hoveredInvocationId == invocation.invocationId && (
-                        <HistoryInvocationCardComponent hover={true} invocation={invocation} />
+                  <Link key={invocation.invocationId} href={`/invocation/${invocation.invocationId}`}>
+                    <Tooltip
+                      renderContent={() => (
+                        // this renders in a portal, so wrap with .history to simplify styling
+                        <div className="history">
+                          <HistoryInvocationCardComponent hover={true} invocation={invocation} />
+                        </div>
                       )}
-                    </div>
-                  </a>
+                      className={`clickable grid-block ${this.getInvocationStatusClass(invocation)}`}
+                    />
+                  </Link>
                 ))}
               </div>
             </div>
