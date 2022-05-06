@@ -78,8 +78,6 @@ var (
 		"cache_stats_finalization_delay", 500*time.Millisecond,
 		"The time allowed for all metrics collectors across all apps to flush their "+
 			"local cache stats to the backing storage, before finalizing stats in the DB.")
-
-	enableOptimizedRedaction = flag.Bool("enable_optimized_redaction", false, "Enables more efficient API key redaction.")
 )
 
 type BuildEventHandler struct {
