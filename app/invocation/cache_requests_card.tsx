@@ -301,13 +301,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         className="row result-row"
         pin={pinBottomMiddleToMouse}
         renderContent={() => this.renderResultHovercard(result, startTimeMillis)}>
-        <div>
-          <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
-        </div>
-        <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
-          {renderCacheType(result.cacheType)}
-        </div>
-        <div className="status-column column-with-icon">{renderStatus(result)}</div>
         {(groupTarget === null || groupActionId === null) && (
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
             {/* bes-upload events don't have a target ID or action mnemonic. */}
@@ -322,6 +315,24 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
+        <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
+          {renderCacheType(result.cacheType)}
+        </div>
+        <div className="status-column column-with-icon">{renderStatus(result)}</div>
+        <div>
+          <DigestComponent hashWidth="96px" sizeWidth="72px" digest={result.digest} expandOnHover={false} />
+        </div>
+        {this.isCompressedSizeColumnVisible() && (
+          <div className={`compressed-size-column ${!result.compressor ? "uncompressed" : ""}`}>
+            {(console.log(result), result.compressor) ? (
+              <>
+                <span>{renderCompressionSavings(result)}</span>
+              </>
+            ) : (
+              <span>&nbsp;</span>
+            )}
+          </div>
+        )}
         <div className="duration-column">{format.compactDurationMillis(proto.durationToMillis(result.duration))}</div>
         {this.renderWaterfallBar(result, startTimeMillis, durationMillis)}
       </Tooltip>
@@ -329,7 +340,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
-    const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
     return (
       <div className="cache-result-hovercard">
         {result.targetId && (
@@ -350,11 +360,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <>
             <b>Compressed</b>{" "}
             <span>
-              {format.bytes(result.transferredSizeBytes)}{" "}
-              <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
-                {compressionSavings <= 0 ? "+" : ""}
-                {(-compressionSavings * 100).toPrecision(3)}%
-              </span>
+              {format.bytes(result.transferredSizeBytes)} {renderCompressionSavings(result)}
             </span>
           </>
         ) : null}
@@ -367,6 +373,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
         </>
       </div>
+    );
+  }
+
+  private isCompressedSizeColumnVisible() {
+    return (
+      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== cache.CacheType.AC
     );
   }
 
@@ -393,40 +405,47 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const [startTimeMillis, durationMillis] = this.getStartTimestampAndDurationMillis();
 
     return (
-      <RequestsCardContainer>
+      <RequestsCardContainer
+        className={
+          this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
+        }>
         {this.renderControls()}
-        {groups === null && (
-          <div className="results-list column">
-            {this.renderResults(this.state.results, startTimeMillis, durationMillis)}
+        <div className="results-table">
+          <div className="row column-headers">
+            {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
+              <div className="name-column">Name</div>
+            )}
+            <div className="cache-type-column">Cache</div>
+            <div className="status-column">Status</div>
+            <div className="digest-column">Digest (hash/size)</div>
+            {this.isCompressedSizeColumnVisible() && <div className="compressed-size-column">Compression</div>}
+            <div className="duration-column">Duration</div>
+            <div className="waterfall-column">Waterfall</div>
           </div>
-        )}
-        {groups?.map((group) => (
-          <div className="group">
-            <div className="group-title action-id row">
-              {group.actionId !== null && looksLikeDigest(group.actionId) && (
-                <Link className="action-id" href={this.getActionUrl(group.results[0]?.actionId)}>
-                  <DigestComponent
-                    hashWidth="168px"
-                    digest={{ hash: group.actionId, sizeBytes: null }}
-                    expandOnHover={false}
-                  />
-                </Link>
-              )}
-              <div className="row action-label">
-                <div>{group.results[0]?.targetId || group.results[0]?.actionId}</div>
-                {group.actionId && group.results[0]?.actionMnemonic && (
-                  <>
-                    <ChevronRight className="icon chevron" />
-                    <div className="action-mnemonic">{group.results[0]?.actionMnemonic}</div>
-                  </>
-                )}
+          {groups === null && (
+            <div className="results-list column">
+              {this.renderResults(this.state.results, startTimeMillis, durationMillis)}
+            </div>
+          )}
+          {groups?.map((group) => (
+            <div className="group">
+              <div className="group-title action-id row">
+                <div className="row action-label">
+                  <div>{group.results[0]?.targetId || group.results[0]?.actionId}</div>
+                  {group.actionId && group.results[0]?.actionMnemonic && (
+                    <>
+                      <ChevronRight className="icon chevron" />
+                      <div className="action-mnemonic">{group.results[0]?.actionMnemonic}</div>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="group-contents results-list column">
+                {this.renderResults(group.results, startTimeMillis, durationMillis, group.targetId, group.actionId)}
               </div>
             </div>
-            <div className="group-contents results-list column">
-              {this.renderResults(group.results, startTimeMillis, durationMillis, group.targetId, group.actionId)}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
         <div className="table-footer-controls">
           {this.state.nextPageToken && (
             <Button
@@ -443,8 +462,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 }
 
-const RequestsCardContainer: React.FC = ({ children }) => (
-  <div className="card cache-requests-card">
+const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ className, children, ...props }) => (
+  <div className={`card cache-requests-card ${className || ""}`} {...props}>
     <div className="content">
       <div className="title">
         <ArrowLeftRight className="icon" />
@@ -475,6 +494,16 @@ function cacheTypeTitle(cacheType: cache.CacheType): string | undefined {
     default:
       return undefined;
   }
+}
+
+function renderCompressionSavings(result: cache.ScoreCard.IResult) {
+  const compressionSavings = 1 - Number(result.transferredSizeBytes) / Number(result.digest.sizeBytes);
+  return (
+    <span className={`compression-savings ${compressionSavings > 0 ? "positive" : "negative"}`}>
+      {compressionSavings <= 0 ? "+" : ""}
+      {(-compressionSavings * 100).toPrecision(3)}%
+    </span>
+  );
 }
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
