@@ -111,22 +111,36 @@ type Invocation struct {
 	LastChunkId  string
 	BranchName   string `gorm:"index:branch_name_index"`
 	Model
-	DurationUsec                     int64
-	UploadThroughputBytesPerSecond   int64
-	ActionCount                      int64
-	Perms                            int `gorm:"index:perms"`
-	RedactionFlags                   int
-	InvocationStatus                 int64 `gorm:"index:invocation_status_idx"`
-	ActionCacheHits                  int64
-	ActionCacheMisses                int64
-	ActionCacheUploads               int64
-	CasCacheHits                     int64
-	CasCacheMisses                   int64
-	CasCacheUploads                  int64
-	TotalDownloadSizeBytes           int64
-	TotalUploadSizeBytes             int64
-	TotalCompressedDownloadSizeBytes int64
-	TotalCompressedUploadSizeBytes   int64
+	DurationUsec                   int64
+	UploadThroughputBytesPerSecond int64
+	ActionCount                    int64
+	Perms                          int `gorm:"index:perms"`
+	RedactionFlags                 int
+	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
+	ActionCacheHits                int64
+	ActionCacheMisses              int64
+	ActionCacheUploads             int64
+	CasCacheHits                   int64
+	CasCacheMisses                 int64
+	CasCacheUploads                int64
+
+	// TotalDownloadSizeBytes is the sum of digest sizes for all cache download
+	// requests made by this invocation.
+	TotalDownloadSizeBytes int64
+
+	// TotalUploadSizeBytes is the sum of digest sizes for all cache upload
+	// requests made by this invocation.
+	TotalUploadSizeBytes int64
+
+	// TotalDownloadTransferredSizeBytes is the sum of payload sizes (compressed,
+	// if applicable) for all cache download requests made by this invocation.
+	TotalDownloadTransferredSizeBytes int64
+
+	// TotalUploadTransferredSizeBytes is the sum of payload sizes
+	// (compressed, if applicable) for all cache upload requests made by this
+	// invocation.
+	TotalUploadTransferredSizeBytes int64
+
 	TotalDownloadUsec                int64
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64

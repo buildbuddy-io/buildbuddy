@@ -62,10 +62,10 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	stats := hit_tracker.CollectCacheStats(ctx, env, iid)
 	assert.Equal(t, int64(1), stats.GetCasCacheHits())
 	assert.Equal(t, d.SizeBytes, stats.GetTotalDownloadSizeBytes())
-	assert.Equal(t, compressedSize, stats.GetTotalCompressedDownloadSizeBytes())
+	assert.Equal(t, compressedSize, stats.GetTotalDownloadTransferredSizeBytes())
 	assert.Equal(t, int64(0), stats.GetCasCacheUploads())
 	assert.Equal(t, int64(0), stats.GetTotalUploadSizeBytes())
-	assert.Equal(t, int64(0), stats.GetTotalCompressedUploadSizeBytes())
+	assert.Equal(t, int64(0), stats.GetTotalUploadTransferredSizeBytes())
 }
 
 // Note: Can't use bazel_request.WithRequestMetadata here since it sets the
