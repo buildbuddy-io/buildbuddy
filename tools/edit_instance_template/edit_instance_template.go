@@ -77,7 +77,7 @@ func main() {
 	}
 	_, err = c.Get(ctx, req)
 	if err != nil {
-		if !strings.Contains(err.Error(), "404") {
+		if !strings.Contains(err.Error(), "Error 404") {
 			log.Fatalf("Could not check for existence of new template: %s", err)
 		}
 		log.Printf("New template does not exist, creating...")
@@ -108,7 +108,6 @@ func main() {
 			log.Fatalf("Could not retrieve MIG list: %s", err)
 		}
 		migsByZone[rsp.Key] = rsp.Value
-		log.Printf("resp: %+v", rsp)
 	}
 	for _, migs := range migsByZone {
 		for _, mig := range migs.GetInstanceGroupManagers() {
