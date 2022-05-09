@@ -1748,4 +1748,5 @@ message ExecutionTask {
   string invocation_id = 3;
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
+  RequestMetadata request_metadata = 9;
 }

@@ -16,6 +16,7 @@ go_library(
         "//server/metrics",
         "//server/resources",
         "//server/util/alert",
+        "//server/util/bazel_request",
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
