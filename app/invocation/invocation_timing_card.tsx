@@ -7,26 +7,22 @@ import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
 import { Clock } from "lucide-react";
+import errorService from "../errors/error_service";
 
 interface Props {
   model: InvocationModel;
 }
 
 interface State {
+  profile: Profile | null;
+  loading: boolean;
   threadNumPages: number;
   threadToNumEventPagesMap: Map<number, number>;
-  profile: Profile;
   threadMap: Map<number, Thread>;
-  timingEnabled: boolean;
-  buildInProgress: boolean;
-  /** Whether the profile file is missing from BuildToolLogs. */
-  isMissingProfile: boolean;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
   eventPageSize: number;
-  timingLoaded: boolean;
-  error: string;
 }
 
 interface Thread {
@@ -47,19 +43,15 @@ const groupByAllStorageValue = "all";
 
 export default class InvocationTimingCardComponent extends React.Component<Props, State> {
   state: State = {
+    profile: null,
+    loading: false,
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
-    profile: null,
     threadMap: new Map<number, Thread>(),
-    timingEnabled: true,
-    buildInProgress: false,
-    isMissingProfile: false,
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
-    timingLoaded: false,
-    error: "",
   };
 
   componentDidMount() {
@@ -72,36 +64,25 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
   }
 
+  getProfileFile() {
+    return this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+  }
+
+  isTimingEnabled() {
+    return Boolean(this.getProfileFile()?.uri?.startsWith("bytestream://"));
+  }
+
   fetchProfile() {
-    let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+    if (!this.isTimingEnabled()) return;
 
-    if (!profileFile?.uri) {
-      const hasBuildToolLogs = Boolean(this.props.model.buildToolLogs);
-      this.setState({
-        ...this.state,
-        buildInProgress: !hasBuildToolLogs,
-        isMissingProfile: hasBuildToolLogs,
-      });
-      return;
-    }
+    // Already fetched
+    if (this.state.profile) return;
 
-    if (!profileFile?.uri.startsWith("bytestream://")) {
-      this.setState({
-        ...this.state,
-        timingEnabled: false,
-        buildInProgress: false,
-      });
-      return;
-    }
-
-    if (this.state.profile) {
-      // Already fetched
-      return;
-    }
-
+    let profileFile = this.getProfileFile();
     let compressionOption = this.props.model.optionsMap.get("json_trace_compression");
-    var isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
+    let isGzipped = compressionOption === undefined ? profileFile.name?.endsWith(".gz") : compressionOption == "1";
 
+    this.setState({ loading: true });
     rpcService
       .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
       .then((contents: any) => {
@@ -110,18 +91,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         }
         this.updateProfile(contents);
       })
-      .catch(() => {
-        console.error("Error loading bytestream timing profile!");
-        this.setState({
-          ...this.state,
-          timingLoaded: false,
-          error: "Error loading timing profile. Make sure your cache is correctly configured.",
-        });
-      });
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   downloadProfile() {
-    let profileFile = this.props.model.buildToolLogs?.log.find((log: any) => log.uri);
+    let profileFile = this.getProfileFile();
 
     try {
       rpcService.downloadBytestreamFile("timing_profile.gz", profileFile?.uri, this.props.model.getId());
@@ -151,9 +126,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
       this.state.threadMap.set(event.tid, thread);
     }
-    this.state.buildInProgress = false;
-    this.state.timingLoaded = true;
-    this.state.error = "";
     this.setState(this.state);
   }
 
@@ -172,36 +144,34 @@ export default class InvocationTimingCardComponent extends React.Component<Props
   handleMoreEventsClicked(threadId: number) {
     this.state.threadToNumEventPagesMap.set(threadId, this.getNumPagesForThread(threadId) + 1);
     this.setState({
-      ...this.state,
       threadToNumEventPagesMap: this.state.threadToNumEventPagesMap,
     });
   }
 
   handleMoreThreadsClicked() {
     this.setState({
-      ...this.state,
       threadNumPages: this.state.threadNumPages + 1,
     });
   }
 
   handleSortByClicked(sortBy: string) {
     window.localStorage[sortByStorageKey] = sortBy;
-    this.setState({ ...this.state, sortBy: sortBy });
+    this.setState({ sortBy: sortBy });
   }
 
   handleGroupByClicked(groupBy: string) {
     window.localStorage[groupByStorageKey] = groupBy;
-    this.setState({ ...this.state, groupBy: groupBy });
+    this.setState({ groupBy: groupBy });
   }
 
   handleThreadPageSizeClicked(pageSize: number) {
     window.localStorage[threadPageSizeStorageKey] = pageSize;
-    this.setState({ ...this.state, threadPageSize: pageSize });
+    this.setState({ threadPageSize: pageSize });
   }
 
   handleEventPageSizeClicked(pageSize: number) {
     window.localStorage[eventPageSizeStorageKey] = pageSize;
-    this.setState({ ...this.state, eventPageSize: pageSize });
+    this.setState({ eventPageSize: pageSize });
   }
 
   getNumPagesForThread(threadId: number) {
@@ -216,23 +186,70 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return durationSeconds.toFixed(0);
   }
 
-  render() {
-    let threads = Array.from(this.state.threadMap.values());
+  renderEmptyState() {
+    if (this.state.loading) {
+      return <div className="loading" />;
+    }
+
+    if (!this.props.model.buildToolLogs) {
+      return <>Build is in progress...</>;
+    }
+
+    // Note: This profile file should be present even if remote cache is disabled,
+    // so enabling remote cache won't fix a missing profile. Show a special message
+    // for this case.
+    if (!this.getProfileFile()) {
+      return (
+        <>
+          Could not find profile info. This might be because Bazel was invoked with a non-default{" "}
+          <span className="inline-code">--profile</span> flag.
+        </>
+      );
+    }
+
+    console.assert(!this.isTimingEnabled());
     return (
       <>
-        {this.state.profile && <FlameChart profile={this.state.profile} />}
+        <p>Profiling isn't enabled for this invocation.</p>
+        <p>
+          To enable profiling you must add gRPC remote caching. You can do so by checking <b>Enable cache</b> below,
+          updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
+        </p>
+        <SetupCodeComponent />
+      </>
+    );
+  }
+
+  render() {
+    let threads = Array.from(this.state.threadMap.values());
+
+    if (!this.state.profile) {
+      return (
+        <div className="card timing">
+          <Clock className="icon" />
+          <div className="content">
+            <div className="header">
+              <div className="title">Timing</div>
+            </div>
+            <div className="empty-state">{this.renderEmptyState()}</div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <FlameChart profile={this.state.profile} />
         <div className="card timing">
           <Clock className="icon" />
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {this.state.timingLoaded && (
-                <div className="button">
-                  <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
-                    Download profile
-                  </Button>
-                </div>
-              )}
+              <div className="button">
+                <Button className="download-gz-file" onClick={this.downloadProfile.bind(this)}>
+                  Download profile
+                </Button>
+              </div>
             </div>
             <div className="sort-controls">
               <div className="sort-control">
@@ -316,24 +333,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
                 </u>
               </div>
             </div>
-            {this.state.buildInProgress && <div className="empty-state">Build is in progress...</div>}
-            {this.state.isMissingProfile && (
-              <div className="empty-state">
-                Could not find profile info. This might be because Bazel was invoked with a non-default{" "}
-                <span className="inline-code">--profile</span> flag.
-              </div>
-            )}
-            {!this.state.timingEnabled && (
-              <div className="empty-state">
-                Profiling isn't enabled for this invocation.
-                <br />
-                <br />
-                To enable profiling you must add GRPC remote caching. You can do so by checking <b>Enable cache</b>{" "}
-                below, updating your <b>.bazelrc</b> accordingly, and re-running your invocation:
-                <SetupCodeComponent />
-              </div>
-            )}
-            {this.state.error && <div className="empty-state">{this.state.error}</div>}
             {this.state.groupBy == groupByThreadStorageValue && (
               <div className="details">
                 {threads
