@@ -43,8 +43,8 @@ func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord
 	// files to be written either to pebble or to disk. Already written
 	// files will be read from wherever they stored, regardless of this
 	// setting.
-	return PebbleWriter(wb, fileRecord)
-	//return FileWriter(ctx, fileDir, fileRecord)
+	//return PebbleWriter(wb, fileRecord)
+	return FileWriter(ctx, fileDir, fileRecord)
 }
 
 func NewReader(ctx context.Context, fileDir string, iter *pebble.Iterator, md *rfpb.StorageMetadata) (io.ReadCloser, error) {
