@@ -5,7 +5,7 @@ import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, So
 import { cache } from "../../proto/cache_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
-import Link from "../components/link/link";
+import Link, { TextLink } from "../components/link/link";
 import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
@@ -332,11 +332,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
             {/* bes-upload events don't have a target ID or action mnemonic. */}
             {result.targetId || result.actionMnemonic ? (
-              <>
+              <TextLink href={this.getActionUrl(result.digest.hash)}>
                 {groupTarget === null && result.targetId}
                 {groupTarget === null && groupActionId === null && " › "}
                 {groupActionId === null && result.actionMnemonic}
-              </>
+              </TextLink>
             ) : (
               result.actionId
             )}
@@ -462,7 +462,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                   {group.actionId && group.results[0]?.actionMnemonic && (
                     <>
                       <ChevronRight className="icon chevron" />
-                      <div className="action-mnemonic">{group.results[0]?.actionMnemonic}</div>
+                      <TextLink className="action-mnemonic" href={this.getActionUrl(group.actionId)}>
+                        {group.results[0]?.actionMnemonic}
+                      </TextLink>
                     </>
                   )}
                 </div>
