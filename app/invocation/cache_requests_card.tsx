@@ -342,6 +342,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
+        {this.isClientColumnVisible() && (
+          <div className="client-column">{result.executorHostId ? "Executor" : "Bazel"}</div>
+        )}
         <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
           {renderCacheType(result.cacheType)}
         </div>
@@ -409,6 +412,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
+  private isClientColumnVisible() {
+    return this.props.model.getIsRBEEnabled();
+  }
+
   render() {
     if (this.state.loading && !this.state.results.length) {
       return (
@@ -442,6 +449,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
               <div className="name-column">Name</div>
             )}
+            {this.isClientColumnVisible() && <div className="client-column">Client</div>}
             <div className="cache-type-column">Cache</div>
             <div className="status-column">Status</div>
             <div className="digest-column">Digest (hash/size)</div>

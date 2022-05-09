@@ -235,6 +235,10 @@
   text-align: right;
 }
 
+.cache-requests-card .client-column {
+  width: 60px;
+}
+
 .cache-requests-card .cache-type-column {
   width: 42px;
 }
@@ -314,6 +318,7 @@
   border-radius: 2px;
   min-width: var(--min-bar-width);
   height: 8px;
+  z-index: 1;
 }
 
 .cache-requests-card .waterfall-gridlines {
