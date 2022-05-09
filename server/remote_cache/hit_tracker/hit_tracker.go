@@ -272,6 +272,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		ActionMnemonic:       h.requestMetadata.ActionMnemonic,
 		TargetId:             h.requestMetadata.TargetId,
 		ActionId:             h.requestMetadata.ActionId,
+		ExecutorHostId:       h.requestMetadata.GetExecutorDetails().GetExecutorHostId(),
 		CacheType:            cacheType,
 		RequestType:          requestType,
 		Digest:               d,
