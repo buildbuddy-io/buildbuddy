@@ -33,6 +33,8 @@ go_test(
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/memory_metrics_collector",
+        "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testenv",
         "//server/util/bazel_request",
         "//server/util/testing/flags",
