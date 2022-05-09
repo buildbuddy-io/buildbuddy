@@ -241,6 +241,11 @@ func (h *HitTracker) TrackEmptyHit() error {
 }
 
 func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
+	if h.requestMetadata.GetExecutorDetails().GetExecutorHostId() != "" {
+		// Don't store executor requests in the scorecard for now.
+		return nil
+	}
+
 	rid, err := uuid.NewRandom()
 	if err != nil {
 		return err

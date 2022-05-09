@@ -1727,6 +1727,12 @@ message RequestMetadata {
   // or equality across invocations, though some client tools may offer these
   // guarantees.
   string configuration_id = 7;
+
+  // BUILDBUDDY EXTENSIONS BELOW
+
+  // Details about the remote executor performing this request on behalf of the
+  // tool.
+  ExecutorDetails executor_details = 1000;
 }
 
 message SizedDirectory {
@@ -1749,4 +1755,9 @@ message ExecutionTask {
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
   RequestMetadata request_metadata = 9;
+}
+
+message ExecutorDetails {
+  // Unique ID of the host this executor is running on.
+  string executor_host_id = 1;
 }
