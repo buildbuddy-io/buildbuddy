@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -258,13 +259,14 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
 	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
-	rmd := &repb.RequestMetadata{
-		ToolInvocationId: execTask.GetInvocationId(),
+	rmd := execTask.GetRequestMetadata()
+	if rmd == nil {
+		rmd = &repb.RequestMetadata{ToolInvocationId: execTask.GetInvocationId()}
 	}
 	if data, err := proto.Marshal(rmd); err == nil {
-		ctx = context.WithValue(ctx, "build.bazel.remote.execution.v2.requestmetadata-bin", string(data))
+		ctx = context.WithValue(ctx, bazel_request.RequestMetadataKey, string(data))
 	}
 	return ctx
 }
@@ -274,7 +276,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
-	ctx = propagateExecutionTaskValuesToContext(ctx, execTask)
+	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)

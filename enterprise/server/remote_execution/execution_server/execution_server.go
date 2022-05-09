@@ -305,11 +305,12 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	executionTask := &repb.ExecutionTask{
-		ExecuteRequest: req,
-		InvocationId:   invocationID,
-		ExecutionId:    executionID,
-		Action:         action,
-		Command:        command,
+		ExecuteRequest:  req,
+		InvocationId:    invocationID,
+		ExecutionId:     executionID,
+		Action:          action,
+		Command:         command,
+		RequestMetadata: bazel_request.GetRequestMetadata(ctx),
 	}
 	// Allow execution worker to auth to cache (if necessary).
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
