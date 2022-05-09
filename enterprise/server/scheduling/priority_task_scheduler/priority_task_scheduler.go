@@ -262,8 +262,6 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
 	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
 	rmd := execTask.GetRequestMetadata()
-	// TODO(bduffany): remove this fallback once all apps populate request
-	// metadata in each ExecutionTask.
 	if rmd == nil {
 		rmd = &repb.RequestMetadata{ToolInvocationId: execTask.GetInvocationId()}
 	}
