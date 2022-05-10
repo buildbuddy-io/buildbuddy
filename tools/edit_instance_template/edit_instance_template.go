@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"path"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
@@ -61,6 +62,18 @@ func createModifiedTemplate(ctx context.Context, c *compute.InstanceTemplatesCli
 	return nil
 }
 
+func getTemplateURL(ctx context.Context, c *compute.InstanceTemplatesClient, templateName string) (string, error) {
+	req := &computepb.GetInstanceTemplateRequest{
+		InstanceTemplate: templateName,
+		Project:          *project,
+	}
+	rsp, err := c.Get(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return rsp.GetSelfLink(), nil
+}
+
 func main() {
 	flag.Parse()
 
@@ -70,24 +83,27 @@ func main() {
 		log.Fatalf("Could not create instance template client: %s", err)
 	}
 	defer c.Close()
-	newTemplate := *template + "-" + *suffix
-	req := &computepb.GetInstanceTemplateRequest{
-		InstanceTemplate: newTemplate,
-		Project:          *project,
-	}
-	_, err = c.Get(ctx, req)
-	if err != nil {
+
+	newTemplateURL := ""
+	newTemplateName := *template + "-" + *suffix
+	if n, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
 		if !strings.Contains(err.Error(), "Error 404") {
 			log.Fatalf("Could not check for existence of new template: %s", err)
 		}
 		log.Printf("New template does not exist, creating...")
 
-		if err := createModifiedTemplate(ctx, c, newTemplate); err != nil {
+		if err := createModifiedTemplate(ctx, c, newTemplateName); err != nil {
 			log.Fatalf("Could not create new template: %s", err)
 		}
-		log.Printf("New template %q created", newTemplate)
+		log.Printf("New template %q created", newTemplateName)
+		if n2, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
+			log.Fatalf("Error getting new template URL: %s", err)
+		} else {
+			newTemplateURL = n2
+		}
 	} else {
-		log.Printf("New template %q already exists, not creating.", newTemplate)
+		newTemplateURL = n
+		log.Printf("New template %q already exists, not creating.", newTemplateName)
 	}
 
 	migc, err := compute.NewInstanceGroupManagersRESTClient(ctx)
@@ -109,6 +125,7 @@ func main() {
 		}
 		migsByZone[rsp.Key] = rsp.Value
 	}
+
 	for _, migs := range migsByZone {
 		for _, mig := range migs.GetInstanceGroupManagers() {
 			if strings.HasSuffix(mig.GetInstanceTemplate(), "/"+*template) {
@@ -117,10 +134,11 @@ func main() {
 				// an existing instance group. Therefore, we
 				// have to delete the instance group and then
 				// create with the new template
+				shortZone := path.Base(mig.GetZone())
 				op, err := migc.Delete(ctx, &computepb.DeleteInstanceGroupManagerRequest{
 					Project:              *project,
 					InstanceGroupManager: mig.GetName(),
-					Zone:                 mig.GetZone(),
+					Zone:                 shortZone,
 				})
 				if err != nil {
 					log.Fatalf("Error deleting old instance group %s: %s", mig.GetName(), err)
@@ -133,10 +151,10 @@ func main() {
 					Project: *project,
 					InstanceGroupManagerResource: &computepb.InstanceGroupManager{
 						Name:             proto.String(mig.GetName()),
-						InstanceTemplate: proto.String(newTemplate),
+						InstanceTemplate: proto.String(newTemplateURL),
 						TargetSize:       proto.Int32(int32(*size)),
 					},
-					Zone: mig.GetZone(),
+					Zone: shortZone,
 				})
 				if err != nil {
 					log.Fatalf("Error creating new instance group %s: %s", mig.GetName(), err)
