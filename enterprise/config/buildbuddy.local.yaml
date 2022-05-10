@@ -1,10 +1,18 @@
+app:
+  no_default_user_group: true
+  create_group_per_user: true
+  add_user_to_domain_group: true
+  code_editor_enabled: true
+  default_redis_target: "localhost:6379"
+  enable_target_tracking: true
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
 storage:
+  ttl_seconds: 86400 # One day in seconds.
   disk:
     root_directory: /tmp/buildbuddy_enterprise
+  enable_chunked_event_logs: true
 cache:
-  max_size_bytes: 10000000000 # 10 GB
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache
 auth:

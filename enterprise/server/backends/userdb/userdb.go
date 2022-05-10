@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -34,9 +35,9 @@ const (
 )
 
 var (
-	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", true, "Cloud-Only")
-	createGroupPerUser   = flag.Bool("app.create_group_per_user", true, "Cloud-Only")
-	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", true, "Cloud-Only")
+	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
+	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
+	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
 
 	orgName   = flag.String("org.name", "", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
@@ -563,7 +564,7 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 			Name:    "Organization",
 		},
 	}
-	if api_config.Enabled() {
+	if api.Enabled() {
 		c.apiKeyValue = api_config.Key()
 	}
 	if *orgName != "" {

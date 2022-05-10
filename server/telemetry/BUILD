@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/config",
         "//proto:telemetry_go_proto",
-        "//server/api/config",
         "//server/backends/blobstore",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",

@@ -31,7 +31,7 @@ const (
 
 var (
 	defaultToDenseMode        = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled         = flag.Bool("app.code_editor_enabled", true, "If set, code editor functionality will be enabled.")
+	codeEditorEnabled         = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
 	userManagementEnabled     = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
 	globalFilterEnabled       = flag.Bool("app.global_filter_enabled", true, "If set, the global filter will be enabled in the UI.")
 	testGridV2Enabled         = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")

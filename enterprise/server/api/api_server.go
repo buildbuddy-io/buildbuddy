@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,6 +31,8 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
+var enableAPI = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
+
 // A prefix specifying which ID encoding scheme we're using.
 // Don't change this unless you're changing the ID scheme, in which case you should probably check for this
 // prefix and support this old ID scheme for some period of time during the migration.
@@ -39,10 +42,21 @@ type APIServer struct {
 	env environment.Env
 }
 
+func Register(env environment.Env) error {
+	if *enableAPI {
+		env.SetAPIService(NewAPIServer(env))
+	}
+	return nil
+}
+
 func NewAPIServer(env environment.Env) *APIServer {
 	return &APIServer{
 		env: env,
 	}
+}
+
+func Enabled() bool {
+	return *enableAPI
 }
 
 func (s *APIServer) checkPreconditions(ctx context.Context) (interfaces.UserInfo, error) {

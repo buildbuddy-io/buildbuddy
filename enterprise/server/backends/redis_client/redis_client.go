@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	defaultRedisTarget          = flag.String("app.default_redis_target", "localhost:6379", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
+	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
 	defaultRedisShards          = flagutil.StringSlice("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
 	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
 	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")

@@ -10,4 +10,3 @@ storage:
 cache:
   disk:
     root_directory: "/buildbuddy/cache/"
-  max_size_bytes: 10000000000 # 10 GB

@@ -26,7 +26,7 @@ import (
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
 
-var enableTargetTracking = flag.Bool("app.enable_target_tracking", true, "Cloud-Only")
+var enableTargetTracking = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
 
 type targetClosure func(event *build_event_stream.BuildEvent)
 type targetState int
