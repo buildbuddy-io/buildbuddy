@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
+)
+
+const (
+	invocationID = "ed3c71b0-25f8-4e49-bda2-d2c5fa4d5a33"
 )
 
 var (
@@ -85,6 +90,7 @@ func TestGetCacheScoreCard_Filter_Search(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
+		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:   &fieldmaskpb.FieldMask{Paths: []string{"search"}},
 			Search: "bes-upload",
@@ -101,6 +107,7 @@ func TestGetCacheScoreCard_Filter_CacheType(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
+		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:      &fieldmaskpb.FieldMask{Paths: []string{"cache_type"}},
 			CacheType: capb.CacheType_AC,
@@ -117,6 +124,7 @@ func TestGetCacheScoreCard_Filter_RequestType(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
+		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:        &fieldmaskpb.FieldMask{Paths: []string{"request_type"}},
 			RequestType: capb.RequestType_READ,
@@ -133,6 +141,7 @@ func TestGetCacheScoreCard_Filter_ResponseType(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
+		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:         &fieldmaskpb.FieldMask{Paths: []string{"response_type"}},
 			ResponseType: capb.ResponseType_NOT_FOUND,
@@ -149,7 +158,8 @@ func TestGetCacheScoreCard_Sort_StartTime(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
-		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_START_TIME,
+		InvocationId: invocationID,
+		OrderBy:      capb.GetCacheScoreCardRequest_ORDER_BY_START_TIME,
 	}
 
 	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
@@ -162,7 +172,8 @@ func TestGetCacheScoreCard_Sort_Duration(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
-		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
+		InvocationId: invocationID,
+		OrderBy:      capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
 	}
 
 	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
@@ -175,9 +186,10 @@ func TestGetCacheScoreCard_GroupByActionOrderByDurationDesc(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
 	req := &capb.GetCacheScoreCardRequest{
-		OrderBy:    capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
-		GroupBy:    capb.GetCacheScoreCardRequest_GROUP_BY_ACTION,
-		Descending: true,
+		InvocationId: invocationID,
+		OrderBy:      capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
+		GroupBy:      capb.GetCacheScoreCardRequest_GROUP_BY_ACTION,
+		Descending:   true,
 	}
 
 	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
@@ -215,8 +227,9 @@ func TestGetCacheScoreCard_GroupByTargetOrderByDuration(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, sc)
 	req := &capb.GetCacheScoreCardRequest{
-		OrderBy: capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
-		GroupBy: capb.GetCacheScoreCardRequest_GROUP_BY_TARGET,
+		InvocationId: invocationID,
+		OrderBy:      capb.GetCacheScoreCardRequest_ORDER_BY_DURATION,
+		GroupBy:      capb.GetCacheScoreCardRequest_GROUP_BY_TARGET,
 	}
 
 	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
@@ -239,6 +252,9 @@ func assertResults(t *testing.T, res *capb.GetCacheScoreCardResponse, msg ...*ca
 func setupEnv(t *testing.T, scorecard *capb.ScoreCard) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	te.SetBlobstore(&fakeBlobStore{ScoreCard: scorecard})
+	te.GetInvocationDB().CreateInvocation(context.Background(), &tables.Invocation{
+		InvocationID: invocationID,
+	})
 	return te
 }
 
