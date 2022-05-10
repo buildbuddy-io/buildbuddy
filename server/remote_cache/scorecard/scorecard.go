@@ -24,6 +24,11 @@ const (
 
 // GetCacheScoreCard returns a list of detailed, per-request cache stats.
 func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
+	// Authorize access to the requested invocation
+	_, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
 	page := &pgpb.OffsetLimit{Offset: 0, Limit: defaultScoreCardPageSize}
 	if req.PageToken != "" {
 		reqPage, err := paging.DecodeOffsetLimit(req.PageToken)

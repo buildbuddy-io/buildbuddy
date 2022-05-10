@@ -24,6 +24,7 @@ go_test(
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
