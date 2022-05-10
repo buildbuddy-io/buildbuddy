@@ -5,9 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"path"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/api/iterator"
 
 	compute "cloud.google.com/go/compute/apiv1"
 	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
@@ -35,13 +37,14 @@ func createModifiedTemplate(ctx context.Context, c *compute.InstanceTemplatesCli
 		resp.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
 	}
 	subnetworkURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", *project, *region, *subnetwork)
+
 	resp.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = proto.Bool(true)
 	resp.GetProperties().NetworkInterfaces = append(resp.GetProperties().GetNetworkInterfaces(),
 		&computepb.NetworkInterface{
 			AccessConfigs: []*computepb.AccessConfig{
 				{
 					Name: proto.String("external-nat"),
-					Type: computepb.AccessConfig_ONE_TO_ONE_NAT.Enum(),
+					Type: proto.String("ONE_TO_ONE_NAT"),
 				},
 			},
 			Subnetwork: proto.String(subnetworkURL),
@@ -54,9 +57,21 @@ func createModifiedTemplate(ctx context.Context, c *compute.InstanceTemplatesCli
 	}
 	_, err = c.Insert(ctx, createReq)
 	if err != nil {
-		return fmt.Errorf("Could not create new template: %s", err)
+		return err
 	}
 	return nil
+}
+
+func getTemplateURL(ctx context.Context, c *compute.InstanceTemplatesClient, templateName string) (string, error) {
+	req := &computepb.GetInstanceTemplateRequest{
+		InstanceTemplate: templateName,
+		Project:          *project,
+	}
+	rsp, err := c.Get(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return rsp.GetSelfLink(), nil
 }
 
 func main() {
@@ -69,43 +84,84 @@ func main() {
 	}
 	defer c.Close()
 
-	newTemplate := *template + "-" + *suffix
-	req := &computepb.GetInstanceTemplateRequest{
-		InstanceTemplate: newTemplate,
-		Project:          *project,
-	}
-	_, err = c.Get(ctx, req)
-	if err != nil {
-		if !strings.HasPrefix(err.Error(), "404") {
+	newTemplateURL := ""
+	newTemplateName := *template + "-" + *suffix
+	if n, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
+		if !strings.Contains(err.Error(), "Error 404") {
 			log.Fatalf("Could not check for existence of new template: %s", err)
 		}
 		log.Printf("New template does not exist, creating...")
 
-		if err := createModifiedTemplate(ctx, c, newTemplate); err != nil {
+		if err := createModifiedTemplate(ctx, c, newTemplateName); err != nil {
 			log.Fatalf("Could not create new template: %s", err)
 		}
-		log.Printf("New template %q created", newTemplate)
+		log.Printf("New template %q created", newTemplateName)
+		if n2, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
+			log.Fatalf("Error getting new template URL: %s", err)
+		} else {
+			newTemplateURL = n2
+		}
 	} else {
-		log.Printf("New template %q already exists, not creating.", newTemplate)
+		newTemplateURL = n
+		log.Printf("New template %q already exists, not creating.", newTemplateName)
 	}
 
 	migc, err := compute.NewInstanceGroupManagersRESTClient(ctx)
 	if err != nil {
 		log.Fatalf("Could not create MIG client: %s", err)
 	}
-	migsByZone, err := migc.AggregatedList(ctx, &computepb.AggregatedListInstanceGroupManagersRequest{
+	it := migc.AggregatedList(ctx, &computepb.AggregatedListInstanceGroupManagersRequest{
 		Project: *project,
 	})
-	if err != nil {
-		log.Fatalf("Could not retrieve MIG list: %s", err)
+
+	migsByZone := make(map[string]*computepb.InstanceGroupManagersScopedList)
+	for {
+		rsp, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Could not retrieve MIG list: %s", err)
+		}
+		migsByZone[rsp.Key] = rsp.Value
 	}
-	for _, migs := range migsByZone.GetItems() {
+
+	for _, migs := range migsByZone {
 		for _, mig := range migs.GetInstanceGroupManagers() {
 			if strings.HasSuffix(mig.GetInstanceTemplate(), "/"+*template) {
-				// GKE doesn't allow us to add network interfaces attached to different networks for a existing instance group. Therefore, we have to delete the instance group and then create with the new template
-				log.Printf("Command to delete and create instance groups:")
-				fmt.Printf("gcloud compute instance-groups managed delete %s --zone %s\n", mig.GetName(), mig.GetZone())
-				fmt.Printf("gcloud compute instance-groups managed create %s --template %s --zone %s --size %d\n", mig.GetName(), newTemplate, mig.GetZone(), *size)
+				// GKE doesn't allow us to add network
+				// interfaces attached to different networks for
+				// an existing instance group. Therefore, we
+				// have to delete the instance group and then
+				// create with the new template
+				shortZone := path.Base(mig.GetZone())
+				op, err := migc.Delete(ctx, &computepb.DeleteInstanceGroupManagerRequest{
+					Project:              *project,
+					InstanceGroupManager: mig.GetName(),
+					Zone:                 shortZone,
+				})
+				if err != nil {
+					log.Fatalf("Error deleting old instance group %s: %s", mig.GetName(), err)
+				}
+				if err := op.Wait(ctx); err != nil {
+					log.Fatalf("Error waiting for old instance group to be deleted %s: %s", mig.GetName(), err)
+				}
+
+				op, err = migc.Insert(ctx, &computepb.InsertInstanceGroupManagerRequest{
+					Project: *project,
+					InstanceGroupManagerResource: &computepb.InstanceGroupManager{
+						Name:             proto.String(mig.GetName()),
+						InstanceTemplate: proto.String(newTemplateURL),
+						TargetSize:       proto.Int32(int32(*size)),
+					},
+					Zone: shortZone,
+				})
+				if err != nil {
+					log.Fatalf("Error creating new instance group %s: %s", mig.GetName(), err)
+				}
+				if err := op.Wait(ctx); err != nil {
+					log.Fatalf("Error waiting for new instance group to be created %s: %s", mig.GetName(), err)
+				}
 			}
 		}
 	}
