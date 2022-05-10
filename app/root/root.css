@@ -1003,6 +1003,8 @@ code .comment {
 .terminal-actions {
   display: flex;
   align-items: center;
+  margin-left: auto;
+  margin-top: 4px;
 }
 
 .terminal-actions,
@@ -1073,7 +1075,7 @@ code .comment {
 
 /* Duplicate class selector here is used to increase specificity */
 .react-lazylog-searchbar.react-lazylog-searchbar {
-  margin-right: 80px;
+  margin-right: 84px;
   background-color: transparent;
   padding: 1px 0 16px 0;
 }
