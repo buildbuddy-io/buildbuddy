@@ -202,6 +202,9 @@ func main() {
 		defer log.Printf("Run this script again with --apply=true to execute these changes!")
 	}
 
+	if *region == "" || *cluster == "" {
+		log.Fatalf("Both --region and --cluster flags must be set.")
+	}
 	ctx := context.Background()
 	c, err := compute.NewInstanceTemplatesRESTClient(ctx)
 	if err != nil {
@@ -215,8 +218,7 @@ func main() {
 	}
 	defer migc.Close()
 
-	// Find all instance templates that match our regex. Typically
-	// this is all instance templates for the ${cluster}-executor-group-*.
+	// Find all instance templates that match our cluster and pool.
 	templates, err := findInstanceTemplates(ctx, c)
 	if err != nil {
 		log.Fatalf("Error fetching instance templates: %s", err)
