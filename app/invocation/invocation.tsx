@@ -15,7 +15,7 @@ import ScorecardCardComponent from "./scorecard_card";
 import FetchCardComponent from "./invocation_fetch_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
-import SuggestionCardComponent from "./invocation_suggestion_card";
+import SuggestionCardComponent, { getSuggestions } from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
@@ -220,6 +220,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
         });
     };
 
+    const suggestions = getSuggestions({ model: this.state.model, buildLogs: this.getBuildLogs() });
+
     return (
       <div className="invocation">
         <div className={`shelf nopadding-dense ${this.state.model.getStatusClass()}`}>
@@ -243,6 +245,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
             rbeEnabled={this.state.model.getIsRBEEnabled() ? true : false}
+            hasSuggestions={suggestions.length > 0}
           />
 
           {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
@@ -269,8 +272,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log") && (
-            <SuggestionCardComponent model={this.state.model} buildLogs={this.getBuildLogs()} />
+          {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
+            <SuggestionCardComponent suggestions={suggestions} overview={activeTab !== "suggestions"} />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
