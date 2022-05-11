@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
@@ -16,30 +17,85 @@ import (
 )
 
 var (
-	project    = flag.String("project", "", "GCP project that hosts the template")
-	template   = flag.String("template", "", "The name of the base template")
-	suffix     = flag.String("suffix", "ssd-network", "Suffix to append to instance template name")
-	size       = flag.Int("size", 5, "The initial number of instances in the group")
-	region     = flag.String("region", "us-west1", "The region of the subnetwork")
+	project = flag.String("project", "", "GCP project that hosts the template")
+	region  = flag.String("region", "", "The region of the subnetwork")
+	cluster = flag.String("cluster", "", "The cluster to modify")
+	pool    = flag.String("pool", "executor-pool", "The pool to modify")
+
 	subnetwork = flag.String("subnetwork", "executor", "The name of the subnetwork")
+	apply      = flag.Bool("apply", false, "If false, run this script in dry-run mode (makes no changes)")
 )
 
-func createModifiedTemplate(ctx context.Context, c *compute.InstanceTemplatesClient, newTemplateName string) error {
-	req := &computepb.GetInstanceTemplateRequest{
-		InstanceTemplate: *template,
-		Project:          *project,
-	}
-	resp, err := c.Get(ctx, req)
-	if err != nil {
-		return fmt.Errorf("could not retrieve base template %q: %s", *template, err)
-	}
-	if resp.GetProperties().GetAdvancedMachineFeatures() == nil {
-		resp.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
-	}
-	subnetworkURL := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", *project, *region, *subnetwork)
+func getSubnetURL() string {
+	return fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/%s/regions/%s/subnetworks/%s", *project, *region, *subnetwork)
+}
 
-	resp.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = proto.Bool(true)
-	resp.GetProperties().NetworkInterfaces = append(resp.GetProperties().GetNetworkInterfaces(),
+func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
+	it := c.List(ctx, &computepb.ListInstanceTemplatesRequest{
+		Filter:  proto.String(fmt.Sprintf("name = gke-%s-%s-*", *cluster, *pool)),
+		Project: *project,
+	})
+
+	templates := make([]*computepb.InstanceTemplate, 0)
+	for {
+		tpl, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		templates = append(templates, tpl)
+	}
+	return templates, nil
+}
+
+func alreadyModified(t *computepb.InstanceTemplate) bool {
+	if !t.GetProperties().GetAdvancedMachineFeatures().GetEnableNestedVirtualization() {
+		log.Printf("nested virt was not enabled on %q", t.GetName())
+		return false
+	}
+
+	foundOneToOneNAT := false
+	for _, ni := range t.GetProperties().GetNetworkInterfaces() {
+		if ni.GetSubnetwork() != getSubnetURL() {
+			continue
+		}
+		for _, ac := range ni.GetAccessConfigs() {
+			if ac.GetType() == "ONE_TO_ONE_NAT" {
+				foundOneToOneNAT = true
+			}
+		}
+	}
+	if !foundOneToOneNAT {
+		log.Printf("ONE_TO_ONE_NAT not found on %q", t.GetName())
+		return false
+	}
+	return true
+}
+
+func modifiedTemplateName(unmodifiedName string) (string, error) {
+	const sep = "-"
+	bits := strings.Split(unmodifiedName, sep)
+	if bits[len(bits)-2] == "bb" {
+		// increment this template generation by 1.
+		i, err := strconv.Atoi(bits[len(bits)-1])
+		if err != nil {
+			return "", err
+		}
+		bits[len(bits)-1] = strconv.Itoa(i + 1)
+		return strings.Join(bits, sep), nil
+	}
+	return unmodifiedName + sep + "bb-1", nil
+}
+
+func createModifiedVersion(ctx context.Context, c *compute.InstanceTemplatesClient, old *computepb.InstanceTemplate, newTemplateName string) (*computepb.InstanceTemplate, error) {
+	new := proto.Clone(old).(*computepb.InstanceTemplate)
+	if new.GetProperties().GetAdvancedMachineFeatures() == nil {
+		new.GetProperties().AdvancedMachineFeatures = &computepb.AdvancedMachineFeatures{}
+	}
+	new.GetProperties().GetAdvancedMachineFeatures().EnableNestedVirtualization = proto.Bool(true)
+	new.GetProperties().NetworkInterfaces = append(new.GetProperties().GetNetworkInterfaces(),
 		&computepb.NetworkInterface{
 			AccessConfigs: []*computepb.AccessConfig{
 				{
@@ -47,36 +103,108 @@ func createModifiedTemplate(ctx context.Context, c *compute.InstanceTemplatesCli
 					Type: proto.String("ONE_TO_ONE_NAT"),
 				},
 			},
-			Subnetwork: proto.String(subnetworkURL),
+			Subnetwork: proto.String(getSubnetURL()),
 		})
-	resp.Name = proto.String(newTemplateName)
+	new.Name = proto.String(newTemplateName)
 
-	createReq := &computepb.InsertInstanceTemplateRequest{
+	req := &computepb.InsertInstanceTemplateRequest{
 		Project:                  *project,
-		InstanceTemplateResource: resp,
+		InstanceTemplateResource: new,
 	}
-	_, err = c.Insert(ctx, createReq)
+	if !*apply {
+		// Don't print the template here, it's fucken huge.
+		log.Printf("Would create new template: %q", newTemplateName)
+		return nil, nil
+	}
+	log.Printf("Modifying template %q to create %q...", old.GetName(), newTemplateName)
+	_, err := c.Insert(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	getReq := &computepb.GetInstanceTemplateRequest{
+		InstanceTemplate: newTemplateName,
+		Project:          *project,
+	}
+	return c.Get(ctx, getReq)
+}
+
+func getIGMs(ctx context.Context, c *compute.InstanceGroupManagersClient) ([]*computepb.InstanceGroupManager, error) {
+	igms := make([]*computepb.InstanceGroupManager, 0)
+	it := c.AggregatedList(ctx, &computepb.AggregatedListInstanceGroupManagersRequest{
+		Project: *project,
+	})
+	for {
+		rsp, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, igm := range rsp.Value.GetInstanceGroupManagers() {
+			shortZone := path.Base(igm.GetZone())
+			if !strings.HasPrefix(shortZone, *region) {
+				continue
+			}
+			igms = append(igms, igm)
+		}
+	}
+	return igms, nil
+}
+
+func createIGMWithTemplate(ctx context.Context, c *compute.InstanceGroupManagersClient, name, shortZone, modifiedTemplateURL string) error {
+	req := &computepb.InsertInstanceGroupManagerRequest{
+		Project: *project,
+		InstanceGroupManagerResource: &computepb.InstanceGroupManager{
+			Name:             proto.String(name),
+			InstanceTemplate: proto.String(modifiedTemplateURL),
+			TargetSize:       proto.Int32(int32(1)),
+		},
+		Zone: shortZone,
+	}
+
+	if !*apply {
+		log.Printf("Would create InstanceGroupManager (%+v)", req)
+		return nil
+	}
+	log.Printf("Creating InstanceGroupManager (%+v)...", req)
+	op, err := c.Insert(ctx, req)
 	if err != nil {
 		return err
 	}
-	return nil
+	return op.Wait(ctx)
 }
 
-func getTemplateURL(ctx context.Context, c *compute.InstanceTemplatesClient, templateName string) (string, error) {
-	req := &computepb.GetInstanceTemplateRequest{
-		InstanceTemplate: templateName,
-		Project:          *project,
+func deleteIGM(ctx context.Context, c *compute.InstanceGroupManagersClient, igm *computepb.InstanceGroupManager) error {
+	req := &computepb.DeleteInstanceGroupManagerRequest{
+		Project:              *project,
+		InstanceGroupManager: igm.GetName(),
+		Zone:                 path.Base(igm.GetZone()),
 	}
-	rsp, err := c.Get(ctx, req)
+
+	if !*apply {
+		log.Printf("Would delete InstanceGroupManager (%+v)", req)
+		return nil
+	}
+	log.Printf("Deleting InstanceGroupManager (%+v)...", req)
+	op, err := c.Delete(ctx, req)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return rsp.GetSelfLink(), nil
+	return op.Wait(ctx)
 }
 
 func main() {
 	flag.Parse()
 
+	if !*apply {
+		defer log.Printf("Run this script again with --apply=true to execute these changes!")
+	}
+
+	if *region == "" || *cluster == "" {
+		log.Fatalf("Both --region and --cluster flags must be set.")
+	}
 	ctx := context.Background()
 	c, err := compute.NewInstanceTemplatesRESTClient(ctx)
 	if err != nil {
@@ -84,84 +212,92 @@ func main() {
 	}
 	defer c.Close()
 
-	newTemplateURL := ""
-	newTemplateName := *template + "-" + *suffix
-	if n, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
-		if !strings.Contains(err.Error(), "Error 404") {
-			log.Fatalf("Could not check for existence of new template: %s", err)
-		}
-		log.Printf("New template does not exist, creating...")
-
-		if err := createModifiedTemplate(ctx, c, newTemplateName); err != nil {
-			log.Fatalf("Could not create new template: %s", err)
-		}
-		log.Printf("New template %q created", newTemplateName)
-		if n2, err := getTemplateURL(ctx, c, newTemplateName); err != nil {
-			log.Fatalf("Error getting new template URL: %s", err)
-		} else {
-			newTemplateURL = n2
-		}
-	} else {
-		newTemplateURL = n
-		log.Printf("New template %q already exists, not creating.", newTemplateName)
-	}
-
 	migc, err := compute.NewInstanceGroupManagersRESTClient(ctx)
 	if err != nil {
 		log.Fatalf("Could not create MIG client: %s", err)
 	}
-	it := migc.AggregatedList(ctx, &computepb.AggregatedListInstanceGroupManagersRequest{
-		Project: *project,
-	})
+	defer migc.Close()
 
-	migsByZone := make(map[string]*computepb.InstanceGroupManagersScopedList)
-	for {
-		rsp, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Could not retrieve MIG list: %s", err)
-		}
-		migsByZone[rsp.Key] = rsp.Value
+	// Find all instance templates that match our cluster and pool.
+	templates, err := findInstanceTemplates(ctx, c)
+	if err != nil {
+		log.Fatalf("Error fetching instance templates: %s", err)
 	}
 
-	for _, migs := range migsByZone {
-		for _, mig := range migs.GetInstanceGroupManagers() {
-			if strings.HasSuffix(mig.GetInstanceTemplate(), "/"+*template) {
-				// GKE doesn't allow us to add network
-				// interfaces attached to different networks for
-				// an existing instance group. Therefore, we
-				// have to delete the instance group and then
-				// create with the new template
-				shortZone := path.Base(mig.GetZone())
-				op, err := migc.Delete(ctx, &computepb.DeleteInstanceGroupManagerRequest{
-					Project:              *project,
-					InstanceGroupManager: mig.GetName(),
-					Zone:                 shortZone,
-				})
-				if err != nil {
-					log.Fatalf("Error deleting old instance group %s: %s", mig.GetName(), err)
+	// Seperate the templates into those that have already been modified
+	// and those that still need to be modified to enable our features.
+	modified := make(map[string]*computepb.InstanceTemplate, 0)
+	unmodified := make(map[string]*computepb.InstanceTemplate, 0)
+	for _, t := range templates {
+		name := t.GetName()
+		if alreadyModified(t) {
+			modified[name] = t
+		} else {
+			unmodified[name] = t
+		}
+	}
+
+	modifiableCount := 0
+	// Modify any templates as necessary.
+	for name := range unmodified {
+		modifiedName, err := modifiedTemplateName(name)
+		if err != nil {
+			log.Fatalf("Error computing modifed template name for %q: %s", name, err)
+		}
+		if _, ok := modified[modifiedName]; ok {
+			log.Printf("a modified version of %q already exists (%q). skipping!", name, modifiedName)
+			continue
+		}
+		modifiableCount += 1
+		new, err := createModifiedVersion(ctx, c, unmodified[name], modifiedName)
+		if err != nil {
+			log.Fatalf("error modifying template %q: %s", name, err)
+		}
+		modified[modifiedName] = new
+	}
+
+	log.Printf("%d templates already modified, %d to modify", len(modified), modifiableCount)
+
+	igms, err := getIGMs(ctx, migc)
+	if err != nil {
+		log.Fatalf("error fetching managed instance groups: %s", err)
+	}
+
+	// at this point, every template should at least have a "modified"
+	// version that enables our extra features.
+	//
+	// now we go through and ensure every modified version has an active
+	// instancegroupmanager using it; and every unmodified version does
+	// not.
+	for name := range unmodified {
+		modifiedName, err := modifiedTemplateName(name)
+		if err != nil {
+			log.Fatalf("Error computing modifed template name for %q: %s", name, err)
+		}
+
+		unmodifiedTemplateURL := unmodified[name].GetSelfLink()
+		modifiedTemplateURL := modified[modifiedName].GetSelfLink()
+
+		modifiedVersionInUse := false
+		for _, igm := range igms {
+			if igm.GetInstanceTemplate() == modifiedTemplateURL {
+				modifiedVersionInUse = true
+				break
+			}
+		}
+
+		for _, igm := range igms {
+			if igm.GetInstanceTemplate() == unmodifiedTemplateURL {
+				if !modifiedVersionInUse {
+					shortZone := path.Base(igm.GetZone())
+					if err := createIGMWithTemplate(ctx, migc, name, shortZone, modifiedTemplateURL); err != nil {
+						log.Fatalf("Error creating instance group manager: %s", err)
+					}
 				}
-				if err := op.Wait(ctx); err != nil {
-					log.Fatalf("Error waiting for old instance group to be deleted %s: %s", mig.GetName(), err)
+				if err := deleteIGM(ctx, migc, igm); err != nil {
+					log.Fatalf("Error deleting instance group manager: %s", err)
 				}
 
-				op, err = migc.Insert(ctx, &computepb.InsertInstanceGroupManagerRequest{
-					Project: *project,
-					InstanceGroupManagerResource: &computepb.InstanceGroupManager{
-						Name:             proto.String(mig.GetName()),
-						InstanceTemplate: proto.String(newTemplateURL),
-						TargetSize:       proto.Int32(int32(*size)),
-					},
-					Zone: shortZone,
-				})
-				if err != nil {
-					log.Fatalf("Error creating new instance group %s: %s", mig.GetName(), err)
-				}
-				if err := op.Wait(ctx); err != nil {
-					log.Fatalf("Error waiting for new instance group to be created %s: %s", mig.GetName(), err)
-				}
 			}
 		}
 	}
