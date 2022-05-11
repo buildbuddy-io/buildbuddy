@@ -78,13 +78,13 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pe
 type asyncStreamProxy struct {
 	pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
 	ctx    context.Context
-	events chan pepb.PublishBuildToolEventStreamRequest
+	events chan *pepb.PublishBuildToolEventStreamRequest
 }
 
 func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ...grpc.CallOption) *asyncStreamProxy {
 	asp := &asyncStreamProxy{
 		ctx:    ctx,
-		events: make(chan pepb.PublishBuildToolEventStreamRequest, *bufferSize),
+		events: make(chan *pepb.PublishBuildToolEventStreamRequest, *bufferSize),
 	}
 	// Start a goroutine that will open the stream and pass along events.
 	go func() {
@@ -118,7 +118,7 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 			if !ok {
 				break
 			}
-			err := stream.Send(&req)
+			err := stream.Send(req)
 			if err != nil {
 				log.Warningf("Error sending req on stream: %s", err.Error())
 				break
@@ -131,7 +131,7 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 
 func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) error {
 	select {
-	case asp.events <- *req:
+	case asp.events <- req:
 		// does not fallthrough.
 	default:
 		log.Warningf("BuildEventProxy dropped message.")
