@@ -71,7 +71,7 @@ const (
 )
 
 var (
-	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 0, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
 	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 
 	cacheStatsFinalizationDelay = flag.Duration(

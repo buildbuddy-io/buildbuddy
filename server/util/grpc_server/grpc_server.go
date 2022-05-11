@@ -25,7 +25,6 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
@@ -131,7 +130,7 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
 
 	// Register API Server as a gRPC service.
-	if api := env.GetAPIService(); api_config.Enabled() && api != nil {
+	if api := env.GetAPIService(); api != nil {
 		apipb.RegisterApiServiceServer(grpcServer, api)
 	}
 

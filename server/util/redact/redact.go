@@ -424,7 +424,7 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 // Returns the API key hard-coded in the BuildBuddy config file / config flags,
 // or "" if there is no key configured.
 func getAPIKeyFromBuildBuddyConfig(env environment.Env) string {
-	if api_config.Enabled() {
+	if api := env.GetAPIService(); api != nil {
 		return api_config.Key()
 	}
 	return ""

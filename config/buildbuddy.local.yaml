@@ -1,16 +1,7 @@
 app:
-  build_buddy_url: "http://localhost:8080"
   log_error_stack_traces: true
-database:
-  data_source: "sqlite3:///tmp/buildbuddy.db"
 storage:
   ttl_seconds: 86400 # One day in seconds.
-  chunk_file_size_bytes: 3000000 # 3 MB
-  disk:
-    root_directory: /tmp/buildbuddy
   enable_chunked_event_logs: true
 cache:
   max_size_bytes: 1000000000 # 1 GB
-  #in_memory: true
-  disk:
-    root_directory: /tmp/buildbuddy_cache

@@ -4,12 +4,10 @@ database:
   data_source: "sqlite3:///devdata/buildbuddy.db"
 storage:
   ttl_seconds: 604800 # 1 week in seconds
-  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: /devdata/
   enable_chunked_event_logs: true
 cache:
-  max_size_bytes: 10000000000 # 10 GB
   ttl_seconds: 604800 # One week in seconds.
   disk:
     root_directory: /devdata/cache

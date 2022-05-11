@@ -51,7 +51,7 @@ const (
 )
 
 var (
-	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	rootDirectory     = flag.String("cache.disk.root_directory", "/tmp/buildbuddy_cache", "The root directory to store all blobs in, if using disk based storage.")
 	partitions        = []disk.Partition{}
 	partitionMappings = []disk.PartitionMapping{}
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")

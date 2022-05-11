@@ -129,8 +129,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		log.Fatalf("%v", err)
 	}
 
-	apiServer := api.NewAPIServer(env)
-	env.SetAPIService(apiServer)
+	if err := api.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	workflowService := workflow.NewWorkflowService(env)
 	env.SetWorkflowService(workflowService)
