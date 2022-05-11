@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	project       = flag.String("project", "", "GCP project that hosts the template")
-	region        = flag.String("region", "us-west1", "The region of the subnetwork")
-	templateRegex = flag.String("template_regex", "", "The regex to use when matching instance templates")
+	project = flag.String("project", "", "GCP project that hosts the template")
+	region  = flag.String("region", "", "The region of the subnetwork")
+	cluster = flag.String("cluster", "", "The cluster to modify")
+	pool    = flag.String("pool", "executor-pool", "The pool to modify")
 
 	subnetwork = flag.String("subnetwork", "executor", "The name of the subnetwork")
 	apply      = flag.Bool("apply", false, "If false, run this script in dry-run mode (makes no changes)")
@@ -31,7 +32,7 @@ func getSubnetURL() string {
 
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
 	it := c.List(ctx, &computepb.ListInstanceTemplatesRequest{
-		Filter:  proto.String(fmt.Sprintf("name = %q", *templateRegex)),
+		Filter:  proto.String(fmt.Sprintf("name = gke-%s-%s-*", *cluster, *pool)),
 		Project: *project,
 	})
 
@@ -142,6 +143,10 @@ func getIGMs(ctx context.Context, c *compute.InstanceGroupManagersClient) ([]*co
 			return nil, err
 		}
 		for _, igm := range rsp.Value.GetInstanceGroupManagers() {
+			shortZone := path.Base(igm.GetZone())
+			if !strings.HasPrefix(shortZone, *region) {
+				continue
+			}
 			igms = append(igms, igm)
 		}
 	}
@@ -230,6 +235,7 @@ func main() {
 		}
 	}
 
+	modifiableCount := 0
 	// Modify any templates as necessary.
 	for name := range unmodified {
 		modifiedName, err := modifiedTemplateName(name)
@@ -240,12 +246,15 @@ func main() {
 			log.Printf("a modified version of %q already exists (%q). skipping!", name, modifiedName)
 			continue
 		}
+		modifiableCount += 1
 		new, err := createModifiedVersion(ctx, c, unmodified[name], modifiedName)
 		if err != nil {
 			log.Fatalf("error modifying template %q: %s", name, err)
 		}
 		modified[modifiedName] = new
 	}
+
+	log.Printf("%d templates already modified, %d to modify", len(modified), modifiableCount)
 
 	igms, err := getIGMs(ctx, migc)
 	if err != nil {
@@ -258,14 +267,15 @@ func main() {
 	// now we go through and ensure every modified version has an active
 	// instancegroupmanager using it; and every unmodified version does
 	// not.
-	//
-	// TODO(tylerw): DRIVE all modifications off of the unmodified list?
 	for name := range unmodified {
 		modifiedName, err := modifiedTemplateName(name)
 		if err != nil {
 			log.Fatalf("Error computing modifed template name for %q: %s", name, err)
 		}
+
+		unmodifiedTemplateURL := unmodified[name].GetSelfLink()
 		modifiedTemplateURL := modified[modifiedName].GetSelfLink()
+
 		modifiedVersionInUse := false
 		for _, igm := range igms {
 			if igm.GetInstanceTemplate() == modifiedTemplateURL {
@@ -274,7 +284,6 @@ func main() {
 			}
 		}
 
-		unmodifiedTemplateURL := unmodified[name].GetSelfLink()
 		for _, igm := range igms {
 			if igm.GetInstanceTemplate() == unmodifiedTemplateURL {
 				if !modifiedVersionInUse {
