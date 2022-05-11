@@ -15,7 +15,7 @@ import ScorecardCardComponent from "./scorecard_card";
 import FetchCardComponent from "./invocation_fetch_card";
 import InvocationDetailsCardComponent from "./invocation_details_card";
 import ErrorCardComponent from "./invocation_error_card";
-import SuggestionCardComponent from "./invocation_suggestion_card";
+import SuggestionCardComponent, { SuggestionLevel } from "./invocation_suggestion_card";
 import InvocationFilterComponent from "./invocation_filter";
 import InvocationInProgressComponent from "./invocation_in_progress";
 import InvocationModel from "./invocation_model";
@@ -270,7 +270,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log") && (
-            <SuggestionCardComponent model={this.state.model} buildLogs={this.getBuildLogs()} />
+            <SuggestionCardComponent
+              model={this.state.model}
+              buildLogs={this.getBuildLogs()}
+              level={SuggestionLevel.ERROR}
+              limit={1}
+            />
           )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (

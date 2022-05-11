@@ -5,9 +5,14 @@ import InvocationModel from "./invocation_model";
 interface Props {
   model: InvocationModel;
   buildLogs: string;
+  /** Show only suggestions with this level. */
+  level?: SuggestionLevel;
+  /** Show up to this many suggestions. */
+  limit?: number;
 }
 
 interface Suggestion {
+  level: SuggestionLevel;
   message: React.ReactNode;
   reason: React.ReactNode;
 }
@@ -15,6 +20,11 @@ interface Suggestion {
 interface MatchParams {
   model: InvocationModel;
   buildLogs: string;
+}
+
+export enum SuggestionLevel {
+  INFO,
+  ERROR,
 }
 
 /** Given some data about an invocation, optionally returns a suggestion. */
@@ -28,6 +38,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
   // TODO(siggisim): server side suggestion storing, parsing, and fetching.
   matchers: SuggestionMatcher[] = [
     buildLogRegex({
+      level: SuggestionLevel.ERROR,
       regex: /stat \/usr\/bin\/gcc: no such file or directory/,
       message: (
         <>
@@ -41,6 +52,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
       ),
     }),
     buildLogRegex({
+      level: SuggestionLevel.ERROR,
       regex: /exec user process caused "exec format error"/,
       message: (
         <>
@@ -51,6 +63,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
       ),
     }),
     buildLogRegex({
+      level: SuggestionLevel.ERROR,
       regex: /rpc error: code = Unavailable desc = No registered executors./,
       message: (
         <>
@@ -62,42 +75,55 @@ export default class SuggestionCardComponent extends React.Component<Props> {
     }),
   ];
 
-  getSuggestion(): Suggestion | null {
-    if (!this.props.buildLogs || !this.props.model) return null;
+  getSuggestions(): Suggestion[] {
+    if (!this.props.buildLogs || !this.props.model) return [];
 
+    const suggestions: Suggestion[] = [];
     for (let matcher of this.matchers) {
       const suggestion = matcher({ buildLogs: this.props.buildLogs, model: this.props.model });
-      if (suggestion) return suggestion;
+      if (this.props.level !== undefined && suggestion.level !== this.props.level) continue;
+      if (suggestion) suggestions.push(suggestion);
     }
-
-    return null;
+    return suggestions;
   }
 
   render() {
-    const suggestion = this.getSuggestion();
-    if (!suggestion) return null;
+    const suggestions = this.getSuggestions();
+    if (!suggestions.length) return null;
 
     return (
-      <div className="card card-suggestion">
-        <Radio className="icon white" />
-        <div className="content">
-          <div className="title">Suggestion from the BuildBuddy Team</div>
-          <div className="details">
-            <div className="card-suggestion-message">{suggestion.message}</div>
-            <div className="card-suggestion-reason">{suggestion.reason}</div>
-          </div>
-        </div>
-      </div>
+      <>
+        {suggestions.map((suggestion) => {
+          <div className="card card-suggestion">
+            <Radio className="icon white" />
+            <div className="content">
+              <div className="title">Suggestion from the BuildBuddy Team</div>
+              <div className="details">
+                <div className="card-suggestion-message">{suggestion.message}</div>
+                <div className="card-suggestion-reason">{suggestion.reason}</div>
+              </div>
+            </div>
+          </div>;
+        })}
+      </>
     );
   }
 }
 
 /** Returns the given suggestion message if the given regex matches the build logs. */
-function buildLogRegex({ regex, message }: { regex: RegExp; message: React.ReactNode }): SuggestionMatcher {
+function buildLogRegex({
+  level,
+  regex,
+  message,
+}: {
+  level: SuggestionLevel;
+  regex: RegExp;
+  message: React.ReactNode;
+}): SuggestionMatcher {
   return ({ buildLogs }) => {
     const matches = buildLogs.match(regex);
     if (!matches) return null;
     const reason = <>Shown because your build log contains "{matches[0]}"</>;
-    return { message, reason };
+    return { level, message, reason };
   };
 }
