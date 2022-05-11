@@ -1,18 +1,33 @@
 import React from "react";
 import { Radio } from "lucide-react";
+import InvocationModel from "./invocation_model";
 
 interface Props {
+  model: InvocationModel;
   buildLogs: string;
 }
 
+interface Suggestion {
+  message: React.ReactNode;
+  reason: React.ReactNode;
+}
+
+interface MatchParams {
+  model: InvocationModel;
+  buildLogs: string;
+}
+
+/** Given some data about an invocation, optionally returns a suggestion. */
+type SuggestionMatcher = (params: MatchParams) => Suggestion | null;
+
 export default class SuggestionCardComponent extends React.Component<Props> {
   shouldComponentUpdate(nextProps: Readonly<Props>): boolean {
-    return nextProps.buildLogs !== this.props.buildLogs;
+    return nextProps.buildLogs !== this.props.buildLogs || nextProps.model !== this.props.model;
   }
 
   // TODO(siggisim): server side suggestion storing, parsing, and fetching.
-  suggestionMap = [
-    {
+  matchers: SuggestionMatcher[] = [
+    buildLogRegex({
       regex: /stat \/usr\/bin\/gcc: no such file or directory/,
       message: (
         <>
@@ -24,8 +39,8 @@ export default class SuggestionCardComponent extends React.Component<Props> {
           .
         </>
       ),
-    },
-    {
+    }),
+    buildLogRegex({
       regex: /exec user process caused "exec format error"/,
       message: (
         <>
@@ -34,8 +49,8 @@ export default class SuggestionCardComponent extends React.Component<Props> {
           the remote execution cluster. Try running Bazel on a Linux host or in a Docker container.
         </>
       ),
-    },
-    {
+    }),
+    buildLogRegex({
       regex: /rpc error: code = Unavailable desc = No registered executors./,
       message: (
         <>
@@ -44,20 +59,15 @@ export default class SuggestionCardComponent extends React.Component<Props> {
           a Linux host or in a Docker container.
         </>
       ),
-    },
+    }),
   ];
 
-  getSuggestion() {
-    if (!this.props.buildLogs) return null;
+  getSuggestion(): Suggestion | null {
+    if (!this.props.buildLogs || !this.props.model) return null;
 
-    for (let potentialSuggestion of this.suggestionMap) {
-      let matches = this.props.buildLogs.match(potentialSuggestion.regex);
-      if (matches) {
-        return {
-          message: potentialSuggestion.message,
-          reason: <>Shown because your build log contains "{matches[0]}"</>,
-        };
-      }
+    for (let matcher of this.matchers) {
+      const suggestion = matcher({ buildLogs: this.props.buildLogs, model: this.props.model });
+      if (suggestion) return suggestion;
     }
 
     return null;
@@ -80,4 +90,14 @@ export default class SuggestionCardComponent extends React.Component<Props> {
       </div>
     );
   }
+}
+
+/** Returns the given suggestion message if the given regex matches the build logs. */
+function buildLogRegex({ regex, message }: { regex: RegExp; message: React.ReactNode }): SuggestionMatcher {
+  return ({ buildLogs }) => {
+    const matches = buildLogs.match(regex);
+    if (!matches) return null;
+    const reason = <>Shown because your build log contains "{matches[0]}"</>;
+    return { message, reason };
+  };
 }
