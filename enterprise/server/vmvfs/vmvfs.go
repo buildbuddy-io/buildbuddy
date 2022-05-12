@@ -39,7 +39,7 @@ func NewServer() (*vfsServer, error) {
 	}
 
 	vsockDialer := func(ctx context.Context, s string) (net.Conn, error) {
-		conn, err := libVsock.Dial(libVsock.Host, vsock.HostVFSServerPort)
+		conn, err := libVsock.Dial(libVsock.Host, vsock.HostVFSServerPort, &libVsock.Config{})
 		return conn, err
 	}
 	conn, err := grpc.Dial("vsock", grpc.WithContextDialer(vsockDialer), grpc.WithInsecure())
