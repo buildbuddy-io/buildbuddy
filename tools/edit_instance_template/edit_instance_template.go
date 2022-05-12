@@ -278,26 +278,15 @@ func main() {
 		unmodifiedTemplateURL := unmodified[name].GetSelfLink()
 		modifiedTemplateURL := modified[modifiedName].GetSelfLink()
 
-		modifiedVersionInUse := false
-		for _, igm := range igms {
-			if igm.GetInstanceTemplate() == modifiedTemplateURL {
-				modifiedVersionInUse = true
-				break
-			}
-		}
-
 		for _, igm := range igms {
 			if igm.GetInstanceTemplate() == unmodifiedTemplateURL {
-				if !modifiedVersionInUse {
-					shortZone := path.Base(igm.GetZone())
-					if err := createIGMWithTemplate(ctx, migc, name, shortZone, modifiedTemplateURL); err != nil {
-						log.Fatalf("Error creating instance group manager: %s", err)
-					}
-				}
 				if err := deleteIGM(ctx, migc, igm); err != nil {
 					log.Fatalf("Error deleting instance group manager: %s", err)
 				}
-
+				shortZone := path.Base(igm.GetZone())
+				if err := createIGMWithTemplate(ctx, migc, igm.GetName(), shortZone, modifiedTemplateURL); err != nil {
+					log.Fatalf("Error creating instance group manager: %s", err)
+				}
 			}
 		}
 	}
