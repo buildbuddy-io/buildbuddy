@@ -52,8 +52,8 @@ const (
 
 var (
 	rootDirectory     = flag.String("cache.disk.root_directory", "/tmp/buildbuddy_cache", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        = []disk.Partition{}
-	partitionMappings = []disk.PartitionMapping{}
+	partitions        = flagutil.Slice("cache.disk.partitions", []disk.Partition{}, "")
+	partitionMappings = flagutil.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
@@ -64,11 +64,6 @@ type Options struct {
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 	UseV2Layout       bool
-}
-
-func init() {
-	flagutil.StructSliceVar(&partitions, "cache.disk.partitions", "")
-	flagutil.StructSliceVar(&partitionMappings, "cache.disk.partition_mappings", "")
 }
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
@@ -170,8 +165,8 @@ func Register(env environment.Env) error {
 	}
 	dc := &Options{
 		RootDirectory:     *rootDirectory,
-		Partitions:        partitions,
-		PartitionMappings: partitionMappings,
+		Partitions:        *partitions,
+		PartitionMappings: *partitionMappings,
 		UseV2Layout:       *useV2Layout,
 	}
 	c, err := NewDiskCache(env, dc, cache_config.MaxSizeBytes())

@@ -39,10 +39,12 @@ import (
 
 var (
 	// Disk flags
-	rootDirectory     = flag.String("storage.disk.root_directory", "/tmp/buildbuddy", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        []disk.Partition
-	partitionMappings []disk.PartitionMapping
-	useV2Layout       = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+	rootDirectory = flag.String("storage.disk.root_directory", "/tmp/buildbuddy", "The root directory to store all blobs in, if using disk based storage.")
+	useV2Layout   = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+
+	// These flags are unreferenced in the code
+	partitions        = flagutil.Slice("storage.disk.partitions", []disk.Partition{}, "")
+	partitionMappings = flagutil.Slice("storage.disk.partition_mappings", []disk.PartitionMapping{}, "")
 
 	// GCS flags
 	gcsBucket          = flag.String("storage.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
@@ -68,11 +70,6 @@ var (
 	azureAccountKey    = flag.String("storage.azure.account_key", "", "The key for the Azure storage account")
 	azureContainerName = flag.String("storage.azure.container_name", "", "The name of the Azure storage container")
 )
-
-func init() {
-	flagutil.StructSliceVar(&partitions, "storage.disk.partitions", "")
-	flagutil.StructSliceVar(&partitionMappings, "storage.disk.partition_mappings", "")
-}
 
 const (
 	// Prometheus BlobstoreTypeLabel values

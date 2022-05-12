@@ -39,7 +39,7 @@ var (
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
-	traceFractionOverrides    = flagutil.StringSlice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
+	traceFractionOverrides    = flagutil.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
 
 	// bound overrides are parsed from the traceFractionOverrides flag.

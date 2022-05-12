@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
@@ -147,10 +148,8 @@ func GetMyPort() (int32, error) {
 	portStr := ""
 	if v := os.Getenv(portEnvVarName); v != "" {
 		portStr = v
-	} else {
-		if v := flag.Lookup("grpc_port"); v != nil {
-			portStr = v.Value.String()
-		}
+	} else if p, err := flagutil.DereferencedValueFromFlagName[int]("grpc_port"); err == nil {
+		portStr = strconv.Itoa(p)
 	}
 	i, err := strconv.ParseInt(portStr, 10, 32)
 	if err != nil {

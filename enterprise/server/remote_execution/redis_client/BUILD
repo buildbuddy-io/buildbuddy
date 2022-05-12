@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/status",
     ],

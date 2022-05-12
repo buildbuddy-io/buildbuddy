@@ -64,8 +64,8 @@ var (
 	dockerNetHost           = flag.Bool("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
-	dockerDevices           []container.DockerDeviceMapping
-	dockerVolumes           = flagutil.StringSlice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
+	dockerDevices           = flagutil.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
+	dockerVolumes           = flagutil.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
@@ -77,11 +77,6 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 )
-
-func init() {
-	flagutil.StructSliceVar(&dockerDevices, "executor.docker_devices", `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContaine
-r":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-}
 
 const (
 	// Runner states
@@ -682,7 +677,7 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,
 		DockerCapAdd:            *dockerCapAdd,
-		DockerDevices:           dockerDevices,
+		DockerDevices:           *dockerDevices,
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
@@ -894,7 +889,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			User:      props.DockerUser,
 			Network:   props.DockerNetwork,
 			CapAdd:    *dockerCapAdd,
-			Devices:   dockerDevices,
+			Devices:   *dockerDevices,
 			Volumes:   *dockerVolumes,
 			Runtime:   *podmanRuntime,
 		}
