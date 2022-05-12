@@ -230,7 +230,6 @@ func (r *dockerCommandContainer) containerConfig(args, env []string, workDir str
 	}
 	return &dockercontainer.Config{
 		Image:      r.image,
-		Hostname:   "localhost",
 		Env:        env,
 		Cmd:        args,
 		WorkingDir: workDir,
