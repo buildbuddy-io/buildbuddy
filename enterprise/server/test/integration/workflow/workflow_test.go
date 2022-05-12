@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -77,7 +78,9 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
 	// Set events_api_url to point to the test BB app server (this gets
 	// propagated to the CI runner so it knows where to publish build events).
-	flags.Set(t, "app.events_api_url", fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
+	u, err := url.Parse(fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
+	require.NoError(t, err)
+	flags.Set(t, "app.events_api_url", *u)
 
 	env.AddExecutors(t, 10)
 	return env, workflowService
