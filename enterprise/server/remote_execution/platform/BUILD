@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
