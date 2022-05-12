@@ -1458,6 +1458,12 @@ func (s *SchedulerServer) CancelTask(ctx context.Context, taskID string) (bool, 
 	return s.deleteTask(ctx, taskID)
 }
 
+func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, error) {
+	key := s.redisKeyForTask(taskID)
+	n, err := s.rdb.Exists(ctx, key).Result()
+	return n == 1, err
+}
+
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// TODO(vadim): verify user is authorized to use executor pool
 

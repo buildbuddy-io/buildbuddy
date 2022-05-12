@@ -410,6 +410,22 @@ var (
 	/// sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
 	/// ```
 
+	RemoteExecutionMergedActions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "merged_actions",
+		Help:      "Number of identical execution requests that have been merged.",
+	}, []string{
+		GroupID,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Rate of merged actions by group.
+	/// sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
+	/// ```
+
 	RemoteExecutionQueueLength = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

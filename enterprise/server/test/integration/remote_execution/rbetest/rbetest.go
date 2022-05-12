@@ -1039,12 +1039,14 @@ func (c *Command) MustFailAfterSchedulerRetry() error {
 	return result.Err
 }
 
-func (c *Command) WaitAccepted() {
+func (c *Command) WaitAccepted() string {
 	select {
-	case <-c.AcceptedChannel():
+	case opName := <-c.AcceptedChannel():
 		// Command accepted.
+		return opName
 	case <-time.After(defaultWaitTimeout):
 		assert.FailNow(c.env.t, fmt.Sprintf("command %q was not accepted within timeout", c.Name))
+		return ""
 	}
 }
 
@@ -1113,7 +1115,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 		assert.FailNow(r.t, fmt.Sprintf("Could not prepare command %q", name), err.Error())
 	}
 
-	err = cmd.Start(ctx)
+	err = cmd.Start(ctx, &rbeclient.StartOpts{SkipCacheLookup: true})
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
@@ -1155,6 +1157,9 @@ type ExecuteOpts struct {
 	InvocationID string
 	// ActionTimeout is the value of Timeout to be passed to the spawned action.
 	ActionTimeout time.Duration
+	// Whether action cache should be checked for existing results. By default,
+	// we skip the action cache check for tests.
+	CheckCache bool
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
@@ -1192,7 +1197,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 		assert.FailNowf(r.t, fmt.Sprintf("unable to request action execution for command %q", name), err.Error())
 	}
 
-	err = cmd.Start(ctx)
+	err = cmd.Start(ctx, &rbeclient.StartOpts{SkipCacheLookup: !opts.CheckCache})
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
