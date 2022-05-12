@@ -26,7 +26,6 @@ esbuild(
         ":fastbuild": False,
         "//conditions:default": True,
     }),
-    splitting = True,
     deps = [
         ":app",
     ],
