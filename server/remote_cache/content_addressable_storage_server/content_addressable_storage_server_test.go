@@ -340,7 +340,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 
 			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
 			require.Nil(t, err)
-			dirName := fmt.Sprintf("depth-%d-node-%d", d, n)
+			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
 			fileNames = append(fileNames, dirName)
 			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
 				Name:   dirName,
@@ -407,8 +407,8 @@ func TestGetTree(t *testing.T) {
 		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
 	}
 
-	child1Digest, child1Files := uploadDirWithFiles(3, 2)
-	child2Digest, child2Files := uploadDirWithFiles(3, 2)
+	child1Digest, child1Files := uploadDirWithFiles(2, 1)
+	child2Digest, child2Files := uploadDirWithFiles(2, 1)
 
 	// Upload a root directory containing both child directories.
 	rootDir := &repb.Directory{
@@ -427,6 +427,7 @@ func TestGetTree(t *testing.T) {
 	assert.Nil(t, err)
 
 	allFiles := append(child1Files, child2Files...)
+	allFiles = append(allFiles, "child1", "child2")
 	treeFiles := readTree(ctx, t, casClient, instanceName, rootDigest)
 	assert.ElementsMatch(t, allFiles, treeFiles)
 }
@@ -484,6 +485,8 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Nil(t, err)
 
 	uploadedFiles1 := append(child1Files, child2Files...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "child2")
+
 	start := time.Now()
 	treeFiles1 := readTree(ctx, t, casClient, instanceName, rootDigest1)
 	fetch1Time := time.Since(start)
@@ -491,6 +494,7 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
 
 	uploadedFiles2 := append(child2Files, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "child2", "child3")
 	start = time.Now()
 	treeFiles2 := readTree(ctx, t, casClient, instanceName, rootDigest2)
 	fetch2Time := time.Since(start)

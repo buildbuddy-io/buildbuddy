@@ -607,7 +607,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 		allDescendents := make([]*repb.DirectoryWithDigest, 0, len(children))
 		allDescendents = append(allDescendents, dirWithDigest)
-		allDescendents = append(allDescendents, children...)
 
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
@@ -640,7 +639,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				log.Warningf("Error setting treeCache blob: %s", err)
 			}
 		}
-
 		return allDescendents, nil
 	}
 
