@@ -343,7 +343,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 			dirName := fmt.Sprintf("depth-%d-node-%d", d, n)
 			fileNames = append(fileNames, dirName)
 			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
-				Name: dirName,
+				Name:   dirName,
 				Digest: subdirDigest,
 			})
 		}
