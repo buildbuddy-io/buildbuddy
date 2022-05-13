@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -25,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
 )
 
@@ -33,10 +39,14 @@ func runCASServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc
 	if err != nil {
 		t.Error(err)
 	}
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	if err != nil {
+		t.Error(err)
+	}
 
 	grpcServer, runFunc := env.LocalGRPCServer()
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
 
 	clientConn, err := env.LocalGRPCConn(ctx)
@@ -300,4 +310,195 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	out, err := compression.DecompressZstd(nil, b)
 	require.NoError(t, err, "failed to decompress blob")
 	return out
+}
+
+func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, instanceName string, depth, branchingFactor int) (*repb.Digest, []string) {
+	numFiles := int(math.Pow(float64(branchingFactor), float64(depth)))
+	fileNames := make([]string, 0, numFiles)
+	var leafNodes []*repb.DirectoryNode
+
+	for d := depth; d > 0; d-- {
+		numNodes := int(math.Pow(float64(branchingFactor), float64(d)))
+		nextLeafNodes := make([]*repb.DirectoryNode, 0, numNodes)
+		for n := 0; n < numNodes; n++ {
+			subdir := &repb.Directory{}
+			if d == depth {
+				d, buf := testdigest.NewRandomDigestBuf(t, 100)
+				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, bytes.NewReader(buf))
+				require.Nil(t, err)
+				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
+				fileNames = append(fileNames, fileName)
+				subdir.Files = append(subdir.Files, &repb.FileNode{
+					Name:   fileName,
+					Digest: d,
+				})
+			} else {
+				start := n * branchingFactor
+				end := branchingFactor + start
+				subdir.Directories = append(subdir.Directories, leafNodes[start:end]...)
+			}
+
+			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
+			require.Nil(t, err)
+			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
+			fileNames = append(fileNames, dirName)
+			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
+				Name:   dirName,
+				Digest: subdirDigest,
+			})
+		}
+		leafNodes = nextLeafNodes
+	}
+
+	parentDir := &repb.Directory{
+		Directories: leafNodes,
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, parentDir)
+	require.Nil(t, err)
+	return rootDigest, fileNames
+}
+
+func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, instanceName string, rootDigest *repb.Digest) []string {
+	// Fetch the tree, and return contents.
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName: instanceName,
+		RootDigest:   rootDigest,
+	})
+	assert.Nil(t, err)
+
+	names := make([]string, 0)
+
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, dir := range rsp.GetDirectories() {
+			for _, file := range dir.GetFiles() {
+				names = append(names, file.GetName())
+			}
+			for _, subdir := range dir.GetDirectories() {
+				names = append(names, subdir.GetName())
+			}
+		}
+	}
+	return names
+}
+
+func TestGetTree(t *testing.T) {
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	// Upload a dir containing fileCount files, and return the file
+	// names and directory digest.
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(2, 1)
+	child2Digest, child2Files := uploadDirWithFiles(2, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+		},
+	}
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir)
+	assert.Nil(t, err)
+
+	allFiles := append(child1Files, child2Files...)
+	allFiles = append(allFiles, "child1", "child2")
+	treeFiles := readTree(ctx, t, casClient, instanceName, rootDigest)
+	assert.ElementsMatch(t, allFiles, treeFiles)
+}
+
+func TestGetTreeCaching(t *testing.T) {
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return makeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(10, 2)
+	child2Digest, child2Files := uploadDirWithFiles(10, 2)
+	child3Digest, child3Files := uploadDirWithFiles(1, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir1 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+		},
+	}
+	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir1)
+	assert.Nil(t, err)
+
+	rootDir2 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child2",
+				Digest: child2Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child3",
+				Digest: child3Digest,
+			},
+		},
+	}
+	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir2)
+	assert.Nil(t, err)
+
+	uploadedFiles1 := append(child1Files, child2Files...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "child2")
+
+	start := time.Now()
+	treeFiles1 := readTree(ctx, t, casClient, instanceName, rootDigest1)
+	fetch1Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
+
+	uploadedFiles2 := append(child2Files, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "child2", "child3")
+	start = time.Now()
+	treeFiles2 := readTree(ctx, t, casClient, instanceName, rootDigest2)
+	fetch2Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
+	assert.Less(t, fetch2Time, fetch1Time/2)
 }
