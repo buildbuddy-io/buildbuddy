@@ -512,6 +512,20 @@ func TestSetValueForFlagName(t *testing.T) {
 	assert.Equal(t, "2", *flagString)
 
 	flags = replaceFlagsForTesting(t)
+	flagString = flags.String("string", "2", "")
+	Alias[string]("string_alias", "string")
+	err = SetValueForFlagName("string_alias", "1", map[string]struct{}{}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, "1", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+	flagString = flags.String("string", "2", "")
+	Alias[string]("string_alias", "string")
+	err = SetValueForFlagName("string_alias", "1", map[string]struct{}{"string": struct{}{}}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, "2", *flagString)
+
+	flags = replaceFlagsForTesting(t)
 	flagURL := URLString("url", "https://www.example.com", "")
 	err = SetValueForFlagName("url", "https://www.example.com:8080", map[string]struct{}{}, true, true)
 	require.NoError(t, err)
@@ -547,6 +561,72 @@ func TestSetValueForFlagName(t *testing.T) {
 	flags = replaceFlagsForTesting(t)
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	err = SetValueForFlagName("string_slice", []string{"3"}, map[string]struct{}{"string_slice": struct{}{}}, false, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	string_slice = make([]string, 2)
+	string_slice[0] = "1"
+	string_slice[1] = "2"
+	SliceVar(&string_slice, "string_slice", "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	err = SetValueForFlagName("string_slice_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	err = SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": struct{}{}}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	err = SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{}, false, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"3"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	err = SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": struct{}{}}, false, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	string_slice = make([]string, 2)
+	string_slice[0] = "1"
+	string_slice[1] = "2"
+	SliceVar(&string_slice, "string_slice", "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
+	err = SetValueForFlagName("string_slice_alias_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
+	err = SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": struct{}{}}, true, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
+	err = SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{}, false, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"3"}, *flagStringSlice)
+
+	flags = replaceFlagsForTesting(t)
+	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
+	err = SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": struct{}{}}, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
@@ -631,6 +711,16 @@ func TestDereferencedValueFromFlagName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSlice)
 
+	_ = Alias[[]string]("string_slice_alias", "string_slice")
+	stringSliceAlias, err := DereferencedValueFromFlagName[[]string]("string_slice_alias")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, stringSliceAlias)
+
+	_ = Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
+	stringSliceAliasAlias, err := DereferencedValueFromFlagName[[]string]("string_slice_alias_alias")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, stringSliceAliasAlias)
+
 	flags = replaceFlagsForTesting(t)
 	SliceVar(&[]testStruct{{Field: 1}, {Field: 2}}, "struct_slice", "")
 	structSlice, err := GetDereferencedValue[[]testStruct]("struct_slice")
@@ -642,4 +732,91 @@ func TestBadDereferencedValueFromFlagName(t *testing.T) {
 	_ = replaceFlagsForTesting(t)
 	_, err := GetDereferencedValue[any]("unknown_flag")
 	require.Error(t, err)
+}
+
+func TestFlagAlias(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+	s := flags.String("string", "test", "")
+	as := Alias[string]("string_alias", "string")
+	aas := Alias[string]("string_alias_alias", "string_alias")
+	assert.Equal(t, *s, "test")
+	assert.Equal(t, s, as)
+	assert.Equal(t, as, aas)
+	flags.Lookup("string").Value.Set("moo")
+	assert.Equal(t, *s, "moo")
+	flags.Lookup("string_alias").Value.Set("woof")
+	assert.Equal(t, *s, "woof")
+	flags.Lookup("string_alias_alias").Value.Set("meow")
+	assert.Equal(t, *s, "meow")
+
+	asf := flags.Lookup("string_alias").Value.(*FlagAlias)
+	assert.Equal(t, "meow", asf.String())
+	assert.Equal(t, "string", asf.AliasedName())
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), asf.AliasedType())
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), asf.YAMLTypeAlias())
+
+	aasf := flags.Lookup("string_alias").Value.(*FlagAlias)
+	assert.Equal(t, "meow", aasf.String())
+	assert.Equal(t, "string", aasf.AliasedName())
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasf.AliasedType())
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasf.YAMLTypeAlias())
+
+	flags = replaceFlagsForTesting(t)
+
+	flagString := flags.String("string", "test", "")
+	Alias[string]("string_alias", "string")
+	yamlData := `
+string: "woof"
+string_alias: "meow"
+`
+	err := PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, "meow", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagString = flags.String("string", "test", "")
+	Alias[string]("string_alias", "string")
+	yamlData = `
+string_alias: "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, "meow", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagString = flags.String("string", "test", "")
+	Alias[string]("string_alias", "string")
+	flags.Set("string", "moo")
+	yamlData = `
+string_alias: "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, "moo", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagString = flags.String("string", "test", "")
+	Alias[string]("string_alias", "string")
+	flags.Set("string_alias", "moo")
+	yamlData = `
+string: "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, "moo", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagString = flags.String("string", "test", "")
+	Alias[string]("string_alias", "string")
+	flags.Set("string_alias", "moo")
+	yamlData = `
+string_alias: "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, "moo", *flagString)
 }
