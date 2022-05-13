@@ -326,7 +326,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 				d, buf := testdigest.NewRandomDigestBuf(t, 100)
 				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, bytes.NewReader(buf))
 				require.Nil(t, err)
-				fileName := fmt.Sprintf("file-%s-%d", d.GetHash(), n)
+				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
 				fileNames = append(fileNames, fileName)
 				subdir.Files = append(subdir.Files, &repb.FileNode{
 					Name:   fileName,
@@ -340,8 +340,10 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 
 			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
 			require.Nil(t, err)
+			dirName := fmt.Sprintf("depth-%d-node-%d", d, n)
+			fileNames = append(fileNames, dirName)
 			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
-				Name:   fmt.Sprintf("depth-%d-leaf-%d", d, n),
+				Name: dirName,
 				Digest: subdirDigest,
 			})
 		}
@@ -364,7 +366,7 @@ func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressab
 	})
 	assert.Nil(t, err)
 
-	allFiles := make([]string, 0)
+	names := make([]string, 0)
 
 	for {
 		rsp, err := stream.Recv()
@@ -376,11 +378,14 @@ func readTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressab
 		}
 		for _, dir := range rsp.GetDirectories() {
 			for _, file := range dir.GetFiles() {
-				allFiles = append(allFiles, file.GetName())
+				names = append(names, file.GetName())
+			}
+			for _, subdir := range dir.GetDirectories() {
+				names = append(names, subdir.GetName())
 			}
 		}
 	}
-	return allFiles
+	return names
 }
 
 func TestGetTree(t *testing.T) {

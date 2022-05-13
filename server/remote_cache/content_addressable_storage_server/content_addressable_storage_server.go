@@ -466,7 +466,7 @@ func makeTreeCacheDigest(d *repb.Digest) (*repb.Digest, error) {
 	return digest.Compute(buf)
 }
 
-func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, cache interfaces.Cache, dd *repb.DirectoryWithDigest, level int) ([]*repb.DirectoryWithDigest, error) {
+func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, cache interfaces.Cache, dd *repb.DirectoryWithDigest) ([]*repb.DirectoryWithDigest, error) {
 	dir := dd.Directory
 	if len(dir.Directories) == 0 {
 		return nil, nil
@@ -596,7 +596,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 
 		start := time.Now()
-		children, err := s.fetchDirectory(ctx, cache, dirWithDigest, level)
+		children, err := s.fetchDirectory(ctx, cache, dirWithDigest)
 		if err != nil {
 			return nil, err
 		}
@@ -605,7 +605,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		fetchCount += 1
 		mu.Unlock()
 
-		allDescendents := make([]*repb.DirectoryWithDigest, 0)
+		allDescendents := make([]*repb.DirectoryWithDigest, 0, len(children))
 		allDescendents = append(allDescendents, children...)
 
 		eg, egCtx := errgroup.WithContext(ctx)
