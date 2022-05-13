@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"os"
 	"sync"
@@ -42,6 +43,10 @@ const (
 	// minTreeCacheDescendents is the minimum number of descendents a node
 	// must have in order to be cached.
 	minTreeCacheDescendents = 10
+)
+
+var (
+	enableTreeCaching = flag.Bool("enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 )
 
 type ContentAddressableStorageServer struct {
@@ -588,10 +593,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if err != nil {
 			return nil, err
 		}
-		if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
-			treeCache := &repb.TreeCache{}
-			if err := proto.Unmarshal(blob, treeCache); err == nil {
-				return treeCache.GetChildren(), nil
+		if *enableTreeCaching {
+			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
+				treeCache := &repb.TreeCache{}
+				if err := proto.Unmarshal(blob, treeCache); err == nil {
+					return treeCache.GetChildren(), nil
+				}
 			}
 		}
 
@@ -627,7 +634,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents {
+		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
 			treeCache := &repb.TreeCache{
 				Children: allDescendents,
 			}
