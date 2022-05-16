@@ -97,6 +97,11 @@ const (
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
 
+	// How often to update executor pool metadata for an open registration stream.
+	// This is chosen to be less than the maximum expected age of any key evicted
+	// from redis due to our allkeys-lru policy.
+	updatePoolInterval = 5 * time.Minute
+
 	// Platform property value corresponding with the darwin (Mac) operating system.
 	darwinOperatingSystemName = "darwin"
 )
@@ -227,6 +232,9 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	}()
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
+	defer checkCredentialsTicker.Stop()
+	updatePoolTicker := time.NewTicker(updatePoolInterval)
+	defer updatePoolTicker.Stop()
 
 	executorID := "unknown"
 	for {
@@ -267,7 +275,13 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
 					return err
 				}
-				log.Warningf("could not revalidate executor registration: %h", err)
+				log.Warningf("could not revalidate executor registration: %s", err)
+			}
+		case <-updatePoolTicker.C:
+			if registeredNode != nil {
+				if err := h.scheduler.AddConnectedExecutor(ctx, h, registeredNode); err != nil {
+					log.Warningf("failed to update pool metadata: %s", err)
+				}
 			}
 		}
 	}
@@ -832,6 +846,9 @@ func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNo
 	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
 }
 
+// AddConnectedExecutor refreshes the node registration metadata in Redis,
+// and if the node is being registered for the first time, it assigns some
+// work to the node.
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) error {
 	poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
 	if s.enableUserOwnedExecutors {
