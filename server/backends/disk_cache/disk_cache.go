@@ -933,6 +933,15 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 		return nil, err
 	}
 
+	p.mu.Lock()
+	if p.diskIsMapped {
+		if ok := p.lru.Contains(k.FullPath()); ok {
+			metrics.DiskCacheDuplicateWrites.Inc()
+			metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
+		}
+	}
+	p.mu.Unlock()
+
 	writeCloser, err := disk.FileWriter(ctx, k.FullPath())
 	if err != nil {
 		return nil, err
