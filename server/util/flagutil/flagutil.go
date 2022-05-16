@@ -170,8 +170,7 @@ func (f *URLFlag) Set(value string) error {
 	if err != nil {
 		return err
 	}
-	v := (*url.URL)(f)
-	*v = *u
+	*(*url.URL)(f) = *u
 	return nil
 }
 
@@ -179,18 +178,12 @@ func (f *URLFlag) String() string {
 	return (*url.URL)(f).String()
 }
 
-func (f *URLFlag) UnmarshalYAML(unmarshal func(any) error) error {
-	var s string
-	err := unmarshal(&s)
+func (f *URLFlag) UnmarshalYAML(value *yaml.Node) error {
+	u, err := url.Parse(value.Value)
 	if err != nil {
-		return err
+		return &yaml.TypeError{Errors: []string{err.Error()}}
 	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return err
-	}
-	v := (*url.URL)(f)
-	*v = *u
+	*(*url.URL)(f) = *u
 	return nil
 }
 
