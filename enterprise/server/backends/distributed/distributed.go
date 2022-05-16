@@ -29,12 +29,13 @@ import (
 )
 
 var (
-	listenAddr        = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
-	redisTarget       = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
-	groupName         = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
-	nodes             = flagutil.StringSlice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
-	replicationFactor = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
-	clusterSize       = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
+	listenAddr         = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
+	redisTarget        = flag.String("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	groupName          = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
+	nodes              = flagutil.StringSlice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	replicationFactor  = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
+	clusterSize        = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
+	disableLocalWrites = flag.Bool("cache.distributed_cache.disable_local_writes", true, "If enabled, does not shortcut distributed writes that belong to the local shard.")
 )
 
 const (
@@ -53,6 +54,7 @@ type CacheConfig struct {
 	ClusterSize          int
 	RPCHeartbeatInterval time.Duration
 	DisableLocalLookup   bool
+	DisableLocalWrites   bool
 }
 
 type hintedHandoffOrder struct {
@@ -86,11 +88,12 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	dcConfig := CacheConfig{
-		ListenAddr:        *listenAddr,
-		GroupName:         *groupName,
-		ReplicationFactor: *replicationFactor,
-		Nodes:             *nodes,
-		ClusterSize:       *clusterSize,
+		ListenAddr:         *listenAddr,
+		GroupName:          *groupName,
+		ReplicationFactor:  *replicationFactor,
+		Nodes:              *nodes,
+		ClusterSize:        *clusterSize,
+		DisableLocalWrites: *disableLocalWrites,
 	}
 	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 	if len(dcConfig.Nodes) == 0 {
@@ -360,7 +363,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.I
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if !c.config.DisableLocalWrites && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
 	}
