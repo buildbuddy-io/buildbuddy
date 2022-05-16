@@ -69,7 +69,7 @@ func (s *Subscriber) Chan() <-chan string {
 }
 
 const (
-	listTTL = 15 * time.Minute
+	listTTL = 8 * time.Hour
 )
 
 type ListPubSub struct {
