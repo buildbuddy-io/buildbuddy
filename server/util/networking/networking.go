@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	devicePrefix = flag.String("device_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix = flag.String("route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -184,7 +184,8 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 //  # add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //  $ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
-	defaultDevice, err := findDevice(ctx)
+	r, err := findRoute(ctx, *routePrefix)
+	device := r.device
 	if err != nil {
 		return nil, err
 	}
@@ -249,48 +250,82 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", defaultDevice, "-j", "ACCEPT")
+	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
 	if err != nil {
 		return nil, err
 	}
 
 	return func(ctx context.Context) error {
-		return removeForwardAcceptRule(ctx, veth1, defaultDevice)
+		return removeForwardAcceptRule(ctx, veth1, device)
 	}, nil
 }
 
-func DefaultInterface(ctx context.Context) (*net.Interface, error) {
-	defaultDevName, err := findDevice(ctx)
+// DefaultIP returns the IPv4 address for the primary network.
+func DefaultIP(ctx context.Context) (net.IP, error) {
+	r, err := findRoute(ctx, "default")
 	if err != nil {
 		return nil, err
 	}
+	device := r.device
+	return ipFromDevice(ctx, device)
+}
+
+// ipFromDevice return IPv4 address for the device.
+func ipFromDevice(ctx context.Context, device string) (net.IP, error) {
+	netIface, err := interfaceFromDevice(ctx, device)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err := netIface.Addrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range addrs {
+		if v, ok := a.(*net.IPNet); ok {
+			if ipv4Addr := v.IP.To4(); ipv4Addr != nil {
+				return ipv4Addr, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("could not determine IP for device %q", device)
+}
+
+func interfaceFromDevice(ctx context.Context, device string) (*net.Interface, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
 	}
 	for _, iface := range ifaces {
-		if iface.Name == defaultDevName {
+		if iface.Name == device {
 			return &iface, nil
 		}
 	}
-	return nil, status.NotFoundErrorf("could not find interface %q", defaultDevName)
+	return nil, status.NotFoundErrorf("could not find interface %q", device)
 }
 
-// findDevice find's the device used for the default route.
-// Equivalent to "ip route | grep default | awk '{print $5}'"
-func findDevice(ctx context.Context) (string, error) {
+type route struct {
+	device  string
+	gateway string
+}
+
+// findRoute find's the route with the prefix.
+// Equivalent to "ip route | grep <prefix> | awk '{print $5}'"
+func findRoute(ctx context.Context, prefix string) (route, error) {
 	out, err := sudoCommand(ctx, "ip", "route")
 	if err != nil {
-		return "", err
+		return route{}, err
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(line, *devicePrefix) {
+		if strings.HasPrefix(line, prefix) {
 			if parts := strings.Split(line, " "); len(parts) > 5 {
-				return parts[4], nil
+				return route{
+					device:  parts[4],
+					gateway: parts[2],
+				}, nil
 			}
 		}
 	}
-	return "", status.FailedPreconditionError("Unable to determine default device.")
+	return route{}, status.FailedPreconditionErrorf("Unable to determine device with prefix: %s", prefix)
 }
 
 // FindDefaultRouteIP finds the default IP used for routing traffic, typically
@@ -315,14 +350,15 @@ func FindDefaultRouteIP(ctx context.Context) (string, error) {
 // EnableMasquerading turns on ipmasq for the default device. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
-	defaultDevice, err := findDevice(ctx)
+	route, err := findRoute(ctx, *routePrefix)
+	device := route.device
 	if err != nil {
 		return err
 	}
 	// Skip appending the rule if it's already in the table.
-	err = runCommand(ctx, "iptables", "-t", "nat", "--check", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
+	err = runCommand(ctx, "iptables", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
 	if err == nil {
 		return nil
 	}
-	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", defaultDevice, "-j", "MASQUERADE")
+	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
 }
