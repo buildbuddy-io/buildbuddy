@@ -396,12 +396,14 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
-	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
-		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err.Error())
-	}
 
 	if err := s.recordPendingExecution(ctx, executionID, r); err != nil {
 		log.Warningf("could not recording pending execution %q: %s", executionID, err)
+	}
+
+	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
+		_ = s.deletePendingExecution(ctx, executionID)
+		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
 
 	return executionID, nil
