@@ -324,7 +324,33 @@ var (
 		PartitionID,
 	})
 
-	/// ## Remote execution metrics
+	DiskCacheDuplicateWrites = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_duplicate_writes",
+		Help:      "Number of writes for digests that already exist.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of duplicate writes.
+	/// sum(buildbuddy_remote_cache_duplicate_writes)
+	/// ```
+
+	DiskCacheDuplicateWritesBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_duplicate_writes_bytes",
+		Help:      "Number of bytes written that already existed in the cache.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of duplicate write bytes.
+	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
+	/// ```
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
