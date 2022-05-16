@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
@@ -300,10 +299,7 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
@@ -345,10 +341,7 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
@@ -390,10 +383,7 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
@@ -436,10 +426,7 @@ func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
@@ -478,10 +465,7 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)
@@ -520,10 +504,7 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	execClient := &fakeExecutionClient{}
 	te.SetRemoteExecutionClient(execClient)
 	ws := te.GetWorkflowService()
-	appUrl := testhttp.StartServer(t, ws)
-	u, err := url.Parse(appUrl)
-	require.NoError(t, err)
-	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "app.build_buddy_url", *testhttp.StartServer(t, ws))
 	flags.Set(t, "remote_execution.enable_remote_exec", true)
 	provider := setupFakeGitProvider(t, te)
 	repoURL := makeTempRepo(t)

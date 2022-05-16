@@ -329,7 +329,7 @@ first:
 	assert.Equal(t, []testStruct{{Field: 4, Meadow: "Great"}, {Field: 9, Meadow: "Eternal"}, {Field: 5}}, flagOneTwoThreeStructSlice)
 	assert.Equal(t, "xxx", *flagABString)
 	assert.Equal(t, []testStruct{{Field: 7, Meadow: "Chimney"}}, flagABStructSlice)
-	assert.Equal(t, url.URL{Scheme:"http", Host: "www.example.com:8080"}, *flagABURL)
+	assert.Equal(t, url.URL{Scheme: "http", Host: "www.example.com:8080"}, *flagABURL)
 }
 
 func TestBadPopulateFlagsFromData(t *testing.T) {
