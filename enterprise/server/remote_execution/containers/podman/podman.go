@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -39,6 +40,10 @@ const (
 	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
 	// process is killed due to the parent container being removed.
 	podmanExecSIGKILLExitCode = 137
+
+	podmanDefaultNetworkIPRange = "10.88.0.0/16"
+	podmanDefaultNetworkGateway = "10.88.0.1"
+	podmanDefaultNetworkBridge  = "cni-podman0"
 )
 
 type pullStatus struct {
@@ -395,4 +400,41 @@ func removeImage(ctx context.Context, imageName string) error {
 		return nil
 	}
 	return status.UnknownErrorf("podman rmi failed: %s", string(result.Stderr))
+}
+
+// Configure the secondary network for podman so that traffic from podman will be routed through
+// the secondary network interface instead of the primary network.
+func ConfigureSecondaryNetwork(ctx context.Context) error {
+	if !networking.IsSecondaryNetworkEnabled() {
+		// No need to configure secondary network for podman.
+		return nil
+	}
+	// Hack: run a dummy podman container to setup default podman bridge network in ip route.
+	// "podman run --rm busybox sh". This should setup the following in ip route:
+	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
+	result := runPodman(ctx, "run", nil, nil, "--rm", "busybox", "sh")
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.ExitCode != 0 {
+		return status.UnknownError("failed to setup podman default network")
+	}
+
+	// Add ip rule to lookup rt1
+	// Equivalent to "ip rule add to 10.88.0.0/16 lookup rt1"
+	if err := networking.AddIPRuleIfNotPresent(ctx, []string{"to", podmanDefaultNetworkIPRange}); err != nil {
+		return err
+	}
+	if err := networking.AddIPRuleIfNotPresent(ctx, []string{"from", podmanDefaultNetworkIPRange}); err != nil {
+		return err
+	}
+
+	// Add ip route to routing table rt1
+	// Equivalent to "ip route add 10.88.0.0/16 via 10.88.0.1 dev cni-podman0 table rt1"
+	route := []string{podmanDefaultNetworkIPRange, "via", podmanDefaultNetworkGateway, "dev", podmanDefaultNetworkBridge}
+	if err := networking.AddRouteIfNotPresent(ctx, route); err != nil {
+		return err
+	}
+	return nil
+
 }
