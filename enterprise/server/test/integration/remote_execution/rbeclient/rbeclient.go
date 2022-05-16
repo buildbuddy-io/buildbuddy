@@ -105,12 +105,16 @@ func (c *Command) GetActionResourceName() *digest.ResourceName {
 	return c.actionResourceName
 }
 
-func (c *Command) Start(ctx context.Context) error {
+type StartOpts struct {
+	SkipCacheLookup bool
+}
+
+func (c *Command) Start(ctx context.Context, opts *StartOpts) error {
 	executionClient := c.gRPCClientSource.GetRemoteExecutionClient()
 	req := &repb.ExecuteRequest{
 		InstanceName:    c.actionResourceName.GetInstanceName(),
 		ActionDigest:    c.actionResourceName.GetDigest(),
-		SkipCacheLookup: true,
+		SkipCacheLookup: opts.SkipCacheLookup,
 	}
 
 	log.Debugf("Executing command %q with action digest %s", c.Name, c.actionResourceName.GetDigest().GetHash())

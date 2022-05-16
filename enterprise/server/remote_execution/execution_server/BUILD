@@ -29,6 +29,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@org_golang_google_grpc//status",
