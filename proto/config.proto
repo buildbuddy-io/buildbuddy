@@ -59,4 +59,7 @@ message FrontendConfig {
 
   // Whether detailed cache stats are enabled (scorecard V2).
   bool detailed_cache_stats_enabled = 19;
+
+  // Whether to enable additional suggestions in the invocation UI.
+  bool expanded_suggestions_enabled = 20;
 }
