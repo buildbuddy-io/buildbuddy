@@ -318,6 +318,13 @@ func TestCommandBuffer(t *testing.T) {
 	err = buf.SAdd(ctx, "set2", "1")
 	require.NoError(t, err)
 
+	err = buf.RPush(ctx, "list1", "1", "2")
+	require.NoError(t, err)
+	err = buf.RPush(ctx, "list1", "3")
+	require.NoError(t, err)
+	err = buf.RPush(ctx, "list2", "A")
+	require.NoError(t, err)
+
 	// Create 2 keys that don't expire (initially).
 	_, err = rdb.Set(ctx, "expiring1", "value1", 0).Result()
 	require.NoError(t, err)
@@ -368,6 +375,13 @@ func TestCommandBuffer(t *testing.T) {
 	s2, err := rdb.SMembers(ctx, "set2").Result()
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"1"}, s2, "SAdd not working as expected")
+
+	list1, err := rdb.LRange(ctx, "list1", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1", "2", "3"}, list1)
+	list2, err := rdb.LRange(ctx, "list2", 0, -1).Result()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"A"}, list2)
 
 	_, err = rdb.Get(ctx, "expiring1").Result()
 	assert.Equal(t, redis.Nil, err)
