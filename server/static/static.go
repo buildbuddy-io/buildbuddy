@@ -30,14 +30,15 @@ const (
 )
 
 var (
-	defaultToDenseMode        = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled         = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
-	userManagementEnabled     = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
-	globalFilterEnabled       = flag.Bool("app.global_filter_enabled", true, "If set, the global filter will be enabled in the UI.")
-	testGridV2Enabled         = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
-	usageEnabled              = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
-	enableWorkflows           = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
-	enableExecutorKeyCreation = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
+	defaultToDenseMode         = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
+	codeEditorEnabled          = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
+	userManagementEnabled      = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.")
+	globalFilterEnabled        = flag.Bool("app.global_filter_enabled", true, "If set, the global filter will be enabled in the UI.")
+	testGridV2Enabled          = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
+	usageEnabled               = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
+	expandedSuggestionsEnabled = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
+	enableWorkflows            = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
+	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -147,6 +148,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ForceUserOwnedDarwinExecutors: remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		TestGridV2Enabled:             *testGridV2Enabled,
 		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
+		ExpandedSuggestionsEnabled:    *expandedSuggestionsEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
