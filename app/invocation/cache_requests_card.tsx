@@ -332,7 +332,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
             {/* bes-upload events don't have a target ID or action mnemonic. */}
             {result.targetId || result.actionMnemonic ? (
-              <TextLink href={this.getActionUrl(result.digest.hash)}>
+              <TextLink href={this.getActionUrl(result.actionId)}>
                 {groupTarget === null && result.targetId}
                 {groupTarget === null && groupActionId === null && " › "}
                 {groupActionId === null && result.actionMnemonic}
@@ -440,7 +440,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <div className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
-              <div className="name-column">Name</div>
+              <div className="name-column">Action</div>
             )}
             <div className="cache-type-column">Cache</div>
             <div className="status-column">Status</div>

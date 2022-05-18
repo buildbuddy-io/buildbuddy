@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -38,6 +37,11 @@ type CacheMode int
 type counterType int
 
 const (
+	// scorecardResultsExpiration determines how long we can go without receiving
+	// any cache requests for an invocation before we delete the invocation's
+	// detailed results from the metrics collector.
+	scorecardResultsExpiration = 3 * time.Hour
+
 	// Prometheus CacheEventTypeLabel values
 
 	hitLabel    = "hit"
@@ -93,10 +97,10 @@ func targetMissesKey(iid string) string {
 	return "hit_tracker/" + iid + "/misses"
 }
 
-// resultIDsKey returns a redis key that stores a set of IDs for all cache
-// results associated with the invocation.
-func resultIDsKey(iid string) string {
-	return "hit_tracker/" + iid + "/result_ids"
+// resultsKey returns a redis key that stores a list of results for all cache
+// requests associated with an invocation.
+func resultsKey(iid string) string {
+	return "hit_tracker/" + iid + "/results"
 }
 
 func counterField(actionCache bool, ct counterType) string {
@@ -246,15 +250,6 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		return nil
 	}
 
-	rid, err := uuid.NewRandom()
-	if err != nil {
-		return err
-	}
-
-	if err := h.c.SetAdd(h.ctx, resultIDsKey(h.iid), rid.String()); err != nil {
-		return err
-	}
-
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation
 	cacheType := capb.CacheType_CAS
@@ -291,7 +286,14 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	if err != nil {
 		return err
 	}
-	return h.c.Set(h.ctx, rid.String(), string(b), 0)
+	key := resultsKey(h.iid)
+	if err := h.c.ListAppend(h.ctx, key, string(b)); err != nil {
+		return err
+	}
+	if err := h.c.Expire(h.ctx, key, scorecardResultsExpiration); err != nil {
+		return err
+	}
+	return nil
 }
 
 // detailedStats holds detailed cache stats for a transfer.
@@ -517,27 +519,18 @@ func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.Score
 	return sc
 }
 
+// readResults reads all stored results from the metrics collector, deleting
+// them after they are read.
 func readResults(ctx context.Context, env environment.Env, iid string) *capb.ScoreCard {
 	c := env.GetMetricsCollector()
 	if c == nil || iid == "" {
 		return nil
 	}
 	sc := &capb.ScoreCard{}
-
-	resultIDs, err := c.SetGetMembers(ctx, resultIDsKey(iid))
-	if err != nil {
-		log.Warningf("Failed to read detailed scorecard for invocation %s: %s", iid, err)
-		return sc
-	}
 	// This limit is a safeguard against buffering too many results in memory.
 	// We expect to hit this rarely (if ever) in production usage.
 	const limit = 500_000
-	if len(resultIDs) > limit {
-		log.Warningf("Truncating cache scorecard for invocation %s from %d to %d results", iid, len(resultIDs), limit)
-		resultIDs = resultIDs[:limit]
-	}
-
-	serializedResults, err := c.GetAll(ctx, resultIDs...)
+	serializedResults, err := c.ListRange(ctx, resultsKey(iid), 0, limit-1)
 	if err != nil {
 		log.Warningf("Failed to read cache scorecard for invocation %s: %s", iid, err)
 		return sc
@@ -597,6 +590,13 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 func CleanupCacheStats(ctx context.Context, env environment.Env, iid string) {
 	c := env.GetMetricsCollector()
 	if c == nil || iid == "" {
+		return
+	}
+
+	if *detailedStatsEnabled {
+		if err := c.Delete(ctx, resultsKey(iid)); err != nil {
+			log.Warningf("Failed to clean up scorecard for invocation %s: %s", iid, err)
+		}
 		return
 	}
 
