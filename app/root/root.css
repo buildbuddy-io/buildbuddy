@@ -603,6 +603,10 @@ svg.icon.orange {
   max-width: 800px;
 }
 
+.card-suggestion .bazel-flag {
+  white-space: nowrap;
+}
+
 .card-suggestion .suggestions-tab-link {
   margin-top: 8px;
 }

@@ -124,8 +124,8 @@ const matchers: SuggestionMatcher[] = [
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <span className="inline-code">--experimental_remote_cache_compression</span> to
-          improve remote cache throughput.
+          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression</BazelFlag> to improve
+          remote cache throughput.
         </>
       ),
       reason: <>Shown because this build is cache-enabled but compression is not enabled.</>,
@@ -142,9 +142,9 @@ const matchers: SuggestionMatcher[] = [
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Configuring a jobs count will allow more actions to execute in parallel, which can significantly improve
-          remote execution performance. We recommend starting with <span className="inline-code">--jobs=50</span> and
-          working your way up.
+          Consider setting the Bazel flag <BazelFlag>--jobs</BazelFlag> to allow more actions to execute in parallel,
+          which can significantly improve remote execution performance. We recommend starting with{" "}
+          <span className="inline-code">--jobs=50</span> and working your way up.
         </>
       ),
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
@@ -161,15 +161,68 @@ const matchers: SuggestionMatcher[] = [
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Adding the Bazel flag <span className="inline-code">--remote_download_minimal</span> or{" "}
-          <span className="inline-code">--remote_download_toplevel</span> can significantly improve performance for
-          builds with a large number of intermediate results.
+          Consider adding the Bazel flag <BazelFlag>--remote_download_minimal</BazelFlag> or{" "}
+          <BazelFlag>--remote_download_toplevel</BazelFlag>, which can significantly improve performance for builds with
+          a large number of intermediate results.
         </>
       ),
       reason: (
         <>
-          Shown because this build is cache-enabled and the effective flag{" "}
-          <span className="inline-code">--remote_download_outputs</span> is not set.
+          Shown because this build is cache-enabled and the flag{" "}
+          <span className="inline-code">--remote_download_outputs</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
+  // Suggest using --incompatible_strict_action_env
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (model.optionsMap.get("incompatible_strict_action_env") !== undefined) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel flag <BazelFlag>--incompatible_strict_action_env</BazelFlag> to help avoid cache
+          misses due to slight differences in environment variables across builds.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because <span className="inline-code">--incompatible_strict_action_env</span> is neither present nor
+          explicitly disabled.
+        </>
+      ),
+    };
+  },
+  // Suggest configuring metadata to enable test grid
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (!capabilities.config.testDashboardEnabled) return null;
+    if (model.invocations[0]?.role !== "CI") return null;
+    if (model.invocations[0]?.command !== "test") return null;
+    if (model.getCommit() && model.getRepo()) return null;
+
+    const missing = [
+      !model.getCommit() && <span className="inline-code">COMMIT_SHA</span>,
+      !model.getRepo() && <span className="inline-code">REPO_URL</span>,
+    ];
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Add <InlineProseList items={missing} /> metadata to see CI tests in the{" "}
+          <TextLink href="/tests/">test dashboard</TextLink> (see the{" "}
+          <TextLink href="https://www.buildbuddy.io/docs/guide-metadata/">build metadata guide</TextLink> for help).
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this invocation was detected to be a CI test, but is missing metadata for{" "}
+          <InlineProseList items={missing} />.
         </>
       ),
     };
@@ -259,4 +312,39 @@ function buildLogRegex({
     const reason = <>Shown because your build log contains "{matches[0]}"</>;
     return { level, message, reason };
   };
+}
+
+function BazelFlag({ children }: { children: string }) {
+  return (
+    <TextLink
+      className="inline-code bazel-flag"
+      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${children}`}>
+      {children}
+    </TextLink>
+  );
+}
+
+/**
+ * Renders a list of items separated by commas, with "and" preceding the final item.
+ * For convenience, falsy list items are filtered out.
+ */
+function InlineProseList({ items }: { items: React.ReactNode[] }) {
+  items = items.filter((item) => item);
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    out.push(items[i]);
+
+    if (i === items.length - 1) break;
+
+    if (i === items.length - 2) {
+      if (items.length === 2) {
+        out.push(" and ");
+      } else {
+        out.push(", and ");
+      }
+    } else {
+      out.push(", ");
+    }
+  }
+  return <>{out}</>;
 }
