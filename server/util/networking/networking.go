@@ -154,6 +154,15 @@ func DeleteRoute(ctx context.Context, vmIdx int) error {
 	return runCommand(ctx, "ip", "route", "delete", cloneIP)
 }
 
+func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
+	if !IsSecondaryNetworkEnabled() {
+		// IP rule is only added when the secondary network is enabled
+		return nil
+	}
+	cloneIP := fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
+	return runCommand(ctx, "ip", "rule", "del", "from", cloneIP)
+}
+
 // SetupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace. It returns a cleanup
 // function that removes firewall rules associated with the pair.
@@ -258,6 +267,14 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
 	if err != nil {
 		return nil, err
+	}
+
+	if IsSecondaryNetworkEnabled() {
+		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableFilename)
+		if err != nil {
+			return nil, err
+		}
+
 	}
 
 	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
