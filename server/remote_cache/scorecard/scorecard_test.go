@@ -182,6 +182,20 @@ func TestGetCacheScoreCard_Sort_Duration(t *testing.T) {
 	assertResults(t, res, acMiss, casDownload, casUpload, besUpload)
 }
 
+func TestGetCacheScoreCard_Sort_Size(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t, testScorecard)
+	req := &capb.GetCacheScoreCardRequest{
+		InvocationId: invocationID,
+		OrderBy:      capb.GetCacheScoreCardRequest_ORDER_BY_SIZE,
+	}
+
+	res, err := scorecard.GetCacheScoreCard(ctx, env, req)
+	require.NoError(t, err)
+
+	assertResults(t, res, acMiss, besUpload, casUpload, casDownload)
+}
+
 func TestGetCacheScoreCard_GroupByActionOrderByDurationDesc(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)

@@ -286,6 +286,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <Select value={this.getOrderBy()} onChange={this.onChangeOrderBy.bind(this)}>
             <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_START_TIME}>Start time</Option>
             <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_DURATION}>Duration</Option>
+            <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_SIZE}>Size</Option>
           </Select>
           <OutlinedButton className="icon-button" onClick={this.onToggleDescending.bind(this)}>
             {this.getDescending() ? <SortDesc className="icon" /> : <SortAsc className="icon" />}
