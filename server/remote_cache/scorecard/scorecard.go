@@ -169,6 +169,10 @@ func sortResults(results []*capb.ScoreCard_Result, opts *sortOpts) {
 		orderFunc = func(result *capb.ScoreCard_Result) int64 {
 			return result.Duration.AsDuration().Nanoseconds()
 		}
+	case capb.GetCacheScoreCardRequest_ORDER_BY_SIZE:
+		orderFunc = func(result *capb.ScoreCard_Result) int64 {
+			return result.Digest.GetSizeBytes()
+		}
 	case capb.GetCacheScoreCardRequest_ORDER_BY_START_TIME:
 		fallthrough
 	default:
