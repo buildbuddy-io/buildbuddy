@@ -166,6 +166,69 @@ func (m *MemoryMetricsCollector) GetAll(ctx context.Context, keys ...string) ([]
 	return vals, nil
 }
 
+func (m *MemoryMetricsCollector) getList(key string) ([]string, error) {
+	value, ok := m.l.Get(key)
+	if !ok {
+		return nil, nil
+	}
+	list, ok := value.([]string)
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("list push failed: key %q holds existing value of type %T", key, value)
+	}
+	return list, nil
+}
+
+func (m *MemoryMetricsCollector) ListAppend(ctx context.Context, key string, values ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	list, err := m.getList(key)
+	if err != nil {
+		return err
+	}
+	m.l.Add(key, append(list, values...))
+	return nil
+}
+
+func (m *MemoryMetricsCollector) ListRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	list, err := m.getList(key)
+	if err != nil {
+		return nil, err
+	}
+
+	lower := int(start)
+	upper := int(stop)
+	// Translate negative indexes => end-relative
+	if lower < 0 {
+		lower = len(list) + lower
+	}
+	if upper < 0 {
+		upper = len(list) + upper
+	}
+	// Make upperbound inclusive, to match redis
+	upper += 1
+	// Handle bounds / edge cases
+	if lower < 0 {
+		lower = 0
+	}
+	if upper < 0 {
+		upper = 0
+	}
+	if lower > len(list) {
+		lower = len(list)
+	}
+	if upper > len(list) {
+		upper = len(list)
+	}
+	if lower > upper {
+		return nil, nil
+	}
+	return list[lower:upper], nil
+}
+
 func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -184,6 +247,11 @@ func (m *MemoryMetricsCollector) Delete(ctx context.Context, key string) error {
 	defer m.mu.Unlock()
 
 	m.l.Remove(key)
+	return nil
+}
+
+func (m *MemoryMetricsCollector) Expire(ctx context.Context, key string, duration time.Duration) error {
+	// Not implemented for now.
 	return nil
 }
 
