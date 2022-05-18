@@ -13,12 +13,14 @@ build:cache-dev --bes_results_url=https://app.buildbuddy.dev/invocation/
 build:cache-dev --bes_backend=grpcs://remote.buildbuddy.dev
 build:cache-dev --remote_cache=grpcs://remote.buildbuddy.dev
 build:cache-dev --remote_upload_local_results
+build:cache-dev --experimental_remote_cache_compression
 
 # Build with --config=cache to send build logs to the production server with cache
 build:cache --bes_results_url=https://app.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://remote.buildbuddy.io
 build:cache --remote_cache=grpcs://remote.buildbuddy.io
 build:cache --remote_upload_local_results
+build:cache --experimental_remote_cache_compression
 
 # Flags shared across remote configs
 build:remote-shared --remote_upload_local_results
@@ -34,16 +36,12 @@ build:remote-shared --verbose_failures
 
 # Build with --config=remote to use BuildBuddy RBE.
 build:remote --config=remote-shared
-build:remote --bes_results_url=https://app.buildbuddy.io/invocation/
-build:remote --bes_backend=grpcs://remote.buildbuddy.io
-build:remote --remote_cache=grpcs://remote.buildbuddy.io
+build:remote --config=cache
 build:remote --remote_executor=grpcs://remote.buildbuddy.io
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
 build:remote-dev --config=remote-shared
-build:remote-dev --bes_results_url=https://app.buildbuddy.dev/invocation/
-build:remote-dev --bes_backend=grpcs://remote.buildbuddy.dev
-build:remote-dev --remote_cache=grpcs://remote.buildbuddy.dev
+build:remote-dev --config=cache-dev
 build:remote-dev --remote_executor=grpcs://remote.buildbuddy.dev
 
 # Configuration used for GitHub actions-based CI
@@ -110,6 +108,10 @@ build --noremote_upload_local_results # Uploads logs & artifacts without writing
 
 # Populate workspace info like commit sha and repo name to your invocation.
 build --workspace_status_command=$(pwd)/workspace_status.sh
+
+# Misc remote cache optimizations
+build --incompatible_remote_build_event_upload_respect_no_cache
+build --experimental_remote_cache_async
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
