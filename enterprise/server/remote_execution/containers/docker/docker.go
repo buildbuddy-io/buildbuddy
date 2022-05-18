@@ -158,6 +158,8 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 		}()
 	}()
 
+	ctx, cancel := background.ExtendContextForFinalization(ctx, containerFinalizationTimeout)
+	defer cancel()
 	r.copyContainerLogs(ctx, cid, result)
 	if result.Error != nil {
 		return result
