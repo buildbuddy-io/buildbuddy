@@ -71,6 +71,31 @@ const matchers: SuggestionMatcher[] = [
       </>
     ),
   }),
+  ({ model, buildLogs }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
+    if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
+    if (model.optionsMap.get("remote_timeout") && Number(model.optionsMap.get("remote_timeout")) >= 600) return null;
+    if (!model.isComplete() || model.invocations[0]?.success) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          If this build uploads or downloads large artifacts, Bazel may have timed out. If you see this often, consider
+          setting a higher value of <BazelFlag>--remote_timeout</BazelFlag>. We recommend a value of 600 (10 minutes).
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build is cache-enabled, has an effective{" "}
+          <span className="inline-code">remote_timeout</span> less than 10 minutes, and failed with a log message
+          containing "DEADLINE_EXCEEDED"
+        </>
+      ),
+    };
+  },
   // Suggest remote.buildbuddy.io instead of cloud.buildbuddy.io
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
