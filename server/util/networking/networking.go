@@ -1,10 +1,12 @@
 package networking
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -16,6 +18,14 @@ import (
 
 var (
 	routePrefix = flag.String("route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+)
+
+const (
+	routingTableFilename = "/etc/iproute2/rt_tables"
+	// The routingTableID for the new routing table we add.
+	routingTableID = 1
+	// The routingTableName for the new routing table we add.
+	routingTableName = "rt1"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -347,7 +357,7 @@ func FindDefaultRouteIP(ctx context.Context) (string, error) {
 	return "", status.FailedPreconditionError("Unable to determine default route.")
 }
 
-// EnableMasquerading turns on ipmasq for the default device. This is required
+// EnableMasquerading turns on ipmasq for the device with --device_prefix. This is required
 // for networking to work on vms.
 func EnableMasquerading(ctx context.Context) error {
 	route, err := findRoute(ctx, *routePrefix)
@@ -361,4 +371,163 @@ func EnableMasquerading(ctx context.Context) error {
 		return nil
 	}
 	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+}
+
+// AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if
+// the pair is not present.
+// Equilvalent to 'echo "1 rt1" | sudo tee -a /etc/iproute2/rt_tables'.
+func addRoutingTableEntryIfNotPresent(ctx context.Context) error {
+	tableEntry := fmt.Sprintf("%d %s", routingTableID, routingTableName)
+	exists, err := routingTableContainsTable(tableEntry)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	f, err := os.OpenFile(routingTableFilename, os.O_APPEND|os.O_WRONLY, 0644)
+	defer f.Close()
+	if err != nil {
+		return status.InternalErrorf("failed to add routing table %s: %s", routingTableName, err)
+	}
+	if _, err = f.WriteString(tableEntry + "\n"); err != nil {
+		return status.InternalErrorf("failed to add routing table %s: %s", routingTableName, err)
+	}
+	return nil
+}
+
+// routingTableContainTable checks if /etc/iproute2/rt_tables contains <tableEntry>.
+func routingTableContainsTable(tableEntry string) (bool, error) {
+	file, err := os.Open(routingTableFilename)
+	if err != nil {
+		return false, status.InternalErrorf("failed to open routing table: %s", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == tableEntry {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ConfigurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
+// network interface. The secondary interface is identified by the --route_prefix.
+// This function:
+//   - adds a new routing table tableName.
+//     Equivalent to: " echo '1 rt1' | sudo tee -a /etc/iproute2/rt_tables'
+//   - adds two ip rules.
+//     Equivalent to: 'ip rule add from 172.24.0.24 table rt1' and
+//     'ip rule add to 172.24.0.24 table rt1' where 172.24.0.24 is the internal ip for the
+//     secondary network interface.
+//   - adds routes to table rt1.
+//     Equivalent to: 'ip route add 172.24.0.1 src 172.24.0.24 dev ens5 table rt1' and
+//     'ip route add default via 172.24.0.1 dev ens5 table rt1' where 172.24.0.1 and ens5 are
+//     the gateway and interface name of the secondary network interface.
+func ConfigurePolicyBasedRoutingForSecondaryNetwork(ctx context.Context) error {
+	if !IsSecondaryNetworkEnabled() {
+		// No need to add IP rule when we don't use secondary network
+		return nil
+	}
+
+	// Adds a new routing table
+	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
+		return err
+	}
+
+	route, err := findRoute(ctx, *routePrefix)
+	if err != nil {
+		return err
+	}
+
+	// Adds two ip rules
+	ip, err := ipFromDevice(ctx, route.device)
+	if err != nil {
+		return err
+	}
+	ipStr := ip.String()
+
+	if err := AddIPRuleIfNotPresent(ctx, []string{"to", ipStr}); err != nil {
+		return err
+	}
+	if err := AddIPRuleIfNotPresent(ctx, []string{"from", ipStr}); err != nil {
+		return err
+	}
+
+	// Adds routes to routing table.
+	ipRouteArgs := []string{route.gateway, "dev", route.device, "scope", "link", "src", ipStr}
+	if err := AddRouteIfNotPresent(ctx, ipRouteArgs); err != nil {
+		return err
+	}
+	ipRouteArgs = []string{"default", "via", route.gateway, "dev", route.device}
+	if err := AddRouteIfNotPresent(ctx, ipRouteArgs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func appendRoutingTable(args []string) []string {
+	return append(args, "table", routingTableName)
+}
+
+// AddIPRuleIfNotPresent adds a ip rule to look up routingTableName if this rule is not present.
+func AddIPRuleIfNotPresent(ctx context.Context, ruleArgs []string) error {
+	listArgs := append([]string{"ip", "rule", "list"}, ruleArgs...)
+	listArgs = appendRoutingTable(listArgs)
+	out, err := sudoCommand(ctx, listArgs...)
+	if err != nil {
+		return err
+	}
+
+	if len(out) == 0 {
+		addArgs := append([]string{"ip", "rule", "add"}, ruleArgs...)
+		addArgs = appendRoutingTable(addArgs)
+		if err := runCommand(ctx, addArgs...); err != nil {
+			return err
+		}
+	}
+	log.Debugf("ip rule %v already exists", ruleArgs)
+	return nil
+}
+
+// AddRouteIfNotPresent adds a route in the routing table with routingTableName if the route is not
+// present.
+func AddRouteIfNotPresent(ctx context.Context, routeArgs []string) error {
+	listArgs := append([]string{"ip", "route", "list"}, routeArgs...)
+	listArgs = appendRoutingTable(listArgs)
+	out, err := sudoCommand(ctx, listArgs...)
+	addRoute := false
+
+	if err == nil {
+		addRoute = len(out) == 0
+	} else {
+		if strings.Contains(err.Error(), "ipv4: FIB table does not exist") {
+			// if no routes has been added to rt1, "ip route list table rt1" will return an error.
+			addRoute = true
+		} else {
+			return err
+		}
+	}
+
+	if addRoute {
+		addArgs := append([]string{"ip", "route", "add"}, routeArgs...)
+		addArgs = appendRoutingTable(addArgs)
+		if err := runCommand(ctx, addArgs...); err != nil {
+			return err
+		}
+	}
+	log.Debugf("ip route %v already exists", routeArgs)
+	return nil
+}
+
+func IsSecondaryNetworkEnabled() bool {
+	if *routePrefix == "default" {
+		return false
+	}
+	return true
 }
