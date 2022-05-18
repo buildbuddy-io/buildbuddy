@@ -1449,6 +1449,11 @@ func writeBazelrc(path, invocationID string) error {
 	lines := []string{
 		"build --build_metadata=ROLE=CI",
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
+		// Note: these pieces of metadata are set to match the WorkspaceStatus event
+		// for the outer (workflow) invocation.
+		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
+		"build --build_metadata=REPO_URL=" + *targetRepoURL,
+		"build --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
 		// for the workflow invocation. In addition, for PRs, we first merge with
