@@ -174,28 +174,6 @@ const matchers: SuggestionMatcher[] = [
       ),
     };
   },
-  // Suggest using --incompatible_strict_action_env
-  ({ model }) => {
-    if (!capabilities.config.expandedSuggestionsEnabled) return null;
-
-    if (model.optionsMap.get("incompatible_strict_action_env") !== undefined) return null;
-
-    return {
-      level: SuggestionLevel.INFO,
-      message: (
-        <>
-          Consider adding the Bazel flag <BazelFlag>--incompatible_strict_action_env</BazelFlag> to help avoid cache
-          misses due to slight differences in environment variables across builds.
-        </>
-      ),
-      reason: (
-        <>
-          Shown because <span className="inline-code">--incompatible_strict_action_env</span> is neither present nor
-          explicitly disabled.
-        </>
-      ),
-    };
-  },
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
