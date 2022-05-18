@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -161,6 +162,8 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 			ws.Inputs[path] = node
 		}
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
+		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
+		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
@@ -270,6 +273,8 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	}
 	actionResult.StdoutDigest = stdoutDigest
 	actionResult.StderrDigest = stderrDigest
+	span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
+	span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
 	return txInfo, nil
 }
 

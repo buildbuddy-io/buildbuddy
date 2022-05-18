@@ -15,7 +15,6 @@ go_library(
         "//server/tables",
         "//server/util/bazel_request",
         "//server/util/log",
-        "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//codes",

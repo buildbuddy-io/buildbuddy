@@ -35,6 +35,7 @@ var (
 	nodes             = flagutil.StringSlice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
 	replicationFactor = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize       = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
+	enableLocalWrites = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
 )
 
 const (
@@ -53,6 +54,7 @@ type CacheConfig struct {
 	ClusterSize          int
 	RPCHeartbeatInterval time.Duration
 	DisableLocalLookup   bool
+	EnableLocalWrites    bool
 }
 
 type hintedHandoffOrder struct {
@@ -91,6 +93,7 @@ func Register(env environment.Env) error {
 		ReplicationFactor: *replicationFactor,
 		Nodes:             *nodes,
 		ClusterSize:       *clusterSize,
+		EnableLocalWrites: *enableLocalWrites,
 	}
 	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 	if len(dcConfig.Nodes) == 0 {
@@ -360,7 +363,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.I
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
-	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
 	}

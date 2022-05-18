@@ -665,8 +665,11 @@ type MetricsCollector interface {
 	SetGetMembers(ctx context.Context, key string) ([]string, error)
 	Set(ctx context.Context, key, value string, expiration time.Duration) error
 	GetAll(ctx context.Context, key ...string) ([]string, error)
+	ListAppend(ctx context.Context, key string, values ...string) error
+	ListRange(ctx context.Context, key string, start, stop int64) ([]string, error)
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
+	Expire(ctx context.Context, key string, duration time.Duration) error
 	Flush(ctx context.Context) error
 }
 

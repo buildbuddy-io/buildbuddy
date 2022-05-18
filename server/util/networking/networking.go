@@ -270,7 +270,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	}
 
 	if IsSecondaryNetworkEnabled() {
-		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableFilename)
+		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableName)
 		if err != nil {
 			return nil, err
 		}

@@ -118,6 +118,18 @@ func (c *collector) GetAll(ctx context.Context, keys ...string) ([]string, error
 	return values, nil
 }
 
+func (c *collector) ListAppend(ctx context.Context, key string, values ...string) error {
+	ifaces := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		ifaces = append(ifaces, value)
+	}
+	return c.rbuf.RPush(ctx, key, ifaces...)
+}
+
+func (c *collector) ListRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	return c.rdb.LRange(ctx, key, start, stop).Result()
+}
+
 func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int64, error) {
 	h, err := c.rdb.HGetAll(ctx, key).Result()
 	if err != nil {
@@ -140,6 +152,10 @@ func (c *collector) ReadCounts(ctx context.Context, key string) (map[string]int6
 
 func (c *collector) Delete(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func (c *collector) Expire(ctx context.Context, key string, duration time.Duration) error {
+	return c.rbuf.Expire(ctx, key, duration)
 }
 
 func (c *collector) Flush(ctx context.Context) error {
