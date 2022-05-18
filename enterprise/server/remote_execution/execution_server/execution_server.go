@@ -35,11 +35,13 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	guuid "github.com/google/uuid"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -197,6 +199,33 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	})
 }
 
+type invocationLinkType int8
+
+const (
+	linkTypeNewExecution    invocationLinkType = 1
+	linkTypeMergedExecution invocationLinkType = 2
+)
+
+func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+	id, err := guuid.NewRandom()
+	if err != nil {
+		return status.InternalErrorf("could not generate link id: %s", err)
+	}
+	idBin, err := id.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	link := &tables.InvocationExecution{
+		ID:           idBin,
+		InvocationID: invocationID,
+		ExecutionID:  executionID,
+		Type:         int8(linkType),
+	}
+	return s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+		return tx.Create(link).Error
+	})
+}
+
 func trimStatus(statusMessage string) string {
 	if len(statusMessage) > 255 {
 		return statusMessage[:255]
@@ -329,6 +358,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	invocationID := bazel_request.GetInvocationID(ctx)
 
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
+		return "", err
+	}
+	if err := s.insertInvocationLink(ctx, executionID, invocationID, linkTypeNewExecution); err != nil {
 		return "", err
 	}
 
@@ -480,6 +512,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		return err
 	}
 
+	invocationID := bazel_request.GetInvocationID(stream.Context())
+
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
@@ -504,9 +538,12 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 				log.Warningf("could not check for existing execution: %s", err)
 			}
 			if ee != "" {
-				log.Infof("Reusing execution %q for execution request %q", ee, adInstanceDigest.DownloadString())
+				log.Infof("Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+				if err := s.insertInvocationLink(ctx, ee, invocationID, linkTypeMergedExecution); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -514,14 +551,14 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Create a new execution unless we found an existing identical action we
 	// can wait on.
 	if executionID == "" {
-		log.Infof("Scheduling new execution for %q", adInstanceDigest.DownloadString())
+		log.Infof("Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
 			log.Errorf("Error dispatching execution %q: %s", executionID, err.Error())
 			return err
 		}
 		executionID = newExecutionID
-		log.Infof("Scheduled execution %q for request %q", executionID, adInstanceDigest.DownloadString())
+		log.Infof("Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{

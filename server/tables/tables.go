@@ -376,6 +376,19 @@ func (t *Execution) TableName() string {
 	return "Executions"
 }
 
+type InvocationExecution struct {
+	Model
+
+	ID           []byte `gorm:"primaryKey;size:16;index:invocation_execution_id"`
+	InvocationID string `gorm:"index:invocation_execution_invocation_id"`
+	ExecutionID  string
+	Type         int8
+}
+
+func (t *InvocationExecution) TableName() string {
+	return "InvocationExecutions"
+}
+
 type TelemetryLog struct {
 	Hostname         string
 	InstallationUUID string `gorm:"primaryKey"`
@@ -923,6 +936,7 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("SE", &Session{})
 	registerTable("EX", &Execution{})
+	registerTable("IE", &InvocationExecution{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})
