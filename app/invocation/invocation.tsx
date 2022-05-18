@@ -272,10 +272,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent suggestions={suggestions} overview={activeTab !== "suggestions"} />
-          )}
-
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
             <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />
           )}
@@ -288,6 +284,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
               expanded={activeTab == "log"}
               fullLogsFetcher={fetchBuildLogs}
             />
+          )}
+
+          {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
+            <SuggestionCardComponent suggestions={suggestions} overview={activeTab !== "suggestions"} />
           )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
