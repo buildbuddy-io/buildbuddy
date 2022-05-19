@@ -243,8 +243,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const value = Number(event.target.value) as cache.GetCacheScoreCardRequest.OrderBy;
     // When changing the sort order, set direction according to a more useful
     // default, to save an extra click. Asc is more useful for start time; Desc
-    // is more useful for duration.
-    const desc = value === cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_DURATION;
+    // is more useful for duration and size.
+    const desc = value !== cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_START_TIME;
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       sort: String(value),
