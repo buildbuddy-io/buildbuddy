@@ -274,7 +274,6 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		if err != nil {
 			return nil, err
 		}
-
 	}
 
 	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
