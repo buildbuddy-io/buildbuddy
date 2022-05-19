@@ -483,6 +483,9 @@ func (s *ExecutionServer) recordPendingExecution(ctx context.Context, executionI
 func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionID string) error {
 	pendingExecutionDigestKey := redisKeyForPendingExecutionDigest(executionID)
 	pendingExecutionKey, err := s.rdb.Get(ctx, pendingExecutionDigestKey).Result()
+	if err == redis.Nil {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
