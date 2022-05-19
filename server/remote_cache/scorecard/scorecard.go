@@ -131,7 +131,7 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 		case "search":
 			s := strings.ToLower(req.GetFilter().GetSearch())
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
-				filePath := strings.Join([]string{result.GetPathPrefix(), result.GetName()}, "/")
+				filePath := filepath.Join(result.GetPathPrefix(), result.GetName())
 				return strings.Contains(strings.ToLower(result.GetActionId()), s) ||
 					strings.Contains(strings.ToLower(result.GetActionMnemonic()), s) ||
 					strings.Contains(strings.ToLower(result.GetTargetId()), s) ||
@@ -266,8 +266,10 @@ func blobName(invocationID string) string {
 	return filepath.Join(invocationID, blobFileName)
 }
 
-// ExtractFiles extracts files from invocation BES events, returning a mapping
-// of digest to file.
+// ExtractFiles extracts any files from invocation BES events which may be
+// associated with bes-upload cache requests, such as the timing profile or
+// other uploads that weren't directly tied to an action execution. The returned
+// mapping is keyed by digest hash.
 func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
 	out := map[string]*bespb.File{}
 
@@ -309,7 +311,7 @@ func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
 			continue
 		}
 		result.Name = f.Name
-		result.PathPrefix = strings.Join(f.PathPrefix, "/")
+		result.PathPrefix = filepath.Join(f.PathPrefix...)
 	}
 }
 
