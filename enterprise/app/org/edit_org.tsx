@@ -20,6 +20,10 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
     }
   }
 
+  showSuggestionPreference(): boolean {
+    return true;
+  }
+
   private populateWithSelectedGroup() {
     const group = this.props.user.selectedGroup;
 
@@ -30,6 +34,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       autoPopulateFromOwnedDomain: Boolean(group.ownedDomain),
       sharingEnabled: group.sharingEnabled,
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
+      suggestionPreference: group.suggestionPreference,
     });
     this.setState({ request, initialRequest: this.newRequest(request) });
   }

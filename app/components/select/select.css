@@ -19,6 +19,8 @@
   cursor: pointer;
   text-overflow: ellipsis;
   overflow: clip;
+  /** make the select element fill the .select-wrapper parent */
+  width: 100%;
 }
 
 .select:focus {

@@ -4,12 +4,13 @@ import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { AlertCircle } from "lucide-react";
+import Select, { Option } from "../../../app/components/select/select";
 
 export type FormProps = {
   user: User;
 };
 
-type GroupRequest = grp.CreateGroupRequest | grp.UpdateGroupRequest;
+type GroupRequest = Partial<grp.CreateGroupRequest & grp.UpdateGroupRequest>;
 
 export type FormState<T extends GroupRequest> = {
   request: T;
@@ -35,6 +36,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
 
   abstract newRequest(values?: Record<string, any>): T;
   abstract submitRequest(): void;
+  abstract showSuggestionPreference(): boolean;
 
   async onSubmit(e: any) {
     e.preventDefault();
@@ -68,6 +70,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   onChangeUrlIdentifier(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = getChangedFormState(e);
     this.setFieldValue(name, makeSlug(value as string));
+  }
+  onChangeSuggestionPreference(e: React.ChangeEvent<HTMLSelectElement>) {
+    const { name, value } = getChangedFormState(e);
+    this.setFieldValue(name, Number(value) as grp.SuggestionPreference);
   }
 
   setFieldValue(name: string, value: any) {
@@ -134,6 +140,20 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             </div>
           )}
         </div>
+        {this.showSuggestionPreference() && (
+          <div className="form-row stacked">
+            <label>Build suggestions</label>
+            <div className="input-help-text">Show diagnostics and improvements on builds within this org</div>
+            <Select
+              name="suggestionPreference"
+              value={request.suggestionPreference}
+              onChange={this.onChangeSuggestionPreference.bind(this)}>
+              <Option value={grp.SuggestionPreference.ENABLED}>Enabled</Option>
+              <Option value={grp.SuggestionPreference.ADMINS_ONLY}>Enabled for admins only</Option>
+              <Option value={grp.SuggestionPreference.DISABLED}>Disabled</Option>
+            </Select>
+          </div>
+        )}
         <label className="form-row input-label">
           <input
             autoComplete="off"
@@ -178,11 +198,11 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 }
 
-export function getChangedFormState(changeEvent: React.ChangeEvent<HTMLInputElement>) {
+export function getChangedFormState(changeEvent: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
   const input = changeEvent.target;
 
   const name = input.name;
-  const value = input.type === "checkbox" ? input.checked : input.value;
+  const value = input.type === "checkbox" ? (input as HTMLInputElement).checked : input.value;
 
   return { name, value };
 }

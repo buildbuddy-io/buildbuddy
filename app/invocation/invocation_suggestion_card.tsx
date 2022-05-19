@@ -3,6 +3,8 @@ import { AlertCircle, HelpCircle } from "lucide-react";
 import { TextLink } from "../components/link/link";
 import InvocationModel from "./invocation_model";
 import capabilities from "../capabilities/capabilities";
+import { User } from "../auth/user";
+import { grp } from "../../proto/group_ts_proto";
 
 interface Props {
   suggestions: Suggestion[];
@@ -232,8 +234,23 @@ const matchers: SuggestionMatcher[] = [
   },
 ];
 
-export function getSuggestions({ model, buildLogs }: { model: InvocationModel; buildLogs: string }): Suggestion[] {
-  if (!buildLogs || !model) return [];
+export function getSuggestions({
+  model,
+  buildLogs,
+  user,
+}: {
+  model: InvocationModel;
+  buildLogs: string;
+  user: User;
+}): Suggestion[] {
+  if (!buildLogs || !model || !user) return [];
+
+  const preference = user.selectedGroup.suggestionPreference;
+  if (preference === grp.SuggestionPreference.DISABLED) return [];
+  // TODO(bduffany): use role directly instead of using this RPC permission as a signal.
+  if (preference === grp.SuggestionPreference.ADMINS_ONLY && !user.canCall("updateGroup")) {
+    return [];
+  }
 
   const suggestions: Suggestion[] = [];
   for (let matcher of matchers) {

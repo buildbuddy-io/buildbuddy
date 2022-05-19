@@ -220,7 +220,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
         });
     };
 
-    const suggestions = getSuggestions({ model: this.state.model, buildLogs: this.getBuildLogs() });
+    const suggestions = getSuggestions({
+      model: this.state.model,
+      buildLogs: this.getBuildLogs(),
+      user: this.props.user,
+    });
 
     return (
       <div className="invocation">
