@@ -9,6 +9,19 @@
   height: 36px;
 }
 
+.invocation-raw-logs-card .download-raw-logs-button {
+  display: flex;
+  gap: 8px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 14px;
+}
+
+.invocation-raw-logs-card .content {
+  position: relative;
+}
+
 .input-tree {
   width: 200px;
   border: 1px solid #eee;
