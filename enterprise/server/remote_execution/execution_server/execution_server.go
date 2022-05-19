@@ -30,10 +30,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gorm.io/gorm"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -42,7 +44,15 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
+const (
+	// TTL for keys used to track pending executions for action merging.
+	pendingExecutionTTL = 8 * time.Hour
+)
+
+var (
+	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
+	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
+)
 
 func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {
 	// IOStats
@@ -93,9 +103,22 @@ func redisKeyForMonitoredTaskStatusStream(taskID string) string {
 	return fmt.Sprintf("taskStatusStream/{%s}", taskID)
 }
 
+func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, error) {
+	userPrefix, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, adResource.DownloadString()), nil
+}
+
+func redisKeyForPendingExecutionDigest(executionID string) string {
+	return fmt.Sprintf("pendingExecutionDigest/%s", executionID)
+}
+
 type ExecutionServer struct {
 	env                               environment.Env
 	cache                             interfaces.Cache
+	rdb                               redis.UniversalClient
 	streamPubSub                      *pubsub.StreamPubSub
 	enableRedisAvailabilityMonitoring bool
 }
@@ -125,6 +148,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	return &ExecutionServer{
 		env:                               env,
 		cache:                             cache,
+		rdb:                               env.GetRemoteExecutionRedisClient(),
 		streamPubSub:                      pubsub.NewStreamPubSub(env.GetRemoteExecutionRedisPubSubClient()),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && *enableRedisAvailabilityMonitoring,
 	}, nil
@@ -174,6 +198,24 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	})
 }
 
+type invocationLinkType int8
+
+const (
+	linkTypeNewExecution    invocationLinkType = 1
+	linkTypeMergedExecution invocationLinkType = 2
+)
+
+func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+	link := &tables.InvocationExecution{
+		InvocationID: invocationID,
+		ExecutionID:  executionID,
+		Type:         int8(linkType),
+	}
+	return s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+		return tx.Create(link).Error
+	})
+}
+
 func trimStatus(statusMessage string) string {
 	if len(statusMessage) > 255 {
 		return statusMessage[:255]
@@ -189,30 +231,35 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		ExecutionID: executionID,
 		Stage:       int64(stage),
 	}
-	if op != nil {
-		if executeResponse := operation.ExtractExecuteResponse(op); executeResponse != nil {
-			execution.StatusCode = executeResponse.GetStatus().GetCode()
-			execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
-			execution.ExitCode = executeResponse.GetResult().GetExitCode()
-			if details := executeResponse.GetStatus().GetDetails(); details != nil && len(details) > 0 {
-				serializedDetails, err := proto.Marshal(details[0])
-				if err == nil {
-					execution.SerializedStatusDetails = serializedDetails
-				} else {
-					log.Errorf("Error marshalling status details: %s", err.Error())
-				}
-			}
-			execution.CachedResult = executeResponse.GetCachedResult()
 
-			// Update stats if the operation has been completed.
-			if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetMessage() != "" {
-				if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
-					summary := &espb.ExecutionSummary{}
-					if err := proto.Unmarshal(data, summary); err == nil {
-						fillExecutionFromSummary(summary, execution)
-					}
+	if executeResponse := operation.ExtractExecuteResponse(op); executeResponse != nil {
+		execution.StatusCode = executeResponse.GetStatus().GetCode()
+		execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
+		execution.ExitCode = executeResponse.GetResult().GetExitCode()
+		if details := executeResponse.GetStatus().GetDetails(); details != nil && len(details) > 0 {
+			serializedDetails, err := proto.Marshal(details[0])
+			if err == nil {
+				execution.SerializedStatusDetails = serializedDetails
+			} else {
+				log.Errorf("Error marshalling status details: %s", err.Error())
+			}
+		}
+		execution.CachedResult = executeResponse.GetCachedResult()
+
+		// Update stats if the operation has been completed.
+		if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetMessage() != "" {
+			if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
+				summary := &espb.ExecutionSummary{}
+				if err := proto.Unmarshal(data, summary); err == nil {
+					fillExecutionFromSummary(summary, execution)
 				}
 			}
+		}
+	}
+
+	if *enableActionMerging && stage == repb.ExecutionStage_COMPLETED {
+		if err := s.deletePendingExecution(ctx, executionID); err != nil {
+			log.Warningf("could not delete pending execution %q: %s", executionID, err)
 		}
 	}
 
@@ -303,13 +350,17 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
 		return "", err
 	}
+	if err := s.insertInvocationLink(ctx, executionID, invocationID, linkTypeNewExecution); err != nil {
+		return "", err
+	}
 
 	executionTask := &repb.ExecutionTask{
-		ExecuteRequest: req,
-		InvocationId:   invocationID,
-		ExecutionId:    executionID,
-		Action:         action,
-		Command:        command,
+		ExecuteRequest:  req,
+		InvocationId:    invocationID,
+		ExecutionId:     executionID,
+		Action:          action,
+		Command:         command,
+		RequestMetadata: bazel_request.GetRequestMetadata(ctx),
 	}
 	// Allow execution worker to auth to cache (if necessary).
 	if jwt, ok := ctx.Value("x-buildbuddy-jwt").(string); ok {
@@ -367,10 +418,84 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Metadata:       schedulingMetadata,
 		SerializedTask: serializedTask,
 	}
+
+	if err := s.recordPendingExecution(ctx, executionID, r); err != nil {
+		log.Warningf("could not recording pending execution %q: %s", executionID, err)
+	}
+
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
-		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err.Error())
+		_ = s.deletePendingExecution(ctx, executionID)
+		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
+	}
+
+	return executionID, nil
+}
+
+// findExistingExecution looks for an identical action that is already pending
+// execution.
+func (s *ExecutionServer) findPendingExecution(ctx context.Context, adResource *digest.ResourceName) (string, error) {
+	executionIDKey, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return "", err
+	}
+	executionID, err := s.rdb.Get(ctx, executionIDKey).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	// Validate that the reverse mapping exists as well. The reverse mapping is
+	// used to delete the pending task information when the task is done.
+	// Bail out if it doesn't exist.
+	err = s.rdb.Get(ctx, redisKeyForPendingExecutionDigest(executionID)).Err()
+	if err == redis.Nil {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	ok, err := s.env.GetSchedulerService().ExistsTask(ctx, executionID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		log.Warningf("Pending execution %q does not exist in the scheduler", executionID)
+		return "", nil
 	}
 	return executionID, nil
+}
+
+func (s *ExecutionServer) recordPendingExecution(ctx context.Context, executionID string, adResource *digest.ResourceName) error {
+	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return err
+	}
+	reverseKey := redisKeyForPendingExecutionDigest(executionID)
+	pipe := s.rdb.TxPipeline()
+	pipe.Set(ctx, forwardKey, executionID, pendingExecutionTTL)
+	pipe.Set(ctx, reverseKey, forwardKey, pendingExecutionTTL)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionID string) error {
+	pendingExecutionDigestKey := redisKeyForPendingExecutionDigest(executionID)
+	pendingExecutionKey, err := s.rdb.Get(ctx, pendingExecutionDigestKey).Result()
+	if err == redis.Nil {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.rdb.Del(ctx, pendingExecutionKey).Err(); err != nil {
+		log.Warningf("could not delete pending execution key %q: %s", pendingExecutionKey, err)
+	}
+	if err := s.rdb.Del(ctx, pendingExecutionDigestKey).Err(); err != nil {
+		log.Warningf("could not delete pending execution digest key %q: %s", pendingExecutionDigestKey, err)
+	}
+	return nil
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
@@ -380,6 +505,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		return err
 	}
 
+	invocationID := bazel_request.GetInvocationID(stream.Context())
+
+	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
 			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
@@ -393,11 +521,37 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			}
 			return nil
 		}
+
+		if *enableActionMerging {
+			// Check if there's already an identical action pending execution.
+			// If so wait on the result of that execution instead of starting a new
+			// one.
+			ee, err := s.findPendingExecution(ctx, adInstanceDigest)
+			if err != nil {
+				log.Warningf("could not check for existing execution: %s", err)
+			}
+			if ee != "" {
+				log.Infof("Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
+				executionID = ee
+				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+				if err := s.insertInvocationLink(ctx, ee, invocationID, linkTypeMergedExecution); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	executionID, err := s.Dispatch(ctx, req)
-	if err != nil {
-		log.Errorf("Error dispatching execution %q: %s", executionID, err.Error())
-		return err
+
+	// Create a new execution unless we found an existing identical action we
+	// can wait on.
+	if executionID == "" {
+		log.Infof("Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
+		newExecutionID, err := s.Dispatch(ctx, req)
+		if err != nil {
+			log.Errorf("Error dispatching execution %q: %s", executionID, err.Error())
+			return err
+		}
+		executionID = newExecutionID
+		log.Infof("Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{

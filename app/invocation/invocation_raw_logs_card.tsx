@@ -1,8 +1,9 @@
 import React from "react";
-import { PauseCircle } from "lucide-react";
+import { Download, PauseCircle } from "lucide-react";
 import InvocationModel from "./invocation_model";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { FilterInput } from "../components/filter_input/filter_input";
+import Button from "../components/button/button";
 
 interface Props {
   model: InvocationModel;
@@ -39,6 +40,15 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
     this.setState({ ...this.state, filterString: event.target.value });
   }
 
+  handleDownloadClicked() {
+    const json = JSON.stringify(this.props.model.invocations[0]?.event, null, 2);
+    const uri = "data:application/json;base64," + window.btoa(json);
+    const link = document.createElement("a");
+    link.href = uri;
+    link.download = `${this.props.model.invocations[0]?.invocationId}_raw.json`;
+    link.click();
+  }
+
   render() {
     let filteredEvents = this.props.model.invocations.flatMap((invocation) =>
       invocation.event
@@ -61,10 +71,14 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
           placeholder="Filter..."
           onChange={this.handleFilterChange.bind(this)}
         />
-        <div className="card">
+        <div className="card invocation-raw-logs-card">
           <PauseCircle className="icon rotate-90" />
           <div className="content">
             <div className="title">Raw logs</div>
+            <Button className="download-raw-logs-button" onClick={this.handleDownloadClicked.bind(this)}>
+              <span>Download JSON</span>
+              <Download className="icon white" />
+            </Button>
             <div className="details code">
               <div>
                 {filteredEvents

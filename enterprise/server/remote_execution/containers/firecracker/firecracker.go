@@ -1150,6 +1150,9 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if err := networking.DeleteRoute(ctx, c.vmIdx); err != nil {
 		lastErr = err
 	}
+	if err := networking.DeleteRuleIfSecondaryNetworkEnabled(ctx, c.vmIdx); err != nil {
+		lastErr = err
+	}
 	return lastErr
 }
 

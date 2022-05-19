@@ -67,17 +67,29 @@
 
 .organization-form .url-input-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  margin-top: 8px;
+  align-self: start;
+  background: #f5f5f5;
+  padding-left: 8px;
+  width: 400px;
+  box-sizing: border-box;
 }
 
 .organization-form .url-input-row > :not(:last-child) {
   margin-right: 8px;
 }
 
+.organization-form .url-input-row span {
+  flex-shrink: 0;
+}
+
 .organization-form .url-input-row input {
-  width: 240px;
+  width: 0;
+  flex-grow: 1;
+}
+
+.organization-form .select-wrapper {
+  align-self: start;
 }
 
 .organization-form input[type="checkbox"] {

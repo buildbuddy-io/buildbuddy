@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
@@ -26,6 +27,7 @@ var (
 	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	defaultImage         = flag.String("executor.default_image", "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0", "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
+	extraEnvVars         = flagutil.StringSlice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
 )
 
 const (
@@ -368,7 +370,9 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	command.Arguments = append(command.Arguments, platformProps.ExtraArgs...)
-	for _, e := range platformProps.EnvOverrides {
+
+	additionalEnvVars := append(*extraEnvVars, platformProps.EnvOverrides...)
+	for _, e := range additionalEnvVars {
 		parts := strings.Split(e, "=")
 		if len(parts) == 0 {
 			continue

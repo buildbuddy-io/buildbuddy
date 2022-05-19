@@ -74,3 +74,33 @@ func TestSetAndGetAll(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedValues, values)
 }
+
+func TestListAppendAndRange(t *testing.T) {
+	mc, err := NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	err = mc.ListAppend(ctx, "key", "1", "2")
+	require.NoError(t, err)
+	err = mc.ListAppend(ctx, "key", "3")
+	require.NoError(t, err)
+
+	for _, testCase := range []struct {
+		start, stop int64
+		expected    []string
+		msg         string
+	}{
+		{0, 2, []string{"1", "2", "3"}, "getting the complete list should work"},
+		{0, 1, []string{"1", "2"}, "getting a partial range should work"},
+		{0, 0, []string{"1"}, "getting a range of size 1 should work"},
+		{-3, 2, []string{"1", "2", "3"}, "negative start indexes should work"},
+		{0, -1, []string{"1", "2", "3"}, "negative end indexes should work"},
+		{-100, 2, []string{"1", "2", "3"}, "out-of-range start index should be treated like first element index"},
+		{0, 100, []string{"1", "2", "3"}, "out-of-range end index should be treated like last element index"},
+		{2, 1, []string{}, "start > end should return empty list"},
+	} {
+		list, err := mc.ListRange(ctx, "key", testCase.start, testCase.stop)
+		require.NoError(t, err)
+		require.Equal(t, testCase.expected, list, testCase.msg)
+	}
+}

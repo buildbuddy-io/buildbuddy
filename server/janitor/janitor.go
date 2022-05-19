@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ttlSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion")
+	ttlSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
 	cleanupInterval   = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the janitor cleanup tasks will run")
 	cleanupWorkers    = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")

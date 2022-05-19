@@ -76,7 +76,7 @@ type vListener struct {
 // NewGuestListener returns a new net.Listener that listens on the guest VSock
 // on the specified port.
 func NewGuestListener(ctx context.Context, port uint32) (net.Listener, error) {
-	l, err := libVsock.Listen(port)
+	l, err := libVsock.Listen(port, &libVsock.Config{})
 	if err != nil {
 		return nil, err
 	}

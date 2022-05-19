@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -355,10 +356,20 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 
 		groupID = g.GroupID
 		res := tx.Exec(`
-			UPDATE `+"`Groups`"+` SET name = ?, url_identifier = ?, owned_domain = ?, sharing_enabled = ?, 
-				use_group_owned_executors = ?
+			UPDATE `+"`Groups`"+` SET
+				name = ?,
+				url_identifier = ?,
+				owned_domain = ?,
+				sharing_enabled = ?, 
+				use_group_owned_executors = ?,
+				suggestion_preference = ?
 			WHERE group_id = ?`,
-			g.Name, g.URLIdentifier, g.OwnedDomain, g.SharingEnabled, g.UseGroupOwnedExecutors,
+			g.Name,
+			g.URLIdentifier,
+			g.OwnedDomain,
+			g.SharingEnabled,
+			g.UseGroupOwnedExecutors,
+			g.SuggestionPreference,
 			g.GroupID)
 		if res.Error != nil {
 			return res.Error
@@ -563,7 +574,7 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 			Name:    "Organization",
 		},
 	}
-	if api_config.Enabled() {
+	if api.Enabled() {
 		c.apiKeyValue = api_config.Key()
 	}
 	if *orgName != "" {
@@ -711,6 +722,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 				g.sharing_enabled,
 				g.use_group_owned_executors,
 				g.saml_idp_metadata_url,
+				g.suggestion_preference,
 				ug.role
 			FROM `+"`Groups`"+` as g
 			JOIN UserGroups as ug
@@ -735,6 +747,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 				&gr.Group.SharingEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.SamlIdpMetadataUrl,
+				&gr.Group.SuggestionPreference,
 				&gr.Role,
 			)
 			if err != nil {
@@ -775,7 +788,8 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				github_token,
 				sharing_enabled,
 				use_group_owned_executors,
-				saml_idp_metadata_url
+				saml_idp_metadata_url,
+				suggestion_preference
 			FROM `+"`Groups`"+`
 			WHERE group_id = ?
 		`, u.GetGroupID()).Rows()
@@ -795,6 +809,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.SharingEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.SamlIdpMetadataUrl,
+				&gr.Group.SuggestionPreference,
 			)
 			if err != nil {
 				return err

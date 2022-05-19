@@ -3,10 +3,8 @@ database:
   data_source: "sqlite3:///buildbuddy/buildbuddy.db"
 storage:
   ttl_seconds: 2592000 # 30 days
-  chunk_file_size_bytes: 3000000 # 3 MB
   disk:
     root_directory: "/buildbuddy/blobs/"
 cache:
   disk:
     root_directory: "/buildbuddy/cache/"
-  max_size_bytes: 10000000000 # 10 GB

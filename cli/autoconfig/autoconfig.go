@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"strings"
 
@@ -71,23 +70,6 @@ func remoteBazelArgs(grpcURL string) []string {
 	return args
 }
 
-func defaultIP(ctx context.Context) (net.IP, error) {
-	netIface, err := networking.DefaultInterface(ctx)
-	if err != nil {
-		return nil, err
-	}
-	addrs, err := netIface.Addrs()
-	if err != nil {
-		return nil, err
-	}
-	for _, a := range addrs {
-		if v, ok := a.(*net.IPNet); ok {
-			return v.IP, nil
-		}
-	}
-	return nil, fmt.Errorf("could not determine host's default IP")
-}
-
 type remoteEndpoints struct {
 	grpcURL    string
 	webBaseURL string
@@ -107,7 +89,7 @@ func configRemoteEndpoints(ctx context.Context) (*remoteEndpoints, error) {
 		}, nil
 	case "local":
 		// we need to use an IP that's reachable from within the firecracker VMs
-		ip, err := defaultIP(ctx)
+		ip, err := networking.DefaultIP(ctx)
 		if err != nil {
 			return nil, err
 		}

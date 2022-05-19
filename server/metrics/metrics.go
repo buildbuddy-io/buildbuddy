@@ -324,7 +324,33 @@ var (
 		PartitionID,
 	})
 
-	/// ## Remote execution metrics
+	DiskCacheDuplicateWrites = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_duplicate_writes",
+		Help:      "Number of writes for digests that already exist.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of duplicate writes.
+	/// sum(buildbuddy_remote_cache_duplicate_writes)
+	/// ```
+
+	DiskCacheDuplicateWritesBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_duplicate_writes_bytes",
+		Help:      "Number of bytes written that already existed in the cache.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total number of duplicate write bytes.
+	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
+	/// ```
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
@@ -408,6 +434,22 @@ var (
 	/// ```promql
 	/// # Rate of new execution requests by OS/Arch.
 	/// sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
+	/// ```
+
+	RemoteExecutionMergedActions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "merged_actions",
+		Help:      "Number of identical execution requests that have been merged.",
+	}, []string{
+		GroupID,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Rate of merged actions by group.
+	/// sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
 	/// ```
 
 	RemoteExecutionQueueLength = promauto.NewGaugeVec(prometheus.GaugeOpts{

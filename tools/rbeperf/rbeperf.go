@@ -155,7 +155,7 @@ func newRunner(gRPCClientSource rbeclient.GRPCClientSource, workload workloadSpe
 func (g *runner) startCommand(ctx context.Context, cmd *rbeclient.Command, executionUpdates chan *rbeclient.CommandResult) {
 	go func() {
 		log.Debugf("Starting command %q.", cmd.Name)
-		if err := cmd.Start(ctx); err != nil {
+		if err := cmd.Start(ctx, &rbeclient.StartOpts{}); err != nil {
 			executionUpdates <- &rbeclient.CommandResult{
 				Stage:       repb.ExecutionStage_COMPLETED,
 				CommandName: cmd.Name,

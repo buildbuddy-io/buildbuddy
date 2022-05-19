@@ -260,6 +260,8 @@ type CommandBuffer struct {
 	incr map[string]int64
 	// Buffer for HINCRBY commands.
 	hincr map[string]map[string]int64
+	// Buffer for RPUSH commands.
+	rpush map[string][]interface{}
 	// Buffer for SADD commands.
 	sadd map[string]map[interface{}]struct{}
 	// Buffer for EXPIRE commands.
@@ -279,6 +281,7 @@ func (c *CommandBuffer) init() {
 	c.set = map[string]valueExpiration{}
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
+	c.rpush = map[string][]interface{}{}
 	c.sadd = map[string]map[interface{}]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
@@ -368,6 +371,23 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 	return nil
 }
 
+// RPush adds an RPUSH operation to the buffer.
+//
+// If the server is shutting down, the command will be issued to Redis
+// synchronously using the given context. Otherwise, the command is added to
+// the buffer and the context is ignored.
+func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...interface{}) error {
+	c.mu.Lock()
+	if c.shouldFlushSynchronously() {
+		c.mu.Unlock()
+		return c.rdb.RPush(ctx, key, values...).Err()
+	}
+	defer c.mu.Unlock()
+
+	c.rpush[key] = append(c.rpush[key], values...)
+	return nil
+}
+
 // Expire adds an EXPIRE operation to the buffer, overwriting any previous
 // expiry currently buffered for the given key. The duration is applied
 // as-is when flushed to Redis, meaning that any time elapsed until the flush
@@ -409,6 +429,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 	incr := c.incr
 	hincr := c.hincr
 	sadd := c.sadd
+	rpush := c.rpush
 	expire := c.expire
 	// Set all fields to fresh values so the current ones can be flushed without
 	// keeping a hold on the lock.
@@ -427,6 +448,9 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 		for field, increment := range h {
 			pipe.HIncrBy(ctx, key, field, increment)
 		}
+	}
+	for key, values := range rpush {
+		pipe.RPush(ctx, key, values...)
 	}
 	for key, set := range sadd {
 		members := []interface{}{}

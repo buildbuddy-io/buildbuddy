@@ -68,7 +68,8 @@ fi
 
 # Update deps.bzl (using Gazelle)
 if ! "${GAZELLE_COMMAND[@]}" update-repos -from_file=go.mod \
-  -to_macro=deps.bzl%install_buildbuddy_dependencies &>"$tmp_log_file"; then
+  -to_macro=deps.bzl%install_buildbuddy_dependencies \
+	-prune=true &>"$tmp_log_file"; then
   echo "Auto-updating 'deps.bzl' failed. Logs:" >&2
   cat "$tmp_log_file" >&2
   exit 1

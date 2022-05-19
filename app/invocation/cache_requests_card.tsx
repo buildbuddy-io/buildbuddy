@@ -5,7 +5,7 @@ import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, So
 import { cache } from "../../proto/cache_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
-import Link from "../components/link/link";
+import Link, { TextLink } from "../components/link/link";
 import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
@@ -243,8 +243,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const value = Number(event.target.value) as cache.GetCacheScoreCardRequest.OrderBy;
     // When changing the sort order, set direction according to a more useful
     // default, to save an extra click. Asc is more useful for start time; Desc
-    // is more useful for duration.
-    const desc = value === cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_DURATION;
+    // is more useful for duration and size.
+    const desc = value !== cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_START_TIME;
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       sort: String(value),
@@ -286,6 +286,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <Select value={this.getOrderBy()} onChange={this.onChangeOrderBy.bind(this)}>
             <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_START_TIME}>Start time</Option>
             <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_DURATION}>Duration</Option>
+            <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_SIZE}>Size</Option>
           </Select>
           <OutlinedButton className="icon-button" onClick={this.onToggleDescending.bind(this)}>
             {this.getDescending() ? <SortDesc className="icon" /> : <SortAsc className="icon" />}
@@ -332,13 +333,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
             {/* bes-upload events don't have a target ID or action mnemonic. */}
             {result.targetId || result.actionMnemonic ? (
-              <>
+              <TextLink href={this.getActionUrl(result.actionId)}>
                 {groupTarget === null && result.targetId}
                 {groupTarget === null && groupActionId === null && " › "}
                 {groupActionId === null && result.actionMnemonic}
-              </>
+              </TextLink>
             ) : (
-              result.actionId
+              <>{result.name ? result.name : result.actionId}</>
             )}
           </div>
         )}
@@ -374,9 +375,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <b>Target</b> <span>{result.targetId}</span>
           </>
         )}
-        {result.actionMnemonic && (
+        {(result.actionMnemonic || result.actionId) && (
           <>
-            <b>Action</b> <span>{result.actionMnemonic}</span>
+            <b>Action</b> <span>{result.actionMnemonic || result.actionId}</span>
+          </>
+        )}
+        {result.name && (
+          <>
+            <b>File</b>{" "}
+            <span>
+              {result.pathPrefix ? result.pathPrefix + "/" : ""}
+              {result.name}
+            </span>
           </>
         )}
         <>
@@ -462,7 +472,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                   {group.actionId && group.results[0]?.actionMnemonic && (
                     <>
                       <ChevronRight className="icon chevron" />
-                      <div className="action-mnemonic">{group.results[0]?.actionMnemonic}</div>
+                      <TextLink className="action-mnemonic" href={this.getActionUrl(group.actionId)}>
+                        {group.results[0]?.actionMnemonic}
+                      </TextLink>
                     </>
                   )}
                 </div>

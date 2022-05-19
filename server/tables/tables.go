@@ -207,6 +207,8 @@ type Group struct {
 	SamlIdpMetadataUrl *string
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
+
+	SuggestionPreference grpb.SuggestionPreference `gorm:"not null;default:1"`
 }
 
 func (g *Group) TableName() string {
@@ -374,6 +376,18 @@ type Execution struct {
 
 func (t *Execution) TableName() string {
 	return "Executions"
+}
+
+type InvocationExecution struct {
+	Model
+
+	InvocationID string `gorm:"primaryKey"`
+	ExecutionID  string `gorm:"primaryKey"`
+	Type         int8
+}
+
+func (t *InvocationExecution) TableName() string {
+	return "InvocationExecutions"
 }
 
 type TelemetryLog struct {
@@ -923,6 +937,7 @@ func init() {
 	registerTable("TO", &Token{})
 	registerTable("SE", &Session{})
 	registerTable("EX", &Execution{})
+	registerTable("IE", &InvocationExecution{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("CL", &CacheLog{})
 	registerTable("TA", &Target{})

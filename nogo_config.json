@@ -49,6 +49,9 @@
     "only_files": {
       "/server/": "Server code",
       "/enterprise/server/": "Enterprise server code"
+    },
+    "exclude_files": {
+      ".*_cgo_gotypes\\.go": "cgo internal files"
     }
   },
   "stdmethods": {

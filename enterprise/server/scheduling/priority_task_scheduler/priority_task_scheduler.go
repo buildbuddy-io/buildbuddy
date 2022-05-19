@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -27,10 +28,17 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
+var (
+	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
+	systemCPUCutoff         = flag.Float64("executor.system_cpu_cutoff", .90, "A total CPU usage value between 0 and 1, above which more tasks will not be scheduled")
+)
 
 const (
 	queueCheckSleepInterval = 10 * time.Millisecond
+
+	// loadAverageCheckInterval is how often the load average will
+	// be checked.
+	loadAverageCheckInterval = 1 * time.Second
 )
 
 var shuttingDownLogOnce sync.Once
@@ -166,7 +174,28 @@ type PriorityTaskScheduler struct {
 	ramBytesUsed            int64
 	cpuMillisCapacity       int64
 	cpuMillisUsed           int64
+	enoughSystemCPU         bool
 	exclusiveTaskScheduling bool
+}
+
+func (q *PriorityTaskScheduler) updateLoadAvg() {
+	for {
+		select {
+		case <-time.After(loadAverageCheckInterval):
+			oneMinLoadAvg, _, _ := resources.GetLoadAverage()
+			numCPUs := resources.GetNumCPUs()
+			fractionUsed := (oneMinLoadAvg / float64(numCPUs))
+			aboveCutoff := fractionUsed < *systemCPUCutoff
+
+			if !aboveCutoff {
+				log.Warningf("CPU use: %2.f%% is above limit: %2.f%%, not scheduling more tasks.", fractionUsed*100, *systemCPUCutoff*100)
+			}
+
+			q.mu.Lock()
+			q.enoughSystemCPU = aboveCutoff
+			q.mu.Unlock()
+		}
+	}
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
@@ -197,6 +226,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 
+	go qes.updateLoadAvg()
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
 }
@@ -258,13 +288,16 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
-func propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
 	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", execTask.GetJwt())
-	rmd := &repb.RequestMetadata{
-		ToolInvocationId: execTask.GetInvocationId(),
+	rmd := execTask.GetRequestMetadata()
+	if rmd == nil {
+		rmd = &repb.RequestMetadata{ToolInvocationId: execTask.GetInvocationId()}
 	}
+	rmd = proto.Clone(rmd).(*repb.RequestMetadata)
+	rmd.ExecutorDetails = &repb.ExecutorDetails{ExecutorHostId: q.exec.HostID()}
 	if data, err := proto.Marshal(rmd); err == nil {
-		ctx = context.WithValue(ctx, "build.bazel.remote.execution.v2.requestmetadata-bin", string(data))
+		ctx = context.WithValue(ctx, bazel_request.RequestMetadataKey, string(data))
 	}
 	return ctx
 }
@@ -274,7 +307,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
-	ctx = propagateExecutionTaskValuesToContext(ctx, execTask)
+	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
 		q.log.Warningf("Error opening publish operation stream: %s", err)
@@ -321,7 +354,7 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	// Only ever run as many sized tasks as we have memory for.
 	knownRAMremaining := q.ramBytesCapacity - q.ramBytesUsed
 	knownCPUremaining := q.cpuMillisCapacity - q.cpuMillisUsed
-	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
+	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu() && q.enoughSystemCPU
 
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one task to run at
 	// a time. Otherwise fall through to the logic below.

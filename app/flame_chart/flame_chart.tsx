@@ -90,7 +90,10 @@ export default class FlameChart extends React.Component<FlameChartProps, Profile
 
     this.horizontalScrollbar = this.horizontalScrollbarRef.current;
 
-    this.setMaxXCoordinate(Math.max(...this.chartModel.blocks.map(({ rectProps: { x, width } }) => x + width)));
+    const xMax = this.chartModel.blocks
+      .map((block) => block.rectProps.x + block.rectProps.width)
+      .reduce((a, b) => Math.max(a, b));
+    this.setMaxXCoordinate(xMax);
     // Zoom all the way out initially
     this.screenPixelsPerSecond.value = this.screenPixelsPerSecond.target = this.screenPixelsPerSecond.min;
 

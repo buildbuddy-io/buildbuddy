@@ -493,6 +493,7 @@ type SchedulerService interface {
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error)
 	CancelTask(ctx context.Context, taskID string) (bool, error)
+	ExistsTask(ctx context.Context, taskID string) (bool, error)
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
@@ -664,8 +665,11 @@ type MetricsCollector interface {
 	SetGetMembers(ctx context.Context, key string) ([]string, error)
 	Set(ctx context.Context, key, value string, expiration time.Duration) error
 	GetAll(ctx context.Context, key ...string) ([]string, error)
+	ListAppend(ctx context.Context, key string, values ...string) error
+	ListRange(ctx context.Context, key string, start, stop int64) ([]string, error)
 	ReadCounts(ctx context.Context, key string) (map[string]int64, error)
 	Delete(ctx context.Context, key string) error
+	Expire(ctx context.Context, key string, duration time.Duration) error
 	Flush(ctx context.Context) error
 }
 

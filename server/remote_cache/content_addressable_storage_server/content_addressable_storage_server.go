@@ -1,9 +1,11 @@
 package content_addressable_storage_server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"os"
 	"sync"
@@ -31,7 +33,21 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const gRPCMaxSize = int64(4194304 - 2000)
+const (
+	gRPCMaxSize = int64(4194304 - 2000)
+
+	// minTreeCacheLevel is the minimum level at which the tree may be
+	// cached. Level 0 is the root of the tree.
+	minTreeCacheLevel = 1
+
+	// minTreeCacheDescendents is the minimum number of descendents a node
+	// must have in order to be cached.
+	minTreeCacheDescendents = 10
+)
+
+var (
+	enableTreeCaching = flag.Bool("enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
+)
 
 type ContentAddressableStorageServer struct {
 	env   environment.Env
@@ -64,6 +80,10 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 
 func (s *ContentAddressableStorageServer) getCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
 	return namespace.CASCache(ctx, s.cache, instanceName)
+}
+
+func (s *ContentAddressableStorageServer) getACCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
+	return namespace.ActionCache(ctx, s.cache, instanceName)
 }
 
 // Determine if blobs are present in the CAS.
@@ -446,12 +466,13 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 	return dir, nil
 }
 
-type DirectoryWithDigest struct {
-	Directory *repb.Directory
-	Digest    *repb.Digest
+func makeTreeCacheDigest(d *repb.Digest) (*repb.Digest, error) {
+	buf := bytes.NewBuffer([]byte(d.GetHash() + "-treecache"))
+	return digest.Compute(buf)
 }
 
-func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, cache interfaces.Cache, dir *repb.Directory) ([]*DirectoryWithDigest, error) {
+func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, cache interfaces.Cache, dd *repb.DirectoryWithDigest) ([]*repb.DirectoryWithDigest, error) {
+	dir := dd.Directory
 	if len(dir.Directories) == 0 {
 		return nil, nil
 	}
@@ -467,7 +488,8 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 	if err != nil {
 		return nil, err
 	}
-	children := make([]*DirectoryWithDigest, 0, len(subdirDigests))
+
+	children := make([]*repb.DirectoryWithDigest, 0, len(subdirDigests))
 	for _, d := range subdirDigests {
 		blob, ok := rspMap[d]
 		if !ok {
@@ -477,7 +499,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 		if err := proto.Unmarshal(blob, subDir); err != nil {
 			return nil, err
 		}
-		children = append(children, &DirectoryWithDigest{Directory: subDir, Digest: d})
+		children = append(children, &repb.DirectoryWithDigest{Directory: subDir, Digest: d})
 	}
 	return children, nil
 }
@@ -511,7 +533,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	rpcStart := time.Now()
 	if req.RootDigest == nil {
-		return fmt.Errorf("RootDigest is required to GetTree")
+		return status.InvalidArgumentError("RootDigest is required to GetTree")
 	}
 	if req.GetRootDigest().GetHash() == digest.EmptySha256 {
 		return nil
@@ -522,6 +544,10 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return err
 	}
 	cache, err := s.getCache(ctx, req.GetInstanceName())
+	if err != nil {
+		return err
+	}
+	acCache, err := s.getACCache(ctx, req.GetInstanceName())
 	if err != nil {
 		return err
 	}
@@ -537,7 +563,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	fetchCount := 0
 	fetchDuration := time.Duration(0)
 
-	finishDir := func(dirWithDigest *DirectoryWithDigest) error {
+	finishDir := func(dirWithDigest *repb.DirectoryWithDigest) error {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -557,44 +583,85 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	eg, egCtx := errgroup.WithContext(ctx)
-	var fetch func(dirWithDigest *DirectoryWithDigest) error
-	fetch = func(dirWithDigest *DirectoryWithDigest) error {
-		if err := finishDir(dirWithDigest); err != nil {
-			return err
-		}
+	var fetch func(ctx context.Context, dirWithDigest *repb.DirectoryWithDigest, level int) ([]*repb.DirectoryWithDigest, error)
+	fetch = func(ctx context.Context, dirWithDigest *repb.DirectoryWithDigest, level int) ([]*repb.DirectoryWithDigest, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
-			return nil
+			return []*repb.DirectoryWithDigest{dirWithDigest}, nil
+		}
+
+		treeCacheDigest, err := makeTreeCacheDigest(dirWithDigest.Digest)
+		if err != nil {
+			return nil, err
+		}
+		if *enableTreeCaching {
+			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
+				treeCache := &repb.TreeCache{}
+				if err := proto.Unmarshal(blob, treeCache); err == nil {
+					return treeCache.GetChildren(), nil
+				}
+			}
 		}
 
 		start := time.Now()
-		children, err := s.fetchDirectory(egCtx, cache, dirWithDigest.Directory)
+		children, err := s.fetchDirectory(ctx, cache, dirWithDigest)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		mu.Lock()
 		fetchDuration += time.Since(start)
 		fetchCount += 1
 		mu.Unlock()
+
+		allDescendents := make([]*repb.DirectoryWithDigest, 0, len(children))
+		allDescendents = append(allDescendents, dirWithDigest)
+
+		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
 			childDirWithDigest := childDirWithDigest
+			l := level
 			eg.Go(func() error {
-				return fetch(childDirWithDigest)
+				grandChildren, err := fetch(egCtx, childDirWithDigest, l+1)
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				allDescendents = append(allDescendents, grandChildren...)
+				return nil
 			})
 		}
-		return nil
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+
+		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
+			treeCache := &repb.TreeCache{
+				Children: allDescendents,
+			}
+			buf, err := proto.Marshal(treeCache)
+			if err != nil {
+				return nil, err
+			}
+			if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
+				log.Warningf("Error setting treeCache blob: %s", err)
+			}
+		}
+		return allDescendents, nil
 	}
 
-	eg.Go(func() error {
-		return fetch(&DirectoryWithDigest{
-			Directory: rootDir,
-			Digest:    req.GetRootDigest(),
-		})
-	})
-
-	if err := eg.Wait(); err != nil {
+	allDirs, err := fetch(ctx, &repb.DirectoryWithDigest{
+		Directory: rootDir,
+		Digest:    req.GetRootDigest(),
+	}, 0)
+	if err != nil {
 		return err
 	}
+	for _, dir := range allDirs {
+		if err := finishDir(dir); err != nil {
+			return err
+		}
+	}
+
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)

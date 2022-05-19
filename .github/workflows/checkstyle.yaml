@@ -20,7 +20,7 @@ jobs:
       - name: Setup go
         uses: actions/setup-go@v2
         with:
-          go-version: "1.17.2" # Keep in sync with WORKSPACE
+          go-version: "1.18.1" # Keep in sync with WORKSPACE
 
       - name: Mount go cache
         uses: actions/cache@v2
@@ -52,7 +52,7 @@ jobs:
       - name: go deps
         # Keep Gazelle version in sync with WORKSPACE
         run: |
-          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.23.0
+          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.25.0
           GAZELLE_PATH="$(go env GOPATH)/bin/gazelle" tools/fix_go_deps.sh --diff &> go-deps-diff.txt || true
           echo "go deps diff:"
           cat go-deps-diff.txt

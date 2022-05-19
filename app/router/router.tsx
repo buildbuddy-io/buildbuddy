@@ -53,15 +53,15 @@ class Router {
   }
 
   /**
-   * Updates the URL relative to the origin. The new URL is formed by appending
-   * the given string onto `window.location.origin` verbatim.
+   * Updates the URL relative to the origin. The new URL is formed relative to
+   * the current href.
    *
    * - Creates a new browser history entry.
    * - Preserves global filter params.
    */
-  navigateTo(path: string) {
+  navigateTo(url: string) {
     const oldUrl = new URL(window.location.href);
-    const newUrl = new URL(window.location.origin + path);
+    const newUrl = new URL(url, window.location.href);
     // Preserve global filter params.
     for (const key of GLOBAL_FILTER_PARAM_NAMES) {
       if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {

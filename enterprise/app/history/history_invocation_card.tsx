@@ -82,7 +82,7 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
 
   // Beware, this method isn't bound to this - so don't use any this. stuff. Event propagation is a nightmare.
   handleBranchClicked(event: any, invocation: invocation.IInvocation) {
-    router.navigateToBranchHistory(invocation.commitSha);
+    router.navigateToBranchHistory(invocation.branchName);
     event.stopPropagation();
     event.preventDefault();
   }

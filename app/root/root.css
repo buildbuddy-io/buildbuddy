@@ -331,7 +331,7 @@ svg.icon.orange {
   border-radius: 50px;
   border: 1px solid #eee;
   margin-right: 8px;
-  padding: 12px 32px;
+  padding: 12px 24px;
   cursor: pointer;
   margin-top: 8px;
   color: #9e9e9e;
@@ -473,8 +473,6 @@ svg.icon.orange {
 
 .card.card-suggestion {
   border-left: 6px solid transparent;
-  background-color: #ff5252;
-  color: #fff;
 }
 
 .card.dark {
@@ -603,6 +601,26 @@ svg.icon.orange {
   font-size: 0.8em;
   opacity: 0.7;
   max-width: 800px;
+}
+
+.card-suggestion .bazel-flag {
+  white-space: nowrap;
+}
+
+.card-suggestion .suggestions-tab-link {
+  margin-top: 8px;
+}
+
+.card-suggestion .details {
+  word-break: initial;
+}
+
+.suggestions .settings-link {
+  font-size: 14px;
+}
+
+.dense .suggestions .settings-link {
+  margin-left: 20px;
 }
 
 /** Home **/
@@ -1003,6 +1021,8 @@ code .comment {
 .terminal-actions {
   display: flex;
   align-items: center;
+  margin-left: auto;
+  margin-top: 4px;
 }
 
 .terminal-actions,
@@ -1073,7 +1093,7 @@ code .comment {
 
 /* Duplicate class selector here is used to increase specificity */
 .react-lazylog-searchbar.react-lazylog-searchbar {
-  margin-right: 80px;
+  margin-right: 84px;
   background-color: transparent;
   padding: 1px 0 16px 0;
 }

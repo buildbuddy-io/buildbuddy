@@ -48,7 +48,6 @@ import (
 	"google.golang.org/grpc"
 
 	bundle "github.com/buildbuddy-io/buildbuddy"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
@@ -285,7 +284,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	// Register API as an HTTP service.
-	if api := env.GetAPIService(); api_config.Enabled() && api != nil {
+	if api := env.GetAPIService(); api != nil {
 		apiProtoHandlers, err := protolet.GenerateHTTPHandlers(api)
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
