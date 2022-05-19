@@ -131,6 +131,10 @@ func incrementIP(ip net.IP) {
 	}
 }
 
+func getCloneIP(vmIdx int) string {
+	return fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
+}
+
 func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName string) error {
 	if netNamespace != "" {
 		return runCommand(ctx, namespace(netNamespace, "ip", "addr", "add", ipAddr, "dev", vethName)...)
@@ -150,8 +154,15 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 }
 
 func DeleteRoute(ctx context.Context, vmIdx int) error {
-	cloneIP := fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
-	return runCommand(ctx, "ip", "route", "delete", cloneIP)
+	return runCommand(ctx, "ip", "route", "delete", getCloneIP(vmIdx))
+}
+
+func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
+	if !IsSecondaryNetworkEnabled() {
+		// IP rule is only added when the secondary network is enabled
+		return nil
+	}
+	return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
 }
 
 // SetupVethPair creates a new veth pair with one end in the given network
@@ -218,7 +229,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 
 	// This IP will be used as the clone-address so must be unique on the
 	// host.
-	cloneIP := fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
+	cloneIP := getCloneIP(vmIdx)
 
 	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
 	if err != nil {
@@ -258,6 +269,13 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
 	if err != nil {
 		return nil, err
+	}
+
+	if IsSecondaryNetworkEnabled() {
+		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
