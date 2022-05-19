@@ -41,7 +41,6 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	guuid "github.com/google/uuid"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -207,16 +206,7 @@ const (
 )
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
-	id, err := guuid.NewRandom()
-	if err != nil {
-		return status.InternalErrorf("could not generate link id: %s", err)
-	}
-	idBin, err := id.MarshalBinary()
-	if err != nil {
-		return err
-	}
 	link := &tables.InvocationExecution{
-		ID:           idBin,
 		InvocationID: invocationID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),

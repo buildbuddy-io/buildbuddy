@@ -37,7 +37,7 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 	return status.FailedPreconditionError("An execution lookup with invocation_id must be provided")
 }
 
-func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *query_builder.Query, invocationID string) ([]tables.Execution, error) {
+func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *query_builder.Query) ([]tables.Execution, error) {
 	dbh := es.env.GetDBHandle()
 	q := baseQuery
 	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, es.env, q, "e"); err != nil {
@@ -67,7 +67,7 @@ func (es *ExecutionService) getLinkedInvocationExecutions(ctx context.Context, i
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
 	q.AddWhereClause(`e.invocation_id = ?`, invocationID)
-	return es.queryExecutions(ctx, q, invocationID)
+	return es.queryExecutions(ctx, q)
 }
 
 func (es *ExecutionService) getUnlinkedInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
@@ -75,9 +75,9 @@ func (es *ExecutionService) getUnlinkedInvocationExecutions(ctx context.Context,
 		SELECT e.* FROM Executions e
 		LEFT JOIN InvocationExecutions ie 
 			ON ie.execution_id = e.execution_id AND ie.invocation_id = e.invocation_id`)
-	q.AddWhereClause(`ie.id IS NULL`)
+	q.AddWhereClause(`ie.invocation_id IS NULL`)
 	q.AddWhereClause(`e.invocation_id = ?`, invocationID)
-	return es.queryExecutions(ctx, q, invocationID)
+	return es.queryExecutions(ctx, q)
 }
 
 func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {

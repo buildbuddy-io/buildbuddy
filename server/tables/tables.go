@@ -379,9 +379,8 @@ func (t *Execution) TableName() string {
 type InvocationExecution struct {
 	Model
 
-	ID           []byte `gorm:"primaryKey;size:16;index:invocation_execution_id"`
-	InvocationID string `gorm:"index:invocation_execution_invocation_id"`
-	ExecutionID  string
+	InvocationID string `gorm:"primaryKey"`
+	ExecutionID  string `gorm:"primaryKey"`
 	Type         int8
 }
 
