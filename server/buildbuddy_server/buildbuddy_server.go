@@ -159,6 +159,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
+			SuggestionPreference:   g.SuggestionPreference,
 		})
 	}
 	return r
@@ -333,6 +334,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		}
 		group.URLIdentifier = &urlIdentifier
 	}
+	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
 	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
 	if err != nil {
@@ -392,6 +394,10 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.SharingEnabled = req.GetSharingEnabled()
 	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
 	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
+	group.SuggestionPreference = req.GetSuggestionPreference()
+	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
+		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
+	}
 	if _, err := userDB.InsertOrUpdateGroup(ctx, group); err != nil {
 		return nil, err
 	}

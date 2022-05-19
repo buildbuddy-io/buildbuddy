@@ -54,6 +54,9 @@ message Group {
     // Admins have unrestricted access to any data owned by this group.
     ADMIN_ROLE = 2;
   }
+
+  // Controls who can see invocation suggestions.
+  SuggestionPreference suggestion_preference = 10;
 }
 
 message JoinGroupRequest {
@@ -227,6 +230,9 @@ message UpdateGroupRequest {
   // Whether builds for this group will use custom executors provided by the
   // group.
   bool use_group_owned_executors = 7;
+
+  // Controls who can see invocation suggestions.
+  SuggestionPreference suggestion_preference = 8;
 }
 
 message UpdateGroupResponse {
@@ -239,4 +245,15 @@ enum GroupMembershipStatus {
   MEMBER = 1;
   // The user has requested to join the group but is not yet a member.
   REQUESTED = 2;
+}
+
+// A group's preference for showing suggestions on invocation pages.
+enum SuggestionPreference {
+  UNKNOWN_SUGGESTION_PREFERENCE = 0;
+  // Show invocation suggestions to anyone.
+  ENABLED = 1;
+  // Show invocation suggestions only to group admins.
+  ADMINS_ONLY = 2;
+  // Don't show invocation suggestions.
+  DISABLED = 3;
 }
