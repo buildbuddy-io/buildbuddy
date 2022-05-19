@@ -1266,19 +1266,19 @@ func TestActionMerging(t *testing.T) {
 	rbe.AddExecutor(t)
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", "sleep 10"}}
-	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true})
+	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
 
-	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true})
+	cmd2 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
 
 	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
 
-	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1})
+	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
-	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1})
+	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
 	require.Equal(t, op3, op4, "expected actions to be merged")
 }
