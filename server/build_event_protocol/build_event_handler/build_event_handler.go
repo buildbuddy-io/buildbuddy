@@ -201,8 +201,8 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		files:     scorecard.ExtractFiles(invocation),
 		createdAt: time.Now(),
+		files:     scorecard.ExtractFiles(invocation),
 	}
 	select {
 	case r.tasks <- req:
