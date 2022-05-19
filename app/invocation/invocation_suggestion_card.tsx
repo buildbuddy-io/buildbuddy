@@ -3,6 +3,8 @@ import { AlertCircle, HelpCircle } from "lucide-react";
 import { TextLink } from "../components/link/link";
 import InvocationModel from "./invocation_model";
 import capabilities from "../capabilities/capabilities";
+import { User } from "../auth/user";
+import { grp } from "../../proto/group_ts_proto";
 
 interface Props {
   suggestions: Suggestion[];
@@ -12,6 +14,7 @@ interface Props {
    * and a link to the suggestions tab.
    */
   overview?: boolean;
+  user?: User;
 }
 
 interface Suggestion {
@@ -232,8 +235,22 @@ const matchers: SuggestionMatcher[] = [
   },
 ];
 
-export function getSuggestions({ model, buildLogs }: { model: InvocationModel; buildLogs: string }): Suggestion[] {
-  if (!buildLogs || !model) return [];
+export function getSuggestions({
+  model,
+  buildLogs,
+  user,
+}: {
+  model: InvocationModel;
+  buildLogs: string;
+  user: User;
+}): Suggestion[] {
+  if (!buildLogs || !model || !user) return [];
+
+  const preference = user.selectedGroup.suggestionPreference;
+  if (preference === grp.SuggestionPreference.DISABLED) return [];
+  if (preference === grp.SuggestionPreference.ADMINS_ONLY && !user.canCall("updateGroup")) {
+    return [];
+  }
 
   const suggestions: Suggestion[] = [];
   for (let matcher of matchers) {
@@ -294,6 +311,11 @@ export default class SuggestionCardComponent extends React.Component<Props> {
             </div>
           </div>
         ))}
+        {this.props.user.canCall("updateGroup") && (
+          <TextLink className="settings-link" href="/settings/org/details">
+            Suggestion settings
+          </TextLink>
+        )}
       </div>
     );
   }

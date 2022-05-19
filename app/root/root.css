@@ -615,6 +615,14 @@ svg.icon.orange {
   word-break: initial;
 }
 
+.suggestions .settings-link {
+  font-size: 14px;
+}
+
+.dense .suggestions .settings-link {
+  margin-left: 20px;
+}
+
 /** Home **/
 
 .home {

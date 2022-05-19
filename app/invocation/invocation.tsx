@@ -220,7 +220,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
         });
     };
 
-    const suggestions = getSuggestions({ model: this.state.model, buildLogs: this.getBuildLogs() });
+    const suggestions = getSuggestions({
+      model: this.state.model,
+      buildLogs: this.getBuildLogs(),
+      user: this.props.user,
+    });
 
     return (
       <div className="invocation">
@@ -287,7 +291,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent suggestions={suggestions} overview={activeTab !== "suggestions"} />
+            <SuggestionCardComponent
+              suggestions={suggestions}
+              overview={activeTab !== "suggestions"}
+              user={this.props.user}
+            />
           )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
