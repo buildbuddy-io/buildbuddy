@@ -207,6 +207,8 @@ type Group struct {
 	SamlIdpMetadataUrl *string
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
+
+	SuggestionPreference grpb.SuggestionPreference `gorm:"not null;default:1"`
 }
 
 func (g *Group) TableName() string {
