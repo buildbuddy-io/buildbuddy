@@ -41,7 +41,7 @@ export default class RawLogsCardComponent extends React.Component<Props, State> 
   }
 
   handleDownloadClicked() {
-    const json = JSON.stringify(this.props.model.invocations[0].event, null, 2);
+    const json = JSON.stringify(this.props.model.invocations[0]?.event, null, 2);
     const uri = "data:application/json;base64," + window.btoa(json);
     const link = document.createElement("a");
     link.href = uri;
