@@ -148,6 +148,9 @@ type recordStatsTask struct {
 	*invocationJWT
 	// createdAt is the time at which this task was created.
 	createdAt time.Time
+	// files contains a mapping of file digests to file name metadata for files
+	// referenced in the BEP.
+	files map[string]*build_event_stream.File
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -199,6 +202,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			jwt:     jwt,
 		},
 		createdAt: time.Now(),
+		files:     scorecard.ExtractFiles(invocation),
 	}
 	select {
 	case r.tasks <- req:
@@ -238,8 +242,9 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
 	}
-	if scoreCard := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); scoreCard != nil {
-		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, scoreCard); err != nil {
+	if sc := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); sc != nil {
+		scorecard.FillBESMetadata(sc, task.files)
+		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, sc); err != nil {
 			log.Errorf("Error writing scorecard blob: %s", err)
 		}
 	}

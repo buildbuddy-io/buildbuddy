@@ -6,7 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:build_event_stream_go_proto",
         "//proto:cache_go_proto",
+        "//proto:invocation_go_proto",
         "//proto:pagination_go_proto",
         "//server/environment",
         "//server/util/paging",

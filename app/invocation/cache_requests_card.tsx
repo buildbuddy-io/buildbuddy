@@ -339,7 +339,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                 {groupActionId === null && result.actionMnemonic}
               </TextLink>
             ) : (
-              result.actionId
+              <>{result.name ? result.name : result.actionId}</>
             )}
           </div>
         )}
@@ -375,9 +375,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <b>Target</b> <span>{result.targetId}</span>
           </>
         )}
-        {result.actionMnemonic && (
+        {(result.actionMnemonic || result.actionId) && (
           <>
-            <b>Action</b> <span>{result.actionMnemonic}</span>
+            <b>Action</b> <span>{result.actionMnemonic || result.actionId}</span>
+          </>
+        )}
+        {result.name && (
+          <>
+            <b>File</b>{" "}
+            <span>
+              {result.pathPrefix ? result.pathPrefix + "/" : ""}
+              {result.name}
+            </span>
           </>
         )}
         <>
@@ -441,7 +450,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <div className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
-              <div className="name-column">Action</div>
+              <div className="name-column">Name</div>
             )}
             <div className="cache-type-column">Cache</div>
             <div className="status-column">Status</div>

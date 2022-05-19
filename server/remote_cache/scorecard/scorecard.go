@@ -3,6 +3,7 @@ package scorecard
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -12,7 +13,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )
 
@@ -20,6 +23,10 @@ const (
 	// Default page size for the scorecard when a page token is not included in
 	// the request.
 	defaultScoreCardPageSize = 100
+)
+
+var (
+	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 // GetCacheScoreCard returns a list of detailed, per-request cache stats.
@@ -124,10 +131,12 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 		case "search":
 			s := strings.ToLower(req.GetFilter().GetSearch())
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
+				filePath := filepath.Join(result.GetPathPrefix(), result.GetName())
 				return strings.Contains(strings.ToLower(result.GetActionId()), s) ||
 					strings.Contains(strings.ToLower(result.GetActionMnemonic()), s) ||
 					strings.Contains(strings.ToLower(result.GetTargetId()), s) ||
-					strings.Contains(strings.ToLower(result.GetDigest().GetHash()), s)
+					strings.Contains(strings.ToLower(result.GetDigest().GetHash()), s) ||
+					strings.Contains(strings.ToLower(filePath), s)
 			})
 		default:
 			return nil, status.InvalidArgumentErrorf("invalid field path %q", path)
@@ -255,6 +264,55 @@ func blobName(invocationID string) string {
 	// to lookup data from historical invocations.
 	blobFileName := invocationID + "-scorecard.pb"
 	return filepath.Join(invocationID, blobFileName)
+}
+
+// ExtractFiles extracts any files from invocation BES events which may be
+// associated with bes-upload cache requests, such as the timing profile or
+// other uploads that weren't directly tied to an action execution. The returned
+// mapping is keyed by digest hash.
+func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
+	out := map[string]*bespb.File{}
+
+	maybeAddToMap := func(file *bespb.File) {
+		if uri, ok := file.File.(*bespb.File_Uri); ok {
+			m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
+			if len(m) >= 1 {
+				digestHash := m[1]
+				out[digestHash] = file
+			}
+		}
+	}
+
+	for _, event := range invocation.Event {
+		switch p := event.BuildEvent.Payload.(type) {
+		case *bespb.BuildEvent_NamedSetOfFiles:
+			for _, f := range p.NamedSetOfFiles.Files {
+				maybeAddToMap(f)
+			}
+		case *bespb.BuildEvent_BuildToolLogs:
+			for _, f := range p.BuildToolLogs.Log {
+				maybeAddToMap(f)
+			}
+		}
+	}
+
+	return out
+}
+
+// FillBESMetadata populates file metadata in the scorecard results for files
+// uploaded via BEP.
+func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
+	for _, result := range sc.Results {
+		if result.ActionId != "bes-upload" {
+			continue
+		}
+		f := files[result.Digest.GetHash()]
+		if f == nil {
+			continue
+		}
+		result.Name = f.Name
+		result.PathPrefix = filepath.Join(f.PathPrefix...)
+	}
 }
 
 // Read reads the invocation cache scorecard from the configured blobstore.
