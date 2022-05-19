@@ -291,7 +291,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {(activeTab === "all" || activeTab == "log" || activeTab === "suggestions") && (
-            <SuggestionCardComponent suggestions={suggestions} overview={activeTab !== "suggestions"} />
+            <SuggestionCardComponent
+              suggestions={suggestions}
+              overview={activeTab !== "suggestions"}
+              user={this.props.user}
+            />
           )}
 
           {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (

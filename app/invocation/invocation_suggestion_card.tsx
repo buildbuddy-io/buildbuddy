@@ -14,6 +14,7 @@ interface Props {
    * and a link to the suggestions tab.
    */
   overview?: boolean;
+  user?: User;
 }
 
 interface Suggestion {
@@ -247,7 +248,6 @@ export function getSuggestions({
 
   const preference = user.selectedGroup.suggestionPreference;
   if (preference === grp.SuggestionPreference.DISABLED) return [];
-  // TODO(bduffany): use role directly instead of using this RPC permission as a signal.
   if (preference === grp.SuggestionPreference.ADMINS_ONLY && !user.canCall("updateGroup")) {
     return [];
   }
@@ -311,6 +311,11 @@ export default class SuggestionCardComponent extends React.Component<Props> {
             </div>
           </div>
         ))}
+        {this.props.user.canCall("updateGroup") && (
+          <TextLink className="settings-link" href="/settings/org/details">
+            Suggestion settings
+          </TextLink>
+        )}
       </div>
     );
   }
