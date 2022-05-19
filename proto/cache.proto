@@ -204,6 +204,16 @@ message ScoreCard {
     // request was unsuccessful, this represents the number of bytes
     // transferred before the failure, if any.
     int64 transferred_size_bytes = 11;
+
+    // The file name of the cache artifact, if known.
+    // Ex: "server/util/url/url.a"
+    string name = 12;
+
+    // The file's path prefix, if known. This is part of the full file path, so
+    // it is important, but it can be "noisy" for display purposes, so it is
+    // kept separate.
+    // Ex: "bazel-out/k8-fastbuild/bin"
+    string path_prefix = 13;
   }
 
   // In the interest of saving space, we only show cache misses.
