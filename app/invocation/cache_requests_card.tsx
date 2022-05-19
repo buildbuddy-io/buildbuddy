@@ -375,9 +375,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <b>Target</b> <span>{result.targetId}</span>
           </>
         )}
-        {result.actionMnemonic && (
+        {(result.actionMnemonic || result.actionId) && (
           <>
-            <b>Action</b> <span>{result.actionMnemonic}</span>
+            <b>Action</b> <span>{result.actionMnemonic || result.actionId}</span>
           </>
         )}
         {result.name && (
