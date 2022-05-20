@@ -36,6 +36,26 @@ export enum SuggestionLevel {
 /** Given some data about an invocation, optionally returns a suggestion. */
 type SuggestionMatcher = (params: MatchParams) => Suggestion | null;
 
+// Recommended --execution_filter values for iOS builds.
+const IOS_EXECUTION_FILTER = {
+  noRemote: [
+    "BitcodeSymbolsCopy",
+    "BundleApp",
+    "BundleTreeApp",
+    "DsymDwarf",
+    "DsymLipo",
+    "GenerateAppleSymbolsFile",
+    "ObjcBinarySymbolStrip",
+    "CppLink",
+    "ObjcLink",
+    "ProcessAndSign",
+    "SignBinary",
+    "SwiftArchive",
+    "SwiftStdlibCopy",
+  ],
+  noRemoteExec: ["BundleResources", "ImportedDynamicFrameworkProcessor"],
+};
+
 // TODO(siggisim): server side suggestion storing, parsing, and fetching.
 const matchers: SuggestionMatcher[] = [
   buildLogRegex({
@@ -142,11 +162,9 @@ const matchers: SuggestionMatcher[] = [
 
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
-    const version = model.started?.buildToolVersion;
-    if (!version) return null;
-    const segments = version.split(".").map(Number);
+    const version = getBazelMajorVersion(model);
     // Bazel pre-v5 doesn't support compression.
-    if (!segments[0] || segments[0] < 5) return null;
+    if (version === null || version < 5) return null;
 
     return {
       level: SuggestionLevel.INFO,
@@ -156,7 +174,13 @@ const matchers: SuggestionMatcher[] = [
           remote cache throughput.
         </>
       ),
-      reason: <>Shown because this build is cache-enabled but compression is not enabled.</>,
+      reason: (
+        <>
+          Shown because this build is cache-enabled but{" "}
+          <span className="inline-code">--experimental_remote_cache_compression</span> is neither enabled nor explicitly
+          disabled.
+        </>
+      ),
     };
   },
   // Suggest using --jobs
@@ -198,6 +222,74 @@ const matchers: SuggestionMatcher[] = [
         <>
           Shown because this build is cache-enabled and the flag{" "}
           <span className="inline-code">--remote_download_outputs</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
+  // Suggest modify_execution_info for iOS builds
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
+    if (model.optionsMap.get("modify_execution_info")) return null;
+
+    const allIOSMnemonics = new Set(Object.values(IOS_EXECUTION_FILTER).flat());
+    const triggeredMnemonics: React.ReactNode[] = [];
+    for (const action of model.buildMetrics?.actionSummary?.actionData || []) {
+      if (allIOSMnemonics.has(action.mnemonic)) {
+        triggeredMnemonics.push(<span className="inline-code">{action.mnemonic}</span>);
+      }
+    }
+    // Need a few mnemonics to match so we can be more certain this is an iOS build.
+    if (triggeredMnemonics.length <= 2) return null;
+
+    const noRemoteExpr = IOS_EXECUTION_FILTER.noRemote.join("|");
+    const noRemoteExecExpr = IOS_EXECUTION_FILTER.noRemoteExec.join("|");
+    const recommendedFlag = `--modify_execution_info=^(${noRemoteExpr})$=+no-remote,^(${noRemoteExecExpr})$=+no-remote-exec`;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          <div>
+            Consider using the Bazel flag <BazelFlag>--modify_execution_info</BazelFlag> to selectively disable remote
+            capabilities for certain build actions, which can improve overall build performance. For iOS builds, we
+            recommend:
+          </div>
+          <code>{recommendedFlag}</code>
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build is not configured with <span className="inline-code">--modify_execution_info</span>{" "}
+          and it looks like an iOS build based on the executed action{triggeredMnemonics.length === 1 ? "" : "s"}{" "}
+          <InlineProseList items={triggeredMnemonics} />
+        </>
+      ),
+    };
+  },
+  // Suggest experimental_remote_cache_async
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
+    if (model.optionsMap.get("experimental_remote_cache_async")) return null;
+    const version = getBazelMajorVersion(model);
+    if (version === null || version < 5) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider enabling <BazelFlag>--experimental_remote_cache_async</BazelFlag> to improve remote cache
+          performance.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build is cache-enabled but{" "}
+          <span className="inline-code">--experimental_remote_cache_async</span> is neither enabled nor explicitly
+          disabled.
         </>
       ),
     };
@@ -372,4 +464,12 @@ function InlineProseList({ items }: { items: React.ReactNode[] }) {
     }
   }
   return <>{out}</>;
+}
+
+function getBazelMajorVersion(model: InvocationModel): number | null {
+  const version = model.started?.buildToolVersion;
+  if (!version) return null;
+  const segments = version.split(".").map(Number);
+  if (isNaN(segments[0])) return null;
+  return segments[0];
 }
