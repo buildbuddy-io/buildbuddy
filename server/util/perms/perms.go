@@ -177,11 +177,21 @@ func AddPermissionsCheckToQuery(ctx context.Context, env environment.Env, q *que
 }
 
 func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environment.Env, q *query_builder.Query, tableAlias string) error {
+	o, err := GetPermissionsCheckClauses(ctx, env, q, tableAlias)
+	if err != nil {
+		return err
+	}
+	orQuery, orArgs := o.Build()
+	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	return nil
+}
+
+func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *query_builder.Query, tableAlias string) (*query_builder.OrClauses, error) {
 	tablePrefix := ""
 	if tableAlias != "" {
 		tablePrefix = tableAlias + "."
 	}
-	o := query_builder.OrClauses{}
+	o := &query_builder.OrClauses{}
 	o.AddOr(fmt.Sprintf("(%sperms & ? != 0)", tablePrefix), OTHERS_READ)
 
 	hasUser := false
@@ -215,12 +225,10 @@ func AddPermissionsCheckToQueryWithTableAlias(ctx context.Context, env environme
 	}
 
 	if !hasUser && !env.GetAuthenticator().AnonymousUsageEnabled() {
-		return status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
-	return nil
+	return o, nil
 }
 
 func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID string) error {
