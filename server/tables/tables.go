@@ -429,13 +429,13 @@ func (c *CacheLog) TableName() string {
 type Target struct {
 	RuleType string
 	UserID   string `gorm:"index:target_user_id"`
-	GroupID  string `gorm:"index:target_group_id"`
+	GroupID  string `gorm:"index:target_group_id;uniqueIndex:target_target_id_group_id_idx,priority:2"`
 	RepoURL  string
 	Label    string
 	Model
 	Perms int `gorm:"index:target_perms"`
 	// TargetID is made up of repoURL + label.
-	TargetID int64 `gorm:"uniqueIndex:target_target_id"`
+	TargetID int64 `gorm:"uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
 
 func (t *Target) TableName() string {
@@ -852,6 +852,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}
 
 	dropIndexIfExists(m, "Executions", "execution_invocation_id")
+	dropIndexIfExists(m, "Targets", "target_target_id")
 
 	type ColRef struct {
 		table  Table
