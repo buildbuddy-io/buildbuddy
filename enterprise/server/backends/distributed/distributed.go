@@ -342,6 +342,16 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTyp
 	return &clone, nil
 }
 
+func (c *Cache) peerZone(peer string) (string, bool) {
+	c.heartbeatMu.Lock()
+	pi, ok := c.peerMetadata[peer]
+	c.heartbeatMu.Unlock()
+	if ok && pi.zone != "" {
+		return pi.zone, true
+	}
+	return "", false
+}
+
 // peers returns the ordered slice of replicationFactor peers responsible for
 // this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) *peerset.PeerSet {
@@ -360,7 +370,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	sortVal := func(peer string) int {
 		if peer == c.config.ListenAddr {
 			return 0
-		} else if pi, ok := c.peerMetadata[peer]; ok && pi.zone == c.zone {
+		} else if zone, ok := c.peerZone(peer); ok && zone == c.zone {
 			return 1
 		} else {
 			return 2
