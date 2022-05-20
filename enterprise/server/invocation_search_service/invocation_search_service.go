@@ -78,21 +78,21 @@ func (s *InvocationSearchService) checkPreconditions(req *inpb.SearchInvocationR
 }
 
 // TODO(tylerw): move this to a common place -- we'll use it a bunch.
-func addPermissionsCheckToQuery(tu *tables.User, q *query_builder.Query) {
+func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
 	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
 	groupArgs := []interface{}{
 		perms.GROUP_READ,
 	}
 	groupParams := make([]string, 0)
-	for _, g := range tu.Groups {
-		groupArgs = append(groupArgs, g.Group.GroupID)
+	for _, g := range u.GetGroupMemberships() {
+		groupArgs = append(groupArgs, g.GroupID)
 		groupParams = append(groupParams, "?")
 	}
 	groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
 	groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
 	o.AddOr(groupQueryStr, groupArgs...)
-	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, tu.UserID)
+	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 	orQuery, orArgs := o.Build()
 	q = q.AddWhereClause("("+orQuery+")", orArgs...)
 }
@@ -101,20 +101,11 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if err := s.checkPreconditions(req); err != nil {
 		return nil, err
 	}
-	if s.env.GetUserDB() == nil {
-		return nil, status.UnimplementedError("Not implemented.")
-	}
-	tu, err := s.env.GetUserDB().GetUser(ctx)
+	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
-		// Searching invocations *requires* that you are logged in.
 		return nil, err
 	}
-
-	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
-		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
+	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
@@ -178,7 +169,7 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 
 	// Always add permissions check.
-	addPermissionsCheckToQuery(tu, q)
+	addPermissionsCheckToQuery(u, q)
 
 	sort := defaultSortParams()
 	if req.Sort != nil && req.Sort.SortField != inpb.InvocationSort_UNKNOWN_SORT_FIELD {
