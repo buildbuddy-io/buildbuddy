@@ -47,6 +47,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testport",
         "//server/util/grpc_client",
         "//server/util/prefix",
         "//server/util/testing/flags",
