@@ -163,5 +163,8 @@ func GetZone() (string, error) {
 	if *zoneOverride != "" {
 		return *zoneOverride, nil
 	}
+	if !metadata.OnGCE() {
+		return "", status.UnavailableError("not running on GCE")
+	}
 	return metadata.Zone()
 }
