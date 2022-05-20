@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -226,6 +227,27 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
+}
+
+func TestReadOffsetLimit(t *testing.T) {
+	mc, err := memory_cache.NewMemoryCache(1000)
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t)
+	size := int64(10)
+	d, buf := testdigest.NewRandomDigestBuf(t, size)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	offset := int64(2)
+	limit := int64(3)
+	reader, err := mc.Reader(ctx, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, size)
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
 
 func TestSizeLimit(t *testing.T) {

@@ -322,6 +322,37 @@ func TestReader(t *testing.T) {
 	}
 }
 
+func TestReadOffsetLimit(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	require.NoError(t, err)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	size := int64(10)
+	d, buf := testdigest.NewRandomDigestBuf(t, size)
+	err = te.GetCache().Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	offset := int64(2)
+	limit := int64(3)
+	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE}
+	reader, err := c.RemoteReader(ctx, peer, isolation, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, size)
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
+}
+
 func TestWriter(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)

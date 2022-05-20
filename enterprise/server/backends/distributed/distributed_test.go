@@ -76,7 +76,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0)
+	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -178,12 +178,63 @@ func TestReadMaxOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes())
+	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
 	assert.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d1.GetHash())
+}
+
+func TestReadOffsetLimit(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	// Do a write, and ensure it was written to all nodes.
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	offset := int64(2)
+	limit := int64(3)
+	reader, err := distributedCaches[1].Reader(ctx, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, d.GetSizeBytes())
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
 
 func TestReadWriteWithFailedNode(t *testing.T) {

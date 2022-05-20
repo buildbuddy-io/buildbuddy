@@ -196,6 +196,29 @@ func TestReadOffset(t *testing.T) {
 
 }
 
+func TestReadOffsetLimit(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, 1000)
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t, te)
+	size := int64(10)
+	d, buf := testdigest.NewRandomDigestBuf(t, size)
+	err = dc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	offset := int64(2)
+	limit := int64(3)
+	reader, err := dc.Reader(ctx, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, size)
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
+}
+
 func TestSizeLimit(t *testing.T) {
 	maxSizeBytes := int64(1000) // 1000 bytes
 	rootDir := testfs.MakeTempDir(t)
