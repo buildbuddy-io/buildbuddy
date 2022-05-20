@@ -404,12 +404,12 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
-func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Reader(ctx, d, offset)
+		return c.local.Reader(ctx, d, offset, limit)
 	}
-	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
+	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset, limit)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
@@ -432,7 +432,7 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
-	r, err := localCache.Reader(ctx, d, 0)
+	r, err := localCache.Reader(ctx, d, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -451,7 +451,7 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 	if exists, err := c.remoteContains(ctx, dest, isolation, d); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, isolation, d, 0)
+	r, err := c.remoteReader(ctx, source, isolation, d, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -661,7 +661,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
@@ -670,7 +670,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset)
+		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset, limit)
 		if err == nil {
 			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
 			backfill()
@@ -689,7 +689,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := c.distributedReader(ctx, d, 0)
+	r, err := c.distributedReader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -922,8 +922,8 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, d, offset)
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	return c.distributedReader(ctx, d, offset, limit)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {

@@ -313,8 +313,8 @@ func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset)
+func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
@@ -888,13 +888,13 @@ func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, 
 	return nil
 }
 
-func (p *partition) reader(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (p *partition) reader(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
 	// Can't specify length because this might be ActionCache
-	r, err := disk.FileReader(ctx, k.FullPath(), offset, 0)
+	r, err := disk.FileReader(ctx, k.FullPath(), offset, limit)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err != nil {

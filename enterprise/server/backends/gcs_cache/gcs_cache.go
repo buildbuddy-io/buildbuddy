@@ -375,13 +375,16 @@ func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*
 	return missing, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 	ctx, spn := tracing.StartSpan(ctx)
-	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
+	if limit == 0 {
+		limit = -1
+	}
+	reader, err := g.bucketHandle.Object(k).NewRangeReader(ctx, offset, limit)
 	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
