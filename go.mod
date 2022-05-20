@@ -9,6 +9,7 @@ replace (
 )
 
 require (
+	cloud.google.com/go/compute v1.5.0
 	cloud.google.com/go/storage v1.21.0
 	github.com/AlecAivazis/survey/v2 v2.3.4
 	github.com/Azure/azure-storage-blob-go v0.14.0
@@ -92,7 +93,6 @@ require (
 
 require (
 	cloud.google.com/go v0.100.2 // indirect
-	cloud.google.com/go/compute v1.5.0 // indirect
 	cloud.google.com/go/iam v0.3.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect

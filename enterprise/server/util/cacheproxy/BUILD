@@ -13,6 +13,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/resources",
         "//server/util/alert",
         "//server/util/bytebufferpool",
         "//server/util/devnull",
@@ -23,6 +24,7 @@ go_library(
         "//server/util/status",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//connectivity",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",
     ],
 )

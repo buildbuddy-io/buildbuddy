@@ -7,14 +7,16 @@ import (
 	"strconv"
 	"sync"
 
+	"cloud.google.com/go/compute/metadata"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
 )
 
 var (
-	memoryBytes = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
-	milliCPU    = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
+	memoryBytes  = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
+	milliCPU     = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
+	zoneOverride = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
@@ -24,6 +26,10 @@ const (
 	hostnameEnvVarName = "MY_HOSTNAME"
 	portEnvVarName     = "MY_PORT"
 	poolEnvVarName     = "MY_POOL"
+)
+
+const (
+	ZoneHeader = "zone"
 )
 
 var (
@@ -151,4 +157,11 @@ func GetMyPort() (int32, error) {
 		return 0, err
 	}
 	return int32(i), nil
+}
+
+func GetZone() (string, error) {
+	if *zoneOverride != "" {
+		return *zoneOverride, nil
+	}
+	return metadata.Zone()
 }
