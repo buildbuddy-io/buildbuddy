@@ -9,13 +9,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -35,7 +34,6 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "auth.enable_anonymous_usage", true)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
@@ -468,23 +466,15 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		foundMap, err := baseCache.ContainsMulti(ctx, digestsWritten)
+		missingMap, err := baseCache.FindMissing(ctx, digestsWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
-			exists, ok := foundMap[d]
-			assert.True(t, ok)
-			assert.True(t, exists)
-		}
+		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		foundMap, err := distributedCache.ContainsMulti(ctx, digestsWritten)
+		missingMap, err := distributedCache.FindMissing(ctx, digestsWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
-			exists, ok := foundMap[d]
-			assert.True(t, ok)
-			assert.True(t, exists)
-		}
+		assert.Equal(t, 0, len(missingMap))
 	}
 }
 
