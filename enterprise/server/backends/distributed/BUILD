@@ -33,7 +33,6 @@ go_test(
     name = "distributed_test",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
-    tags = ["manual"],
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
