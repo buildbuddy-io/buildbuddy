@@ -170,12 +170,12 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	if outerReader, err := c.outer.Reader(ctx, d, offset); err == nil {
+func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	if outerReader, err := c.outer.Reader(ctx, d, offset, limit); err == nil {
 		return outerReader, nil
 	}
 
-	innerReader, err := c.inner.Reader(ctx, d, offset)
+	innerReader, err := c.inner.Reader(ctx, d, offset, limit)
 	if err != nil {
 		return nil, err
 	}

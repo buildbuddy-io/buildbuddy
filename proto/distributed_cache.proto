@@ -22,6 +22,7 @@ message ReadRequest {
   reserved 1;
   Key key = 2;
   int64 offset = 3;
+  int64 limit = 5;
 }
 
 message ReadResponse {

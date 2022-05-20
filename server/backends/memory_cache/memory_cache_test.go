@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -13,8 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -218,7 +217,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := mc.Reader(ctx, d, 0)
+		reader, err := mc.Reader(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}

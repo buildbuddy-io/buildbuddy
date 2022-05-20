@@ -152,7 +152,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := dc.Reader(ctx, d, 0)
+		reader, err := dc.Reader(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -185,7 +185,7 @@ func TestReadOffset(t *testing.T) {
 		t.Fatalf("Error closing writer: %s", err.Error())
 	}
 	// Use Reader() to get the bytes from the cache.
-	reader, err := dc.Reader(ctx, d, d.GetSizeBytes())
+	reader, err := dc.Reader(ctx, d, d.GetSizeBytes(), 0)
 	if err != nil {
 		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 	}

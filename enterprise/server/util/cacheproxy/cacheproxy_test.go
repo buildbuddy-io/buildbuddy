@@ -120,7 +120,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	}
 
 	// Remote-read the random bytes back.
-	r, err := c.RemoteReader(ctx, peer, isolation, d, d.GetSizeBytes())
+	r, err := c.RemoteReader(ctx, peer, isolation, d, d.GetSizeBytes(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestReader(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
+		r, err := c.RemoteReader(ctx, peer, isolation, d, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -373,7 +373,7 @@ func TestWriter(t *testing.T) {
 		// they match..
 		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 		require.NoError(t, err)
-		r, err := cache.Reader(ctx, d, 0)
+		r, err := cache.Reader(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -567,7 +567,7 @@ func TestOversizeBlobs(t *testing.T) {
 		}
 
 		// Remote-read the random bytes back.
-		r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
+		r, err := c.RemoteReader(ctx, peer, isolation, d, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -735,7 +735,7 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := c.RemoteReader(ctx, peer, isolation, d, 0)
+	r, err := c.RemoteReader(ctx, peer, isolation, d, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
