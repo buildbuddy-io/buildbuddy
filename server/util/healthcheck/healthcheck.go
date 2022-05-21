@@ -37,6 +37,7 @@ type serviceStatus struct {
 type HealthChecker struct {
 	done          chan bool
 	quit          chan struct{}
+	checkersMu    sync.Mutex
 	checkers      map[string]interfaces.Checker
 	lastStatus    []*serviceStatus
 	serverType    string
@@ -53,6 +54,7 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		quit:          make(chan struct{}),
 		shutdownFuncs: make([]interfaces.CheckerFunc, 0),
 		readyToServe:  true,
+		checkersMu:    sync.Mutex{},
 		checkers:      make(map[string]interfaces.Checker, 0),
 		lastStatus:    make([]*serviceStatus, 0),
 	}
@@ -130,10 +132,13 @@ func (h *HealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
 }
 
 func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {
+	h.checkersMu.Lock()
+	h.checkers[name] = f
+	h.checkersMu.Unlock()
+
 	// Mark the service as unhealthy until the healthcheck runs
 	// and it becomes healthy.
 	h.mu.Lock()
-	h.checkers[name] = f
 	h.readyToServe = false
 	h.mu.Unlock()
 }
@@ -154,8 +159,12 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	statusData := make([]*serviceStatus, 0)
 	statusDataMu := sync.Mutex{}
 
+	h.checkersMu.Lock()
+	checkers := h.checkers
+	h.checkersMu.Unlock()
+
 	eg, ctx := errgroup.WithContext(ctx)
-	for name, ck := range h.checkers {
+	for name, ck := range checkers {
 		name := name
 		checkFn := ck
 		eg.Go(func() error {
