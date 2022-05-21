@@ -165,7 +165,11 @@ func (c *fileCache) scanDir() {
 	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
 	}
-	log.Infof("filecache(%q) scanned %d files in %s. Total tracked bytes: %d", c.rootDir, scanCount, time.Since(scanStart), c.l.Size())
+	c.lock.Lock()
+	lruSize := c.l.Size()
+	c.lock.Unlock()
+
+	log.Infof("filecache(%q) scanned %d files in %s. Total tracked bytes: %d", c.rootDir, scanCount, time.Since(scanStart), lruSize)
 	close(c.dirScanDone)
 }
 
