@@ -47,7 +47,7 @@ go_library(
     name = "buildbuddy_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy",
-    visibility = ["//visibility:private"],
+    visibility = [":__subpackages__"],
     deps = [
         "//server/config",
         "//server/janitor",
