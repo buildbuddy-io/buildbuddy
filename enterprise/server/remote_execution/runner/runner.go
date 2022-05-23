@@ -158,6 +158,7 @@ type state int
 type commandRunner struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
+	p              *pool
 
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
@@ -320,7 +321,10 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	// shutdown while this func is executing, which concurrently sets the runner
 	// state to "removed". This doesn't cause any known issues right now, but is
 	// error prone.
-	switch r.state {
+	r.p.mu.RLock()
+	s := r.state
+	r.p.mu.RUnlock()
+	switch s {
 	case initial:
 		err := container.PullImageIfNecessary(
 			ctx, r.env, r.imageCacheAuth,
@@ -332,7 +336,9 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
+		r.p.mu.Lock()
 		r.state = ready
+		r.p.mu.Unlock()
 		break
 	case ready:
 		break
@@ -365,7 +371,11 @@ func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats
 // that fully isolate all processes started by the runner and remove them
 // automatically via `Container.Remove`.
 func (r *commandRunner) shutdown(ctx context.Context) error {
-	if r.PlatformProperties.WorkloadIsolationType != string(platform.BareContainerType) {
+	r.p.mu.RLock()
+	props := r.PlatformProperties
+	r.p.mu.RUnlock()
+
+	if props.WorkloadIsolationType != string(platform.BareContainerType) {
 		return nil
 	}
 
@@ -379,9 +389,15 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	r.p.mu.RLock()
+	s := r.state
+	r.p.mu.RUnlock()
+
 	errs := []error{}
-	if s := r.state; s != initial && s != removed {
+	if s != initial && s != removed {
+		r.p.mu.Lock()
 		r.state = removed
+		r.p.mu.Unlock()
 		if err := r.shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
@@ -424,8 +440,13 @@ func (r *commandRunner) RemoveInBackground() {
 // isCIRunner returns whether the task assigned to this runner is a BuildBuddy
 // CI task.
 func (r *commandRunner) isCIRunner() bool {
-	args := r.task.GetCommand().GetArguments()
-	return r.PlatformProperties.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	r.p.mu.RLock()
+	task := r.task
+	props := r.PlatformProperties
+	r.p.mu.RUnlock()
+
+	args := task.GetCommand().GetArguments()
+	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
 func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
@@ -809,9 +830,10 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 			return nil, err
 		}
 		if r != nil {
-			log.Info("Reusing workspace for task.")
+			p.mu.Lock()
 			r.task = task
 			r.PlatformProperties = props
+			p.mu.Unlock()
 			return r, nil
 		}
 	}
@@ -856,6 +878,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	}
 	r := &commandRunner{
 		env:                p.env,
+		p:                  p,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		task:               task,
