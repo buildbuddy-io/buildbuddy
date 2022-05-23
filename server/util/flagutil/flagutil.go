@@ -223,6 +223,20 @@ func (f *URLFlag) YAMLTypeAlias() reflect.Type {
 	return reflect.TypeOf((*URLFlag)(nil))
 }
 
+func (f *URLFlag) DocumentNode(n *yaml.Node, opts ...DocumentNodeOption) error {
+	for _, opt := range opts {
+		if _, ok := opt.(*addTypeToLineComment); ok {
+			if n.LineComment != "" {
+				n.LineComment += " "
+			}
+			n.LineComment += "type: URL"
+			continue
+		}
+		opt.Transform(f, n)
+	}
+	return nil
+}
+
 type FlagAlias struct {
 	name string
 }
@@ -280,6 +294,20 @@ func (f *FlagAlias) YAMLTypeAlias() reflect.Type {
 	return t
 }
 
+func (f *FlagAlias) DocumentNode(n *yaml.Node, opts ...DocumentNodeOption) error {
+	for _, opt := range opts {
+		if _, ok := opt.(*addTypeToLineComment); ok {
+			if n.LineComment != "" {
+				n.LineComment += " "
+			}
+			n.LineComment += "type: URL"
+			continue
+		}
+		opt.Transform(f, n)
+	}
+	return nil
+}
+
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
 func IgnoreFlagForYAML(name string) {
@@ -331,10 +359,9 @@ type addTypeToLineComment struct{}
 
 func (f *addTypeToLineComment) Transform(in any, n *yaml.Node) {
 	if n.LineComment != "" {
-		n.LineComment = fmt.Sprintf("%s type: %T", n.LineComment, in)
-	} else {
-		n.LineComment = fmt.Sprintf("type: %T", in)
+		n.LineComment += " "
 	}
+	n.LineComment = fmt.Sprintf("%stype: %T", n.LineComment, in)
 }
 
 func (f *addTypeToLineComment) Passthrough() bool { return true }
@@ -448,9 +475,14 @@ func GenerateDocumentedDefaultYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, erro
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
 	}
-	value := reflect.ValueOf(flg.Value)
+	v, err := GetDereferencedValue[any](flg.Name)
+	if err != nil {
+		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
+	}
+	value := reflect.New(reflect.TypeOf(v))
+	value.Elem().Set(reflect.ValueOf(v))
 	if !value.CanConvert(t) {
-		return nil, status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", flg.Value, flg.Value, t, flg.Name)
+		return nil, status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", value.Interface(), value.Type(), t, flg.Name)
 	}
 	return DocumentedNode(value.Convert(t).Interface(), LineComment(flg.Usage), AddTypeToLineComment())
 }
