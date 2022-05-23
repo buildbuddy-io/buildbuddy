@@ -68,4 +68,5 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
     ],
+    shard_count = 8,
 )
