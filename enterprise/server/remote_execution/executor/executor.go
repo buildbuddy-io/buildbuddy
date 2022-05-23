@@ -258,6 +258,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
 	}
+	if ctx.Err() != nil {
+		log.Warningf("Task %q encountered context error: %s", taskID, ctx.Err())
+	}
 	if cmdResult.Error != nil {
 		log.Warningf("Command execution returned error: %s", cmdResult.Error)
 	}
