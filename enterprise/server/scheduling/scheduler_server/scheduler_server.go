@@ -1361,10 +1361,12 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				// (in subsequent loop iterations) if the preferred node probe fails.
 				preferredNode = nil
 			} else {
+				nodeBalancer.mu.Lock()
 				nodes = nodeBalancer.nodes
 				if opts.scheduleOnConnectedExecutors {
 					nodes = nodeBalancer.connectedExecutors
 				}
+				nodeBalancer.mu.Unlock()
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}
