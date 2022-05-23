@@ -258,7 +258,7 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   handleFilterChange(event: React.ChangeEvent<HTMLInputElement>) {
-    router.replaceParams({ filter: event.target.value });
+    router.setQueryParam("filter", event.target.value);
   }
 
   durationToNum(duration: any) {
