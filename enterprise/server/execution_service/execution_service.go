@@ -40,9 +40,20 @@ func checkPreconditions(req *espb.GetExecutionRequest) error {
 func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *query_builder.Query) ([]tables.Execution, error) {
 	dbh := es.env.GetDBHandle()
 	q := baseQuery
-	if err := perms.AddPermissionsCheckToQueryWithTableAlias(ctx, es.env, q, "e"); err != nil {
+
+	permClauses, err := perms.GetPermissionsCheckClauses(ctx, es.env, q, "e")
+	if err != nil {
 		return nil, err
 	}
+	// If an authenticated invocation has OTHERS_READ perms (i.e. it is owned by a
+	// group but made public), then let child executions inherit that OTHERS_READ
+	// bit. An alternative here would be to explicitly mark all child executions
+	// with OTHERS_READ, but that is somewhat complex. So we use this simple
+	// permissions inheriting approach instead.
+	permClauses.AddOr("i.perms & ? != 0", perms.OTHERS_READ)
+	permQuery, permArgs := permClauses.Build()
+	q.AddWhereClause("("+permQuery+")", permArgs...)
+
 	queryStr, args := q.Build()
 	rows, err := dbh.DB(ctx).Raw(queryStr, args...).Rows()
 	if err != nil {
@@ -64,6 +75,7 @@ func (es *ExecutionService) getLinkedInvocationExecutions(ctx context.Context, i
 	q := query_builder.NewQuery(`
 		SELECT e.* FROM InvocationExecutions ie
 		JOIN Executions e ON e.execution_id = ie.execution_id
+		JOIN Invocations i ON i.invocation_id = e.invocation_id
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
 	q.AddWhereClause(`e.invocation_id = ?`, invocationID)
@@ -73,6 +85,7 @@ func (es *ExecutionService) getLinkedInvocationExecutions(ctx context.Context, i
 func (es *ExecutionService) getUnlinkedInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
 	q := query_builder.NewQuery(`
 		SELECT e.* FROM Executions e
+		JOIN Invocations i ON i.invocation_id = e.invocation_id
 		LEFT JOIN InvocationExecutions ie 
 			ON ie.execution_id = e.execution_id AND ie.invocation_id = e.invocation_id`)
 	q.AddWhereClause(`ie.invocation_id IS NULL`)
