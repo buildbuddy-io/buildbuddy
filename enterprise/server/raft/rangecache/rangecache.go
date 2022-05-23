@@ -33,6 +33,7 @@ type lockingRangeDescriptor struct {
 	mu sync.Mutex
 	rd *rfpb.RangeDescriptor
 }
+
 func newLockingRangeDescriptor(rd *rfpb.RangeDescriptor) *lockingRangeDescriptor {
 	return &lockingRangeDescriptor{
 		mu: sync.Mutex{},
