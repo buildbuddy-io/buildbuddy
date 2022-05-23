@@ -162,7 +162,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 	}
 
 	if !alreadyValid {
-		log.Debugf("Acquired %s", h.String())
+		log.Debugf("Acquired %s", h.string(h.nodeID, h.lastLivenessRecord))
 	}
 
 	// We just renewed the lease. If there isn't already a background
@@ -170,7 +170,7 @@ func (h *Liveness) ensureValidLease(forceRenewal bool) (*rfpb.NodeLivenessRecord
 	if h.stopped {
 		h.stopped = false
 		h.quitLease = make(chan struct{})
-		go h.keepLeaseAlive()
+		go h.keepLeaseAlive(h.quitLease)
 	}
 	return h.lastLivenessRecord, nil
 }
@@ -269,25 +269,35 @@ func (h *Liveness) renewLease() error {
 	return nil
 }
 
-func (h *Liveness) keepLeaseAlive() {
+func (h *Liveness) keepLeaseAlive(quitLease chan struct{}) {
 	for {
+		h.mu.Lock()
+		ttr := h.timeUntilLeaseRenewal
+		h.mu.Unlock()
+
 		select {
-		case <-h.quitLease:
+		case <-quitLease:
 			// TODO(tylerw): attempt to drop lease gracefully.
 			return
-		case <-time.After(h.timeUntilLeaseRenewal):
+		case <-time.After(ttr):
 			h.ensureValidLease(true /*=forceRenewal*/)
 		}
 	}
 }
 
-func (h *Liveness) String() string {
+func (h *Liveness) string(nodeID []byte, llr *rfpb.NodeLivenessRecord) string {
 	// Don't lock here (to avoid recursive locking).
-	err := h.verifyLease(h.lastLivenessRecord)
+	err := h.verifyLease(llr)
 	if err != nil {
-		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(h.nodeID), err)
+		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(nodeID), err)
 	}
-	l := h.lastLivenessRecord
-	lifetime := time.Unix(0, l.GetExpiration()).Sub(time.Now())
-	return fmt.Sprintf("Liveness(%q): [epoch: %d, expires in %s]", string(h.nodeID), l.GetEpoch(), lifetime)
+	lifetime := time.Unix(0, llr.GetExpiration()).Sub(time.Now())
+	return fmt.Sprintf("Liveness(%q): [epoch: %d, expires in %s]", string(nodeID), llr.GetEpoch(), lifetime)
+}
+
+func (h *Liveness) String() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.string(h.nodeID, h.lastLivenessRecord)
 }
