@@ -36,7 +36,7 @@ func TestBlobExists(t *testing.T) {
 	} else if exists {
 		t.Fatalf("Blob foo exists before addition")
 	}
-	m.BlobMap["foo_0000"] = []byte{}
+	m.Set("foo_0000", []byte{})
 
 	if exists, err := c.BlobExists(mtx, "foo"); err != nil {
 		t.Fatalf("Encountered error calling BlobExists: %v", err)
@@ -59,17 +59,17 @@ func TestDeleteBlob(t *testing.T) {
 	test_map := make(map[string][]byte)
 	test_map["bar_0000"] = []byte("bar contents")
 
-	m.BlobMap["bar_0000"] = []byte("bar contents")
-	m.BlobMap["foobar_0000"] = []byte(test_string[:4])
-	m.BlobMap["foobar_0001"] = []byte(test_string[4:6])
-	m.BlobMap["foobar_0002"] = []byte(test_string[6:])
+	m.Set("bar_0000", []byte("bar contents"))
+	m.Set("foobar_0000", []byte(test_string[:4]))
+	m.Set("foobar_0001", []byte(test_string[4:6]))
+	m.Set("foobar_0002", []byte(test_string[6:]))
 
 	if err := c.DeleteBlob(mtx, "foobar"); err != nil {
 		t.Errorf("Delete Blob returned error for existing blob")
 	}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for delete blob:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for delete blob:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 }
@@ -83,7 +83,7 @@ func TestReadBlob(t *testing.T) {
 		t.Fatalf("Read did not return status.NotFoundErr for a non-existent blob")
 	}
 
-	m.BlobMap["foo_0000"] = []byte{}
+	m.Set("foo_0000", []byte{})
 
 	if data, err := c.ReadBlob(mtx, "foo"); err != nil {
 		t.Fatalf("Encountered error calling ReadBlob on empty blob: %v", err)
@@ -94,7 +94,7 @@ func TestReadBlob(t *testing.T) {
 	}
 
 	test_string := []byte("asdfjkl;")
-	m.BlobMap["bar_0000"] = test_string
+	m.Set("bar_0000", test_string)
 
 	if data, err := c.ReadBlob(mtx, "bar"); err != nil {
 		t.Fatalf("Encountered error calling ReadBlob on single chunk blob: %v", err)
@@ -104,9 +104,9 @@ func TestReadBlob(t *testing.T) {
 		t.Fatalf("Got wrong data from single chunk blob: %v should be %v", data, test_string)
 	}
 
-	m.BlobMap["foobar_0000"] = []byte(test_string[:4])
-	m.BlobMap["foobar_0001"] = []byte(test_string[4:6])
-	m.BlobMap["foobar_0002"] = []byte(test_string[6:])
+	m.Set("foobar_0000", []byte(test_string[:4]))
+	m.Set("foobar_0001", []byte(test_string[4:6]))
+	m.Set("foobar_0002", []byte(test_string[6:]))
 
 	if data, err := c.ReadBlob(mtx, "foobar"); err != nil {
 		t.Fatalf("Encountered error calling ReadBlob on multi-chunk blob: %v", err)
@@ -132,8 +132,8 @@ func TestWriteBlob(t *testing.T) {
 		t.Fatalf("WriteBlob wrote wrong number of bytes for empty file: %d should be 0", bytesWritten)
 	}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for empty file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	test_string := []byte("asdfjkl;")
@@ -145,8 +145,8 @@ func TestWriteBlob(t *testing.T) {
 		t.Fatalf("WriteBlob wrote wrong number of bytes for single-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for single-chunk file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for single-chunk file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	test_string = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`-=[]\\;',./~!@#$%^&*()_+{}|:\"<>?")
@@ -177,8 +177,8 @@ func TestWriteBlob(t *testing.T) {
 		t.Fatalf("WriteBlob wrote wrong number of bytes for multi-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for multi-chunk file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	test_string = []byte("2745904518281828")
@@ -210,8 +210,8 @@ func TestWriteBlob(t *testing.T) {
 		t.Fatalf("WriteBlob wrote wrong number of bytes for overwriting multi-chunk file: %d should be %d", bytesWritten, len(test_string))
 	}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for overwriting multi-chunk file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for overwriting multi-chunk file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 }
@@ -235,7 +235,7 @@ func TestReaders(t *testing.T) {
 		t.Fatalf("Reading from ReverseReader did not return status.NotFound for a non-existent blob: %v", err)
 	}
 
-	m.BlobMap["foo_0000"] = []byte{}
+	m.Set("foo_0000", []byte{})
 
 	r = c.Reader(mtx, "foo")
 	rr, err = c.ReverseReader(mtx, "foo")
@@ -256,7 +256,7 @@ func TestReaders(t *testing.T) {
 	}
 
 	test_string := []byte("asdfjkl;")
-	m.BlobMap["bar_0000"] = test_string
+	m.Set("bar_0000", test_string)
 
 	r = c.Reader(mtx, "bar")
 	rr, err = c.ReverseReader(mtx, "bar")
@@ -305,25 +305,25 @@ func TestReaders(t *testing.T) {
 	}
 
 	test_string = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`-=[]\\;',./~!@#$%^&*()_+{}|:\"<>?")
-	m.BlobMap["foobar_0000"] = test_string[:5]
-	m.BlobMap["foobar_0001"] = test_string[5:10]
-	m.BlobMap["foobar_0002"] = test_string[10:15]
-	m.BlobMap["foobar_0003"] = test_string[15:20]
-	m.BlobMap["foobar_0004"] = test_string[20:25]
-	m.BlobMap["foobar_0005"] = test_string[25:30]
-	m.BlobMap["foobar_0006"] = test_string[30:35]
-	m.BlobMap["foobar_0007"] = test_string[35:40]
-	m.BlobMap["foobar_0008"] = test_string[40:45]
-	m.BlobMap["foobar_0009"] = test_string[45:50]
-	m.BlobMap["foobar_000a"] = test_string[50:55]
-	m.BlobMap["foobar_000b"] = test_string[55:60]
-	m.BlobMap["foobar_000c"] = test_string[60:65]
-	m.BlobMap["foobar_000d"] = test_string[65:70]
-	m.BlobMap["foobar_000e"] = test_string[70:75]
-	m.BlobMap["foobar_000f"] = test_string[75:80]
-	m.BlobMap["foobar_0010"] = test_string[80:85]
-	m.BlobMap["foobar_0011"] = test_string[85:90]
-	m.BlobMap["foobar_0012"] = test_string[90:]
+	m.Set("foobar_0000", test_string[:5])
+	m.Set("foobar_0001", test_string[5:10])
+	m.Set("foobar_0002", test_string[10:15])
+	m.Set("foobar_0003", test_string[15:20])
+	m.Set("foobar_0004", test_string[20:25])
+	m.Set("foobar_0005", test_string[25:30])
+	m.Set("foobar_0006", test_string[30:35])
+	m.Set("foobar_0007", test_string[35:40])
+	m.Set("foobar_0008", test_string[40:45])
+	m.Set("foobar_0009", test_string[45:50])
+	m.Set("foobar_000a", test_string[50:55])
+	m.Set("foobar_000b", test_string[55:60])
+	m.Set("foobar_000c", test_string[60:65])
+	m.Set("foobar_000d", test_string[65:70])
+	m.Set("foobar_000e", test_string[70:75])
+	m.Set("foobar_000f", test_string[75:80])
+	m.Set("foobar_0010", test_string[80:85])
+	m.Set("foobar_0011", test_string[85:90])
+	m.Set("foobar_0012", test_string[90:])
 
 	r = c.Reader(mtx, "foobar")
 	rr, err = c.ReverseReader(mtx, "foobar")
@@ -383,27 +383,27 @@ func TestWriter(t *testing.T) {
 	flushTime := 50 * time.Millisecond
 	w := c.Writer(mtx, "foo", &ChunkstoreWriterOptions{WriteTimeoutDuration: flushTime})
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	time.Sleep(time.Millisecond * 100)
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	w.Flush(mtx)
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for open empty file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	w.Close(mtx)
 	test_map["foo_0000"] = []byte{}
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for closed empty file:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for closed empty file:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	test_string := []byte("asdfjkl;")
@@ -412,15 +412,15 @@ func TestWriter(t *testing.T) {
 	w.Write(mtx, test_string)
 	test_map["bar_0000"] = test_string[0:5]
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for multi-chunk file before wait for flush:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file before wait for flush:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 	time.Sleep(100 * time.Millisecond)
 	test_map["bar_0001"] = test_string[5:]
 
-	if !cmp.Equal(m.BlobMap, test_map) {
-		t.Fatalf("Map contents are incorrect for multi-chunk file after wait for flush:\n\n%v\n\nshould be:\n\n%v", m.BlobMap, test_map)
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file after wait for flush:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
 }

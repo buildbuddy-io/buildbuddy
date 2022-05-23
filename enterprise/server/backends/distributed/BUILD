@@ -33,6 +33,7 @@ go_test(
     name = "distributed_test",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
+    shard_count = 10,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",

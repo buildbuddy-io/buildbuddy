@@ -25,20 +25,24 @@ type Listener interface {
 type GossipManager struct {
 	serfInstance  *serf.Serf
 	serfEventChan chan serf.Event
-	listeners     []Listener
 
 	ListenAddr string
 	Join       []string
 
-	tagMu sync.Mutex
-	tags  map[string]string
+	mu        sync.Mutex
+	listeners []Listener
+	tags      map[string]string
 }
 
 func (gm *GossipManager) processEvents() {
 	for {
 		select {
 		case event := <-gm.serfEventChan:
-			for _, listener := range gm.listeners {
+			gm.mu.Lock()
+			listeners := gm.listeners
+			gm.mu.Unlock()
+
+			for _, listener := range listeners {
 				listener.OnEvent(event.EventType(), event)
 			}
 		}
@@ -57,7 +61,9 @@ func (gm *GossipManager) AddListener(listener Listener) {
 		Members: gm.serfInstance.Members(),
 	}
 	listener.OnEvent(existingMembersEvent.Type, existingMembersEvent)
+	gm.mu.Lock()
 	gm.listeners = append(gm.listeners, listener)
+	gm.mu.Unlock()
 }
 
 func (gm *GossipManager) LocalMember() serf.Member {
@@ -73,8 +79,8 @@ func (gm *GossipManager) Shutdown() error {
 	return gm.serfInstance.Shutdown()
 }
 func (gm *GossipManager) SetTags(tags map[string]string) error {
-	gm.tagMu.Lock()
-	defer gm.tagMu.Unlock()
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
 	for tagName, tagValue := range tags {
 		if tagValue == "" {
 			delete(gm.tags, tagName)
@@ -138,12 +144,12 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
-		listeners:     make([]Listener, 0),
-		serfEventChan: make(chan serf.Event, 16),
-		tagMu:         sync.Mutex{},
-		tags:          make(map[string]string, 0),
 		ListenAddr:    listenAddress,
 		Join:          join,
+		serfEventChan: make(chan serf.Event, 16),
+		mu:            sync.Mutex{},
+		listeners:     make([]Listener, 0),
+		tags:          make(map[string]string, 0),
 	}
 	serfConfig.EventCh = gossipMan.serfEventChan
 	go gossipMan.processEvents()
