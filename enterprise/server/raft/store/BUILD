@@ -41,6 +41,7 @@ go_library(
 go_test(
     name = "store_test",
     srcs = ["store_test.go"],
+    shard_count = 8,
     deps = [
         ":store",
         "//enterprise/server/raft/client",
@@ -68,5 +69,4 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
     ],
-    shard_count = 8,
 )
