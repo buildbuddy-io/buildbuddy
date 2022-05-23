@@ -190,7 +190,7 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, d)
 	if err != nil {
@@ -199,6 +199,9 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset int64) 
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
 	length := int64(len(buf))
+	if limit != 0 && limit < length {
+		length = limit
+	}
 	if length > 0 {
 		return io.NopCloser(io.LimitReader(r, length)), nil
 	}

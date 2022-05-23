@@ -278,7 +278,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if err != nil {
 		return err
 	}
-	reader, err := cache.Reader(ctx, d, req.GetOffset())
+	reader, err := cache.Reader(ctx, d, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
@@ -430,11 +430,12 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	req := &dcpb.ReadRequest{
 		Isolation: isolation,
 		Key:       digestToKey(d),
 		Offset:    offset,
+		Limit:     limit,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {

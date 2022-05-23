@@ -300,7 +300,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.
 	}, nil
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
 		return nil, err
@@ -316,6 +316,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (
 			Header:     h,
 			FileRecord: fileRecord,
 			Offset:     offset,
+			Limit:      limit,
 		}
 		r, err := rc.apiClient.RemoteReader(ctx, c, req)
 		if err != nil {
@@ -416,7 +417,7 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 }
 
 func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := rc.Reader(ctx, d, 0)
+	r, err := rc.Reader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err
 	}

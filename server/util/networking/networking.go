@@ -122,15 +122,6 @@ func createRandomVethPair(ctx context.Context, netNamespace string) (string, str
 	return veth0, veth1, err
 }
 
-func incrementIP(ip net.IP) {
-	for j := len(ip) - 1; j >= 0; j-- {
-		ip[j]++
-		if ip[j] > 0 {
-			break
-		}
-	}
-}
-
 func getCloneIP(vmIdx int) string {
 	return fmt.Sprintf("192.168.%d.%d", vmIdx/30, ((vmIdx%30)*8)+3)
 }
@@ -219,12 +210,11 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 
 	// This addr will be used for the host-side of the veth pair, so it
 	// needs to to be unique on the host.
-	hostEndpointNet := fmt.Sprintf("10.%d.%d.1/24", vmIdx/30, (vmIdx%30)*8)
+	hostEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+5)
 	hostEndpointAddr := strings.SplitN(hostEndpointNet, "/", 2)[0]
 
-	// Same as above, but ends with .2 instead of .1. Can be anything
-	// because it's in a namespace.
-	cloneEndpointNet := fmt.Sprintf("10.%d.%d.2/24", vmIdx/30, (vmIdx%30)*8)
+	// Can be anything because it's in a namespace.
+	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+6)
 	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
 
 	// This IP will be used as the clone-address so must be unique on the
