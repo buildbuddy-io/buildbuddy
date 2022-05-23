@@ -86,7 +86,7 @@ type Cache struct {
 	heartbeatChannel     *heartbeat.Channel
 	heartbeatMu          *sync.Mutex
 	shutdownMu           *sync.RWMutex
-	shutDownChan         chan bool
+	shutDownChan         chan struct{}
 	finishedShutdown     bool
 	isolation            *dcpb.Isolation
 	config               CacheConfig
@@ -263,14 +263,13 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	}
 }
 
-func (c *Cache) heartbeatPeers() {
+func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 	ticker := time.NewTicker(c.config.RPCHeartbeatInterval)
 	defer ticker.Stop()
 	for {
-		c.shutdownMu.RLock()
 		select {
-		case <-c.shutDownChan:
-			break
+		case <-shutDownChan:
+			return
 		case <-ticker.C:
 			for _, peer := range c.consistentHash.GetItems() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -281,7 +280,6 @@ func (c *Cache) heartbeatPeers() {
 				cancel()
 			}
 		}
-		c.shutdownMu.RUnlock()
 	}
 }
 
@@ -292,8 +290,8 @@ func (c *Cache) StartListening() {
 	if c.finishedShutdown == false {
 		return
 	}
-	c.shutDownChan = make(chan bool, 0)
-	go c.heartbeatPeers()
+	c.shutDownChan = make(chan struct{}, 0)
+	go c.heartbeatPeers(c.shutDownChan)
 	go func() {
 		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
 		if c.heartbeatChannel != nil {
