@@ -99,19 +99,6 @@ func GetSysFreeRAMBytes() int64 {
 	return int64(mem.ActualFree)
 }
 
-func GetNumCPUs() int {
-	cpuList := gosigar.CpuList{}
-	cpuList.Get()
-	return len(cpuList.List)
-}
-
-// GetLoadAverage returns 1, 5, and 15 min load averages.
-func GetLoadAverage() (float64, float64, float64) {
-	load := gosigar.LoadAverage{}
-	load.Get()
-	return load.One, load.Five, load.Fifteen
-}
-
 func GetAllocatedRAMBytes() int64 {
 	return allocatedRAMBytes
 }
