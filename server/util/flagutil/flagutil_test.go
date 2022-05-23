@@ -615,31 +615,31 @@ func TestBadSetValueForFlagName(t *testing.T) {
 func TestDereferencedValueFromFlagName(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	_ = flags.Bool("bool", false, "")
-	v, err := DereferencedValueFromFlagName[bool]("bool")
+	v, err := GetDereferencedValue[bool]("bool")
 	require.NoError(t, err)
 	assert.Equal(t, false, v)
 
 	flags = replaceFlagsForTesting(t)
 	_ = flags.Bool("bool", true, "")
-	v, err = DereferencedValueFromFlagName[bool]("bool")
+	v, err = GetDereferencedValue[bool]("bool")
 	require.NoError(t, err)
 	assert.Equal(t, true, v)
 
 	flags = replaceFlagsForTesting(t)
 	_ = Slice("string_slice", []string{"1", "2"}, "")
-	stringSlice, err := DereferencedValueFromFlagName[[]string]("string_slice")
+	stringSlice, err := GetDereferencedValue[[]string]("string_slice")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSlice)
 
 	flags = replaceFlagsForTesting(t)
 	SliceVar(&[]testStruct{{Field: 1}, {Field: 2}}, "struct_slice", "")
-	structSlice, err := DereferencedValueFromFlagName[[]testStruct]("struct_slice")
+	structSlice, err := GetDereferencedValue[[]testStruct]("struct_slice")
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, structSlice)
 }
 
 func TestBadDereferencedValueFromFlagName(t *testing.T) {
 	_ = replaceFlagsForTesting(t)
-	_, err := DereferencedValueFromFlagName[any]("unknown_flag")
+	_, err := GetDereferencedValue[any]("unknown_flag")
 	require.Error(t, err)
 }

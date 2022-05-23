@@ -657,7 +657,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL))
 
 	grpcPort := "1985"
-	if p, err := flagutil.DereferencedValueFromFlagName[int]("grpc_port"); err == nil {
+	if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
 		grpcPort = strconv.Itoa(p)
 	}
 	eventsAPIURL := events_api_url.String()

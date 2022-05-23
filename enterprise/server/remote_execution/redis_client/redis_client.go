@@ -24,7 +24,7 @@ func RegisterRemoteExecutionClient(env environment.Env) error {
 	}
 
 	// Fulfill internal remote execution requests locally.
-	grpc_port, err := flagutil.DereferencedValueFromFlagName[int]("grpc_port")
+	grpc_port, err := flagutil.GetDereferencedValue[int]("grpc_port")
 	if err != nil {
 		return status.InternalErrorf("Error initializing remote execution client: %s", err)
 	}

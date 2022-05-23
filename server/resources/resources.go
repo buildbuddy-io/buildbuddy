@@ -148,7 +148,7 @@ func GetMyPort() (int32, error) {
 	portStr := ""
 	if v := os.Getenv(portEnvVarName); v != "" {
 		portStr = v
-	} else if p, err := flagutil.DereferencedValueFromFlagName[int]("grpc_port"); err == nil {
+	} else if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
 		portStr = strconv.Itoa(p)
 	}
 	i, err := strconv.ParseInt(portStr, 10, 32)

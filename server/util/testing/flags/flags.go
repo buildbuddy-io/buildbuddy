@@ -23,7 +23,7 @@ func PopulateFlagsFromData(t testing.TB, testConfigData []byte) {
 // Set a flag value and register a cleanup function to restore the flag
 // to its original value after the given test is complete.
 func Set(t testing.TB, name string, value any) {
-	origValue, err := flagutil.DereferencedValueFromFlagName[any](name)
+	origValue, err := flagutil.GetDereferencedValue[any](name)
 	require.NoError(t, err)
 	err = flagutil.SetValueForFlagName(name, value, nil, false, true)
 	require.NoError(t, err)

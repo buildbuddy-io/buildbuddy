@@ -29,7 +29,7 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 	if env.GetCache() != nil {
 		localURL, _ := url.Parse(url.String())
 		grpcPort := "1985"
-		if p, err := flagutil.DereferencedValueFromFlagName[int]("grpc_port"); err == nil {
+		if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort

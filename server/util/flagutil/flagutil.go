@@ -413,9 +413,9 @@ func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appen
 	return nil
 }
 
-// DereferencedValueFromFlagName retypes and returns the dereferenced Value for
+// GetDereferencedValue retypes and returns the dereferenced Value for
 // a given flag name.
-func DereferencedValueFromFlagName[T any](name string) (T, error) {
+func GetDereferencedValue[T any](name string) (T, error) {
 	flg := defaultFlagSet.Lookup(name)
 	zeroT := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	if flg == nil {
