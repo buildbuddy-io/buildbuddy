@@ -294,20 +294,6 @@ func (f *FlagAlias) YAMLTypeAlias() reflect.Type {
 	return t
 }
 
-func (f *FlagAlias) DocumentNode(n *yaml.Node, opts ...DocumentNodeOption) error {
-	for _, opt := range opts {
-		if _, ok := opt.(*addTypeToLineComment); ok {
-			if n.LineComment != "" {
-				n.LineComment += " "
-			}
-			n.LineComment += "type: URL"
-			continue
-		}
-		opt.Transform(f, n)
-	}
-	return nil
-}
-
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
 func IgnoreFlagForYAML(name string) {
@@ -341,19 +327,25 @@ type headComment string
 
 func (h *headComment) Transform(in any, n *yaml.Node) { n.HeadComment = string(*h) }
 func (h *headComment) Passthrough() bool              { return false }
-func HeadComment(s string) *headComment               { return (*headComment)(&s) }
+
+// HeadComment sets the HeadComment of a yaml.Node to the specified string.
+func HeadComment(s string) *headComment { return (*headComment)(&s) }
 
 type lineComment string
 
 func (l *lineComment) Transform(in any, n *yaml.Node) { n.LineComment = string(*l) }
 func (l *lineComment) Passthrough() bool              { return false }
-func LineComment(s string) *lineComment               { return (*lineComment)(&s) }
+
+// LineComment sets the LineComment of a yaml.Node to the specified string.
+func LineComment(s string) *lineComment { return (*lineComment)(&s) }
 
 type footComment string
 
 func (f *footComment) Transform(in any, n *yaml.Node) { n.FootComment = string(*f) }
 func (f *footComment) Passthrough() bool              { return false }
-func FootComment(s string) *footComment               { return (*footComment)(&s) }
+
+// FootComment sets the FootComment of a yaml.Node to the specified string.
+func FootComment(s string) *footComment { return (*footComment)(&s) }
 
 type addTypeToLineComment struct{}
 
@@ -365,6 +357,8 @@ func (f *addTypeToLineComment) Transform(in any, n *yaml.Node) {
 }
 
 func (f *addTypeToLineComment) Passthrough() bool { return true }
+
+// AddTypeToLineComment appends the type specification to the LineComment of the yaml.Node.
 func AddTypeToLineComment() *addTypeToLineComment { return (*addTypeToLineComment)(&struct{}{}) }
 
 func FilterPassthrough(opts []DocumentNodeOption) []DocumentNodeOption {
@@ -377,6 +371,8 @@ func FilterPassthrough(opts []DocumentNodeOption) []DocumentNodeOption {
 	return ptOpts
 }
 
+// DocumentedNode returns a yaml.Node representing the input value with
+// documentation in the comments.
 func DocumentedNode(in any, opts ...DocumentNodeOption) (*yaml.Node, error) {
 	n := &yaml.Node{}
 	if err := n.Encode(in); err != nil {
@@ -388,6 +384,7 @@ func DocumentedNode(in any, opts ...DocumentNodeOption) (*yaml.Node, error) {
 	return n, nil
 }
 
+// DocumentNode fills the comments of a yaml.Node with documentation.
 func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
 	switch m := in.(type) {
 	case DocumentedMarshaler:
@@ -399,12 +396,14 @@ func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
 		t := v.Type()
 		switch t.Kind() {
 		case reflect.Ptr:
+			// document based on the value pointed to
 			if !v.IsNil() {
 				return DocumentNode(v.Elem().Interface(), n, opts...)
 			} else {
 				return DocumentNode(reflect.New(reflect.TypeOf(t).Elem()).Elem().Interface(), n, opts...)
 			}
 		case reflect.Struct:
+			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
 			contentIndex := make(map[string]int, len(n.Content)/2)
 			for i := 0; i < len(n.Content)/2; i++ {
 				contentIndex[n.Content[2*i].Value] = 2*i + 1
@@ -432,6 +431,7 @@ func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
 				}
 			}
 		case reflect.Slice:
+			// yaml.Node stores sequences in Content as [element1, element2...]
 			for i := range n.Content {
 				var err error
 				if err = DocumentNode(v.Index(i).Interface(), n.Content[i], FilterPassthrough(opts)...); err != nil {
@@ -452,6 +452,7 @@ func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
 				}
 			}
 		case reflect.Map:
+			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
 			for i := 0; i < len(n.Content)/2; i++ {
 				k := reflect.ValueOf(n.Content[2*i].Value)
 				if err := DocumentNode(
@@ -470,7 +471,9 @@ func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
 	return nil
 }
 
-func GenerateDocumentedDefaultYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
+// GenerateDocumentedYAMLNodeFromFlag produces a documented yaml.Node which
+// represents the value contained in the flag.
+func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
 	t, err := getYAMLTypeForFlag(flg)
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
@@ -487,14 +490,17 @@ func GenerateDocumentedDefaultYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, erro
 	return DocumentedNode(value.Convert(t).Interface(), LineComment(flg.Usage), AddTypeToLineComment())
 }
 
-func SplitDocumentedDefaultYAMLFromFlags() ([]byte, error) {
+// SplitDocumentedYAMLFromFlags produces marshaled YAML representing the flags,
+// partitioned into two groups: structured (flags containing dots), and
+// unstructured (flags not containing dots).
+func SplitDocumentedYAMLFromFlags() ([]byte, error) {
 	b := bytes.NewBuffer([]byte{})
 
 	if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
 		return nil, err
 	}
 	um, err := GenerateYAMLMapWithValuesFromFlags(
-		GenerateDocumentedDefaultYAMLNodeFromFlag,
+		GenerateDocumentedYAMLNodeFromFlag,
 		func(flg *flag.Flag) bool { return !strings.Contains(flg.Name, ".") },
 		IgnoreFilter,
 	)
@@ -513,7 +519,7 @@ func SplitDocumentedDefaultYAMLFromFlags() ([]byte, error) {
 		return nil, err
 	}
 	sm, err := GenerateYAMLMapWithValuesFromFlags(
-		GenerateDocumentedDefaultYAMLNodeFromFlag,
+		GenerateDocumentedYAMLNodeFromFlag,
 		func(flg *flag.Flag) bool { return strings.Contains(flg.Name, ".") },
 		IgnoreFilter,
 	)
@@ -531,6 +537,13 @@ func SplitDocumentedDefaultYAMLFromFlags() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// GenerateYAMLMapWithValuesFromFlags generates a YAML map structure
+// representing the flags, with values generated from the flags as per the
+// generateValue function that has been passed in, and filtering out any flags
+// for which any of the passed filter functions return false. Any nil generated
+// values are not added to the map, and any empty maps are recursively removed
+// such that the final map returned contains no empty maps at any point in its
+// structure.
 func GenerateYAMLMapWithValuesFromFlags[T any](generateValue func(*flag.Flag) (T, error), filters ...func(*flag.Flag) bool) (map[string]any, error) {
 	yamlMap := make(map[string]any)
 	var errors []error
@@ -578,6 +591,10 @@ func GenerateYAMLMapWithValuesFromFlags[T any](generateValue func(*flag.Flag) (T
 	return RemoveEmptyMapsFromYAMLMap(yamlMap), nil
 }
 
+// RemoveEmptyMapsFromYAMLMap recursively removes all empty maps, such that the
+// returned map contains no empty maps at any point in its structure. The
+// original map is returned unless it is empty after removal, in which case nil
+// is returned.
 func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 	for k, v := range m {
 		mv, ok := v.(map[string]any)

@@ -20,7 +20,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	b, err := flagutil.SplitDocumentedDefaultYAMLFromFlags()
+	b, err := flagutil.SplitDocumentedYAMLFromFlags()
 	if err != nil {
 		log.Fatalf("Encountered error generating documented default YAML file: %s", err)
 	}
