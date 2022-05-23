@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -13,8 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -218,7 +218,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := mc.Reader(ctx, d, 0)
+		reader, err := mc.Reader(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -227,6 +227,27 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
+}
+
+func TestReadOffsetLimit(t *testing.T) {
+	mc, err := memory_cache.NewMemoryCache(1000)
+	require.NoError(t, err)
+
+	ctx := getAnonContext(t)
+	size := int64(10)
+	d, buf := testdigest.NewRandomDigestBuf(t, size)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	offset := int64(2)
+	limit := int64(3)
+	reader, err := mc.Reader(ctx, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, size)
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
 
 func TestSizeLimit(t *testing.T) {

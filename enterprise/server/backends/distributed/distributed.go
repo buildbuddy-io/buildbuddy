@@ -78,7 +78,6 @@ type peerInfo struct {
 type Cache struct {
 	local                interfaces.Cache
 	log                  log.Logger
-	doneHeartbeat        chan bool
 	peerMetadata         map[string]*peerInfo
 	hintedHandoffsMu     *sync.RWMutex
 	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
@@ -86,7 +85,9 @@ type Cache struct {
 	consistentHash       *consistent_hash.ConsistentHash
 	heartbeatChannel     *heartbeat.Channel
 	heartbeatMu          *sync.Mutex
-	shutDownChan         chan bool
+	shutdownMu           *sync.RWMutex
+	shutDownChan         chan struct{}
+	finishedShutdown     bool
 	isolation            *dcpb.Isolation
 	config               CacheConfig
 	zone                 string
@@ -139,9 +140,11 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		consistentHash: chash,
 		isolation:      &dcpb.Isolation{},
 
-		heartbeatMu:  &sync.Mutex{},
-		shutDownChan: make(chan bool, 0),
-		peerMetadata: make(map[string]*peerInfo, 0),
+		heartbeatMu:      &sync.Mutex{},
+		shutdownMu:       &sync.RWMutex{},
+		shutDownChan:     nil,
+		finishedShutdown: true,
+		peerMetadata:     make(map[string]*peerInfo, 0),
 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
@@ -260,13 +263,13 @@ func (c *Cache) handleHintedHandoffs(peer string) {
 	}
 }
 
-func (c *Cache) heartbeatPeers() {
+func (c *Cache) heartbeatPeers(shutDownChan chan struct{}) {
 	ticker := time.NewTicker(c.config.RPCHeartbeatInterval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-c.shutDownChan:
-			break
+		case <-shutDownChan:
+			return
 		case <-ticker.C:
 			for _, peer := range c.consistentHash.GetItems() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -281,10 +284,14 @@ func (c *Cache) heartbeatPeers() {
 }
 
 func (c *Cache) StartListening() {
-	if c.shutDownChan == nil {
-		c.shutDownChan = make(chan bool, 0)
+	c.shutdownMu.Lock()
+	defer c.shutdownMu.Unlock()
+
+	if c.finishedShutdown == false {
+		return
 	}
-	go c.heartbeatPeers()
+	c.shutDownChan = make(chan struct{}, 0)
+	go c.heartbeatPeers(c.shutDownChan)
 	go func() {
 		log.Infof("Distributed cache listening on %q", c.config.ListenAddr)
 		if c.heartbeatChannel != nil {
@@ -294,17 +301,23 @@ func (c *Cache) StartListening() {
 			log.Warningf("Unable to start cacheproxy: %s", err)
 		}
 	}()
+	c.finishedShutdown = false
 }
 
 func (c *Cache) Shutdown(ctx context.Context) error {
 	log.Infof("Distributed cache shutting down %q", c.config.ListenAddr)
+	c.shutdownMu.Lock()
+	defer c.shutdownMu.Unlock()
+	if c.finishedShutdown {
+		log.Printf("Already finished shutdown, returning early.")
+		return nil
+	}
+
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StopAdvertising()
 	}
-	if c.shutDownChan != nil {
-		close(c.shutDownChan)
-		c.shutDownChan = nil
-	}
+	close(c.shutDownChan)
+	c.finishedShutdown = true
 	return c.cacheProxy.Shutdown(ctx)
 }
 
@@ -342,6 +355,16 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTyp
 	return &clone, nil
 }
 
+func (c *Cache) peerZone(peer string) (string, bool) {
+	c.heartbeatMu.Lock()
+	pi, ok := c.peerMetadata[peer]
+	c.heartbeatMu.Unlock()
+	if ok && pi.zone != "" {
+		return pi.zone, true
+	}
+	return "", false
+}
+
 // peers returns the ordered slice of replicationFactor peers responsible for
 // this key. They should be tried in order.
 func (c *Cache) peers(d *repb.Digest) *peerset.PeerSet {
@@ -360,7 +383,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	sortVal := func(peer string) int {
 		if peer == c.config.ListenAddr {
 			return 0
-		} else if pi, ok := c.peerMetadata[peer]; ok && pi.zone == c.zone {
+		} else if zone, ok := c.peerZone(peer); ok && zone == c.zone {
 			return 1
 		} else {
 			return 2
@@ -394,12 +417,12 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
-func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Reader(ctx, d, offset)
+		return c.local.Reader(ctx, d, offset, limit)
 	}
-	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset)
+	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset, limit)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
@@ -422,7 +445,7 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
-	r, err := localCache.Reader(ctx, d, 0)
+	r, err := localCache.Reader(ctx, d, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -441,7 +464,7 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 	if exists, err := c.remoteContains(ctx, dest, isolation, d); err == nil && exists {
 		return nil
 	}
-	r, err := c.remoteReader(ctx, source, isolation, d, 0)
+	r, err := c.remoteReader(ctx, source, isolation, d, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -651,7 +674,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
@@ -660,7 +683,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset)
+		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset, limit)
 		if err == nil {
 			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
 			backfill()
@@ -679,7 +702,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset in
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := c.distributedReader(ctx, d, 0)
+	r, err := c.distributedReader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -912,8 +935,8 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, d, offset)
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	return c.distributedReader(ctx, d, offset, limit)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {

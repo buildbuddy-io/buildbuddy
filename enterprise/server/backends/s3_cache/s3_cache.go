@@ -460,7 +460,7 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]
 	return missing, nil
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	k, err := s3c.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -468,10 +468,17 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (i
 	ctx, spn := tracing.StartSpan(ctx)
 	// TODO(bduffany): track this as a contains() request, or find a way to
 	// track it as part of the read
+
+	readRange := aws.String(fmt.Sprintf("%d-", offset))
+	if limit != 0 {
+		// range bounds are inclusive
+		readRange = aws.String(fmt.Sprintf("%d-%d", offset, offset+limit-1))
+	}
+
 	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(k),
-		Range:  aws.String(fmt.Sprintf("%d-", offset)),
+		Range:  readRange,
 	})
 	spn.End()
 	if isNotFoundErr(err) {

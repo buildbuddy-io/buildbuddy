@@ -25,7 +25,6 @@ go_test(
         ":nodeliveness",
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@go_googleapis//google/rpc:status_go_proto",

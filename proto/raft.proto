@@ -410,6 +410,7 @@ message ReadRequest {
   Header header = 1;
   FileRecord file_record = 2;
   int64 offset = 3;
+  int64 limit = 4;
 }
 
 message ReadResponse {

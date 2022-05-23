@@ -9,13 +9,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -35,7 +34,6 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "auth.enable_anonymous_usage", true)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
@@ -78,7 +76,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0)
+	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -180,12 +178,63 @@ func TestReadMaxOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes())
+	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
 	assert.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", d1.GetHash())
+}
+
+func TestReadOffsetLimit(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	// Do a write, and ensure it was written to all nodes.
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	offset := int64(2)
+	limit := int64(3)
+	reader, err := distributedCaches[1].Reader(ctx, d, offset, limit)
+	require.NoError(t, err)
+
+	readBuf := make([]byte, d.GetSizeBytes())
+	n, err := reader.Read(readBuf)
+	require.EqualValues(t, limit, n)
+	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
 
 func TestReadWriteWithFailedNode(t *testing.T) {
@@ -468,23 +517,15 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		foundMap, err := baseCache.ContainsMulti(ctx, digestsWritten)
+		missingMap, err := baseCache.FindMissing(ctx, digestsWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
-			exists, ok := foundMap[d]
-			assert.True(t, ok)
-			assert.True(t, exists)
-		}
+		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		foundMap, err := distributedCache.ContainsMulti(ctx, digestsWritten)
+		missingMap, err := distributedCache.FindMissing(ctx, digestsWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
-			exists, ok := foundMap[d]
-			assert.True(t, ok)
-			assert.True(t, exists)
-		}
+		assert.Equal(t, 0, len(missingMap))
 	}
 }
 

@@ -233,7 +233,7 @@ type Cache interface {
 	Delete(ctx context.Context, d *repb.Digest) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error)
+	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
 }
 

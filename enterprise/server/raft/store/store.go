@@ -313,6 +313,7 @@ func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescri
 			Header:     h,
 			FileRecord: fileRecord,
 			Offset:     0,
+			Limit:      0,
 		}
 		r, err := s.apiClient.RemoteReader(ctx, c, req)
 		if err != nil {

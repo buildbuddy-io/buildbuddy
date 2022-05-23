@@ -27,6 +27,30 @@ func New() *RangeCache {
 	}
 }
 
+// A lockingRangeDescriptor pointer is stored in the rangeMap to prevent
+// data races when mutating the order of replicas elsewhere.
+type lockingRangeDescriptor struct {
+	mu sync.Mutex
+	rd *rfpb.RangeDescriptor
+}
+
+func newLockingRangeDescriptor(rd *rfpb.RangeDescriptor) *lockingRangeDescriptor {
+	return &lockingRangeDescriptor{
+		mu: sync.Mutex{},
+		rd: rd,
+	}
+}
+func (lr *lockingRangeDescriptor) Get() *rfpb.RangeDescriptor {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	return lr.rd
+}
+func (lr *lockingRangeDescriptor) Update(rd *rfpb.RangeDescriptor) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	lr.rd = rd
+}
+
 func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	rc.rangeMu.Lock()
 	defer rc.rangeMu.Unlock()
@@ -41,10 +65,11 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		// ranges and possibly delete them or if they are newer, then we'll
 		// ignore this update.
 		for _, overlappingRange := range rc.rangeMap.GetOverlapping(left, right) {
-			v, ok := overlappingRange.Val.(*rfpb.RangeDescriptor)
+			lr, ok := overlappingRange.Val.(*lockingRangeDescriptor)
 			if !ok {
 				continue
 			}
+			v := lr.Get()
 			if v.GetGeneration() >= newDescriptor.GetGeneration() {
 				log.Debugf("Ignoring rangeDescriptor %+v, because current has same or later generation: %+v", newDescriptor, v)
 				return nil
@@ -58,16 +83,17 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 			rc.rangeMap.Remove(overlappingRange.Left, overlappingRange.Right)
 		}
 		log.Debugf("Adding new range: %d [%q, %q)", newDescriptor.GetRangeId(), left, right)
-		_, err := rc.rangeMap.Add(left, right, newDescriptor)
+		_, err := rc.rangeMap.Add(left, right, newLockingRangeDescriptor(newDescriptor))
 		return err
 	} else {
-		v, ok := r.Val.(*rfpb.RangeDescriptor)
+		lr, ok := r.Val.(*lockingRangeDescriptor)
 		if !ok {
 			return status.FailedPreconditionError("Val was not a rangeVal")
 		}
+		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
+			lr.Update(newDescriptor)
 			log.Debugf("Updated generation of range: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
-			r.Val = newDescriptor
 		}
 	}
 	return nil
@@ -109,13 +135,15 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 		return
 	}
 
-	rd, ok := r.Val.(*rfpb.RangeDescriptor)
+	lr, ok := r.Val.(*lockingRangeDescriptor)
 	if !ok {
 		return
 	}
+	rd := lr.Get()
+	newDescriptor := proto.Clone(rd).(*rfpb.RangeDescriptor)
 
 	leadReplicaIndex := -1
-	for i, replica := range rd.GetReplicas() {
+	for i, replica := range newDescriptor.GetReplicas() {
 		if replica.GetClusterId() == rep.GetClusterId() &&
 			replica.GetNodeId() == rep.GetNodeId() {
 			leadReplicaIndex = i
@@ -126,7 +154,8 @@ func (rc *RangeCache) SetPreferredReplica(rep *rfpb.ReplicaDescriptor, rng *rfpb
 		log.Errorf("SetPreferredReplica called but range %+v does not contain preferred %+v", rng, rep)
 		return
 	}
-	rd.Replicas[0], rd.Replicas[leadReplicaIndex] = rd.Replicas[leadReplicaIndex], rd.Replicas[0]
+	newDescriptor.Replicas[0], newDescriptor.Replicas[leadReplicaIndex] = newDescriptor.Replicas[leadReplicaIndex], newDescriptor.Replicas[0]
+	lr.Update(newDescriptor)
 }
 
 func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
@@ -134,8 +163,8 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	defer rc.rangeMu.RUnlock()
 
 	val := rc.rangeMap.Lookup(key)
-	if rv, ok := val.(*rfpb.RangeDescriptor); ok {
-		return rv
+	if lr, ok := val.(*lockingRangeDescriptor); ok {
+		return lr.Get()
 	}
 	return nil
 }

@@ -30,5 +30,6 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/prefix",
+        "@com_github_stretchr_testify//require",
     ],
 )
