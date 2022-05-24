@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -643,14 +645,6 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	return nil, status.InternalError("Could not find the requested group ID. This should never happen.")
 }
 
-func getIntFlag(flagName string, defaultVal string) string {
-	f := flag.Lookup(flagName)
-	if f == nil {
-		return defaultVal
-	}
-	return f.Value.String()
-}
-
 func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBazelConfigRequest) (*bzpb.GetBazelConfigResponse, error) {
 	configOptions := make([]*bzpb.ConfigOption, 0)
 
@@ -662,7 +656,10 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 	}
 	configOptions = append(configOptions, makeConfigOption("build", "bes_results_url", resultsURL))
 
-	grpcPort := getIntFlag("grpc_port", "1985")
+	grpcPort := "1985"
+	if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
+		grpcPort = strconv.Itoa(p)
+	}
 	eventsAPIURL := events_api_url.String()
 	if eventsAPIURL == "" {
 		eventsAPIURL = assembleURL(req.Host, "grpc:", grpcPort)

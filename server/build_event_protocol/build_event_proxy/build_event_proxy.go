@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	hosts      = flagutil.StringSlice("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
+	hosts      = flagutil.Slice("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
 	bufferSize = flag.Int("build_event_proxy.buffer_size", 100, "The number of build events to buffer locally when proxying build events.")
 )
 

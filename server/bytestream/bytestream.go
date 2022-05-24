@@ -2,13 +2,14 @@ package bytestream
 
 import (
 	"context"
-	"flag"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
@@ -27,7 +28,11 @@ func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL
 	// If we have a cache enabled, try connecting to that first
 	if env.GetCache() != nil {
 		localURL, _ := url.Parse(url.String())
-		localURL.Host = "localhost:" + getIntFlag("grpc_port", "1985")
+		grpcPort := "1985"
+		if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
+			grpcPort = strconv.Itoa(p)
+		}
+		localURL.Host = "localhost:" + grpcPort
 		err = streamFromUrl(ctx, localURL, false, callback)
 	}
 
@@ -106,12 +111,4 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, callback func(
 		callback(rsp.Data)
 	}
 	return nil
-}
-
-func getIntFlag(flagName string, defaultVal string) string {
-	f := flag.Lookup(flagName)
-	if f == nil {
-		return defaultVal
-	}
-	return f.Value.String()
 }

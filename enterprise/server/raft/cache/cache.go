@@ -44,7 +44,7 @@ import (
 var (
 	rootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
 	listenAddr    = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
-	join          = flagutil.StringSlice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	join          = flagutil.Slice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	httpPort      = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
 )

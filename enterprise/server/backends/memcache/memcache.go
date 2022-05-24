@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var memcacheTargets = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flagutil.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB

@@ -60,23 +60,19 @@ func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 	// The static filesystem is the same, however, so we set it if the flag
 	// is set, but we do not fall back to an embedded staticFS.
 	realEnv.SetAppFilesystem(nil)
-	if staticDirectoryFlag := flag.Lookup("static_directory"); staticDirectoryFlag != nil {
-		if staticDirectory := staticDirectoryFlag.Value.String(); staticDirectory != "" {
-			staticFS, err := static.FSFromRelPath(staticDirectory)
-			if err != nil {
-				log.Fatalf("Error getting static FS from relPath: %q: %s", staticDirectory, err)
-			}
-			realEnv.SetStaticFilesystem(staticFS)
+	if staticDirectory, err := flagutil.GetDereferencedValue[string]("static_directory"); err == nil && staticDirectory != "" {
+		staticFS, err := static.FSFromRelPath(staticDirectory)
+		if err != nil {
+			log.Fatalf("Error getting static FS from relPath: %q: %s", staticDirectory, err)
 		}
+		realEnv.SetStaticFilesystem(staticFS)
 	}
-	if appDirectoryFlag := flag.Lookup("app_directory"); appDirectoryFlag != nil {
-		if appDirectory := appDirectoryFlag.Value.String(); appDirectory != "" {
-			appFS, err := static.FSFromRelPath(appDirectory)
-			if err != nil {
-				log.Fatalf("Error getting app FS from relPath: %q: %s", appDirectory, err)
-			}
-			realEnv.SetAppFilesystem(appFS)
+	if appDirectory, err := flagutil.GetDereferencedValue[string]("app_directory"); err == nil && appDirectory != "" {
+		appFS, err := static.FSFromRelPath(appDirectory)
+		if err != nil {
+			log.Fatalf("Error getting app FS from relPath: %q: %s", appDirectory, err)
 		}
+		realEnv.SetAppFilesystem(appFS)
 	}
 	bundleFS, err := bundle.Get()
 	if err != nil {
