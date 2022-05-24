@@ -712,12 +712,12 @@ func TestDereferencedValueFromFlagName(t *testing.T) {
 	assert.Equal(t, []string{"1", "2"}, stringSlice)
 
 	_ = Alias[[]string]("string_slice_alias", "string_slice")
-	stringSliceAlias, err := DereferencedValueFromFlagName[[]string]("string_slice_alias")
+	stringSliceAlias, err := GetDereferencedValue[[]string]("string_slice_alias")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSliceAlias)
 
 	_ = Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
-	stringSliceAliasAlias, err := DereferencedValueFromFlagName[[]string]("string_slice_alias_alias")
+	stringSliceAliasAlias, err := GetDereferencedValue[[]string]("string_slice_alias_alias")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, stringSliceAliasAlias)
 

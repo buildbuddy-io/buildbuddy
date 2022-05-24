@@ -56,7 +56,7 @@ type TypeAliased interface {
 	AliasedType() reflect.Type
 }
 
-type IsNameAliasing interface {
+type isNameAliasing interface {
 	AliasedName() string
 }
 
@@ -201,7 +201,7 @@ type FlagAlias struct {
 func Alias[T any](newName, name string) *T {
 	f := &FlagAlias{name: name}
 	var flg *flag.Flag
-	for aliaser, ok := IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(IsNameAliasing) {
+	for aliaser, ok := isNameAliasing(f), true; ok; aliaser, ok = flg.Value.(isNameAliasing) {
 		if flg = defaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
 			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, newName, aliaser.AliasedName())
 		}
@@ -463,7 +463,7 @@ func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appen
 	if _, ok := setFlags[name]; ok {
 		return nil
 	}
-	if v, ok := flg.Value.(IsNameAliasing); ok {
+	if v, ok := flg.Value.(isNameAliasing); ok {
 		return SetValueForFlagName(v.AliasedName(), i, setFlags, appendSlice, strict)
 	}
 	t, err := getTypeForFlag(flg)
@@ -485,8 +485,8 @@ func GetDereferencedValue[T any](name string) (T, error) {
 	if flg == nil {
 		return *zeroT, status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	if v, ok := flg.Value.(IsNameAliasing); ok {
-		return DereferencedValueFromFlagName[T](v.AliasedName())
+	if v, ok := flg.Value.(isNameAliasing); ok {
+		return GetDereferencedValue[T](v.AliasedName())
 	}
 	t := reflect.TypeOf((*T)(nil))
 	addr := reflect.ValueOf(flg.Value)
