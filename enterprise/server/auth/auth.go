@@ -41,17 +41,12 @@ import (
 var (
 	adminGroupID         = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
-	oauthProviders       = []OauthProvider{}
+	oauthProviders       = flagutil.Slice("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
 	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 )
-
-// Initialize the oauth providers flag to point to `oauthProviders`.
-func init() {
-	flagutil.StructSliceVar(&oauthProviders, "auth.oauth_providers", "The list of oauth providers to use to authenticate.")
-}
 
 type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" json:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
@@ -517,7 +512,7 @@ func newForTesting(ctx context.Context, env environment.Env, testAuthenticator a
 func RegisterNullAuth(env environment.Env) error {
 	env.SetAuthenticator(
 		nullauth.NewNullAuthenticator(
-			*enableAnonymousUsage || (len(oauthProviders) == 0 && !selfauth.Enabled()),
+			*enableAnonymousUsage || (len(*oauthProviders) == 0 && !selfauth.Enabled()),
 			*adminGroupID,
 		),
 	)
@@ -525,7 +520,8 @@ func RegisterNullAuth(env environment.Env) error {
 }
 
 func Register(ctx context.Context, env environment.Env) error {
-	authConfigs := oauthProviders
+	authConfigs := make([]OauthProvider, len(*oauthProviders))
+	copy(authConfigs, *oauthProviders)
 	if selfauth.Enabled() {
 		authConfigs = append(
 			authConfigs,
@@ -562,7 +558,7 @@ func (a *OpenIDAuthenticator) AdminGroupID() string {
 }
 
 func (a *OpenIDAuthenticator) AnonymousUsageEnabled() bool {
-	if len(oauthProviders) == 0 && !selfauth.Enabled() {
+	if len(*oauthProviders) == 0 && !selfauth.Enabled() {
 		return true
 	}
 	return a.enableAnonymousUsage

@@ -30,13 +30,9 @@ const (
 )
 
 var (
-	containerRegistries     = []ContainerRegistry{}
+	containerRegistries     = flagutil.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
-
-func init() {
-	flagutil.StructSliceVar(&containerRegistries, "executor.container_registries", "")
-}
 
 type ContainerRegistry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
@@ -244,7 +240,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		}
 	}
 
-	if len(containerRegistries) == 0 {
+	if len(*containerRegistries) == 0 {
 		return PullCredentials{}
 	}
 
@@ -254,7 +250,7 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 		return PullCredentials{}
 	}
 	refHostname := reference.Domain(ref)
-	for _, cfg := range containerRegistries {
+	for _, cfg := range *containerRegistries {
 		for _, cfgHostname := range cfg.Hostnames {
 			if refHostname == cfgHostname {
 				return PullCredentials{

@@ -9,6 +9,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",

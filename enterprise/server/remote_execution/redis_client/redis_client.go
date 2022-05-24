@@ -3,10 +3,10 @@ package redis_client
 import (
 	"flag"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -24,7 +24,11 @@ func RegisterRemoteExecutionClient(env environment.Env) error {
 	}
 
 	// Fulfill internal remote execution requests locally.
-	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", reflect.ValueOf(flag.Lookup("grpc_port").Value).Convert(reflect.TypeOf((*int)(nil))).Elem().Int()))
+	grpc_port, err := flagutil.GetDereferencedValue[int]("grpc_port")
+	if err != nil {
+		return status.InternalErrorf("Error initializing remote execution client: %s", err)
+	}
+	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_port))
 	if err != nil {
 		return status.InternalErrorf("Error initializing remote execution client: %s", err)
 	}
