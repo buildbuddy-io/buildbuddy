@@ -46,6 +46,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
@@ -1268,10 +1270,16 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 		command.Arguments = append(workerArgs, "--persistent_worker")
 
 		go func() {
-			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
+			// rr := stdinReader
+			os.MkdirAll("/tmp/persistent", 0777)
+			f, _ := os.Create(fmt.Sprintf("/tmp/persistent/%d.bin", time.Now().UnixNano()))
+			defer f.Close()
+			rr := io.TeeReader(stdinReader, f)
+			log.Debugf("Starting persistent worker: %s", command.GetArguments())
+			res := r.Container.Exec(execContext, command, rr, stdoutWriter)
 			stdinWriter.Close()
 			stdoutReader.Close()
-			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
+			log.Debugf("Persistent worker exited with response: err=%s, stdout=%s, stderr=%s, flagFiles: %+v, workerArgs: %+v", res.Error, string(res.Stdout), string(res.Stderr), flagFiles, workerArgs)
 		}()
 	}
 
@@ -1330,6 +1338,11 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 }
 
 func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
+	s, _ := prototext.MarshalOptions{}.Marshal(requestProto)
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	log.Debugf("Sending work request (%s): %s", r.PlatformProperties.PersistentWorkerProtocol, s)
 	protocol := r.PlatformProperties.PersistentWorkerProtocol
 	if protocol == workerProtocolJSONValue {
 		marshaler := &protojson.MarshalOptions{EmitUnpopulated: true}
@@ -1343,11 +1356,15 @@ func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
 	}
-	out, err := proto.Marshal(requestProto)
+	// Write the proto length (in varint encoding), then the proto itself
+	buf := protowire.AppendVarint(nil, uint64(proto.Size(requestProto)))
+	var err error
+	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, requestProto)
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(out)
+	_, err = writer.Write(buf)
+	log.Debugf("Sent work request (%s): %s", r.PlatformProperties.PersistentWorkerProtocol, s)
 	return err
 }
 
@@ -1364,6 +1381,7 @@ func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, 
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
 	}
 	// Read the response size from stdout as a unsigned varint.
+	log.Errorf("Waiting for proto length from worker...")
 	size, err := binary.ReadUvarint(r.stdoutReader)
 	if err != nil {
 		return err
@@ -1376,6 +1394,7 @@ func (r *commandRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, 
 	if err := proto.Unmarshal(data, responseProto); err != nil {
 		return err
 	}
+	log.Errorf("")
 	return nil
 }
 
