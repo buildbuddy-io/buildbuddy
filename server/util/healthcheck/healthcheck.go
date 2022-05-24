@@ -160,7 +160,10 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 	statusDataMu := sync.Mutex{}
 
 	h.checkersMu.Lock()
-	checkers := h.checkers
+	checkers := make(map[string]interfaces.Checker, len(h.checkers))
+	for k, v := range h.checkers {
+		checkers[k] = v
+	}
 	h.checkersMu.Unlock()
 
 	eg, ctx := errgroup.WithContext(ctx)
