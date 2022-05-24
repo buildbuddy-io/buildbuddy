@@ -12,16 +12,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
-var memcacheTargets = flagutil.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flagtypes.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB

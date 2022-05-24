@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
@@ -29,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
@@ -39,7 +39,7 @@ var (
 	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jager collector endpoint where traces will be sent.")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces.")
 	traceFraction             = flag.Float64("app.trace_fraction", 0, "Fraction of requests to sample for tracing.")
-	traceFractionOverrides    = flagutil.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
+	traceFractionOverrides    = flagtypes.Slice("app.trace_fraction_overrides", []string{}, "Tracing fraction override based on name in format name=fraction.")
 	ignoreForcedTracingHeader = flag.Bool("app.ignore_forced_tracing_header", false, "If set, we will not honor the forced tracing header.")
 
 	// bound overrides are parsed from the traceFractionOverrides flag.

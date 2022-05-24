@@ -49,6 +49,7 @@ go_library(
         "//server/telemetry",
         "//server/util/fileresolver",
         "//server/util/flagutil",
+        "//server/util/flagutil/yaml",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",

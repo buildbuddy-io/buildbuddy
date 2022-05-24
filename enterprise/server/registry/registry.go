@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -50,6 +49,7 @@ import (
 
 	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -916,7 +916,7 @@ func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env e
 func main() {
 	flag.Parse()
 
-	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
