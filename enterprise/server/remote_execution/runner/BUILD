@@ -50,6 +50,7 @@ go_library(
 go_test(
     name = "runner_test",
     srcs = ["runner_test.go"],
+    data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
     deps = [
         "//enterprise/server/remote_execution/platform",

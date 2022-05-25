@@ -519,10 +519,15 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
-	encodedResponse := encodedResponse(t, protocol, resp, 2)
+	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
-			Arguments: append([]string{"sh", "-c", `echo ` + encodedResponse + ` | base64 --decode && tee`}, arg),
+			Arguments: []string{
+				workerPath,
+				"--protocol=" + protocol,
+				"--response_base64=" + encodedResponse(t, protocol, resp),
+				arg,
+			},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
@@ -534,23 +539,21 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 	}
 }
 
-func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse, count int) string {
+func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {
 	buf := []byte{}
-	for i := 0; i < count; i++ {
-		if protocol == "json" {
-			out, err := protojson.Marshal(resp)
-			buf = append(buf, out...)
-			if err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			out, err := proto.Marshal(resp)
-			size := make([]byte, binary.MaxVarintLen64)
-			n := binary.PutUvarint(size, uint64(len(out)))
-			buf = append(append(buf, size[:n]...), out...)
-			if err != nil {
-				t.Fatal(err)
-			}
+	if protocol == "json" {
+		out, err := protojson.Marshal(resp)
+		buf = append(buf, out...)
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		out, err := proto.Marshal(resp)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(out)))
+		buf = append(append(buf, size[:n]...), out...)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	return base64.StdEncoding.EncodeToString(buf)
