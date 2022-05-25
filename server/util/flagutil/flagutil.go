@@ -56,6 +56,10 @@ type TypeAliased interface {
 	AliasedType() reflect.Type
 }
 
+type isNameAliasing interface {
+	AliasedName() string
+}
+
 type Appendable interface {
 	AppendSlice(any) error
 }
@@ -188,6 +192,63 @@ func (f *URLFlag) AliasedType() reflect.Type {
 
 func (f *URLFlag) YAMLTypeAlias() reflect.Type {
 	return reflect.TypeOf((*URLFlag)(nil))
+}
+
+type FlagAlias struct {
+	name string
+}
+
+func Alias[T any](newName, name string) *T {
+	f := &FlagAlias{name: name}
+	var flg *flag.Flag
+	for aliaser, ok := isNameAliasing(f), true; ok; aliaser, ok = flg.Value.(isNameAliasing) {
+		if flg = defaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
+			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, newName, aliaser.AliasedName())
+		}
+	}
+	addr := reflect.ValueOf(flg.Value)
+	if t, err := getTypeForFlag(flg); err == nil {
+		if !addr.CanConvert(t) {
+			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, newName, flg.Name, flg.Value, t)
+		}
+		addr = addr.Convert(t)
+	}
+	value, ok := addr.Interface().(*T)
+	if !ok {
+		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, newName, flg.Name, flg.Value, (*T)(nil))
+	}
+	defaultFlagSet.Var(f, newName, "Alias for "+name)
+	return value
+}
+
+func (f *FlagAlias) Set(value string) error {
+	return defaultFlagSet.Set(f.name, value)
+}
+
+func (f *FlagAlias) String() string {
+	return defaultFlagSet.Lookup(f.name).Value.String()
+}
+
+func (f *FlagAlias) AliasedName() string {
+	return f.name
+}
+
+func (f *FlagAlias) AliasedType() reflect.Type {
+	flg := defaultFlagSet.Lookup(f.name)
+	t, err := getTypeForFlag(flg)
+	if err != nil {
+		return reflect.TypeOf(flg.Value)
+	}
+	return t
+}
+
+func (f *FlagAlias) YAMLTypeAlias() reflect.Type {
+	flg := defaultFlagSet.Lookup(f.name)
+	t, err := getYAMLTypeForFlag(flg)
+	if err != nil {
+		return reflect.TypeOf(flg.Value)
+	}
+	return t
 }
 
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
@@ -402,6 +463,9 @@ func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appen
 	if _, ok := setFlags[name]; ok {
 		return nil
 	}
+	if v, ok := flg.Value.(isNameAliasing); ok {
+		return SetValueForFlagName(v.AliasedName(), i, setFlags, appendSlice, strict)
+	}
 	t, err := getTypeForFlag(flg)
 	if err != nil {
 		return status.UnimplementedErrorf("Error encountered setting flag: %s", err)
@@ -420,6 +484,9 @@ func GetDereferencedValue[T any](name string) (T, error) {
 	zeroT := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	if flg == nil {
 		return *zeroT, status.NotFoundErrorf("Undefined flag: %s", name)
+	}
+	if v, ok := flg.Value.(isNameAliasing); ok {
+		return GetDereferencedValue[T](v.AliasedName())
 	}
 	t := reflect.TypeOf((*T)(nil))
 	addr := reflect.ValueOf(flg.Value)
