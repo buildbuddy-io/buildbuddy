@@ -1933,8 +1933,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gomodule_redigo",
         importpath = "github.com/gomodule/redigo",
-        sum = "h1:y0Wmhvml7cGnzPa9nocn/fMraMH/lMDdeG+rkx4VgYY=",
-        version = "v1.7.1-0.20190724094224-574c33c3df38",
+        sum = "h1:K/R+8tc58AaqLkqG2Ol3Qk+DR/TlNuhuh457pBFPtt0=",
+        version = "v2.0.0+incompatible",
     )
 
     go_repository(
@@ -4200,6 +4200,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:BVoBIqAf/2QdbFmSwAWnaIqDivZdOV0ZRwEm6jivLKw=",
         version = "v1.4.11",
     )
+    go_repository(
+        name = "com_github_throttled_throttled_v2",
+        importpath = "github.com/throttled/throttled/v2",
+        replace = "github.com/buildbuddy-io/throttled/v2",
+        sum = "h1:l9PGL9DJwcCgQcVt/zFzVjJbSzb+BmpU8NBeo6leHKU=",
+        version = "v2.9.1-rc2",
+    )
+
     go_repository(
         name = "com_github_tidwall_pretty",
         importpath = "github.com/tidwall/pretty",
