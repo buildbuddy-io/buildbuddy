@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
@@ -1343,11 +1344,14 @@ func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
 	}
-	out, err := proto.Marshal(requestProto)
+	// Write the proto length (in varint encoding), then the proto itself
+	buf := protowire.AppendVarint(nil, uint64(proto.Size(requestProto)))
+	var err error
+	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, requestProto)
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(out)
+	_, err = writer.Write(buf)
 	return err
 }
 
