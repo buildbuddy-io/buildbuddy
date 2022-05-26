@@ -2,13 +2,16 @@ package url_test
 
 import (
 	"flag"
+	"net/url"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/buildbuddy-io/buildbuddy/server/util/url"
+	"github.com/stretchr/testify/require"
+
+	bburl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
 func init() {
@@ -16,7 +19,9 @@ func init() {
 }
 
 func envWithAppURL(t *testing.T, appUrl string) environment.Env {
-	flags.Set(t, "app.build_buddy_url", appUrl)
+	u, err := url.Parse(appUrl)
+	require.NoError(t, err)
+	flags.Set(t, "app.build_buddy_url", *u)
 	healthChecker := healthcheck.NewHealthChecker("test")
 	return real_environment.NewRealEnv(healthChecker)
 }
@@ -56,7 +61,7 @@ func TestValidateRedirect(t *testing.T) {
 
 	for _, tc := range testCases {
 		te := envWithAppURL(t, tc.AppURL)
-		err := url.ValidateRedirect(te, tc.RedirURL)
+		err := bburl.ValidateRedirect(te, tc.RedirURL)
 		gotErr := err != nil
 		if gotErr != tc.WantErr {
 			t.Fatalf("ValidateRedir(%q, %q) returned %s, wantErr: %t", tc.AppURL, tc.RedirURL, err, tc.WantErr)

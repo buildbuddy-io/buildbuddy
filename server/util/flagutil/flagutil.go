@@ -64,15 +64,6 @@ type Appendable interface {
 	AppendSlice(any) error
 }
 
-// String flag that gets validated as a URL
-// TODO: just use the URL directly (not the string) once we can generate the
-// YAML map from the flags instead of the other way around.
-func URLString(name, value, usage string) *string {
-	u := NewURLFlag(&value)
-	defaultFlagSet.Var(u, name, usage)
-	return &value
-}
-
 type SliceFlag[T any] []T
 
 func NewSliceFlag[T any](slice *[]T) *SliceFlag[T] {
@@ -153,41 +144,51 @@ func (f *SliceFlag[T]) YAMLTypeAlias() reflect.Type {
 	return f.AliasedType()
 }
 
-type URLFlag string
+type URLFlag url.URL
 
-func NewURLFlag(s *string) *URLFlag {
-	_, err := url.Parse(*s)
+func URL(name string, value url.URL, usage string) *url.URL {
+	u := &value
+	defaultFlagSet.Var((*URLFlag)(u), name, usage)
+	return u
+}
+
+func URLVar(value *url.URL, name string, usage string) {
+	defaultFlagSet.Var((*URLFlag)(value), name, usage)
+}
+
+func URLFromString(name, value, usage string) *url.URL {
+	u, err := url.Parse(value)
 	if err != nil {
-		log.Fatalf("Error parsing default URL value '%s' for flag: %v", *s, err)
+		log.Fatalf("Error parsing default URL value '%s' for flag: %v", value, err)
 		return nil
 	}
-	return (*URLFlag)(s)
+	return URL(name, *u, usage)
 }
 
 func (f *URLFlag) Set(value string) error {
-	*f = URLFlag(value)
-	_, err := url.Parse(value)
+	u, err := url.Parse(value)
 	if err != nil {
 		return err
 	}
+	*(*url.URL)(f) = *u
 	return nil
 }
 
 func (f *URLFlag) String() string {
-	return string(*f)
+	return (*url.URL)(f).String()
 }
 
-func (f *URLFlag) UnmarshalYAML(unmarshal func(any) error) error {
-	err := unmarshal((*string)(f))
+func (f *URLFlag) UnmarshalYAML(value *yaml.Node) error {
+	u, err := url.Parse(value.Value)
 	if err != nil {
-		return err
+		return &yaml.TypeError{Errors: []string{err.Error()}}
 	}
-	_, err = url.Parse(string(*f))
-	return err
+	*(*url.URL)(f) = *u
+	return nil
 }
 
 func (f *URLFlag) AliasedType() reflect.Type {
-	return reflect.TypeOf((*string)(nil))
+	return reflect.TypeOf((*url.URL)(nil))
 }
 
 func (f *URLFlag) YAMLTypeAlias() reflect.Type {

@@ -21,5 +21,6 @@ go_test(
         "//server/real_environment",
         "//server/util/healthcheck",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -5,8 +5,5 @@ go_library(
     srcs = ["events_api_url.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/alert",
-        "//server/util/flagutil",
-    ],
+    deps = ["//server/util/flagutil"],
 )
