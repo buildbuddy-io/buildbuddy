@@ -144,7 +144,7 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		log.Fatalf("Erro pre-writing blobs: %s", err)
+		log.Fatalf("Error pre-writing blobs: %s", err)
 	}
 	return digests
 }
