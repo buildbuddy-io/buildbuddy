@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
@@ -13,7 +14,7 @@ import (
 
 // StartServer runs a test-scoped HTTP server and returns the base server URL
 // in the format "http://localhost:PORT"
-func StartServer(t *testing.T, handler http.Handler) string {
+func StartServer(t *testing.T, handler http.Handler) *url.URL {
 	port := testport.FindFree(t)
 
 	addr := fmt.Sprintf("localhost:%d", port)
@@ -27,5 +28,5 @@ func StartServer(t *testing.T, handler http.Handler) string {
 		err := lis.Close()
 		require.NoError(t, err)
 	})
-	return "http://" + addr
+	return &url.URL{Scheme: "http", Host: addr}
 }
