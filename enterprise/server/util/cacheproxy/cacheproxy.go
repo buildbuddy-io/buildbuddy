@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
@@ -43,9 +45,10 @@ type CacheProxy struct {
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*dcClient
-	heartbeatCallback     func(peer string)
+	heartbeatCallback     func(ctx context.Context, peer string)
 	hintedHandoffCallback func(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest)
 	listenAddr            string
+	zone                  string
 }
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
@@ -58,6 +61,12 @@ func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *
 		mu:         &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*dcClient, 0),
+	}
+	zone, err := resources.GetZone()
+	if err != nil {
+		log.Warningf("Error detecting zone: %s", err)
+	} else {
+		proxy.zone = zone
 	}
 	return proxy
 }
@@ -99,7 +108,7 @@ func (c *CacheProxy) Shutdown(ctx context.Context) error {
 	return err
 }
 
-func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(peer string)) {
+func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer string)) {
 	c.heartbeatCallback = fn
 }
 
@@ -164,8 +173,23 @@ func (c *CacheProxy) getCache(ctx context.Context, isolation *dcpb.Isolation) (i
 	return c.cache.WithIsolation(ctx, ct, isolation.GetRemoteInstanceName())
 }
 
+func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
+	if c.zone != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, resources.ZoneHeader, c.zone)
+	}
+	return ctx
+}
+
+func (c *CacheProxy) readWriteContext(ctx context.Context) (context.Context, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(c.prepareContext(ctx), c.env)
+	if err != nil {
+		return ctx, err
+	}
+	return ctx, err
+}
+
 func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +227,7 @@ func IsolationToString(isolation *dcpb.Isolation) string {
 }
 
 func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, c.env)
+	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +268,7 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 }
 
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), c.env)
+	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -254,7 +278,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if err != nil {
 		return err
 	}
-	reader, err := cache.Reader(ctx, d, req.GetOffset())
+	reader, err := cache.Reader(ctx, d, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
@@ -279,7 +303,7 @@ func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, isola
 }
 
 func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), c.env)
+	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -337,7 +361,7 @@ func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) 
 		return nil, status.InvalidArgumentError("A source is required.")
 	}
 	if c.heartbeatCallback != nil {
-		c.heartbeatCallback(req.GetSource())
+		c.heartbeatCallback(ctx, req.GetSource())
 	}
 	return &dcpb.HeartbeatResponse{}, nil
 }
@@ -406,11 +430,12 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	req := &dcpb.ReadRequest{
 		Isolation: isolation,
 		Key:       digestToKey(d),
 		Offset:    offset,
+		Limit:     limit,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -529,6 +554,6 @@ func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
 	req := &dcpb.HeartbeatRequest{
 		Source: c.listenAddr,
 	}
-	_, err = client.Heartbeat(ctx, req)
+	_, err = client.Heartbeat(c.prepareContext(ctx), req)
 	return err
 }

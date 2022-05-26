@@ -7,7 +7,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 
@@ -92,8 +91,6 @@ func TestAcquireAndRelease(t *testing.T) {
 	valid := liveness.Valid()
 	require.True(t, valid)
 
-	log.Printf("NodeLiveness: %s", liveness)
-
 	// Should be able to release a liveness record.
 	err = liveness.Release()
 	require.Nil(t, err)
@@ -117,14 +114,12 @@ func TestKeepalive(t *testing.T) {
 	valid := liveness.Valid()
 	require.True(t, valid)
 
-	log.Printf("NodeLiveness: %s", liveness)
 	time.Sleep(leaseDuration * 2)
 
 	// Liveness record hould have been kept alive.
 	valid = liveness.Valid()
 	require.True(t, valid)
 
-	log.Printf("NodeLiveness: %s", liveness)
 }
 
 func TestEpochChangeOnLease(t *testing.T) {
@@ -138,8 +133,6 @@ func TestEpochChangeOnLease(t *testing.T) {
 	// Liveness record should be valid.
 	valid := liveness.Valid()
 	require.True(t, valid)
-
-	log.Printf("NodeLiveness: %s", liveness)
 
 	// Get the epoch of the liveness record.
 	nl, err := liveness.BlockingGetCurrentNodeLiveness()
@@ -159,8 +152,6 @@ func TestEpochChangeOnLease(t *testing.T) {
 
 	valid = liveness2.Valid()
 	require.True(t, valid)
-
-	log.Printf("NodeLiveness: %s", liveness2)
 
 	// Ensure that epoch has been incremented.
 	nl, err = liveness2.BlockingGetCurrentNodeLiveness()

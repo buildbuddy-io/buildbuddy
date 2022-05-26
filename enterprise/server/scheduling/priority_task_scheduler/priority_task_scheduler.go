@@ -28,17 +28,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var (
-	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
-	systemCPUCutoff         = flag.Float64("executor.system_cpu_cutoff", .90, "A total CPU usage value between 0 and 1, above which more tasks will not be scheduled")
-)
+var exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 
 const (
 	queueCheckSleepInterval = 10 * time.Millisecond
-
-	// loadAverageCheckInterval is how often the load average will
-	// be checked.
-	loadAverageCheckInterval = 1 * time.Second
 )
 
 var shuttingDownLogOnce sync.Once
@@ -174,28 +167,7 @@ type PriorityTaskScheduler struct {
 	ramBytesUsed            int64
 	cpuMillisCapacity       int64
 	cpuMillisUsed           int64
-	enoughSystemCPU         bool
 	exclusiveTaskScheduling bool
-}
-
-func (q *PriorityTaskScheduler) updateLoadAvg() {
-	for {
-		select {
-		case <-time.After(loadAverageCheckInterval):
-			oneMinLoadAvg, _, _ := resources.GetLoadAverage()
-			numCPUs := resources.GetNumCPUs()
-			fractionUsed := (oneMinLoadAvg / float64(numCPUs))
-			aboveCutoff := fractionUsed < *systemCPUCutoff
-
-			if !aboveCutoff {
-				log.Warningf("CPU use: %2.f%% is above limit: %2.f%%, not scheduling more tasks.", fractionUsed*100, *systemCPUCutoff*100)
-			}
-
-			q.mu.Lock()
-			q.enoughSystemCPU = aboveCutoff
-			q.mu.Unlock()
-		}
-	}
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
@@ -226,7 +198,6 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 
-	go qes.updateLoadAvg()
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
 }
@@ -354,7 +325,7 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	// Only ever run as many sized tasks as we have memory for.
 	knownRAMremaining := q.ramBytesCapacity - q.ramBytesUsed
 	knownCPUremaining := q.cpuMillisCapacity - q.cpuMillisUsed
-	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu() && q.enoughSystemCPU
+	willFit := knownRAMremaining >= res.GetTaskSize().GetEstimatedMemoryBytes() && knownCPUremaining >= res.GetTaskSize().GetEstimatedMilliCpu()
 
 	// If we're running in exclusiveTaskScheduling mode, only ever allow one task to run at
 	// a time. Otherwise fall through to the logic below.

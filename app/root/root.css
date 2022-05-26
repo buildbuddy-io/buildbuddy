@@ -611,6 +611,10 @@ svg.icon.orange {
   margin-top: 8px;
 }
 
+.card-suggestion .break-all {
+  word-break: break-all;
+}
+
 .card-suggestion .details {
   word-break: initial;
 }

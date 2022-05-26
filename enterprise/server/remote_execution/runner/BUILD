@@ -41,6 +41,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
@@ -49,6 +50,7 @@ go_library(
 go_test(
     name = "runner_test",
     srcs = ["runner_test.go"],
+    data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
     deps = [
         "//enterprise/server/remote_execution/platform",

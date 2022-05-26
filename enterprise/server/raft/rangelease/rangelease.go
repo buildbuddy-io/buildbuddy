@@ -267,7 +267,7 @@ func (l *Lease) ensureValidLease(forceRenewal bool) (*rfpb.RangeLeaseRecord, err
 	}
 
 	if !alreadyValid {
-		log.Debugf("Acquired %s", l.String())
+		log.Debugf("Acquired %s", l.string(l.rangeDescriptor, l.leaseRecord))
 	}
 
 	// We just renewed the lease. If there isn't already a background
@@ -304,18 +304,22 @@ func (l *Lease) Valid() bool {
 	return false
 }
 
-func (l *Lease) String() string {
+func (l *Lease) string(rd *rfpb.RangeDescriptor, lr *rfpb.RangeLeaseRecord) string {
 	// Don't lock here (to avoid recursive locking).
-	rd := l.rangeDescriptor
 	leaseName := fmt.Sprintf("RangeLease(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
-	err := l.verifyLease(l.leaseRecord)
+	err := l.verifyLease(lr)
 	if err != nil {
 		return fmt.Sprintf("%s invalid (%s)", leaseName, err)
 	}
-	lr := l.leaseRecord
 	if nl := lr.GetNodeLiveness(); nl != nil {
 		return fmt.Sprintf("%s [node epoch: %d]", leaseName, nl.GetEpoch())
 	}
 	lifetime := time.Unix(0, lr.GetExpiration()).Sub(time.Now())
 	return fmt.Sprintf("%s [expires in: %s]", leaseName, lifetime)
+}
+
+func (l *Lease) String() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.string(l.rangeDescriptor, l.leaseRecord)
 }

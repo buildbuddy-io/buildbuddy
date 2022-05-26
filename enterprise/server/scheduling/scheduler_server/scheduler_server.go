@@ -451,6 +451,18 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 	return executors, nil
 }
 
+// GetNodes returns the execution nodes in this node pool, optionally filtering
+// to just the nodes that are directly connected to this server instance.
+func (np *nodePool) GetNodes(connectedOnly bool) []*executionNode {
+	np.mu.Lock()
+	defer np.mu.Unlock()
+
+	if connectedOnly {
+		return np.connectedExecutors
+	}
+	return np.nodes
+}
+
 func (np *nodePool) RefreshNodes(ctx context.Context) error {
 	np.mu.Lock()
 	defer np.mu.Unlock()
@@ -1361,10 +1373,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				// (in subsequent loop iterations) if the preferred node probe fails.
 				preferredNode = nil
 			} else {
-				nodes = nodeBalancer.nodes
-				if opts.scheduleOnConnectedExecutors {
-					nodes = nodeBalancer.connectedExecutors
-				}
+				nodes = nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
 				}

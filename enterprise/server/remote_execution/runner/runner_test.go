@@ -393,14 +393,13 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	})
-	task := newTask()
 	ctxUser1 := withAuthenticatedUser(t, context.Background(), "US1")
 	ctxUser2 := withAuthenticatedUser(t, context.Background(), "US2")
 	ctxUser3 := withAuthenticatedUser(t, context.Background(), "US3")
 
-	r1 := mustGetNewRunner(t, ctxUser1, pool, task)
-	r2 := mustGetNewRunner(t, ctxUser2, pool, task)
-	r3 := mustGetNewRunner(t, ctxUser3, pool, task)
+	r1 := mustGetNewRunner(t, ctxUser1, pool, newTask())
+	r2 := mustGetNewRunner(t, ctxUser2, pool, newTask())
+	r3 := mustGetNewRunner(t, ctxUser3, pool, newTask())
 
 	// Limit is 2, so r1 and r2 should be added with no problem.
 
@@ -411,9 +410,9 @@ func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	// Should be able to get r1 and r3 back from the pool. r2 should have been
 	// evicted since it's the oldest (least recently added back to the pool).
 
-	mustGetPausedRunner(t, ctxUser1, pool, task)
-	mustGetPausedRunner(t, ctxUser3, pool, task)
-	mustGetNewRunner(t, ctxUser2, pool, task)
+	mustGetPausedRunner(t, ctxUser1, pool, newTask())
+	mustGetPausedRunner(t, ctxUser3, pool, newTask())
+	mustGetNewRunner(t, ctxUser2, pool, newTask())
 }
 
 func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
@@ -520,10 +519,15 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
-	encodedResponse := encodedResponse(t, protocol, resp, 2)
+	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
 	return &repb.ExecutionTask{
 		Command: &repb.Command{
-			Arguments: append([]string{"sh", "-c", `echo ` + encodedResponse + ` | base64 --decode && tee`}, arg),
+			Arguments: []string{
+				workerPath,
+				"--protocol=" + protocol,
+				"--response_base64=" + encodedResponse(t, protocol, resp),
+				arg,
+			},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: "persistentWorkerKey", Value: key},
@@ -535,23 +539,21 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 	}
 }
 
-func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse, count int) string {
+func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {
 	buf := []byte{}
-	for i := 0; i < count; i++ {
-		if protocol == "json" {
-			out, err := protojson.Marshal(resp)
-			buf = append(buf, out...)
-			if err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			out, err := proto.Marshal(resp)
-			size := make([]byte, binary.MaxVarintLen64)
-			n := binary.PutUvarint(size, uint64(len(out)))
-			buf = append(append(buf, size[:n]...), out...)
-			if err != nil {
-				t.Fatal(err)
-			}
+	if protocol == "json" {
+		out, err := protojson.Marshal(resp)
+		buf = append(buf, out...)
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		out, err := proto.Marshal(resp)
+		size := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(size, uint64(len(out)))
+		buf = append(append(buf, size[:n]...), out...)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	return base64.StdEncoding.EncodeToString(buf)

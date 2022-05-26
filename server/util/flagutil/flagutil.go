@@ -30,9 +30,6 @@ var (
 		flagTypeFromFlagFuncName("Uint"):     reflect.TypeOf((*uint)(nil)),
 		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
 		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
-
-		reflect.TypeOf((*stringSliceFlag)(nil)): reflect.TypeOf((*[]string)(nil)),
-		reflect.TypeOf((*URLFlag)(nil)):         reflect.TypeOf((*URLFlag)(nil)),
 	}
 
 	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
@@ -51,23 +48,20 @@ func flagTypeFromFlagFuncName(name string) reflect.Type {
 	return reflect.TypeOf(fs.Lookup("").Value)
 }
 
-// TODO: When we get generics, we can replace these function with Slice and use
-// it for all types of slices (currently just strings and structs).
-func StringSlice(name string, defaultValue []string, usage string) *[]string {
-	sliceFlag, err := NewSliceFlag(&defaultValue)
-	if err != nil {
-		log.Fatalf("Encountered error creating flag for %s: %v", name, err)
-	}
-	defaultFlagSet.Var(sliceFlag, name, usage)
-	return &defaultValue
+type YAMLTypeAliasable interface {
+	YAMLTypeAlias() reflect.Type
 }
 
-func StructSliceVar(structSlicePtr interface{}, name, usage string) {
-	sliceFlag, err := NewSliceFlag(structSlicePtr)
-	if err != nil {
-		log.Fatalf("Encountered error creating flag for %s: %v", name, err)
-	}
-	defaultFlagSet.Var(sliceFlag, name, usage)
+type TypeAliased interface {
+	AliasedType() reflect.Type
+}
+
+type isNameAliasing interface {
+	AliasedName() string
+}
+
+type Appendable interface {
+	AppendSlice(any) error
 }
 
 // String flag that gets validated as a URL
@@ -79,167 +73,84 @@ func URLString(name, value, usage string) *string {
 	return &value
 }
 
-// NOTE: slice flags are *appended* to default values and
-// config values, instead of overriding them completely.
-type SliceFlag interface {
-	flag.Value
-	UnderlyingSlice() interface{}
-	SetTo(interface{})
-	Slice(i, j int) interface{}
-	AppendSlice(interface{}) interface{}
-	Len() int
+type SliceFlag[T any] []T
+
+func NewSliceFlag[T any](slice *[]T) *SliceFlag[T] {
+	return (*SliceFlag[T])(slice)
 }
 
-func NewSliceFlag(slicePtr interface{}) (SliceFlag, error) {
-	if stringSlicePtr, ok := slicePtr.(*[]string); ok {
-		return newStringSliceFlag(stringSlicePtr), nil
-	}
-	if reflect.TypeOf(slicePtr).Elem().Elem().Kind() == reflect.Struct {
-		return newStructSliceFlag(slicePtr), nil
-	}
-	return nil, fmt.Errorf("Unrecognized slice pointer type in NewSliceFlag: %T", slicePtr)
+func Slice[T any](name string, defaultValue []T, usage string) *[]T {
+	slice := make([]T, len(defaultValue))
+	copy(slice, defaultValue)
+	defaultFlagSet.Var(NewSliceFlag(&slice), name, usage)
+	return &slice
 }
 
-type stringSliceFlag []string
-
-func (f *stringSliceFlag) String() string {
-	return strings.Join(*f, ",")
+func SliceVar[T any](slice *[]T, name, usage string) {
+	defaultFlagSet.Var(NewSliceFlag(slice), name, usage)
 }
 
-func (f *stringSliceFlag) Set(values string) error {
-	for _, val := range strings.Split(values, ",") {
-		*f = append(*f, val)
+func (f *SliceFlag[T]) String() string {
+	switch v := any((*[]T)(f)).(type) {
+	case *[]string:
+		return strings.Join(*v, ",")
+	default:
+		b, err := json.Marshal(f)
+		if err != nil {
+			alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
+			return "[]"
+		}
+		return string(b)
 	}
+}
+
+func (f *SliceFlag[T]) Set(values string) error {
+	if v, ok := any((*[]T)(f)).(*[]string); ok {
+		for _, val := range strings.Split(values, ",") {
+			*v = append(*v, val)
+		}
+		return nil
+	}
+	v := (*[]T)(f)
+	var a any
+	if err := json.Unmarshal([]byte(values), &a); err != nil {
+		return err
+	}
+	if _, ok := a.([]any); ok {
+		var dst []T
+		if err := json.Unmarshal([]byte(values), &dst); err != nil {
+			return err
+		}
+		*v = append(*v, dst...)
+		return nil
+	}
+	if _, ok := a.(map[string]any); ok {
+		var dst T
+		if err := json.Unmarshal([]byte(values), &dst); err != nil {
+			return err
+		}
+		*v = append(*v, dst)
+		return nil
+	}
+	return fmt.Errorf("Default Set for SliceFlag can only accept JSON objects or arrays, but type was %T", a)
+}
+
+func (f *SliceFlag[T]) AppendSlice(slice any) error {
+	s, ok := slice.([]T)
+	if !ok {
+		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %T.", slice, slice, ([]T)(nil))
+	}
+	v := (*[]T)(f)
+	*v = append(*v, s...)
 	return nil
 }
 
-func (f *stringSliceFlag) UnderlyingSlice() interface{} {
-	slice := make([]string, len(*f))
-	copy(slice, *f)
-	return slice
+func (f *SliceFlag[T]) AliasedType() reflect.Type {
+	return reflect.TypeOf((*[]T)(nil))
 }
 
-func (f *stringSliceFlag) SetTo(stringSlice interface{}) {
-	ss, ok := stringSlice.([]string)
-	if !ok {
-		alert.UnexpectedEvent("string_slice_flag_type_error", "SetTo accepts only []string, but was passed parameter of type %T", stringSlice)
-		return
-	}
-	*f = make([]string, len(ss))
-	copy(*f, ss)
-}
-
-func (f *stringSliceFlag) Slice(i, j int) interface{} {
-	return f.UnderlyingSlice().([]string)[i:j]
-}
-
-func (f *stringSliceFlag) AppendSlice(stringSlice interface{}) interface{} {
-	ss, ok := stringSlice.([]string)
-	if !ok {
-		alert.UnexpectedEvent("string_slice_flag_type_error", "SetTo accepts only []string, but was passed parameter of type %T", stringSlice)
-		return []string{}
-	}
-	return append(f.UnderlyingSlice().([]string), ss...)
-}
-
-func (f *stringSliceFlag) Len() int {
-	return len(*f)
-}
-
-func newStringSliceFlag(stringSlicePtr *[]string) *stringSliceFlag {
-	return (*stringSliceFlag)(stringSlicePtr)
-}
-
-type structSliceFlag struct {
-	dstSlice reflect.Value
-}
-
-func (f *structSliceFlag) String() string {
-	if !f.dstSlice.IsValid() {
-		return "[]"
-	}
-	b, err := json.Marshal(f.dstSlice.Interface())
-	if err != nil {
-		alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
-		return "[]"
-	}
-	return string(b)
-}
-
-func (f *structSliceFlag) Set(value string) error {
-	var i interface{}
-	if err := json.Unmarshal([]byte(value), &i); err != nil {
-		return err
-	}
-	if _, ok := i.([]interface{}); ok {
-		dst := reflect.New(f.dstSlice.Type())
-		if err := json.Unmarshal([]byte(value), dst.Interface()); err != nil {
-			return err
-		}
-		f.dstSlice.Set(reflect.AppendSlice(f.dstSlice, dst.Elem()))
-		return nil
-	}
-	if _, ok := i.(map[string]interface{}); ok {
-		dst := reflect.New(f.dstSlice.Type().Elem())
-		if err := json.Unmarshal([]byte(value), dst.Interface()); err != nil {
-			return err
-		}
-		f.dstSlice.Set(reflect.Append(f.dstSlice, dst.Elem()))
-		return nil
-	}
-	return fmt.Errorf("Set for structSliceFlag can only accept JSON objects or arrays, but type was %T", i)
-}
-
-func (f *structSliceFlag) UnderlyingSlice() interface{} {
-	slice := reflect.MakeSlice(f.dstSlice.Type(), f.dstSlice.Len(), f.dstSlice.Len())
-	reflect.Copy(slice, f.dstSlice)
-	return slice.Interface()
-}
-
-func (f *structSliceFlag) SetTo(structSlice interface{}) {
-	if reflect.TypeOf(structSlice).Kind() != reflect.Slice {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "SetTo accepts only slices of struct types, but was passed parameter of type %T", structSlice)
-		return
-	}
-	if reflect.TypeOf(structSlice).Elem().Kind() != reflect.Struct {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "SetTo accepts only slices of struct types, but was passed parameter of type %T", structSlice)
-		return
-	}
-	if reflect.TypeOf(structSlice) != f.dstSlice.Type() {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "SetTo was passed a slice of %T, which cannot be appended to a slice of type %T", structSlice, f.UnderlyingSlice())
-		return
-	}
-	length := reflect.ValueOf(structSlice).Len()
-	f.dstSlice.Set(reflect.MakeSlice(f.dstSlice.Type(), length, length))
-	reflect.Copy(f.dstSlice, reflect.ValueOf(structSlice))
-}
-
-func (f *structSliceFlag) Slice(i, j int) interface{} {
-	return reflect.ValueOf(f.UnderlyingSlice()).Slice(i, j).Interface()
-}
-
-func (f *structSliceFlag) AppendSlice(structSlice interface{}) interface{} {
-	if reflect.TypeOf(structSlice).Kind() != reflect.Slice {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append accepts only slices of struct types, but was passed parameter of type %T", structSlice)
-		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
-	}
-	if reflect.TypeOf(structSlice).Elem().Kind() != reflect.Struct {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append accepts only slices of struct types, but was passed parameter of type %T", structSlice)
-		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
-	}
-	if reflect.TypeOf(structSlice) != f.dstSlice.Type() {
-		alert.UnexpectedEvent("struct_slice_flag_type_error", "Append was passed a slice of %T, which cannot be appended to a slice of type %T", structSlice, f.UnderlyingSlice())
-		return reflect.MakeSlice(f.dstSlice.Type(), 0, 0)
-	}
-	return reflect.AppendSlice(reflect.ValueOf(f.UnderlyingSlice()), reflect.ValueOf(structSlice)).Interface()
-}
-
-func (f *structSliceFlag) Len() int {
-	return f.dstSlice.Len()
-}
-
-func newStructSliceFlag(structSlicePtr interface{}) *structSliceFlag {
-	return &structSliceFlag{reflect.ValueOf(structSlicePtr).Elem()}
+func (f *SliceFlag[T]) YAMLTypeAlias() reflect.Type {
+	return f.AliasedType()
 }
 
 type URLFlag string
@@ -266,7 +177,7 @@ func (f *URLFlag) String() string {
 	return string(*f)
 }
 
-func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (f *URLFlag) UnmarshalYAML(unmarshal func(any) error) error {
 	err := unmarshal((*string)(f))
 	if err != nil {
 		return err
@@ -275,16 +186,99 @@ func (f *URLFlag) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return err
 }
 
+func (f *URLFlag) AliasedType() reflect.Type {
+	return reflect.TypeOf((*string)(nil))
+}
+
+func (f *URLFlag) YAMLTypeAlias() reflect.Type {
+	return reflect.TypeOf((*URLFlag)(nil))
+}
+
+type FlagAlias struct {
+	name string
+}
+
+func Alias[T any](newName, name string) *T {
+	f := &FlagAlias{name: name}
+	var flg *flag.Flag
+	for aliaser, ok := isNameAliasing(f), true; ok; aliaser, ok = flg.Value.(isNameAliasing) {
+		if flg = defaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
+			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, newName, aliaser.AliasedName())
+		}
+	}
+	addr := reflect.ValueOf(flg.Value)
+	if t, err := getTypeForFlag(flg); err == nil {
+		if !addr.CanConvert(t) {
+			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, newName, flg.Name, flg.Value, t)
+		}
+		addr = addr.Convert(t)
+	}
+	value, ok := addr.Interface().(*T)
+	if !ok {
+		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, newName, flg.Name, flg.Value, (*T)(nil))
+	}
+	defaultFlagSet.Var(f, newName, "Alias for "+name)
+	return value
+}
+
+func (f *FlagAlias) Set(value string) error {
+	return defaultFlagSet.Set(f.name, value)
+}
+
+func (f *FlagAlias) String() string {
+	return defaultFlagSet.Lookup(f.name).Value.String()
+}
+
+func (f *FlagAlias) AliasedName() string {
+	return f.name
+}
+
+func (f *FlagAlias) AliasedType() reflect.Type {
+	flg := defaultFlagSet.Lookup(f.name)
+	t, err := getTypeForFlag(flg)
+	if err != nil {
+		return reflect.TypeOf(flg.Value)
+	}
+	return t
+}
+
+func (f *FlagAlias) YAMLTypeAlias() reflect.Type {
+	flg := defaultFlagSet.Lookup(f.name)
+	t, err := getYAMLTypeForFlag(flg)
+	if err != nil {
+		return reflect.TypeOf(flg.Value)
+	}
+	return t
+}
+
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
 func IgnoreFlagForYAML(name string) {
 	ignoreSet[name] = struct{}{}
 }
 
+func getTypeForFlag(flg *flag.Flag) (reflect.Type, error) {
+	if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
+		return t, nil
+	} else if v, ok := flg.Value.(TypeAliased); ok {
+		return v.AliasedType(), nil
+	}
+	return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+}
+
+func getYAMLTypeForFlag(flg *flag.Flag) (reflect.Type, error) {
+	if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
+		return t, nil
+	} else if v, ok := flg.Value.(YAMLTypeAliasable); ok {
+		return v.YAMLTypeAlias(), nil
+	}
+	return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+}
+
 // GenerateYAMLTypeMapFromFlags generates a map of the type that should be
 // marshaled from YAML for each flag name at the corresponding nested map index.
-func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
-	yamlMap := make(map[string]interface{})
+func GenerateYAMLTypeMapFromFlags() (map[string]any, error) {
+	yamlMap := make(map[string]any)
 	var errors []error
 	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
 		keys := strings.Split(flg.Name, ".")
@@ -297,11 +291,11 @@ func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 		for i, k := range keys[:len(keys)-1] {
 			v, ok := m[k]
 			if !ok {
-				v := make(map[string]interface{})
+				v := make(map[string]any)
 				m[k], m = v, v
 				continue
 			}
-			m, ok = v.(map[string]interface{})
+			m, ok = v.(map[string]any)
 			if !ok {
 				errors = append(errors, status.FailedPreconditionErrorf("When trying to create YAML type map hierarchy for %s, encountered non-map value of type %T at %s", flg.Name, v, strings.Join(keys[:i+1], ".")))
 				return
@@ -312,14 +306,12 @@ func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 			errors = append(errors, status.FailedPreconditionErrorf("When trying to create type for %s for YAML type map, encountered pre-existing value of type %T.", flg.Name, v))
 			return
 		}
-		if v, ok := flg.Value.(*structSliceFlag); ok {
-			m[k] = v.dstSlice.Type()
-			return
-		} else if t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]; ok {
-			m[k] = t.Elem()
+		t, err := getYAMLTypeForFlag(flg)
+		if err != nil {
+			errors = append(errors, err)
 			return
 		}
-		errors = append(errors, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value))
+		m[k] = t.Elem()
 	})
 	if errors != nil {
 		return nil, status.InternalErrorf("Errors encountered when converting flags to YAML map: %v", errors)
@@ -331,7 +323,7 @@ func GenerateYAMLTypeMapFromFlags() (map[string]interface{}, error) {
 // re-marshals it into the types specified by the type map, replacing the
 // original value in the input map. Filters out any values not specified by the
 // flags.
-func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]interface{}, prefix []string) error {
+func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, prefix []string) error {
 	for k := range yamlMap {
 		label := append(prefix, k)
 		if _, ok := typeMap[k]; !ok {
@@ -356,8 +348,8 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]interface{}, typeMap map[string]i
 				return status.InternalErrorf("Failed to unmarshal YAML to the specified type at %s: wanted %v, got %T", strings.Join(label, "."), t, v.Type())
 			}
 			yamlMap[k] = v.Interface()
-		case map[string]interface{}:
-			yamlSubmap, ok := yamlMap[k].(map[string]interface{})
+		case map[string]any:
+			yamlSubmap, ok := yamlMap[k].(map[string]any)
 			if !ok {
 				// this is a value, not a map, and there is no corresponding type
 				alert.UnexpectedEvent("Input YAML contained non-map value %v of type %T at label %s", yamlMap[k], yamlMap[k], strings.Join(label, "."))
@@ -381,7 +373,7 @@ func PopulateFlagsFromData(data []byte) error {
 	// expand environment variables
 	expandedData := []byte(os.ExpandEnv(string(data)))
 
-	yamlMap := make(map[string]interface{})
+	yamlMap := make(map[string]any)
 	if err := yaml.Unmarshal([]byte(expandedData), yamlMap); err != nil {
 		return status.InternalErrorf("Error parsing config file: %s", err)
 	}
@@ -422,7 +414,7 @@ func PopulateFlagsFromFile(configFile string) error {
 // and iterates over it, finding flags with names corresponding to the keys and
 // setting the flag to the YAML value if the flag was not set on the command
 // line.
-func PopulateFlagsFromYAMLMap(m map[string]interface{}) error {
+func PopulateFlagsFromYAMLMap(m map[string]any) error {
 	setFlags := make(map[string]struct{})
 	defaultFlagSet.Visit(func(flg *flag.Flag) {
 		setFlags[flg.Name] = struct{}{}
@@ -431,8 +423,8 @@ func PopulateFlagsFromYAMLMap(m map[string]interface{}) error {
 	return populateFlagsFromYAML(m, []string{}, setFlags)
 }
 
-func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]struct{}) error {
-	if m, ok := i.(map[string]interface{}); ok {
+func populateFlagsFromYAML(i any, prefix []string, setFlags map[string]struct{}) error {
+	if m, ok := i.(map[string]any); ok {
 		for k, v := range m {
 			p := append(prefix, k)
 			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
@@ -452,7 +444,7 @@ func populateFlagsFromYAML(i interface{}, prefix []string, setFlags map[string]s
 }
 
 // SetValueForFlagName sets the value for a flag by name.
-func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
+func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
 	flg := defaultFlagSet.Lookup(name)
 	if flg == nil {
 		if strict {
@@ -461,56 +453,67 @@ func SetValueForFlagName(name string, i interface{}, setFlags map[string]struct{
 		return nil
 	}
 	// For slice flags, append the YAML values to the existing values if appendSlice is true
-	if v, ok := flg.Value.(SliceFlag); ok && appendSlice {
-		if reflect.TypeOf(i) != reflect.TypeOf(v.UnderlyingSlice()) {
-			return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag %s of type %T.", i, i, flg.Name, v.UnderlyingSlice())
+	if v, ok := flg.Value.(Appendable); ok && appendSlice {
+		if err := v.AppendSlice(i); err != nil {
+			return status.InternalErrorf("Error encountered appending to flag %s: %s", flg.Name, err)
 		}
-		v.SetTo(v.AppendSlice(i))
 		return nil
 	}
 	// For non-append flags, skip the YAML values if it was set on the command line
 	if _, ok := setFlags[name]; ok {
 		return nil
 	}
-	if v, ok := flg.Value.(*structSliceFlag); ok {
-		if reflect.TypeOf(i) != reflect.TypeOf(v.UnderlyingSlice()) {
-			return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag %s of type %T.", i, i, flg.Name, v.UnderlyingSlice())
-		}
-		v.SetTo(i)
-		return nil
+	if v, ok := flg.Value.(isNameAliasing); ok {
+		return SetValueForFlagName(v.AliasedName(), i, setFlags, appendSlice, strict)
 	}
-	t, ok := flagTypeMap[reflect.TypeOf(flg.Value)]
-	if !ok {
-		return status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+	t, err := getTypeForFlag(flg)
+	if err != nil {
+		return status.UnimplementedErrorf("Error encountered setting flag: %s", err)
 	}
 	if !reflect.ValueOf(i).CanConvert(t.Elem()) {
-		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", i, i, t, flg.Name)
+		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", i, i, t.Elem(), flg.Name)
 	}
 	reflect.ValueOf(flg.Value).Convert(t).Elem().Set(reflect.ValueOf(i).Convert(t.Elem()))
 	return nil
 }
 
-// DereferencedValueFromFlagName returns the value pointed to by a flag.Value
-// for a given flag name.
-func DereferencedValueFromFlagName(name string) (interface{}, error) {
+// GetDereferencedValue retypes and returns the dereferenced Value for
+// a given flag name.
+func GetDereferencedValue[T any](name string) (T, error) {
 	flg := defaultFlagSet.Lookup(name)
+	zeroT := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	if flg == nil {
-		return nil, status.NotFoundErrorf("Undefined flag: %s", name)
+		return *zeroT, status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	if v, ok := flg.Value.(*structSliceFlag); ok {
-		return v.UnderlyingSlice(), nil
+	if v, ok := flg.Value.(isNameAliasing); ok {
+		return GetDereferencedValue[T](v.AliasedName())
 	}
+	t := reflect.TypeOf((*T)(nil))
 	addr := reflect.ValueOf(flg.Value)
-	t, ok := flagTypeMap[addr.Type()]
-	if !ok {
-		return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %s", name, addr.Type())
+	if t == reflect.TypeOf((*any)(nil)) {
+		var err error
+		t, err = getTypeForFlag(flg)
+		if err != nil {
+			return *zeroT, status.InternalErrorf("Error dereferencing flag to unspecified type: %s.", err)
+		}
+		if !addr.CanConvert(t) {
+			return *zeroT, status.InvalidArgumentErrorf("Flag %s of type %T could not be converted to %s.", name, flg.Value, t)
+		}
+		return addr.Convert(t).Elem().Interface().(T), nil
 	}
-	return addr.Convert(t).Elem().Interface(), nil
+	if !addr.CanConvert(t) {
+		return *zeroT, status.InvalidArgumentErrorf("Flag %s of type %T could not be converted to %s.", name, flg.Value, t)
+	}
+	v, ok := addr.Convert(t).Interface().(*T)
+	if !ok {
+		return *zeroT, status.InternalErrorf("Failed to assert flag %s of type %T as type %s.", name, flg.Value, t)
+	}
+	return *v, nil
 }
 
 // FOR TESTING PURPOSES ONLY
 // AddTestFlagTypeForTesting adds a type correspondence to the internal
 // flagTypeMap.
-func AddTestFlagTypeForTesting(flagValue interface{}, value interface{}) {
+func AddTestFlagTypeForTesting(flagValue, value any) {
 	flagTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }

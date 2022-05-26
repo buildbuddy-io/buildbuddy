@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var memcacheTargets = flagutil.StringSlice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flagutil.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB
@@ -244,7 +244,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
 	}
@@ -260,6 +260,9 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.Re
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
 	length := d.GetSizeBytes()
+	if limit != 0 && limit < length {
+		length = limit
+	}
 	if length > 0 {
 		return io.NopCloser(io.LimitReader(r, length)), nil
 	}

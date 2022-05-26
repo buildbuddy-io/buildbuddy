@@ -46,6 +46,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
@@ -64,8 +65,8 @@ var (
 	dockerNetHost           = flag.Bool("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
-	dockerDevices           []container.DockerDeviceMapping
-	dockerVolumes           = flagutil.StringSlice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
+	dockerDevices           = flagutil.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
+	dockerVolumes           = flagutil.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
@@ -77,11 +78,6 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 )
-
-func init() {
-	flagutil.StructSliceVar(&dockerDevices, "executor.docker_devices", `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContaine
-r":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-}
 
 const (
 	// Runner states
@@ -158,6 +154,7 @@ type state int
 type commandRunner struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
+	p              *pool
 
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
@@ -320,7 +317,10 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	// shutdown while this func is executing, which concurrently sets the runner
 	// state to "removed". This doesn't cause any known issues right now, but is
 	// error prone.
-	switch r.state {
+	r.p.mu.RLock()
+	s := r.state
+	r.p.mu.RUnlock()
+	switch s {
 	case initial:
 		err := container.PullImageIfNecessary(
 			ctx, r.env, r.imageCacheAuth,
@@ -332,7 +332,9 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
+		r.p.mu.Lock()
 		r.state = ready
+		r.p.mu.Unlock()
 		break
 	case ready:
 		break
@@ -365,7 +367,11 @@ func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats
 // that fully isolate all processes started by the runner and remove them
 // automatically via `Container.Remove`.
 func (r *commandRunner) shutdown(ctx context.Context) error {
-	if r.PlatformProperties.WorkloadIsolationType != string(platform.BareContainerType) {
+	r.p.mu.RLock()
+	props := r.PlatformProperties
+	r.p.mu.RUnlock()
+
+	if props.WorkloadIsolationType != string(platform.BareContainerType) {
 		return nil
 	}
 
@@ -379,9 +385,15 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	r.p.mu.RLock()
+	s := r.state
+	r.p.mu.RUnlock()
+
 	errs := []error{}
-	if s := r.state; s != initial && s != removed {
+	if s != initial && s != removed {
+		r.p.mu.Lock()
 		r.state = removed
+		r.p.mu.Unlock()
 		if err := r.shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
@@ -424,8 +436,13 @@ func (r *commandRunner) RemoveInBackground() {
 // isCIRunner returns whether the task assigned to this runner is a BuildBuddy
 // CI task.
 func (r *commandRunner) isCIRunner() bool {
-	args := r.task.GetCommand().GetArguments()
-	return r.PlatformProperties.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	r.p.mu.RLock()
+	task := r.task
+	props := r.PlatformProperties
+	r.p.mu.RUnlock()
+
+	args := task.GetCommand().GetArguments()
+	return props.WorkflowID != "" && len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
 }
 
 func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
@@ -682,7 +699,7 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,
 		DockerCapAdd:            *dockerCapAdd,
-		DockerDevices:           dockerDevices,
+		DockerDevices:           *dockerDevices,
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
@@ -809,9 +826,10 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 			return nil, err
 		}
 		if r != nil {
-			log.Info("Reusing workspace for task.")
+			p.mu.Lock()
 			r.task = task
 			r.PlatformProperties = props
+			p.mu.Unlock()
 			return r, nil
 		}
 	}
@@ -856,6 +874,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	}
 	r := &commandRunner{
 		env:                p.env,
+		p:                  p,
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		task:               task,
@@ -894,7 +913,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			User:      props.DockerUser,
 			Network:   props.DockerNetwork,
 			CapAdd:    *dockerCapAdd,
-			Devices:   dockerDevices,
+			Devices:   *dockerDevices,
 			Volumes:   *dockerVolumes,
 			Runtime:   *podmanRuntime,
 		}
@@ -1325,11 +1344,14 @@ func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, write
 	if protocol != "" && protocol != workerProtocolProtobufValue {
 		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
 	}
-	out, err := proto.Marshal(requestProto)
+	// Write the proto length (in varint encoding), then the proto itself
+	buf := protowire.AppendVarint(nil, uint64(proto.Size(requestProto)))
+	var err error
+	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, requestProto)
 	if err != nil {
 		return err
 	}
-	_, err = writer.Write(out)
+	_, err = writer.Write(buf)
 	return err
 }
 

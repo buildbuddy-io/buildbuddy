@@ -41,6 +41,7 @@ go_library(
 go_test(
     name = "store_test",
     srcs = ["store_test.go"],
+    shard_count = 8,
     deps = [
         ":store",
         "//enterprise/server/raft/client",
