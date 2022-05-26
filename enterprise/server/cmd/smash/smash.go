@@ -8,11 +8,9 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/bojand/ghz/printer"
 	"github.com/bojand/ghz/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -20,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/jhump/protoreflect/desc"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
@@ -29,7 +28,7 @@ import (
 
 var (
 	cacheTarget  = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
-	method       = flag.String("method", "google.bytestream.ByteStream/Write", "One of google.bytestream.ByteStream/{Read,Write}.")
+	method       = flag.String("method", "google.bytestream.ByteStream/Write", "One of google.bytestream.ByteStream/{Read,Write},build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs.")
 	rps          = flag.Uint("rps", 1000, "How many requests per second to attempt.")
 	testDuration = flag.Duration("test_duration", 10*time.Second, "The duration of the loadtest.")
 	concurrency  = flag.Uint("concurrency", 10, "Number of concurrent workers to use")
@@ -41,6 +40,12 @@ var (
 	ssl                = flag.Bool("ssl", false, "If true, use ssl.")
 	blobSize           = flag.Int64("blob_size", 100000, "Num bytes (max) of blob to send/read.")
 	htmlOutputFile     = flag.String("html_output_file", "", "If set, results will be written to this file in HTML format")
+)
+
+const (
+	byteStreamRead   = "google.bytestream.ByteStream/Read"
+	byteStreamWrite  = "google.bytestream.ByteStream/Write"
+	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
 )
 
 type randomDataMaker struct {
@@ -105,7 +110,7 @@ func randomBlobSize() int64 {
 	return randRange(histBuckets[len(histBuckets)-2], histBuckets[len(histBuckets)-1])
 }
 
-func writeBlobsForReading() []*repb.Digest {
+func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 	log.Print("Pre-writing blobs for read test.")
 	prefix := "grpc://"
 	if *ssl {
@@ -116,16 +121,30 @@ func writeBlobsForReading() []*repb.Digest {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
-	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	mu := sync.Mutex{}
 	digests := make([]*repb.Digest, 0)
-	for i := 0; uint(i) < *concurrency; i++ {
-		d, buf := newRandomDigestBuf(randomBlobSize())
-		_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, bytes.NewReader(buf))
-		if err != nil {
-			log.Fatalf("Error pre-writing blob %q: %s", d.GetHash(), err)
-		}
-		digests = append(digests, d)
+
+	blobsPerThread := numBlobs / int(*concurrency)
+	for c := 0; c < int(*concurrency); c++ {
+		eg.Go(func() error {
+			for i := 0; i < blobsPerThread; i++ {
+				d, buf := newRandomDigestBuf(randomBlobSize())
+				_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, bytes.NewReader(buf))
+				if err != nil {
+					return err
+				}
+				mu.Lock()
+				digests = append(digests, d)
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		log.Fatalf("Error pre-writing blobs: %s", err)
 	}
 	return digests
 }
@@ -180,14 +199,31 @@ func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	return binData
 }
 
+func findMissingBlobsDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
+	req := &repb.FindMissingBlobsRequest{
+		InstanceName: *instanceName,
+		BlobDigests:  make([]*repb.Digest, 100),
+	}
+	for i := 0; i < 100; i++ {
+		req.BlobDigests[i] = preWrittenDigests[rand.Intn(len(preWrittenDigests))]
+	}
+	binData, err := proto.Marshal(req)
+	if err != nil {
+		log.Fatalf("Error marshalling read: %s", err)
+	}
+	return binData
+}
+
 func dataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	switch *method {
-	case "google.bytestream.ByteStream/Read":
+	case findMissingBlobs:
+		return findMissingBlobsDataFunc(mtd, cd)
+	case byteStreamRead:
 		return readDataFunc(mtd, cd)
-	case "google.bytestream.ByteStream/Write":
+	case byteStreamWrite:
 		return writeDataFunc(mtd, cd)
 	default:
-		log.Fatalf("Unknown bytestream method: %q", *method)
+		log.Fatalf("Unknown rpc method: %q", *method)
 	}
 	return nil
 }
@@ -199,16 +235,12 @@ func main() {
 		seed = time.Now().Unix()
 	}
 	randomSrc = &randomDataMaker{rand.NewSource(seed)}
+	ctx := context.Background()
 
-	// Figure out where our runfiles (static content bundled with the binary) live.
-	rfp, err := bazel.RunfilesPath()
-	if err != nil {
-		log.Fatalf("Error figuring out runfiles: %s", err)
-	}
-	protosetFile := filepath.Join(rfp, "/enterprise/server/cmd/smash/bspb.protoset")
-
-	if *method == "google.bytestream.ByteStream/Read" {
-		preWrittenDigests = writeBlobsForReading()
+	if *method == byteStreamRead {
+		preWrittenDigests = writeBlobsForReading(ctx, int(*concurrency))
+	} else if *method == findMissingBlobs {
+		preWrittenDigests = writeBlobsForReading(ctx, 1000)
 	}
 
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
@@ -227,7 +259,6 @@ func main() {
 		runner.WithConcurrency(*concurrency),
 		runner.WithRPS(*rps),
 		runner.WithRunDuration(*testDuration),
-		runner.WithProtoset(protosetFile),
 		runner.WithInsecure(!*ssl),
 		runner.WithBinaryDataFunc(dataFunc),
 		runner.WithMetadata(md),
