@@ -26,7 +26,12 @@ import (
 )
 
 var (
-	rootDirectory = flag.String("cache.pebble.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	rootDirectory = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
+	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000 * megabyte, "How much ram to give the block cache")
+)
+
+const (
+	megabyte = 1e6
 )
 
 type PebbleCache struct {
@@ -51,15 +56,17 @@ func Register(env environment.Env) error {
 	}
 	c, err := NewPebbleCache(maxSizeBytes)
 	if err != nil {
-		return status.InternalErrorf("Error configuring in-memory cache: %s", err)
+		return status.InternalErrorf("Error configuring pebble cache: %s", err)
 	}
 	env.SetCache(c)
-	log.Printf("Registered a pebble cache!")
 	return nil
 }
 
 func NewPebbleCache(maxSizeBytes int64) (*PebbleCache, error) {
-	db, err := pebble.Open(*rootDirectory, &pebble.Options{})
+	c := pebble.NewCache(*blockCacheSizeBytes)
+	defer c.Unref()
+
+	db, err := pebble.Open(*rootDirectory, &pebble.Options{Cache: c})
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +259,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		if err != nil {
 			return err
 		}
-		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: true})
+		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		return err
 	}}
 	return dc, nil
