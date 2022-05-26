@@ -43,7 +43,7 @@ func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord
 	// files to be written either to pebble or to disk. Already written
 	// files will be read from wherever they stored, regardless of this
 	// setting.
-	//return PebbleWriter(wb, fileRecord)
+	// return PebbleWriter(wb, fileRecord) NB: Pebble only writer needs more testing.
 	return FileWriter(ctx, fileDir, fileRecord)
 }
 

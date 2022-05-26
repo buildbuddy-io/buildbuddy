@@ -19,20 +19,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"google.golang.org/protobuf/proto"
-	
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
 var (
-	rootDirectory     = flag.String("cache.pebble.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	rootDirectory = flag.String("cache.pebble.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
 )
 
 type PebbleCache struct {
-	db                 *pebble.DB
-	isolation          *rfpb.Isolation
-	
+	db        *pebble.DB
+	isolation *rfpb.Isolation
+
 	remoteInstanceName string
 	rootDirectory      string
 }
@@ -64,8 +64,8 @@ func NewPebbleCache(maxSizeBytes int64) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
-		db:                 db,
-		rootDirectory:      *rootDirectory,
+		db:            db,
+		rootDirectory: *rootDirectory,
 	}
 	if err := disk.EnsureDirectoryExists(pc.fileDir()); err != nil {
 		return nil, err
@@ -144,19 +144,17 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 	return missing, nil
 }
 
-
 func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-        rc, err := p.Reader(ctx, d, 0)
-        if err != nil {
-                return nil, err
-        }
-        defer rc.Close()
-        return io.ReadAll(rc)
+	rc, err := p.Reader(ctx, d, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, d := range digests {
 		data, err := p.Get(ctx, d)
 		if status.IsNotFoundError(err) {
@@ -171,13 +169,13 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 }
 
 func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-        wc, err := p.Writer(ctx, d)
-        if err != nil {
-                return err
-        }
-        if _, err := wc.Write(data); err != nil {
-                return err
-        }
+	wc, err := p.Writer(ctx, d)
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(data); err != nil {
+		return err
+	}
 	return wc.Close()
 }
 
@@ -194,9 +192,8 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return nil
 }
 
-
 // Low level interface used for seeking and stream-writing.
-func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
@@ -218,20 +215,19 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset int64) 
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 		return nil, status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
 	}
-	//log.Printf("fileMetatadata was: %+v", fileMetadata)
 	return filestore.NewReader(ctx, p.fileDir(), iter, fileMetadata.GetStorageMetadata())
 }
 
 type dbCloser struct {
-        filestore.WriteCloserMetadata
-        closeFn func() error
+	filestore.WriteCloserMetadata
+	closeFn func() error
 }
 
 func (dc *dbCloser) Close() error {
-        if err := dc.WriteCloserMetadata.Close(); err != nil {
-                return err
-        }
-        return dc.closeFn()
+	if err := dc.WriteCloserMetadata.Close(); err != nil {
+		return err
+	}
+	return dc.closeFn()
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
@@ -239,9 +235,9 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
-        fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
-        if err != nil {
-                return nil, err
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
 	}
 	wcm, err := filestore.NewWriter(ctx, p.fileDir(), p.db.NewBatch(), fileRecord)
 	if err != nil {
