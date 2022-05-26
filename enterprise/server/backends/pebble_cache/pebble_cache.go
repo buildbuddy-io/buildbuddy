@@ -40,6 +40,8 @@ type PebbleCache struct {
 
 	remoteInstanceName string
 	rootDirectory      string
+
+	quitChan           chan struct{}
 }
 
 func Register(env environment.Env) error {
@@ -73,6 +75,7 @@ func NewPebbleCache(maxSizeBytes int64) (*PebbleCache, error) {
 	pc := &PebbleCache{
 		db:            db,
 		rootDirectory: *rootDirectory,
+		quitChan:      make(chan struct{}),
 	}
 	if err := disk.EnsureDirectoryExists(pc.fileDir()); err != nil {
 		return nil, err
