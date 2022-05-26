@@ -82,6 +82,10 @@ func NewExecutor(env environment.Env, id string, runnerPool interfaces.RunnerPoo
 	}, nil
 }
 
+func (s *Executor) ID() string {
+	return s.id
+}
+
 func (s *Executor) HostID() string {
 	return s.hostID
 }

@@ -21,6 +21,7 @@ var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the 
 type TaskLeaser struct {
 	env        environment.Env
 	log        *log.Logger
+	executorID string
 	taskID     string
 	quit       chan struct{}
 	mu         sync.Mutex // protects stream
@@ -30,15 +31,16 @@ type TaskLeaser struct {
 	cancelFunc context.CancelFunc
 }
 
-func NewTaskLeaser(env environment.Env, executorName string, taskID string) *TaskLeaser {
-	sublog := log.NamedSubLogger(executorName)
+func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
+	sublog := log.NamedSubLogger(executorID)
 	return &TaskLeaser{
-		env:    env,
-		log:    &sublog,
-		taskID: taskID,
-		quit:   make(chan struct{}),
-		ttl:    100 * time.Second,
-		closed: true, // set to false in Claim.
+		env:        env,
+		log:        &sublog,
+		executorID: executorID,
+		taskID:     taskID,
+		quit:       make(chan struct{}),
+		ttl:        100 * time.Second,
+		closed:     true, // set to false in Claim.
 	}
 }
 
@@ -46,7 +48,8 @@ func (t *TaskLeaser) pingServer() ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	req := &scpb.LeaseTaskRequest{
-		TaskId: t.taskID,
+		ExecutorId: t.executorID,
+		TaskId:     t.taskID,
 	}
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
@@ -122,7 +125,8 @@ func (t *TaskLeaser) Close(taskErr error, retry bool) {
 	close(t.quit) // This cancels our lease-keep-alive background goroutine.
 
 	req := &scpb.LeaseTaskRequest{
-		TaskId: t.taskID,
+		ExecutorId: t.executorID,
+		TaskId:     t.taskID,
 	}
 
 	shouldReEnqueue := false
