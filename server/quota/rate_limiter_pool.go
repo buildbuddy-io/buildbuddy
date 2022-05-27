@@ -23,6 +23,8 @@ type namespace struct {
 
 	rateLimiters map[string]*throttled.GCRARateLimiterCtx
 
+	rateLimitersByKey map[string]*throttled.GCRARateLimiterCtx
+
 	config *qcpb.NamespaceConfig
 }
 
@@ -66,7 +68,7 @@ func createNamespace(env environment.Env, nsConfig *qcpb.NamespaceConfig) (*name
 		config:             nsConfig,
 		defaultRateLimiter: defaultRateLimiter,
 		rateLimiters:       make(map[string]*throttled.GCRARateLimiterCtx),
-		// TODO: set rateLimiters
+		rateLimitersByKey:  make(map[string]*throttled.GCRARateLimiterCtx),
 	}
 
 	for _, bc := range nsConfig.GetOverriddenDynamicBucketTemplates() {
@@ -104,4 +106,20 @@ func createRateLimiter(env environment.Env, namespace string, bc *qcpb.BucketCon
 		return nil, status.InternalErrorf("unable to create GCRARateLimiter: %s", err)
 	}
 	return rateLimiter, nil
+}
+
+// findRateLimiter finds the rate limiter given a namespace and key. If the key is found in
+// rateLimitersByKey map, return the corresponding rateLimiter. Otherwise, return the default rate
+// limiter. Return nil if the namespace is not found.
+func (p *rateLimiterPool) findRateLimiter(namespace string, key string) *throttled.GCRARateLimiterCtx {
+	ns, ok := p.namespaces[namespace]
+	if !ok {
+		return nil
+	}
+
+	if rl, ok := ns.rateLimitersByKey[key]; ok {
+		return rl
+	}
+
+	return ns.defaultRateLimiter
 }
