@@ -378,6 +378,15 @@ func PopulateFlagsFromData(data []byte) error {
 	if err := yaml.Unmarshal([]byte(expandedData), yamlMap); err != nil {
 		return status.InternalErrorf("Error parsing config file: %s", err)
 	}
+	node := &yaml.Node{}
+	if err := yaml.Unmarshal([]byte(expandedData), node); err != nil {
+		return status.InternalErrorf("Error parsing config file: %s", err)
+	}
+	if len(node.Content) > 0 {
+		node = node.Content[0]
+	} else {
+		node = nil
+	}
 	typeMap, err := GenerateYAMLTypeMapFromFlags()
 	if err != nil {
 		return err
@@ -386,7 +395,7 @@ func PopulateFlagsFromData(data []byte) error {
 		return status.InternalErrorf("Error encountered retyping YAML map: %s", err)
 	}
 
-	return PopulateFlagsFromYAMLMap(yamlMap)
+	return PopulateFlagsFromYAMLMap(yamlMap, node)
 }
 
 // PopulateFlagsFromData takes the path to some YAML file, reads it, and
@@ -412,26 +421,40 @@ func PopulateFlagsFromFile(configFile string) error {
 }
 
 // PopulateFlagsFromYAMLMap takes a map populated by YAML from some YAML input
-// and iterates over it, finding flags with names corresponding to the keys and
-// setting the flag to the YAML value if the flag was not set on the command
-// line.
-func PopulateFlagsFromYAMLMap(m map[string]any) error {
+// and a yaml.Node populated by YAML from the same input and iterates over it,
+// finding flags with names corresponding to the keys and setting the flag to
+// the YAML value if the flag was not set on the command line. The yaml.Node
+// preserves order when setting the flag values, which is important for aliases.
+// If Node is nil, the order values will be set in is random, as per go's
+// implementation of map traversal.
+func PopulateFlagsFromYAMLMap(m map[string]any, node *yaml.Node) error {
 	setFlags := make(map[string]struct{})
 	defaultFlagSet.Visit(func(flg *flag.Flag) {
 		setFlags[flg.Name] = struct{}{}
 	})
 
-	return populateFlagsFromYAML(m, []string{}, setFlags)
+	return populateFlagsFromYAML(m, []string{}, node, setFlags)
 }
 
-func populateFlagsFromYAML(i any, prefix []string, setFlags map[string]struct{}) error {
-	if m, ok := i.(map[string]any); ok {
+func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map[string]struct{}) error {
+	if m, ok := a.(map[string]any); ok {
+		i := 0
 		for k, v := range m {
+			var n *yaml.Node
+			if node != nil {
+				// Ensure that we populate flags in the order they are specified in the
+				// YAML data if the node structure data was provided.
+				for ok := false; node != nil && !ok; i++ {
+					k = node.Content[2*i].Value
+					n = node.Content[2*i+1]
+					v, ok = m[k]
+				}
+			}
 			p := append(prefix, k)
 			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
 				return nil
 			}
-			if err := populateFlagsFromYAML(v, p, setFlags); err != nil {
+			if err := populateFlagsFromYAML(v, p, n, setFlags); err != nil {
 				return err
 			}
 		}
@@ -441,7 +464,7 @@ func populateFlagsFromYAML(i any, prefix []string, setFlags map[string]struct{})
 	if _, ok := ignoreSet[name]; ok {
 		return nil
 	}
-	return SetValueForFlagName(name, i, setFlags, true, false)
+	return SetValueForFlagName(name, a, setFlags, true, false)
 }
 
 // SetValueForFlagName sets the value for a flag by name.

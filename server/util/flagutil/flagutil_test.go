@@ -392,7 +392,10 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 		},
 		"undefined": struct{}{}, // keys without with no corresponding flag name should be ignored.
 	}
-	err := PopulateFlagsFromYAMLMap(input)
+	node := &yaml.Node{}
+	err := node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.NoError(t, err)
 
 	assert.Equal(t, false, *flagBool)
@@ -410,16 +413,24 @@ func TestBadPopulateFlagsFromYAML(t *testing.T) {
 
 	flags := replaceFlagsForTesting(t)
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	err := PopulateFlagsFromYAMLMap(map[string]any{
+	input := map[string]any{
 		"unsupported": 0,
-	})
+	}
+	node := &yaml.Node{}
+	err := node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 	flags.Bool("bool", false, "")
-	err = PopulateFlagsFromYAMLMap(map[string]any{
+	input = map[string]any{
 		"bool": 0,
-	})
+	}
+	node = &yaml.Node{}
+	err = node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.Error(t, err)
 }
 
@@ -770,13 +781,38 @@ func TestFlagAlias(t *testing.T) {
 
 	flagString := flags.String("string", "test", "")
 	Alias[string]("string_alias", "string")
+	Alias[string]("string_alias2", "string")
+	Alias[string]("string_alias3", "string")
 	yamlData := `
 string: "woof"
+string_alias2: "moo"
+string_alias3: "oink"
 string_alias: "meow"
 `
 	err := PopulateFlagsFromData([]byte(yamlData))
 	require.NoError(t, err)
 	assert.Equal(t, "meow", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagStringSlice := Slice("string_slice", []string{"test"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias2", "string_slice")
+	Alias[[]string]("string_slice_alias3", "string_slice")
+	yamlData = `
+string_slice:
+  - "woof"
+string_slice_alias2:
+  - "moo"
+string_slice_alias3:
+  - "oink"
+  - "ribbit"
+string_slice_alias:
+  - "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"test", "woof", "moo", "oink", "ribbit", "meow"}, *flagStringSlice)
 
 	flags = replaceFlagsForTesting(t)
 
