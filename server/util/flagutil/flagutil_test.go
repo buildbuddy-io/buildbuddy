@@ -127,26 +127,26 @@ func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	Slice("one.two.three.struct_slice", []testStruct{{Field: 4, Meadow: "Great"}}, "")
 	flags.String("a.b.string", "xxx", "")
 	URLFromString("a.b.url", "https://www.example.com", "")
-	actual, err := GenerateYAMLTypeMapFromFlags()
+	actual, err := GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.NoError(t, err)
 	expected := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf(int(0)),
-				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"int":          reflect.TypeOf((*int)(nil)),
+				"string_slice": reflect.TypeOf((*[]string)(nil)),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf(float64(0)),
+					"float64": reflect.TypeOf((*float64)(nil)),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
+					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf(""),
-				"url":    reflect.TypeOf(URLFlag(url.URL{})),
+				"string": reflect.TypeOf((*string)(nil)),
+				"url":    reflect.TypeOf((*URLFlag)(nil)),
 			},
 		},
 	}
@@ -160,47 +160,47 @@ func TestBadGenerateYAMLTypeMapFromFlags(t *testing.T) {
 
 	flags.Int("one.two.int", 10, "")
 	flags.Int("one.two", 10, "")
-	_, err := GenerateYAMLTypeMapFromFlags()
+	_, err := GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Int("one.two", 10, "")
 	flags.Int("one.two.int", 10, "")
-	_, err = GenerateYAMLTypeMapFromFlags()
+	_, err = GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	_, err = GenerateYAMLTypeMapFromFlags()
+	_, err = GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 }
 
 func TestRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf(int(0)),
-				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"int":          reflect.TypeOf((*int)(nil)),
+				"string_slice": reflect.TypeOf((*[]string)(nil)),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf(float64(0)),
+					"float64": reflect.TypeOf((*float64)(nil)),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
+					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf(""),
-				"url":    reflect.TypeOf(URLFlag(url.URL{})),
+				"string": reflect.TypeOf((*string)(nil)),
+				"url":    reflect.TypeOf((*URLFlag)(nil)),
 			},
 		},
 		"foo": map[string]any{
-			"bar": reflect.TypeOf(int64(0)),
+			"bar": reflect.TypeOf((*int64)(nil)),
 		},
 	}
 	yamlData := `
@@ -259,7 +259,7 @@ first:
 
 func TestBadRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 	}
 	yamlData := `
 bool: 7

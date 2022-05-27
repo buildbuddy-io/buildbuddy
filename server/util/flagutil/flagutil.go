@@ -1,6 +1,7 @@
 package flagutil
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -35,6 +36,15 @@ var (
 	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
 	// the flag specifying the path to the config file)
 	ignoreSet = make(map[string]struct{})
+
+	nilableKinds = map[reflect.Kind]struct{}{
+		reflect.Chan:      {},
+		reflect.Func:      {},
+		reflect.Interface: {},
+		reflect.Map:       {},
+		reflect.Ptr:       {},
+		reflect.Slice:     {},
+	}
 )
 
 func flagTypeFromFlagFuncName(name string) reflect.Type {
@@ -46,6 +56,16 @@ func flagTypeFromFlagFuncName(name string) reflect.Type {
 	}
 	ff.Call(in)
 	return reflect.TypeOf(fs.Lookup("").Value)
+}
+
+func IgnoreFilter(flg *flag.Flag) bool {
+	keys := strings.Split(flg.Name, ".")
+	for i := range keys {
+		if _, ok := ignoreSet[strings.Join(keys[:i+1], ".")]; ok {
+			return false
+		}
+	}
+	return true
 }
 
 type YAMLTypeAliasable interface {
@@ -62,6 +82,10 @@ type isNameAliasing interface {
 
 type Appendable interface {
 	AppendSlice(any) error
+}
+
+type DocumentedMarshaler interface {
+	DocumentNode(n *yaml.Node, opts ...DocumentNodeOption) error
 }
 
 type SliceFlag[T any] []T
@@ -187,12 +211,30 @@ func (f *URLFlag) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+func (f *URLFlag) MarshalYAML() (any, error) {
+	return f.String(), nil
+}
+
 func (f *URLFlag) AliasedType() reflect.Type {
 	return reflect.TypeOf((*url.URL)(nil))
 }
 
 func (f *URLFlag) YAMLTypeAlias() reflect.Type {
 	return reflect.TypeOf((*URLFlag)(nil))
+}
+
+func (f *URLFlag) DocumentNode(n *yaml.Node, opts ...DocumentNodeOption) error {
+	for _, opt := range opts {
+		if _, ok := opt.(*addTypeToLineComment); ok {
+			if n.LineComment != "" {
+				n.LineComment += " "
+			}
+			n.LineComment += "type: URL"
+			continue
+		}
+		opt.Transform(f, n)
+	}
+	return nil
 }
 
 type FlagAlias struct {
@@ -276,18 +318,242 @@ func getYAMLTypeForFlag(flg *flag.Flag) (reflect.Type, error) {
 	return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
 }
 
-// GenerateYAMLTypeMapFromFlags generates a map of the type that should be
-// marshaled from YAML for each flag name at the corresponding nested map index.
-func GenerateYAMLTypeMapFromFlags() (map[string]any, error) {
+type DocumentNodeOption interface {
+	Transform(in any, n *yaml.Node)
+	Passthrough() bool
+}
+
+type headComment string
+
+func (h *headComment) Transform(in any, n *yaml.Node) { n.HeadComment = string(*h) }
+func (h *headComment) Passthrough() bool              { return false }
+
+// HeadComment sets the HeadComment of a yaml.Node to the specified string.
+func HeadComment(s string) *headComment { return (*headComment)(&s) }
+
+type lineComment string
+
+func (l *lineComment) Transform(in any, n *yaml.Node) { n.LineComment = string(*l) }
+func (l *lineComment) Passthrough() bool              { return false }
+
+// LineComment sets the LineComment of a yaml.Node to the specified string.
+func LineComment(s string) *lineComment { return (*lineComment)(&s) }
+
+type footComment string
+
+func (f *footComment) Transform(in any, n *yaml.Node) { n.FootComment = string(*f) }
+func (f *footComment) Passthrough() bool              { return false }
+
+// FootComment sets the FootComment of a yaml.Node to the specified string.
+func FootComment(s string) *footComment { return (*footComment)(&s) }
+
+type addTypeToLineComment struct{}
+
+func (f *addTypeToLineComment) Transform(in any, n *yaml.Node) {
+	if n.LineComment != "" {
+		n.LineComment += " "
+	}
+	n.LineComment = fmt.Sprintf("%stype: %T", n.LineComment, in)
+}
+
+func (f *addTypeToLineComment) Passthrough() bool { return true }
+
+// AddTypeToLineComment appends the type specification to the LineComment of the yaml.Node.
+func AddTypeToLineComment() *addTypeToLineComment { return (*addTypeToLineComment)(&struct{}{}) }
+
+func FilterPassthrough(opts []DocumentNodeOption) []DocumentNodeOption {
+	ptOpts := []DocumentNodeOption{}
+	for _, opt := range opts {
+		if opt.Passthrough() {
+			ptOpts = append(ptOpts, opt)
+		}
+	}
+	return ptOpts
+}
+
+// DocumentedNode returns a yaml.Node representing the input value with
+// documentation in the comments.
+func DocumentedNode(in any, opts ...DocumentNodeOption) (*yaml.Node, error) {
+	n := &yaml.Node{}
+	if err := n.Encode(in); err != nil {
+		return nil, err
+	}
+	if err := DocumentNode(in, n, opts...); err != nil {
+		return nil, err
+	}
+	return n, nil
+}
+
+// DocumentNode fills the comments of a yaml.Node with documentation.
+func DocumentNode(in any, n *yaml.Node, opts ...DocumentNodeOption) error {
+	switch m := in.(type) {
+	case DocumentedMarshaler:
+		return m.DocumentNode(n, opts...)
+	case yaml.Marshaler:
+		// pass
+	default:
+		v := reflect.ValueOf(in)
+		t := v.Type()
+		switch t.Kind() {
+		case reflect.Ptr:
+			// document based on the value pointed to
+			if !v.IsNil() {
+				return DocumentNode(v.Elem().Interface(), n, opts...)
+			} else {
+				return DocumentNode(reflect.New(reflect.TypeOf(t).Elem()).Elem().Interface(), n, opts...)
+			}
+		case reflect.Struct:
+			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
+			contentIndex := make(map[string]int, len(n.Content)/2)
+			for i := 0; i < len(n.Content)/2; i++ {
+				contentIndex[n.Content[2*i].Value] = 2*i + 1
+			}
+			for i := 0; i < t.NumField(); i++ {
+				ft := t.FieldByIndex([]int{i})
+				name := strings.Split(ft.Tag.Get("yaml"), ",")[0]
+				if name == "" {
+					name = strings.ToLower(ft.Name)
+				}
+				idx, ok := contentIndex[name]
+				if !ok {
+					// field is not encoded by yaml
+					continue
+				}
+				if err := DocumentNode(
+					v.FieldByIndex([]int{i}).Interface(),
+					n.Content[idx],
+					append(
+						[]DocumentNodeOption{LineComment(ft.Tag.Get("usage"))},
+						FilterPassthrough(opts)...,
+					)...,
+				); err != nil {
+					return err
+				}
+			}
+		case reflect.Slice:
+			// yaml.Node stores sequences in Content as [element1, element2...]
+			for i := range n.Content {
+				var err error
+				if err = DocumentNode(v.Index(i).Interface(), n.Content[i], FilterPassthrough(opts)...); err != nil {
+					return err
+				}
+			}
+			if len(n.Content) == 0 {
+				exampleNode, err := DocumentedNode(reflect.MakeSlice(t, 1, 1).Interface(), FilterPassthrough(opts)...)
+				if err != nil {
+					return err
+				}
+				if exampleNode.Content[0].Kind != yaml.ScalarNode {
+					example, err := yaml.Marshal(exampleNode)
+					if err != nil {
+						return err
+					}
+					n.FootComment = fmt.Sprintf("e.g.,\n%s", string(example))
+				}
+			}
+		case reflect.Map:
+			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
+			for i := 0; i < len(n.Content)/2; i++ {
+				k := reflect.ValueOf(n.Content[2*i].Value)
+				if err := DocumentNode(
+					v.MapIndex(k).Interface(),
+					n.Content[2*i+1],
+					FilterPassthrough(opts)...,
+				); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	for _, opt := range opts {
+		opt.Transform(in, n)
+	}
+	return nil
+}
+
+// GenerateDocumentedYAMLNodeFromFlag produces a documented yaml.Node which
+// represents the value contained in the flag.
+func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
+	t, err := getYAMLTypeForFlag(flg)
+	if err != nil {
+		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
+	}
+	v, err := GetDereferencedValue[any](flg.Name)
+	if err != nil {
+		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
+	}
+	value := reflect.New(reflect.TypeOf(v))
+	value.Elem().Set(reflect.ValueOf(v))
+	if !value.CanConvert(t) {
+		return nil, status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", value.Interface(), value.Type(), t, flg.Name)
+	}
+	return DocumentedNode(value.Convert(t).Interface(), LineComment(flg.Usage), AddTypeToLineComment())
+}
+
+// SplitDocumentedYAMLFromFlags produces marshaled YAML representing the flags,
+// partitioned into two groups: structured (flags containing dots), and
+// unstructured (flags not containing dots).
+func SplitDocumentedYAMLFromFlags() ([]byte, error) {
+	b := bytes.NewBuffer([]byte{})
+
+	if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
+		return nil, err
+	}
+	um, err := GenerateYAMLMapWithValuesFromFlags(
+		GenerateDocumentedYAMLNodeFromFlag,
+		func(flg *flag.Flag) bool { return !strings.Contains(flg.Name, ".") },
+		IgnoreFilter,
+	)
+	if err != nil {
+		return nil, err
+	}
+	ub, err := yaml.Marshal(um)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := b.Write(ub); err != nil {
+		return nil, err
+	}
+
+	if _, err := b.Write([]byte("\n# Structured settings\n\n")); err != nil {
+		return nil, err
+	}
+	sm, err := GenerateYAMLMapWithValuesFromFlags(
+		GenerateDocumentedYAMLNodeFromFlag,
+		func(flg *flag.Flag) bool { return strings.Contains(flg.Name, ".") },
+		IgnoreFilter,
+	)
+	if err != nil {
+		return nil, err
+	}
+	sb, err := yaml.Marshal(sm)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := b.Write(sb); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+// GenerateYAMLMapWithValuesFromFlags generates a YAML map structure
+// representing the flags, with values generated from the flags as per the
+// generateValue function that has been passed in, and filtering out any flags
+// for which any of the passed filter functions return false. Any nil generated
+// values are not added to the map, and any empty maps are recursively removed
+// such that the final map returned contains no empty maps at any point in its
+// structure.
+func GenerateYAMLMapWithValuesFromFlags[T any](generateValue func(*flag.Flag) (T, error), filters ...func(*flag.Flag) bool) (map[string]any, error) {
 	yamlMap := make(map[string]any)
 	var errors []error
 	defaultFlagSet.VisitAll(func(flg *flag.Flag) {
-		keys := strings.Split(flg.Name, ".")
-		for i := range keys {
-			if _, ok := ignoreSet[strings.Join(keys[:i+1], ".")]; ok {
+		for _, f := range filters {
+			if !f(flg) {
 				return
 			}
 		}
+		keys := strings.Split(flg.Name, ".")
 		m := yamlMap
 		for i, k := range keys[:len(keys)-1] {
 			v, ok := m[k]
@@ -298,26 +564,51 @@ func GenerateYAMLTypeMapFromFlags() (map[string]any, error) {
 			}
 			m, ok = v.(map[string]any)
 			if !ok {
-				errors = append(errors, status.FailedPreconditionErrorf("When trying to create YAML type map hierarchy for %s, encountered non-map value of type %T at %s", flg.Name, v, strings.Join(keys[:i+1], ".")))
+				errors = append(errors, status.FailedPreconditionErrorf("When trying to create YAML map hierarchy for %s, encountered non-map value %s of type %T at %s", flg.Name, v, v, strings.Join(keys[:i+1], ".")))
 				return
 			}
 		}
 		k := keys[len(keys)-1]
 		if v, ok := m[k]; ok {
-			errors = append(errors, status.FailedPreconditionErrorf("When trying to create type for %s for YAML type map, encountered pre-existing value of type %T.", flg.Name, v))
+			errors = append(errors, status.FailedPreconditionErrorf("When generating value for %s for YAML map, encountered pre-existing value %s of type %T.", flg.Name, v, v))
 			return
 		}
-		t, err := getYAMLTypeForFlag(flg)
+		v, err := generateValue(flg)
 		if err != nil {
 			errors = append(errors, err)
 			return
 		}
-		m[k] = t.Elem()
+		value := reflect.ValueOf(v)
+		if _, ok := nilableKinds[value.Kind()]; ok && value.IsNil() {
+			return
+		}
+		m[k] = v
 	})
 	if errors != nil {
-		return nil, status.InternalErrorf("Errors encountered when converting flags to YAML map: %v", errors)
+		return nil, status.InternalErrorf("Errors encountered when generating YAML map from flags: %v", errors)
 	}
-	return yamlMap, nil
+
+	return RemoveEmptyMapsFromYAMLMap(yamlMap), nil
+}
+
+// RemoveEmptyMapsFromYAMLMap recursively removes all empty maps, such that the
+// returned map contains no empty maps at any point in its structure. The
+// original map is returned unless it is empty after removal, in which case nil
+// is returned.
+func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
+	for k, v := range m {
+		mv, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if m[k] = RemoveEmptyMapsFromYAMLMap(mv); m[k] == nil {
+			delete(m, k)
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // RetypeAndFilterYAMLMap un-marshals yaml from the input yamlMap and then
@@ -340,13 +631,13 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 			if err != nil {
 				return status.InternalErrorf("Encountered error marshaling %v to YAML at %s: %s", yamlMap[k], strings.Join(label, "."), err)
 			}
-			v := reflect.New(t).Elem()
+			v := reflect.New(t.Elem()).Elem()
 			err = yaml.Unmarshal(yamlData, v.Addr().Interface())
 			if err != nil {
 				return status.InternalErrorf("Encountered error marshaling %s to YAML for type %v at %s: %s", string(yamlData), v.Type(), strings.Join(label, "."), err)
 			}
-			if v.Type() != t {
-				return status.InternalErrorf("Failed to unmarshal YAML to the specified type at %s: wanted %v, got %T", strings.Join(label, "."), t, v.Type())
+			if v.Type() != t.Elem() {
+				return status.InternalErrorf("Failed to unmarshal YAML to the specified type at %s: wanted %v, got %T", strings.Join(label, "."), t.Elem(), v.Type())
 			}
 			yamlMap[k] = v.Interface()
 		case map[string]any:
@@ -387,7 +678,7 @@ func PopulateFlagsFromData(data []byte) error {
 	} else {
 		node = nil
 	}
-	typeMap, err := GenerateYAMLTypeMapFromFlags()
+	typeMap, err := GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	if err != nil {
 		return err
 	}
