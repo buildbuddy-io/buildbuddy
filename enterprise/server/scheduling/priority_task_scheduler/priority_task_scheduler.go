@@ -382,7 +382,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.untrackTask(reservation, &cancel)
 		}()
 
-		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.HostID(), reservation.GetTaskId())
+		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
 		ctx, serializedTask, err := taskLease.Claim(ctx)
 		if err != nil {
 			// NotFound means the task is already claimed.

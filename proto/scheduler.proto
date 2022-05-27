@@ -27,6 +27,9 @@ message LeaseTaskRequest {
   // the task.
   // Mutually exclusive with `finalize`.
   bool release = 3;
+
+  // ID of the executor making the request.
+  string executor_id = 4;
 }
 
 message LeaseTaskResponse {

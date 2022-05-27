@@ -861,7 +861,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		return nil
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
-	log.Infof("Scheduler: registered worker node: %q %+v", addr, poolKey)
+	log.Infof("Scheduler: registered executor %q (host ID %q, addr %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, poolKey)
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
@@ -1169,6 +1169,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	claimed := false
 	taskID := ""
 
+	// TODO(vadim): remove after executor ID in lease request is rolled out
 	executorID := "unknown"
 	if p, ok := peer.FromContext(ctx); ok {
 		executorID = p.Addr.String()
@@ -1202,6 +1203,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			// We don't re-enqueue in this case which is a bummer but
 			// makes the code significantly simpler. Also, don't do this!
 			return status.InvalidArgumentError("TaskId must be set and the same value for all requests")
+		}
+		if req.GetExecutorId() != "" {
+			executorID = req.GetExecutorId()
 		}
 		taskID = req.GetTaskId()
 		if time.Since(lastCheckin) > (leaseInterval + leaseGracePeriod) {
