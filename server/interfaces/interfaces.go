@@ -793,3 +793,11 @@ type DistributedLock interface {
 	// Unlock releases the lock.
 	Unlock(ctx context.Context) error
 }
+
+// QuotaManager manages quota.
+type QuotaManager interface {
+	// Allow checks whether a particular inside the given namesapce has exceeded a rate limit.
+	// If the rate limit has not been exceeded, the underlying storage is updated by
+	// the supplied quanity.
+	Allow(ctx context.Context, namespace string, key string, quantity int64) (bool, error)
+}
