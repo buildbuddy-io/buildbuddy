@@ -1,10 +1,13 @@
 package quota
 
 import (
+	"context"
+	"math"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/quota/config"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
@@ -28,13 +31,13 @@ type namespace struct {
 	config *qcpb.NamespaceConfig
 }
 
-type rateLimiterPool struct {
+type QuotaManager struct {
 	config     *qcpb.ServiceConfig
 	namespaces map[string]*namespace
 }
 
-func CreateRateLimiterPool(env environment.Env, config *qcpb.ServiceConfig) (*rateLimiterPool, error) {
-	pool := &rateLimiterPool{
+func NewQuotaManager(env environment.Env, config *qcpb.ServiceConfig) (*QuotaManager, error) {
+	qm := &QuotaManager{
 		config:     config,
 		namespaces: make(map[string]*namespace),
 	}
@@ -44,10 +47,10 @@ func CreateRateLimiterPool(env environment.Env, config *qcpb.ServiceConfig) (*ra
 		if err != nil {
 			return nil, err
 		}
-		pool.namespaces[nsConfig.GetName()] = ns
+		qm.namespaces[nsConfig.GetName()] = ns
 	}
 
-	return pool, nil
+	return qm, nil
 }
 
 func createNamespace(env environment.Env, nsConfig *qcpb.NamespaceConfig) (*namespace, error) {
@@ -111,8 +114,8 @@ func createRateLimiter(env environment.Env, namespace string, bc *qcpb.BucketCon
 // findRateLimiter finds the rate limiter given a namespace and key. If the key is found in
 // rateLimitersByKey map, return the corresponding rateLimiter. Otherwise, return the default rate
 // limiter. Return nil if the namespace is not found.
-func (p *rateLimiterPool) findRateLimiter(namespace string, key string) *throttled.GCRARateLimiterCtx {
-	ns, ok := p.namespaces[namespace]
+func (qm *QuotaManager) findRateLimiter(namespace string, key string) *throttled.GCRARateLimiterCtx {
+	ns, ok := qm.namespaces[namespace]
 	if !ok {
 		return nil
 	}
@@ -122,4 +125,30 @@ func (p *rateLimiterPool) findRateLimiter(namespace string, key string) *throttl
 	}
 
 	return ns.defaultRateLimiter
+}
+
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, key string, quantity int64) (bool, error) {
+	rl := qm.findRateLimiter(namespace, key)
+	if rl == nil {
+		log.Warningf("rate limiter for namespace %q and key %q not found", namespace, key)
+		return true, nil
+	}
+	if quantity > math.MaxInt {
+		return false, status.InternalErrorf("quantity (%d) exceeds the limit", quantity)
+	}
+	limitExceeded, _, err := rl.RateLimit(key, int(quantity))
+	if err != nil {
+		return false, status.InternalErrorf("rate limiter failed %s", err)
+	}
+	return !limitExceeded, err
+}
+
+func Register(env environment.Env) error {
+	c := config.DummyConfig()
+	qm, err := NewQuotaManager(env, c)
+	if err != nil {
+		return err
+	}
+	env.SetQuotaManager(qm)
+	return nil
 }
