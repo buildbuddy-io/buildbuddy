@@ -183,7 +183,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		action = fillActionFromBuildEvent(action, event.BuildEvent)
 
 		// Filter to only selected actions.
-		if action != nil && actionMatchesActionSelector(action.GetId(), req.GetSelector()) {
+		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
 			actions = append(actions, action)
 		}
 	}
@@ -363,6 +363,7 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Completed:
 		{
+			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
 			action.Id.TargetId = encodeID(event.GetId().GetTargetCompleted().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
 			action.Id.ActionId = encodeID("build")
@@ -372,6 +373,7 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	case *build_event_stream.BuildEvent_TestResult:
 		{
 			testResultID := event.GetId().GetTestResult()
+			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
 			action.Id.TargetId = encodeID(event.GetId().GetTestResult().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = encodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
@@ -400,8 +402,9 @@ func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSel
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
-func actionMatchesActionSelector(id *apipb.Action_Id, selector *apipb.ActionSelector) bool {
-	return (selector.TargetId == "" || selector.TargetId == id.TargetId) &&
-		(selector.ConfigurationId == "" || selector.ConfigurationId == id.ConfigurationId) &&
-		(selector.ActionId == "" || selector.ActionId == id.ActionId)
+func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSelector) bool {
+	return (selector.TargetId == "" || selector.TargetId == action.GetId().TargetId) &&
+		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
+		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
+		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
 }

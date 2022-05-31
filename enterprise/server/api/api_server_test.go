@@ -154,6 +154,25 @@ func TestGetActionWithTargetID(t *testing.T) {
 	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
 }
 
+func TestGetActionWithTargetLabel(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	assert.NoError(t, err)
+	testInvocationID := testUUID.String()
+	testTargetLabel := "//my/other/target:foo"
+
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamBuild(t, env, testInvocationID)
+	env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{InvocationID: testInvocationID})
+	s := NewAPIServer(env)
+	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID, TargetLabel: testTargetLabel}})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 1, len(resp.Action))
+	assert.Equal(t, resp.Action[0].TargetLabel, "//my/other/target:foo")
+	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
+	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
+}
+
 func TestGetActionAuth(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
