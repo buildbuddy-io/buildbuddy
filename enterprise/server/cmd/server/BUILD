@@ -44,6 +44,7 @@ go_library(
         "//server/interfaces",
         "//server/janitor",
         "//server/libmain",
+        "//server/quota",
         "//server/real_environment",
         "//server/static",
         "//server/telemetry",
