@@ -504,6 +504,24 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if err != nil {
 		return err
 	}
+	user_id := s.getUserID(ctx)
+	if user_id == "" {
+		log.Warning("user_id is empty")
+	}
+	qm := s.env.GetQuotaManager()
+	if qm == nil {
+		log.Warning("Quota Manager is not set")
+	} else {
+		allow, err := qm.Allow(ctx, "remote_execution", user_id, 1)
+		if err != nil {
+			log.Warningf("failed to check quota: %s", err)
+		}
+		if !allow {
+			log.Info("This request would be denied because of quota")
+		} else {
+			log.Info("This request would be allowed")
+		}
+	}
 
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
@@ -628,6 +646,17 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 			return interfaces.AuthAnonymousUser
 		}
 		return user.GetGroupID()
+	}
+	return ""
+}
+
+func (s *ExecutionServer) getUserID(ctx context.Context) string {
+	if a := s.env.GetAuthenticator(); a != nil {
+		user, err := a.AuthenticatedUser(ctx)
+		if err != nil {
+			return interfaces.AuthAnonymousUser
+		}
+		return user.GetUserID()
 	}
 	return ""
 }
