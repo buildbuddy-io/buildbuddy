@@ -117,6 +117,7 @@ func createRateLimiter(env environment.Env, namespace string, bc *qcpb.BucketCon
 func (qm *QuotaManager) findRateLimiter(namespace string, key string) *throttled.GCRARateLimiterCtx {
 	ns, ok := qm.namespaces[namespace]
 	if !ok {
+		log.Warningf("namespace %q not found", namespace)
 		return nil
 	}
 

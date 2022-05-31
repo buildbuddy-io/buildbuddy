@@ -504,15 +504,15 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if err != nil {
 		return err
 	}
-	user_id := s.getUserID(ctx)
-	if user_id == "" {
-		log.Warning("user_id is empty")
+	groupID := s.getGroupID(ctx)
+	if groupID == "" {
+		log.Warning("group ID is empty")
 	}
 	qm := s.env.GetQuotaManager()
 	if qm == nil {
 		log.Warning("Quota Manager is not set")
 	} else {
-		allow, err := qm.Allow(ctx, "remote_execution", user_id, 1)
+		allow, err := qm.Allow(ctx, "remote_execution", groupID, 1)
 		if err != nil {
 			log.Warningf("failed to check quota: %s", err)
 		}
@@ -551,7 +551,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			if ee != "" {
 				log.Infof("Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
 				executionID = ee
-				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
+				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 				if err := s.insertInvocationLink(ctx, ee, invocationID, linkTypeMergedExecution); err != nil {
 					return err
 				}
@@ -639,24 +639,13 @@ type waitOpts struct {
 	isExecuteRequest bool
 }
 
-func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
+func (s *ExecutionServer) getGroupID(ctx context.Context) string {
 	if a := s.env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
 		if err != nil {
 			return interfaces.AuthAnonymousUser
 		}
 		return user.GetGroupID()
-	}
-	return ""
-}
-
-func (s *ExecutionServer) getUserID(ctx context.Context) string {
-	if a := s.env.GetAuthenticator(); a != nil {
-		user, err := a.AuthenticatedUser(ctx)
-		if err != nil {
-			return interfaces.AuthAnonymousUser
-		}
-		return user.GetUserID()
 	}
 	return ""
 }
@@ -703,7 +692,7 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		}
 	}
 
-	groupID := s.getGroupIDForMetrics(ctx)
+	groupID := s.getGroupID(ctx)
 	metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Inc()
 	defer metrics.RemoteExecutionWaitingExecutionResult.With(prometheus.Labels{metrics.GroupID: groupID}).Dec()
 
