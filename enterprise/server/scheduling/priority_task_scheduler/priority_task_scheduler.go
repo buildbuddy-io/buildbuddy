@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -28,7 +30,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-var exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
+var (
+	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
+	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+)
 
 const (
 	queueCheckSleepInterval = 10 * time.Millisecond
@@ -156,6 +161,7 @@ type PriorityTaskScheduler struct {
 	log           log.Logger
 	shuttingDown  bool
 	exec          *executor.Executor
+	runnerPool    interfaces.RunnerPool
 	newTaskSignal chan struct{}
 	rootContext   context.Context
 	rootCancel    context.CancelFunc
@@ -170,7 +176,7 @@ type PriorityTaskScheduler struct {
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
 	sublog := log.NamedSubLogger(exec.HostID())
 
 	ramBytesCapacity := options.RAMBytesCapacityOverride
@@ -188,6 +194,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, opti
 		log:                     sublog,
 		q:                       newTaskQueue(),
 		exec:                    exec,
+		runnerPool:              runnerPool,
 		newTaskSignal:           make(chan struct{}, 1),
 		rootContext:             rootContext,
 		rootCancel:              rootCancel,
@@ -221,7 +228,13 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 		q.rootCancel()
 	}
 	delay := deadline.Sub(time.Now()) - time.Second
+	if runner.ContextBasedShutdownEnabled() {
+		// Cancel all tasks early enough to allow containers and workspaces to be
+		// cleaned up.
+		delay = deadline.Sub(time.Now()) - *shutdownCleanupDuration
+	}
 	ctx, cancel := context.WithTimeout(ctx, delay)
+	defer cancel()
 
 	// Start a goroutine that will:
 	//   - log success on graceful shutdown
@@ -246,7 +259,10 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	cancel()
+	// Since all tasks have finished, no new runners can be created, and it is now
+	// safe to wait for all pending cleanup jobs to finish.
+	q.runnerPool.Wait()
+
 	return nil
 }
 

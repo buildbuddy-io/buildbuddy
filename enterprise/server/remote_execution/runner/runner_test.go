@@ -286,7 +286,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
+func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -459,7 +459,7 @@ func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	mustAddWithoutEviction(t, ctx, pool, r4)
 }
 
-func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
+func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -483,9 +483,9 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	err = pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
-	require.Equal(t, 0, pool.ActiveRunnerCount())
+	require.Equal(t, 1, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
+	require.NoError(t, err, "runner should not have been removed on shutdown")
 }
 
 func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
