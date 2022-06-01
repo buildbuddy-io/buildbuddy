@@ -199,6 +199,10 @@ type commandRunner struct {
 	// Decoder used when reading streamed JSON values from stdout.
 	jsonDecoder *json.Decoder
 
+	// A function that is invoked after the runner is removed. Controlled by the
+	// runner pool.
+	removeCallback func()
+
 	// Cached resource usage values from the last time the runner was added to
 	// the pool.
 
@@ -389,8 +393,8 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
-	if *contextBasedShutdown {
-		defer r.p.pendingRemovals.Done()
+	if r.removeCallback != nil {
+		defer r.removeCallback()
 	}
 
 	r.p.mu.RLock()
@@ -905,6 +909,9 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	p.runners = append(p.runners, r)
 	if *contextBasedShutdown {
 		p.pendingRemovals.Add(1)
+		r.removeCallback = func() {
+			p.pendingRemovals.Done()
+		}
 	}
 	return r, nil
 }
