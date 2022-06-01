@@ -184,6 +184,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 
 		// Filter to only selected actions.
 		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
+			action = fillActionOutputFilesFromBuildEvent(action, event.BuildEvent)
 			actions = append(actions, action)
 		}
 	}
@@ -360,14 +361,13 @@ func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
 }
 
 func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.BuildEvent) *apipb.Action {
-	switch p := event.Payload.(type) {
+	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Completed:
 		{
 			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
 			action.Id.TargetId = encodeID(event.GetId().GetTargetCompleted().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
 			action.Id.ActionId = encodeID("build")
-			action.File = filesFromOutput(p.Completed.ImportantOutput)
 			return action
 		}
 	case *build_event_stream.BuildEvent_TestResult:
@@ -377,6 +377,21 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 			action.Id.TargetId = encodeID(event.GetId().GetTestResult().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = encodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
+			return action
+		}
+	}
+	return nil
+}
+
+func fillActionOutputFilesFromBuildEvent(action *apipb.Action, event *build_event_stream.BuildEvent) *apipb.Action {
+	switch p := event.Payload.(type) {
+	case *build_event_stream.BuildEvent_Completed:
+		{
+			action.File = filesFromOutput(p.Completed.ImportantOutput)
+			return action
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		{
 			action.File = filesFromOutput(p.TestResult.TestActionOutput)
 			return action
 		}
