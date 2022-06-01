@@ -180,11 +180,11 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 			},
 		}
 
-		action = fillActionFromBuildEvent(action, event.BuildEvent)
+		action = fillActionFromBuildEvent(event.BuildEvent, action)
 
 		// Filter to only selected actions.
 		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
-			action = fillActionOutputFilesFromBuildEvent(action, event.BuildEvent)
+			action = fillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
 			actions = append(actions, action)
 		}
 	}
@@ -360,7 +360,7 @@ func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
 	return files
 }
 
-func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.BuildEvent) *apipb.Action {
+func fillActionFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Completed:
 		{
@@ -383,7 +383,7 @@ func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.Bu
 	return nil
 }
 
-func fillActionOutputFilesFromBuildEvent(action *apipb.Action, event *build_event_stream.BuildEvent) *apipb.Action {
+func fillActionOutputFilesFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Completed:
 		{
