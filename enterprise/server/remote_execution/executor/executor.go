@@ -260,7 +260,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	// Exit codes < 0 mean that the command either never started or was killed.
 	// Make sure we return an error in this case.
 	if cmdResult.ExitCode < 0 {
-		cmdResult.Error = incompleteExecutionError(cmdResult.ExitCode, cmdResult.Error)
+		cmdResult.Error = incompleteExecutionError(ctx, cmdResult.ExitCode, cmdResult.Error)
 	}
 	if cmdResult.Error != nil {
 		log.Warningf("Command execution returned error: %s", cmdResult.Error)
@@ -345,10 +345,25 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	return false, nil
 }
 
-func incompleteExecutionError(exitCode int, err error) error {
+func incompleteExecutionError(ctx context.Context, exitCode int, err error) error {
 	if err == nil {
 		alert.UnexpectedEvent("incomplete_command_with_nil_error")
 		return status.UnknownErrorf("Command did not complete, for unknown reasons (internal status %d)", exitCode)
+	}
+	// If the context timed out or was cancelled, ignore any error returned from
+	// the command since it's most likely caused by the context error, and we
+	// don't want to require container implementations to have to handle these
+	// cases explicitly.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		log.Infof("Ignoring command error likely caused by %s: %s", ctxErr, err)
+		if ctxErr == context.DeadlineExceeded {
+			return status.DeadlineExceededError("deadline exceeeded")
+		}
+		if ctxErr == context.Canceled {
+			return status.AbortedError("context canceled")
+		}
+		alert.UnexpectedEvent("unknown_context_error", "Unknown context error: %s", ctxErr)
+		return status.UnknownError(ctxErr.Error())
 	}
 	// Ensure that if the command was not found, we return FAILED_PRECONDITION,
 	// per RBE protocol. This is done because container/command implementations
