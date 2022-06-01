@@ -4,6 +4,16 @@ title: Prometheus Metrics
 sidebar_label: Prometheus Metrics
 ---
 
+<!--
+
+============================
+GENERATED FILE - DO NOT EDIT
+============================
+
+Run `python3 server/metrics/generate_docs.py` to re-generate.
+
+-->
+
 BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
 [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
 latency, traffic, errors, and saturation.
@@ -11,7 +21,7 @@ latency, traffic, errors, and saturation.
 To view these metrics in a live-updating dashboard, we recommend using a tool
 like [Grafana](https://grafana.com).
 
-## Invocation log uploads
+## Invocation build event metrics
 
 All invocation metrics are recorded at the _end_ of each invocation.
 
@@ -72,6 +82,32 @@ sum(rate(buildbuddy_invocation_build_event_count{status="0"}[5m]))
   /
 sum(rate(buildbuddy_invocation_build_event_count[5m]))
 ```
+
+### **`buildbuddy_invocation_stats_recorder_workers`** (Gauge)
+
+Number of invocation stats recorder workers currently running.
+
+### **`buildbuddy_invocation_stats_recorder_duration_usec`** (Histogram)
+
+How long it took to finalize an invocation's stats, in **microseconds**.
+
+This includes the time required to wait for all BuildBuddy apps to flush their local metrics to Redis (if applicable) and then record the metrics to the DB.
+
+### **`buildbuddy_invocation_webhook_invocation_lookup_workers`** (Gauge)
+
+Number of webhook invocation lookup workers currently running.
+
+### **`buildbuddy_invocation_webhook_invocation_lookup_duration_usec`** (Histogram)
+
+How long it took to lookup an invocation before posting to the webhook, in **microseconds**.
+
+### **`buildbuddy_invocation_webhook_notify_workers`** (Gauge)
+
+Number of webhook notify workers currently running.
+
+### **`buildbuddy_invocation_webhook_notify_duration_usec`** (Histogram)
+
+How long it took to post an invocation proto to the webhook, in **microseconds**.
 
 ## Remote cache metrics
 
@@ -157,6 +193,32 @@ histogram_quantile(
 )
 ```
 
+### **`buildbuddy_remote_cache_disk_cache_last_eviction_age_usec`** (Gauge)
+
+The age of the item most recently evicted from the cache, in **microseconds**.
+
+### **`buildbuddy_remote_cache_disk_cache_duplicate_writes`** (Counter)
+
+Number of writes for digests that already exist.
+
+#### Examples
+
+```promql
+# Total number of duplicate writes.
+sum(buildbuddy_remote_cache_duplicate_writes)
+```
+
+### **`buildbuddy_remote_cache_disk_cache_duplicate_writes_bytes`** (Counter)
+
+Number of bytes written that already existed in the cache.
+
+#### Examples
+
+```promql
+# Total number of duplicate write bytes.
+sum(buildbuddy_remote_cache_duplicate_writes_bytes)
+```
+
 ## Remote execution metrics
 
 ### **`buildbuddy_remote_execution_count`** (Counter)
@@ -173,6 +235,12 @@ Number of actions executed remotely.
 # Total number of actions executed per second
 sum(rate(buildbuddy_remote_execution_count[5m]))
 ```
+
+### **`buildbuddy_remote_execution_tasks_started_count`** (Counter)
+
+Number of tasks started remotely, but not necessarily completed.
+
+Includes retry attempts of the same task.
 
 ### **`buildbuddy_remote_execution_executed_action_metadata_durations_usec`** (Histogram)
 
@@ -200,6 +268,39 @@ histogram_quantile(
 )
 ```
 
+### **`buildbuddy_remote_execution_waiting_execution_result`** (Gauge)
+
+Number of execution requests for which the client is actively waiting for results.
+
+#### Examples
+
+```promql
+# Total number of execution requests with client waiting for result.
+sum(buildbuddy_remote_execution_waiting_execution_result)
+```
+
+### **`buildbuddy_remote_execution_requests`** (Counter)
+
+Number of execution requests received.
+
+#### Examples
+
+```promql
+# Rate of new execution requests by OS/Arch.
+sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
+```
+
+### **`buildbuddy_remote_execution_merged_actions`** (Counter)
+
+Number of identical execution requests that have been merged.
+
+#### Examples
+
+```promql
+# Rate of merged actions by group.
+sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
+```
+
 ### **`buildbuddy_remote_execution_queue_length`** (Gauge)
 
 Number of actions currently waiting in the executor queue.
@@ -214,6 +315,10 @@ quantile(0.5, buildbuddy_remote_execution_queue_length)
 ### **`buildbuddy_remote_execution_tasks_executing`** (Gauge)
 
 Number of tasks currently being executed by the executor.
+
+#### Labels
+
+- **stage**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ... Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
 
 #### Examples
 
@@ -271,6 +376,52 @@ Total number of bytes uploaded during remote execution.
 ### **`buildbuddy_remote_execution_file_upload_duration_usec`** (Histogram)
 
 Per-file upload duration during remote execution, in **microseconds**.
+
+### **`buildbuddy_remote_execution_recycle_runner_requests`** (Counter)
+
+Number of execution requests with runner recycling enabled (via the platform property `recycle-runner=true`).
+
+#### Labels
+
+- **status**: Type of event sent to BuildBuddy's webhook handler: `push` or `pull_request`. Status of the recycle runner request: `hit` if the executor assigned a recycled runner to the action; `miss` otherwise.
+
+### **`buildbuddy_remote_execution_runner_pool_count`** (Gauge)
+
+Number of command runners that are currently pooled (and available for recycling).
+
+### **`buildbuddy_remote_execution_runner_pool_evictions`** (Counter)
+
+Number of command runners removed from the pool to make room for other runners.
+
+### **`buildbuddy_remote_execution_runner_pool_failed_recycle_attempts`** (Counter)
+
+Number of failed attempts to add runners to the pool.
+
+### **`buildbuddy_remote_execution_runner_pool_memory_usage_bytes`** (Gauge)
+
+Total memory usage of pooled command runners, in **bytes**.
+
+Currently only supported for Docker-based executors.
+
+### **`buildbuddy_remote_execution_runner_pool_disk_usage_bytes`** (Gauge)
+
+Total disk usage of pooled command runners, in **bytes**.
+
+### **`buildbuddy_remote_execution_file_cache_requests`** (Counter)
+
+Number of local executor file cache requests.
+
+#### Labels
+
+- **status**: Reason for a runner not being added to the runner pool. GroupID associated with the request. OS associated with the request. Arch associated with the request. EventName is the name used to identify the type of an unexpected event. PartitionID is the ID of the disk cache partition this event applied to. Status of the file cache request: `hit` if found in cache, `miss` otherwise.
+
+### **`buildbuddy_remote_execution_file_cache_last_eviction_age_usec`** (Gauge)
+
+Age of the last entry evicted from the executor's local file cache (relative to when it was added to the cache), in **microseconds**.
+
+### **`buildbuddy_remote_execution_file_cache_added_file_size_bytes`** (Histogram)
+
+Size of artifacts added to the file cache, in **bytes**.
 
 ## Blobstore metrics
 
@@ -560,6 +711,16 @@ The time spent handling each build event in **microseconds**.
 
 - **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 
+### Webhooks
+
+Webhooks are HTTP endpoints exposed by BuildBuddy server which allow it to
+respond to repository events. These URLs are created as part of BuildBuddy
+workflows.
+
+### **`buildbuddy_webhook_handler_workflows_started`** (Counter)
+
+The number of workflows triggered by the webhook handler.
+
 ### Cache
 
 "Cache" refers to the cache backend(s) that BuildBuddy uses to
@@ -786,3 +947,9 @@ Number of retries required to fulfill each `contains(key)` request to the cache 
 
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
+
+### Misc metrics
+
+### **`buildbuddy_unexpected_event`** (Counter)
+
+Counter for unexpected events.
