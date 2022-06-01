@@ -532,6 +532,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		InvocationStatus:    invocationStatus,
 		Attempt:             e.attempt,
 		HasChunkedEventLogs: e.logWriter != nil,
+		BazelExitCode:       e.beValues.BuildExitCode(),
 	}
 
 	if e.pw != nil {
@@ -616,6 +617,7 @@ func recordInvocationMetrics(ti *tables.Invocation) {
 	statusLabel := invocationStatusLabel(ti)
 	metrics.InvocationCount.With(prometheus.Labels{
 		metrics.InvocationStatusLabel: statusLabel,
+		metrics.BazelExitCode:         ti.BazelExitCode,
 		metrics.BazelCommand:          ti.Command,
 	}).Inc()
 	metrics.InvocationDurationUs.With(prometheus.Labels{
@@ -1060,6 +1062,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invoca
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
+	i.BazelExitCode = p.BazelExitCode
 	return i, nil
 }
 
@@ -1111,6 +1114,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 		out.HasChunkedEventLogs = true
 	}
 	out.Attempt = i.Attempt
+	out.BazelExitCode = i.BazelExitCode
 	return out
 }
 

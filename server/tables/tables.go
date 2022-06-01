@@ -148,6 +148,7 @@ type Invocation struct {
 	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
+	BazelExitCode                    string
 }
 
 func (i *Invocation) TableName() string {
