@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -115,6 +116,53 @@ func TestStructSliceFlag(t *testing.T) {
 	testFlag := NewSliceFlag(&testSlice)
 	testFlag.AppendSlice(*(*[]testStruct)(testFlag))
 	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
+}
+
+func TestProtoSliceFlag(t *testing.T) {
+	var err error
+
+	flags := replaceFlagsForTesting(t)
+
+	fooFlag := Slice("foo", []*timestamppb.Timestamp{}, "A list of foos")
+	assert.Equal(t, []*timestamppb.Timestamp{}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foo", `[{"seconds":3,"nanos":5}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foo", `{"seconds":5,"nanos":9}`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}, {Seconds: 5, Nanos: 9}}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}, {Seconds: 5, Nanos: 9}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	barFlag := []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}
+	SliceVar(&barFlag, "bar", "A list of bars")
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}, barFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("bar").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	fooxFlag := Slice("foox", []*timestamppb.Timestamp{}, "A list of fooxes")
+	assert.Equal(t, []*timestamppb.Timestamp{}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foox", `[{"seconds":13,"nanos":64},{},{"seconds":15}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foox", `[{"seconds":17,"nanos":9001},{},{"seconds":19}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}, {Seconds: 17, Nanos: 9001}, {}, {Seconds: 19}}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}, {Seconds: 17, Nanos: 9001}, {}, {Seconds: 19}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	bazFlag := []*timestamppb.Timestamp{}
+	SliceVar(&bazFlag, "baz", "A list of bazs")
+	err = flags.Set("baz", flags.Lookup("bar").Value.String())
+	assert.NoError(t, err)
+	assert.Equal(t, barFlag, bazFlag)
+
+	testSlice := []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}}
+	testFlag := NewSliceFlag(&testSlice)
+	testFlag.AppendSlice(*(*[]*timestamppb.Timestamp)(testFlag))
+	assert.Equal(t, []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}, {}, {Seconds: 1}, {Nanos: 99}}, testSlice)
+
 }
 
 func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
