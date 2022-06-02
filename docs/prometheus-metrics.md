@@ -32,6 +32,7 @@ The total number of invocations whose logs were uploaded to BuildBuddy.
 #### Labels
 
 - **invocation_status**: Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
+- **bazel_exit_code**: Exit code of a completed bazel command
 - **bazel_command**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 
 #### Examples

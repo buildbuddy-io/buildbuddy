@@ -68,6 +68,9 @@ const (
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
 
+	/// Exit code of a completed bazel command
+	BazelExitCode = "bazel_exit_code"
+
 	/// Executed action stage. Action execution is split into stages corresponding to
 	/// the timestamps defined in
 	/// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
@@ -122,6 +125,7 @@ var (
 		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
 	}, []string{
 		InvocationStatusLabel,
+		BazelExitCode,
 		BazelCommand,
 	})
 
