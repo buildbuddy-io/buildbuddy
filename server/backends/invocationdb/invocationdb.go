@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -108,11 +109,19 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 // id and attempt number. It returns whether a row was updated.
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	updated := false
-	err := d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
-		result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
-		updated = result.RowsAffected > 0
-		return result.Error
-	})
+	var err error
+	for retries, max_retries := 0, 5; retries < 5; retries++ {
+		err = d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
+			result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
+			updated = result.RowsAffected > 0
+			return result.Error
+		})
+		if d.h.IsDeadlockError(err) {
+			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, retries, max_retries)
+			continue
+		}
+		break
+	}
 	return updated, err
 }
 

@@ -259,6 +259,7 @@ type DBHandle interface {
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool
+	IsDeadlockError(err error) bool
 }
 
 type InvocationDB interface {
