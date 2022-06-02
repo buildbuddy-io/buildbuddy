@@ -97,7 +97,7 @@ class DocsGenerator(object):
                         line_index=line_index,
                     )
                 self.label_constant_comments.append(m.group(1))
-            m = re.match(r'(\w+Label) = "(.*)"', line)
+            m = re.match(r'(\w+) = "(.*)"', line)
             if m:
                 self.label_constants[m.group(1)] = {
                     "value": m.group(2),
@@ -154,7 +154,8 @@ class DocsGenerator(object):
                     )
                 self.add_metric_label(line_index, m.group(1))
                 return
-            m = re.match(r"\w+Label", line)
+
+            m = re.match(r"\w+", line)
             if m:
                 label_constant_token = m.group()
                 const = self.label_constants[label_constant_token]
