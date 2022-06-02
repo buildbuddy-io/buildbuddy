@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -98,6 +99,9 @@ const (
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
 	runnerRecycleTimeout = 30 * time.Second
+	// How long to spend waiting for a persistent worker process to terminate
+	// after we send the shutdown signal before giving up.
+	persistentWorkerShutdownTimeout = 10 * time.Second
 
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
@@ -184,11 +188,17 @@ type commandRunner struct {
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
+	// TODO(bduffany): encapsulate persistent worker fields in their own struct
+	// in a separate package.
+
 	// Stdin handle to send persistent WorkRequests to.
 	stdinWriter io.Writer
 	// Stdout handle to read persistent WorkResponses from.
 	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
 	stdoutReader *bufio.Reader
+	// Stops the persistent worker associated with this runner. If this is nil,
+	// there is no persistent worker associated.
+	stopPersistentWorker func() error
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
 
@@ -399,6 +409,11 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 		}
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
+		}
+		if r.stopPersistentWorker != nil {
+			if err := r.stopPersistentWorker(); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if r.VFS != nil {
@@ -1249,6 +1264,45 @@ func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
+func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
+	// Note: Using the server context since this worker will stick around for
+	// other tasks.
+	ctx, cancel := context.WithCancel(r.env.GetServerContext())
+	workerTerminated := make(chan struct{})
+	r.stopPersistentWorker = func() error {
+		// Canceling the worker context should terminate the worker process.
+		cancel()
+		// Wait for the worker to terminate. This is needed since canceling the
+		// context doesn't block until the worker is killed. This helps ensure that
+		// the worker is killed if we are shutting down. The shutdown case is also
+		// why we use ExtendContextForFinalization here.
+		ctx, cancel := background.ExtendContextForFinalization(r.env.GetServerContext(), persistentWorkerShutdownTimeout)
+		defer cancel()
+		select {
+		case <-workerTerminated:
+			return nil
+		case <-ctx.Done():
+			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
+		}
+	}
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	r.stdinWriter = stdinWriter
+	r.stdoutReader = bufio.NewReader(stdoutReader)
+	r.jsonDecoder = json.NewDecoder(r.stdoutReader)
+
+	command = proto.Clone(command).(*repb.Command)
+	command.Arguments = append(workerArgs, "--persistent_worker")
+
+	go func() {
+		defer close(workerTerminated)
+		res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
+		stdinWriter.Close()
+		stdoutReader.Close()
+		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
+	}()
+}
+
 func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
@@ -1257,31 +1311,12 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 
 	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
 
-	execContext, cancel := context.WithCancel(ctx)
 	// If it's our first rodeo, create the persistent worker.
-	if r.stdinWriter == nil || r.stdoutReader == nil {
-		stdinReader, stdinWriter := io.Pipe()
-		stdoutReader, stdoutWriter := io.Pipe()
-		r.stdinWriter = stdinWriter
-		r.stdoutReader = bufio.NewReader(stdoutReader)
-		r.jsonDecoder = json.NewDecoder(r.stdoutReader)
-
-		command.Arguments = append(workerArgs, "--persistent_worker")
-
-		go func() {
-			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
-			stdinWriter.Close()
-			stdoutReader.Close()
-			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-		}()
+	if r.stopPersistentWorker == nil {
+		r.startPersistentWorker(command, workerArgs, flagFiles)
 	}
 
 	r.doNotReuse = true
-	defer func() {
-		if r.doNotReuse {
-			cancel()
-		}
-	}()
 
 	// We've got a worker - now let's build a work request.
 	requestProto := &wkpb.WorkRequest{
