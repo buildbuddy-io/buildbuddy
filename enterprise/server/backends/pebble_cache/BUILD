@@ -15,11 +15,12 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/disk",
+        "//server/util/flagutil",
         "//server/util/log",
-        "//server/util/prefix",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -29,13 +30,16 @@ go_test(
     deps = [
         ":pebble_cache",
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/testutil/testfs",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/prefix",
-        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -97,10 +97,10 @@ var (
 
 func fileRecordSegments(r *rfpb.FileRecord) ([4]string, error) {
 	var segments [4]string
-	if r.GetGroupId() == "" {
-		return segments, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+	if r.GetIsolation().GetPartitionId() == "" {
+		return segments, status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
 	}
-	segments[0] = r.GetGroupId()
+	segments[0] = r.GetIsolation().GetPartitionId()
 
 	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
 		segments[1] = "cas"
@@ -118,13 +118,16 @@ func fileRecordSegments(r *rfpb.FileRecord) ([4]string, error) {
 	return segments, nil
 }
 
+// FileKey is the partial path where a file will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/root/dir/blobs/foo/bar".
 func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {groupID}/{ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
-	//   //   GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
-	//   //   GR123456/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/ac/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	s, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
@@ -132,13 +135,20 @@ func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	return []byte(filepath.Join(s[0], s[1], s[2], s[3])), nil
 }
 
+// FileDataKey is the partial key name where a file will be written if it is
+// stored entirely in pebble.
+// For example, given a fileRecord with FileKey: "tiny/file", the filestore will
+// write the file under pebble keys like:
+//   - tiny/file-0
+//   - tiny/file-1
+//   - tiny/file-2
 func FileDataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// File Data keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}-
 	//   // for example:
-	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd-
-	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd-
+	//   //   PART123/ac/abcd12345asdasdasd123123123asdasdasd-
+	//   //   PART123/cas/abcd12345asdasdasd123123123asdasdasd-
 	s, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
@@ -146,13 +156,18 @@ func FileDataKey(r *rfpb.FileRecord) ([]byte, error) {
 	return []byte(filepath.Join(s[0], s[1], s[3]) + "-"), nil
 }
 
+// FileMetadataKey is the partial key name where a file's metadata will be
+// written in pebble.
+// For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
+// write the file's metadata under pebble key like:
+//   - baz/bap
 func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// Metadata keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}
 	//   // for example:
-	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd
-	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123456/ac/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123456/cas/abcd12345asdasdasd123123123asdasdasd
 	s, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err

@@ -29,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -49,6 +48,10 @@ var (
 	gRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
 )
 
+const (
+	DefaultPartitionID = "default"
+)
+
 type Config struct {
 	// Required fields.
 	RootDir string
@@ -62,6 +65,9 @@ type Config struct {
 
 	// GRPC API Config
 	GRPCPort int
+
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
 }
 
 type RaftCache struct {
@@ -265,7 +271,29 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
+func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
+	auth := rc.env.GetAuthenticator()
+	if auth == nil {
+		return DefaultPartitionID, nil
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return DefaultPartitionID, nil
+	}
+	for _, pm := range rc.conf.PartitionMappings {
+		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return pm.PartitionID, nil
+		}
+	}
+	return DefaultPartitionID, nil
+}
+
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
 	case interfaces.CASCacheType:
@@ -276,6 +304,7 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.Cac
 		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
 	}
 	newIsolation.RemoteInstanceName = remoteInstanceName
+	newIsolation.PartitionId = partID
 
 	clone := *rc
 	clone.isolation = newIsolation
@@ -288,13 +317,8 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.
 	if err != nil {
 		return nil, err
 	}
-	userPrefix, err := prefix.UserPrefixFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	return &rfpb.FileRecord{
-		GroupId:   strings.TrimSuffix(userPrefix, "/"),
 		Isolation: rc.isolation,
 		Digest:    d,
 	}, nil
