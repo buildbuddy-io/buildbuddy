@@ -252,6 +252,32 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 	assert.Equal(t, maxSchedulerAttempts, int(taskCount-initialTaskCount), "scheduler should have retried the task")
 }
 
+func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		RunInterceptor: func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
+			// Wait for the action timeout to pass
+			<-ctx.Done()
+			// Intentionally return Unavailable despite the context deadline being
+			// exceeded, to test that Container implementations should not have to
+			// worry too much about the exact error returned when there is a timeout.
+			wrappedErr := status.UnavailableErrorf("wrapped error: %s", ctx.Err())
+			return commandutil.ErrorResult(wrappedErr)
+		},
+	})
+	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+
+	opts := &rbetest.ExecuteOpts{ActionTimeout: 1 * time.Millisecond}
+	// Note: The actual command here doesn't matter since we override the response.
+	cmd := rbe.Execute(&repb.Command{Arguments: []string{"sh", "-c", "exit 0"}}, opts)
+	res := cmd.MustTerminateAbnormally()
+
+	assert.True(t, status.IsDeadlineExceededError(res.Err), "expected DeadlineExceeded, got: %s", res.Err)
+	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
+	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected attempt count")
+}
+
 func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 

@@ -180,10 +180,11 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 			},
 		}
 
-		action = fillActionFromBuildEvent(action, event.BuildEvent)
+		action = fillActionFromBuildEvent(event.BuildEvent, action)
 
 		// Filter to only selected actions.
-		if action != nil && actionMatchesActionSelector(action.GetId(), req.GetSelector()) {
+		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
+			action = fillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
 			actions = append(actions, action)
 		}
 	}
@@ -359,22 +360,38 @@ func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
 	return files
 }
 
-func fillActionFromBuildEvent(action *apipb.Action, event *build_event_stream.BuildEvent) *apipb.Action {
-	switch p := event.Payload.(type) {
+func fillActionFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
+	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Completed:
 		{
+			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
 			action.Id.TargetId = encodeID(event.GetId().GetTargetCompleted().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
 			action.Id.ActionId = encodeID("build")
-			action.File = filesFromOutput(p.Completed.ImportantOutput)
 			return action
 		}
 	case *build_event_stream.BuildEvent_TestResult:
 		{
 			testResultID := event.GetId().GetTestResult()
+			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
 			action.Id.TargetId = encodeID(event.GetId().GetTestResult().GetLabel())
 			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = encodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
+			return action
+		}
+	}
+	return nil
+}
+
+func fillActionOutputFilesFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
+	switch p := event.Payload.(type) {
+	case *build_event_stream.BuildEvent_Completed:
+		{
+			action.File = filesFromOutput(p.Completed.ImportantOutput)
+			return action
+		}
+	case *build_event_stream.BuildEvent_TestResult:
+		{
 			action.File = filesFromOutput(p.TestResult.TestActionOutput)
 			return action
 		}
@@ -400,8 +417,9 @@ func targetMatchesTargetSelector(target *apipb.Target, selector *apipb.TargetSel
 }
 
 // Returns true if a selector doesn't specify a particular id or matches the target's ID
-func actionMatchesActionSelector(id *apipb.Action_Id, selector *apipb.ActionSelector) bool {
-	return (selector.TargetId == "" || selector.TargetId == id.TargetId) &&
-		(selector.ConfigurationId == "" || selector.ConfigurationId == id.ConfigurationId) &&
-		(selector.ActionId == "" || selector.ActionId == id.ActionId)
+func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSelector) bool {
+	return (selector.TargetId == "" || selector.TargetId == action.GetId().TargetId) &&
+		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
+		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
+		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
 }

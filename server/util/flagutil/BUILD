@@ -22,5 +22,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

@@ -46,6 +46,9 @@ message Action {
 
   // A list of file references for action level files.
   repeated File file = 2;
+
+  // The label of the target that generated this action.
+  string target_label = 3;
 }
 
 // The selector used to specify which actions to return.
@@ -65,4 +68,8 @@ message ActionSelector {
   // Optional: The Action ID.
   // If set, only the action with this action id will be returned.
   string action_id = 4;
+
+  // Optional: The Target label.
+  // If set, only the action with this target label will be returned.
+  string target_label = 5;
 }

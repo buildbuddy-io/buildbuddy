@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -117,6 +118,53 @@ func TestStructSliceFlag(t *testing.T) {
 	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
 }
 
+func TestProtoSliceFlag(t *testing.T) {
+	var err error
+
+	flags := replaceFlagsForTesting(t)
+
+	fooFlag := Slice("foo", []*timestamppb.Timestamp{}, "A list of foos")
+	assert.Equal(t, []*timestamppb.Timestamp{}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foo", `[{"seconds":3,"nanos":5}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foo", `{"seconds":5,"nanos":9}`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}, {Seconds: 5, Nanos: 9}}, *fooFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 3, Nanos: 5}, {Seconds: 5, Nanos: 9}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foo").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	barFlag := []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}
+	SliceVar(&barFlag, "bar", "A list of bars")
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}, barFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 11, Nanos: 100}, {Seconds: 13, Nanos: 256}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("bar").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	fooxFlag := Slice("foox", []*timestamppb.Timestamp{}, "A list of fooxes")
+	assert.Equal(t, []*timestamppb.Timestamp{}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foox", `[{"seconds":13,"nanos":64},{},{"seconds":15}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+	err = flags.Set("foox", `[{"seconds":17,"nanos":9001},{},{"seconds":19}]`)
+	assert.NoError(t, err)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}, {Seconds: 17, Nanos: 9001}, {}, {Seconds: 19}}, *fooxFlag)
+	assert.Equal(t, []*timestamppb.Timestamp{{Seconds: 13, Nanos: 64}, {}, {Seconds: 15}, {Seconds: 17, Nanos: 9001}, {}, {Seconds: 19}}, *(*[]*timestamppb.Timestamp)(flags.Lookup("foox").Value.(*SliceFlag[*timestamppb.Timestamp])))
+
+	bazFlag := []*timestamppb.Timestamp{}
+	SliceVar(&bazFlag, "baz", "A list of bazs")
+	err = flags.Set("baz", flags.Lookup("bar").Value.String())
+	assert.NoError(t, err)
+	assert.Equal(t, barFlag, bazFlag)
+
+	testSlice := []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}}
+	testFlag := NewSliceFlag(&testSlice)
+	testFlag.AppendSlice(*(*[]*timestamppb.Timestamp)(testFlag))
+	assert.Equal(t, []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}, {}, {Seconds: 1}, {Nanos: 99}}, testSlice)
+
+}
+
 func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 
@@ -127,26 +175,26 @@ func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	Slice("one.two.three.struct_slice", []testStruct{{Field: 4, Meadow: "Great"}}, "")
 	flags.String("a.b.string", "xxx", "")
 	URLFromString("a.b.url", "https://www.example.com", "")
-	actual, err := GenerateYAMLTypeMapFromFlags()
+	actual, err := GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.NoError(t, err)
 	expected := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf(int(0)),
-				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"int":          reflect.TypeOf((*int)(nil)),
+				"string_slice": reflect.TypeOf((*[]string)(nil)),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf(float64(0)),
+					"float64": reflect.TypeOf((*float64)(nil)),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
+					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf(""),
-				"url":    reflect.TypeOf(URLFlag(url.URL{})),
+				"string": reflect.TypeOf((*string)(nil)),
+				"url":    reflect.TypeOf((*URLFlag)(nil)),
 			},
 		},
 	}
@@ -160,47 +208,47 @@ func TestBadGenerateYAMLTypeMapFromFlags(t *testing.T) {
 
 	flags.Int("one.two.int", 10, "")
 	flags.Int("one.two", 10, "")
-	_, err := GenerateYAMLTypeMapFromFlags()
+	_, err := GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Int("one.two", 10, "")
 	flags.Int("one.two.int", 10, "")
-	_, err = GenerateYAMLTypeMapFromFlags()
+	_, err = GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	_, err = GenerateYAMLTypeMapFromFlags()
+	_, err = GenerateYAMLMapWithValuesFromFlags(getYAMLTypeForFlag, IgnoreFilter)
 	require.Error(t, err)
 
 }
 
 func TestRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf(int(0)),
-				"string_slice": reflect.TypeOf(([]string)(nil)),
+				"int":          reflect.TypeOf((*int)(nil)),
+				"string_slice": reflect.TypeOf((*[]string)(nil)),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf(float64(0)),
+					"float64": reflect.TypeOf((*float64)(nil)),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf(([]testStruct)(nil)),
+					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf(""),
-				"url":    reflect.TypeOf(URLFlag(url.URL{})),
+				"string": reflect.TypeOf((*string)(nil)),
+				"url":    reflect.TypeOf((*URLFlag)(nil)),
 			},
 		},
 		"foo": map[string]any{
-			"bar": reflect.TypeOf(int64(0)),
+			"bar": reflect.TypeOf((*int64)(nil)),
 		},
 	}
 	yamlData := `
@@ -259,7 +307,7 @@ first:
 
 func TestBadRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf(false),
+		"bool": reflect.TypeOf((*bool)(nil)),
 	}
 	yamlData := `
 bool: 7
@@ -392,7 +440,10 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 		},
 		"undefined": struct{}{}, // keys without with no corresponding flag name should be ignored.
 	}
-	err := PopulateFlagsFromYAMLMap(input)
+	node := &yaml.Node{}
+	err := node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.NoError(t, err)
 
 	assert.Equal(t, false, *flagBool)
@@ -410,16 +461,24 @@ func TestBadPopulateFlagsFromYAML(t *testing.T) {
 
 	flags := replaceFlagsForTesting(t)
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	err := PopulateFlagsFromYAMLMap(map[string]any{
+	input := map[string]any{
 		"unsupported": 0,
-	})
+	}
+	node := &yaml.Node{}
+	err := node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 	flags.Bool("bool", false, "")
-	err = PopulateFlagsFromYAMLMap(map[string]any{
+	input = map[string]any{
 		"bool": 0,
-	})
+	}
+	node = &yaml.Node{}
+	err = node.Encode(input)
+	require.NoError(t, err)
+	err = PopulateFlagsFromYAMLMap(input, node)
 	require.Error(t, err)
 }
 
@@ -770,13 +829,38 @@ func TestFlagAlias(t *testing.T) {
 
 	flagString := flags.String("string", "test", "")
 	Alias[string]("string_alias", "string")
+	Alias[string]("string_alias2", "string")
+	Alias[string]("string_alias3", "string")
 	yamlData := `
 string: "woof"
+string_alias2: "moo"
+string_alias3: "oink"
 string_alias: "meow"
 `
 	err := PopulateFlagsFromData([]byte(yamlData))
 	require.NoError(t, err)
 	assert.Equal(t, "meow", *flagString)
+
+	flags = replaceFlagsForTesting(t)
+
+	flagStringSlice := Slice("string_slice", []string{"test"}, "")
+	Alias[[]string]("string_slice_alias", "string_slice")
+	Alias[[]string]("string_slice_alias2", "string_slice")
+	Alias[[]string]("string_slice_alias3", "string_slice")
+	yamlData = `
+string_slice:
+  - "woof"
+string_slice_alias2:
+  - "moo"
+string_slice_alias3:
+  - "oink"
+  - "ribbit"
+string_slice_alias:
+  - "meow"
+`
+	err = PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"test", "woof", "moo", "oink", "ribbit", "meow"}, *flagStringSlice)
 
 	flags = replaceFlagsForTesting(t)
 
