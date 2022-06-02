@@ -59,6 +59,8 @@ const (
 	partitionDirectoryPrefix = "PT"
 )
 
+// Options is a struct containing the pebble cache configuration options.
+// Once a cache is created, the options may not be changed.
 type Options struct {
 	RootDirectory       string
 	Partitions          []disk.Partition
@@ -67,6 +69,8 @@ type Options struct {
 	BlockCacheSizeBytes int64
 }
 
+// PebbleCache implements the cache interface by storing metadata in a pebble
+// database and storing cache entry contents on disk.
 type PebbleCache struct {
 	opts *Options
 
@@ -79,6 +83,8 @@ type PebbleCache struct {
 	eg        *errgroup.Group
 }
 
+// Register creates a new PebbleCache from the configured flags and sets it in
+// the provided env.
 func Register(env environment.Env) error {
 	if *rootDirectory == "" {
 		return nil
@@ -106,7 +112,8 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-// validateOpts validates that each partition mapping points to a partition.
+// validateOpts validates that each partition mapping references a partition
+// and that MaxSizeBytes is non-zero.
 func validateOpts(opts *Options) error {
 	if opts.MaxSizeBytes == 0 {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
@@ -143,6 +150,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
+// NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := validateOpts(opts); err != nil {
 		return nil, err
@@ -226,11 +234,15 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb
 	}, nil
 }
 
+// blobDir returns a directory path under the root directory, specific to the
+// configured partition, where blobs can be stored.
 func (p *PebbleCache) blobDir() string {
 	partDir := partitionDirectoryPrefix + p.isolation.GetPartitionId()
 	return filepath.Join(p.opts.RootDirectory, "blobs", partDir)
 }
 
+// hasFileMetadata returns a bool indicating if the provided iterator has the
+// key specified by fileMetadaKey.
 func hasFileMetadata(iter *pebble.Iterator, fileMetadaKey []byte) bool {
 	if iter.SeekGE(fileMetadaKey) && bytes.Compare(iter.Key(), fileMetadaKey) == 0 {
 		return true
@@ -323,10 +335,26 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return nil
+	fileRecord, err := p.makeFileRecord(ctx, d)
+	if err != nil {
+		return err
+	}
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	file, err := constants.FileKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(p.blobDir(), string(file))
+
+	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+		return err
+	}
+	return disk.DeleteFile(ctx, filePath)
 }
 
-// Low level interface used for seeking and stream-writing.
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -399,12 +427,19 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	return dc, nil
 }
 
+// TestingWaitForGC should be used by tests only.
+// This function waits until any active file deletion has finished.
 func (p *PebbleCache) TestingWaitForGC() {
 	p.waitGroup.Wait()
 }
 
 const (
-	sampleN        = 10
+	// sampleN is the number of random files to sample when adding a new
+	// deletion candidate to the sample pool
+	sampleN = 10
+
+	// samplePoolSize is the number of deletion candidates to maintain in
+	// memory at a time.
 	samplePoolSize = 16
 )
 
