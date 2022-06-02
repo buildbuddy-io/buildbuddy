@@ -17,8 +17,7 @@ import (
 const (
 	// Label constants.
 	// Commonly used labels can be added here, and their documentation will be
-	// displayed in the metrics where they are used. Each constant's name should
-	// end with `Label`.
+	// displayed in the metrics where they are used.
 
 	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 	StatusLabel = "status"
@@ -29,7 +28,6 @@ const (
 	/// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
-	// TODO(bduffany): Document the difference between `miss` and `upload`
 	/// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
@@ -89,19 +87,19 @@ const (
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
-	/// GroupID associated with the request.
+	/// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
 	/// OS associated with the request.
 	OS = "os"
 
-	/// Arch associated with the request.
+	/// CPU architecture associated with the request.
 	Arch = "arch"
 
-	/// EventName is the name used to identify the type of an unexpected event.
+	/// The name used to identify the type of an unexpected event.
 	EventName = "name"
 
-	/// PartitionID is the ID of the disk cache partition this event applied to.
+	/// The ID of the disk cache partition this event applied to.
 	PartitionID = "partition_id"
 
 	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.

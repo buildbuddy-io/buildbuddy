@@ -32,6 +32,7 @@ The total number of invocations whose logs were uploaded to BuildBuddy.
 #### Labels
 
 - **invocation_status**: Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
+- **bazel_command**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 
 #### Examples
 
@@ -52,6 +53,7 @@ The total duration of each invocation, in **microseconds**.
 #### Labels
 
 - **invocation_status**: Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
+- **bazel_command**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 
 #### Examples
 
@@ -197,6 +199,10 @@ histogram_quantile(
 
 The age of the item most recently evicted from the cache, in **microseconds**.
 
+#### Labels
+
+- **partition_id**: The ID of the disk cache partition this event applied to.
+
 ### **`buildbuddy_remote_cache_disk_cache_duplicate_writes`** (Counter)
 
 Number of writes for digests that already exist.
@@ -250,7 +256,8 @@ Queries should filter or group by the `stage` label, taking care not to aggregat
 
 #### Labels
 
-- **stage**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ... Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
+- **stage**: Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
+- **group_id**: Group (organization) ID associated with the request.
 
 #### Examples
 
@@ -272,6 +279,10 @@ histogram_quantile(
 
 Number of execution requests for which the client is actively waiting for results.
 
+#### Labels
+
+- **group_id**: Group (organization) ID associated with the request.
+
 #### Examples
 
 ```promql
@@ -282,6 +293,12 @@ sum(buildbuddy_remote_execution_waiting_execution_result)
 ### **`buildbuddy_remote_execution_requests`** (Counter)
 
 Number of execution requests received.
+
+#### Labels
+
+- **group_id**: Group (organization) ID associated with the request.
+- **os**: OS associated with the request.
+- **arch**: CPU architecture associated with the request.
 
 #### Examples
 
@@ -294,6 +311,10 @@ sum(rate(buildbuddy_remote_execution_requests[1m])) by (os, arch)
 
 Number of identical execution requests that have been merged.
 
+#### Labels
+
+- **group_id**: Group (organization) ID associated with the request.
+
 #### Examples
 
 ```promql
@@ -304,6 +325,10 @@ sum(rate(buildbuddy_remote_execution_merged_actions[1m])) by (group_id)
 ### **`buildbuddy_remote_execution_queue_length`** (Gauge)
 
 Number of actions currently waiting in the executor queue.
+
+#### Labels
+
+- **group_id**: Group (organization) ID associated with the request.
 
 #### Examples
 
@@ -318,7 +343,7 @@ Number of tasks currently being executed by the executor.
 
 #### Labels
 
-- **stage**: Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ... Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
+- **stage**: Executed action stage. Action execution is split into stages corresponding to the timestamps defined in [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797): `queued`, `input_fetch`, `execution`, and `output_upload`. An additional stage, `worker`, includes all stages during which a worker is handling the action, which is all stages except the `queued` stage.
 
 #### Examples
 
@@ -383,7 +408,7 @@ Number of execution requests with runner recycling enabled (via the platform pro
 
 #### Labels
 
-- **status**: Type of event sent to BuildBuddy's webhook handler: `push` or `pull_request`. Status of the recycle runner request: `hit` if the executor assigned a recycled runner to the action; `miss` otherwise.
+- **status**: Status of the recycle runner request: `hit` if the executor assigned a recycled runner to the action; `miss` otherwise.
 
 ### **`buildbuddy_remote_execution_runner_pool_count`** (Gauge)
 
@@ -396,6 +421,10 @@ Number of command runners removed from the pool to make room for other runners.
 ### **`buildbuddy_remote_execution_runner_pool_failed_recycle_attempts`** (Counter)
 
 Number of failed attempts to add runners to the pool.
+
+#### Labels
+
+- **reason**: Reason for a runner not being added to the runner pool.
 
 ### **`buildbuddy_remote_execution_runner_pool_memory_usage_bytes`** (Gauge)
 
@@ -413,7 +442,7 @@ Number of local executor file cache requests.
 
 #### Labels
 
-- **status**: Reason for a runner not being added to the runner pool. GroupID associated with the request. OS associated with the request. Arch associated with the request. EventName is the name used to identify the type of an unexpected event. PartitionID is the ID of the disk cache partition this event applied to. Status of the file cache request: `hit` if found in cache, `miss` otherwise.
+- **status**: Status of the file cache request: `hit` if found in cache, `miss` otherwise.
 
 ### **`buildbuddy_remote_execution_file_cache_last_eviction_age_usec`** (Gauge)
 
@@ -721,6 +750,10 @@ workflows.
 
 The number of workflows triggered by the webhook handler.
 
+#### Labels
+
+- **event**: Type of event sent to BuildBuddy's webhook handler: `push` or `pull_request`.
+
 ### Cache
 
 "Cache" refers to the cache backend(s) that BuildBuddy uses to
@@ -953,3 +986,7 @@ Number of retries required to fulfill each `contains(key)` request to the cache 
 ### **`buildbuddy_unexpected_event`** (Counter)
 
 Counter for unexpected events.
+
+#### Labels
+
+- **name**: The name used to identify the type of an unexpected event.
