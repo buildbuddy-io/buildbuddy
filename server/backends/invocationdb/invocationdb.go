@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
 
@@ -110,14 +111,15 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	updated := false
 	var err error
-	for retries, max_retries := 0, 5; retries < 5; retries++ {
+	retryOptions := &retry.Options{InitialBackoff: time.Second, Multiplier: 2.0, MaxRetries: 5}
+	for i, r := 1, retry.New(ctx, retryOptions); r.Next(); i++ {
 		err = d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
 			result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 			updated = result.RowsAffected > 0
 			return result.Error
 		})
 		if d.h.IsDeadlockError(err) {
-			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, retries, max_retries)
+			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, i, retryOptions.MaxRetries)
 			continue
 		}
 		break

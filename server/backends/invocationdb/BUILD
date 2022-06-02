@@ -17,6 +17,7 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
+        "//server/util/retry",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
     ],
