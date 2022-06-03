@@ -215,15 +215,18 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       className="copy-icon"
                       onClick={this.handleCopyClicked.bind(
                         this,
-                        `bazel ${this.props.model.started?.command} ${
-                          this.props.model.expanded?.id?.pattern?.pattern
-                        } ${this.props.model.optionsParsed?.explicitCmdLine.join(" ")}`
+                        `bazel ${
+                          this.props.model.started?.command
+                        } ${this.props.model.expanded?.id?.pattern?.pattern.join(
+                          " "
+                        )} ${this.props.model.optionsParsed?.explicitCmdLine.join(" ")}`
                       )}
                     />
                   </div>
                   <div className="invocation-section">
                     <code className="wrap">
-                      bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                      bazel {this.props.model.started?.command}{" "}
+                      {this.props.model.expanded?.id?.pattern?.pattern?.join(" ")}{" "}
                       {this.props.model.optionsParsed?.explicitCmdLine.join(" ")}
                     </code>
                   </div>
@@ -236,15 +239,18 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                       className="copy-icon"
                       onClick={this.handleCopyClicked.bind(
                         this,
-                        `bazel ${this.props.model.started?.command} ${
-                          this.props.model.expanded?.id?.pattern?.pattern
-                        } ${this.props.model.optionsParsed?.cmdLine.join(" ")}`
+                        `bazel ${
+                          this.props.model.started?.command
+                        } ${this.props.model.expanded?.id?.pattern?.pattern.join(
+                          " "
+                        )} ${this.props.model.optionsParsed?.cmdLine.join(" ")}`
                       )}
                     />
                   </div>
                   <div className="invocation-section">
                     <code className="wrap">
-                      bazel {this.props.model.started?.command} {this.props.model.expanded?.id?.pattern?.pattern}{" "}
+                      bazel {this.props.model.started?.command}{" "}
+                      {this.props.model.expanded?.id?.pattern?.pattern.join(" ")}{" "}
                       {this.props.model.optionsParsed?.cmdLine.join(" ")}
                     </code>
                   </div>
