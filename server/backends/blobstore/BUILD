@@ -24,7 +24,7 @@ go_library(
         "@com_github_azure_azure_storage_blob_go//azblob",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_google_cloud_go_storage//:storage",
-        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_api//option",
         "@org_golang_google_grpc//status",
     ],
 )
