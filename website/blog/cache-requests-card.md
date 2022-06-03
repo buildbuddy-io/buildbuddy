@@ -141,8 +141,8 @@ Implementing the cache requests card required solving a few interesting
 problems.
 
 The total size of the request metadata stored for each build is not
-extremely large &mdash; just tens of megabytes for builds with millions of
-cache requests &mdash; but we serve a high volume of requests, and we
+extremely large &mdash; just tens of megabytes for builds with hundreds of
+thousands of cache requests &mdash; but we serve a high volume of requests, and we
 don't want to negatively impact cache performance just to store this
 metadata for each request.
 
