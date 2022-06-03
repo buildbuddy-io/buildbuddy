@@ -924,16 +924,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:a5mlkVzth6W5A4fOsS3D2EO5BUmsJpcB+cRlLU7cSug=",
         version = "v2.7.1+incompatible",
     )
-
-    # Generated with ./tools/vendor.sh docker/docker 363e9a88a11be517d9e8c65c998ff56f774eb4dc
-    http_archive(
+    go_repository(
         name = "com_github_docker_docker",
-        sha256 = "358b4cdf0e2f11b7a99087e349b41d0f5a0a5b9da83b0ef0609ad08160bcd5f0",
-        strip_prefix = "moby-363e9a88a11be517d9e8c65c998ff56f774eb4dc",
-        urls = ["https://github.com/docker/docker/archive/363e9a88a11be517d9e8c65c998ff56f774eb4dc.zip"],
-        patches = ["@%s//buildpatches:com_github_docker_docker" % workspace_name],
-        patch_args = ["-s", "-p0"],
+        importpath = "github.com/docker/docker",
+        sum = "h1:Z6O9Nhsjv+ayUEeI1IojKbYcsGdgYSNqxe1s2MYzUhQ=",
+        version = "v20.10.7+incompatible",
     )
+
     go_repository(
         name = "com_github_docker_go_connections",
         importpath = "github.com/docker/go-connections",
