@@ -4616,15 +4616,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:SC+c6A1qTFstO9qmB86mPV2IpYme/2ZoEQ0hrP+wo+Q=",
         version = "v0.0.0-20160811212531-371fbbdaa898",
     )
-
-    # Generated with ./tools/vendor.sh googleapis/google-api-go-client 9d43e7dc08e2598d4dcb661324c4877dfd63c4f9 google.golang.org/api org_golang_google_api
-    http_archive(
+    go_repository(
         name = "org_golang_google_api",
-        sha256 = "ff6530ad088bdaf5508cc5bc34d1939b5a5e41b9edfee24c4ca3299c82115e47",
-        strip_prefix = "google-api-go-client-9d43e7dc08e2598d4dcb661324c4877dfd63c4f9",
-        urls = ["https://github.com/googleapis/google-api-go-client/archive/9d43e7dc08e2598d4dcb661324c4877dfd63c4f9.zip"],
-        patches = ["@%s//buildpatches:org_golang_google_api" % workspace_name],
-        patch_args = ["-s", "-p0"],
+        importpath = "google.golang.org/api",
+        sum = "h1:ExR2D+5TYIrMphWgs5JCgwRhEDlPDXXrLwHHMgPHTXE=",
+        version = "v0.74.0",
     )
 
     go_repository(
