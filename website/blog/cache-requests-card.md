@@ -142,9 +142,9 @@ problems.
 
 The total size of the request metadata stored for each build is not
 extremely large &mdash; just tens of megabytes for builds with hundreds of
-thousands of cache requests &mdash; but we serve a high volume of requests, and we
-don't want to negatively impact cache performance just to store this
-metadata for each request.
+thousands of cache requests &mdash; but we serve a high volume of
+requests, and we don't want to negatively impact cache performance just to
+store this metadata for each request.
 
 The simplest solution to implement would be to do a blocking write to a
 MySQL table for each cache request. This would also be pretty convenient
@@ -168,8 +168,10 @@ by a local disk, Google Cloud Storage, Amazon S3, etc.
 Secondly, even with the amazing performance of Redis, we can't just issue
 a single write request for every cache request. Doing a separate Redis
 write for every request places a large amount of CPU load on Redis, since
-it needs to do a `read()` and `write()` system call for each write. To
-address this, we used Redis
+it needs to do a `read()` and `write()` system call for each write.
+(We learned this the hard way.)
+
+To address this, we used Redis
 [**pipelining**](https://redis.io/docs/manual/pipelining/). Instead of
 issuing Redis commands directly, we add each command to a pipeline, and
 have a separate background job that periodically flushes the pipeline.
