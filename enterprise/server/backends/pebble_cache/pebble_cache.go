@@ -397,7 +397,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 			return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
 		}
 	}
-	rc, err := filestore.NewReader(ctx, p.blobDir(), iter, fileMetadata.GetStorageMetadata())
+	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
 	if err != nil {
 		p.updateAtime(fileMetadataKey)
 	}
