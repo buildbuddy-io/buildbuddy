@@ -18,6 +18,7 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",

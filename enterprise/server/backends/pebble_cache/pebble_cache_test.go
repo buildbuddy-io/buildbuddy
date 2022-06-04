@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 
@@ -303,7 +304,9 @@ func TestLRU(t *testing.T) {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
 
-	maxSizeBytes := int64(11000)
+	numDigests := 1000
+	digestSize := 100
+	maxSizeBytes := int64(numDigests * digestSize)
 	rootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
@@ -312,7 +315,9 @@ func TestLRU(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 10)
+	quartile := numDigests / 4
+
+	digestKeys := make([]*repb.Digest, numDigests)
 	for i := range digestKeys {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		digestKeys[i] = d
@@ -321,17 +326,25 @@ func TestLRU(t *testing.T) {
 		}
 	}
 
-	// "Use" some digests
-	numToUse := len(digestKeys) / 5
-	for i := 0; i < numToUse; i++ {
-		d := digestKeys[i]
-		if _, err := pc.Get(ctx, d); err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
+	// Use the digests in the following way:
+	// 1) first 3 quartiles
+	// 2) first 2 quartiles
+	// 3) first quartile
+	// This sets us up so we add an additional quartile of data
+	// and then expect data from the 3rd quartile (least recently used)
+	// to be the most evicted.
+	for i := 3; i > 0; i-- {
+		log.Printf("Using data from 0:%d", quartile*i)
+		for j := 0; j < quartile*i; j++ {
+			d := digestKeys[j]
+			if _, err := pc.Contains(ctx, d); err != nil {
+				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
+			}
 		}
 	}
 
 	// Write more data.
-	for i := 0; i < len(digestKeys)/3; i++ {
+	for i := 0; i < quartile; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		digestKeys = append(digestKeys, d)
 		if err := pc.Set(ctx, d, buf); err != nil {
@@ -342,11 +355,36 @@ func TestLRU(t *testing.T) {
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 
-	// Ensure that all of the "used" digests are there.
-	for i := 0; i < numToUse; i++ {
-		d := digestKeys[i]
-		if ok, err := pc.Contains(ctx, d); err != nil || !ok {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
+	evictionsByQuartile := make([][]*repb.Digest, 5)
+	for i, d := range digestKeys {
+		ok, err := pc.Contains(ctx, d)
+		evicted := err != nil || !ok
+		q := i / quartile
+		if evicted {
+			evictionsByQuartile[q] = append(evictionsByQuartile[q], d)
 		}
 	}
+
+	for quartile, evictions := range evictionsByQuartile {
+		count := len(evictions)
+		sample := ""
+		for i, d := range evictions {
+			if i > 3 {
+				break
+			}
+			sample += d.GetHash()
+			sample += ", "
+		}
+		log.Printf("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+	}
+
+	// None of the files "used" just before adding more should have been
+	// evicted.
+	require.Equal(t, 0, len(evictionsByQuartile[0]))
+
+	// None of the most recently added files should have been evicted.
+	require.Equal(t, 0, len(evictionsByQuartile[4]))
+
+	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
+	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/cespare/xxhash/v2"
 	"github.com/cockroachdb/pebble"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -78,6 +79,7 @@ type PebbleCache struct {
 	db        *pebble.DB
 	isolation *rfpb.Isolation
 
+	atimes    *sync.Map
 	waitGroup *sync.WaitGroup
 	quitChan  chan struct{}
 	eg        *errgroup.Group
@@ -170,6 +172,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		db:        db,
 		quitChan:  make(chan struct{}),
 		eg:        &errgroup.Group{},
+		atimes:    &sync.Map{},
 		waitGroup: &sync.WaitGroup{},
 		isolation: &rfpb.Isolation{
 			CacheType:   rfpb.Isolation_CAS_CACHE,
@@ -241,10 +244,14 @@ func (p *PebbleCache) blobDir() string {
 	return filepath.Join(p.opts.RootDirectory, "blobs", partDir)
 }
 
+func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
+	p.atimes.Store(xxhash.Sum64(fileMetadataKey), time.Now().UnixNano())
+}
+
 // hasFileMetadata returns a bool indicating if the provided iterator has the
-// key specified by fileMetadaKey.
-func hasFileMetadata(iter *pebble.Iterator, fileMetadaKey []byte) bool {
-	if iter.SeekGE(fileMetadaKey) && bytes.Compare(iter.Key(), fileMetadaKey) == 0 {
+// key specified by fileMetadataKey.
+func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
+	if iter.SeekGE(fileMetadataKey) && bytes.Compare(iter.Key(), fileMetadataKey) == 0 {
 		return true
 	}
 	return false
@@ -258,11 +265,15 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	if err != nil {
 		return false, err
 	}
-	fileMetadaKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 	if err != nil {
 		return false, err
 	}
-	return hasFileMetadata(iter, fileMetadaKey), nil
+	found := hasFileMetadata(iter, fileMetadataKey)
+	if found {
+		p.updateAtime(fileMetadataKey)
+	}
+	return found, nil
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -279,12 +290,14 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 		if err != nil {
 			return nil, err
 		}
-		fileMetadaKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
-		if !hasFileMetadata(iter, fileMetadaKey) {
+		if !hasFileMetadata(iter, fileMetadataKey) {
 			missing = append(missing, d)
+		} else {
+			p.updateAtime(fileMetadataKey)
 		}
 	}
 	return missing, nil
@@ -384,7 +397,11 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 			return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
 		}
 	}
-	return filestore.NewReader(ctx, p.blobDir(), iter, fileMetadata.GetStorageMetadata())
+	rc, err := filestore.NewReader(ctx, p.blobDir(), iter, fileMetadata.GetStorageMetadata())
+	if err != nil {
+		p.updateAtime(fileMetadataKey)
+	}
+	return rc, err
 }
 
 type funcCloser struct {
@@ -422,6 +439,9 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 			return err
 		}
 		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
+		if err == nil {
+			p.updateAtime(fileMetadataKey)
+		}
 		return err
 	}}
 	return dc, nil
@@ -435,12 +455,14 @@ func (p *PebbleCache) TestingWaitForGC() {
 
 const (
 	// sampleN is the number of random files to sample when adding a new
-	// deletion candidate to the sample pool
+	// deletion candidate to the sample pool. Increasing this number
+	// makes eviction slower but improves sampled-LRU accuracy.
 	sampleN = 10
 
 	// samplePoolSize is the number of deletion candidates to maintain in
-	// memory at a time.
-	samplePoolSize = 16
+	// memory at a time. Increasing this number uses more memory but
+	// improves sampled-LRU accuracy.
+	samplePoolSize = 100
 )
 
 type evictionPoolEntry struct {
@@ -455,6 +477,7 @@ type partitionEvictor struct {
 	blobDir   string
 	reader    pebble.Reader
 	writer    pebble.Writer
+	atimes    *sync.Map
 	waitGroup *sync.WaitGroup
 
 	samplePool     []*evictionPoolEntry
@@ -513,8 +536,20 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 	return []byte(randKey)
 }
 
+func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
+	if a, ok := e.atimes.Load(xxhash.Sum64(s.fileMetadataKey)); ok {
+		s.timestamp = a.(int64)
+		return nil
+	}
+	info, err := os.Stat(s.filePath)
+	if err != nil {
+		return err
+	}
+	s.timestamp = getLastUse(info)
+	return nil
+}
+
 func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evictionPoolEntry, error) {
-	log.Printf("Sampling")
 	samples := make([]*evictionPoolEntry, 0, k)
 	fileMetadata := &rfpb.FileMetadata{}
 
@@ -544,20 +579,19 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 			return nil, err
 		}
 		filePath := filepath.Join(e.blobDir, string(file))
-		info, err := os.Stat(filePath)
-		if err != nil {
-			// The file could have already been deleted and our
-			// iterator is not yet aware of that.
-			continue
-		}
 		fileMetadataKey := make([]byte, len(iter.Key()))
 		copy(fileMetadataKey, iter.Key())
-		samples = append(samples, &evictionPoolEntry{
-			timestamp:       getLastUse(info),
+
+		sample := &evictionPoolEntry{
 			fileRecord:      fileMetadata.GetFileRecord(),
 			filePath:        filePath,
 			fileMetadataKey: fileMetadataKey,
-		})
+		}
+		if err := e.refreshAtime(sample); err != nil {
+			continue
+		}
+
+		samples = append(samples, sample)
 		if len(samples) == k {
 			break
 		}
@@ -588,11 +622,9 @@ func (e *partitionEvictor) resampleK(k int) error {
 	}
 
 	for _, sample := range e.samplePool {
-		info, err := os.Stat(sample.filePath)
-		if err != nil {
+		if err := e.refreshAtime(sample); err != nil {
 			continue
 		}
-		sample.timestamp = getLastUse(info)
 	}
 
 	if len(e.samplePool) > 0 {
@@ -618,11 +650,11 @@ func (e *partitionEvictor) evict(count int) error {
 			return err
 		}
 		for i, sample := range e.samplePool {
-			fileMetadaKey, err := constants.FileMetadataKey(sample.fileRecord)
+			fileMetadataKey, err := constants.FileMetadataKey(sample.fileRecord)
 			if err != nil {
 				return err
 			}
-			_, closer, err := e.reader.Get(fileMetadaKey)
+			_, closer, err := e.reader.Get(fileMetadataKey)
 			if err == pebble.ErrNotFound {
 				continue
 			}
@@ -630,7 +662,6 @@ func (e *partitionEvictor) evict(count int) error {
 			if err := e.deleteFile(sample); err != nil {
 				continue
 			}
-			log.Printf("Deleted file: %q", sample.filePath)
 			evicted += 1
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
 			break
@@ -697,7 +728,6 @@ func (e *partitionEvictor) ttl() error {
 		if e.totalSizeBytes < maxAllowedSize {
 			break
 		}
-		log.Printf("Partition %q has size %d, maxAllowed: %d", e.part.ID, e.totalSizeBytes, maxAllowedSize)
 
 		numToEvict := int(.001 * float64(e.totalCount))
 		if numToEvict == 0 {
@@ -711,6 +741,8 @@ func (e *partitionEvictor) ttl() error {
 }
 
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
+	// Compute size once, initially, so that a correct
+	// value is set and not the init value of 0.
 	if err := e.computeSize(); err != nil {
 		return err
 	}
@@ -739,6 +771,7 @@ func (p *PebbleCache) runGC(quitChan chan struct{}) {
 			samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
 			reader:     p.db,
 			writer:     p.db,
+			atimes:     p.atimes,
 			waitGroup:  p.waitGroup,
 		}
 	}
