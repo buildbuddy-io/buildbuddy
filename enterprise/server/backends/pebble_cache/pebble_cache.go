@@ -44,7 +44,6 @@ var (
 // TODO:
 //  - add a pacer that deletes files as new ones are written when the cache is
 //    above a certain size
-//  - add a queue that bumps file ttls
 //  - add a flag that ingests a disk cache
 const (
 	// cutoffThreshold is the point above which a janitor thread will run
@@ -58,6 +57,16 @@ const (
 
 	defaultPartitionID       = "default"
 	partitionDirectoryPrefix = "PT"
+
+	// sampleN is the number of random files to sample when adding a new
+	// deletion candidate to the sample pool. Increasing this number
+	// makes eviction slower but improves sampled-LRU accuracy.
+	sampleN = 10
+
+	// samplePoolSize is the number of deletion candidates to maintain in
+	// memory at a time. Increasing this number uses more memory but
+	// improves sampled-LRU accuracy.
+	samplePoolSize = 100
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -79,10 +88,10 @@ type PebbleCache struct {
 	db        *pebble.DB
 	isolation *rfpb.Isolation
 
-	atimes    *sync.Map
-	waitGroup *sync.WaitGroup
-	quitChan  chan struct{}
-	eg        *errgroup.Group
+	atimes   *sync.Map
+	quitChan chan struct{}
+	eg       *errgroup.Group
+	evictors []*partitionEvictor
 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
@@ -167,18 +176,29 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
-		opts:      opts,
-		env:       env,
-		db:        db,
-		quitChan:  make(chan struct{}),
-		eg:        &errgroup.Group{},
-		atimes:    &sync.Map{},
-		waitGroup: &sync.WaitGroup{},
+		opts:     opts,
+		env:      env,
+		db:       db,
+		quitChan: make(chan struct{}),
+		eg:       &errgroup.Group{},
+		atimes:   &sync.Map{},
+		evictors: make([]*partitionEvictor, len(opts.Partitions)),
 		isolation: &rfpb.Isolation{
 			CacheType:   rfpb.Isolation_CAS_CACHE,
 			PartitionId: defaultPartitionID,
 		},
 	}
+	for i, part := range opts.Partitions {
+		pc.evictors[i] = &partitionEvictor{
+			part:       part,
+			blobDir:    pc.blobDir(),
+			samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
+			reader:     db,
+			writer:     db,
+			atimes:     pc.atimes,
+		}
+	}
+
 	if err := disk.EnsureDirectoryExists(pc.blobDir()); err != nil {
 		return nil, err
 	}
@@ -454,21 +474,16 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
-func (p *PebbleCache) TestingWaitForGC() {
-	p.waitGroup.Wait()
+func (p *PebbleCache) TestingWaitForGC() error {
+	eg := &errgroup.Group{}
+	for _, evictor := range p.evictors {
+		evictor := evictor
+		eg.Go(func() error {
+			return evictor.ttl()
+		})
+	}
+	return eg.Wait()
 }
-
-const (
-	// sampleN is the number of random files to sample when adding a new
-	// deletion candidate to the sample pool. Increasing this number
-	// makes eviction slower but improves sampled-LRU accuracy.
-	sampleN = 10
-
-	// samplePoolSize is the number of deletion candidates to maintain in
-	// memory at a time. Increasing this number uses more memory but
-	// improves sampled-LRU accuracy.
-	samplePoolSize = 100
-)
 
 type evictionPoolEntry struct {
 	timestamp       int64
@@ -478,12 +493,11 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	part      disk.Partition
-	blobDir   string
-	reader    pebble.Reader
-	writer    pebble.Writer
-	atimes    *sync.Map
-	waitGroup *sync.WaitGroup
+	part    disk.Partition
+	blobDir string
+	reader  pebble.Reader
+	writer  pebble.Writer
+	atimes  *sync.Map
 
 	samplePool     []*evictionPoolEntry
 	totalSizeBytes int64
@@ -725,8 +739,6 @@ func (e *partitionEvictor) computeSize() error {
 
 func (e *partitionEvictor) ttl() error {
 	maxAllowedSize := int64(janitorCutoffThreshold * float64(e.part.MaxSizeBytes))
-	e.waitGroup.Add(1)
-	defer e.waitGroup.Done()
 	for {
 		if err := e.computeSize(); err != nil {
 			return err
@@ -768,31 +780,14 @@ func (e *partitionEvictor) run(quitChan chan struct{}) error {
 	}
 }
 
-func (p *PebbleCache) runGC(quitChan chan struct{}) {
-	evictors := make([]*partitionEvictor, len(p.opts.Partitions))
-	for i, part := range p.opts.Partitions {
-		evictors[i] = &partitionEvictor{
-			part:       part,
-			blobDir:    p.blobDir(),
-			samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
-			reader:     p.db,
-			writer:     p.db,
-			atimes:     p.atimes,
-			waitGroup:  p.waitGroup,
-		}
-	}
-
-	for _, evictor := range evictors {
-		evictor := evictor
-		p.eg.Go(func() error {
-			return evictor.run(quitChan)
-		})
-	}
-}
-
 func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{}, 0)
-	go p.runGC(p.quitChan)
+	for _, evictor := range p.evictors {
+		evictor := evictor
+		p.eg.Go(func() error {
+			return evictor.run(p.quitChan)
+		})
+	}
 	return nil
 }
 

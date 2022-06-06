@@ -267,8 +267,6 @@ func TestSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pc.Start()
-	defer pc.Stop()
 
 	digestKeys := make([]*repb.Digest, 0, 150000)
 	for i := 0; i < 150; i++ {
@@ -312,8 +310,6 @@ func TestLRU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pc.Start()
-	defer pc.Stop()
 
 	quartile := numDigests / 4
 
