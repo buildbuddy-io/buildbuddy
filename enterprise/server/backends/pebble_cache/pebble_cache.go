@@ -248,6 +248,10 @@ func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
 	p.atimes.Store(xxhash.Sum64(fileMetadataKey), time.Now().UnixNano())
 }
 
+func (p *PebbleCache) clearAtime(fileMetadataKey []byte) {
+	p.atimes.Delete(xxhash.Sum64(fileMetadataKey))
+}
+
 // hasFileMetadata returns a bool indicating if the provided iterator has the
 // key specified by fileMetadataKey.
 func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
@@ -365,6 +369,7 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
+	p.clearAtime(fileMetadataKey)
 	return disk.DeleteFile(ctx, filePath)
 }
 
@@ -604,6 +609,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	if err := e.writer.Delete(sample.fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
 		return err
 	}
+	e.atimes.Delete(xxhash.Sum64(sample.fileMetadataKey))
 	return disk.DeleteFile(context.TODO(), sample.filePath)
 }
 
