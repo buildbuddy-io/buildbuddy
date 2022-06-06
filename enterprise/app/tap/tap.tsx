@@ -17,6 +17,7 @@ import { ChevronsRight } from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
+import { normalizeRepoURL } from "../../../app/util/git";
 
 interface Props {
   user: User;
@@ -144,11 +145,11 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   selectedRepo(): string {
-    const repo = this.props.search.get("repo");
-    if (repo) return repo;
+    let repo = this.props.search.get("repo");
+    if (repo) return normalizeRepoURL(repo);
 
-    const lastSelectedRepo = localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY];
-    if (lastSelectedRepo) return lastSelectedRepo;
+    let lastSelectedRepo = localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY];
+    if (lastSelectedRepo) return normalizeRepoURL(lastSelectedRepo);
 
     return this.state?.repos[0] || "";
   }
