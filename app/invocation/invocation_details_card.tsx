@@ -37,9 +37,11 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     return [
       "bazel",
       this.props.model.started?.command,
-      ...this.props.model.expanded?.id?.pattern?.pattern,
-      ...options,
-    ].join(" ");
+      ...(this.props.model.expanded?.id?.pattern?.pattern || []),
+      ...(options || []),
+    ]
+      .filter((value) => value)
+      .join(" ");
   }
 
   render() {
