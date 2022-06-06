@@ -446,8 +446,8 @@ func (p *partition) WaitUntilMapped() {
 }
 
 func (p *partition) Statusz(ctx context.Context) string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	buf := "<br>"
 	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
 	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
@@ -718,15 +718,18 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
 	ok := p.lru.Contains(k.FullPath())
+	isMapped := p.diskIsMapped
+	p.mu.RUnlock()
 
-	if !ok && !p.diskIsMapped {
+	if !ok && !isMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
+		p.mu.Lock()
 		ok = p.addFileToLRUIfExists(k)
+		p.mu.Unlock()
 	}
 	return ok, nil
 }

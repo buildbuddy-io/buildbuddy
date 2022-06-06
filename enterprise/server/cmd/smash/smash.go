@@ -240,7 +240,7 @@ func main() {
 	if *method == byteStreamRead {
 		preWrittenDigests = writeBlobsForReading(ctx, int(*concurrency))
 	} else if *method == findMissingBlobs {
-		preWrittenDigests = writeBlobsForReading(ctx, 1000)
+		preWrittenDigests = writeBlobsForReading(ctx, 10000)
 	}
 
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
