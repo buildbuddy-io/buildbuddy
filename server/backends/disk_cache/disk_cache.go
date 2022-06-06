@@ -721,7 +721,6 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	ok := p.lru.Contains(k.FullPath())
-
 	if !ok && !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
