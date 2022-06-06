@@ -83,6 +83,8 @@ func isEmptyLayer(layer v1.Layer) (bool, error) {
 	if err != nil {
 		return false, status.UnknownErrorf("could not determine layer size for layer %q: %s", d, err)
 	}
+	// An empty tar.gz archive contains an "end of file" record, so it's not 0
+	// bytes.
 	if size > 100 {
 		return false, nil
 	}
@@ -92,6 +94,8 @@ func isEmptyLayer(layer v1.Layer) (bool, error) {
 	}
 	defer lr.Close()
 	r := tar.NewReader(lr)
+	// If the archive is empty, r.Next should immediately return an EOF error
+	// to indicate there are no files contained inside.
 	_, err = r.Next()
 	if err == io.EOF {
 		return true, nil
