@@ -720,16 +720,19 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// if necessary and applicable.
 	p.mu.RLock()
 	ok := p.lru.Contains(k.FullPath())
-	isMapped := p.diskIsMapped
 	p.mu.RUnlock()
+	if ok {
+		// Early return, without any additional locking.
+		return ok, nil
+	}
 
-	if !ok && !isMapped {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !ok && !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		p.mu.Lock()
 		ok = p.addFileToLRUIfExists(k)
-		p.mu.Unlock()
 	}
 	return ok, nil
 }
