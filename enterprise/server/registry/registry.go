@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base32"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -28,20 +27,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/match"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -61,12 +65,10 @@ var (
 	// the stargz store. base32 to make it a valid image name.
 	imageNameEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-	manifestReqRE    = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
-	optManifestReqRE = regexp.MustCompile("/v2/(.+?)/optimizedManifests/(.+)")
-	blobReqRE        = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
+	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
+	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
 
 	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort    = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
 	serverType = flag.String("server_type", "registry-server", "The server type to match on health checks")
 
 	casBackend = flag.String("registry.cas_backend", "", "")
@@ -177,7 +179,10 @@ func (r *registry) dedupeConvertImage(ctx context.Context, img v1.Image) (manife
 	v, err, _ := r.workDeduper.Do(d.String(), func() (interface{}, error) {
 		return r.convertImage(ctx, img)
 	})
-	return v.(manifestLike), err
+	if err != nil {
+		return nil, err
+	}
+	return v.(manifestLike), nil
 }
 
 type convertedImage struct {
@@ -286,7 +291,10 @@ func (r *registry) dedupeConvertImageIndex(ctx context.Context, imgIdx v1.ImageI
 	v, err, _ := r.workDeduper.Do(d.String(), func() (interface{}, error) {
 		return r.convertImageIndex(ctx, imgIdx)
 	})
-	return v.(manifestLike), err
+	if err != nil {
+		return nil, err
+	}
+	return v.(manifestLike), nil
 }
 
 type convertedImageIndex struct {
@@ -413,8 +421,8 @@ func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Descri
 	return nil
 }
 
-func (r *registry) convert(ctx context.Context, req *request, remoteDesc *remote.Descriptor) (*regpb.Manifest, error) {
-	req.logger.Infof("Converting %q", remoteDesc.Ref)
+func (r *registry) convert(ctx context.Context, reqLogger log.Logger, remoteDesc *remote.Descriptor) (*regpb.Manifest, error) {
+	reqLogger.Infof("Converting %q", remoteDesc.Ref)
 
 	start := time.Now()
 
@@ -447,7 +455,7 @@ func (r *registry) convert(ctx context.Context, req *request, remoteDesc *remote
 		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
 	}
 
-	req.logger.Infof("Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
+	reqLogger.Infof("Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
 
 	manifestProto, err := manifestProto(servable)
 	if err != nil {
@@ -538,41 +546,13 @@ func (r *registry) getOptimizedManifest(ctx context.Context, req *request, image
 		remoteDesc = desc
 	}
 
-	return r.convert(ctx, req, remoteDesc)
+	return r.convert(ctx, req.logger, remoteDesc)
 }
 
 // HTTP request with a per-request logger.
 type request struct {
 	*http.Request
 	logger log.Logger
-}
-
-// for json marshalling
-type optRef struct {
-	Ref string
-}
-
-func (r *registry) handleOptimizedManifestRequest(w http.ResponseWriter, req *request, encodedImageName, refName string) {
-	ib, err := imageNameEncoding.DecodeString(strings.ToUpper(encodedImageName))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not decode image image name %q: %s", encodedImageName, err), http.StatusBadRequest)
-		return
-	}
-	realImageName := string(ib)
-
-	manifest, err := r.getOptimizedManifest(req.Context(), req, realImageName, refName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not get optimized manifest: %s", err), http.StatusInternalServerError)
-		return
-	}
-
-	resolved := fmt.Sprintf("%s@%s", encodedImageName, manifest.Digest)
-	b, err := json.Marshal(&optRef{Ref: resolved})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not get optimized manifest: %s", err), http.StatusInternalServerError)
-	}
-	w.Write(b)
-	w.Write([]byte("\n"))
 }
 
 func (r *registry) handleManifestRequest(w http.ResponseWriter, req *request, imageName, refName string) {
@@ -737,6 +717,151 @@ type registry struct {
 	workDeduper singleflight.Group
 }
 
+// checkAccess whether the supplied credentials are sufficient to retrieve
+// the provided img.
+func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, img v1.Image, authenticator authn.Authenticator) error {
+	// Check if we have access to all the layers.
+	// Obtaining the size of a layer requires a HEAD request to the remote repo.
+	layers, err := img.Layers()
+	if err != nil {
+		return status.UnknownErrorf("could not get layers for image: %s", err)
+	}
+	eg, egCtx := errgroup.WithContext(ctx)
+	remoteOpts := []remote.Option{remote.WithContext(egCtx)}
+	if authenticator != nil {
+		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
+	}
+	for _, layerInfo := range layers {
+		layerInfo := layerInfo
+		eg.Go(func() error {
+			d, err := layerInfo.Digest()
+			if err != nil {
+				return err
+			}
+			layerRef := imgRef.Context().Digest(d.String())
+			l, err := remote.Layer(layerRef, remoteOpts...)
+			if err != nil {
+				return err
+			}
+			_, err = l.Size()
+			return err
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("could not retrieve image layer from remote: %s", err)
+		}
+		return status.UnavailableErrorf("could not retrieve image layer from remote: %s", err)
+	}
+
+	return nil
+}
+
+// targetImageFromDescriptor returns the image instance described by the remote
+// descriptor. If the remote descriptor is a manifest, then the manifest is
+// returned directly. If the remote descriptor is an image index, a single
+// manifest is selected from the index using the provided platform options.
+func (r *registry) targetImageFromDescriptor(remoteDesc *remote.Descriptor, platform *regpb.Platform) (v1.Image, error) {
+	switch remoteDesc.MediaType {
+	// This is an "image index", a meta-manifest that contains a list of
+	// {platform props, manifest hash} properties to allow client to decide
+	// which manifest they want to use based on platform.
+	case types.OCIImageIndex, types.DockerManifestList:
+		imgIdx, err := remoteDesc.ImageIndex()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image index from descriptor: %s", err)
+		}
+		imgs, err := partial.FindImages(imgIdx, match.Platforms(v1.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		}))
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not search image index: %s", err)
+		}
+		if len(imgs) == 0 {
+			return nil, status.NotFoundErrorf("could not find suitable image in image index")
+		}
+		if len(imgs) > 1 {
+			return nil, status.NotFoundErrorf("found multiple matching images in image index")
+		}
+		return imgs[0], nil
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		img, err := remoteDesc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		}
+		return img, nil
+	default:
+		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
+	}
+}
+
+func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimizedImageRequest) (*regpb.GetOptimizedImageResponse, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, status.InternalErrorf("could not generate request ID: %s", err)
+	}
+	logger := log.NamedSubLogger(id.String())
+
+	logger.Infof("GetOptimizedImage %q", req.GetImage())
+	imageRef, err := ctrname.ParseReference(req.GetImage())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image %q", req.GetImage())
+	}
+
+	var authenticator authn.Authenticator
+	remoteOpts := []remote.Option{remote.WithContext(ctx)}
+	if req.GetImageCredentials().GetUsername() != "" || req.GetImageCredentials().GetPassword() != "" {
+		authenticator := &authn.Basic{
+			Username: req.GetImageCredentials().GetUsername(),
+			Password: req.GetImageCredentials().GetPassword(),
+		}
+		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
+	}
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	remoteImg, err := r.targetImageFromDescriptor(remoteDesc, req.GetPlatform())
+	if err != nil {
+		return nil, err
+	}
+
+	// Check whether the supplied credentials are sufficient to access the
+	// remote image.
+	if err := r.checkAccess(ctx, imageRef, remoteImg, authenticator); err != nil {
+		return nil, err
+	}
+
+	// If we got here then it means the credentials are valid for the remote
+	// repo. Now we can return the optimized image ref to the client.
+
+	manifest, err := r.getCachedManifest(ctx, remoteDesc.Digest.String())
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
+	}
+	if manifest != nil {
+		logger.Infof("Using cached manifest information")
+	} else {
+		convertedManifest, err := r.convert(ctx, logger, remoteDesc)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not convert image: %s", err)
+		}
+		manifest = convertedManifest
+	}
+
+	encodedImageName := strings.ToLower(imageNameEncoding.EncodeToString([]byte(imageRef.Context().Name())))
+
+	return &regpb.GetOptimizedImageResponse{
+		OptimizedImage: fmt.Sprintf("%s@%s", encodedImageName, manifest.Digest),
+	}, nil
+}
+
 func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env environment.Env) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(w http.ResponseWriter, req *http.Request) {
@@ -764,31 +889,20 @@ func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env e
 			r.handleBlobRequest(w, wReq, m[1], m[2])
 			return
 		}
-		// This is a BuildBuddy specific endpoint that allows us to tell
-		// the client which manifest to use for a given image reference.
-		if m := optManifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-			r.handleOptimizedManifestRequest(w, wReq, m[1], m[2])
-			return
-		}
 		http.NotFound(w, req)
 	})
 	mux.Handle("/readyz", hc.ReadinessHandler())
 	mux.Handle("/healthz", hc.LivenessHandler())
 
-	if env.GetSSLService().IsEnabled() {
-		log.Infof("Starting HTTPS server on port %d", *sslPort)
-		tlsConfig, mux := env.GetSSLService().ConfigureTLS(mux)
-		sslSrv := &http.Server{
-			Handler:   mux,
-			TLSConfig: tlsConfig,
-		}
-		sslLis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *sslPort))
-		if err != nil {
-			log.Fatalf("could not listen on SSL port %d: %s", *sslPort, err)
-		}
-		go func() {
-			_ = sslSrv.ServeTLS(sslLis, "", "")
-		}()
+	regRegistryServices := func(server *grpc.Server, env environment.Env) {
+		regpb.RegisterRegistryServer(server, r)
+	}
+
+	if err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
+		log.Fatalf("Could not setup GRPC server: %s", err)
+	}
+	if err := grpc_server.RegisterGRPCSServer(env, regRegistryServices); err != nil {
+		log.Fatalf("Could not setup GRPCS server: %s", err)
 	}
 
 	log.Infof("Starting HTTP server on port %d", *port)

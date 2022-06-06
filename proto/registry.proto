@@ -17,3 +17,37 @@ message Manifest {
   // CAS anymore.
   repeated build.bazel.remote.execution.v2.Digest cas_dependencies = 4;
 }
+
+message Credentials {
+  string username = 1;
+  string password = 2;
+}
+
+message Platform {
+  string arch = 1;
+  string os = 2;
+  string variant = 3;
+}
+
+message GetOptimizedImageRequest {
+  // The target image, including repo (e.g. docker.io/busybox)
+  string image = 1;
+
+  // If an image has multiple variants, this selector is used
+  // to select a single variant.
+  Platform platform = 2;
+
+  // Credentials for accessing the target image.
+  Credentials image_credentials = 3;
+}
+
+message GetOptimizedImageResponse {
+  string optimized_image = 1;
+}
+
+service Registry {
+  // Returns an optimized image for the given remote image reference.
+  // This RPC always checks the credentials against the remote repo,
+  // even if the optimized image is in the cache.
+  rpc GetOptimizedImage(GetOptimizedImageRequest) returns (GetOptimizedImageResponse);
+}
