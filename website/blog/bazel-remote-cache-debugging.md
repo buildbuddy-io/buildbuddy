@@ -7,7 +7,7 @@ author_title: Engineer @ BuildBuddy
 date: 2022-06-06:12:00:00
 author_url: https://github.com/bduffany
 author_image_url: https://avatars.githubusercontent.com/u/2414826?v=4
-image: /img/blog/cache-requests-card.png
+image: /img/blog/remote-cache-debugging.png
 tags: [product, engineering]
 ---
 
