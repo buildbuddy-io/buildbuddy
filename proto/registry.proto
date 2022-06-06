@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+import "proto/remote_execution.proto";
+
+package registry;
+
+// Metadata about an optimized manifest.
+message Manifest {
+  // The (OCI, sha256:foo) digest of the manifest.
+  string digest = 1;
+  // Raw manifest contents.
+  bytes data = 2;
+  // Content type of the manifest.
+  string content_type = 3;
+  // CAS dependencies (layer blobs) for this manifest. We ignore an
+  // optimized manifest if any of the referenced blobs are not in the
+  // CAS anymore.
+  repeated build.bazel.remote.execution.v2.Digest cas_dependencies = 4;
+}
