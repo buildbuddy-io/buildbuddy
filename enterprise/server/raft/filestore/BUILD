@@ -10,7 +10,6 @@ go_library(
         "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//server/util/disk",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
     ],

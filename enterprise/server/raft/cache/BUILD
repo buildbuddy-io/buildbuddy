@@ -28,7 +28,6 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/network",
-        "//server/util/prefix",
         "//server/util/status",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
