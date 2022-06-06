@@ -274,7 +274,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 		// Upload compressed blob with metadata.
 		// Use an invocation context scoped just to this upload.
 		{
-			rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t)}
+			rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t), ActionMnemonic: "GoCompile"}
 			ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 			require.NoError(t, err)
 			uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
@@ -290,7 +290,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 
 		// Read back the compressed blob we just uploaded, using a new invocation
 		// context. After decompressing, should get back the original blob contents.
-		rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t)}
+		rmd := &repb.RequestMetadata{ToolInvocationId: newUUID(t), ActionMnemonic: "GoCompile"}
 		ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 		require.NoError(t, err)
 		downloadResourceName := fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes)
