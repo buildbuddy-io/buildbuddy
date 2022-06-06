@@ -190,6 +190,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	for i, part := range opts.Partitions {
 		pc.evictors[i] = &partitionEvictor{
+			mu:         &sync.Mutex{},
 			part:       part,
 			blobDir:    pc.blobDir(),
 			samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
@@ -493,6 +494,7 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
+	mu      *sync.Mutex
 	part    disk.Partition
 	blobDir string
 	reader  pebble.Reader
@@ -738,6 +740,8 @@ func (e *partitionEvictor) computeSize() error {
 }
 
 func (e *partitionEvictor) ttl() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	maxAllowedSize := int64(janitorCutoffThreshold * float64(e.part.MaxSizeBytes))
 	for {
 		if err := e.computeSize(); err != nil {
@@ -761,9 +765,6 @@ func (e *partitionEvictor) ttl() error {
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
 	// Compute size once, initially, so that a correct
 	// value is set and not the init value of 0.
-	if err := e.computeSize(); err != nil {
-		return err
-	}
 	if err := e.ttl(); err != nil {
 		return err
 	}

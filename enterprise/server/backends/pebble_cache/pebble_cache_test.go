@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -27,10 +26,6 @@ import (
 var (
 	emptyUserMap = testauth.TestUsers()
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
@@ -267,6 +262,8 @@ func TestSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pc.Start()
+	defer pc.Stop()
 
 	digestKeys := make([]*repb.Digest, 0, 150000)
 	for i := 0; i < 150; i++ {
@@ -310,6 +307,8 @@ func TestLRU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pc.Start()
+	defer pc.Stop()
 
 	quartile := numDigests / 4
 
