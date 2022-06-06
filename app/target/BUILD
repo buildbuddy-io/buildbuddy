@@ -8,6 +8,7 @@ ts_library(
     deps = [
         "//app/alert",
         "//app/auth",
+        "//app/components/button",
         "//app/docs",
         "//app/format",
         "//app/router",

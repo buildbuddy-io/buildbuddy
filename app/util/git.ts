@@ -6,10 +6,10 @@
  * - localhost URLs are allowed to be http://
  */
 export function normalizeRepoURL(url: string): string {
+  if (!url) return url;
+  url = url.trim();
   // Leave file:// URLs untouched
   if (url.startsWith("file://")) return url;
-
-  url = url.trim();
   url = url
     // Strip ssh:// prefix
     .replace(/^ssh:\/\//, "")

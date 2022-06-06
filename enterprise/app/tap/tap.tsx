@@ -145,10 +145,10 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   selectedRepo(): string {
-    let repo = this.props.search.get("repo");
+    const repo = this.props.search.get("repo");
     if (repo) return normalizeRepoURL(repo);
 
-    let lastSelectedRepo = localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY];
+    const lastSelectedRepo = localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY];
     if (lastSelectedRepo) return normalizeRepoURL(lastSelectedRepo);
 
     return this.state?.repos[0] || "";

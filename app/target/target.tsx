@@ -3,7 +3,6 @@ import React from "react";
 import TargetTestLogCardComponent from "./target_test_log_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
 import TargetArtifactsCardComponent from "./target_artifacts_card";
-import { TextLink } from "../components/link/link";
 import ActionCardComponent from "./action_card";
 import router from "../router/router";
 import format from "../format/format";
@@ -14,7 +13,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
-import { OutlinedLinkButton } from "app/components/button/link_button";
+import { OutlinedLinkButton } from "../components/button/link_button";
 
 interface Props {
   invocationId: string;
