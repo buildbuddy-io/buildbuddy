@@ -876,7 +876,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if action != nil {
 		action = api_common.FillActionOutputFilesFromBuildEvent(event, action)
 	} else {
-		// early exist if this wasn't an action event.
+		// early exit if this isn't an action event.
 		return nil
 	}
 	b, err := proto.Marshal(action)
