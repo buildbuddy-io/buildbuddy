@@ -24,6 +24,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/timeutil",
+        "@com_github_klauspost_compress//zstd",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/timestamppb",

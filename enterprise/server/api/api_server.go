@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -147,6 +148,42 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	}, nil
 }
 
+func (s *APIServer) getActionsFromCache(ctx context.Context, req *apipb.GetActionRequest) ([]*apipb.Action, error) {
+	// This limit is a safeguard against buffering too many results in memory.
+	// We expect to hit this rarely (if ever) in production usage.
+	const limit = 100_000
+	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
+		return nil, nil
+	}
+	iid := req.GetSelector().GetInvocationId()
+	serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
+	if err == nil {
+		return nil, err
+	}
+	dec, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	actions := make([]*apipb.Action, 0)
+	a := &apipb.Action{}
+	buf := make([]byte, 100)
+
+	for _, compressed := range serializedResults {
+		raw, err := dec.DecodeAll([]byte(compressed), buf[:0])
+		if err != nil {
+			return nil, err
+		}
+		if err := proto.Unmarshal(raw, a); err != nil {
+			return nil, err
+		}
+		if actionMatchesActionSelector(a, req.GetSelector()) {
+			actions = append(actions, a)
+		}
+	}
+	return actions, nil
+}
+
 func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) (*apipb.GetActionResponse, error) {
 	if _, err := s.checkPreconditions(ctx); err != nil {
 		return nil, err
@@ -160,22 +197,10 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		Action: make([]*apipb.Action, 0),
 	}
 
-	// This limit is a safeguard against buffering too many results in memory.
-	// We expect to hit this rarely (if ever) in production usage.
-	const limit = 100_000
-	if api_config.CacheEnabled() && s.env.GetMetricsCollector() != nil {
-		serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
-		if err == nil {
-			for _, serializedResult := range serializedResults {
-				a := &apipb.Action{}
-				if err := proto.Unmarshal([]byte(serializedResult), a); err == nil {
-					if actionMatchesActionSelector(a, req.GetSelector()) {
-						rsp.Action = append(rsp.Action, a)
-					}
-				}
-			}
-		}
+	if cachedActions, err := s.getActionsFromCache(ctx, req); err == nil {
+		rsp.Action = append(rsp.Action, cachedActions...)
 	}
+
 	if len(rsp.Action) > 0 {
 		return rsp, nil
 	}

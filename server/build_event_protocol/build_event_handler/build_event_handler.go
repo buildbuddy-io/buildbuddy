@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -119,15 +120,16 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 	}
 
 	return &EventChannel{
-		env:            b.env,
-		statsRecorder:  b.statsRecorder,
-		ctx:            ctx,
-		pw:             nil,
-		beValues:       buildEventAccumulator,
-		redactor:       redact.NewStreamingRedactor(b.env),
-		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
-		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
-		collector:      b.env.GetMetricsCollector(),
+		env:                     b.env,
+		statsRecorder:           b.statsRecorder,
+		ctx:                     ctx,
+		pw:                      nil,
+		beValues:                buildEventAccumulator,
+		redactor:                redact.NewStreamingRedactor(b.env),
+		statusReporter:          build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
+		targetTracker:           target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
+		collector:               b.env.GetMetricsCollector(),
+		compressedMetricWriters: make(map[string]*zstd.Encoder, 0),
 
 		hasReceivedEventWithOptions: false,
 		eventsBeforeOptions:         make([]*inpb.InvocationEvent, 0),
@@ -463,15 +465,16 @@ func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEv
 }
 
 type EventChannel struct {
-	ctx            context.Context
-	env            environment.Env
-	pw             *protofile.BufferedProtoWriter
-	beValues       *accumulator.BEValues
-	redactor       *redact.StreamingRedactor
-	statusReporter *build_status_reporter.BuildStatusReporter
-	targetTracker  *target_tracker.TargetTracker
-	statsRecorder  *statsRecorder
-	collector      interfaces.MetricsCollector
+	ctx                     context.Context
+	env                     environment.Env
+	pw                      *protofile.BufferedProtoWriter
+	beValues                *accumulator.BEValues
+	redactor                *redact.StreamingRedactor
+	statusReporter          *build_status_reporter.BuildStatusReporter
+	targetTracker           *target_tracker.TargetTracker
+	statsRecorder           *statsRecorder
+	collector               interfaces.MetricsCollector
+	compressedMetricWriters map[string]*zstd.Encoder
 
 	eventsBeforeOptions         []*inpb.InvocationEvent
 	hasReceivedEventWithOptions bool
@@ -562,6 +565,12 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 			return err
 		}
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
+	}
+
+	for _, closer := range e.compressedMetricWriters {
+		if err := closer.Close(); err != nil {
+			log.Errorf("Error closing compressed metric writer: %s", err)
+		}
 	}
 
 	ti, err := tableInvocationFromProto(invocation, iid)
@@ -867,6 +876,12 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 
 const apiFacetsExpiration = 1 * time.Hour
 
+type writerFunc func(data []byte) (int, error)
+
+func (wf writerFunc) Write(data []byte) (int, error) {
+	return wf(data)
+}
+
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
 	if e.collector == nil || !api_config.CacheEnabled() {
 		return nil
@@ -883,18 +898,32 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 		// early exit if this isn't an action event.
 		return nil
 	}
-	b, err := proto.Marshal(action)
+	buf, err := proto.Marshal(action)
 	if err != nil {
 		return err
 	}
 	key := api_common.ActionsKey(iid)
-	if err := e.collector.ListAppend(e.ctx, key, string(b)); err != nil {
+	if _, ok := e.compressedMetricWriters[key]; !ok {
+		wf := writerFunc(func(data []byte) (int, error) {
+			if err := e.collector.ListAppend(e.ctx, key, string(data)); err != nil {
+				return 0, err
+			}
+			if err := e.collector.Expire(e.ctx, key, apiFacetsExpiration); err != nil {
+				return 0, err
+			}
+			return len(data), nil
+		})
+		w, err := zstd.NewWriter(wf)
+		if err != nil {
+			return err
+		}
+		e.compressedMetricWriters[key] = w
+	}
+	enc := e.compressedMetricWriters[key]
+	if _, err = enc.Write(buf); err != nil {
 		return err
 	}
-	if err := e.collector.Expire(e.ctx, key, apiFacetsExpiration); err != nil {
-		return err
-	}
-	return nil
+	return enc.Flush()
 }
 
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
