@@ -57,7 +57,7 @@ func NewQuotaManager(env environment.Env, config *qcpb.ServiceConfig) (*QuotaMan
 }
 
 func createNamespace(env environment.Env, nsConfig *qcpb.NamespaceConfig) (*namespace, error) {
-	if len(nsConfig.GetName()) == 0 {
+	if nsConfig.GetName() == "" {
 		return nil, status.InvalidArgumentError("namespace name is empty")
 	}
 	defaultRateLimiterConfig := nsConfig.GetDefaultDynamicBucketTemplate()
@@ -97,7 +97,7 @@ func createRateLimiter(env environment.Env, namespace string, bc *qcpb.BucketCon
 	// TODO: set up a dedicated redis client for quota
 	store, err := goredisstore.NewCtx(env.GetDefaultRedisClient(), prefix)
 	if err != nil {
-		return nil, status.InternalErrorf("unable to init redist store: %s", err)
+		return nil, status.InternalErrorf("unable to init redis store: %s", err)
 	}
 
 	rate := bc.GetMaxRate()
