@@ -27,37 +27,53 @@ const (
 	gRPCMaxSize        = int64(4000000)
 )
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+type StreamBlobOpts struct {
+	Offset int64
+	Limit  int64
+}
+
+func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
 	if bsClient == nil {
-		return status.FailedPreconditionError("ByteStreamClient not configured")
+		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
 	if r.GetDigest().GetHash() == digest.EmptySha256 {
-		return nil
+		return 0, nil
 	}
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
-		ReadOffset:   0,
-		ReadLimit:    r.GetDigest().GetSizeBytes(),
+		ReadOffset:   opts.Offset,
+		ReadLimit:    opts.Limit,
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
-			return digest.MissingDigestError(r.GetDigest())
+			return 0, digest.MissingDigestError(r.GetDigest())
 		}
-		return err
+		return 0, err
 	}
 
+	written := int64(0)
 	for {
 		rsp, err := stream.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
-		out.Write(rsp.Data)
+		n, err := out.Write(rsp.Data)
+		if err != nil {
+			return 0, err
+		}
+		written += int64(n)
 	}
-	return nil
+	return written, nil
+}
+
+// TODO(vadim): return # of bytes written for consistency with GetBlobChunk
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+	_, err := GetBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
+	return err
 }
 
 func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
@@ -77,7 +93,7 @@ func ComputeFileDigest(fullFilePath, instanceName string) (*digest.ResourceName,
 	return ComputeDigest(f, instanceName)
 }
 
-func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
