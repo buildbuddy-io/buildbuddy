@@ -43,14 +43,14 @@ func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord
 	// files to be written either to pebble or to disk. Already written
 	// files will be read from wherever they stored, regardless of this
 	// setting.
-	return PebbleWriter(wb, fileRecord)
-	//return FileWriter(ctx, fileDir, fileRecord)
+	// return PebbleWriter(wb, fileRecord) NB: Pebble only writer needs more testing.
+	return FileWriter(ctx, fileDir, fileRecord)
 }
 
 func NewReader(ctx context.Context, fileDir string, iter *pebble.Iterator, md *rfpb.StorageMetadata) (io.ReadCloser, error) {
 	switch {
 	case md.GetFileMetadata() != nil:
-		return FileReader(ctx, fileDir, md.GetFileMetadata())
+		return FileReader(ctx, fileDir, md.GetFileMetadata(), 0, 0)
 	case md.GetPebbleMetadata() != nil:
 		return PebbleReader(iter, md.GetPebbleMetadata()), nil
 	default:
@@ -71,8 +71,8 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 	}
 }
 
-func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata) (io.ReadCloser, error) {
-	return disk.FileReader(ctx, filepath.Join(fileDir, f.GetFilename()), 0, 0)
+func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+	return disk.FileReader(ctx, filepath.Join(fileDir, f.GetFilename()), offset, limit)
 }
 
 func FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {

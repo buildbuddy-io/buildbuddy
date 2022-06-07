@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
@@ -166,6 +167,9 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	if err := s3_cache.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := pebble_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
 
