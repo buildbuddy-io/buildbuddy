@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"flag"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,15 +24,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-)
-
-var (
-	enableAPI   = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
-	enableCache = flag.Bool("api.enable_cache", true, "Whether or not to enable the API cache.")
 )
 
 type APIServer struct {
@@ -41,7 +36,7 @@ type APIServer struct {
 }
 
 func Register(env environment.Env) error {
-	if *enableAPI {
+	if api_config.APIEnabled() {
 		env.SetAPIService(NewAPIServer(env))
 	}
 	return nil
@@ -51,10 +46,6 @@ func NewAPIServer(env environment.Env) *APIServer {
 	return &APIServer{
 		env: env,
 	}
-}
-
-func Enabled() bool {
-	return *enableAPI
 }
 
 func (s *APIServer) checkPreconditions(ctx context.Context) (interfaces.UserInfo, error) {
@@ -172,13 +163,15 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 	// This limit is a safeguard against buffering too many results in memory.
 	// We expect to hit this rarely (if ever) in production usage.
 	const limit = 100_000
-	if *enableCache && s.env.GetMetricsCollector() != nil {
+	if api_config.CacheEnabled() && s.env.GetMetricsCollector() != nil {
 		serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
 		if err == nil {
-			a := &apipb.Action{}
 			for _, serializedResult := range serializedResults {
+				a := &apipb.Action{}
 				if err := proto.Unmarshal([]byte(serializedResult), a); err == nil {
-					rsp.Action = append(rsp.Action, a)
+					if actionMatchesActionSelector(a, req.GetSelector()) {
+						rsp.Action = append(rsp.Action, a)
+					}
 				}
 			}
 		}

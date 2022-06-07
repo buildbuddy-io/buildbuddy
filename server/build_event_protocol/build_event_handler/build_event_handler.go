@@ -46,6 +46,7 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -867,7 +868,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 const apiFacetsExpiration = 1 * time.Hour
 
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
-	if e.collector == nil {
+	if e.collector == nil || !api_config.CacheEnabled() {
 		return nil
 	}
 	action := &apipb.Action{
