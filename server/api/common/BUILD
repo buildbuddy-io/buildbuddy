@@ -9,6 +9,5 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/remote_cache/digest",
-        "//server/util/log",
     ],
 )

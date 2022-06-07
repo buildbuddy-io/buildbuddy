@@ -20,7 +20,6 @@ go_library(
         "//server/http/protolet",
         "//server/interfaces",
         "//server/tables",
-        "//server/util/log",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
