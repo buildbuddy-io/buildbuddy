@@ -172,7 +172,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 	// This limit is a safeguard against buffering too many results in memory.
 	// We expect to hit this rarely (if ever) in production usage.
 	const limit = 100_000
-	if *enableCache {
+	if *enableCache && s.env.GetMetricsCollector() != nil {
 		serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
 		if err == nil {
 			a := &apipb.Action{}

@@ -867,6 +867,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 const apiFacetsExpiration = 1 * time.Hour
 
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
+	if e.collector == nil {
+		return nil
+	}
 	action := &apipb.Action{
 		Id: &apipb.Action_Id{
 			InvocationId: iid,
