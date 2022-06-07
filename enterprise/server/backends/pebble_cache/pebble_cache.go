@@ -424,7 +424,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 		}
 	}
 	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
-	if err != nil {
+	if err == nil {
 		p.updateAtime(fileMetadataKey)
 	}
 	return rc, err
