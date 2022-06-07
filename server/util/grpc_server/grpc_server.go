@@ -18,15 +18,8 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
@@ -39,8 +32,10 @@ var (
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 )
 
-func RegisterGRPCServer(env environment.Env) error {
-	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil)
+type RegisterServices func(server *grpc.Server, env environment.Env)
+
+func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
+	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
 	if err != nil {
 		return err
 	}
@@ -54,7 +49,7 @@ func RegisterGRPCServer(env environment.Env) error {
 	return nil
 }
 
-func RegisterGRPCSServer(env environment.Env) error {
+func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) error {
 	if !env.GetSSLService().IsEnabled() {
 		return nil
 	}
@@ -62,7 +57,7 @@ func RegisterGRPCSServer(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds))
+	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
 		return err
 	}
@@ -70,7 +65,7 @@ func RegisterGRPCSServer(env environment.Env) error {
 	return nil
 }
 
-func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption) (*grpc.Server, error) {
+func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
 
@@ -82,9 +77,9 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	grpcOptions := CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s", hostAndPort)
+		log.Infof("gRPCS listening on %s", hostAndPort)
 	} else {
-		log.Printf("gRPC listening on http://%s", hostAndPort)
+		log.Infof("gRPC listening on %s", hostAndPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -100,47 +95,13 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	// that substantially (50%+ QPS) impact performance.
 	// grpc_prometheus.EnableHandlingTimeHistogram()
 
-	// Start Build-Event-Protocol and Remote-Cache services.
-	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
-
-	if casServer := env.GetCASServer(); casServer != nil {
-		// Register to handle content addressable storage (CAS) messages.
-		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	}
-	if bsServer := env.GetByteStreamServer(); bsServer != nil {
-		// Register to handle bytestream (upload and download) messages.
-		bspb.RegisterByteStreamServer(grpcServer, bsServer)
-	}
-	if acServer := env.GetActionCacheServer(); acServer != nil {
-		// Register to handle action cache (upload and download) messages.
-		repb.RegisterActionCacheServer(grpcServer, acServer)
-	}
-	if pushServer := env.GetPushServer(); pushServer != nil {
-		rapb.RegisterPushServer(grpcServer, pushServer)
-	}
-	if fetchServer := env.GetFetchServer(); fetchServer != nil {
-		rapb.RegisterFetchServer(grpcServer, fetchServer)
-	}
-	if rexec := env.GetRemoteExecutionService(); rexec != nil {
-		repb.RegisterExecutionServer(grpcServer, rexec)
-	}
-	if scheduler := env.GetSchedulerService(); scheduler != nil {
-		scpb.RegisterSchedulerServer(grpcServer, scheduler)
-	}
-	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
-
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
-
-	// Register API Server as a gRPC service.
-	if api := env.GetAPIService(); api != nil {
-		apipb.RegisterApiServiceServer(grpcServer, api)
-	}
-
 	// Register health check service.
 	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
 
+	regServices(grpcServer, env)
+
 	go func() {
-		grpcServer.Serve(lis)
+		_ = grpcServer.Serve(lis)
 	}()
 	env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(grpcServer))
 	return grpcServer, nil

@@ -48,7 +48,14 @@ import (
 	"google.golang.org/grpc"
 
 	bundle "github.com/buildbuddy-io/buildbuddy"
+	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -191,6 +198,44 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	return realEnv
 }
 
+func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
+	// Start Build-Event-Protocol and Remote-Cache services.
+	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
+
+	if casServer := env.GetCASServer(); casServer != nil {
+		// Register to handle content addressable storage (CAS) messages.
+		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	}
+	if bsServer := env.GetByteStreamServer(); bsServer != nil {
+		// Register to handle bytestream (upload and download) messages.
+		bspb.RegisterByteStreamServer(grpcServer, bsServer)
+	}
+	if acServer := env.GetActionCacheServer(); acServer != nil {
+		// Register to handle action cache (upload and download) messages.
+		repb.RegisterActionCacheServer(grpcServer, acServer)
+	}
+	if pushServer := env.GetPushServer(); pushServer != nil {
+		rapb.RegisterPushServer(grpcServer, pushServer)
+	}
+	if fetchServer := env.GetFetchServer(); fetchServer != nil {
+		rapb.RegisterFetchServer(grpcServer, fetchServer)
+	}
+	if rexec := env.GetRemoteExecutionService(); rexec != nil {
+		repb.RegisterExecutionServer(grpcServer, rexec)
+	}
+	if scheduler := env.GetSchedulerService(); scheduler != nil {
+		scpb.RegisterSchedulerServer(grpcServer, scheduler)
+	}
+	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
+
+	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
+
+	// Register API Server as a gRPC service.
+	if api := env.GetAPIService(); api != nil {
+		apipb.RegisterApiServiceServer(grpcServer, api)
+	}
+}
+
 func StartAndRunServices(env environment.Env) {
 	env.SetListenAddr(*listen)
 
@@ -253,10 +298,10 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := grpc_server.RegisterGRPCServer(env); err != nil {
+	if err := grpc_server.RegisterGRPCServer(env, registerGRPCServices); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := grpc_server.RegisterGRPCSServer(env); err != nil {
+	if err := grpc_server.RegisterGRPCSServer(env, registerGRPCServices); err != nil {
 		log.Fatalf("%v", err)
 	}
 
