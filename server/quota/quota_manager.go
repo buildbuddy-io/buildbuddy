@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/quota/config"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -32,12 +33,14 @@ type namespace struct {
 }
 
 type QuotaManager struct {
+	env        environment.Env
 	config     *qcpb.ServiceConfig
 	namespaces map[string]*namespace
 }
 
 func NewQuotaManager(env environment.Env, config *qcpb.ServiceConfig) (*QuotaManager, error) {
 	qm := &QuotaManager{
+		env:        env,
 		config:     config,
 		namespaces: make(map[string]*namespace),
 	}
@@ -128,7 +131,28 @@ func (qm *QuotaManager) findRateLimiter(namespace string, key string) *throttled
 	return ns.defaultRateLimiter
 }
 
-func (qm *QuotaManager) Allow(ctx context.Context, namespace string, key string, quantity int64) (bool, error) {
+func (qm *QuotaManager) getGroupID(ctx context.Context) string {
+	if a := qm.env.GetAuthenticator(); a != nil {
+		user, err := a.AuthenticatedUser(ctx)
+		if err != nil {
+			return interfaces.AuthAnonymousUser
+		}
+		return user.GetGroupID()
+	}
+	return ""
+}
+
+func (qm *QuotaManager) getKey(ctx context.Context) string {
+	groupID := qm.getGroupID(ctx)
+	if groupID != "" {
+		return groupID
+	}
+	//TODO(lulu): find IP address
+	return ""
+}
+
+func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
+	key := qm.getKey(ctx)
 	rl := qm.findRateLimiter(namespace, key)
 	if rl == nil {
 		log.Warningf("rate limiter for namespace %q and key %q not found", namespace, key)

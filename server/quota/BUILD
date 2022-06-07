@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:quota_config_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/quota/config",
         "//server/util/log",
         "//server/util/status",
