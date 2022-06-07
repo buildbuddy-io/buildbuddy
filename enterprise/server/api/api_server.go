@@ -2,9 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
-	"flag"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,33 +14,29 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
-var enableAPI = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
-
-// A prefix specifying which ID encoding scheme we're using.
-// Don't change this unless you're changing the ID scheme, in which case you should probably check for this
-// prefix and support this old ID scheme for some period of time during the migration.
-const encodedIDPrefix = "id::v1::"
-
 type APIServer struct {
 	env environment.Env
 }
 
 func Register(env environment.Env) error {
-	if *enableAPI {
+	if api_config.APIEnabled() {
 		env.SetAPIService(NewAPIServer(env))
 	}
 	return nil
@@ -53,10 +46,6 @@ func NewAPIServer(env environment.Env) *APIServer {
 	return &APIServer{
 		env: env,
 	}
-}
-
-func Enabled() bool {
-	return *enableAPI
 }
 
 func (s *APIServer) checkPreconditions(ctx context.Context) (interfaces.UserInfo, error) {
@@ -166,32 +155,52 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 	if req.GetSelector().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("ActionSelector must contain a valid invocation_id")
 	}
+	iid := req.GetSelector().GetInvocationId()
+	rsp := &apipb.GetActionResponse{
+		Action: make([]*apipb.Action, 0),
+	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	// This limit is a safeguard against buffering too many results in memory.
+	// We expect to hit this rarely (if ever) in production usage.
+	const limit = 100_000
+	if api_config.CacheEnabled() && s.env.GetMetricsCollector() != nil {
+		serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
+		if err == nil {
+			for _, serializedResult := range serializedResults {
+				a := &apipb.Action{}
+				if err := proto.Unmarshal([]byte(serializedResult), a); err == nil {
+					if actionMatchesActionSelector(a, req.GetSelector()) {
+						rsp.Action = append(rsp.Action, a)
+					}
+				}
+			}
+		}
+	}
+	if len(rsp.Action) > 0 {
+		return rsp, nil
+	}
+
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, iid)
 	if err != nil {
 		return nil, err
 	}
 
-	actions := []*apipb.Action{}
 	for _, event := range inv.GetEvent() {
 		action := &apipb.Action{
 			Id: &apipb.Action_Id{
 				InvocationId: inv.InvocationId,
 			},
 		}
-
-		action = fillActionFromBuildEvent(event.BuildEvent, action)
+		action = api_common.FillActionFromBuildEvent(event.BuildEvent, action)
 
 		// Filter to only selected actions.
 		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
-			action = fillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
-			actions = append(actions, action)
+			action = api_common.FillActionOutputFilesFromBuildEvent(event.BuildEvent, action)
+			rsp.Action = append(rsp.Action, action)
 		}
 	}
 
-	return &apipb.GetActionResponse{
-		Action: actions,
-	}, nil
+	return rsp, nil
 }
 
 func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apipb.GetLogResponse, error) {
@@ -264,10 +273,6 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func encodeID(id string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(encodedIDPrefix + id))
-}
-
 func testStatusToStatus(testStatus build_event_stream.TestStatus) cmnpb.Status {
 	switch testStatus {
 	case build_event_stream.TestStatus_PASSED:
@@ -306,7 +311,7 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 				targetMap[label] = &apipb.Target{
 					Id: &apipb.Target_Id{
 						InvocationId: inv.InvocationId,
-						TargetId:     encodeID(label),
+						TargetId:     api_common.EncodeID(label),
 					},
 					Label:    label,
 					Status:   cmnpb.Status_BUILDING,
@@ -334,69 +339,6 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 		}
 	}
 	return targetMap
-}
-
-func filesFromOutput(output []*build_event_stream.File) []*apipb.File {
-	files := []*apipb.File{}
-	for _, output := range output {
-		uri := ""
-		switch file := output.File.(type) {
-		case *build_event_stream.File_Uri:
-			uri = file.Uri
-			// Contents files are not currently supported - only the file name will be appended without a uri.
-		}
-		f := &apipb.File{
-			Name: output.Name,
-			Uri:  uri,
-		}
-		if u, err := url.Parse(uri); err == nil {
-			if r, err := digest.ParseDownloadResourceName(u.Path); err == nil {
-				f.Hash = r.GetDigest().GetHash()
-				f.SizeBytes = r.GetDigest().GetSizeBytes()
-			}
-		}
-		files = append(files, f)
-	}
-	return files
-}
-
-func fillActionFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch event.Payload.(type) {
-	case *build_event_stream.BuildEvent_Completed:
-		{
-			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.TargetId = encodeID(event.GetId().GetTargetCompleted().GetLabel())
-			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
-			action.Id.ActionId = encodeID("build")
-			return action
-		}
-	case *build_event_stream.BuildEvent_TestResult:
-		{
-			testResultID := event.GetId().GetTestResult()
-			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
-			action.Id.TargetId = encodeID(event.GetId().GetTestResult().GetLabel())
-			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
-			action.Id.ActionId = encodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
-			return action
-		}
-	}
-	return nil
-}
-
-func fillActionOutputFilesFromBuildEvent(event *build_event_stream.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch p := event.Payload.(type) {
-	case *build_event_stream.BuildEvent_Completed:
-		{
-			action.File = filesFromOutput(p.Completed.ImportantOutput)
-			return action
-		}
-	case *build_event_stream.BuildEvent_TestResult:
-		{
-			action.File = filesFromOutput(p.TestResult.TestActionOutput)
-			return action
-		}
-	}
-	return nil
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
