@@ -18,6 +18,7 @@ ts_library(
         "//app/format",
         "//app/router",
         "//app/service",
+        "//app/util:git",
         "//app/util:math",
         "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",

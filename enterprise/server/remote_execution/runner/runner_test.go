@@ -576,35 +576,54 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		pool := newRunnerPool(t, env, noLimitsCfg)
 		ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
+		// Note: in each test step below, we use a fresh context and cancel it
+		// after the step is done, to ensure that the worker sticks around across task
+		// contexts
+
 		// Make a new persistent worker
-		r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res := r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 1, pool.PausedRunnerCount())
+		})()
 
 		// Reuse the persistent worker
-		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res = r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 1, pool.PausedRunnerCount())
+		})()
 
 		// Try a persistent worker with a new key
-		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res = r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 2, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 2, pool.PausedRunnerCount())
+		})()
 	}
 }
 

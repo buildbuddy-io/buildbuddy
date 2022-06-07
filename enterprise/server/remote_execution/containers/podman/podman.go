@@ -100,6 +100,10 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		"--name",
 		c.name,
 		"--rm",
+		"--dns",
+		"8.8.8.8",
+		"--dns-search",
+		".",
 		"--volume",
 		fmt.Sprintf(
 			"%s:%s",

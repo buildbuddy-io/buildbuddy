@@ -17,8 +17,7 @@ import (
 const (
 	// Label constants.
 	// Commonly used labels can be added here, and their documentation will be
-	// displayed in the metrics where they are used. Each constant's name should
-	// end with `Label`.
+	// displayed in the metrics where they are used.
 
 	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
 	StatusLabel = "status"
@@ -29,7 +28,6 @@ const (
 	/// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
-	// TODO(bduffany): Document the difference between `miss` and `upload`
 	/// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
@@ -70,6 +68,9 @@ const (
 	/// Command provided to the Bazel daemon: `run`, `test`, `build`, `coverage`, `mobile-install`, ...
 	BazelCommand = "bazel_command"
 
+	/// Exit code of a completed bazel command
+	BazelExitCode = "bazel_exit_code"
+
 	/// Executed action stage. Action execution is split into stages corresponding to
 	/// the timestamps defined in
 	/// [`ExecutedActionMetadata`](https://github.com/buildbuddy-io/buildbuddy/blob/fb2e3a74083d82797926654409dc3858089d260b/proto/remote_execution.proto#L797):
@@ -89,19 +90,19 @@ const (
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
-	/// GroupID associated with the request.
+	/// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
 	/// OS associated with the request.
 	OS = "os"
 
-	/// Arch associated with the request.
+	/// CPU architecture associated with the request.
 	Arch = "arch"
 
-	/// EventName is the name used to identify the type of an unexpected event.
+	/// The name used to identify the type of an unexpected event.
 	EventName = "name"
 
-	/// PartitionID is the ID of the disk cache partition this event applied to.
+	/// The ID of the disk cache partition this event applied to.
 	PartitionID = "partition_id"
 
 	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
@@ -124,6 +125,7 @@ var (
 		Help:      "The total number of invocations whose logs were uploaded to BuildBuddy.",
 	}, []string{
 		InvocationStatusLabel,
+		BazelExitCode,
 		BazelCommand,
 	})
 
@@ -193,7 +195,7 @@ var (
 		Subsystem: "invocation",
 		Name:      "stats_recorder_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "How long it took to finalize an invocation's stats. This includes the time required to wait for all BuildBuddy apps to flush their local metrics to Redis (if applicable) and then record the metrics to the DB.",
+		Help:      "How long it took to finalize an invocation's stats, in **microseconds**. This includes the time required to wait for all BuildBuddy apps to flush their local metrics to Redis (if applicable) and then record the metrics to the DB.",
 	})
 
 	WebhookInvocationLookupWorkers = promauto.NewGauge(prometheus.GaugeOpts{
@@ -208,7 +210,7 @@ var (
 		Subsystem: "invocation",
 		Name:      "webhook_invocation_lookup_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "How long it took to lookup an invocation before posting to the webhook.",
+		Help:      "How long it took to lookup an invocation before posting to the webhook, in **microseconds**.",
 	})
 
 	WebhookNotifyWorkers = promauto.NewGauge(prometheus.GaugeOpts{
@@ -223,7 +225,7 @@ var (
 		Subsystem: "invocation",
 		Name:      "webhook_notify_duration_usec",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "How long it took to post an invocation proto to the webhook.",
+		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
 	})
 
 	/// ## Remote cache metrics
@@ -319,7 +321,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_last_eviction_age_usec",
-		Help:      "The age (in usec) of the item most recently evicted from the cache",
+		Help:      "The age of the item most recently evicted from the cache, in **microseconds**.",
 	}, []string{
 		PartitionID,
 	})
@@ -351,6 +353,8 @@ var (
 	/// # Total number of duplicate write bytes.
 	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
 	/// ```
+
+	/// ## Remote execution metrics
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,

@@ -95,8 +95,10 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 
 	// Support prometheus grpc metrics.
 	grpc_prometheus.Register(grpcServer)
-	// Enable prometheus latency metrics too.
-	grpc_prometheus.EnableHandlingTimeHistogram()
+
+	// DISABLED in prod: enabling these causes unnecessary allocations
+	// that substantially (50%+ QPS) impact performance.
+	// grpc_prometheus.EnableHandlingTimeHistogram()
 
 	// Start Build-Event-Protocol and Remote-Cache services.
 	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
