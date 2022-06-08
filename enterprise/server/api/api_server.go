@@ -334,7 +334,7 @@ func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Targe
 				targetMap[label] = &apipb.Target{
 					Id: &apipb.Target_Id{
 						InvocationId: inv.InvocationId,
-						TargetId: label,
+						TargetId:     label,
 					},
 					Label:    label,
 					Status:   cmnpb.Status_BUILDING,
