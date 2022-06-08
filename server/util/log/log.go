@@ -249,6 +249,15 @@ func NamedSubLogger(name string) Logger {
 	}
 }
 
+func enrichEventFromContext(ctx context.Context, e *zerolog.Event) {
+	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
+		e.Str("invocation_id", iid)
+	}
+	if reqID, err := uuid.GetFromContext(ctx); err == nil {
+		e.Str("request_id", reqID)
+	}
+}
+
 // Zerolog convenience wrapper below here:
 // DEPRECATED: use log.Info instead!
 func Print(message string) {
@@ -270,6 +279,16 @@ func Debugf(format string, args ...interface{}) {
 	log.Debug().Msgf(format, args...)
 }
 
+// CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxDebugf(ctx context.Context, format string, args ...interface{}) {
+	e := log.Debug()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
+}
+
 // Info logs to the INFO log.
 func Info(message string) {
 	log.Info().Msg(message)
@@ -278,6 +297,16 @@ func Info(message string) {
 // Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
 func Infof(format string, args ...interface{}) {
 	log.Info().Msgf(format, args...)
+}
+
+// CtxInfof logs to the INFO log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxInfof(ctx context.Context, format string, args ...interface{}) {
+	e := log.Info()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
 }
 
 // Warning logs to the WARNING log.
@@ -290,6 +319,16 @@ func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
 }
 
+// CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxWarningf(ctx context.Context, format string, args ...interface{}) {
+	e := log.Warn()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
+}
+
 // Error logs to the ERROR log.
 func Error(message string) {
 	log.Error().Msg(message)
@@ -298,6 +337,16 @@ func Error(message string) {
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
+}
+
+// CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxErrorf(ctx context.Context, format string, args ...interface{}) {
+	e := log.Error()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
 }
 
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
@@ -312,6 +361,19 @@ func Fatal(message string) {
 // It calls os.Exit() with exit code 1.
 func Fatalf(format string, args ...interface{}) {
 	log.Fatal().Msgf(format, args...)
+	// Make sure fatal logs will exit.
+	os.Exit(1)
+}
+
+// CtxFatalf logs to the FATAL log. Arguments are handled in the manner of
+// fmt.Printf.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+// It calls os.Exit() with exit code 1.
+func CtxFatalf(ctx context.Context, format string, args ...interface{}) {
+	e := log.Fatal()
+	enrichEventFromContext(ctx, e)
+	e.Msgf(format, args...)
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
