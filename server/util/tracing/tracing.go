@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"math"
@@ -16,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/detectors/gcp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -53,34 +53,87 @@ const (
 	traceHeader                   = "x-buildbuddy-trace"
 	traceParentHeader             = "traceparent"
 	forceTraceHeaderValue         = "force"
-
-	TracingDecisionHeader = "tracing-decision"
 )
 
-type fractionSampler struct{}
+// fractionSampler allows specifying a default sampling fraction as well as overrides based on the span name.
+// Based on TraceIDRatioBased sampler from the OpenTelemetry library.
+type fractionSampler struct {
+	traceIDUpperBound          uint64
+	traceIDUpperBoundOverrides map[string]uint64
+	description                string
+	ignoreForcedTracingHeader  bool
+}
+
+func newFractionSampler(fraction float64, fractionOverrides map[string]float64, ignoreForcedTracingHeader bool) *fractionSampler {
+	configDescription := fmt.Sprintf("default=%f", fraction)
+	boundOverrides := make(map[string]uint64)
+	for n, f := range fractionOverrides {
+		boundOverrides[n] = uint64(f * math.MaxInt64)
+		configDescription += fmt.Sprintf(",%s=%f", n, f)
+	}
+
+	return &fractionSampler{
+		traceIDUpperBound:          uint64(fraction * math.MaxInt64),
+		traceIDUpperBoundOverrides: boundOverrides,
+		description:                fmt.Sprintf("FractionSampler(%s)", configDescription),
+		ignoreForcedTracingHeader:  ignoreForcedTracingHeader,
+	}
+}
+
+func (s *fractionSampler) checkForcedTrace(parameters sdktrace.SamplingParameters) bool {
+	if s.ignoreForcedTracingHeader {
+		return false
+	}
+	md, ok := metadata.FromIncomingContext(parameters.ParentContext)
+	if !ok {
+		// Not an incoming gRPC request
+		return false
+	}
+	hdrs, ok := md[traceHeader]
+	forced := ok && len(hdrs) > 0 && hdrs[0] == forceTraceHeaderValue
+	return forced
+}
 
 func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
 	psc := trace.SpanContextFromContext(parameters.ParentContext)
-	if ShouldTraceIncoming(parameters.ParentContext, parameters.Name) {
+
+	// Check if sampling is forced via gRPC header.
+	if s.checkForcedTrace(parameters) {
 		return sdktrace.SamplingResult{
 			Decision:   sdktrace.RecordAndSample,
 			Attributes: parameters.Attributes,
 			Tracestate: psc.TraceState(),
 		}
 	}
+
+	bound := s.traceIDUpperBound
+	if boundOverride, ok := s.traceIDUpperBoundOverrides[parameters.Name]; ok {
+		bound = boundOverride
+	}
+
+	x := binary.BigEndian.Uint64(parameters.TraceID[0:8]) >> 1
+	decision := sdktrace.Drop
+	if x < bound {
+		decision = sdktrace.RecordAndSample
+	}
 	return sdktrace.SamplingResult{
-		Decision:   sdktrace.Drop,
+		Decision:   decision,
 		Attributes: parameters.Attributes,
 		Tracestate: psc.TraceState(),
 	}
 }
+
 func (s *fractionSampler) Description() string {
-	return "FractionSampler"
+	return s.description
 }
 
 func Configure(env environment.Env) error {
-	if *traceJaegerCollector == "" {
+	if *traceFraction <= 0 {
 		return nil
+	}
+
+	if *traceJaegerCollector == "" {
+		return status.InvalidArgumentErrorf("Tracing enabled but Jaeger collector endpoint is not set.")
 	}
 
 	traceExporter, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
@@ -88,6 +141,21 @@ func Configure(env environment.Env) error {
 		log.Warningf("Could not initialize Cloud Trace exporter: %s", err)
 		return nil
 	}
+
+	fractionOverrides := make(map[string]float64)
+	for _, override := range *traceFractionOverrides {
+		parts := strings.Split(override, "=")
+		if len(parts) != 2 {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
+		}
+		name := parts[0]
+		fraction, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, fraction not valid: %s", override, err)
+		}
+		fractionOverrides[name] = fraction
+	}
+	sampler := newFractionSampler(*traceFraction, fractionOverrides, *ignoreForcedTracingHeader)
 
 	var resourceAttrs []attribute.KeyValue
 	if *traceServiceName != "" {
@@ -109,7 +177,6 @@ func Configure(env environment.Env) error {
 		res = resource.NewSchemaless(resourceAttrs...)
 	}
 
-	sampler := &fractionSampler{}
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithSpanProcessor(bsp),
 		sdktrace.WithSampler(sdktrace.ParentBased(sampler)),
@@ -123,7 +190,7 @@ func Configure(env environment.Env) error {
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
 	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
 	otel.SetTextMapPropagator(propagator)
-	log.Info("Tracing enabled.")
+	log.Infof("Tracing enabled with sampler: %s", sampler.Description())
 	return nil
 }
 
@@ -227,14 +294,7 @@ func (m *HttpServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // StartSpan starts a new span named after the calling function.
 func StartSpan(ctx context.Context, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	var provider trace.TracerProvider
-	if decision, ok := tracingDecision(ctx); ok && !decision {
-		provider = trace.NewNoopTracerProvider()
-	} else {
-		provider = otel.GetTracerProvider()
-	}
-
-	ctx, span := provider.Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
+	ctx, span := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName).Start(ctx, "unknown_go_function", opts...)
 	if !span.IsRecording() {
 		return ctx, span
 	}
@@ -254,89 +314,4 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 		return
 	}
 	span.SetAttributes(attribute.String(key, value))
-}
-
-func parseOverrides() error {
-	overrideFractions = make(map[string]float64, 0)
-	for _, override := range *traceFractionOverrides {
-		parts := strings.Split(override, "=")
-		if len(parts) != 2 {
-			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, expected name=fraction", override)
-		}
-		name := parts[0]
-		fraction, err := strconv.ParseFloat(parts[1], 64)
-		if err != nil {
-			return status.InvalidArgumentErrorf("Trace fraction override %q has invalid format, fraction not valid: %s", override, err)
-		}
-		overrideFractions[name] = fraction
-	}
-	return nil
-}
-
-func shouldTraceMD(grpcMD metadata.MD, method string) bool {
-	if len(grpcMD) > 0 {
-		// Check if this was a force-traced request.
-		forcedVals := grpcMD[traceHeader]
-		if !*ignoreForcedTracingHeader && len(forcedVals) > 0 && forcedVals[0] == forceTraceHeaderValue {
-			return true
-		}
-
-		// Check if this is a request from some other service which has
-		// already enabled tracing.
-		parentVals := grpcMD[traceParentHeader]
-		if len(parentVals) > 0 && len(parentVals[0]) > 0 {
-			return true
-		}
-	}
-	initOverrideFractions.Do(func() {
-		if err := parseOverrides(); err != nil {
-			log.Errorf(err.Error())
-		}
-	})
-
-	fraction := *traceFraction
-	if f, ok := overrideFractions[method]; ok {
-		fraction = f
-	}
-	return float64(random.RandUint64())/math.MaxUint64 < fraction
-}
-
-func tracingDecision(ctx context.Context) (bool, bool) {
-	if v := ctx.Value(TracingDecisionHeader); v != nil {
-		shouldTrace, ok := v.(bool)
-		if ok {
-			return shouldTrace, true
-		}
-	}
-	return false, false
-}
-
-// ShouldTraceIncoming returns a boolean indicating if request should be traced
-// because:
-//  - tracing was forced
-//  - some other service is tracing this request already
-//  - sampling indicates this request should be traced
-func ShouldTraceIncoming(ctx context.Context, method string) bool {
-	// If this ctx was already selected for tracing by the rpc interceptor,
-	// use that decision.
-	if decision, ok := tracingDecision(ctx); ok {
-		return decision
-	}
-	grpcMD, _ := metadata.FromIncomingContext(ctx)
-	return shouldTraceMD(grpcMD, method)
-}
-
-//  ShouldTraceOutgoing returns a boolean indicating if request should be traced
-//  because:
-//  - tracing was forced
-//  - some other service is tracing this request already
-//  - sampling indicates this request should be traced
-func ShouldTraceOutgoing(ctx context.Context, method string) bool {
-	// If this ctx was already selected for tracing by the rpc interceptor,
-	// use that decision.
-	if decision, ok := tracingDecision(ctx); ok {
-		return decision
-	}
-	grpcMD, _ := metadata.FromOutgoingContext(ctx)
-	return shouldTraceMD(grpcMD, method)
 }
