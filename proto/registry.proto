@@ -43,7 +43,7 @@ message GetOptimizedImageRequest {
   // to select a single variant.
   Platform platform = 2;
 
-  // Credentials for accessing the target image.
+  // Optional credentials for accessing the target image.
   Credentials image_credentials = 3;
 }
 

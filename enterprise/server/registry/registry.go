@@ -488,6 +488,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*regpb
 	// manifest so that we trigger a new conversion and repopulate the data in
 	// the CAS.
 	if len(rsp.GetMissingBlobDigests()) > 0 {
+		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", digest)
 		return nil, nil
 	}
 	return mfProto, nil

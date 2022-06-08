@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -73,8 +72,9 @@ func constructExecCommand(command *repb.Command, workDir string, opts *container
 		}()
 	}
 	if *DebugStreamCommandOutputs {
-		cmd.Stdout = io.MultiWriter(cmd.Stdout, os.Stdout)
-		cmd.Stderr = io.MultiWriter(cmd.Stderr, os.Stderr)
+		logWriter := log.Writer(fmt.Sprintf("[%s] ", executable))
+		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
+		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	for _, envVar := range command.GetEnvironmentVariables() {

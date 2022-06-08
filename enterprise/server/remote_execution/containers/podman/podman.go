@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,13 +20,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -38,6 +40,8 @@ var (
 
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
+	imageStreamingRegistryGRPCTarget = flag.String("executor.podman_image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
+	imageStreamingRegistryHTTPTarget = flag.String("executor.podman_image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -59,17 +63,117 @@ const (
 	podmanDefaultNetworkGateway = "10.88.0.1"
 	podmanDefaultNetworkBridge  = "cni-podman0"
 
-	// pollCIDTimeout specifies how long to wait polling for a container's
 	// --cidfile to be written by podman before we give up.
 	pollCIDTimeout = 15 * time.Second
 	// statsPollInterval controls how often we will poll the cgroupfs to determine
 	// a container's resource usage.
 	statsPollInterval = 50 * time.Millisecond
+	
+	optImageRefCacheSize = 1000
 )
+
+type optImageCache struct {
+	cache interfaces.LRU
+}
+
+func (c *optImageCache) get(key string) (string, error) {
+	if v, ok := c.cache.Get(key); ok {
+		return v.(string), nil
+	}
+	return "", nil
+}
+
+func (c *optImageCache) put(key string, optImage string) {
+	c.cache.Add(key, optImage)
+}
+
+func newOptImageCache() (*optImageCache, error) {
+	l, err := lru.NewLRU(&lru.Config{
+		SizeFn: func(value interface{}) int64 {
+			return 1
+		},
+		MaxSize: optImageRefCacheSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &optImageCache{cache: l}, nil
+}
 
 type pullStatus struct {
 	mu     *sync.RWMutex
 	pulled bool
+}
+
+type Provider struct {
+	env                   environment.Env
+	imageCacheAuth        *container.ImageCacheAuthenticator
+	buildRoot             string
+	imageStreamingEnabled bool
+	regClient             regpb.RegistryClient
+	optImageCache         *optImageCache
+}
+
+func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
+	c, err := newOptImageCache()
+	if err != nil {
+		return nil, err
+	}
+	var regClient regpb.RegistryClient
+	if *imageStreamingRegistryGRPCTarget != "" {
+		conn, err := grpc_client.DialTarget(*imageStreamingRegistryGRPCTarget)
+		if err != nil {
+			return nil, err
+		}
+		regClient = regpb.NewRegistryClient(conn)
+	}
+
+	imageStreamingEnabled := *imageStreamingRegistryHTTPTarget != "" && *imageStreamingRegistryGRPCTarget != ""
+	if imageStreamingEnabled {
+		log.Infof("Starting stargz store")
+		cmd := exec.CommandContext(env.GetServerContext(), "stargz-store", "/var/lib/stargz-store/store")
+		logWriter := log.Writer("[stargzstore] ")
+		cmd.Stderr = logWriter
+		cmd.Stdout = logWriter
+		if err := cmd.Start(); err != nil {
+			return nil, status.UnavailableErrorf("could not start stargz store: %s", err)
+		}
+
+		// Configures podman to check stargz store for image data.
+		storageConf := `
+[storage]
+driver = "overlay"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+[storage.options]
+additionallayerstores=["/var/lib/stargz-store/store:ref"]
+`
+		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
+			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
+		}
+	}
+
+	return &Provider{
+		env:                   env,
+		imageCacheAuth:        imageCacheAuthenticator,
+		buildRoot:             buildRoot,
+		imageStreamingEnabled: imageStreamingEnabled,
+		regClient:             regClient,
+		optImageCache:         c,
+	}, nil
+}
+
+func (p *Provider) NewContainer(image string, options *PodmanOptions) container.CommandContainer {
+	return &podmanCommandContainer{
+		env:                   p.env,
+		imageCacheAuth:        p.imageCacheAuth,
+		image:                 image,
+		registryClient:        p.regClient,
+		imageStreamingEnabled: *imageStreamingRegistryGRPCTarget != "" && *imageStreamingRegistryHTTPTarget != "",
+		optImageCache:         p.optImageCache,
+		buildRoot:             p.buildRoot,
+		options:               options,
+	}
 }
 
 type PodmanOptions struct {
@@ -93,7 +197,12 @@ type podmanCommandContainer struct {
 
 	image     string
 	buildRoot string
-	workDir   string
+
+	imageStreamingEnabled bool
+	optImageCache         *optImageCache
+	registryClient        regpb.RegistryClient
+	// If container streaming is enabled, this field will contain the name of
+	// the image optimized for streaming.
 
 	options *PodmanOptions
 
@@ -197,11 +306,17 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	stopMonitoring, statsCh := c.monitor(ctx)
 	defer stopMonitoring()
 
+	image, err := c.targetImage(ctx)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	podmanRunArgs = append(podmanRunArgs, c.image)
+	podmanRunArgs = append(podmanRunArgs, image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = runPodman(ctx, "run", &container.ExecOpts{}, podmanRunArgs...)
 
@@ -223,6 +338,83 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return result
 }
 
+func (c *podmanCommandContainer) optImageRefKey(ctx context.Context) (string, error) {
+	groupID := ""
+	u, err := perms.AuthenticatedUser(ctx, c.env)
+	if err != nil {
+		if !perms.IsAnonymousUserError(err) {
+			return "", err
+		}
+	} else {
+		groupID = u.GetGroupID()
+	}
+
+	return fmt.Sprintf("%s-%s", groupID, c.image), nil
+}
+
+func (c *podmanCommandContainer) targetImage(ctx context.Context) (string, error) {
+	if !c.imageStreamingEnabled {
+		return c.image, nil
+	}
+
+	// If the optimized image name has not been resolved from the registry
+	// yet then check our local cache.
+	if c.optimizedImage == "" {
+		key, err := c.optImageRefKey(ctx)
+		if err != nil {
+			return "", err
+		}
+		optImage, err := c.optImageCache.get(key)
+		if err != nil {
+			return "", err
+		}
+		c.optimizedImage = optImage
+	}
+	if c.optimizedImage == "" {
+		return "", status.FailedPreconditionErrorf("optimized image not yet resolved")
+	}
+	return c.optimizedImage, nil
+}
+
+func (c *podmanCommandContainer) resolveTargetImage(ctx context.Context, credentials container.PullCredentials) (string, error) {
+	if !c.imageStreamingEnabled {
+		return c.image, nil
+	}
+
+	if c.registryClient == nil || *imageStreamingRegistryHTTPTarget == "" {
+		return "", status.FailedPreconditionErrorf("streaming enabled, but registry client or http target are not set")
+	}
+
+	log.CtxInfof(ctx, "Resolving optimized image for %q", c.image)
+	req := &regpb.GetOptimizedImageRequest{
+		Image: c.image,
+		Platform: &regpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+	}
+	if !credentials.IsEmpty() {
+		req.ImageCredentials = &regpb.Credentials{
+			Username: credentials.Username,
+			Password: credentials.Password,
+		}
+	}
+
+	// Clear the JWT from the RPC so that the blobs are stored as anonymous data
+	// until we implement CAS auth for image streaming.
+	rpcCtx := context.WithValue(ctx, "x-buildbuddy-jwt", nil)
+	rsp, err := c.registryClient.GetOptimizedImage(rpcCtx, req)
+	if err != nil {
+		return "", status.UnavailableErrorf("could not resolve optimized image for %q: %s", c.image, err)
+	}
+	optImage := fmt.Sprintf("%s/%s", *imageStreamingRegistryHTTPTarget, rsp.GetOptimizedImage())
+	log.CtxInfof(ctx, "Resolved optimized image %q for %q", optImage, c.image)
+	c.optimizedImage = optImage
+	key, err := c.optImageRefKey(ctx)
+	c.optImageCache.put(key, optImage)
+	return c.optimizedImage, nil
+}
+
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
 	containerName, err := generateContainerName()
 	if err != nil {
@@ -232,7 +424,11 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	c.workDir = workDir
 
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
-	podmanRunArgs = append(podmanRunArgs, c.image)
+	image, err := c.targetImage(ctx)
+	if err != nil {
+		return err
+	}
+	podmanRunArgs = append(podmanRunArgs, image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := runPodman(ctx, "create", &container.ExecOpts{}, podmanRunArgs...)
 	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
@@ -304,6 +500,10 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, op
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {
+	if c.imageStreamingEnabled {
+		return true, nil
+	}
+
 	// Try to avoid the `pull` command which results in a network roundtrip.
 	listResult := runPodman(ctx, "image", &container.ExecOpts{}, "inspect", "--format={{.ID}}", c.image)
 	if listResult.ExitCode == podmanInternalExitCode {
@@ -333,12 +533,12 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 	ps.mu.RUnlock()
 
 	if alreadyPulled {
-		return c.pullImage(creds)
+		return c.pullImage(ctx, creds)
 	}
 
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if err := c.pullImage(creds); err != nil {
+	if err := c.pullImage(ctx, creds); err != nil {
 		return err
 	}
 	ps.pulled = true
@@ -443,7 +643,16 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 	return cid, ctx.Err()
 }
 
-func (c *podmanCommandContainer) pullImage(creds container.PullCredentials) error {
+func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.PullCredentials) error {
+	if c.imageStreamingEnabled {
+		// Always re-resolve image when a pull is requested. This takes care of
+		// re-validating the passed credentials.
+		if _, err := c.resolveTargetImage(ctx, creds); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	podmanArgs := make([]string, 0, 2)
 	if !creds.IsEmpty() {
 		podmanArgs = append(podmanArgs, fmt.Sprintf(
