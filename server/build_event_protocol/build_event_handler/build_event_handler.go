@@ -128,6 +128,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
+		apiTargetMap:   make(api_common.TargetMap),
 
 		hasReceivedEventWithOptions: false,
 		eventsBeforeOptions:         make([]*inpb.InvocationEvent, 0),
@@ -472,6 +473,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
+	apiTargetMap   api_common.TargetMap
 
 	eventsBeforeOptions         []*inpb.InvocationEvent
 	hasReceivedEventWithOptions bool
@@ -577,6 +579,8 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
 	}
+
+	e.flushAPIFacets(iid)
 
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
@@ -867,6 +871,30 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 
 const apiFacetsExpiration = 1 * time.Hour
 
+func (e *EventChannel) flushAPIFacets(iid string) error {
+	auth := e.env.GetAuthenticator()
+	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
+		return nil
+	}
+
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if userInfo == nil || err != nil {
+		return nil
+	}
+
+	for label, target := range e.apiTargetMap {
+		b, err := proto.Marshal(target)
+		if err != nil {
+			return err
+		}
+		key := api_common.TargetLabelKey(userInfo.GetGroupID(), iid, label)
+		if err := e.collector.Set(e.ctx, key, string(b), apiFacetsExpiration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
 	auth := e.env.GetAuthenticator()
 	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
@@ -877,6 +905,9 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if userInfo == nil || err != nil {
 		return nil
 	}
+
+	e.apiTargetMap.ProcessEvent(iid, event)
+
 	action := &apipb.Action{
 		Id: &apipb.Action_Id{
 			InvocationId: iid,
