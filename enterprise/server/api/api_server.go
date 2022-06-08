@@ -148,7 +148,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	}, nil
 }
 
-func (s *APIServer) redisCachedAction(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) ([]*apipb.Action, error) {
+func (s *APIServer) redisCachedActions(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) ([]*apipb.Action, error) {
 	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
 		return nil, nil
 	}
@@ -188,7 +188,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		Action: make([]*apipb.Action, 0),
 	}
 
-	cachedActions, err := s.redisCachedAction(ctx, userInfo, iid, req.GetSelector().GetTargetLabel())
+	cachedActions, err := s.redisCachedActions(ctx, userInfo, iid, req.GetSelector().GetTargetLabel())
 	if err != nil {
 		log.Debugf("redisCachedAction err: %s", err)
 	}
