@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -246,13 +247,26 @@ func (qm *QuotaManager) getGroupID(ctx context.Context) string {
 	return ""
 }
 
+func getIP(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+
+	vals := md.Get("X-Forwarded-For")
+
+	if len(vals) == 0 {
+		return ""
+	}
+	ips := strings.Split(vals[0], ",")
+	return ips[0]
+}
+
 func (qm *QuotaManager) getKey(ctx context.Context) string {
-	groupID := qm.getGroupID(ctx)
-	if groupID != "" {
+	if groupID := qm.getGroupID(ctx); groupID != "" {
 		return groupID
 	}
-	//TODO(lulu): find IP address
-	return ""
+	return getIP(ctx)
 }
 
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
