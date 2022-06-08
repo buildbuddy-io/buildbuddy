@@ -4,11 +4,17 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 // N.B. This file contains common functions used to format and extract API
@@ -91,4 +97,78 @@ func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.
 		}
 	}
 	return nil
+}
+
+func testStatusToStatus(testStatus bespb.TestStatus) cmnpb.Status {
+	switch testStatus {
+	case bespb.TestStatus_PASSED:
+		return cmnpb.Status_PASSED
+	case bespb.TestStatus_FLAKY:
+		return cmnpb.Status_FLAKY
+	case bespb.TestStatus_TIMEOUT:
+		return cmnpb.Status_TIMED_OUT
+	case bespb.TestStatus_FAILED:
+		return cmnpb.Status_FAILED
+	case bespb.TestStatus_INCOMPLETE:
+		return cmnpb.Status_INCOMPLETE
+	case bespb.TestStatus_REMOTE_FAILURE:
+		return cmnpb.Status_TOOL_FAILED
+	case bespb.TestStatus_FAILED_TO_BUILD:
+		return cmnpb.Status_FAILED_TO_BUILD
+	case bespb.TestStatus_TOOL_HALTED_BEFORE_TESTING:
+		return cmnpb.Status_CANCELLED
+	default:
+		return cmnpb.Status_STATUS_UNSPECIFIED
+	}
+}
+
+type TargetMap map[string]*apipb.Target
+
+func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
+	switch p := event.Payload.(type) {
+	case *bespb.BuildEvent_Configured:
+		{
+			ruleType := strings.Replace(p.Configured.TargetKind, " rule", "", -1)
+			language := ""
+			if components := strings.Split(p.Configured.TargetKind, "_"); len(components) > 1 {
+				language = components[0]
+			}
+			label := event.GetId().GetTargetConfigured().GetLabel()
+			tm[label] = &apipb.Target{
+				Id: &apipb.Target_Id{
+					InvocationId: iid,
+					TargetId:     EncodeID(label),
+				},
+				Label:    label,
+				Status:   cmnpb.Status_BUILDING,
+				RuleType: ruleType,
+				Language: language,
+				Tag:      p.Configured.Tag,
+			}
+		}
+	case *bespb.BuildEvent_Completed:
+		{
+			target := tm[event.GetId().GetTargetCompleted().GetLabel()]
+			target.Status = cmnpb.Status_BUILT
+		}
+	case *bespb.BuildEvent_TestSummary:
+		{
+			target := tm[event.GetId().GetTestSummary().GetLabel()]
+			target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
+			startTime := timeutil.GetTimeWithFallback(p.TestSummary.FirstStartTime, p.TestSummary.FirstStartTimeMillis)
+			duration := timeutil.GetDurationWithFallback(p.TestSummary.TotalRunDuration, p.TestSummary.TotalRunDurationMillis)
+			target.Timing = &cmnpb.Timing{
+				StartTime: timestamppb.New(startTime),
+				Duration:  durationpb.New(duration),
+			}
+		}
+	}
+}
+
+func TargetMapFromInvocation(inv *inpb.Invocation) map[string]*apipb.Target {
+	targetMap := make(TargetMap)
+	for _, event := range inv.GetEvent() {
+		targetMap.ProcessEvent(inv.GetInvocationId(), event.GetBuildEvent())
+	}
+	return targetMap
 }

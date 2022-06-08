@@ -4,10 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -19,16 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
@@ -133,7 +126,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		return nil, err
 	}
 
-	targetMap := targetMapFromInvocation(inv)
+	targetMap := api_common.TargetMapFromInvocation(inv)
 
 	// Filter to only selected targets.
 	targets := []*apipb.Target{}
@@ -288,74 +281,6 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func testStatusToStatus(testStatus build_event_stream.TestStatus) cmnpb.Status {
-	switch testStatus {
-	case build_event_stream.TestStatus_PASSED:
-		return cmnpb.Status_PASSED
-	case build_event_stream.TestStatus_FLAKY:
-		return cmnpb.Status_FLAKY
-	case build_event_stream.TestStatus_TIMEOUT:
-		return cmnpb.Status_TIMED_OUT
-	case build_event_stream.TestStatus_FAILED:
-		return cmnpb.Status_FAILED
-	case build_event_stream.TestStatus_INCOMPLETE:
-		return cmnpb.Status_INCOMPLETE
-	case build_event_stream.TestStatus_REMOTE_FAILURE:
-		return cmnpb.Status_TOOL_FAILED
-	case build_event_stream.TestStatus_FAILED_TO_BUILD:
-		return cmnpb.Status_FAILED_TO_BUILD
-	case build_event_stream.TestStatus_TOOL_HALTED_BEFORE_TESTING:
-		return cmnpb.Status_CANCELLED
-	default:
-		return cmnpb.Status_STATUS_UNSPECIFIED
-	}
-}
-
-func targetMapFromInvocation(inv *invocation.Invocation) map[string]*apipb.Target {
-	targetMap := make(map[string]*apipb.Target)
-	for _, event := range inv.GetEvent() {
-		switch p := event.BuildEvent.Payload.(type) {
-		case *build_event_stream.BuildEvent_Configured:
-			{
-				ruleType := strings.Replace(p.Configured.TargetKind, " rule", "", -1)
-				language := ""
-				if components := strings.Split(p.Configured.TargetKind, "_"); len(components) > 1 {
-					language = components[0]
-				}
-				label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
-				targetMap[label] = &apipb.Target{
-					Id: &apipb.Target_Id{
-						InvocationId: inv.InvocationId,
-						TargetId:     api_common.EncodeID(label),
-					},
-					Label:    label,
-					Status:   cmnpb.Status_BUILDING,
-					RuleType: ruleType,
-					Language: language,
-					Tag:      p.Configured.Tag,
-				}
-			}
-		case *build_event_stream.BuildEvent_Completed:
-			{
-				target := targetMap[event.GetBuildEvent().GetId().GetTargetCompleted().GetLabel()]
-				target.Status = cmnpb.Status_BUILT
-			}
-		case *build_event_stream.BuildEvent_TestSummary:
-			{
-				target := targetMap[event.GetBuildEvent().GetId().GetTestSummary().GetLabel()]
-				target.Status = testStatusToStatus(p.TestSummary.OverallStatus)
-				startTime := timeutil.GetTimeWithFallback(p.TestSummary.FirstStartTime, p.TestSummary.FirstStartTimeMillis)
-				duration := timeutil.GetDurationWithFallback(p.TestSummary.TotalRunDuration, p.TestSummary.TotalRunDurationMillis)
-				target.Timing = &cmnpb.Timing{
-					StartTime: timestamppb.New(startTime),
-					Duration:  durationpb.New(duration),
-				}
-			}
-		}
-	}
-	return targetMap
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
