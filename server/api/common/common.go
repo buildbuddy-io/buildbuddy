@@ -26,8 +26,8 @@ func EncodeID(id string) string {
 
 // ActionsKey eturns a string key under which target level actions can be
 // recorded in a metrics collector.
-func ActionsKey(iid string) string {
-	return "api/" + iid + "/cached_actions"
+func ActionLabelKey(groupID, iid, targetLabel string) string {
+	return groupID + "/api/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
 }
 
 func filesFromOutput(output []*bespb.File) []*apipb.File {

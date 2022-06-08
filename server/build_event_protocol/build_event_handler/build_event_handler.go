@@ -868,7 +868,13 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 const apiFacetsExpiration = 1 * time.Hour
 
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
-	if e.collector == nil || !api_config.CacheEnabled() {
+	auth := e.env.GetAuthenticator()
+	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
+		return nil
+	}
+
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if userInfo == nil || err != nil {
 		return nil
 	}
 	action := &apipb.Action{
@@ -887,7 +893,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if err != nil {
 		return err
 	}
-	key := api_common.ActionsKey(iid)
+	key := api_common.ActionLabelKey(userInfo.GetGroupID(), iid, action.GetTargetLabel())
 	if err := e.collector.ListAppend(e.ctx, key, string(b)); err != nil {
 		return err
 	}

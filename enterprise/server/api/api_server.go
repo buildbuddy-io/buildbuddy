@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -147,8 +148,35 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	}, nil
 }
 
+func (s *APIServer) redisCachedActions(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) ([]*apipb.Action, error) {
+	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
+		return nil, nil
+	}
+
+	if targetLabel == "" {
+		return nil, nil
+	}
+
+	const limit = 100_000
+	key := api_common.ActionLabelKey(userInfo.GetGroupID(), iid, targetLabel)
+	serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, key, 0, limit-1)
+	if err != nil {
+		return nil, err
+	}
+	a := &apipb.Action{}
+	actions := make([]*apipb.Action, 0)
+	for _, serializedResult := range serializedResults {
+		if err := proto.Unmarshal([]byte(serializedResult), a); err != nil {
+			return nil, err
+		}
+		actions = append(actions, a)
+	}
+	return actions, nil
+}
+
 func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) (*apipb.GetActionResponse, error) {
-	if _, err := s.checkPreconditions(ctx); err != nil {
+	userInfo, err := s.checkPreconditions(ctx)
+	if err != nil {
 		return nil, err
 	}
 
@@ -160,22 +188,11 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		Action: make([]*apipb.Action, 0),
 	}
 
-	// This limit is a safeguard against buffering too many results in memory.
-	// We expect to hit this rarely (if ever) in production usage.
-	const limit = 100_000
-	if api_config.CacheEnabled() && s.env.GetMetricsCollector() != nil {
-		serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, api_common.ActionsKey(iid), 0, limit-1)
-		if err == nil {
-			for _, serializedResult := range serializedResults {
-				a := &apipb.Action{}
-				if err := proto.Unmarshal([]byte(serializedResult), a); err == nil {
-					if actionMatchesActionSelector(a, req.GetSelector()) {
-						rsp.Action = append(rsp.Action, a)
-					}
-				}
-			}
-		}
+	cachedActions, err := s.redisCachedActions(ctx, userInfo, iid, req.GetSelector().GetTargetLabel())
+	if err != nil {
+		log.Debugf("redisCachedAction err: %s", err)
 	}
+	rsp.Action = append(rsp.Action, cachedActions...)
 	if len(rsp.Action) > 0 {
 		return rsp, nil
 	}
