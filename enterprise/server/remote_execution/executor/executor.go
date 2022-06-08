@@ -196,16 +196,16 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
-	stage.Set("pull_image")
-	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(err)
-	}
-
 	finishedCleanly := false
 	defer func() {
 		ctx := context.Background()
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
+
+	stage.Set("pull_image")
+	if err := r.PrepareForTask(ctx); err != nil {
+		return finishWithErrFn(err)
+	}
 
 	md.InputFetchStartTimestamp = timestamppb.Now()
 

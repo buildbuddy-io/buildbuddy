@@ -598,6 +598,11 @@ type RunnerPool interface {
 	// Shutdown removes all runners from the pool.
 	Shutdown(ctx context.Context) error
 
+	// Wait waits for all background cleanup jobs to complete. This is intended to
+	// be called during shutdown, after all tasks have finished executing (to ensure
+	// that no new cleanup jobs will be needed after this returns).
+	Wait()
+
 	// Returns the build root directory for this pool.
 	GetBuildRoot() string
 }

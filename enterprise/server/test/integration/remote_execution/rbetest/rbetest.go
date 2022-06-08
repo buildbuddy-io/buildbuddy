@@ -777,7 +777,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, &options.priorityTaskSchedulerOptions)
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 
 	executorPort := testport.FindFree(r.t)
