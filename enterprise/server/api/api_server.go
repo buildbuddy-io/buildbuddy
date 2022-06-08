@@ -219,7 +219,13 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		Action: make([]*apipb.Action, 0),
 	}
 
-	cachedActions, err := s.redisCachedActions(ctx, userInfo, iid, req.GetSelector().GetTargetLabel())
+	cacheKey := req.GetSelector().GetTargetLabel()
+	// Target ID is equal to the target label, so either can be used as a cache key.
+	if targetId := req.GetSelector().GetTargetId(); targetId != "" {
+		cacheKey = targetId
+	}
+
+	cachedActions, err := s.redisCachedActions(ctx, userInfo, iid, cacheKey)
 	if err != nil {
 		log.Debugf("redisCachedAction err: %s", err)
 	}

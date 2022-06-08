@@ -250,7 +250,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, &priority_task_scheduler.Options{})
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, &priority_task_scheduler.Options{})
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}

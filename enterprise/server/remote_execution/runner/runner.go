@@ -78,6 +78,7 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
+	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 )
 
 const (
@@ -152,6 +153,10 @@ func k8sPodID() (string, error) {
 	return "", nil
 }
 
+func ContextBasedShutdownEnabled() bool {
+	return *contextBasedShutdown
+}
+
 // state indicates the current state of a commandRunner.
 type state int
 
@@ -204,6 +209,10 @@ type commandRunner struct {
 
 	// Decoder used when reading streamed JSON values from stdout.
 	jsonDecoder *json.Decoder
+
+	// A function that is invoked after the runner is removed. Controlled by the
+	// runner pool.
+	removeCallback func()
 
 	// Cached resource usage values from the last time the runner was added to
 	// the pool.
@@ -395,6 +404,10 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	if r.removeCallback != nil {
+		defer r.removeCallback()
+	}
+
 	r.p.mu.RLock()
 	s := r.state
 	r.p.mu.RUnlock()
@@ -494,6 +507,9 @@ type pool struct {
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
 	maxRunnerDiskUsageBytes   int64
+
+	// pendingRemovals keeps track of which runners are pending removal.
+	pendingRemovals sync.WaitGroup
 
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
@@ -907,6 +923,12 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
 	p.runners = append(p.runners, r)
+	if *contextBasedShutdown {
+		p.pendingRemovals.Add(1)
+		r.removeCallback = func() {
+			p.pendingRemovals.Done()
+		}
+	}
 	return r, nil
 }
 
@@ -1094,12 +1116,29 @@ func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	runners := p.runners
-	p.runners = nil
+	var runnersToRemove []*commandRunner
+	if *contextBasedShutdown {
+		// Remove only paused runners, since active runners should be removed only
+		// after their currently assigned task is canceled due to the shutdown
+		// grace period expiring.
+		var pausedRunners, activeRunners []*commandRunner
+		for _, r := range p.runners {
+			if r.state == paused {
+				pausedRunners = append(pausedRunners, r)
+			} else {
+				activeRunners = append(activeRunners, r)
+			}
+		}
+		runnersToRemove = pausedRunners
+		p.runners = activeRunners
+	} else {
+		runnersToRemove = p.runners
+		p.runners = nil
+	}
 	p.mu.Unlock()
 
 	removeResults := make(chan error)
-	for _, r := range runners {
+	for _, r := range runnersToRemove {
 		// Remove runners in parallel, since each deletion is blocked on uploads
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
@@ -1110,7 +1149,7 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		}()
 	}
 	errs := make([]error, 0)
-	for range runners {
+	for range runnersToRemove {
 		if err := <-removeResults; err != nil {
 			errs = append(errs, err)
 		}
@@ -1119,6 +1158,12 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		return status.InternalErrorf("failed to shut down runner pool: %s", errSlice(errs))
 	}
 	return nil
+}
+
+func (p *pool) Wait() {
+	if *contextBasedShutdown {
+		p.pendingRemovals.Wait()
+	}
 }
 
 func (p *pool) remove(r *commandRunner) {
@@ -1167,8 +1212,6 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		log.Errorf("Failed to clean workspace: %s", err)
 		return
 	}
-	// This call happens after we send the final stream event back to the
-	// client, so background context is appropriate.
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
 			log.Debug(err.Error())

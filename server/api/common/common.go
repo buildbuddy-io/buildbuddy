@@ -69,7 +69,7 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 	case *bespb.BuildEvent_Completed:
 		{
 			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.TargetId = EncodeID(event.GetId().GetTargetCompleted().GetLabel())
+			action.Id.TargetId = event.GetId().GetTargetCompleted().GetLabel()
 			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().Id
 			action.Id.ActionId = EncodeID("build")
 			return action
@@ -78,7 +78,7 @@ func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *ap
 		{
 			testResultID := event.GetId().GetTestResult()
 			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
-			action.Id.TargetId = EncodeID(event.GetId().GetTestResult().GetLabel())
+			action.Id.TargetId = event.GetId().GetTestResult().GetLabel()
 			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
 			action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
 			return action
