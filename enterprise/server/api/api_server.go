@@ -154,7 +154,9 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 	if err != nil {
 		log.Debugf("redisCachedTarget err: %s", err)
 	} else if cachedTarget != nil {
-		rsp.Target = append(rsp.Target, cachedTarget)
+		if targetMatchesTargetSelector(cachedTarget, req.GetSelector()) {
+			rsp.Target = append(rsp.Target, cachedTarget)
+		}
 	}
 	if len(rsp.Target) > 0 {
 		return rsp, nil
@@ -229,7 +231,11 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 	if err != nil {
 		log.Debugf("redisCachedAction err: %s", err)
 	}
-	rsp.Action = append(rsp.Action, cachedActions...)
+	for _, action := range cachedActions {
+		if action != nil && actionMatchesActionSelector(action, req.GetSelector()) {
+			rsp.Action = append(rsp.Action, action)
+		}
+	}
 	if len(rsp.Action) > 0 {
 		return rsp, nil
 	}
