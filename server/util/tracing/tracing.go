@@ -315,5 +315,3 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 	}
 	span.SetAttributes(attribute.String(key, value))
 }
-
-
