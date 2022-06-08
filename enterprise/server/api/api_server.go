@@ -112,20 +112,58 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}, nil
 }
 
-func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) (*apipb.GetTargetResponse, error) {
-	if _, err := s.checkPreconditions(ctx); err != nil {
-		return nil, err
+func (s *APIServer) redisCachedTarget(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) (*apipb.Target, error) {
+	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
+		return nil, nil
 	}
 
+	if targetLabel == "" {
+		return nil, nil
+	}
+	key := api_common.TargetLabelKey(userInfo.GetGroupID(), iid, targetLabel)
+	blobs, err := s.env.GetMetricsCollector().GetAll(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(blobs) != 1 {
+		return nil, nil
+	}
+
+	t := &apipb.Target{}
+	if err := proto.Unmarshal([]byte(blobs[0]), t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) (*apipb.GetTargetResponse, error) {
+	userInfo, err := s.checkPreconditions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetSelector().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("TargetSelector must contain a valid invocation_id")
+	}
+	iid := req.GetSelector().GetInvocationId()
+
+	rsp := &apipb.GetTargetResponse{
+		Target: make([]*apipb.Target, 0),
+	}
+
+	cachedTarget, err := s.redisCachedTarget(ctx, userInfo, iid, req.GetSelector().GetLabel())
+	if err != nil {
+		log.Debugf("redisCachedTarget err: %s", err)
+	} else if cachedTarget != nil {
+		rsp.Target = append(rsp.Target, cachedTarget)
+	}
+	if len(rsp.Target) > 0 {
+		return rsp, nil
 	}
 
 	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
 	if err != nil {
 		return nil, err
 	}
-
 	targetMap := api_common.TargetMapFromInvocation(inv)
 
 	// Filter to only selected targets.

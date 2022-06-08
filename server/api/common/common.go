@@ -30,10 +30,14 @@ func EncodeID(id string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(encodedIDPrefix + id))
 }
 
+func TargetLabelKey(groupID, iid, targetLabel string) string {
+	return groupID + "/api/t/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
+}
+
 // ActionsKey eturns a string key under which target level actions can be
 // recorded in a metrics collector.
 func ActionLabelKey(groupID, iid, targetLabel string) string {
-	return groupID + "/api/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
+	return groupID + "/api/a/" + base64.RawURLEncoding.EncodeToString([]byte(iid+targetLabel))
 }
 
 func filesFromOutput(output []*bespb.File) []*apipb.File {
@@ -165,7 +169,7 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 	}
 }
 
-func TargetMapFromInvocation(inv *inpb.Invocation) map[string]*apipb.Target {
+func TargetMapFromInvocation(inv *inpb.Invocation) TargetMap {
 	targetMap := make(TargetMap)
 	for _, event := range inv.GetEvent() {
 		targetMap.ProcessEvent(inv.GetInvocationId(), event.GetBuildEvent())
