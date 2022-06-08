@@ -30,6 +30,7 @@ import (
 var (
 	certFile         = flag.String("ssl.cert_file", "", "Path to a PEM encoded certificate file to use for TLS if not using ACME.")
 	keyFile          = flag.String("ssl.key_file", "", "Path to a PEM encoded key file to use for TLS if not using ACME.")
+	selfSigned       = flag.Bool("ssl.self_signed", false, "If true, a self-signed cert will be generated for TLS termination.")
 	clientCACertFile = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
 	clientCAKeyFile  = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
 	hostWhitelist    = flagutil.Slice("ssl.host_whitelist", []string{}, "Cloud-Only")
@@ -168,6 +169,19 @@ func (s *SSLService) populateTLSConfig() error {
 		grpcTLSConfig.Certificates = []tls.Certificate{certPair}
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
+	} else if *selfSigned {
+		cert, key, err := generateCert(pkix.Name{CommonName: "Server"}, nil)
+		if err != nil {
+			return err
+		}
+		certPair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+		if err != nil {
+			return err
+		}
+		httpTLSConfig.Certificates = []tls.Certificate{certPair}
+		grpcTLSConfig.Certificates = []tls.Certificate{certPair}
+		s.httpTLSConfig = httpTLSConfig
+		s.grpcTLSConfig = grpcTLSConfig
 	} else if *useACME {
 		if build_buddy_url.String() == "" {
 			return status.FailedPreconditionError("No buildbuddy app URL set - unable to use ACME")
@@ -233,11 +247,15 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 	return credentials.NewTLS(s.grpcTLSConfig), nil
 }
 
-func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
-	if s.AuthorityCert == nil || s.AuthorityKey == nil {
-		return "", "", status.FailedPreconditionError("Cert authority must be setup in order to generate certificiates")
-	}
+type CACert struct {
+	cert *x509.Certificate
+	key  *rsa.PrivateKey
+}
 
+// generateCert generates a cert and returns the cert + private key pair.
+// An optional CA cert may be specified to sign the generated cert. If omitted,
+// the returned cert will be self-signed.
+func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
@@ -252,17 +270,21 @@ func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
 	}
 
 	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			CommonName:   "BuildBuddy API Key",
-			SerialNumber: apiKey,
-		},
+		SerialNumber:          serialNumber,
+		Subject:               subject,
 		NotBefore:             notBefore,
 		NotAfter:              notAfter,
 		BasicConstraintsValid: true,
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, s.AuthorityCert, &priv.PublicKey, s.AuthorityKey)
+	if caCert == nil {
+		caCert = &CACert{
+			cert: &template,
+			key:  priv,
+		}
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.cert, &priv.PublicKey, caCert.key)
 	if err != nil {
 		return "", "", err
 	}
@@ -281,6 +303,18 @@ func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
 	}
 
 	return certBuffer.String(), keyBuffer.String(), nil
+}
+
+func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
+	if s.AuthorityCert == nil || s.AuthorityKey == nil {
+		return "", "", status.FailedPreconditionError("Cert authority must be setup in order to generate certificiates")
+	}
+
+	subject := pkix.Name{
+		CommonName:   "BuildBuddy API Key",
+		SerialNumber: apiKey,
+	}
+	return generateCert(subject, &CACert{cert: s.AuthorityCert, key: s.AuthorityKey})
 }
 
 func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
