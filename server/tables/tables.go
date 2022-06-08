@@ -546,6 +546,36 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+type QuotaBucket struct {
+	Model
+	QuotaBucketID string `gorm:"primarykey"`
+	Namespace     string
+	Prefix        string
+
+	// The maximum sustained rate of requests
+	NumRequests        int64
+	PeriodDurationUsec int64
+
+	// The number of requests that will be allowed to exceed the rate in a single
+	// burst and must be non-negative.
+	MaxBurst int64
+}
+
+func (*QuotaBucket) TableName() string {
+	return "QuotaBucket"
+}
+
+type QuotaGroup struct {
+	Model
+	QuotaBucketID string `gorm:"primarykey"`
+	// GroupID or IP address
+	QuotaKey string `gorm:"primarykey"`
+}
+
+func (*QuotaGroup) TableName() string {
+	return "QuotaGroup"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -946,4 +976,6 @@ func init() {
 	registerTable("TS", &TargetStatus{})
 	registerTable("WF", &Workflow{})
 	registerTable("UA", &Usage{})
+	registerTable("QB", &QuotaBucket{})
+	registerTable("QG", &QuotaGroup{})
 }
