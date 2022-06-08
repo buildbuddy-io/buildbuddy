@@ -140,7 +140,7 @@ func TestGetActionWithTargetID(t *testing.T) {
 	testUUID, err := uuid.NewRandom()
 	assert.NoError(t, err)
 	testInvocationID := testUUID.String()
-	testTargetID := "aWQ6OnYxOjovL215L3RhcmdldDpmb28"
+	testTargetID := "//my/target:foo"
 
 	env, ctx := getEnvAndCtx(t, "user1")
 	streamBuild(t, env, testInvocationID)
