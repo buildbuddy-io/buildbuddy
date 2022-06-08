@@ -46,7 +46,8 @@ const (
 )
 
 var (
-	enableTreeCaching = flag.Bool("enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
+	enableTreeCaching = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
+	treeCacheSeed     = flag.String("cache.tree_cache_seed", "treecache", "If set, hash this with digests before caching / reading from tree cache")
 )
 
 type ContentAddressableStorageServer struct {
@@ -467,7 +468,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 }
 
 func makeTreeCacheDigest(d *repb.Digest) (*repb.Digest, error) {
-	buf := bytes.NewBuffer([]byte(d.GetHash() + "-treecache"))
+	buf := bytes.NewBuffer([]byte(d.GetHash() + *treeCacheSeed))
 	return digest.Compute(buf)
 }
 
