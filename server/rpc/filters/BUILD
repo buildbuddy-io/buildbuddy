@@ -11,7 +11,6 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/log",
         "//server/util/request_context",
-        "//server/util/tracing",
         "//server/util/uuid",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
