@@ -158,7 +158,7 @@ func (s *APIServer) redisCachedActions(ctx context.Context, userInfo interfaces.
 	}
 
 	const limit = 100_000
-	key := api_common.ActionLabelKey(userInfo.GetUserID(), iid, targetLabel)
+	key := api_common.ActionLabelKey(userInfo.GetGroupID(), iid, targetLabel)
 	serializedResults, err := s.env.GetMetricsCollector().ListRange(ctx, key, 0, limit-1)
 	if err != nil {
 		return nil, err

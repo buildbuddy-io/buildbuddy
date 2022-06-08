@@ -877,7 +877,6 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if userInfo == nil || err != nil {
 		return nil
 	}
-
 	action := &apipb.Action{
 		Id: &apipb.Action_Id{
 			InvocationId: iid,
@@ -894,7 +893,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if err != nil {
 		return err
 	}
-	key := api_common.ActionLabelKey(userInfo.GetUserID(), iid, action.GetTargetLabel())
+	key := api_common.ActionLabelKey(userInfo.GetGroupID(), iid, action.GetTargetLabel())
 	if err := e.collector.ListAppend(e.ctx, key, string(b)); err != nil {
 		return err
 	}
