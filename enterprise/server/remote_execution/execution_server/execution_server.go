@@ -211,9 +211,16 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),
 	}
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+	err := s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		return tx.Create(link).Error
 	})
+	// This probably means there were duplicate actions in a single invocation
+	// that were merged. Not an error.
+	if err != nil && s.env.GetDBHandle().IsDuplicateKeyError(err) {
+		log.Warningf("Duplicate execution link while inserting execution %q invocation ID %q link type %d", executionID, invocationID, linkType)
+		return nil
+	}
+	return err
 }
 
 func trimStatus(statusMessage string) string {
