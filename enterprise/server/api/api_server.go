@@ -190,7 +190,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 
 	cachedActions, err := s.redisCachedAction(ctx, userInfo, iid, req.GetSelector().GetTargetLabel())
 	if err != nil {
-		log.Printf("redisCachedAction err: %s", err)
+		log.Debugf("redisCachedAction err: %s", err)
 	}
 	rsp.Action = append(rsp.Action, cachedActions...)
 	if len(rsp.Action) > 0 {
