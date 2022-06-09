@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -499,17 +501,40 @@ func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionI
 	return nil
 }
 
-func getRealIP(ctx context.Context) *string {
+func logRealIP(ctx context.Context) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil
+		log.Info("no md from incoming context")
 	}
 
 	vals := md.Get("x-Real-IP")
-	if len(vals) > 0 {
-		return &vals[0]
+	ips := strings.Join(vals, ":")
+	log.Infof("Real IP is (len=%d) : %s", len(vals), ips)
+}
+
+func logForwardIP(ctx context.Context) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		log.Info("no md from incoming context")
 	}
-	return nil
+
+	vals := md.Get("X-Forwarded-For")
+	ips := strings.Join(vals, ":")
+	log.Infof("Forward IP is (len=%d) : %s", len(vals), ips)
+}
+
+func logPeerIP(ctx context.Context) {
+	pr, ok := peer.FromContext(ctx)
+	if !ok {
+		log.Info("no peer from incoming context")
+	}
+
+	if pr.Addr == net.Addr(nil) {
+		log.Info("Peer ip is nil")
+	}
+
+	remoteAddr := pr.Addr.String()
+	log.Infof("RemoteAddr is %s", remoteAddr)
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
@@ -520,12 +545,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		return err
 	}
 
-	ipAddr = getRealIP(req)
-	if ipAddr == nil {
-		log.Info("ip addr is nil")
-	} else {
-		log.Infof("ip addr is %s: ", ipAddr)
-	}
+	logRealIP(ctx)
+	logForwardIP(ctx)
+	logPeerIP(ctx)
 
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
