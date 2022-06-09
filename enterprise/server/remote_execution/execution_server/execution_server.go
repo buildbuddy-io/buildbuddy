@@ -41,6 +41,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	"google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -498,11 +499,32 @@ func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionI
 	return nil
 }
 
+func getRealIP(ctx context.Context) *string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil
+	}
+
+	vals := md.Get("x-Real-IP")
+	if len(vals) > 0 {
+		return &vals[0]
+	}
+	return nil
+}
+
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+
 	if err != nil {
 		return err
+	}
+
+	ipAddr = getRealIP(req)
+	if ipAddr == nil {
+		log.Info("ip addr is nil")
+	} else {
+		log.Infof("ip addr is %s: ", ipAddr)
 	}
 
 	invocationID := bazel_request.GetInvocationID(stream.Context())
