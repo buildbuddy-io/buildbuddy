@@ -598,6 +598,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
+					log.Debugf("Successfully read tree cache")
 					return treeCache.GetChildren(), nil
 				}
 			}
@@ -635,9 +636,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
+		if *enableTreeCaching {
 			treeCache := &repb.TreeCache{
 				Children: allDescendents,
+			}
+			if !isComplete(treeCache) {
+				log.Fatalf("TREE CACHE IS NOT COMPLETE")
 			}
 			buf, err := proto.Marshal(treeCache)
 			if err != nil {
@@ -646,6 +650,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
 				log.Warningf("Error setting treeCache blob: %s", err)
 			}
+			log.Debugf("Successfully wrote tree cache")
 		}
 		return allDescendents, nil
 	}
@@ -668,4 +673,20 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return stream.Send(rsp)
 	}
 	return nil
+}
+
+func isComplete(treeCache *repb.TreeCache) bool {
+	allDigests := make(map[string]struct{}, len(treeCache.GetChildren()))
+	for _, child := range treeCache.Children {
+		allDigests[child.GetDigest().GetHash()] = struct{}{}
+	}
+	for _, child := range treeCache.Children {
+		for _, dirNode := range child.GetDirectory().GetDirectories() {
+			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
+				log.Printf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				return false
+			}
+		}
+	}
+	return true
 }
