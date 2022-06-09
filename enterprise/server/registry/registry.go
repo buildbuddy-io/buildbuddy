@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -32,7 +33,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
@@ -51,7 +51,6 @@ import (
 	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
-	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -422,8 +421,8 @@ func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Descri
 	return nil
 }
 
-func (r *registry) convert(ctx context.Context, reqLogger log.Logger, remoteDesc *remote.Descriptor) (*regpb.Manifest, error) {
-	reqLogger.Infof("Converting %q", remoteDesc.Ref)
+func (r *registry) convert(ctx context.Context, remoteDesc *remote.Descriptor) (*regpb.Manifest, error) {
+	log.CtxInfof(ctx, "Converting %q", remoteDesc.Ref)
 
 	start := time.Now()
 
@@ -456,7 +455,7 @@ func (r *registry) convert(ctx context.Context, reqLogger log.Logger, remoteDesc
 		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
 	}
 
-	reqLogger.Infof("Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
+	log.CtxInfof(ctx, "Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
 
 	manifestProto, err := manifestProto(servable)
 	if err != nil {
@@ -494,7 +493,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*regpb
 	return mfProto, nil
 }
 
-func (r *registry) getOptimizedManifest(ctx context.Context, req *request, imageName, refName string) (*regpb.Manifest, error) {
+func (r *registry) getOptimizedManifest(ctx context.Context, imageName, refName string) (*regpb.Manifest, error) {
 	// If the ref contains ":" then it's a digest (e.g. sha256:52f4...),
 	// otherwise it's a tag reference.
 	var nameRef string
@@ -547,16 +546,11 @@ func (r *registry) getOptimizedManifest(ctx context.Context, req *request, image
 		remoteDesc = desc
 	}
 
-	return r.convert(ctx, req.logger, remoteDesc)
+	return r.convert(ctx, remoteDesc)
 }
 
-// HTTP request with a per-request logger.
-type request struct {
-	*http.Request
-	logger log.Logger
-}
-
-func (r *registry) handleManifestRequest(w http.ResponseWriter, req *request, imageName, refName string) {
+func (r *registry) handleManifestRequest(w http.ResponseWriter, req *http.Request, imageName, refName string) {
+	ctx := req.Context()
 	realName, err := imageNameEncoding.DecodeString(strings.ToUpper(imageName))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not decode image image name %q: %s", imageName, err), http.StatusBadRequest)
@@ -564,16 +558,16 @@ func (r *registry) handleManifestRequest(w http.ResponseWriter, req *request, im
 	}
 	imageName = string(realName)
 
-	manifest, err := r.getOptimizedManifest(req.Context(), req, imageName, refName)
+	manifest, err := r.getOptimizedManifest(req.Context(), imageName, refName)
 	if err != nil {
-		req.logger.Warningf("could not get optimized manifest: %s", err)
+		log.CtxWarningf(ctx, "could not get optimized manifest: %s", err)
 		http.Error(w, fmt.Sprintf("could not get optimized manifest: %s", err), http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-type", manifest.ContentType)
 	if _, err := w.Write(manifest.Data); err != nil {
-		req.logger.Warningf("error serving cached manifest: %s", err)
+		log.CtxWarningf(ctx, "error serving cached manifest: %s", err)
 	}
 }
 
@@ -639,7 +633,8 @@ func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	return n, nil
 }
 
-func (r *registry) handleBlobRequest(w http.ResponseWriter, req *request, name, refName string) {
+func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, name, refName string) {
+	ctx := req.Context()
 	h, err := v1.NewHash(refName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
@@ -649,7 +644,7 @@ func (r *registry) handleBlobRequest(w http.ResponseWriter, req *request, name, 
 	blobSize, err := r.getBlobSize(req.Context(), h)
 	if err != nil {
 		if err != context.Canceled {
-			req.logger.Warningf("could not determine blob size: %s", err)
+			log.CtxWarningf(ctx, "could not determine blob size: %s", err)
 		}
 		http.Error(w, fmt.Sprintf("could not determine blob size: %s", err), http.StatusInternalServerError)
 		return
@@ -669,7 +664,7 @@ func (r *registry) handleBlobRequest(w http.ResponseWriter, req *request, name, 
 		Limit:  0,
 	}
 	if r := req.Header.Get("Range"); r != "" {
-		req.logger.Infof("%s %q %s", req.Method, req.RequestURI, r)
+		log.CtxInfof(ctx, "%s %q %s", req.Method, req.RequestURI, r)
 		parsedRanges, err := parseRangeHeader(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -694,7 +689,7 @@ func (r *registry) handleBlobRequest(w http.ResponseWriter, req *request, name, 
 	_, err = cachetools.GetBlobChunk(req.Context(), r.bsClient, rn, opts, w)
 	if err != nil {
 		if err != context.Canceled {
-			req.logger.Warningf("error serving %q: %s", req.RequestURI, err)
+			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
 		}
 		return
 	}
@@ -722,7 +717,6 @@ type registry struct {
 // the provided img.
 func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, img v1.Image, authenticator authn.Authenticator) error {
 	// Check if we have access to all the layers.
-	// Obtaining the size of a layer requires a HEAD request to the remote repo.
 	layers, err := img.Layers()
 	if err != nil {
 		return status.UnknownErrorf("could not get layers for image: %s", err)
@@ -744,6 +738,7 @@ func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, im
 			if err != nil {
 				return err
 			}
+			// This issues a HEAD request for the layer.
 			_, err = l.Size()
 			return err
 		})
@@ -799,13 +794,7 @@ func (r *registry) targetImageFromDescriptor(remoteDesc *remote.Descriptor, plat
 }
 
 func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimizedImageRequest) (*regpb.GetOptimizedImageResponse, error) {
-	id, err := uuid.GetFromContext(ctx)
-	if err != nil {
-		return nil, status.InternalErrorf("could not get request ID: %s", err)
-	}
-	logger := log.NamedSubLogger(id)
-
-	logger.Infof("GetOptimizedImage %q", req.GetImage())
+	log.CtxInfof(ctx, "GetOptimizedImage %q", req.GetImage())
 	imageRef, err := ctrname.ParseReference(req.GetImage())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", req.GetImage())
@@ -847,9 +836,9 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimize
 		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
 	}
 	if manifest != nil {
-		logger.Infof("Using cached manifest information")
+		log.CtxInfof(ctx, "Using cached manifest information")
 	} else {
-		convertedManifest, err := r.convert(ctx, logger, remoteDesc)
+		convertedManifest, err := r.convert(ctx, remoteDesc)
 		if err != nil {
 			return nil, status.UnknownErrorf("could not convert image: %s", err)
 		}
@@ -863,35 +852,35 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimize
 	}, nil
 }
 
+func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	log.CtxInfof(ctx, "%s %q", req.Method, req.RequestURI)
+	// Clients issue a GET /v2/ request to verify that this is a registry
+	// endpoint.
+	if req.RequestURI == "/v2/" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// Request for a manifest or image index.
+	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
+		r.handleManifestRequest(w, req, m[1], m[2])
+		return
+	}
+	// Request for a blob (full layer or layer chunk).
+	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
+		r.handleBlobRequest(w, req, m[1], m[2])
+		return
+	}
+	http.NotFound(w, req)
+}
+
 func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env environment.Env) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v2/", func(w http.ResponseWriter, req *http.Request) {
-		id, err := guuid.NewRandom()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not generate request ID: %s", err), http.StatusInternalServerError)
-			return
-		}
-		wReq := &request{Request: req, logger: log.NamedSubLogger(id.String())}
 
-		wReq.logger.Infof("%s %q", req.Method, req.RequestURI)
-		// Clients issue a GET /v2/ request to verify that this is a registry
-		// endpoint.
-		if req.RequestURI == "/v2/" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		// Request for a manifest or image index.
-		if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-			r.handleManifestRequest(w, wReq, m[1], m[2])
-			return
-		}
-		// Request for a blob (full layer or layer chunk).
-		if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-			r.handleBlobRequest(w, wReq, m[1], m[2])
-			return
-		}
-		http.NotFound(w, req)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.handleRegistryRequest(w, req)
 	})
+	mux.Handle("/v2/", filters.RequestID(handler))
 	mux.Handle("/readyz", hc.ReadinessHandler())
 	mux.Handle("/healthz", hc.LivenessHandler())
 
@@ -928,13 +917,7 @@ func main() {
 	flag.Parse()
 
 	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
-		fmt.Printf("Error loading config from file: %s", err)
-		os.Exit(1)
-	}
-
-	if err := log.Configure(); err != nil {
-		fmt.Printf("Error configuring logging: %s", err)
-		os.Exit(1)
+		log.Fatalf("Error loading config from file: %s", err)
 	}
 
 	if err := log.Configure(); err != nil {
