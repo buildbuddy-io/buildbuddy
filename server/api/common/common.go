@@ -141,7 +141,7 @@ func (tm TargetMap) ProcessEvent(iid string, event *bespb.BuildEvent) {
 			tm[label] = &apipb.Target{
 				Id: &apipb.Target_Id{
 					InvocationId: iid,
-					TargetId:     EncodeID(label),
+					TargetId:     label,
 				},
 				Label:    label,
 				Status:   cmnpb.Status_BUILDING,
