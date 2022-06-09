@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -201,6 +202,7 @@ type commandRunner struct {
 	// Stdout handle to read persistent WorkResponses from.
 	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
 	stdoutReader *bufio.Reader
+	workerStderr bytes.Buffer
 	// Stops the persistent worker associated with this runner. If this is nil,
 	// there is no persistent worker associated.
 	stopPersistentWorker func() error

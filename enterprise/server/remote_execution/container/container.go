@@ -92,7 +92,7 @@ type CommandContainer interface {
 	// the executed process.
 	// If stdout is non-nil, the stdout of the executed process will be written to the
 	// stdout writer.
-	Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
+	Exec(ctx context.Context, command *repb.Command, opts *ExecOpts) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -103,6 +103,16 @@ type CommandContainer interface {
 
 	// Stats returns the current resource usage of this container.
 	Stats(ctx context.Context) (*Stats, error)
+}
+
+// ExecOpts specifies options for executing a task.
+type ExecOpts struct {
+	// Stdin is an optional stdin source for the executed process.
+	Stdin io.Reader
+	// Stdout is an optional stdout sink for the executed process.
+	Stdout io.Writer
+	// Stderr is an optional stderr sink for the executed process.
+	Stderr io.Writer
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it
