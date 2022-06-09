@@ -150,7 +150,13 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		Target: make([]*apipb.Target, 0),
 	}
 
-	cachedTarget, err := s.redisCachedTarget(ctx, userInfo, iid, req.GetSelector().GetLabel())
+	cacheKey := req.GetSelector().GetLabel()
+	// Target ID is equal to the target label, so either can be used as a cache key.
+	if targetId := req.GetSelector().GetTargetId(); targetId != "" {
+		cacheKey = targetId
+	}
+
+	cachedTarget, err := s.redisCachedTarget(ctx, userInfo, iid, cacheKey)
 	if err != nil {
 		log.Debugf("redisCachedTarget err: %s", err)
 	} else if cachedTarget != nil {
