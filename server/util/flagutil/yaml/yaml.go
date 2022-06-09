@@ -61,14 +61,17 @@ type DocumentedMarshaler interface {
 	DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error
 }
 
-// GetYAMLTypeForFlag returns the type alias to use in YAML contexts for the flag.
-func GetYAMLTypeForFlag(flg *flag.Flag) (reflect.Type, error) {
-	if v, ok := flg.Value.(YAMLTypeAliasable); ok {
+// GetYAMLTypeForFlagValue returns the type alias to use in YAML contexts for the flag.
+func GetYAMLTypeForFlagValue(value flag.Value) (reflect.Type, error) {
+	if v, ok := value.(common.WrappingValue); ok {
+		return GetYAMLTypeForFlagValue(v.WrappedValue())
+	}
+	if v, ok := value.(YAMLTypeAliasable); ok {
 		return v.YAMLTypeAlias(), nil
-	} else if t, err := common.GetTypeForFlag(flg); err == nil {
+	} else if t, err := common.GetTypeForFlagValue(value); err == nil {
 		return t, nil
 	}
-	return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+	return nil, status.UnimplementedErrorf("Unsupported flag type: %T", value)
 }
 
 type HeadComment string
@@ -223,9 +226,9 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 // GenerateDocumentedYAMLNodeFromFlag produces a documented yaml.Node which
 // represents the value contained in the flag.
 func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
-	t, err := GetYAMLTypeForFlag(flg)
+	t, err := GetYAMLTypeForFlagValue(flg.Value)
 	if err != nil {
-		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
+		return nil, status.InternalErrorf("Error encountered generating default YAML from flags when processing flag %s: %s", flg.Name, err)
 	}
 	v, err := common.GetDereferencedValue[any](flg.Name)
 	if err != nil {
@@ -425,7 +428,12 @@ func PopulateFlagsFromData(data []byte) error {
 	if len(node.Content) > 0 {
 		node = node.Content[0]
 	}
-	typeMap, err := GenerateYAMLMapWithValuesFromFlags(GetYAMLTypeForFlag, IgnoreFilter)
+	typeMap, err := GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return GetYAMLTypeForFlagValue(flg.Value)
+		},
+		IgnoreFilter,
+	)
 	if err != nil {
 		return err
 	}

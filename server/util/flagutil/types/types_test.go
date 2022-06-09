@@ -178,14 +178,22 @@ func TestFlagAlias(t *testing.T) {
 	asf := flags.Lookup("string_alias").Value.(*FlagAlias)
 	assert.Equal(t, "meow", asf.String())
 	assert.Equal(t, "string", asf.AliasedName())
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), asf.AliasedType())
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), asf.YAMLTypeAlias())
+	asfType, err := common.GetTypeForFlagValue(asf)
+	require.NoError(t, err)
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfType)
+	asfYAMLType, err := flagyaml.GetYAMLTypeForFlagValue(asf)
+	require.NoError(t, err)
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfYAMLType)
 
 	aasf := flags.Lookup("string_alias").Value.(*FlagAlias)
 	assert.Equal(t, "meow", aasf.String())
 	assert.Equal(t, "string", aasf.AliasedName())
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasf.AliasedType())
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasf.YAMLTypeAlias())
+	aasfType, err := common.GetTypeForFlagValue(asf)
+	require.NoError(t, err)
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasfType)
+	aasfYAMLType, err := flagyaml.GetYAMLTypeForFlagValue(asf)
+	require.NoError(t, err)
+	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasfYAMLType)
 
 	flags = replaceFlagsForTesting(t)
 
@@ -199,7 +207,7 @@ string_alias2: "moo"
 string_alias3: "oink"
 string_alias: "meow"
 `
-	err := flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
 	require.NoError(t, err)
 	assert.Equal(t, "meow", *flagString)
 
@@ -372,4 +380,50 @@ string_alias: "meow"
 	structSlice, err := common.GetDereferencedValue[[]testStruct]("struct_slice")
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, structSlice)
+}
+
+func TestDeprecateFlag(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+	flagInt := DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "")
+	flagStringSlice := DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "")
+	assert.Equal(t, *flagInt, 5)
+	assert.Equal(t, *flagStringSlice, []string{"hi"})
+	flags.Set("deprecated_int", "7")
+	flags.Set("deprecated_string_slice", "hello")
+	assert.Equal(t, *flagStringSlice, []string{"hi", "hello"})
+	assert.Equal(t, *flagInt, 7)
+	testInt, err := common.GetDereferencedValue[int]("deprecated_int")
+	require.NoError(t, err)
+	assert.Equal(t, testInt, 7)
+	testStringSlice, err := common.GetDereferencedValue[[]string]("deprecated_string_slice")
+	require.NoError(t, err)
+	assert.Equal(t, testStringSlice, []string{"hi", "hello"})
+
+	flags = replaceFlagsForTesting(t)
+
+	flagInt = DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "")
+	flagString := DeprecatedVar[string](NewPrimitiveFlag(""), "deprecated_string", "")
+	flagStringSlice = DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "")
+	flags.Set("deprecated_int", "7")
+	yamlData := `
+deprecated_int: 9
+deprecated_string: "moo"
+deprecated_string_slice:
+  - "hello"
+`
+	err = flagyaml.PopulateFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, *flagInt, 7)
+	assert.Equal(t, *flagString, "moo")
+	assert.Equal(t, *flagStringSlice, []string{"hi", "hello"})
+	testInt, err = common.GetDereferencedValue[int]("deprecated_int")
+	require.NoError(t, err)
+	assert.Equal(t, testInt, 7)
+	testString, err := common.GetDereferencedValue[string]("deprecated_string")
+	require.NoError(t, err)
+	assert.Equal(t, testString, "moo")
+	testStringSlice, err = common.GetDereferencedValue[[]string]("deprecated_string_slice")
+	require.NoError(t, err)
+	assert.Equal(t, testStringSlice, []string{"hi", "hello"})
+
 }
