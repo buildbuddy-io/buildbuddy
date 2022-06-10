@@ -1,11 +1,14 @@
 package commandutil_test
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -36,6 +39,30 @@ func TestRun_NormalExit_NoError(t *testing.T) {
 		assert.NoError(t, res.Error)
 		assert.Equal(t, 137, res.ExitCode)
 	}
+}
+
+func TestRun_Stdio(t *testing.T) {
+	ctx := context.Background()
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		if ! [ "$(cat)" = "TestInput" ] ; then
+			echo "ERROR: missing expected TestInput on stdin"
+			exit 1
+		fi
+		echo TestOutput
+		echo TestError >&2
+	`}}
+	var stdout, stderr bytes.Buffer
+	res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
+		Stdin:  strings.NewReader("TestInput\n"),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	assert.NoError(t, res.Error)
+	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout opt should be respected")
+	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
+	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
+	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
 }
 
 // TODO(bduffany): Treat SIGABRT as a normal exit rather than an unexpected
@@ -87,7 +114,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 
 	{
 		cmd := &repb.Command{Arguments: []string{"./command_not_found_in_working_dir"}}
-		res := commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)
+		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -97,7 +124,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	}
 	{
 		cmd := &repb.Command{Arguments: []string{"command_not_found_in_PATH"}}
-		res := commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)
+		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -113,7 +140,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	testfs.WriteAllFileContents(t, wd, map[string]string{"non_executable_file": ""})
 
 	cmd := &repb.Command{Arguments: []string{"./non_executable_file"}}
-	res := commandutil.Run(ctx, cmd, wd, nil /*=stdin*/, nil /*=stdout*/)
+	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
 
 	assert.Error(t, res.Error)
 	assert.True(
@@ -134,7 +161,7 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, nil, nil)
+	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
 
 	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -155,7 +182,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, nil, nil)
+	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
 
 	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -164,5 +191,5 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", nil /*=stdin*/, nil /*=stdout*/)
+	return commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
 }

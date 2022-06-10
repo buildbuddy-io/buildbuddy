@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/log",
@@ -20,6 +21,7 @@ go_test(
     data = ["//enterprise/server/remote_execution/commandutil/test_binary"],
     deps = [
         ":commandutil",
+        "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testfs",
