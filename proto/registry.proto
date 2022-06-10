@@ -17,3 +17,51 @@ message Manifest {
   // CAS anymore.
   repeated build.bazel.remote.execution.v2.Digest cas_dependencies = 4;
 }
+
+message Credentials {
+  string username = 1;
+  string password = 2;
+}
+
+// Also see the `platform` property in the official OCI specification:
+// https://github.com/opencontainers/image-spec/blob/v1.0.0/image-index.md
+message Platform {
+  // CPU architecture (e.g. amd64, arm64)
+  string arch = 1;
+  // Operating system (e.g. linux)
+  string os = 2;
+  // CPU variant (e.g. v8, v7)
+  string variant = 3;
+}
+
+message GetOptimizedImageRequest {
+  // The target image, including repo (e.g. docker.io/busybox:latest or
+  // docker.io/busybox@sha256:foo)
+  string image = 1;
+
+  // If an image has multiple variants, this selector is used
+  // to select a single variant.
+  Platform platform = 2;
+
+  // Credentials for accessing the target image.
+  Credentials image_credentials = 3;
+}
+
+message GetOptimizedImageResponse {
+  // An encoded image reference that is only valid for the BuildBuddy registry.
+  // This reference can be used to pull/run the image via the registry by
+  // passing it to a container engine. The returned reference does not include
+  // the registry host. To use the image reference, it should be prefixed by the
+  // address of the registry service from which it should be served. e.g. if the
+  // returned image is foo@sha256:bar, the image should be pulled from
+  // registry_host/foo@sha256:bar
+  string optimized_image = 1;
+}
+
+service Registry {
+  // Returns an optimized image for the given remote image reference.
+  // This RPC always checks the credentials against the remote repo,
+  // even if the optimized image is in the cache.
+  rpc GetOptimizedImage(GetOptimizedImageRequest)
+      returns (GetOptimizedImageResponse);
+}
