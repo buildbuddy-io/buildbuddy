@@ -3,6 +3,7 @@ package commandutil_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,34 @@ func TestRun_Stdio(t *testing.T) {
 	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
 	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
 	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
+}
+
+func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
+	ctx := context.Background()
+	// Note: this command does not consume stdin. We should still be able to write
+	// stdin to it, and not have it fail/hang. See
+	// https://go.dev/play/p/DpKaVrx8d8G for an example implementation that does
+	// not handle this correctly.
+	cmd := &repb.Command{Arguments: []string{"echo", "foo"}}
+
+	inr, inw := io.Pipe()
+	outr, outw := io.Pipe()
+
+	go func() {
+		defer inr.Close()
+		defer outw.Close()
+
+		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
+			Stdin:  inr,
+			Stdout: outw,
+		})
+		assert.Empty(t, res.Stdout)
+	}()
+
+	inw.Write([]byte("foo"))
+	out, err := io.ReadAll(outr)
+	require.NoError(t, err)
+	assert.Equal(t, "foo\n", string(out))
 }
 
 // TODO(bduffany): Treat SIGABRT as a normal exit rather than an unexpected
