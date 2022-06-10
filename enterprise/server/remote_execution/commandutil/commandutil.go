@@ -39,7 +39,7 @@ var (
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
-func constructExecCommand(command *repb.Command, workDir string, opts *container.ExecOpts) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
+func constructExecCommand(command *repb.Command, workDir string, opts *container.ExecOpts) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
 	// CommandContext is to kill just the top-level process when the context is
@@ -58,8 +58,19 @@ func constructExecCommand(command *repb.Command, workDir string, opts *container
 	if opts.Stderr != nil {
 		cmd.Stderr = opts.Stderr
 	}
+	// Note: We are using StdinPipe() instead of cmd.Stdin here, because the
+	// latter approach results in a bug where cmd.Wait() can hang indefinitely if
+	// the process doesn't consume its stdin. See
+	// https://go.dev/play/p/DpKaVrx8d8G
 	if opts.Stdin != nil {
-		cmd.Stdin = opts.Stdin
+		inp, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, nil, nil, status.InternalErrorf("failed to get stdin pipe: %s", err)
+		}
+		go func() {
+			defer inp.Close()
+			io.Copy(inp, opts.Stdin)
+		}()
 	}
 	if *DebugStreamCommandOutputs {
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, os.Stdout)
@@ -69,7 +80,7 @@ func constructExecCommand(command *repb.Command, workDir string, opts *container
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	return cmd, &stdout, &stderr
+	return cmd, &stdout, &stderr, nil
 }
 
 // RetryIfTextFileBusy runs a function, retrying "text file busy" errors up to
@@ -95,7 +106,11 @@ func Run(ctx context.Context, command *repb.Command, workDir string, opts *conta
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
-		cmd, stdoutBuf, stderrBuf = constructExecCommand(command, workDir, opts)
+		var err error
+		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, opts)
+		if err != nil {
+			return err
+		}
 		return RunWithProcessTreeCleanup(ctx, cmd)
 	})
 

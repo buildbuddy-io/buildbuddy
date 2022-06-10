@@ -35,6 +35,7 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/flagutil",
+        "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
