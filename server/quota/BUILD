@@ -6,10 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/quota",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:quota_config_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/quota/config",
+        "//server/tables",
         "//server/util/log",
         "//server/util/status",
         "@com_github_throttled_throttled_v2//:throttled",
