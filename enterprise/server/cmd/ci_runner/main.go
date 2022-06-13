@@ -760,7 +760,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
-		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
+		args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
 
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
@@ -772,7 +772,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 			defer os.RemoveAll(tmpDir)
 			runScript = filepath.Join(tmpDir, "run.sh")
-			args = append(args, "--script_path="+runScript)
+			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
 		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter)
@@ -1100,9 +1100,28 @@ func bazelArgs(cmd string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		tokens = append(tokens, extras...)
+		tokens = appendBazelSubcommandArgs(tokens, extras...)
 	}
 	return append(startupFlags, tokens...), nil
+}
+
+// appendBazelSubcommandArgs appends bazel arguments to a bazel command,
+// *before* the arg separator ("--") if it exists, so that the arguments apply
+// to the bazel subcommand ("build", "run", etc.) and not the binary being run
+// (in the "bazel run" case).
+func appendBazelSubcommandArgs(args []string, argsToAppend ...string) []string {
+	splitIndex := len(args)
+	for i, arg := range args {
+		if arg == "--" {
+			splitIndex = i
+			break
+		}
+	}
+	out := make([]string, 0, len(args)+len(argsToAppend))
+	out = append(out, args[:splitIndex]...)
+	out = append(out, argsToAppend...)
+	out = append(out, args[splitIndex:]...)
+	return out
 }
 
 func ensureHomeDir() error {
