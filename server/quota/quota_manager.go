@@ -84,34 +84,91 @@ func validateBucket(bucket *tables.QuotaBucket) error {
 	return nil
 }
 
-type namespace struct {
-	name      string
-	prefixMap map[string]*tables.QuotaBucket
-
-	defaultRateLimiter *throttled.GCRARateLimiterCtx
-
-	rateLimitersByKey map[string]*throttled.GCRARateLimiterCtx
+type Bucket interface {
+	Config() *tables.QuotaBucket
+	Allow(ctx context.Context, key string, quantity int64) (bool, error)
 }
 
+type gcraBucket struct {
+	config      *tables.QuotaBucket
+	rateLimiter *throttled.GCRARateLimiterCtx
+}
+
+func (b *gcraBucket) Config() *tables.QuotaBucket {
+	return b.config
+}
+
+func (b *gcraBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
+	if quantity > math.MaxInt {
+		return false, status.InternalErrorf("quantity (%d) exceeds the limit", quantity)
+	}
+	limitExceeded, _, err := b.rateLimiter.RateLimitCtx(ctx, key, int(quantity))
+	return !limitExceeded, err
+}
+
+func createGCRABucket(env environment.Env, config *tables.QuotaBucket) (Bucket, error) {
+	prefix := strings.Join([]string{redisQuotaKeyPrefix, config.Namespace, config.Prefix, ""}, ":")
+	// TODO: set up a dedicated redis client for quota
+	store, err := goredisstore.NewCtx(env.GetDefaultRedisClient(), prefix)
+	if err != nil {
+		return nil, status.InternalErrorf("unable to init redis store: %s", err)
+	}
+
+	period := time.Duration(config.PeriodDurationUsec)
+	quota := throttled.RateQuota{
+		MaxRate:  throttled.PerDuration(int(config.NumRequests), period),
+		MaxBurst: int(config.MaxBurst),
+	}
+
+	rateLimiter, err := throttled.NewGCRARateLimiterCtx(store, quota)
+	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
+	if err != nil {
+		return nil, status.InternalErrorf("unable to create GCRARateLimiter: %s", err)
+	}
+
+	bucket := &gcraBucket{
+		config:      config,
+		rateLimiter: rateLimiter,
+	}
+
+	return bucket, nil
+}
+
+type namespace struct {
+	name           string
+	configByPrefix map[string]*tables.QuotaBucket
+
+	defaultBucket Bucket
+	bucketsByKey  map[string]Bucket
+}
+
+type bucketCreatorFn func(environment.Env, *tables.QuotaBucket) (Bucket, error)
+
 type QuotaManager struct {
-	env        environment.Env
-	config     *config
-	namespaces map[string]*namespace
+	env           environment.Env
+	config        *config
+	namespaces    map[string]*namespace
+	bucketCreator bucketCreatorFn
 }
 
 func NewQuotaManager(env environment.Env) (*QuotaManager, error) {
+	return newQuotaManager(env, createGCRABucket)
+}
+
+func newQuotaManager(env environment.Env, bucketCreator bucketCreatorFn) (*QuotaManager, error) {
 	config, err := fetchConfigFromDB(env)
 	if err != nil {
 		return nil, err
 	}
 	qm := &QuotaManager{
-		env:        env,
-		config:     config,
-		namespaces: make(map[string]*namespace),
+		env:           env,
+		config:        config,
+		namespaces:    make(map[string]*namespace),
+		bucketCreator: bucketCreator,
 	}
 
 	for namespaceName, prefixMap := range config.bucketsByName {
-		ns, err := createNamespace(env, namespaceName, prefixMap, config.quotaKeysByBucketID)
+		ns, err := qm.createNamespace(env, namespaceName, prefixMap, config.quotaKeysByBucketID)
 		if err != nil {
 			return nil, err
 		}
@@ -121,75 +178,53 @@ func NewQuotaManager(env environment.Env) (*QuotaManager, error) {
 	return qm, nil
 }
 
-func createNamespace(env environment.Env, name string, prefixMap map[string]*tables.QuotaBucket, quotaKeysByBucketID map[string][]string) (*namespace, error) {
-	defaultBucket := prefixMap[defaultPrefix]
-	if defaultBucket == nil {
+func (qm *QuotaManager) createNamespace(env environment.Env, name string, prefixMap map[string]*tables.QuotaBucket, quotaKeysByBucketID map[string][]string) (*namespace, error) {
+	defaultBucketConfig := prefixMap[defaultPrefix]
+	if defaultBucketConfig == nil {
 		return nil, status.InvalidArgumentErrorf("default quota bucket is unset in namespace: %q", name)
 	}
 
-	defaultRateLimiter, err := createRateLimiter(env, defaultBucket)
+	defaultBucket, err := qm.bucketCreator(env, defaultBucketConfig)
 	if err != nil {
 		return nil, err
 	}
 
 	ns := &namespace{
-		name:               name,
-		prefixMap:          prefixMap,
-		defaultRateLimiter: defaultRateLimiter,
-		rateLimitersByKey:  make(map[string]*throttled.GCRARateLimiterCtx),
+		name:           name,
+		configByPrefix: prefixMap,
+		defaultBucket:  defaultBucket,
+		bucketsByKey:   make(map[string]Bucket),
 	}
 
-	for _, b := range prefixMap {
-		rl, err := createRateLimiter(env, b)
+	for _, bc := range prefixMap {
+		bucket, err := qm.bucketCreator(env, bc)
 		if err != nil {
 			return nil, err
 		}
 
-		keys := quotaKeysByBucketID[b.QuotaBucketID]
+		keys := quotaKeysByBucketID[bc.QuotaBucketID]
 		for _, key := range keys {
-			ns.rateLimitersByKey[key] = rl
+			ns.bucketsByKey[key] = bucket
 		}
 	}
 	return ns, nil
 }
 
-func createRateLimiter(env environment.Env, bucket *tables.QuotaBucket) (*throttled.GCRARateLimiterCtx, error) {
-	prefix := strings.Join([]string{redisQuotaKeyPrefix, bucket.Namespace, bucket.Prefix, ""}, ":")
-	// TODO: set up a dedicated redis client for quota
-	store, err := goredisstore.NewCtx(env.GetDefaultRedisClient(), prefix)
-	if err != nil {
-		return nil, status.InternalErrorf("unable to init redis store: %s", err)
-	}
-
-	period := time.Duration(bucket.PeriodDurationUsec)
-	quota := throttled.RateQuota{
-		MaxRate:  throttled.PerDuration(int(bucket.NumRequests), period),
-		MaxBurst: int(bucket.MaxBurst),
-	}
-
-	rateLimiter, err := throttled.NewGCRARateLimiterCtx(store, quota)
-	rateLimiter.SetMaxCASAttemptsLimit(maxRedisRetry)
-	if err != nil {
-		return nil, status.InternalErrorf("unable to create GCRARateLimiter: %s", err)
-	}
-	return rateLimiter, nil
-}
-
-// findRateLimiter finds the rate limiter given a namespace and key. If the key is found in
-// rateLimitersByKey map, return the corresponding rateLimiter. Otherwise, return the default rate
-// limiter. Return nil if the namespace is not found.
-func (qm *QuotaManager) findRateLimiter(namespace string, key string) *throttled.GCRARateLimiterCtx {
+// findBucket finds the bucket given a namespace and key. If the key is found in
+// bucketsByKey map, return the corresponding bucket. Otherwise, return the default bucket. Return
+// nil if the namespace is not found.
+func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
 	ns, ok := qm.namespaces[namespace]
 	if !ok {
 		log.Warningf("namespace %q not found", namespace)
 		return nil
 	}
 
-	if rl, ok := ns.rateLimitersByKey[key]; ok {
-		return rl
+	if b, ok := ns.bucketsByKey[key]; ok {
+		return b
 	}
 
-	return ns.defaultRateLimiter
+	return ns.defaultBucket
 }
 
 func (qm *QuotaManager) getGroupID(ctx context.Context) string {
@@ -214,19 +249,12 @@ func (qm *QuotaManager) getKey(ctx context.Context) string {
 
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
 	key := qm.getKey(ctx)
-	rl := qm.findRateLimiter(namespace, key)
-	if rl == nil {
-		log.Warningf("rate limiter for namespace %q and key %q not found", namespace, key)
+	b := qm.findBucket(namespace, key)
+	if b == nil {
+		log.Warningf("quota bucket for namespace %q and key %q not found", namespace, key)
 		return true, nil
 	}
-	if quantity > math.MaxInt {
-		return false, status.InternalErrorf("quantity (%d) exceeds the limit", quantity)
-	}
-	limitExceeded, _, err := rl.RateLimit(key, int(quantity))
-	if err != nil {
-		return false, status.InternalErrorf("rate limiter failed %s", err)
-	}
-	return !limitExceeded, err
+	return b.Allow(ctx, key, quantity)
 }
 
 func Register(env environment.Env) error {
