@@ -70,6 +70,21 @@ actions:
 `,
 	}
 
+	workspaceContentsWithRunScript = map[string]string{
+		"WORKSPACE":     `workspace(name = "test")`,
+		"BUILD":         `sh_test(name = "print_args", srcs = ["print_args.sh"])`,
+		"print_args.sh": "echo 'args: {{' $@ '}}'",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Print args"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run //:print_args -- "Hello world"
+`,
+	}
+
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
@@ -469,6 +484,31 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 	}
 
 	run()
+}
+
+func TestRunAction_RespectsArgs(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithRunScript)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Print args",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	assert.Contains(t, result.Output, "args: {{ Hello world }}")
 }
 
 func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {

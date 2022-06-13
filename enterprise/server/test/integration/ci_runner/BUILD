@@ -11,7 +11,7 @@ go_test(
     exec_properties = {
         "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8",
     },
-    shard_count = 8,
+    shard_count = 9,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
