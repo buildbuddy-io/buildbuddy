@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "proto/context.proto";
+
+package quota;
+
+message Rate {
+	int64 num_requests = 1;
+	google.protobuf.Duration period = 2;
+}
+
+message Bucket {
+	// The name of the bucket
+	string name = 1;
+    Rate max_rate = 2;
+	int64 burst = 3;
+}
+
+message QuotaKey {
+	string group_id = 1;
+	string ip_address = 2;
+}
+
+message Namespace {
+	// The name of the namespace
+	string name = 1;
+
+	Bucket default_bucket = 2;
+
+	map<string, Bucket> buckets_by_quota_key = 3;
+}
+
+message AddNamespace {
+	// The name of the namespace
+	string name = 1;
+	Bucket default_bucket = 2;
+	repeated Bucket buckets = 3;
+}
+
+message CreateNamespaceRequest {
+  context.RequestContext request_context = 1;
+  AddNamespace mod = 2;
+}
+
+message CreateNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message AddBucketToNamespaceRequest {
+  context.RequestContext request_context = 1;
+  Bucket bucket = 2;
+  string namespace = 3;
+}
+
+message AddBucketToNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message UpdateBucketRequest {
+  context.RequestContext request_context = 1;
+
+  QuotaKey key = 2;
+  string namespace = 3;
+  
+  // When new_bucket_name is empty, will apply default bucket for the specified key.
+  string new_bucket_name = 4;
+}
+
+message UpdateBucketResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message RemoveNamespaceRequest {
+  context.RequestContext request_context = 1;
+  string namespace = 2;
+}
+
+message RemoveNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetNamespaceRequest {
+  context.RequestContext request_context = 1;
+  // When namespace is not set, return all namespaces.
+  string namespace = 2;
+}
+
+message GetNamespaceResponse {
+  context.ResponseContext request_context = 1;
+  repeated Namespace namespaces = 2;
+}

@@ -114,6 +114,15 @@ proto_library(
 )
 
 proto_library(
+    name = "quota_proto",
+    srcs = [":quota.proto"],
+    deps = [
+        ":context_proto",
+        "@com_google_protobuf//:duration_proto",
+		],
+)
+
+proto_library(
     name = "publish_build_event_proto",
     srcs = [
         "publish_build_event.proto",
@@ -318,6 +327,7 @@ proto_library(
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
+		":quota_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
@@ -520,6 +530,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "quota_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/quota",
+    proto = ":quota_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "target_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
     proto = ":target_proto",
@@ -663,6 +682,7 @@ go_proto_library(
         ":execution_stats_go_proto",
         ":github_go_proto",
         ":group_go_proto",
+        ":quota_go_proto",
         ":invocation_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
