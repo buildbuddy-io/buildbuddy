@@ -548,9 +548,8 @@ func (*Usage) TableName() string {
 
 type QuotaBucket struct {
 	Model
-	QuotaBucketID string `gorm:"primarykey"`
-	Namespace     string
-	Prefix        string
+	Namespace string `gorm:"primarykey"`
+	Name      string `gorm:"primarykey"`
 
 	// The maximum sustained rate of requests
 	NumRequests        int64
@@ -567,9 +566,11 @@ func (*QuotaBucket) TableName() string {
 
 type QuotaGroup struct {
 	Model
-	QuotaBucketID string `gorm:"primarykey"`
+	Namespace string `gorm:"primarykey"`
 	// GroupID or IP address
 	QuotaKey string `gorm:"primarykey"`
+
+	BucketName string
 }
 
 func (*QuotaGroup) TableName() string {
