@@ -37,17 +37,15 @@ func TestQuotaManagerFindRateLimiter(t *testing.T) {
 	db := env.GetDBHandle().DB(ctx)
 	buckets := []*tables.QuotaBucket{
 		{
-			QuotaBucketID:      "abc123",
 			Namespace:          "remote_execution",
-			Prefix:             "default",
+			Name:               "default",
 			NumRequests:        100,
 			PeriodDurationUsec: int64(time.Second / time.Microsecond),
 			MaxBurst:           105,
 		},
 		{
-			QuotaBucketID:      "abc124",
 			Namespace:          "remote_execution",
-			Prefix:             "restricted",
+			Name:               "restricted",
 			NumRequests:        10,
 			PeriodDurationUsec: int64(time.Second / time.Microsecond),
 			MaxBurst:           12,
@@ -55,8 +53,9 @@ func TestQuotaManagerFindRateLimiter(t *testing.T) {
 	}
 
 	quotaGroup := &tables.QuotaGroup{
-		QuotaBucketID: "abc124",
-		QuotaKey:      "GR123456",
+		Namespace:  "remote_execution",
+		QuotaKey:   "GR123456",
+		BucketName: "restricted",
 	}
 	result := db.Create(&buckets)
 	require.NoError(t, result.Error)

@@ -17,17 +17,16 @@ import (
 
 const (
 	maxRedisRetry       = 3
-	defaultPrefix       = "default"
+	defaultBucketName   = "default"
 	redisQuotaKeyPrefix = "quota"
 )
 
-type config struct {
-	bucketsByName       map[string]map[string]*tables.QuotaBucket
-	bucketsByID         map[string]*tables.QuotaBucket
-	quotaKeysByBucketID map[string][]string
+type namespaceConfig struct {
+	bucketsByName         map[string]*tables.QuotaBucket
+	quotaKeysByBucketName map[string][]string
 }
 
-func fetchConfigFromDB(env environment.Env) (*config, error) {
+func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("quota manager is not configured")
 	}
@@ -43,26 +42,37 @@ func fetchConfigFromDB(env environment.Env) (*config, error) {
 		return nil, status.InternalErrorf("failed to read quota config: %s", result.Error)
 	}
 
-	config := &config{
-		bucketsByID:         make(map[string]*tables.QuotaBucket),
-		bucketsByName:       make(map[string]map[string]*tables.QuotaBucket),
-		quotaKeysByBucketID: make(map[string][]string),
-	}
+	config := make(map[string]*namespaceConfig)
 	for _, b := range buckets {
 		if err := validateBucket(b); err != nil {
 			return nil, status.InternalErrorf("bucket is invalid: %v", b)
 		}
-		config.bucketsByID[b.QuotaBucketID] = b
-		if config.bucketsByName[b.Namespace] == nil {
-			config.bucketsByName[b.Namespace] = make(map[string]*tables.QuotaBucket)
+		ns := config[b.Namespace]
+		if ns == nil {
+			ns = &namespaceConfig{
+				bucketsByName:         make(map[string]*tables.QuotaBucket),
+				quotaKeysByBucketName: make(map[string][]string),
+			}
+			config[b.Namespace] = ns
 		}
-		config.bucketsByName[b.Namespace][b.Prefix] = b
+		ns.bucketsByName[b.Name] = b
 	}
+
 	for _, g := range quotaGroups {
-		if keys := config.quotaKeysByBucketID[g.QuotaBucketID]; keys == nil {
-			config.quotaKeysByBucketID[g.QuotaBucketID] = []string{g.QuotaKey}
+		ns := config[g.Namespace]
+		if ns == nil {
+			return nil, status.InternalErrorf("namespace %q doesn't exist", g.Namespace)
+		}
+		if _, ok := ns.bucketsByName[g.BucketName]; !ok {
+			return nil, status.InternalErrorf("namespace %q bucket name %q doesn't exist", g.Namespace, g.BucketName)
+		}
+		if g.BucketName == defaultBucketName {
+			log.Warningf("doesn't need to create QuotaGroup for default bucket in namespace %q", g.Namespace)
+		}
+		if keys := ns.quotaKeysByBucketName[g.BucketName]; keys == nil {
+			ns.quotaKeysByBucketName[g.BucketName] = []string{g.QuotaKey}
 		} else {
-			config.quotaKeysByBucketID[g.QuotaBucketID] = append(keys, g.QuotaKey)
+			ns.quotaKeysByBucketName[g.BucketName] = append(keys, g.QuotaKey)
 		}
 	}
 	return config, nil
@@ -107,7 +117,7 @@ func (b *gcraBucket) Allow(ctx context.Context, key string, quantity int64) (boo
 }
 
 func createGCRABucket(env environment.Env, config *tables.QuotaBucket) (Bucket, error) {
-	prefix := strings.Join([]string{redisQuotaKeyPrefix, config.Namespace, config.Prefix, ""}, ":")
+	prefix := strings.Join([]string{redisQuotaKeyPrefix, config.Namespace, config.Name, ""}, ":")
 	// TODO: set up a dedicated redis client for quota
 	store, err := goredisstore.NewCtx(env.GetDefaultRedisClient(), prefix)
 	if err != nil {
@@ -135,8 +145,8 @@ func createGCRABucket(env environment.Env, config *tables.QuotaBucket) (Bucket, 
 }
 
 type namespace struct {
-	name           string
-	configByPrefix map[string]*tables.QuotaBucket
+	name   string
+	config *namespaceConfig
 
 	defaultBucket Bucket
 	bucketsByKey  map[string]Bucket
@@ -146,7 +156,6 @@ type bucketCreatorFn func(environment.Env, *tables.QuotaBucket) (Bucket, error)
 
 type QuotaManager struct {
 	env           environment.Env
-	config        *config
 	namespaces    map[string]*namespace
 	bucketCreator bucketCreatorFn
 }
@@ -162,24 +171,23 @@ func newQuotaManager(env environment.Env, bucketCreator bucketCreatorFn) (*Quota
 	}
 	qm := &QuotaManager{
 		env:           env,
-		config:        config,
 		namespaces:    make(map[string]*namespace),
 		bucketCreator: bucketCreator,
 	}
 
-	for namespaceName, prefixMap := range config.bucketsByName {
-		ns, err := qm.createNamespace(env, namespaceName, prefixMap, config.quotaKeysByBucketID)
+	for nsName, nsConfig := range config {
+		ns, err := qm.createNamespace(env, nsName, nsConfig)
 		if err != nil {
 			return nil, err
 		}
-		qm.namespaces[namespaceName] = ns
+		qm.namespaces[nsName] = ns
 	}
 
 	return qm, nil
 }
 
-func (qm *QuotaManager) createNamespace(env environment.Env, name string, prefixMap map[string]*tables.QuotaBucket, quotaKeysByBucketID map[string][]string) (*namespace, error) {
-	defaultBucketConfig := prefixMap[defaultPrefix]
+func (qm *QuotaManager) createNamespace(env environment.Env, name string, config *namespaceConfig) (*namespace, error) {
+	defaultBucketConfig := config.bucketsByName[defaultBucketName]
 	if defaultBucketConfig == nil {
 		return nil, status.InvalidArgumentErrorf("default quota bucket is unset in namespace: %q", name)
 	}
@@ -190,19 +198,19 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, prefix
 	}
 
 	ns := &namespace{
-		name:           name,
-		configByPrefix: prefixMap,
-		defaultBucket:  defaultBucket,
-		bucketsByKey:   make(map[string]Bucket),
+		name:          name,
+		config:        config,
+		defaultBucket: defaultBucket,
+		bucketsByKey:  make(map[string]Bucket),
 	}
 
-	for _, bc := range prefixMap {
+	for _, bc := range config.bucketsByName {
 		bucket, err := qm.bucketCreator(env, bc)
 		if err != nil {
 			return nil, err
 		}
 
-		keys := quotaKeysByBucketID[bc.QuotaBucketID]
+		keys := config.quotaKeysByBucketName[bc.Name]
 		for _, key := range keys {
 			ns.bucketsByKey[key] = bucket
 		}
