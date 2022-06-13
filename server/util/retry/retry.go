@@ -27,7 +27,15 @@ type Retry struct {
 func New(ctx context.Context, opts *Options) *Retry {
 	maxAttempts := opts.MaxRetries
 	if maxAttempts <= 0 {
-		maxAttempts = int(math.Ceil(math.Log(float64(opts.MaxBackoff)/float64(opts.InitialBackoff)) / math.Log(opts.Multiplier)))
+		// always try at least once
+		maxAttempts = 1
+		if opts.Multiplier > 1 && opts.MaxBackoff > opts.InitialBackoff {
+			maxAttempts = 1 + int(math.Ceil(
+				math.Log(
+					float64(opts.MaxBackoff)/float64(opts.InitialBackoff),
+				)/math.Log(opts.Multiplier),
+			))
+		}
 	}
 
 	r := &Retry{
