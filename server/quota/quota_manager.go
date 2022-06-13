@@ -114,7 +114,7 @@ func createGCRABucket(env environment.Env, config *tables.QuotaBucket) (Bucket, 
 		return nil, status.InternalErrorf("unable to init redis store: %s", err)
 	}
 
-	period := time.Duration(config.PeriodDurationUsec)
+	period := time.Duration(config.PeriodDurationUsec) * time.Microsecond
 	quota := throttled.RateQuota{
 		MaxRate:  throttled.PerDuration(int(config.NumRequests), period),
 		MaxBurst: int(config.MaxBurst),
