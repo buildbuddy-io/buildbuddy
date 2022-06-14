@@ -501,7 +501,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "assigned_milli_cpu",
-		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.",
+		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
 	/// #### Examples
@@ -519,6 +519,31 @@ var (
 	///   ) * 1000 * 0.6)
 	/// )
 	/// ```
+
+	RemoteExecutionMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "memory_usage_bytes",
+		Help:      "Current total task memory usage in **bytes**. This only accounts for tasks which are actively executing. To see memory usage of pooled runners, sum with runner pool memory usage.",
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Total approximate memory usage of active and pooled runners,
+	/// # grouped by executor pod.
+	/// sum by (pod_name) (
+	///   buildbuddy_remote_execution_memory_usage_bytes
+	///   + buildbuddy_remote_execution_runner_pool_memory_usage_bytes
+	/// )
+	/// ```
+
+	RemoteExecutionUsedMilliCPU = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "used_milli_cpu",
+		Help:      "Approximate CPU usage of executed tasks, in **CPU-milliseconds**.",
+	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
