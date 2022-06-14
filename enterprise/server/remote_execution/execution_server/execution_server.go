@@ -504,20 +504,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if err != nil {
 		return err
 	}
-	qm := s.env.GetQuotaManager()
-	if qm == nil {
-		log.Warning("Quota Manager is not set")
-	} else {
-		allow, err := qm.Allow(ctx, "remote_execution", 1)
-		if err != nil {
-			log.Warningf("failed to check quota: %s", err)
-		}
-		if !allow {
-			log.Info("This request would be denied because of quota")
-		} else {
-			log.Info("This request would be allowed")
-		}
-	}
 
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
