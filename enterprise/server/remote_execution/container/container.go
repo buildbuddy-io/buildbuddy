@@ -46,13 +46,16 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
-// Stats holds represents a container's held resources.
+// Stats represents a container's resource usage.
 type Stats struct {
+	// MemoryUsageBytes is the most recent memory usage value sampled from the
+	// container, in bytes.
 	MemoryUsageBytes int64
-
-	// TODO: add CPU usage once we have a reliable way to measure it.
-	// CPU only applies to bare execution, since Docker containers
-	// are frozen when not in use, reducing their CPU usage to 0.
+	// CPUNanos is the total CPU usage used by a task, in CPU-nanoseconds.
+	CPUNanos int64
+	// PeakMemoryUsageBytes is the highest memory usage sampled during the
+	// execution of a task, in bytes.
+	PeakMemoryUsageBytes int64
 }
 
 type FileSystemLayout struct {

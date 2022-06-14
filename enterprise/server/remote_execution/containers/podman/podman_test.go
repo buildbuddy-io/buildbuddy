@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io/ioutil"
+	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -348,4 +350,44 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
+
+func TestPodmanRun_RecordsStats(t *testing.T) {
+	// Note: This test requires root. Under cgroup v2, root is not required, but
+	// some devs' machines are running Ubuntu 20.04 currently, which only has
+	// cgroup v1 enabled (enabling cgroup v2 requires modifying kernel boot
+	// params).
+	u, err := user.Current()
+	require.NoError(t, err)
+	if u.Uid != "0" {
+		t.Skip("Test requires root")
+	}
+	// podman needs iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			for i in $(seq 100); do
+				sleep 0.001
+			done
+		`},
+	}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
+		EnableStats: true,
+	})
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	require.NoError(t, res.Error)
+	t.Log(string(res.Stderr))
+	require.Equal(t, res.ExitCode, 0)
+
+	assert.Greater(t, res.CPUNanos, int64(0), "CPU should be >= 0")
+	assert.Greater(t, res.PeakMemoryUsageBytes, int64(0), "peak mem usage should be >= 0")
 }
