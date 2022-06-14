@@ -106,13 +106,17 @@ service BuildBuddyService {
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
 
   // Quota API
-  rpc GetNamespaceRequest(quota.GetNamespaceRequest) returns (quota.GetNamespaceResponse);
+  rpc GetNamespaceRequest(quota.GetNamespaceRequest)
+      returns (quota.GetNamespaceResponse);
 
-  rpc CreateNamespace(quota.CreateNamespaceRequest) returns (quota.CreateNamespaceResponse);
+  rpc CreateNamespace(quota.CreateNamespaceRequest)
+      returns (quota.CreateNamespaceResponse);
 
-  rpc RemoveNamespace(quota.RemoveNamespaceRequest) returns (quota.RemoveNamespaceResponse);
+  rpc RemoveNamespace(quota.RemoveNamespaceRequest)
+      returns (quota.RemoveNamespaceResponse);
 
-  rpc AddBucketToNamespace(quota.AddBucketToNamespaceRequest) returns (quota.AddBucketToNamespaceResponse);
+  rpc ModifyBucket(quota.ModifyBucketRequest)
+      returns (quota.ModifyBucketResponse);
 
-  rpc UpdateBucket(quota.UpdateBucketRequest) returns (quota.UpdateBucketResponse);
+  rpc ApplyBucket(quota.ApplyBucketRequest) returns (quota.ApplyBucketResponse);
 }

@@ -6,36 +6,36 @@ import "proto/context.proto";
 package quota;
 
 message Rate {
-	int64 num_requests = 1;
-	google.protobuf.Duration period = 2;
+  int64 num_requests = 1;
+  google.protobuf.Duration period = 2;
 }
 
 message Bucket {
-	// The name of the bucket
-	string name = 1;
-    Rate max_rate = 2;
-	int64 burst = 3;
+  // The name of the bucket
+  string name = 1;
+  Rate max_rate = 2;
+  int64 burst = 3;
 }
 
 message QuotaKey {
-	string group_id = 1;
-	string ip_address = 2;
+  string group_id = 1;
+  string ip_address = 2;
 }
 
 message Namespace {
-	// The name of the namespace
-	string name = 1;
+  // The name of the namespace
+  string name = 1;
 
-	Bucket default_bucket = 2;
+  Bucket default_bucket = 2;
 
-	map<string, Bucket> buckets_by_quota_key = 3;
+  map<string, Bucket> buckets_by_quota_key = 3;
 }
 
 message AddNamespace {
-	// The name of the namespace
-	string name = 1;
-	Bucket default_bucket = 2;
-	repeated Bucket buckets = 3;
+  // The name of the namespace
+  string name = 1;
+  Bucket default_bucket = 2;
+  repeated Bucket buckets = 3;
 }
 
 message CreateNamespaceRequest {
@@ -47,36 +47,45 @@ message CreateNamespaceResponse {
   context.ResponseContext response_context = 1;
 }
 
-message AddBucketToNamespaceRequest {
-  context.RequestContext request_context = 1;
-  Bucket bucket = 2;
-  string namespace = 3;
-}
-
-message AddBucketToNamespaceResponse {
-  context.ResponseContext response_context = 1;
-}
-
-message UpdateBucketRequest {
-  context.RequestContext request_context = 1;
-
-  QuotaKey key = 2;
-  string namespace = 3;
-  
-  // When new_bucket_name is empty, will apply default bucket for the specified key.
-  string new_bucket_name = 4;
-}
-
-message UpdateBucketResponse {
-  context.ResponseContext response_context = 1;
-}
-
 message RemoveNamespaceRequest {
   context.RequestContext request_context = 1;
   string namespace = 2;
 }
 
 message RemoveNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message ModifyBucketRequest {
+  context.RequestContext request_context = 1;
+  string namespace = 2;
+
+  // Pre-requisite: the name of the bucket doesn't exist.
+  Bucket add_bucket = 3;
+
+  // Pre-requisite: the name of the bucket exists.
+  Bucket update_bucket = 4;
+
+  // the name of the bucket to remove
+  string remove_bucket = 5;
+}
+
+message ModifyBucketResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message ApplyBucketRequest {
+  context.RequestContext request_context = 1;
+
+  QuotaKey key = 2;
+  string namespace = 3;
+
+  // When new_bucket_name is empty, will apply default bucket for the specified
+  // key.
+  string new_bucket_name = 4;
+}
+
+message ApplyBucketResponse {
   context.ResponseContext response_context = 1;
 }
 

@@ -119,7 +119,7 @@ proto_library(
     deps = [
         ":context_proto",
         "@com_google_protobuf//:duration_proto",
-		],
+    ],
 )
 
 proto_library(
@@ -327,7 +327,7 @@ proto_library(
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
-		":quota_proto",
+        ":quota_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
@@ -682,8 +682,8 @@ go_proto_library(
         ":execution_stats_go_proto",
         ":github_go_proto",
         ":group_go_proto",
-        ":quota_go_proto",
         ":invocation_go_proto",
+        ":quota_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",
