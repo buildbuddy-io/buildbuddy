@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	containerRegistries     = flagutil.Slice("executor.container_registries", []ContainerRegistry{}, "")
+	containerRegistries     = flagtypes.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
 

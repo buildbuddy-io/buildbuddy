@@ -15,7 +15,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/disk",
-        "//server/util/flagutil",
+        "//server/util/flagutil/types",
         "//server/util/log",
         "//server/util/status",
         "@com_github_cespare_xxhash_v2//:xxhash",

@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cespare/xxhash/v2"
@@ -32,13 +31,14 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 var (
 	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
-	partitions          = flagutil.Slice("cache.pebble.partitions", []disk.Partition{}, "")
-	partitionMappings   = flagutil.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
+	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 )
 
 // TODO:

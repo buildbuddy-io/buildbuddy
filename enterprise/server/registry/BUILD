@@ -19,7 +19,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/ssl",
-        "//server/util/flagutil",
+        "//server/util/flagutil/yaml",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",

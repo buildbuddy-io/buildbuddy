@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -33,6 +32,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 const (
@@ -52,8 +52,8 @@ const (
 
 var (
 	rootDirectory     = flag.String("cache.disk.root_directory", "/tmp/buildbuddy_cache", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        = flagutil.Slice("cache.disk.partitions", []disk.Partition{}, "")
-	partitionMappings = flagutil.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
+	partitions        = flagtypes.Slice("cache.disk.partitions", []disk.Partition{}, "")
+	partitionMappings = flagtypes.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
