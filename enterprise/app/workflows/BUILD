@@ -24,9 +24,9 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:errors",
         "//proto:workflow_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//rxjs",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
     ],
 )

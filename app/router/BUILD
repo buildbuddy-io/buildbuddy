@@ -9,6 +9,6 @@ ts_library(
         "//app/auth:user",
         "//app/capabilities",
         "//app/format",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )

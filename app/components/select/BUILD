@@ -11,9 +11,9 @@ ts_library(
         "*.tsx",
     ]),
     deps = [
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
     ],
 )

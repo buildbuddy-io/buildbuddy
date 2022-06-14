@@ -19,8 +19,8 @@ ts_library(
         "//app/service",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

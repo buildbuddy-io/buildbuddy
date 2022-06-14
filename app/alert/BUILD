@@ -9,10 +9,10 @@ ts_library(
         "*.ts",
     ]),
     deps = [
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//rxjs",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
     ],
 )
 

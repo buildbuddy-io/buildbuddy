@@ -23,8 +23,8 @@ ts_library(
         "//app/util:errors",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

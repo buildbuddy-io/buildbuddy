@@ -16,8 +16,8 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "//proto:user_ts_proto",
-        "@npm//rxjs",
-        "@npm//tslib",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -28,6 +28,6 @@ ts_library(
         "//app/service",
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )

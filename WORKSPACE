@@ -310,9 +310,9 @@ swc_register_toolchains(
 
 http_archive(
     name = "aspect_rules_ts",
-    sha256 = "b79eca71668f1d5e318c25a25a5f9a150d351cbfab1ea9e225b0ee7a9f16763d",
-    strip_prefix = "rules_ts-0.6.0",
-    url = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v0.6.0.tar.gz",
+    #sha256 = "b79eca71668f1d5e318c25a25a5f9a150d351cbfab1ea9e225b0ee7a9f16763d",
+    strip_prefix = "rules_ts-d4a70a7389a51dbd2c1a2a06c99c38e6acd4e7e0",
+    url = "https://github.com/aspect-build/rules_ts/archive/d4a70a7389a51dbd2c1a2a06c99c38e6acd4e7e0.tar.gz",
 )
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")

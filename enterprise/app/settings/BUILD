@@ -23,8 +23,8 @@ ts_library(
         "//app/service",
         "//enterprise/app/api_keys",
         "//enterprise/app/org",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )
