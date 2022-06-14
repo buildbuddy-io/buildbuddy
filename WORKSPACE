@@ -68,14 +68,16 @@ gazelle_dependencies()
 # Node
 
 http_archive(
-    name = "build_bazel_rules_nodejs",
-    sha256 = "2b2004784358655f334925e7eadc7ba80f701144363df949b3293e1ae7a2fb7b",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.4.0/rules_nodejs-5.4.0.tar.gz"],
+    name = "aspect_rules_js",
+    #sha256 = "ac67010f1c150a70d7ebf0026754b8a754f3be6d899b699f97be3c046a951c6a",
+    # ALMOST 1.0.0
+    strip_prefix = "rules_js-6a2a3477fcbcd819cd7f44d5bfd47f2fed30add4",
+    url = "https://github.com/aspect-build/rules_js/archive/6a2a3477fcbcd819cd7f44d5bfd47f2fed30add4.tar.gz",
 )
 
-load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
 
-build_bazel_rules_nodejs_dependencies()
+rules_js_dependencies()
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
@@ -84,22 +86,17 @@ nodejs_register_toolchains(
     node_version = "16.9.0",
 )
 
-load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
+load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock")
 
-yarn_repositories(
-    name = "yarn",
-    yarn_version = "1.22.10",
-)
-
-load("@build_bazel_rules_nodejs//:index.bzl", "yarn_install")
-
-yarn_install(
+npm_translate_lock(
     name = "npm",
-    exports_directories_only = False,
-    package_json = "//:package.json",
-    symlink_node_modules = True,
-    yarn_lock = "//:yarn.lock",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
 )
+
+load("@npm//:repositories.bzl", "npm_repositories")
+
+npm_repositories()
 
 # Docker
 
@@ -272,17 +269,32 @@ http_archive(
 
 # esbuild (for bundling JS)
 
-load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
+http_archive(
+    name = "aspect_rules_esbuild",
+    sha256 = "3c4bb6937b120c1090dc0c60d3af7de929291981feb7c0ef1f015057fb6b3423",
+    strip_prefix = "rules_esbuild-0.7.0",
+    url = "https://github.com/aspect-build/rules_esbuild/archive/refs/tags/v0.7.0.tar.gz",
+)
 
-esbuild_repositories(npm_repository = "npm")
+load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")
 
-# SWC (for transpiling TS -> JS)
+rules_esbuild_dependencies()
+
+# Register a toolchain containing esbuild npm package and native bindings
+load("@aspect_rules_esbuild//esbuild:repositories.bzl", "LATEST_VERSION", "esbuild_register_toolchains")
+
+esbuild_register_toolchains(
+    name = "esbuild",
+    esbuild_version = LATEST_VERSION,
+)
+
+# SWC (for transpiling TS -> JS) and TS (for typechecking)
 
 http_archive(
     name = "aspect_rules_swc",
-    sha256 = "206a89aae3a04831123b43962a3864e8ab1652b703c4af58d84b04174360137d",
-    strip_prefix = "rules_swc-0.4.0",
-    url = "https://github.com/aspect-build/rules_swc/archive/refs/tags/v0.4.0.tar.gz",
+    sha256 = "a484046ba2094284aa41c81f7e0fe4de8df7b21aacd3c5762fa442f80e11585b",
+    strip_prefix = "rules_swc-0.11.0",
+    url = "https://github.com/aspect-build/rules_swc/archive/refs/tags/v0.11.0.tar.gz",
 )
 
 load("@aspect_rules_swc//swc:dependencies.bzl", "rules_swc_dependencies")
@@ -295,6 +307,17 @@ swc_register_toolchains(
     name = "swc",
     swc_version = "v1.2.141",
 )
+
+http_archive(
+    name = "aspect_rules_ts",
+    sha256 = "b79eca71668f1d5e318c25a25a5f9a150d351cbfab1ea9e225b0ee7a9f16763d",
+    strip_prefix = "rules_ts-0.6.0",
+    url = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v0.6.0.tar.gz",
+)
+
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
+rules_ts_dependencies(ts_version_from = "//:package.json")
 
 # Web testing
 
