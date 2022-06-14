@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
@@ -41,6 +42,7 @@ var (
 	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
 	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
+	removeStaleExecutors         = flag.Bool("remote_execution.remove_stale_executors", false, "If true, executors are removed if they are not heard from for a prolonged amount of time.")
 )
 
 const (
@@ -59,6 +61,10 @@ const (
 	// request to enqueue work is recieved and the set of execution nodes
 	// was fetched more than this duration ago, they will be re-fetched.
 	maxAllowedExecutionNodesStaleness = 10 * time.Second
+
+	// An executor is removed if it does not refresh its registration within
+	// this amount of time.
+	executorMaxRegistrationStaleness = 10 * time.Minute
 
 	// The maximum number of times a task may be re-enqueued.
 	maxTaskAttemptCount = 5
@@ -440,6 +446,15 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 		if err != nil {
 			return nil, err
 		}
+
+		if *removeStaleExecutors && time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+			log.Infof("Removing stale executor %q from pool %+v", id, np.key)
+			if err := np.rdb.HDel(ctx, np.key.redisPoolKey(), id).Err(); err != nil {
+				log.Warningf("could not remove stale executor: %s", err)
+			}
+			continue
+		}
+
 		executors = append(executors, &executionNode{
 			executorID:            id,
 			schedulerHostPort:     node.GetSchedulerHostPort(),
@@ -900,6 +915,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		SchedulerHostPort: s.ownHostPort,
 		GroupId:           groupID,
 		Acl:               acl,
+		LastPingTime:      timestamppb.Now(),
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
