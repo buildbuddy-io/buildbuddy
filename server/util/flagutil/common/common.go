@@ -38,28 +38,36 @@ func flagTypeFromFlagFuncName(name string) reflect.Type {
 }
 
 type TypeAliased interface {
+	// AliasedType returns the type this flag.Value aliases.
 	AliasedType() reflect.Type
 }
 
 type IsNameAliasing interface {
+	// AliasedName returns the flag name this flag.Value aliases.
 	AliasedName() string
 }
 
 type WrappingValue interface {
+	// WrappedValue returns the value this flag.Value wraps.
 	WrappedValue() flag.Value
 }
 
 type Appendable interface {
+	// AppendSlice appends the passed slice to this flag.Value.
 	AppendSlice(any) error
 }
 
 type DocumentNodeOption interface {
+	// Transform transforms the passed yaml.Node in place.
 	Transform(in any, n *yaml.Node)
+	// Passthrough returns whether this option should be passed to child nodes.
 	Passthrough() bool
 }
 
-type SetValueHooked interface {
-	SetValueHook()
+type SetValueForFlagNameHooked interface {
+	// SetValueForFlagNameHooked is the hook for flags that is called when the
+	// flag.Value is set by name.
+	SetValueForFlagNameHook()
 }
 
 // GetTypeForFlagValue returns the (pointer) Type this flag aliases; this is the same
@@ -77,7 +85,7 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 }
 
 // SetValueForFlagName sets the value for a flag by name.
-func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appendSlice bool, strict bool) error {
+func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, strict bool) error {
 	flg := DefaultFlagSet.Lookup(name)
 	if flg == nil {
 		if strict {
@@ -85,28 +93,41 @@ func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appen
 		}
 		return nil
 	}
-	return setValue(flg.Value, name, i, setFlags, appendSlice)
+	return setValueFromFlagName(flg.Value, name, i, setFlags, appendSlice, force)
 }
 
-func setValue(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool) error {
+func setValueFromFlagName(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error {
+	if v, ok := value.(SetValueForFlagNameHooked); ok {
+		setHooks = append(setHooks, v.SetValueForFlagNameHook)
+	}
+	return SetValueWithCustomIndirectBehavior(value, name, i, setFlags, appendSlice, force, setValueFromFlagName, setHooks...)
+}
+
+type SetValueForIndirectFxn func(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error
+
+func SetValueWithCustomIndirectBehavior(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
 	var appendFlag Appendable
-	// For slice flags, append the YAML values to the existing values if appendSlice is true
+	// For slice flags, append the values to the existing values if appendSlice is true
 	if v, ok := value.(Appendable); ok && appendSlice {
 		appendFlag = v
 	}
-	// For non-append flags, skip the YAML values if it was set on the command line
-	if _, ok := setFlags[name]; appendFlag == nil && ok {
+	// For non-append flags, skip the value if it was set on the command line and we are not forced
+	if _, ok := setFlags[name]; appendFlag == nil && !force && ok {
 		return nil
 	}
-	if v, ok := value.(SetValueHooked); ok {
-		v.SetValueHook()
-	}
 	if v, ok := value.(IsNameAliasing); ok {
-		return SetValueForFlagName(v.AliasedName(), i, setFlags, appendSlice, true)
+		aliasedFlag := DefaultFlagSet.Lookup(v.AliasedName())
+		if aliasedFlag == nil {
+			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
+		}
+		return setValueForIndirect(aliasedFlag.Value, v.AliasedName(), i, setFlags, appendSlice, force, setHooks...)
 	}
 	// Unwrap any wrapper values (e.g. DeprecatedFlag)
 	if v, ok := value.(WrappingValue); ok {
-		return setValue(v.WrappedValue(), name, i, setFlags, appendSlice)
+		return setValueForIndirect(v.WrappedValue(), name, i, setFlags, appendSlice, force, setHooks...)
+	}
+	for _, setHook := range setHooks {
+		setHook()
 	}
 	if appendFlag != nil {
 		if err := appendFlag.AppendSlice(i); err != nil {

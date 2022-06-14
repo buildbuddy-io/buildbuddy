@@ -50,14 +50,23 @@ func IgnoreFilter(flg *flag.Flag) bool {
 }
 
 type YAMLTypeAliasable interface {
+	// YAMLTypeAlias returns the type alias we use in YAML for this flag.Value.
 	YAMLTypeAlias() reflect.Type
 }
 
 type YAMLTypeStringable interface {
+	// YAMLTypeString returns the name to print for this type in YAML docs.
 	YAMLTypeString() string
 }
 
+type YAMLSetValueHooked interface {
+	// YAMLSetValueHook is the hook for flags that is called when the flag.Value
+	// is set through the YAML config.
+	YAMLSetValueHook()
+}
+
 type DocumentedMarshaler interface {
+	// DocumentNode documents the yaml.Node representing this value.
 	DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error
 }
 
@@ -510,5 +519,17 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 	if _, ok := ignoreSet[name]; ok {
 		return nil
 	}
-	return common.SetValueForFlagName(name, a, setFlags, true, false)
+
+	flg := common.DefaultFlagSet.Lookup(name)
+	if flg == nil {
+		return nil
+	}
+	return setValueForYAML(flg.Value, name, a, setFlags, true, false)
+}
+
+func setValueForYAML(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error {
+	if v, ok := value.(YAMLSetValueHooked); ok {
+		setHooks = append(setHooks, v.YAMLSetValueHook)
+	}
+	return common.SetValueWithCustomIndirectBehavior(value, name, i, setFlags, appendSlice, force, setValueForYAML, setHooks...)
 }

@@ -282,14 +282,14 @@ string_alias: "meow"
 	flags = replaceFlagsForTesting(t)
 	flagString = flags.String("string", "2", "")
 	Alias[string]("string_alias", "string")
-	err = common.SetValueForFlagName("string_alias", "1", map[string]struct{}{}, true, true)
+	err = common.SetValueForFlagName("string_alias", "1", map[string]struct{}{}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, "1", *flagString)
 
 	flags = replaceFlagsForTesting(t)
 	flagString = flags.String("string", "2", "")
 	Alias[string]("string_alias", "string")
-	err = common.SetValueForFlagName("string_alias", "1", map[string]struct{}{"string": {}}, true, true)
+	err = common.SetValueForFlagName("string_alias", "1", map[string]struct{}{"string": {}}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, "2", *flagString)
 
@@ -299,28 +299,28 @@ string_alias: "meow"
 	string_slice[1] = "2"
 	SliceVar(&string_slice, "string_slice", "")
 	Alias[[]string]("string_slice_alias", "string_slice")
-	err = common.SetValueForFlagName("string_slice_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, true)
+	err = common.SetValueForFlagName("string_slice_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
 
 	flags = replaceFlagsForTesting(t)
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
-	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, true, true)
+	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
 
 	flags = replaceFlagsForTesting(t)
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
-	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{}, false, true)
+	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{}, false, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3"}, *flagStringSlice)
 
 	flags = replaceFlagsForTesting(t)
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
-	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, false, true)
+	err = common.SetValueForFlagName("string_slice_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, false, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
@@ -331,7 +331,7 @@ string_alias: "meow"
 	SliceVar(&string_slice, "string_slice", "")
 	Alias[[]string]("string_slice_alias", "string_slice")
 	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
-	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, true)
+	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, map[string]struct{}{}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "1", "2"}, string_slice)
 
@@ -339,7 +339,7 @@ string_alias: "meow"
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
 	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
-	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, true, true)
+	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, true, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2", "3"}, *flagStringSlice)
 
@@ -347,7 +347,7 @@ string_alias: "meow"
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
 	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
-	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{}, false, true)
+	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{}, false, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3"}, *flagStringSlice)
 
@@ -355,7 +355,7 @@ string_alias: "meow"
 	flagStringSlice = Slice("string_slice", []string{"1", "2"}, "")
 	Alias[[]string]("string_slice_alias", "string_slice")
 	Alias[[]string]("string_slice_alias_alias", "string_slice_alias")
-	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, false, true)
+	err = common.SetValueForFlagName("string_slice_alias_alias", []string{"3"}, map[string]struct{}{"string_slice": {}}, false, false, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1", "2"}, *flagStringSlice)
 
@@ -384,8 +384,8 @@ string_alias: "meow"
 
 func TestDeprecateFlag(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
-	flagInt := DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "")
-	flagStringSlice := DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "")
+	flagInt := DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "", "migration plan")
+	flagStringSlice := DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "", "migration plan")
 	assert.Equal(t, *flagInt, 5)
 	assert.Equal(t, *flagStringSlice, []string{"hi"})
 	flags.Set("deprecated_int", "7")
@@ -401,9 +401,9 @@ func TestDeprecateFlag(t *testing.T) {
 
 	flags = replaceFlagsForTesting(t)
 
-	flagInt = DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "")
-	flagString := DeprecatedVar[string](NewPrimitiveFlag(""), "deprecated_string", "")
-	flagStringSlice = DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "")
+	flagInt = DeprecatedVar[int](NewPrimitiveFlag(5), "deprecated_int", "", "migration plan")
+	flagString := DeprecatedVar[string](NewPrimitiveFlag(""), "deprecated_string", "", "migration plan")
+	flagStringSlice = DeprecatedVar[[]string](NewSliceFlag(&[]string{"hi"}), "deprecated_string_slice", "", "migration plan")
 	flags.Set("deprecated_int", "7")
 	yamlData := `
 deprecated_int: 9
@@ -425,5 +425,13 @@ deprecated_string_slice:
 	testStringSlice, err = common.GetDereferencedValue[[]string]("deprecated_string_slice")
 	require.NoError(t, err)
 	assert.Equal(t, testStringSlice, []string{"hi", "hello"})
+
+	d := any(&DeprecatedFlag{})
+	_, ok := d.(common.WrappingValue)
+	assert.True(t, ok)
+	_, ok = d.(common.SetValueForFlagNameHooked)
+	assert.True(t, ok)
+	_, ok = d.(flagyaml.YAMLSetValueHooked)
+	assert.True(t, ok)
 
 }

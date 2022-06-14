@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
 func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value *T) flag.Value {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	switch v := any(value).(type) {
@@ -39,6 +40,7 @@ func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint |
 	return fs.Lookup("").Value
 }
 
+// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive.
 func NewPrimitiveFlag[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value T) flag.Value {
 	return NewPrimitiveFlagVar(&value)
 }
@@ -227,16 +229,21 @@ func (f *FlagAlias) WrappedValue() flag.Value {
 
 type DeprecatedFlag struct {
 	flag.Value
-	name string
+	name          string
+	migrationPlan string
 }
 
-func DeprecatedVar[T any](value flag.Value, name string, usage string) *T {
-	common.DefaultFlagSet.Var(&DeprecatedFlag{value, name}, name, "**DEPRECATED** "+usage)
+// DeprecatedVar takes a flag.Value (which can be obtained for primitive types
+// via the NewPrimitiveFlag or NewPrimitiveFlagVar functions), the customary
+// name and usage parameters, and a migration plan, and defines a flag that will
+// notify users that it is deprecated when it is set.
+func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
+	common.DefaultFlagSet.Var(&DeprecatedFlag{value, name, migrationPlan}, name, usage+" **DEPRECATED** "+migrationPlan)
 	return reflect.ValueOf(value).Convert(reflect.TypeOf((*T)(nil))).Interface().(*T)
 }
 
 func (d *DeprecatedFlag) Set(value string) error {
-	log.Warningf("Flag %s is deprecated and was set on the command line.", d.name)
+	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.migrationPlan)
 	return d.Value.Set(value)
 }
 
@@ -244,6 +251,10 @@ func (d *DeprecatedFlag) WrappedValue() flag.Value {
 	return d.Value
 }
 
-func (d *DeprecatedFlag) SetValueHook() {
-	log.Warningf("Flag %s is deprecated and was set programmatically, likely through the YAML config.", d.name)
+func (d *DeprecatedFlag) SetValueForFlagNameHook() {
+	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.migrationPlan)
+}
+
+func (d *DeprecatedFlag) YAMLSetValueHook() {
+	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.migrationPlan)
 }
