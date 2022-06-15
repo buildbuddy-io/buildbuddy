@@ -13,8 +13,8 @@ ts_library(
         "//app/router",
         "//app/service",
         "//proto:bazel_config_ts_proto",
-        "@npm//@types/react",
-        "@npm//protobufjs",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/protobufjs",
+        "//:node_modules/react",
     ],
 )

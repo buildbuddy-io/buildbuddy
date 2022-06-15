@@ -1,8 +1,8 @@
-load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 
 # TODO switch to protobufjs-cli when its published
 # https://github.com/protobufjs/protobuf.js/commit/da34f43ccd51ad97017e139f137521782f5ef119
-load("@npm//protobufjs:index.bzl", "pbjs", "pbts")
+load("@npm//protobufjs:package_json.bzl", "bin")
 load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 
 # protobuf.js relies on these packages, but does not list them as dependencies
@@ -14,7 +14,7 @@ load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 # Per Bazel semantics, all dependencies should be pre-declared.
 # Note, you'll also need to install all of these in your package.json!
 # (This should be fixed when we switch to protobufjs-cli)
-_PROTOBUFJS_CLI_DEPS = ["@npm//%s" % s for s in [
+_PROTOBUFJS_CLI_DEPS = ["//:node_modules/%s" % s for s in [
     "chalk",
     "escodegen",
     "espree",
@@ -64,9 +64,9 @@ def ts_proto_library(name, proto, **kwargs):
     )
 
     # Transform .proto files to a single _pb.js file named after the macro
-    pbjs(
+    bin.pbjs(
         name = js_target,
-        data = [":" + proto_target] + _PROTOBUFJS_CLI_DEPS,
+        srcs = [":" + proto_target] + _PROTOBUFJS_CLI_DEPS,
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
@@ -81,9 +81,9 @@ def ts_proto_library(name, proto, **kwargs):
     )
 
     # Transform the _pb.js file to a .d.ts file with TypeScript types
-    pbts(
+    bin.pbts(
         name = ts_target,
-        data = [js_target] + _PROTOBUFJS_CLI_DEPS,
+        srcs = [js_target] + _PROTOBUFJS_CLI_DEPS,
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbts-for-typescript
         args = [
@@ -102,7 +102,7 @@ def ts_proto_library(name, proto, **kwargs):
     # Expose the results as js_library which provides DeclarationInfo for interop with other rules
     if "deps" not in kwargs:
         kwargs["deps"] = []
-    kwargs["deps"].append("@npm//protobufjs")
+    kwargs["deps"].append("//:node_modules/protobufjs")
     js_library(
         name = name,
         srcs = [

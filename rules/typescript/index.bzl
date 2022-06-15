@@ -1,12 +1,11 @@
-load("@aspect_rules_swc//swc:swc.bzl", "swc_transpiler")
-load("@build_bazel_rules_nodejs//internal/common:copy_to_bin.bzl", "copy_to_bin")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild")
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
-load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_swc//swc:defs.bzl", "swc_transpiler")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@npm//jasmine:package_json.bzl", jasmine_bin = "bin")
 
 def _swc(**kwargs):
     swc_transpiler(
-        swcrc = "//:.swcrc",
+        swcrc = "//:swcrc",
         **kwargs
     )
 
@@ -14,7 +13,6 @@ def ts_library(name, srcs, **kwargs):
     ts_project(
         name = name,
         tsconfig = "//:tsconfig",
-        composite = True,
         transpiler = _swc,
         srcs = srcs,
         **kwargs
@@ -32,7 +30,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         name = "%s_esm" % name,
         testonly = 1,
         srcs = srcs,
-        deps = deps + ["@npm//@types/jasmine"],
+        deps = deps + ["//:node_modules/@types/jasmine"],
         **kwargs
     )
 
@@ -51,7 +49,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     # more easily supported there.
     esbuild(
         name = "%s_commonjs" % name,
-        args = {"resolveExtensions": [".mjs", ".js"]},
+        config = {"resolveExtensions": [".mjs", ".js"]},
         testonly = 1,
         entry_point = srcs[0],
         deps = ["%s_esm" % name],
@@ -68,9 +66,9 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         tags = ["local"],
     )
 
-    jasmine_node_test(
+    jasmine_bin.jasmine_test(
         name = name,
         size = "small",
-        srcs = [":%s_commonjs.test.js" % name],
+        data = [":%s_commonjs.test.js" % name],
         **kwargs
     )

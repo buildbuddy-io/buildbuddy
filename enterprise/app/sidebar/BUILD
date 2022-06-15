@@ -12,8 +12,8 @@ ts_library(
         "//app/capabilities",
         "//app/router",
         "//app/service",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

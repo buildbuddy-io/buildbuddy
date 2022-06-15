@@ -1,8 +1,12 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
-load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 
 package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
 
 nogo(
     name = "vet",
@@ -59,7 +63,6 @@ nogo(
 gazelle(name = "gazelle")
 
 exports_files([
-    ".swcrc",
     "package.json",
     "yarn.lock",
     "VERSION",
@@ -186,4 +189,9 @@ toolchain(
     name = "sh_toolchain",
     toolchain = ":bash_rbe_ubuntu1604",
     toolchain_type = "@bazel_tools//tools/sh:toolchain_type",
+)
+
+copy_to_bin(
+    name = "swcrc",
+    srcs = [".swcrc"],
 )

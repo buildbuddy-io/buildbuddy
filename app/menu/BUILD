@@ -13,9 +13,9 @@ ts_library(
         "//app/service",
         "//proto:invocation_ts_proto",
         "//proto:user_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//protobufjs",
-        "@npm//react",
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/protobufjs",
+        "//:node_modules/react",
     ],
 )
