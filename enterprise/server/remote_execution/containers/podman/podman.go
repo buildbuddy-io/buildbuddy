@@ -89,6 +89,7 @@ type podmanCommandContainer struct {
 
 	image     string
 	buildRoot string
+	workDir   string
 
 	options *PodmanOptions
 
@@ -172,6 +173,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 }
 
 func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
+	c.workDir = workDir
 	defer os.RemoveAll(c.cidFilePath())
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(podman) %s", command.GetArguments()),
@@ -223,6 +225,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 		return status.UnavailableErrorf("failed to generate podman container name: %s", err)
 	}
 	c.name = containerName
+	c.workDir = workDir
 
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
 	podmanRunArgs = append(podmanRunArgs, c.image)
@@ -344,7 +347,7 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds container.
 // ".cid" extension, such as "/tmp/remote_build/{{WORKSPACE_ID}}.cid". Note:
 // this logic depends on the workspace parent directory already existing.
 func (c *podmanCommandContainer) cidFilePath() string {
-	return c.buildRoot + ".cid"
+	return c.workDir + ".cid"
 }
 
 // monitor starts a goroutine to monitor the container's resource usage. The
