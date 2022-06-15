@@ -14,7 +14,7 @@ message Bucket {
   // The name of the bucket
   string name = 1;
   Rate max_rate = 2;
-  int64 burst = 3;
+  int64 max_burst = 3;
 }
 
 message QuotaKey {
