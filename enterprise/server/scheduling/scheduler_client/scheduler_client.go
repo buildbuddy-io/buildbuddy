@@ -109,13 +109,10 @@ func (r *Registration) Check(ctx context.Context) error {
 	return errors.New("not registered to scheduler yet")
 }
 
-func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse) (bool, error) {
+func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, registrationTicker *time.Ticker) (bool, error) {
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
-
-	idleTimer := time.NewTimer(schedulerCheckInInterval)
-	defer idleTimer.Stop()
 
 	select {
 	case <-ctx.Done():
@@ -157,9 +154,9 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		if err := stream.Send(rspMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send task reservation response: %s", err)
 		}
-	case <-idleTimer.C:
+	case <-registrationTicker.C:
 		if err := stream.Send(registrationMsg); err != nil {
-			return false, status.UnavailableErrorf("could not send idle registration message: %s", err)
+			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	}
 	return false, nil
@@ -207,8 +204,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			}
 		}()
 
+		registrationTicker := time.NewTicker(schedulerCheckInInterval)
 		for {
-			done, err := r.processWorkStream(ctx, stream, schedulerMsgs)
+			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, registrationTicker)
 			if err != nil {
 				_ = stream.CloseSend()
 				log.Warningf("Error maintaining registration with scheduler, will retry: %s", err)
