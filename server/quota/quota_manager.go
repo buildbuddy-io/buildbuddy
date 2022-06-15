@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"math"
+	"net"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
+
+	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 )
 
 var (
@@ -36,8 +40,46 @@ const (
 )
 
 type namespaceConfig struct {
+	name                  string
 	bucketsByName         map[string]*tables.QuotaBucket
 	quotaKeysByBucketName map[string][]string
+}
+
+func bucketToProto(from *tables.QuotaBucket) *qpb.Bucket {
+	res := &qpb.Bucket{
+		Name: from.Name,
+		MaxRate: &qpb.Rate{
+			NumRequests: from.NumRequests,
+			Period:      durationpb.New(time.Duration(from.PeriodDurationUsec) * time.Microsecond),
+		},
+		MaxBurst: from.MaxBurst,
+	}
+	return res
+}
+
+func bucketToRow(namespace string, from *qpb.Bucket) *tables.QuotaBucket {
+	res := &tables.QuotaBucket{
+		Namespace:          namespace,
+		Name:               from.GetName(),
+		NumRequests:        from.GetMaxRate().GetNumRequests(),
+		PeriodDurationUsec: int64(from.GetMaxRate().GetPeriod().AsDuration() / time.Microsecond),
+		MaxBurst:           from.GetMaxBurst(),
+	}
+	return res
+}
+
+func namespaceConfigToProto(from *namespaceConfig) *qpb.Namespace {
+	res := &qpb.Namespace{
+		Name: from.name,
+	}
+	for _, fromBucket := range from.bucketsByName {
+		assignedBucket := &qpb.AssignedBucket{
+			Bucket:    bucketToProto(fromBucket),
+			QuotaKeys: from.quotaKeysByBucketName[fromBucket.Name],
+		}
+		res.AssignedBuckets = append(res.GetAssignedBuckets(), assignedBucket)
+	}
+	return res
 }
 
 func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error) {
@@ -58,16 +100,17 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 			if err := tx.ScanRows(bucketRows, &tb); err != nil {
 				return status.InternalErrorf("failed to scan QuotaBuckets: %s", err)
 			}
-			if err = validateBucket(&tb); err != nil {
-				return status.InternalErrorf("invalid bucket: %v", tb)
-			}
 			ns := config[tb.Namespace]
 			if ns == nil {
 				ns = &namespaceConfig{
+					name:                  tb.Namespace,
 					bucketsByName:         make(map[string]*tables.QuotaBucket),
 					quotaKeysByBucketName: make(map[string][]string),
 				}
 				config[tb.Namespace] = ns
+			}
+			if err := validateBucket(bucketToProto(&tb)); err != nil {
+				return status.InternalErrorf("invalid bucket: %v", tb)
 			}
 			ns.bucketsByName[tb.Name] = &tb
 		}
@@ -110,17 +153,17 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 	return config, nil
 }
 
-func validateBucket(bucket *tables.QuotaBucket) error {
-	if num := bucket.NumRequests; num <= 0 || num > math.MaxInt {
-		return status.InvalidArgumentErrorf("bucket.NumRequests(%d) must be positive and less than %d", num, math.MaxInt)
+func validateBucket(bucket *qpb.Bucket) error {
+	if num := bucket.GetMaxRate().GetNumRequests(); num <= 0 || num > math.MaxInt {
+		return status.InvalidArgumentErrorf("bucket.max_rate.num_requests(%d) must be positive and less than %d", num, math.MaxInt)
 	}
 
-	if bucket.PeriodDurationUsec == 0 {
-		return status.InvalidArgumentError("bucket.PeriodDurationUsec is zero")
+	if bucket.GetMaxRate().GetPeriod().AsDuration() == 0 {
+		return status.InvalidArgumentError("bucket.max_rate.period is zero")
 	}
 
 	if burst := bucket.MaxBurst; burst < 0 || burst > math.MaxInt {
-		return status.InvalidArgumentErrorf("bucket.MaxBurst(%d) must be non-negative and less than %d", burst, math.MaxInt)
+		return status.InvalidArgumentErrorf("bucket.max_burst(%d) must be non-negative and less than %d", burst, math.MaxInt)
 	}
 
 	return nil
@@ -324,4 +367,169 @@ func Register(env environment.Env) error {
 	}
 	env.SetQuotaManager(qm)
 	return nil
+}
+
+func (qm *QuotaManager) GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error) {
+	configs, err := fetchConfigFromDB(qm.env)
+	if err != nil {
+		return nil, err
+	}
+	res := &qpb.GetNamespaceResponse{}
+	for _, c := range configs {
+		res.Namespaces = append(res.GetNamespaces(), namespaceConfigToProto(c))
+	}
+	return res, nil
+}
+
+func (qm *QuotaManager) RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error) {
+	if qm.env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	err := qm.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("query_manager_insert_buckets"), func(tx *db.DB) error {
+		ns := req.GetNamespace()
+		if err := tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ?`, ns).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM QuotaBuckets WHERE namespace = ?`, ns).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &qpb.RemoveNamespaceResponse{}, nil
+}
+
+func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error) {
+	if qm.env.GetDBHandle() == nil {
+		return nil, status.FailedPreconditionError("database not configured")
+	}
+	if req.GetNamespace() == "" || req.GetBucketName() == "" {
+		return nil, status.FailedPreconditionError("namespace and bucket_name cannot be empty")
+	}
+
+	quotaKey := ""
+	if groupID := req.GetKey().GetGroupId(); groupID != "" {
+		_, err := qm.env.GetUserDB().GetGroupByID(ctx, groupID)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid group id: %s", err)
+		} else {
+			quotaKey = groupID
+		}
+	} else if ipStr := req.GetKey().GetIpAddress(); ipStr != "" {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			return nil, status.InvalidArgumentErrorf("invalid IP address: %s", ipStr)
+		} else {
+			quotaKey = ipStr
+		}
+	} else {
+		return nil, status.InvalidArgumentError("quota key is empty")
+	}
+
+	dbh := qm.env.GetDBHandle()
+	err := dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("apply_bucket"), func(tx *db.DB) error {
+		row := &struct{ Count int64 }{}
+		err := tx.Raw(
+			`SELECT COUNT(*) AS count FROM QuotaBuckets WHERE namespace = ? AND name = ?`, req.GetNamespace(), req.GetBucketName(),
+		).Take(row).Error
+		if err != nil {
+			return err
+		}
+		if row.Count == 0 {
+			return status.FailedPreconditionErrorf("namespace(%q) and bucket_name(%q) doesn't exist", req.GetNamespace(), req.GetBucketName())
+		}
+
+		quotaGroup := &tables.QuotaGroup{
+			Namespace:  req.GetNamespace(),
+			QuotaKey:   quotaKey,
+			BucketName: req.GetBucketName(),
+		}
+		var existing tables.QuotaGroup
+		if err := tx.Where("namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).First(&existing).Error; err != nil {
+			if db.IsRecordNotFound(err) {
+				if req.GetBucketName() == defaultBucketName {
+					return nil
+				}
+				return tx.Create(quotaGroup).Error
+			}
+			return err
+		}
+		if req.GetBucketName() == defaultBucketName {
+			return tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Error
+		} else {
+			return tx.Model(&existing).Where("namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).Updates(quotaGroup).Error
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &qpb.ApplyBucketResponse{}, nil
+}
+
+func (qm *QuotaManager) ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error) {
+	if req.GetNamespace() == "" {
+		return nil, status.InvalidArgumentError("namespace cannot empty")
+	}
+
+	if req.GetAddBucket() != nil {
+		return qm.addBucket(ctx, req.GetNamespace(), req.GetAddBucket())
+	}
+
+	if req.GetUpdateBucket() != nil {
+		return qm.updateBucket(ctx, req.GetNamespace(), req.GetUpdateBucket())
+	}
+
+	if req.GetRemoveBucket() != "" {
+		return qm.removeBucket(ctx, req.GetNamespace(), req.GetRemoveBucket())
+	}
+
+	return nil, status.InvalidArgumentError("one of add_bucket, update_bucket and remove_bucket should be set")
+}
+
+func (qm *QuotaManager) addBucket(ctx context.Context, namespace string, bucket *qpb.Bucket) (*qpb.ModifyNamespaceResponse, error) {
+	if err := validateBucket(bucket); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid add_bucket: %s", err)
+	}
+	row := bucketToRow(namespace, bucket)
+
+	err := qm.env.GetDBHandle().DB(ctx).Create(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &qpb.ModifyNamespaceResponse{}, nil
+}
+
+func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, bucket *qpb.Bucket) (*qpb.ModifyNamespaceResponse, error) {
+	if err := validateBucket(bucket); err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid update_bucket: %s", err)
+	}
+	bucketRow := bucketToRow(namespace, bucket)
+
+	db := qm.env.GetDBHandle().DB(ctx)
+	res := db.Model(bucketRow).Where("namespace = ? AND name= ?", bucketRow.Namespace, bucketRow.Name).Updates(bucketRow)
+
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, status.InvalidArgumentErrorf("bucket %s doesn't exist", bucket.GetName())
+	}
+	return &qpb.ModifyNamespaceResponse{}, nil
+}
+
+func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, bucketName string) (*qpb.ModifyNamespaceResponse, error) {
+	dbh := qm.env.GetDBHandle()
+	err := dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("remove_bucket"), func(tx *db.DB) error {
+		if err := tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ? AND bucket_name = ?`, namespace, bucketName).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DELETE FROM QuotaBuckets WHERE namespace = ? AND name = ?`, namespace, bucketName).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &qpb.ModifyNamespaceResponse{}, nil
 }
