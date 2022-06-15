@@ -22,13 +22,21 @@ message QuotaKey {
   string ip_address = 2;
 }
 
+message QuotaRule {
+	QuotaKey quota_key = 1;
+	string bucket_name = 2;
+}
+
 message Namespace {
   // The name of the namespace
   string name = 1;
 
-  Bucket default_bucket = 2;
+  // All the buckets in the namespace
+  repeated Bucket buckets = 2;
 
-  map<string, Bucket> buckets_by_quota_key = 3;
+  // Each rule indicates that quota_key will be rate limited by the max_rate and max_burst defined
+  // in the bucket identified by the bucket_name. 
+  repeated QuotaRule rules = 3;
 }
 
 message AddNamespace {
