@@ -106,7 +106,7 @@ service BuildBuddyService {
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
 
   // Quota API
-  rpc GetNamespaceRequest(quota.GetNamespaceRequest)
+  rpc GetNamespace(quota.GetNamespaceRequest)
       returns (quota.GetNamespaceResponse);
 
   rpc CreateNamespace(quota.CreateNamespaceRequest)
