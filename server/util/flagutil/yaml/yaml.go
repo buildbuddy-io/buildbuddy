@@ -524,12 +524,12 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 	if flg == nil {
 		return nil
 	}
-	return setValueForYAML(flg.Value, name, a, setFlags, true, false)
+	return setValueForYAML(flg.Value, name, a, setFlags, true)
 }
 
-func setValueForYAML(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error {
-	if v, ok := value.(YAMLSetValueHooked); ok {
+func setValueForYAML(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+	if v, ok := flagValue.(YAMLSetValueHooked); ok {
 		setHooks = append(setHooks, v.YAMLSetValueHook)
 	}
-	return common.SetValueWithCustomIndirectBehavior(value, name, i, setFlags, appendSlice, force, setValueForYAML, setHooks...)
+	return common.SetValueWithCustomIndirectBehavior(flagValue, name, newValue, setFlags, appendSlice, setValueForYAML, setHooks...)
 }

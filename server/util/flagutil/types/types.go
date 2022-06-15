@@ -216,7 +216,7 @@ func (f *FlagAlias) Set(value string) error {
 }
 
 func (f *FlagAlias) String() string {
-	return common.DefaultFlagSet.Lookup(f.name).Value.String()
+	return f.WrappedValue().String()
 }
 
 func (f *FlagAlias) AliasedName() string {

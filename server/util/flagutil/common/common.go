@@ -84,65 +84,78 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	return nil, status.UnimplementedErrorf("Unsupported flag type : %T", value)
 }
 
-// SetValueForFlagName sets the value for a flag by name.
-func SetValueForFlagName(name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, strict bool) error {
+// SetValueForFlagName sets the value for a flag by name. setFlags is the set of
+// flags that have already been set on the command line; those flags will not be
+// set again except to append to them, in the case of slices. To force the
+// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
+// be appended to the current slice value; otherwise, a slice value will replace
+// the current slice value. appendSlice has no effect if the values in question
+// are not slices.
+func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
 	flg := DefaultFlagSet.Lookup(name)
 	if flg == nil {
-		if strict {
-			return status.NotFoundErrorf("Undefined flag: %s", name)
-		}
-		return nil
+		return status.NotFoundErrorf("Undefined flag: %s", name)
 	}
-	return setValueFromFlagName(flg.Value, name, i, setFlags, appendSlice, force)
+	return setValueFromFlagName(flg.Value, name, newValue, setFlags, appendSlice)
 }
 
-func setValueFromFlagName(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error {
-	if v, ok := value.(SetValueForFlagNameHooked); ok {
+func setValueFromFlagName(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+	if v, ok := flagValue.(SetValueForFlagNameHooked); ok {
 		setHooks = append(setHooks, v.SetValueForFlagNameHook)
 	}
-	return SetValueWithCustomIndirectBehavior(value, name, i, setFlags, appendSlice, force, setValueFromFlagName, setHooks...)
+	return SetValueWithCustomIndirectBehavior(flagValue, name, newValue, setFlags, appendSlice, setValueFromFlagName, setHooks...)
 }
 
-type SetValueForIndirectFxn func(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setHooks ...func()) error
+type SetValueForIndirectFxn func(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error
 
-func SetValueWithCustomIndirectBehavior(value flag.Value, name string, i any, setFlags map[string]struct{}, appendSlice bool, force bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
-	var appendFlag Appendable
-	// For slice flags, append the values to the existing values if appendSlice is true
-	if v, ok := value.(Appendable); ok && appendSlice {
-		appendFlag = v
-	}
-	// For non-append flags, skip the value if it was set on the command line and we are not forced
-	if _, ok := setFlags[name]; appendFlag == nil && !force && ok {
-		return nil
-	}
-	if v, ok := value.(IsNameAliasing); ok {
+// SetValueWithCustomIndirectBehavior sets the value for a flag, but if the flag
+// passed is an alias for another flag or wraps another flag.Value, it instead
+// calls setValueForIndirect with the new flag.Value. setFlags is the set of
+// flags that have already been set on the command line; those flags will not be
+// set again except to append to them, in the case of slices. To force the
+// setting of a flag, pass a nil map. If appendSlice is true, a slice value will
+// be appended to the current slice value; otherwise, a slice value will replace
+// the current slice value. appendSlice has no effect if the values in question
+// are not slices. setHooks is a slice of functions to call in order if the
+// flag.Value will be set.
+func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setValueForIndirect SetValueForIndirectFxn, setHooks ...func()) error {
+	if v, ok := flagValue.(IsNameAliasing); ok {
 		aliasedFlag := DefaultFlagSet.Lookup(v.AliasedName())
 		if aliasedFlag == nil {
 			return status.NotFoundErrorf("Flag %s aliases undefined flag: %s", name, v.AliasedName())
 		}
-		return setValueForIndirect(aliasedFlag.Value, v.AliasedName(), i, setFlags, appendSlice, force, setHooks...)
+		return setValueForIndirect(aliasedFlag.Value, v.AliasedName(), newValue, setFlags, appendSlice, setHooks...)
 	}
 	// Unwrap any wrapper values (e.g. DeprecatedFlag)
-	if v, ok := value.(WrappingValue); ok {
-		return setValueForIndirect(v.WrappedValue(), name, i, setFlags, appendSlice, force, setHooks...)
+	if v, ok := flagValue.(WrappingValue); ok {
+		return setValueForIndirect(v.WrappedValue(), name, newValue, setFlags, appendSlice, setHooks...)
+	}
+	var appendFlag Appendable
+	// For slice flags, append the values to the existing values if appendSlice is true
+	if v, ok := flagValue.(Appendable); ok && appendSlice {
+		appendFlag = v
+	}
+	// For non-append flags, skip the value if it has already been set
+	if _, ok := setFlags[name]; appendFlag == nil && ok {
+		return nil
 	}
 	for _, setHook := range setHooks {
 		setHook()
 	}
 	if appendFlag != nil {
-		if err := appendFlag.AppendSlice(i); err != nil {
+		if err := appendFlag.AppendSlice(newValue); err != nil {
 			return status.InternalErrorf("Error encountered appending to flag %s: %s", name, err)
 		}
 		return nil
 	}
-	t, err := GetTypeForFlagValue(value)
+	t, err := GetTypeForFlagValue(flagValue)
 	if err != nil {
 		return status.UnimplementedErrorf("Error encountered setting flag %s: %s", name, err)
 	}
-	if !reflect.ValueOf(i).CanConvert(t.Elem()) {
-		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", i, i, t.Elem(), name)
+	if !reflect.ValueOf(newValue).CanConvert(t.Elem()) {
+		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", newValue, newValue, t.Elem(), name)
 	}
-	reflect.ValueOf(value).Convert(t).Elem().Set(reflect.ValueOf(i).Convert(t.Elem()))
+	reflect.ValueOf(flagValue).Convert(t).Elem().Set(reflect.ValueOf(newValue).Convert(t.Elem()))
 	return nil
 }
 
