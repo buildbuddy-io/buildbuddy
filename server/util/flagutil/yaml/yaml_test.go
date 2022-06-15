@@ -47,7 +47,12 @@ func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	flagtypes.Slice("one.two.three.struct_slice", []testStruct{{Field: 4, Meadow: "Great"}}, "")
 	flags.String("a.b.string", "xxx", "")
 	flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
-	actual, err := flagyaml.GenerateYAMLMapWithValuesFromFlags(flagyaml.GetYAMLTypeForFlag, flagyaml.IgnoreFilter)
+	actual, err := flagyaml.GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return flagyaml.GetYAMLTypeForFlagValue(flg.Value)
+		},
+		flagyaml.IgnoreFilter,
+	)
 	require.NoError(t, err)
 	expected := map[string]any{
 		"bool": reflect.TypeOf((*bool)(nil)),
@@ -80,20 +85,35 @@ func TestBadGenerateYAMLTypeMapFromFlags(t *testing.T) {
 
 	flags.Int("one.two.int", 10, "")
 	flags.Int("one.two", 10, "")
-	_, err := flagyaml.GenerateYAMLMapWithValuesFromFlags(flagyaml.GetYAMLTypeForFlag, flagyaml.IgnoreFilter)
+	_, err := flagyaml.GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return flagyaml.GetYAMLTypeForFlagValue(flg.Value)
+		},
+		flagyaml.IgnoreFilter,
+	)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Int("one.two", 10, "")
 	flags.Int("one.two.int", 10, "")
-	_, err = flagyaml.GenerateYAMLMapWithValuesFromFlags(flagyaml.GetYAMLTypeForFlag, flagyaml.IgnoreFilter)
+	_, err = flagyaml.GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return flagyaml.GetYAMLTypeForFlagValue(flg.Value)
+		},
+		flagyaml.IgnoreFilter,
+	)
 	require.Error(t, err)
 
 	flags = replaceFlagsForTesting(t)
 
 	flags.Var(&unsupportedFlagValue{}, "unsupported", "")
-	_, err = flagyaml.GenerateYAMLMapWithValuesFromFlags(flagyaml.GetYAMLTypeForFlag, flagyaml.IgnoreFilter)
+	_, err = flagyaml.GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return flagyaml.GetYAMLTypeForFlagValue(flg.Value)
+		},
+		flagyaml.IgnoreFilter,
+	)
 	require.Error(t, err)
 
 }
