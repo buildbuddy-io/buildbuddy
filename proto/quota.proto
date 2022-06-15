@@ -23,7 +23,7 @@ message QuotaKey {
 }
 
 message QuotaRule {
-	QuotaKey quota_key = 1;
+	string quota_key = 1;
 	string bucket_name = 2;
 }
 
