@@ -16,8 +16,14 @@ import (
 )
 
 const (
-	maxRedisRetry       = 3
-	defaultBucketName   = "default"
+	// The maximum number of attempts to update rate limit data in redis.
+	maxRedisRetry = 3
+
+	// The name of the default bucket in the namespace. If you change this field,
+	// you also need to update the QuotaBucket and QuotaGroup table.
+	defaultBucketName = "default"
+
+	// THe prefix we use to all quota-related redis entries.
 	redisQuotaKeyPrefix = "quota"
 )
 
@@ -30,49 +36,59 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("quota manager is not configured")
 	}
-	buckets := []*tables.QuotaBucket{}
 	ctx := env.GetServerContext()
-	result := env.GetDBHandle().DB(ctx).Find(&buckets)
-	if result.Error != nil {
-		return nil, status.InternalErrorf("failed to read quota config: %s", result.Error)
+	db := env.GetDBHandle().DB(ctx)
+	bucketRows, err := db.Raw(`SELECT * FROM QuotaBucket`).Rows()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read quota config: %s", err)
 	}
-	quotaGroups := []*tables.QuotaGroup{}
-	result = env.GetDBHandle().DB(ctx).Find(&quotaGroups)
-	if result.Error != nil {
-		return nil, status.InternalErrorf("failed to read quota config: %s", result.Error)
-	}
+	defer bucketRows.Close()
 
 	config := make(map[string]*namespaceConfig)
-	for _, b := range buckets {
-		if err := validateBucket(b); err != nil {
-			return nil, status.InternalErrorf("bucket is invalid: %v", b)
+	for bucketRows.Next() {
+		var tb tables.QuotaBucket
+		if err := db.ScanRows(bucketRows, &tb); err != nil {
+			return nil, err
 		}
-		ns := config[b.Namespace]
+		if err := validateBucket(&tb); err != nil {
+			return nil, status.InternalErrorf("invalid bucket: %v", tb)
+		}
+		ns := config[tb.Namespace]
 		if ns == nil {
 			ns = &namespaceConfig{
 				bucketsByName:         make(map[string]*tables.QuotaBucket),
 				quotaKeysByBucketName: make(map[string][]string),
 			}
-			config[b.Namespace] = ns
+			config[tb.Namespace] = ns
 		}
-		ns.bucketsByName[b.Name] = b
+		ns.bucketsByName[tb.Name] = &tb
 	}
 
-	for _, g := range quotaGroups {
-		ns := config[g.Namespace]
+	groupRows, err := db.Raw(`SELECT * FROM QuotaGroup`).Rows()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read quota config: %s", err)
+	}
+	defer groupRows.Close()
+
+	for groupRows.Next() {
+		var tg tables.QuotaGroup
+		if err := db.ScanRows(bucketRows, &tg); err != nil {
+			return nil, err
+		}
+		ns := config[tg.Namespace]
 		if ns == nil {
-			return nil, status.InternalErrorf("namespace %q doesn't exist", g.Namespace)
+			return nil, status.InternalErrorf("namespace %q doesn't exist", tg.Namespace)
 		}
-		if _, ok := ns.bucketsByName[g.BucketName]; !ok {
-			return nil, status.InternalErrorf("namespace %q bucket name %q doesn't exist", g.Namespace, g.BucketName)
+		if _, ok := ns.bucketsByName[tg.BucketName]; !ok {
+			return nil, status.InternalErrorf("namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
 		}
-		if g.BucketName == defaultBucketName {
-			log.Warningf("doesn't need to create QuotaGroup for default bucket in namespace %q", g.Namespace)
+		if tg.BucketName == defaultBucketName {
+			log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
 		}
-		if keys := ns.quotaKeysByBucketName[g.BucketName]; keys == nil {
-			ns.quotaKeysByBucketName[g.BucketName] = []string{g.QuotaKey}
+		if keys := ns.quotaKeysByBucketName[tg.BucketName]; keys == nil {
+			ns.quotaKeysByBucketName[tg.BucketName] = []string{tg.QuotaKey}
 		} else {
-			ns.quotaKeysByBucketName[g.BucketName] = append(keys, g.QuotaKey)
+			ns.quotaKeysByBucketName[tg.BucketName] = append(keys, tg.QuotaKey)
 		}
 	}
 	return config, nil
@@ -84,11 +100,11 @@ func validateBucket(bucket *tables.QuotaBucket) error {
 	}
 
 	if bucket.PeriodDurationUsec == 0 {
-		return status.InvalidArgumentError("max_rate.period is zero")
+		return status.InvalidArgumentError("bucket.PeriodDurationUsec is zero")
 	}
 
 	if burst := bucket.MaxBurst; burst < 0 || burst > math.MaxInt {
-		return status.InvalidArgumentErrorf("max_burst(%d) must be non-negative and less than %d", burst, math.MaxInt)
+		return status.InvalidArgumentErrorf("bucket.MaxBurst(%d) must be non-negative and less than %d", burst, math.MaxInt)
 	}
 
 	return nil
@@ -219,8 +235,8 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 }
 
 // findBucket finds the bucket given a namespace and key. If the key is found in
-// bucketsByKey map, return the corresponding bucket. Otherwise, return the default bucket. Return
-// nil if the namespace is not found.
+// bucketsByKey map, return the corresponding bucket. Otherwise, return the
+// default bucket. Returns nil if the namespace is not found.
 func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
 	ns, ok := qm.namespaces[namespace]
 	if !ok {
