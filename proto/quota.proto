@@ -31,8 +31,8 @@ message QuotaKey {
 }
 
 message QuotaGroup {
-	string quota_key = 1;
-	string bucket_name = 2;
+  string quota_key = 1;
+  string bucket_name = 2;
 }
 
 // Namespace indicates a single resource to be protected by quota manager, like
@@ -44,8 +44,8 @@ message Namespace {
   // All the buckets in the namespace
   repeated Bucket buckets = 2;
 
-  // Each group indicates that quota_key will be rate limited by the max_rate and
-  // max_burst defined in the bucket identified by the bucket_name. 
+  // Each group indicates that quota_key will be rate limited by the max_rate
+  // and max_burst defined in the bucket identified by the bucket_name.
   repeated QuotaGroup groups = 3;
 }
 
@@ -53,8 +53,8 @@ message AddNamespace {
   // The name of the namespace
   string name = 1;
 
-  // The default bucket to be used when there is no explicit quota groups defined
-  // for a user.
+  // The default bucket to be used when there is no explicit quota groups
+  // defined for a user.
   Bucket default_bucket = 2;
 
   repeated Bucket buckets = 3;
