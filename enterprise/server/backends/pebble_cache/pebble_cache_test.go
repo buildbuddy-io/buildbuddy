@@ -35,6 +35,34 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	return ctx
 }
 
+func TestACIsolation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	c1, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "foo")
+	require.Nil(t, err)
+	c2, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "bar")
+	require.Nil(t, err)
+
+	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
+
+	require.Nil(t, c1.Set(ctx, d1, buf1))
+	require.Nil(t, c2.Set(ctx, d1, []byte("evilbuf")))
+
+	got1, err := c1.Get(ctx, d1)
+	require.Nil(t, err, err)
+	require.Equal(t, buf1, got1)
+}
+
 func TestIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
