@@ -548,8 +548,12 @@ func (*Usage) TableName() string {
 
 type QuotaBucket struct {
 	Model
+	// The namespace indicates a single resource to be protected from abusive
+	// usage.
 	Namespace string `gorm:"primarykey"`
-	Name      string `gorm:"primarykey"`
+
+	// The name of the bucket, like "default", "banned", or "restricted".
+	Name string `gorm:"primarykey"`
 
 	// The maximum sustained rate of requests
 	NumRequests        int64
@@ -564,10 +568,13 @@ func (*QuotaBucket) TableName() string {
 	return "QuotaBucket"
 }
 
+// QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
+// example, user:X is in bucket:restricted.
 type QuotaGroup struct {
 	Model
 	Namespace string `gorm:"primarykey"`
-	// GroupID or IP address
+	// GroupID or IP address (for anon clients). Used to count quota for a single
+	// user.
 	QuotaKey string `gorm:"primarykey"`
 
 	BucketName string
