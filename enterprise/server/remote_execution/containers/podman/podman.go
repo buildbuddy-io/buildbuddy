@@ -59,7 +59,11 @@ const (
 	podmanDefaultNetworkGateway = "10.88.0.1"
 	podmanDefaultNetworkBridge  = "cni-podman0"
 
-	pollCIDTimeout    = 15 * time.Second
+	// pollCIDTimeout specifies how long to wait polling for a container's
+	// --cidfile to be written by podman before we give up.
+	pollCIDTimeout = 15 * time.Second
+	// statsPollInterval controls how often we will poll the cgroupfs to determine
+	// a container's resource usage.
 	statsPollInterval = 50 * time.Millisecond
 )
 
@@ -369,8 +373,11 @@ func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFun
 
 		start := time.Now()
 		defer func() {
-			// Only log an error if the task ran long enough that we could reasonably
-			// expect to sample stats at least once while it was executing.
+			// Only log an error if the task ran long enough that we could
+			// reasonably expect to sample stats at least once while it was
+			// executing. Note that we can't sample stats until podman creates
+			// the container, which can take a few hundred ms or possibly longer
+			// if the executor is heavily loaded.
 			dur := time.Since(start)
 			if last == nil && dur > 1*time.Second && lastErr != nil {
 				log.Warningf("Failed to read container stats: %s", lastErr)
