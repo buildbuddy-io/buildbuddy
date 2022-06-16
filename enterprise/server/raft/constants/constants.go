@@ -133,7 +133,7 @@ func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	// filekeys look like this:
 	//   // {groupID}/{ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
-	//   //   PART123/ac/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
 	//   //   PART123/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
@@ -155,7 +155,7 @@ func FileDataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// File Data keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}-
 	//   // for example:
-	//   //   PART123/ac/abcd12345asdasdasd123123123asdasdasd-
+	//   //   PART123/ac/44321/abcd12345asdasdasd123123123asdasdasd-
 	//   //   PART123/cas/abcd12345asdasdasd123123123asdasdasd-
 	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
@@ -174,7 +174,7 @@ func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// Metadata keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}
 	//   // for example:
-	//   //   PART123456/ac/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123456/ac/44321/abcd12345asdasdasd123123123asdasdasd
 	//   //   PART123456/cas/abcd12345asdasdasd123123123asdasdasd
 	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
