@@ -287,9 +287,13 @@ func (qm *QuotaManager) getKey(ctx context.Context) string {
 
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
 	key := qm.getKey(ctx)
+	if key == "" {
+		log.Warningf("Key is empty.")
+		return true, nil
+	}
 	b := qm.findBucket(namespace, key)
 	if b == nil {
-		log.Warningf("quota bucket for namespace %q and key %q not found", namespace, key)
+		log.Warningf("Quota bucket for namespace %q and key %q not found", namespace, key)
 		return true, nil
 	}
 	return b.Allow(ctx, key, quantity)
