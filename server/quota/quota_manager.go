@@ -40,7 +40,7 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 	db := env.GetDBHandle().DB(ctx)
 	bucketRows, err := db.Raw(`SELECT * FROM QuotaBucket`).Rows()
 	if err != nil {
-		return nil, status.InternalErrorf("failed to read quota config: %s", err)
+		return nil, status.InternalErrorf("failed to read table QuotaBucket: %s", err)
 	}
 	defer bucketRows.Close()
 
@@ -48,7 +48,7 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 	for bucketRows.Next() {
 		var tb tables.QuotaBucket
 		if err := db.ScanRows(bucketRows, &tb); err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("failed to scan QuotaBucket: %s", err)
 		}
 		if err := validateBucket(&tb); err != nil {
 			return nil, status.InternalErrorf("invalid bucket: %v", tb)
@@ -66,14 +66,14 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 
 	groupRows, err := db.Raw(`SELECT * FROM QuotaGroup`).Rows()
 	if err != nil {
-		return nil, status.InternalErrorf("failed to read quota config: %s", err)
+		return nil, status.InternalErrorf("failed to read table QuotaGroup: %s", err)
 	}
 	defer groupRows.Close()
 
 	for groupRows.Next() {
 		var tg tables.QuotaGroup
-		if err := db.ScanRows(bucketRows, &tg); err != nil {
-			return nil, err
+		if err := db.ScanRows(groupRows, &tg); err != nil {
+			return nil, status.InternalErrorf("failed to scan QuotaGroup: %s", err)
 		}
 		ns := config[tg.Namespace]
 		if ns == nil {
