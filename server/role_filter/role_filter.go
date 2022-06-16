@@ -94,6 +94,13 @@ var (
 	// their authenticated group.
 	ServerAdminOnlyRPCs = []string{
 		"GetInvocationOwner",
+
+		// Quota APIs
+		"GetNamespace",
+		"CreateNamespace",
+		"RemoveNamespace",
+		"ModifyBucket",
+		"ApplyBucket",
 	}
 )
 
