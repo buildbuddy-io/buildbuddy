@@ -9,86 +9,77 @@ import (
 )
 
 func TestMaxRetryFromBackoff(t *testing.T) {
-	r := retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     24,
-			Multiplier:     2,
-			MaxRetries:     0,
+	tests := map[string]struct {
+		inputOptions        *retry.Options
+		expectedMaxAttempts int
+	}{
+		"exact backoff boundary": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     24,
+				Multiplier:     2,
+				MaxRetries:     0,
+			},
+			expectedMaxAttempts: 4,
+		},
+		"above exact backoff boundary": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     25,
+				Multiplier:     2,
+				MaxRetries:     0,
+			},
+			expectedMaxAttempts: 5,
+		},
+		"below exact backoff boundary": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     23,
+				Multiplier:     2,
+				MaxRetries:     0,
+			},
+			expectedMaxAttempts: 4,
+		},
+		"manually set maximum above calculated backoff": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     23,
+				Multiplier:     2,
+				MaxRetries:     7,
+			},
+			expectedMaxAttempts: 7,
+		},
+		"manually set maximum below calculated backoff": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     23,
+				Multiplier:     2,
+				MaxRetries:     2,
+			},
+			expectedMaxAttempts: 2,
+		},
+		"initial backoff greater than maximum": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     1,
+				Multiplier:     2,
+				MaxRetries:     0,
+			},
+			expectedMaxAttempts: 1,
+		},
+		"multiplier less than or equal to one": {
+			inputOptions: &retry.Options{
+				InitialBackoff: 3,
+				MaxBackoff:     7,
+				Multiplier:     0.5,
+				MaxRetries:     0,
+			},
+			expectedMaxAttempts: 1,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.expectedMaxAttempts, retry.New(context.Background(), tc.inputOptions).MaxAttempts())
 		})
-	assert.Equal(t, 4, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     25,
-			Multiplier:     2,
-			MaxRetries:     0,
-		})
-	assert.Equal(t, 5, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     23,
-			Multiplier:     2,
-			MaxRetries:     0,
-		})
-	assert.Equal(t, 4, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     23,
-			Multiplier:     2,
-			MaxRetries:     0,
-		})
-	assert.Equal(t, 4, r.MaxAttempts())
-	assert.Equal(t, 4, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     23,
-			Multiplier:     2,
-			MaxRetries:     7,
-		})
-	assert.Equal(t, 7, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     23,
-			Multiplier:     2,
-			MaxRetries:     2,
-		})
-	assert.Equal(t, 2, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     23,
-			Multiplier:     2,
-			MaxRetries:     2,
-		})
-	assert.Equal(t, 2, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     1,
-			Multiplier:     2,
-			MaxRetries:     0,
-		})
-	assert.Equal(t, 1, r.MaxAttempts())
-	r = retry.New(
-		context.Background(),
-		&retry.Options{
-			InitialBackoff: 3,
-			MaxBackoff:     7,
-			Multiplier:     0.5,
-			MaxRetries:     0,
-		})
-	assert.Equal(t, 1, r.MaxAttempts())
+	}
 }
