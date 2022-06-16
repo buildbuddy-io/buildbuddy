@@ -14,6 +14,7 @@ load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 # Per Bazel semantics, all dependencies should be pre-declared.
 # Note, you'll also need to install all of these in your package.json!
 # (This should be fixed when we switch to protobufjs-cli)
+# NOTE: this is unused since pnpm.packageExtensions in package.json fixes this right within build graph.
 _PROTOBUFJS_CLI_DEPS = ["//:node_modules/%s" % s for s in [
     "chalk",
     "escodegen",
@@ -66,7 +67,9 @@ def ts_proto_library(name, proto, **kwargs):
     # Transform .proto files to a single _pb.js file named after the macro
     bin.pbjs(
         name = js_target,
-        srcs = [":" + proto_target] + _PROTOBUFJS_CLI_DEPS,
+        srcs = [":" + proto_target],
+        copy_srcs_to_bin = False,
+        chdir = "../../../",
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
@@ -75,7 +78,7 @@ def ts_proto_library(name, proto, **kwargs):
             "--root=%s" % name,
             "--strict-long",  # Force usage of Long type with int64 fields
             "--out=$@",
-            "$(execpaths %s)" % proto_target,
+            "$(locations %s)" % proto_target,
         ],
         outs = [js_out],
     )
@@ -83,7 +86,9 @@ def ts_proto_library(name, proto, **kwargs):
     # Transform the _pb.js file to a .d.ts file with TypeScript types
     bin.pbts(
         name = ts_target,
-        srcs = [js_target] + _PROTOBUFJS_CLI_DEPS,
+        srcs = [js_target],
+        copy_srcs_to_bin = False,
+        chdir = "../../../",
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbts-for-typescript
         args = [

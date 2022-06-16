@@ -1,7 +1,9 @@
-lockfileVersion: 5.4
+lockfileVersion: 5.3
 
 overrides:
   '@types/react': ^16.8.17
+
+packageExtensionsChecksum: cf27afb114e4e8655ffccb9eb32a951e
 
 specifiers:
   '@bazel/bazelisk': ^1.6.1
@@ -59,7 +61,6 @@ specifiers:
   recharts: ^2.1.9
   rollup-plugin-replace: ^2.2.0
   rxjs: ^6.6.3
-  semver: ^7.1.2
   tmp: ^0.2.0
   tslib: ^2.1.0
   typescript: 4.7.3
@@ -88,7 +89,7 @@ devDependencies:
   chalk: 4.1.2
   clang-format: 1.8.0
   concurrently: 5.3.0
-  dagre-d3-react: 0.2.4_wcqkhtmu7mswc6yz4uyexck3ty
+  dagre-d3-react: 0.2.4_react-dom@16.14.0+react@16.14.0
   date-fns: 2.28.0
   diff: 5.1.0
   diff-match-patch: 1.0.5
@@ -114,15 +115,14 @@ devDependencies:
   prettier: 2.7.0
   protobufjs: 6.11.3
   react: 16.14.0
-  react-date-range: 1.4.0_463tdaa2tsjpwhdqg7cxmozjzu
+  react-date-range: 1.4.0_date-fns@2.28.0+react@16.14.0
   react-dom: 16.14.0_react@16.14.0
-  react-lazylog: github.com/buildbuddy-io/react-lazylog/571fcaee618082aa141d7d09c5a3054ed6324837_wcqkhtmu7mswc6yz4uyexck3ty
-  react-modal: 3.15.1_wcqkhtmu7mswc6yz4uyexck3ty
-  react-virtualized: 9.22.3_wcqkhtmu7mswc6yz4uyexck3ty
-  recharts: 2.1.10_wcqkhtmu7mswc6yz4uyexck3ty
+  react-lazylog: github.com/buildbuddy-io/react-lazylog/571fcaee618082aa141d7d09c5a3054ed6324837_react-dom@16.14.0+react@16.14.0
+  react-modal: 3.15.1_react-dom@16.14.0+react@16.14.0
+  react-virtualized: 9.22.3_react-dom@16.14.0+react@16.14.0
+  recharts: 2.1.10_react-dom@16.14.0+react@16.14.0
   rollup-plugin-replace: 2.2.0
   rxjs: 6.6.7
-  semver: 7.3.7
   tmp: 0.2.1
   tslib: 2.4.0
   typescript: 4.7.3
@@ -1002,7 +1002,7 @@ packages:
       d3-array: 2.12.1
     dev: true
 
-  /dagre-d3-react/0.2.4_wcqkhtmu7mswc6yz4uyexck3ty:
+  /dagre-d3-react/0.2.4_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-spYk0zaI8Mm+5E+99veMDS7CG2Prpce1CcjQINHTKmJe0XUkmFEey5yRr4Ag7htXdirw1Lf/rlBiZgORcc1Nyg==}
     peerDependencies:
       react: 16.9.0
@@ -1119,6 +1119,19 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
+  /escodegen/1.14.3:
+    resolution: {integrity: sha512-qFcX0XJkdg+PB3xjZZG/wKSuT1PnQWx57+TVSjIMmILd2yC/6ByYElPwJnslDsuWuSAp4AwJGumarAAmJch5Kw==}
+    engines: {node: '>=4.0'}
+    hasBin: true
+    dependencies:
+      esprima: 4.0.1
+      estraverse: 4.3.0
+      esutils: 2.0.3
+      optionator: 0.8.3
+    optionalDependencies:
+      source-map: 0.6.1
+    dev: true
+
   /escodegen/2.0.0:
     resolution: {integrity: sha512-mmHKys/C8BFUGI+MAWNcSYoORYLMdPzjrknd2Vc+bUsjN5bXcr8EhrNB+UTqfL1y3I9c4fw2ihgtMPQLBRiQxw==}
     engines: {node: '>=6.0'}
@@ -1150,6 +1163,11 @@ packages:
     resolution: {integrity: sha512-eGuFFw7Upda+g4p+QHvnW0RyTX/SVeJBDM/gCtMARO0cLuT2HcEKnTPvhjV6aGeqrCB/sbNop0Kszm0jsaWU4A==}
     engines: {node: '>=4'}
     hasBin: true
+    dev: true
+
+  /estraverse/4.3.0:
+    resolution: {integrity: sha512-39nnKffWz8xN1BU/2c79n9nB9HDzo0niYUqx6xyqUnyoAnQyyWpOTdZEeiCch8BBu515t4wp9ZmgVfVhn9EBpw==}
+    engines: {node: '>=4.0'}
     dev: true
 
   /estraverse/5.3.0:
@@ -1460,7 +1478,7 @@ packages:
       js2xmlparser: 4.0.2
       klaw: 4.0.1
       markdown-it: 12.3.2
-      markdown-it-anchor: 8.6.4_2zb4u3vubltivolgu556vv4aom
+      markdown-it-anchor: 8.6.4_d643ca6eb40ae68ab966a77bead78073
       marked: 4.0.17
       mkdirp: 1.0.4
       requizzle: 0.2.3
@@ -1665,7 +1683,7 @@ packages:
       sourcemap-codec: 1.4.8
     dev: true
 
-  /markdown-it-anchor/8.6.4_2zb4u3vubltivolgu556vv4aom:
+  /markdown-it-anchor/8.6.4_d643ca6eb40ae68ab966a77bead78073:
     resolution: {integrity: sha512-Ul4YVYZNxMJYALpKtu+ZRdrryYt/GlQ5CK+4l1bp/gWXOG2QWElt6AqF3Mih/wfUKdZbNAZVXGR73/n6U/8img==}
     peerDependencies:
       '@types/markdown-it': '*'
@@ -1982,7 +2000,17 @@ packages:
       '@protobufjs/utf8': 1.1.0
       '@types/long': 4.0.2
       '@types/node': 17.0.42
+      chalk: 4.1.2
+      escodegen: 1.14.3
+      espree: 7.3.1
+      estraverse: 5.3.0
+      glob: 7.2.3
+      jsdoc: 3.6.10
       long: 4.0.0
+      minimist: 1.2.6
+      semver: 7.3.7
+      tmp: 0.2.1
+      uglify-js: 3.16.0
     dev: true
 
   /pump/3.0.0:
@@ -2016,7 +2044,7 @@ packages:
       safe-buffer: 5.2.1
     dev: true
 
-  /react-date-range/1.4.0_463tdaa2tsjpwhdqg7cxmozjzu:
+  /react-date-range/1.4.0_date-fns@2.28.0+react@16.14.0:
     resolution: {integrity: sha512-+9t0HyClbCqw1IhYbpWecjsiaftCeRN5cdhsi9v06YdimwyMR2yYHWcgVn3URwtN/txhqKpEZB6UX1fHpvK76w==}
     peerDependencies:
       date-fns: 2.0.0-alpha.7 || >=2.0.0
@@ -2059,7 +2087,7 @@ packages:
       react: 16.14.0
     dev: true
 
-  /react-modal/3.15.1_wcqkhtmu7mswc6yz4uyexck3ty:
+  /react-modal/3.15.1_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-duB9bxOaYg7Zt6TMFldIFxQRtSP+Dg3F1ZX3FXxSUn+3tZZ/9JCgeAQKDg7rhZSAqopq8TFRw3yIbnx77gyFTw==}
     engines: {node: '>=8'}
     peerDependencies:
@@ -2074,7 +2102,7 @@ packages:
       warning: 4.0.3
     dev: true
 
-  /react-resize-detector/6.7.8_wcqkhtmu7mswc6yz4uyexck3ty:
+  /react-resize-detector/6.7.8_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-0FaEcUBAbn+pq3PT5a9hHRebUfuS1SRLGLpIw8LydU7zX429I6XJgKerKAMPsJH0qWAl6o5bVKNqFJqr6tGPYw==}
     peerDependencies:
       react: ^16.0.0 || ^17.0.0
@@ -2087,7 +2115,7 @@ packages:
       resize-observer-polyfill: 1.5.1
     dev: true
 
-  /react-smooth/2.0.0_wcqkhtmu7mswc6yz4uyexck3ty:
+  /react-smooth/2.0.0_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-wK4dBBR6P21otowgMT9toZk+GngMplGS1O5gk+2WSiHEXIrQgDvhR5IIlT74Vtu//qpTcipkgo21dD7a7AUNxw==}
     peerDependencies:
       prop-types: ^15.6.0
@@ -2098,7 +2126,7 @@ packages:
       raf: 3.4.1
       react: 16.14.0
       react-dom: 16.14.0_react@16.14.0
-      react-transition-group: 2.9.0_wcqkhtmu7mswc6yz4uyexck3ty
+      react-transition-group: 2.9.0_react-dom@16.14.0+react@16.14.0
     dev: true
 
   /react-string-replace/0.4.4:
@@ -2108,7 +2136,7 @@ packages:
       lodash: 4.17.21
     dev: true
 
-  /react-transition-group/2.9.0_wcqkhtmu7mswc6yz4uyexck3ty:
+  /react-transition-group/2.9.0_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-+HzNTCHpeQyl4MJ/bdE0u6XRMe9+XG/+aL4mCxVN4DnPBQ0/5bfHWPDuOZUzYdMj94daZaZdCCc1Dzt9R/xSSg==}
     peerDependencies:
       react: '>=15.0.0'
@@ -2122,7 +2150,7 @@ packages:
       react-lifecycles-compat: 3.0.4
     dev: true
 
-  /react-virtualized/9.22.3_wcqkhtmu7mswc6yz4uyexck3ty:
+  /react-virtualized/9.22.3_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-MKovKMxWTcwPSxE1kK1HcheQTWfuCxAuBoSTf2gwyMM21NdX/PXUhnoP8Uc5dRKd+nKm8v41R36OellhdCpkrw==}
     peerDependencies:
       react: ^15.3.0 || ^16.0.0-alpha
@@ -2162,7 +2190,7 @@ packages:
       decimal.js-light: 2.5.1
     dev: true
 
-  /recharts/2.1.10_wcqkhtmu7mswc6yz4uyexck3ty:
+  /recharts/2.1.10_react-dom@16.14.0+react@16.14.0:
     resolution: {integrity: sha512-me6c8m2Gs88X/nuM2gDSTDIhpSLNMbiTrlE4Cu53hjZNegT3g3xLlTrbYSAQuBCFWuWJAZXCmEuMr6AwizLyaA==}
     engines: {node: '>=12'}
     peerDependencies:
@@ -2178,8 +2206,8 @@ packages:
       react: 16.14.0
       react-dom: 16.14.0_react@16.14.0
       react-is: 16.13.1
-      react-resize-detector: 6.7.8_wcqkhtmu7mswc6yz4uyexck3ty
-      react-smooth: 2.0.0_wcqkhtmu7mswc6yz4uyexck3ty
+      react-resize-detector: 6.7.8_react-dom@16.14.0+react@16.14.0
+      react-smooth: 2.0.0_react-dom@16.14.0+react@16.14.0
       recharts-scale: 0.4.5
       reduce-css-calc: 2.1.8
     transitivePeerDependencies:
@@ -2360,6 +2388,7 @@ packages:
   /source-map/0.6.1:
     resolution: {integrity: sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==}
     engines: {node: '>=0.10.0'}
+    requiresBuild: true
     dev: true
     optional: true
 
@@ -2728,7 +2757,7 @@ packages:
       yargs-parser: 13.1.2
     dev: true
 
-  github.com/buildbuddy-io/react-lazylog/571fcaee618082aa141d7d09c5a3054ed6324837_wcqkhtmu7mswc6yz4uyexck3ty:
+  github.com/buildbuddy-io/react-lazylog/571fcaee618082aa141d7d09c5a3054ed6324837_react-dom@16.14.0+react@16.14.0:
     resolution: {tarball: https://codeload.github.com/buildbuddy-io/react-lazylog/tar.gz/571fcaee618082aa141d7d09c5a3054ed6324837}
     id: github.com/buildbuddy-io/react-lazylog/571fcaee618082aa141d7d09c5a3054ed6324837
     name: react-lazylog
@@ -2743,7 +2772,7 @@ packages:
       prop-types: 15.8.1
       react: 16.14.0
       react-string-replace: 0.4.4
-      react-virtualized: 9.22.3_wcqkhtmu7mswc6yz4uyexck3ty
+      react-virtualized: 9.22.3_react-dom@16.14.0+react@16.14.0
       text-encoding-utf-8: 1.0.2
       whatwg-fetch: 2.0.4
     transitivePeerDependencies:
