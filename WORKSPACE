@@ -69,10 +69,9 @@ gazelle_dependencies()
 
 http_archive(
     name = "aspect_rules_js",
-    #sha256 = "ac67010f1c150a70d7ebf0026754b8a754f3be6d899b699f97be3c046a951c6a",
-    # ALMOST 1.0.0
-    strip_prefix = "rules_js-6a2a3477fcbcd819cd7f44d5bfd47f2fed30add4",
-    url = "https://github.com/aspect-build/rules_js/archive/6a2a3477fcbcd819cd7f44d5bfd47f2fed30add4.tar.gz",
+    sha256 = "e7a21d8eec5565da01417bc809213405271a818e870890c2d3bb3dde5e808bcc",
+    strip_prefix = "rules_js-1.0.0-beta.0",
+    url = "https://github.com/aspect-build/rules_js/archive/refs/tags/v1.0.0-beta.0.tar.gz",
 )
 
 load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
@@ -310,9 +309,9 @@ swc_register_toolchains(
 
 http_archive(
     name = "aspect_rules_ts",
-    #sha256 = "b79eca71668f1d5e318c25a25a5f9a150d351cbfab1ea9e225b0ee7a9f16763d",
-    strip_prefix = "rules_ts-d4a70a7389a51dbd2c1a2a06c99c38e6acd4e7e0",
-    url = "https://github.com/aspect-build/rules_ts/archive/d4a70a7389a51dbd2c1a2a06c99c38e6acd4e7e0.tar.gz",
+    sha256 = "991a5ccad5fd276164ea64c01ae0b67820a5d514fbf37ae3f7ac8701a84b9f5a",
+    strip_prefix = "rules_ts-0.7.0",
+    url = "https://github.com/aspect-build/rules_ts/archive/refs/tags/v0.7.0.tar.gz",
 )
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")

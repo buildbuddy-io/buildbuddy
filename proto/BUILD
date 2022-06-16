@@ -394,6 +394,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 

@@ -1,32 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-
-# TODO switch to protobufjs-cli when its published
-# https://github.com/protobufjs/protobuf.js/commit/da34f43ccd51ad97017e139f137521782f5ef119
 load("@npm//protobufjs:package_json.bzl", "bin")
 load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 
-# protobuf.js relies on these packages, but does not list them as dependencies
-# in its package.json.
-# Instead they are listed under "cliDependencies"
-# (see https://unpkg.com/protobufjs@6.10.2/package.json)
-# When run, the CLI attempts to run `npm install` at runtime to get them.
-# This fails under Bazel as it tries to access the npm cache outside of the sandbox.
-# Per Bazel semantics, all dependencies should be pre-declared.
-# Note, you'll also need to install all of these in your package.json!
-# (This should be fixed when we switch to protobufjs-cli)
-# NOTE: this is unused since pnpm.packageExtensions in package.json fixes this right within build graph.
-_PROTOBUFJS_CLI_DEPS = ["//:node_modules/%s" % s for s in [
-    "chalk",
-    "escodegen",
-    "espree",
-    "estraverse",
-    "glob",
-    "jsdoc",
-    "minimist",
-    "semver",
-    "tmp",
-    "uglify-js",
-]]
 
 def _proto_sources_impl(ctx):
     return DefaultInfo(files = ctx.attr.proto[ProtoInfo].transitive_sources)
@@ -40,7 +15,7 @@ _proto_sources = rule(
     attrs = {"proto": attr.label(providers = [ProtoInfo])},
 )
 
-def ts_proto_library(name, proto, **kwargs):
+def ts_proto_library(name, proto, deps = [], **kwargs):
     """Minimal wrapper macro around pbjs/pbts tooling
 
     Args:
@@ -69,7 +44,9 @@ def ts_proto_library(name, proto, **kwargs):
         name = js_target,
         srcs = [":" + proto_target],
         copy_srcs_to_bin = False,
-        chdir = "../../../",
+        env = {
+            "BAZEL_BINDIR": "."
+        },
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
@@ -88,7 +65,9 @@ def ts_proto_library(name, proto, **kwargs):
         name = ts_target,
         srcs = [js_target],
         copy_srcs_to_bin = False,
-        chdir = "../../../",
+        env = {
+            "BAZEL_BINDIR": "."
+        },
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbts-for-typescript
         args = [
@@ -98,21 +77,13 @@ def ts_proto_library(name, proto, **kwargs):
         outs = [ts_out],
     )
 
-    # umd_bundle(
-    #     name = name + "__umd",
-    #     package_name = name,
-    #     entry_point = ":" + js_out,
-    # )
-
     # Expose the results as js_library which provides DeclarationInfo for interop with other rules
-    if "deps" not in kwargs:
-        kwargs["deps"] = []
-    kwargs["deps"].append("//:node_modules/protobufjs")
     js_library(
         name = name,
         srcs = [
             js_target,
             ts_target,
         ],
+        deps = deps + ["//:node_modules/protobufjs"],
         **kwargs
     )

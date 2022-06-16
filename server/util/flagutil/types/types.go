@@ -7,15 +7,43 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
-
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
+
+// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
+func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value *T) flag.Value {
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	switch v := any(value).(type) {
+	case *bool:
+		fs.BoolVar(v, "", *v, "")
+	case *time.Duration:
+		fs.DurationVar(v, "", *v, "")
+	case *float64:
+		fs.Float64Var(v, "", *v, "")
+	case *int:
+		fs.IntVar(v, "", *v, "")
+	case *int64:
+		fs.Int64Var(v, "", *v, "")
+	case *uint:
+		fs.UintVar(v, "", *v, "")
+	case *uint64:
+		fs.Uint64Var(v, "", *v, "")
+	case *string:
+		fs.StringVar(v, "", *v, "")
+	}
+	return fs.Lookup("").Value
+}
+
+// NewPrimitiveFlagVar returns a flag.Value derived from the given primitive.
+func NewPrimitiveFlag[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value T) flag.Value {
+	return NewPrimitiveFlagVar(&value)
+}
 
 type SliceFlag[T any] []T
 
@@ -169,7 +197,7 @@ func Alias[T any](newName, name string) *T {
 		}
 	}
 	addr := reflect.ValueOf(flg.Value)
-	if t, err := common.GetTypeForFlag(flg); err == nil {
+	if t, err := common.GetTypeForFlagValue(flg.Value); err == nil {
 		if !addr.CanConvert(t) {
 			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, newName, flg.Name, flg.Value, t)
 		}
@@ -188,27 +216,45 @@ func (f *FlagAlias) Set(value string) error {
 }
 
 func (f *FlagAlias) String() string {
-	return common.DefaultFlagSet.Lookup(f.name).Value.String()
+	return f.WrappedValue().String()
 }
 
 func (f *FlagAlias) AliasedName() string {
 	return f.name
 }
 
-func (f *FlagAlias) AliasedType() reflect.Type {
-	flg := common.DefaultFlagSet.Lookup(f.name)
-	t, err := common.GetTypeForFlag(flg)
-	if err != nil {
-		return reflect.TypeOf(flg.Value)
-	}
-	return t
+func (f *FlagAlias) WrappedValue() flag.Value {
+	return common.DefaultFlagSet.Lookup(f.name).Value
 }
 
-func (f *FlagAlias) YAMLTypeAlias() reflect.Type {
-	flg := common.DefaultFlagSet.Lookup(f.name)
-	t, err := flagyaml.GetYAMLTypeForFlag(flg)
-	if err != nil {
-		return reflect.TypeOf(flg.Value)
-	}
-	return t
+type DeprecatedFlag struct {
+	flag.Value
+	name          string
+	migrationPlan string
+}
+
+// DeprecatedVar takes a flag.Value (which can be obtained for primitive types
+// via the NewPrimitiveFlag or NewPrimitiveFlagVar functions), the customary
+// name and usage parameters, and a migration plan, and defines a flag that will
+// notify users that it is deprecated when it is set.
+func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
+	common.DefaultFlagSet.Var(&DeprecatedFlag{value, name, migrationPlan}, name, usage+" **DEPRECATED** "+migrationPlan)
+	return reflect.ValueOf(value).Convert(reflect.TypeOf((*T)(nil))).Interface().(*T)
+}
+
+func (d *DeprecatedFlag) Set(value string) error {
+	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.migrationPlan)
+	return d.Value.Set(value)
+}
+
+func (d *DeprecatedFlag) WrappedValue() flag.Value {
+	return d.Value
+}
+
+func (d *DeprecatedFlag) SetValueForFlagNameHook() {
+	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.migrationPlan)
+}
+
+func (d *DeprecatedFlag) YAMLSetValueHook() {
+	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.migrationPlan)
 }

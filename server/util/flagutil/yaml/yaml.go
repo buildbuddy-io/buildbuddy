@@ -50,25 +50,37 @@ func IgnoreFilter(flg *flag.Flag) bool {
 }
 
 type YAMLTypeAliasable interface {
+	// YAMLTypeAlias returns the type alias we use in YAML for this flag.Value.
 	YAMLTypeAlias() reflect.Type
 }
 
 type YAMLTypeStringable interface {
+	// YAMLTypeString returns the name to print for this type in YAML docs.
 	YAMLTypeString() string
 }
 
+type YAMLSetValueHooked interface {
+	// YAMLSetValueHook is the hook for flags that is called when the flag.Value
+	// is set through the YAML config.
+	YAMLSetValueHook()
+}
+
 type DocumentedMarshaler interface {
+	// DocumentNode documents the yaml.Node representing this value.
 	DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error
 }
 
-// GetYAMLTypeForFlag returns the type alias to use in YAML contexts for the flag.
-func GetYAMLTypeForFlag(flg *flag.Flag) (reflect.Type, error) {
-	if v, ok := flg.Value.(YAMLTypeAliasable); ok {
+// GetYAMLTypeForFlagValue returns the type alias to use in YAML contexts for the flag.
+func GetYAMLTypeForFlagValue(value flag.Value) (reflect.Type, error) {
+	if v, ok := value.(common.WrappingValue); ok {
+		return GetYAMLTypeForFlagValue(v.WrappedValue())
+	}
+	if v, ok := value.(YAMLTypeAliasable); ok {
 		return v.YAMLTypeAlias(), nil
-	} else if t, err := common.GetTypeForFlag(flg); err == nil {
+	} else if t, err := common.GetTypeForFlagValue(value); err == nil {
 		return t, nil
 	}
-	return nil, status.UnimplementedErrorf("Unsupported flag type at %s: %T", flg.Name, flg.Value)
+	return nil, status.UnimplementedErrorf("Unsupported flag type: %T", value)
 }
 
 type HeadComment string
@@ -223,9 +235,9 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 // GenerateDocumentedYAMLNodeFromFlag produces a documented yaml.Node which
 // represents the value contained in the flag.
 func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
-	t, err := GetYAMLTypeForFlag(flg)
+	t, err := GetYAMLTypeForFlagValue(flg.Value)
 	if err != nil {
-		return nil, status.InternalErrorf("Error encountered generating default YAML from flags: %s", err)
+		return nil, status.InternalErrorf("Error encountered generating default YAML from flags when processing flag %s: %s", flg.Name, err)
 	}
 	v, err := common.GetDereferencedValue[any](flg.Name)
 	if err != nil {
@@ -425,7 +437,12 @@ func PopulateFlagsFromData(data []byte) error {
 	if len(node.Content) > 0 {
 		node = node.Content[0]
 	}
-	typeMap, err := GenerateYAMLMapWithValuesFromFlags(GetYAMLTypeForFlag, IgnoreFilter)
+	typeMap, err := GenerateYAMLMapWithValuesFromFlags(
+		func(flg *flag.Flag) (reflect.Type, error) {
+			return GetYAMLTypeForFlagValue(flg.Value)
+		},
+		IgnoreFilter,
+	)
 	if err != nil {
 		return err
 	}
@@ -502,5 +519,17 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 	if _, ok := ignoreSet[name]; ok {
 		return nil
 	}
-	return common.SetValueForFlagName(name, a, setFlags, true, false)
+
+	flg := common.DefaultFlagSet.Lookup(name)
+	if flg == nil {
+		return nil
+	}
+	return setValueForYAML(flg.Value, name, a, setFlags, true)
+}
+
+func setValueForYAML(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
+	if v, ok := flagValue.(YAMLSetValueHooked); ok {
+		setHooks = append(setHooks, v.YAMLSetValueHook)
+	}
+	return common.SetValueWithCustomIndirectBehavior(flagValue, name, newValue, setFlags, appendSlice, setValueForYAML, setHooks...)
 }

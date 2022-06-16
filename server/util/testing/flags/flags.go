@@ -28,11 +28,11 @@ func PopulateFlagsFromData(t testing.TB, testConfigData []byte) {
 func Set(t testing.TB, name string, value any) {
 	origValue, err := flagutil.GetDereferencedValue[any](name)
 	require.NoError(t, err)
-	err = flagutil_common.SetValueForFlagName(name, value, nil, false, true)
+	err = flagutil.SetValueForFlagName(name, value, nil, false)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		err = flagutil_common.SetValueForFlagName(name, origValue, nil, false, true)
+		err = flagutil.SetValueForFlagName(name, origValue, nil, false)
 		require.NoError(t, err)
 	})
 }
