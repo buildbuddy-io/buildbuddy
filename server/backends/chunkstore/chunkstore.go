@@ -419,7 +419,7 @@ func (w *ChunkstoreWriter) GetLastChunkIndex(ctx context.Context) uint16 {
 	// Call Write with an empty buffer to update lastChunkIndex without triggering
 	// an actual write to blobstore, which lets us get an updated index in case a
 	// timeout-based flush has happened between now and the last call to Write.
-	w.Write(ctx, []byte{})
+	w.WriteWithTail(ctx, []byte{}, nil)
 	return w.lastChunkIndex
 }
 
@@ -501,7 +501,12 @@ func (l *writeLoop) run(ctx context.Context) {
 					// nil Tail means don't overwrite the tail. This accompanies manual
 					// flushes and no-op writes (to get updated chunkIndex from potential
 					// automatic flushes).
-					volatileTail = req.VolatileTail
+					if string(req.VolatileTail) == string(volatileTail) {
+						// We did not chanhge the tail, update the request to reflect this.
+						req.VolatileTail = nil
+					} else {
+						volatileTail = req.VolatileTail
+					}
 				}
 				chunk = append(chunk, req.Chunk...)
 				lastWriteSize = len(req.Chunk)
@@ -577,8 +582,12 @@ func (l *writeLoop) run(ctx context.Context) {
 		l.writeResultChannel <- result
 
 		if l.writeHook != nil {
-			// All work has been done for this write; trigger the writeHook
-			l.writeHook(ctx, req, result, chunk, volatileTail)
+			if bytesFlushed != 0 || !open || (req != nil && ((req.Chunk != nil && len(req.Chunk) != 0) || req.VolatileTail != nil)) {
+				// Only call the writeHook if a state change has occurred.
+
+				// All work has been done for this write; trigger the writeHook.
+				l.writeHook(ctx, req, result, chunk, volatileTail)
+			}
 		}
 	}
 	close(l.writeResultChannel)
