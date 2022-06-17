@@ -369,6 +369,10 @@ type WriteRequest struct {
 	Close        bool
 }
 
+func (w *WriteRequest) IsEmpty() bool {
+	return w == nil || ((w.Chunk == nil || len(w.Chunk) == 0) && w.VolatileTail == nil && !w.Close)
+}
+
 type WriteResult struct {
 	Err            error
 	Size           int
@@ -582,7 +586,7 @@ func (l *writeLoop) run(ctx context.Context) {
 		l.writeResultChannel <- result
 
 		if l.writeHook != nil {
-			if bytesFlushed != 0 || !open || (req != nil && ((req.Chunk != nil && len(req.Chunk) != 0) || req.VolatileTail != nil)) {
+			if bytesFlushed != 0 || !open || !req.IsEmpty() {
 				// Only call the writeHook if a state change has occurred.
 
 				// All work has been done for this write; trigger the writeHook.
