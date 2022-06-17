@@ -641,6 +641,13 @@ type CommandResult struct {
 	// * -2 (NoExitCode) if the exit code could not be determined because it returned
 	//   an error other than exec.ExitError. This case typically means it failed to start.
 	ExitCode int
+
+	// PeakMemoryUsageBytes is the approximate maximum memory usage (in bytes)
+	// used by the command throughout its execution, or 0 if unknown.
+	PeakMemoryUsageBytes int64
+	// CPUNanos is the approximate CPU usage of the command (measured in
+	// CPU-nanoseconds), or 0 if unknown.
+	CPUNanos int64
 }
 
 type Subscriber interface {
