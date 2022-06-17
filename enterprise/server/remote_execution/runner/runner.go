@@ -80,6 +80,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
+	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 )
 
 const (
@@ -948,13 +949,14 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		)
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
-			ForceRoot: props.DockerForceRoot,
-			User:      props.DockerUser,
-			Network:   props.DockerNetwork,
-			CapAdd:    *dockerCapAdd,
-			Devices:   *dockerDevices,
-			Volumes:   *dockerVolumes,
-			Runtime:   *podmanRuntime,
+			ForceRoot:   props.DockerForceRoot,
+			User:        props.DockerUser,
+			Network:     props.DockerNetwork,
+			CapAdd:      *dockerCapAdd,
+			Devices:     *dockerDevices,
+			Volumes:     *dockerVolumes,
+			Runtime:     *podmanRuntime,
+			EnableStats: *podmanEnableStats,
 		}
 		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
 	case platform.FirecrackerContainerType:

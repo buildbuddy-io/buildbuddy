@@ -368,6 +368,7 @@ func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFun
 		if !c.options.EnableStats {
 			return
 		}
+		defer container.Metrics.SetContainerMemoryUsageBytes(c, 0)
 		var last *container.Stats
 		var lastErr error
 
@@ -397,6 +398,16 @@ func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFun
 					lastErr = err
 					continue
 				}
+
+				var cpuUsageDiffNanos int64
+				if last == nil {
+					cpuUsageDiffNanos = stats.CPUNanos
+				} else {
+					cpuUsageDiffNanos = stats.CPUNanos - last.CPUNanos
+				}
+				container.Metrics.AddCPUNanos(cpuUsageDiffNanos)
+				container.Metrics.SetContainerMemoryUsageBytes(c, stats.MemoryUsageBytes)
+
 				last = stats
 			}
 		}
@@ -651,8 +662,6 @@ func readInt64FromFile(path string) (int64, error) {
 }
 
 type containerStats struct {
-	logErrOnce sync.Once
-
 	mu sync.Mutex
 	// last is the last recorded stats.
 	last *container.Stats
