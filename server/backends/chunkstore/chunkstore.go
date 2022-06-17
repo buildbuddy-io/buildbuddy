@@ -502,7 +502,7 @@ func (l *writeLoop) run(ctx context.Context) {
 					// flushes and no-op writes (to get updated chunkIndex from potential
 					// automatic flushes).
 					if string(req.VolatileTail) == string(volatileTail) {
-						// We did not chanhge the tail, update the request to reflect this.
+						// We did not change the tail, update the request to reflect this.
 						req.VolatileTail = nil
 					} else {
 						volatileTail = req.VolatileTail
