@@ -87,6 +87,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":remote_execution_proto",
+        ":scheduler_proto",
         "@com_google_protobuf//:duration_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
@@ -361,6 +362,7 @@ proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -464,6 +466,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":remote_execution_go_proto",
+        ":scheduler_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
@@ -780,6 +783,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     proto = ":remote_execution_proto",
     deps = [
+        ":scheduler_go_proto",
         ":semver_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
         "@go_googleapis//google/longrunning:longrunning_go_proto",

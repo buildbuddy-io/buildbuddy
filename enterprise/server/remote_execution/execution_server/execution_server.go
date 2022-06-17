@@ -62,6 +62,11 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.FileUploadCount = summary.GetIoStats().GetFileUploadCount()
 	execution.FileUploadSizeBytes = summary.GetIoStats().GetFileUploadSizeBytes()
 	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
+	// Task sizing
+	execution.EstimatedMilliCPU = summary.GetTaskSize().GetEstimatedMilliCpu()
+	execution.EstimatedMemoryBytes = summary.GetTaskSize().GetEstimatedMemoryBytes()
+	execution.PeakMemoryBytes = summary.GetUsageStats().GetPeakMemoryBytes()
+	execution.CPUNanos = summary.GetUsageStats().GetCpuNanos()
 	// ExecutedActionMetadata
 	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
 	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()

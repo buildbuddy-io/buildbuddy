@@ -208,8 +208,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	// Stop monitoring so that we can get stats.
 	stopMonitoring()
 	if stats := <-statsCh; stats != nil {
-		result.CPUNanos = stats.CPUNanos
-		result.PeakMemoryUsageBytes = stats.PeakMemoryUsageBytes
+		result.UsageStats = stats.UsageStats()
 	}
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
@@ -290,8 +289,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, op
 	res := runPodman(ctx, "exec", opts, podmanRunArgs...)
 	stopMonitoring()
 	if stats := <-statsCh; stats != nil {
-		res.CPUNanos = stats.CPUNanos
-		res.PeakMemoryUsageBytes = stats.PeakMemoryUsageBytes
+		res.UsageStats = stats.UsageStats()
 	}
 	c.mu.Lock()
 	removed := c.removed

@@ -642,12 +642,9 @@ type CommandResult struct {
 	//   an error other than exec.ExitError. This case typically means it failed to start.
 	ExitCode int
 
-	// PeakMemoryUsageBytes is the approximate maximum memory usage (in bytes)
-	// used by the command throughout its execution, or 0 if unknown.
-	PeakMemoryUsageBytes int64
-	// CPUNanos is the approximate CPU usage of the command (measured in
-	// CPU-nanoseconds), or 0 if unknown.
-	CPUNanos int64
+	// UsageStats holds the command's measured resource usage. It may be nil if
+	// resource measurement is not implemented by the command's isolation type.
+	UsageStats *espb.UsageStats
 }
 
 type Subscriber interface {

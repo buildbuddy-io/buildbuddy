@@ -143,6 +143,10 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 			FileUploadSizeBytes:      in.FileUploadSizeBytes,
 			FileUploadDurationUsec:   in.FileUploadDurationUsec,
 		},
+		UsageStats: &espb.UsageStats{
+			PeakMemoryBytes: in.PeakMemoryBytes,
+			CpuNanos:        in.CPUNanos,
+		},
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,
 			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
