@@ -14,6 +14,8 @@ go_library(
         "//server/interfaces",
         "//server/util/alert",
         "//server/util/background",
+        "//server/util/disk",
+        "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/networking",
