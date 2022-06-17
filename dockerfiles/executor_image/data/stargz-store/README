@@ -1,0 +1,3 @@
+This binary was built from source from the https://github.com/containerd/stargz-snapshotter repo.
+
+To build the binary, checkout the repo and run `make stargz-store`. The built binary will be at out/stargz-store.

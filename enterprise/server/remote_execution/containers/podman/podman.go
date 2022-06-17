@@ -40,8 +40,8 @@ var (
 
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
-	imageStreamingRegistryGRPCTarget = flag.String("executor.podman_image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
-	imageStreamingRegistryHTTPTarget = flag.String("executor.podman_image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
+	imageStreamingRegistryGRPCTarget = flag.String("executor.podman.image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
+	imageStreamingRegistryHTTPTarget = flag.String("executor.podman.image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -69,6 +69,8 @@ const (
 	// a container's resource usage.
 	statsPollInterval = 50 * time.Millisecond
 	
+	// optImageRefCacheSize is the size of the cache used to store mappings from
+	// the original image name to the optimized image name.
 	optImageRefCacheSize = 1000
 )
 
@@ -201,8 +203,6 @@ type podmanCommandContainer struct {
 	imageStreamingEnabled bool
 	optImageCache         *optImageCache
 	registryClient        regpb.RegistryClient
-	// If container streaming is enabled, this field will contain the name of
-	// the image optimized for streaming.
 
 	options *PodmanOptions
 
@@ -357,23 +357,18 @@ func (c *podmanCommandContainer) targetImage(ctx context.Context) (string, error
 		return c.image, nil
 	}
 
-	// If the optimized image name has not been resolved from the registry
-	// yet then check our local cache.
-	if c.optimizedImage == "" {
-		key, err := c.optImageRefKey(ctx)
-		if err != nil {
-			return "", err
-		}
-		optImage, err := c.optImageCache.get(key)
-		if err != nil {
-			return "", err
-		}
-		c.optimizedImage = optImage
+	key, err := c.optImageRefKey(ctx)
+	if err != nil {
+		return "", err
 	}
-	if c.optimizedImage == "" {
+	optImage, err := c.optImageCache.get(key)
+	if err != nil {
+		return "", err
+	}
+	if optImage == "" {
 		return "", status.FailedPreconditionErrorf("optimized image not yet resolved")
 	}
-	return c.optimizedImage, nil
+	return optImage, nil
 }
 
 func (c *podmanCommandContainer) resolveTargetImage(ctx context.Context, credentials container.PullCredentials) (string, error) {
@@ -409,10 +404,9 @@ func (c *podmanCommandContainer) resolveTargetImage(ctx context.Context, credent
 	}
 	optImage := fmt.Sprintf("%s/%s", *imageStreamingRegistryHTTPTarget, rsp.GetOptimizedImage())
 	log.CtxInfof(ctx, "Resolved optimized image %q for %q", optImage, c.image)
-	c.optimizedImage = optImage
 	key, err := c.optImageRefKey(ctx)
 	c.optImageCache.put(key, optImage)
-	return c.optimizedImage, nil
+	return optImage, nil
 }
 
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
