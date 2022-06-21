@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/backends/redis_client",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/blobstore",
@@ -19,6 +20,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/ssl",
+        "//server/util/dsingleflight",
         "//server/util/flagutil/yaml",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
@@ -41,7 +43,6 @@ go_library(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
-        "@org_golang_x_sync//singleflight",
     ],
 )
 
