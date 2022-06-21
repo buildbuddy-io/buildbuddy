@@ -532,6 +532,16 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// TaskSizer estimates task resource usage for scheduling purposes.
+type TaskSizer interface {
+	// Estimate returns the resource usage for a task.
+	Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+
+	// Update updates future resource usage estimates based on a command's
+	// recorded execution stats.
+	Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error
+}
+
 // ScheduledTask represents an execution task along with its scheduling metadata
 // computed by the execution service.
 type ScheduledTask struct {

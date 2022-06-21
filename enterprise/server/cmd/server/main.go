@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
@@ -192,6 +193,9 @@ func main() {
 	}
 	if err := task_router.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if err := tasksize.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
 	}
 
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {

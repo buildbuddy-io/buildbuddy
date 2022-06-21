@@ -37,6 +37,7 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 type RealEnv struct {
 	schedulerService                 interfaces.SchedulerService
 	taskRouter                       interfaces.TaskRouter
+	taskSizer                        interfaces.TaskSizer
 	healthChecker                    interfaces.HealthChecker
 	serverContext                    context.Context
 	workflowService                  interfaces.WorkflowService
@@ -294,6 +295,12 @@ func (r *RealEnv) SetTaskRouter(tr interfaces.TaskRouter) {
 }
 func (r *RealEnv) GetTaskRouter() interfaces.TaskRouter {
 	return r.taskRouter
+}
+func (r *RealEnv) GetTaskSizer() interfaces.TaskSizer {
+	return r.taskSizer
+}
+func (r *RealEnv) SetTaskSizer(val interfaces.TaskSizer) {
+	r.taskSizer = val
 }
 func (r *RealEnv) SetMetricsCollector(c interfaces.MetricsCollector) {
 	r.metricsCollector = c
