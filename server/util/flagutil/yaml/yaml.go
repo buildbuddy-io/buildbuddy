@@ -485,8 +485,7 @@ func PopulateFlagsFromFile(configFile string) error {
 		return fmt.Errorf("Error reading config file: %s", err)
 	}
 
-	err = PopulateFlagsFromData(fileBytes)
-	if err != nil {
+	if err := PopulateFlagsFromData(fileBytes); err != nil {
 		return err
 	}
 
