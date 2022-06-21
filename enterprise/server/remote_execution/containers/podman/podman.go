@@ -643,13 +643,25 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 }
 
 func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.PullCredentials) error {
+	targetImage := c.image
 	if c.imageStreamingEnabled {
 		// Always re-resolve image when a pull is requested. This takes care of
 		// re-validating the passed credentials.
-		if _, err := c.resolveTargetImage(ctx, creds); err != nil {
+		img, err := c.resolveTargetImage(ctx, creds)
+		if err != nil {
 			return err
 		}
-		return nil
+
+		// Ideally we would not have to do a "podman pull" when image streaming
+		// is enabled, but there's a concurrency bug in podman related to
+		// looking up additional layer information from providers like
+		// stargz-store. To work around this bug, we do a single synchronous
+		// pull (locked by caller) which causes the layer metadata to be
+		// pre-populated in podman storage.
+		// The pull can be removed once there's a new podman version that
+		// includes the fix for
+		// https://github.com/containers/storage/issues/1263
+		targetImage = img
 	}
 
 	podmanArgs := make([]string, 0, 2)
@@ -660,7 +672,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 			creds.Password,
 		))
 	}
-	podmanArgs = append(podmanArgs, c.image)
+	podmanArgs = append(podmanArgs, targetImage)
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
