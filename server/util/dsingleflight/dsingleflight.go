@@ -1,5 +1,22 @@
 // Package dsingleflight is a distributed version of the singleflight package.
 // Work is coordinated across servers using Redis.
+//
+// Usage:
+//     sf := dsingleflight.New(rdb)
+//     result, err := df.Do(ctx, "executor-large-compute-CBF43926", func() ([]byte, error) {
+// 		   return expensiveCalculation()
+//     })
+//
+// Considerations:
+//  - Deduplication is best-effort and depends on redis availability. There's a
+//    possibility that a task may be executed more than once.
+//  - Task keys are not namespaced. Choose keys that will be unique across all
+//    servers connected to the Redis instance/cluster and that appropriately
+//    differentiate different types of tasks.
+//    An example key might be servertype-subsystem-taskhash
+//  - The result is temporarily stored in Redis, so it must be serializable to
+//    a slice of bytes.
+
 package dsingleflight
 
 import (
