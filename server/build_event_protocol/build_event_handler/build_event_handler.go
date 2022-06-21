@@ -695,7 +695,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
-		isFirstEventWithOptions := !e.hasReceivedEventWithOptions
+		isFirstEventWithOptions := true
 		e.hasReceivedEventWithOptions = true
 		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
@@ -980,12 +980,12 @@ func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
 func getNumActionsFromOptions(event *build_event_stream.BuildEvent) int {
 	options, err := extractOptions(event)
 	if err != nil {
-		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		log.Warningf("Could not extract options for ui_actions_shown, defaulting to %d: %d", defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	optionsList, err := shlex.Split(options)
 	if err != nil {
-		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		log.Warningf("Could not shlex split options '%s' for ui_actions_shown, defaulting to %d: %v", options, defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
