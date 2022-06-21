@@ -565,7 +565,7 @@ type QuotaBucket struct {
 }
 
 func (*QuotaBucket) TableName() string {
-	return "QuotaBucket"
+	return "QuotaBuckets"
 }
 
 // QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
@@ -581,7 +581,7 @@ type QuotaGroup struct {
 }
 
 func (*QuotaGroup) TableName() string {
-	return "QuotaGroup"
+	return "QuotaGroups"
 }
 
 type PostAutoMigrateLogic func() error
