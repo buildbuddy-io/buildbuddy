@@ -532,6 +532,13 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// ScheduledTask represents an execution task along with its scheduling metadata
+// computed by the execution service.
+type ScheduledTask struct {
+	ExecutionTask      *repb.ExecutionTask
+	SchedulingMetadata *scpb.SchedulingMetadata
+}
+
 // Runner represents an isolated execution environment.
 //
 // Runners are assigned a single task when they are retrieved from a Pool,

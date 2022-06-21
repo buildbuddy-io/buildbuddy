@@ -16,7 +16,6 @@ syntax = "proto3";
 
 package build.bazel.remote.execution.v2;
 
-import "proto/scheduler.proto";
 import "proto/semver.proto";
 import "google/api/annotations.proto";
 import "google/longrunning/operations.proto";
@@ -1765,13 +1764,6 @@ message ExecutionTask {
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
   RequestMetadata request_metadata = 9;
-}
-
-// An ExecutionTask along with its scheduling metadata computed by the execution
-// service.
-message ScheduledTask {
-  ExecutionTask execution_task = 1;
-  scheduler.SchedulingMetadata scheduling_metadata = 2;
 }
 
 message ExecutorDetails {
