@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"reflect"
 	"os/signal"
-	"syscall"
+	"reflect"
 	"strings"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
