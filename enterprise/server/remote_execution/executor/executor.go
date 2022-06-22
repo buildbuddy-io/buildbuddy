@@ -193,7 +193,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 		}
 	}
 
-	r, err := s.runnerPool.Get(ctx, st)
+	r, err := s.runnerPool.Get(ctx, task)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
