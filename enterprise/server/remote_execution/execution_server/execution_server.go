@@ -864,21 +864,15 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	}
 
-	var lastErr error
-
 	sizer := s.env.GetTaskSizer()
 	summary, _ := decodeExecutionSummary(executeResponse)
 	if sizer != nil && summary != nil {
 		if err := sizer.Update(ctx, cmd, summary); err != nil {
-			lastErr = err
+			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
 	}
 
-	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
-		lastErr = err
-	}
-
-	return lastErr
+	return s.updateUsage(ctx, cmd, executeResponse)
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
