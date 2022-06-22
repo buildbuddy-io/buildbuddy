@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -184,20 +183,6 @@ func NewSimpleClient(redisTarget string, checker interfaces.HealthChecker, healt
 	redisClient.AddHook(redisotel.NewTracingHook())
 	checker.AddHealthCheck(healthCheckName, &HealthChecker{Rdb: redisClient})
 	return redisClient
-}
-
-// Int64Values converts a Redis hash (which are always returned from go-redis as
-// a `map[string]string`) to a map with int64 values.
-func Int64Values(hash map[string]string) (map[string]int64, error) {
-	out := make(map[string]int64, len(hash))
-	for k, v := range hash {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = i
-	}
-	return out, nil
 }
 
 type redlock struct {

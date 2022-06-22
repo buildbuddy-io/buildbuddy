@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -22,7 +21,7 @@ import (
 )
 
 var (
-	adaptiveSizingEnabled = flag.Bool("remote_execution.adaptive_task_sizing_enabled", false, "Whether to adapt task sizing estimates based on task usage stats.")
+	useMeasuredSizes = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
 )
 
 const (
@@ -66,21 +65,15 @@ const (
 	MaxResourceCapacityRatio = 0.8
 
 	// The expiration for all task-sizing keys stored in Redis.
-	redisKeyExpiration = 12 * time.Hour
+	redisKeyExpiration = 5 * 24 * time.Hour
 	// Redis key prefix used for holding current task size estimates.
 	redisKeyPrefix = "taskSize"
-	// Redis hash key used to hold the CPU estimate for a task (in milli-CPU).
-	// The hash is stored under a key derived from the task parameters.
-	redisCPUHashKey = "milliCPU"
-	// Redis hash key used to hold the memory estimate (in bytes). The hash is
-	// stored under a key derived from the task.
-	redisMemHashKey = "memBytes"
 
-	// When using adaptive task sizing, multiply the stat-based memory estimate
-	// by this much in order to determine effective the memory estimate. This
-	// allows some wiggle room for new tasks to use more memory than the
+	// When using measured task sizes, multiply the last measured peak memory
+	// usage by this much in order to determine effective the memory estimate.
+	// This allows some wiggle room for new tasks to use more memory than the
 	// previously recorded task.
-	adaptiveSizingMemoryMultiplier = 1.10
+	measuredSizeMemoryMultiplier = 1.10
 )
 
 // Register registers the task sizer with the env.
@@ -100,7 +93,7 @@ type taskSizer struct {
 
 func NewSizer(env environment.Env) (*taskSizer, error) {
 	var rdb redis.UniversalClient
-	if *adaptiveSizingEnabled {
+	if *useMeasuredSizes {
 		rdb = env.GetRemoteExecutionRedisClient()
 		if rdb == nil {
 			return nil, status.FailedPreconditionError("missing Redis client configuration")
@@ -114,7 +107,7 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 
 func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
 	defaultSize := Estimate(task)
-	if !*adaptiveSizingEnabled {
+	if !*useMeasuredSizes {
 		return defaultSize
 	}
 	recordedSize, err := s.lastRecordedSize(ctx, task)
@@ -126,19 +119,18 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 		return defaultSize
 	}
 	return &scpb.TaskSize{
-		EstimatedMemoryBytes: int64(float64(recordedSize.EstimatedMemoryBytes) * adaptiveSizingMemoryMultiplier),
+		EstimatedMemoryBytes: int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	}
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error {
-	if !*adaptiveSizingEnabled {
+	if !*useMeasuredSizes {
 		return nil
 	}
-	// If we are missing CPU/memory stats, do nothing. This is expected for
-	// tasks that either completed too quickly to get a sample of their CPU/mem
-	// usage, or tasks where the workload isolation type doesn't yet support the
-	// Stats() API.
+	// If we are missing CPU/memory stats, do nothing. This is expected in some
+	// cases, for example if a task completed too quickly to get a sample of
+	// its CPU/mem usage.
 	stats := summary.GetUsageStats()
 	if stats.GetCpuNanos() == 0 || stats.GetPeakMemoryBytes() == 0 {
 		return nil
@@ -156,11 +148,15 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb
 	if err != nil {
 		return err
 	}
-	pipe := s.rdb.TxPipeline()
-	pipe.HSet(ctx, key, redisMemHashKey, stats.GetPeakMemoryBytes())
-	pipe.HSet(ctx, key, redisCPUHashKey, milliCPU)
-	pipe.Expire(ctx, key, redisKeyExpiration)
-	_, err = pipe.Exec(ctx)
+	size := &scpb.TaskSize{
+		EstimatedMilliCpu:    milliCPU,
+		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
+	}
+	b, err := proto.Marshal(size)
+	if err != nil {
+		return err
+	}
+	s.rdb.Set(ctx, key, string(b), redisKeyExpiration)
 	return err
 }
 
@@ -169,26 +165,21 @@ func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTa
 	if err != nil {
 		return nil, err
 	}
-	m, err := s.rdb.HGetAll(ctx, key).Result()
+	serializedSize, err := s.rdb.Get(ctx, key).Result()
 	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
 		return nil, err
 	}
-	// Note: if the key is not found, HGETALL returns an empty map, not a
-	// redis.Nil error.
-	if len(m) == 0 {
-		return nil, nil
-	}
-	mInt64, err := redisutil.Int64Values(m)
-	if err != nil {
+	size := &scpb.TaskSize{}
+	if err := proto.Unmarshal([]byte(serializedSize), size); err != nil {
 		return nil, err
 	}
-	if mInt64[redisMemHashKey] == 0 || mInt64[redisCPUHashKey] == 0 {
+	if size.EstimatedMemoryBytes == 0 || size.EstimatedMilliCpu == 0 {
 		return nil, status.InternalError("found invalid task size stored in Redis")
 	}
-	return &scpb.TaskSize{
-		EstimatedMemoryBytes: mInt64[redisMemHashKey],
-		EstimatedMilliCpu:    mInt64[redisCPUHashKey],
-	}, nil
+	return size, nil
 }
 
 func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string, error) {
@@ -216,6 +207,7 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 
 func commandKey(cmd *repb.Command) (string, error) {
 	// Include the command executable name in the key for easier debugging.
+	// Truncate so that the keys cannot get too big.
 	arg0 := "?"
 	if len(cmd.Arguments) > 0 {
 		arg0 = cmd.Arguments[0]

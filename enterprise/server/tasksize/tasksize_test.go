@@ -119,7 +119,7 @@ func TestEstimate_DiskSizePlatformProp_UsesPropValueForDiskSize(t *testing.T) {
 }
 
 func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
-	flags.Set(t, "remote_execution.adaptive_task_sizing_enabled", true)
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
 	env := testenv.GetTestEnv(t)
 	rdb := testredis.Start(t).Client()

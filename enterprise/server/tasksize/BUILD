@@ -10,7 +10,6 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/util/redisutil",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
@@ -19,7 +18,7 @@ go_library(
         "//server/util/perms",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
-        "@com_github_gogo_protobuf//proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
