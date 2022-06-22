@@ -112,7 +112,7 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	}
 	recordedSize, err := s.lastRecordedSize(ctx, task)
 	if err != nil {
-		log.Warningf("Failed to read task size from Redis; falling back to default size estimate: %s", err)
+		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
 		return defaultSize
 	}
 	if recordedSize == nil {
@@ -129,8 +129,8 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb
 		return nil
 	}
 	// If we are missing CPU/memory stats, do nothing. This is expected in some
-	// cases, for example if a task completed too quickly to get a sample of
-	// its CPU/mem usage.
+	// cases, for example if a task completed too quickly to get a sample of its
+	// CPU/mem usage.
 	stats := summary.GetUsageStats()
 	if stats.GetCpuNanos() == 0 || stats.GetPeakMemoryBytes() == 0 {
 		return nil
