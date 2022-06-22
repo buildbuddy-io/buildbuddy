@@ -109,9 +109,6 @@ service BuildBuddyService {
   rpc GetNamespace(quota.GetNamespaceRequest)
       returns (quota.GetNamespaceResponse);
 
-  rpc CreateNamespace(quota.CreateNamespaceRequest)
-      returns (quota.CreateNamespaceResponse);
-
   rpc RemoveNamespace(quota.RemoveNamespaceRequest)
       returns (quota.RemoveNamespaceResponse);
 

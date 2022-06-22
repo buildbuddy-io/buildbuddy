@@ -856,10 +856,6 @@ func (s *BuildBuddyServer) GetNamespace(ctx context.Context, req *qpb.GetNamespa
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) CreateNamespace(ctx context.Context, req *qpb.CreateNamespaceRequest) (*qpb.CreateNamespaceResponse, error) {
-	return nil, status.UnimplementedError("Not implemented")
-}
-
 func (s *BuildBuddyServer) RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }

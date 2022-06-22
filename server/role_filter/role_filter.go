@@ -97,7 +97,6 @@ var (
 
 		// Quota APIs
 		"GetNamespace",
-		"CreateNamespace",
 		"RemoveNamespace",
 		"ModifyBucket",
 		"ApplyBucket",
