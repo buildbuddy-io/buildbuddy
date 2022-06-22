@@ -762,6 +762,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 			Platform:  plat,
 		},
 	}
+	platProps := platform.ParseProperties(execTask)
 	task := &interfaces.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
@@ -770,7 +771,6 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 		ExecutionTask: execTask,
 	}
-	platProps := platform.ParseProperties(execTask)
 	c, err := p.newContainer(ctx, platProps, task)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
