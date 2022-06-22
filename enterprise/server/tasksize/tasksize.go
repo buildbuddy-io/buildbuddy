@@ -1,9 +1,14 @@
 package tasksize
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -49,6 +54,32 @@ const (
 	MaxResourceCapacityRatio = 0.8
 )
 
+// Register registers the task sizer with the env.
+func Register(env environment.Env) error {
+	sizer, err := NewSizer(env)
+	if err != nil {
+		return err
+	}
+	env.SetTaskSizer(sizer)
+	return nil
+}
+
+type taskSizer struct{}
+
+func NewSizer(env environment.Env) (*taskSizer, error) {
+	return &taskSizer{}, nil
+}
+
+func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+	// TODO(bduffany): Use previous execution stats
+	return Estimate(task)
+}
+
+func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error {
+	// TODO(bduffany): Implement
+	return status.UnimplementedError("not implemented")
+}
+
 func testSize(testSize string) (int64, int64) {
 	mb := 0
 	cpu := 0
@@ -74,6 +105,8 @@ func testSize(testSize string) (int64, int64) {
 	return int64(mb * 1e6), int64(cpu)
 }
 
+// Estimate returns the default task size estimate for a task. It does not use
+// information about historical task executions.
 func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	props := platform.ParseProperties(task)
 
