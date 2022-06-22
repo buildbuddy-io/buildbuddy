@@ -53,30 +53,30 @@ var (
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
 )
 
-func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.Execution) {
+func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
 	// IOStats
-	execution.FileDownloadCount = summary.GetIoStats().GetFileDownloadCount()
-	execution.FileDownloadSizeBytes = summary.GetIoStats().GetFileDownloadSizeBytes()
-	execution.FileDownloadDurationUsec = summary.GetIoStats().GetFileDownloadDurationUsec()
-	execution.FileUploadCount = summary.GetIoStats().GetFileUploadCount()
-	execution.FileUploadSizeBytes = summary.GetIoStats().GetFileUploadSizeBytes()
-	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
+	execution.FileDownloadCount = md.GetIoStats().GetFileDownloadCount()
+	execution.FileDownloadSizeBytes = md.GetIoStats().GetFileDownloadSizeBytes()
+	execution.FileDownloadDurationUsec = md.GetIoStats().GetFileDownloadDurationUsec()
+	execution.FileUploadCount = md.GetIoStats().GetFileUploadCount()
+	execution.FileUploadSizeBytes = md.GetIoStats().GetFileUploadSizeBytes()
+	execution.FileUploadDurationUsec = md.GetIoStats().GetFileUploadDurationUsec()
 	// Task sizing
-	execution.EstimatedMilliCPU = summary.GetEstimatedTaskSize().GetEstimatedMilliCpu()
-	execution.EstimatedMemoryBytes = summary.GetEstimatedTaskSize().GetEstimatedMemoryBytes()
-	execution.PeakMemoryBytes = summary.GetUsageStats().GetPeakMemoryBytes()
-	execution.CPUNanos = summary.GetUsageStats().GetCpuNanos()
+	execution.EstimatedMilliCPU = md.GetEstimatedTaskSize().GetEstimatedMilliCpu()
+	execution.EstimatedMemoryBytes = md.GetEstimatedTaskSize().GetEstimatedMemoryBytes()
+	execution.PeakMemoryBytes = md.GetUsageStats().GetPeakMemoryBytes()
+	execution.CPUNanos = md.GetUsageStats().GetCpuNanos()
 	// ExecutedActionMetadata
-	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
-	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()
-	execution.WorkerStartTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerStartTimestamp().AsTime().UnixMicro()
-	execution.WorkerCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetWorkerCompletedTimestamp().AsTime().UnixMicro()
-	execution.InputFetchStartTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchStartTimestamp().AsTime().UnixMicro()
-	execution.InputFetchCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetInputFetchCompletedTimestamp().AsTime().UnixMicro()
-	execution.ExecutionStartTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionStartTimestamp().AsTime().UnixMicro()
-	execution.ExecutionCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetExecutionCompletedTimestamp().AsTime().UnixMicro()
-	execution.OutputUploadStartTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadStartTimestamp().AsTime().UnixMicro()
-	execution.OutputUploadCompletedTimestampUsec = summary.GetExecutedActionMetadata().GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
+	execution.Worker = md.GetWorker()
+	execution.QueuedTimestampUsec = md.GetQueuedTimestamp().AsTime().UnixMicro()
+	execution.WorkerStartTimestampUsec = md.GetWorkerStartTimestamp().AsTime().UnixMicro()
+	execution.WorkerCompletedTimestampUsec = md.GetWorkerCompletedTimestamp().AsTime().UnixMicro()
+	execution.InputFetchStartTimestampUsec = md.GetInputFetchStartTimestamp().AsTime().UnixMicro()
+	execution.InputFetchCompletedTimestampUsec = md.GetInputFetchCompletedTimestamp().AsTime().UnixMicro()
+	execution.ExecutionStartTimestampUsec = md.GetExecutionStartTimestamp().AsTime().UnixMicro()
+	execution.ExecutionCompletedTimestampUsec = md.GetExecutionCompletedTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadStartTimestampUsec = md.GetOutputUploadStartTimestamp().AsTime().UnixMicro()
+	execution.OutputUploadCompletedTimestampUsec = md.GetOutputUploadCompletedTimestamp().AsTime().UnixMicro()
 }
 
 func generateCommandSnippet(command *repb.Command) string {
@@ -258,11 +258,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		execution.CachedResult = executeResponse.GetCachedResult()
 
 		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED {
-			summary, _ := decodeExecutionSummary(executeResponse)
-			if summary != nil {
-				fillExecutionFromSummary(summary, execution)
-			}
+		if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetResult().GetExecutionMetadata() != nil {
+			fillExecutionFromActionMetadata(executeResponse.GetResult().GetExecutionMetadata(), execution)
 		}
 	}
 
@@ -864,11 +861,11 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	}
 
-	sizer := s.env.GetTaskSizer()
-	summary, _ := decodeExecutionSummary(executeResponse)
-	if sizer != nil && summary != nil {
-		if err := sizer.Update(ctx, cmd, summary); err != nil {
-			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+	if sizer := s.env.GetTaskSizer(); sizer != nil {
+		if md, _ := decodeMetadataFromExecutionSummary(executeResponse); md != nil {
+			if err := sizer.Update(ctx, cmd, md); err != nil {
+				log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+			}
 		}
 	}
 
@@ -957,7 +954,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	return nil
 }
 
-func decodeExecutionSummary(resp *repb.ExecuteResponse) (*espb.ExecutionSummary, error) {
+func decodeMetadataFromExecutionSummary(resp *repb.ExecuteResponse) (*repb.ExecutedActionMetadata, error) {
 	if resp.GetMessage() == "" {
 		return nil, nil
 	}
@@ -969,5 +966,12 @@ func decodeExecutionSummary(resp *repb.ExecuteResponse) (*espb.ExecutionSummary,
 	if err := proto.Unmarshal(data, summary); err != nil {
 		return nil, err
 	}
-	return summary, nil
+	md := summary.GetExecutedActionMetadata()
+	if md == nil {
+		return nil, nil
+	}
+	md.IoStats = summary.GetIoStats()
+	md.UsageStats = summary.GetUsageStats()
+	md.EstimatedTaskSize = summary.GetEstimatedTaskSize()
+	return md, nil
 }

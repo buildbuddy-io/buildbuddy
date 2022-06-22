@@ -51,7 +51,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -255,7 +254,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error {
+func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
@@ -373,7 +372,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return r.Container.Exec(ctx, command, &container.ExecOpts{})
 }
 
-func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
+func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
 	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
 	if err != nil {
 		return err
