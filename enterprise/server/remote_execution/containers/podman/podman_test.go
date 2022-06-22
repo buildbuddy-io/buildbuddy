@@ -388,6 +388,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
 
-	assert.Greater(t, res.CPUNanos, int64(0), "CPU should be >= 0")
-	assert.Greater(t, res.PeakMemoryUsageBytes, int64(0), "peak mem usage should be >= 0")
+	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
+	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
+	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
 }

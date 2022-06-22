@@ -358,6 +358,14 @@ type Execution struct {
 	FileUploadSizeBytes      int64
 	FileUploadDurationUsec   int64
 
+	// UsageStats
+	PeakMemoryBytes int64
+	CPUNanos        int64
+
+	// Task sizing
+	EstimatedMemoryBytes int64
+	EstimatedMilliCPU    int64
+
 	// ExecutedActionMetadata (in addition to Worker above)
 	Perms                              int `gorm:"index:executions_perms"`
 	QueuedTimestampUsec                int64

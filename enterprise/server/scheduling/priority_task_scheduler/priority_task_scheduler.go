@@ -289,11 +289,12 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.ExecutionTask) (retry bool, err error) {
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *interfaces.ScheduledTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
 
+	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
@@ -304,8 +305,8 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, execTask *repb.Exec
 	// TODO(http://go/b/1192): Figure out why CloseAndRecv() hangs if we call
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
-	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, execTask, clientStream); err != nil {
-		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask.GetExecutionId(), err)
+	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
+		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask, err)
 		time.Sleep(time.Until(start.Add(closeStreamDelay)))
 		_, _ = clientStream.CloseAndRecv()
 		return retry, err
@@ -414,7 +415,11 @@ func (q *PriorityTaskScheduler) handleTask() {
 			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
-		retry, err := q.runTask(ctx, execTask)
+		scheduledTask := &interfaces.ScheduledTask{
+			ExecutionTask:      execTask,
+			SchedulingMetadata: reservation.GetSchedulingMetadata(),
+		}
+		retry, err := q.runTask(ctx, scheduledTask)
 		if err != nil {
 			q.log.Errorf("Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}

@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
@@ -61,6 +62,13 @@ type Stats struct {
 	// PeakMemoryUsageBytes is the highest memory usage sampled during the
 	// execution of a task, in bytes.
 	PeakMemoryUsageBytes int64
+}
+
+func (s *Stats) ToProto() *espb.UsageStats {
+	return &espb.UsageStats{
+		CpuNanos:        s.CPUNanos,
+		PeakMemoryBytes: s.PeakMemoryUsageBytes,
+	}
 }
 
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
