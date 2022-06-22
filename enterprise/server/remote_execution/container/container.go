@@ -64,7 +64,7 @@ type Stats struct {
 	PeakMemoryUsageBytes int64
 }
 
-func (s *Stats) UsageStats() *espb.UsageStats {
+func (s *Stats) ToProto() *espb.UsageStats {
 	return &espb.UsageStats{
 		CpuNanos:        s.CPUNanos,
 		PeakMemoryBytes: s.PeakMemoryUsageBytes,

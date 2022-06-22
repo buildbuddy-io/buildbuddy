@@ -144,8 +144,8 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 			FileUploadDurationUsec:   in.FileUploadDurationUsec,
 		},
 		UsageStats: &espb.UsageStats{
-			PeakMemoryBytes: in.PeakMemoryBytes,
 			CpuNanos:        in.CPUNanos,
+			PeakMemoryBytes: in.PeakMemoryBytes,
 		},
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,

@@ -92,7 +92,7 @@ message ExecutionSummary {
   UsageStats usage_stats = 10;
 
   // Estimated task size that was used for scheduling purposes.
-  scheduler.TaskSize task_size = 11;
+  scheduler.TaskSize estimated_task_size = 11;
 
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata

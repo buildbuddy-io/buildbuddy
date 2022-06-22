@@ -208,7 +208,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	// Stop monitoring so that we can get stats.
 	stopMonitoring()
 	if stats := <-statsCh; stats != nil {
-		result.UsageStats = stats.UsageStats()
+		result.UsageStats = stats.ToProto()
 	}
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
@@ -289,7 +289,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, op
 	res := runPodman(ctx, "exec", opts, podmanRunArgs...)
 	stopMonitoring()
 	if stats := <-statsCh; stats != nil {
-		res.UsageStats = stats.UsageStats()
+		res.UsageStats = stats.ToProto()
 	}
 	c.mu.Lock()
 	removed := c.removed

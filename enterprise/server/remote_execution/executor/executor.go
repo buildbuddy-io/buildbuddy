@@ -327,7 +327,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	execSummary := &espb.ExecutionSummary{
 		IoStats:                ioStats,
 		UsageStats:             cmdResult.UsageStats,
-		TaskSize:               st.SchedulingMetadata.GetTaskSize(),
+		EstimatedTaskSize:      st.SchedulingMetadata.GetTaskSize(),
 		ExecutedActionMetadata: md,
 	}
 
