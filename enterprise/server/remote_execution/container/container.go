@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -19,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
@@ -30,6 +32,10 @@ const (
 )
 
 var (
+	// Metrics is a shared metrics object to handle proper prometheus metrics
+	// accounting across container instances.
+	Metrics = NewContainerMetrics()
+
 	containerRegistries     = flagtypes.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
@@ -46,13 +52,60 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
-// Stats holds represents a container's held resources.
+// Stats represents a container's resource usage.
 type Stats struct {
+	// MemoryUsageBytes is the most recent memory usage value sampled from the
+	// container, in bytes.
 	MemoryUsageBytes int64
+	// CPUNanos is the total CPU usage used by a task, in CPU-nanoseconds.
+	CPUNanos int64
+	// PeakMemoryUsageBytes is the highest memory usage sampled during the
+	// execution of a task, in bytes.
+	PeakMemoryUsageBytes int64
+}
 
-	// TODO: add CPU usage once we have a reliable way to measure it.
-	// CPU only applies to bare execution, since Docker containers
-	// are frozen when not in use, reducing their CPU usage to 0.
+func (s *Stats) ToProto() *espb.UsageStats {
+	return &espb.UsageStats{
+		CpuNanos:        s.CPUNanos,
+		PeakMemoryBytes: s.PeakMemoryUsageBytes,
+	}
+}
+
+// ContainerMetrics handles Prometheus metrics accounting for CommandContainer
+// instances.
+type ContainerMetrics struct {
+	mu          sync.Mutex
+	memoryUsage map[CommandContainer]int64
+}
+
+func NewContainerMetrics() *ContainerMetrics {
+	return &ContainerMetrics{
+		memoryUsage: make(map[CommandContainer]int64),
+	}
+}
+
+// AddCPUNanos records incremental CPU usage for a container.
+func (m *ContainerMetrics) AddCPUNanos(cpuNanos int64) {
+	const millisPerNanos = 1 / 1e6
+	metrics.RemoteExecutionUsedMilliCPU.Add(float64(cpuNanos) * millisPerNanos)
+}
+
+// SetContainerMemoryUsageBytes sets the current memory usage for the container.
+// Once the container is no longer using memory, the container's memory usage
+// *must* be set to 0 via this method to avoid a memory leak.
+func (m *ContainerMetrics) SetContainerMemoryUsageBytes(c CommandContainer, usageBytes int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if usageBytes == 0 {
+		delete(m.memoryUsage, c)
+	} else {
+		m.memoryUsage[c] = usageBytes
+	}
+	var total int64
+	for _, v := range m.memoryUsage {
+		total += v
+	}
+	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(total))
 }
 
 type FileSystemLayout struct {

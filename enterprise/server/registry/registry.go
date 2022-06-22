@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -43,7 +45,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
@@ -171,18 +172,32 @@ func (r *registry) convertLayer(ctx context.Context, l v1.Layer) (*convertedLaye
 
 // dedupeConvertImage waits for an existing conversion or starts a new one if no
 // conversion is in progress for the given image.
-func (r *registry) dedupeConvertImage(ctx context.Context, img v1.Image) (manifestLike, error) {
+func (r *registry) dedupeConvertImage(ctx context.Context, img v1.Image) (*protoManifest, error) {
 	d, err := img.Digest()
 	if err != nil {
 		return nil, err
 	}
-	v, err, _ := r.workDeduper.Do(d.String(), func() (interface{}, error) {
-		return r.convertImage(ctx, img)
+
+	workKey := fmt.Sprintf("registry-convert-image-%s", d.String())
+	vBytes, err := r.workDeduper.Do(ctx, workKey, func() ([]byte, error) {
+		r, err := r.convertImage(ctx, img)
+		if err != nil {
+			return nil, err
+		}
+		p, err := proto.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		return p, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.(manifestLike), nil
+	var v regpb.Manifest
+	if err := proto.Unmarshal(vBytes, &v); err != nil {
+		return nil, err
+	}
+	return &protoManifest{&v}, nil
 }
 
 type convertedImage struct {
@@ -194,7 +209,27 @@ func (ci *convertedImage) CASDependencies() []*repb.Digest {
 	return ci.casDependencies
 }
 
-func (r *registry) convertImage(ctx context.Context, img v1.Image) (manifestLike, error) {
+type protoManifest struct {
+	*regpb.Manifest
+}
+
+func (p *protoManifest) MediaType() (types.MediaType, error) {
+	return types.MediaType(p.Manifest.ContentType), nil
+}
+
+func (p *protoManifest) Digest() (v1.Hash, error) {
+	return v1.NewHash(p.Manifest.Digest)
+}
+
+func (p *protoManifest) Size() (int64, error) {
+	return 0, status.UnimplementedError("not implemented")
+}
+
+func (p *protoManifest) CASDependencies() []*repb.Digest {
+	return p.Manifest.CasDependencies
+}
+
+func (r *registry) convertImage(ctx context.Context, img v1.Image) (*protoManifest, error) {
 	manifest, err := img.Manifest()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not get image manifest: %s", err)
@@ -274,27 +309,44 @@ func (r *registry) convertImage(ctx context.Context, img v1.Image) (manifestLike
 		Image:           newImg,
 		casDependencies: casDependencies,
 	}
-	if err := r.writeManifest(ctx, img, ci); err != nil {
+	mfProto, err := manifestProto(ci)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.writeManifest(ctx, img, mfProto); err != nil {
 		return nil, status.UnknownErrorf("could not write converted manifest: %s", err)
 	}
-
-	return ci, nil
+	return &protoManifest{mfProto}, nil
 }
 
 // dedupeConvertImageIndex waits for an existing conversion or starts a new one
 // if no conversion is in progress for the given image index.
-func (r *registry) dedupeConvertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (manifestLike, error) {
+func (r *registry) dedupeConvertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (*protoManifest, error) {
 	d, err := imgIdx.Digest()
 	if err != nil {
 		return nil, err
 	}
-	v, err, _ := r.workDeduper.Do(d.String(), func() (interface{}, error) {
-		return r.convertImageIndex(ctx, imgIdx)
+	workKey := fmt.Sprintf("registry-convert-imageidx-%s", d.String())
+	vBytes, err := r.workDeduper.Do(ctx, workKey, func() ([]byte, error) {
+		p, err := r.convertImageIndex(ctx, imgIdx)
+		if err != nil {
+			return nil, err
+		}
+		b, err := proto.Marshal(p.Manifest)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.(manifestLike), nil
+
+	var v regpb.Manifest
+	if err := proto.Unmarshal(vBytes, &v); err != nil {
+		return nil, err
+	}
+	return &protoManifest{&v}, nil
 }
 
 type convertedImageIndex struct {
@@ -306,7 +358,7 @@ func (cii *convertedImageIndex) CASDependencies() []*repb.Digest {
 	return cii.casDependencies
 }
 
-func (r *registry) convertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (manifestLike, error) {
+func (r *registry) convertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (*protoManifest, error) {
 	manifest, err := imgIdx.IndexManifest()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not retrieve image index manifest: %s", err)
@@ -354,11 +406,14 @@ func (r *registry) convertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) 
 		ImageIndex:      newIdx,
 		casDependencies: casDependencies,
 	}
-	if err := r.writeManifest(ctx, imgIdx, cii); err != nil {
+	mfProto, err := manifestProto(cii)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.writeManifest(ctx, imgIdx, mfProto); err != nil {
 		return nil, status.UnknownErrorf("could not write converted manifest: %s", err)
 	}
-
-	return cii, nil
+	return &protoManifest{mfProto}, nil
 }
 
 func blobKey(digest string) string {
@@ -388,21 +443,14 @@ func manifestProto(manifest manifestLike) (*regpb.Manifest, error) {
 	}, nil
 }
 
-func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Describable, newManifest manifestLike) error {
-	manifestProto, err := manifestProto(newManifest)
-	if err != nil {
-		return err
-	}
+func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Describable, newManifest *regpb.Manifest) error {
 	oldDigest, err := oldManifest.Digest()
 	if err != nil {
 		return status.UnknownErrorf("could not get digest for old manifest: %s", err)
 	}
-	newDigest, err := newManifest.Digest()
-	if err != nil {
-		return status.UnknownErrorf("could not get digest for new manifest: %s", err)
-	}
+	newDigest := newManifest.GetDigest()
 
-	mfProtoBytes, err := proto.Marshal(manifestProto)
+	mfProtoBytes, err := proto.Marshal(newManifest)
 	if err != nil {
 		return status.UnknownErrorf("could not marshal proto for manifest: %s", err)
 	}
@@ -415,7 +463,7 @@ func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Descri
 	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(oldDigest.String()), mfProtoBytes); err != nil {
 		return status.UnknownErrorf("could not write manifest: %s", err)
 	}
-	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(newDigest.String()), mfProtoBytes); err != nil {
+	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(newDigest), mfProtoBytes); err != nil {
 		return status.UnknownErrorf("could not write manifest: %s", err)
 	}
 	return nil
@@ -426,7 +474,7 @@ func (r *registry) convert(ctx context.Context, remoteDesc *remote.Descriptor) (
 
 	start := time.Now()
 
-	var servable manifestLike
+	var mfProto *regpb.Manifest
 	switch remoteDesc.MediaType {
 	// This is an "image index", a meta-manifest that contains a list of
 	// {platform props, manifest hash} properties to allow client to decide
@@ -440,7 +488,7 @@ func (r *registry) convert(ctx context.Context, remoteDesc *remote.Descriptor) (
 		if err != nil {
 			return nil, status.UnknownErrorf("could not convert image index: %s", err)
 		}
-		servable = newImgIdx
+		mfProto = newImgIdx.Manifest
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
 		img, err := remoteDesc.Image()
 		if err != nil {
@@ -450,18 +498,13 @@ func (r *registry) convert(ctx context.Context, remoteDesc *remote.Descriptor) (
 		if err != nil {
 			return nil, status.UnknownErrorf("could not convert image: %s", err)
 		}
-		servable = newImg
+		mfProto = newImg.Manifest
 	default:
 		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
 	}
 
 	log.CtxInfof(ctx, "Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
-
-	manifestProto, err := manifestProto(servable)
-	if err != nil {
-		return nil, err
-	}
-	return manifestProto, nil
+	return mfProto, nil
 }
 
 func (r *registry) getCachedManifest(ctx context.Context, digest string) (*regpb.Manifest, error) {
@@ -488,6 +531,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*regpb
 	// manifest so that we trigger a new conversion and repopulate the data in
 	// the CAS.
 	if len(rsp.GetMissingBlobDigests()) > 0 {
+		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", digest)
 		return nil, nil
 	}
 	return mfProto, nil
@@ -710,7 +754,7 @@ type registry struct {
 	manifestStore interfaces.Blobstore
 	blobSizeLRU   interfaces.LRU
 
-	workDeduper singleflight.Group
+	workDeduper *dsingleflight.Coordinator
 }
 
 // checkAccess whether the supplied credentials are sufficient to retrieve
@@ -809,6 +853,7 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimize
 		}
 		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}
+
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -952,11 +997,16 @@ func main() {
 		log.Fatalf("could not initialize blob size LRU: %s", err)
 	}
 
+	if err := redis_client.RegisterDefault(env); err != nil {
+		log.Fatalf("could not initialize redis client: %s", err)
+	}
+
 	r := &registry{
 		casClient:     casClient,
 		bsClient:      bsClient,
 		manifestStore: bs,
 		blobSizeLRU:   blobSizeLRU,
+		workDeduper:   dsingleflight.New(env.GetDefaultRedisClient()),
 	}
 	r.Start(env.GetServerContext(), healthChecker, env)
 }

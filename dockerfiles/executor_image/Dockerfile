@@ -2,6 +2,7 @@ FROM gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062
 
 COPY data/firecracker /usr/bin/firecracker
 COPY data/jailer /usr/bin/jailer
+COPY data/stargz-store/v0.11.4 /usr/bin/stargz-store
 
 RUN apt-get update && apt-get install -y \
   rpm curl apt-transport-https ca-certificates gnupg-agent software-properties-common fuse

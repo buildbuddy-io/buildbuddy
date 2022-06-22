@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -376,4 +377,25 @@ func CtxFatalf(ctx context.Context, format string, args ...interface{}) {
 	e.Msgf(format, args...)
 	// Make sure fatal logs will exit.
 	os.Exit(1)
+}
+
+type logWriter struct {
+	prefix string
+}
+
+func (w *logWriter) Write(b []byte) (int, error) {
+	lines := strings.Split(string(b), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		Infof("%s%s", w.prefix, line)
+	}
+	return len(b), nil
+}
+
+// Writer returns a writer that outputs written data to the log with each line
+// prepended with the given prefix.
+func Writer(prefix string) io.Writer {
+	return &logWriter{prefix: prefix}
 }

@@ -34,6 +34,7 @@ go_library(
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/selfauth",
         "//enterprise/server/splash",
+        "//enterprise/server/tasksize",
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
         "//enterprise/server/usage_service",

@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -62,6 +61,11 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.FileUploadCount = summary.GetIoStats().GetFileUploadCount()
 	execution.FileUploadSizeBytes = summary.GetIoStats().GetFileUploadSizeBytes()
 	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
+	// Task sizing
+	execution.EstimatedMilliCPU = summary.GetEstimatedTaskSize().GetEstimatedMilliCpu()
+	execution.EstimatedMemoryBytes = summary.GetEstimatedTaskSize().GetEstimatedMemoryBytes()
+	execution.PeakMemoryBytes = summary.GetUsageStats().GetPeakMemoryBytes()
+	execution.CPUNanos = summary.GetUsageStats().GetCpuNanos()
 	// ExecutedActionMetadata
 	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
 	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()
@@ -331,6 +335,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if scheduler == nil {
 		return "", status.FailedPreconditionErrorf("No scheduler service configured")
 	}
+	sizer := s.env.GetTaskSizer()
+	if sizer == nil {
+		return "", status.FailedPreconditionError("No task sizer configured")
+	}
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
@@ -386,7 +394,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := tasksize.Estimate(executionTask)
+	taskSize := sizer.Estimate(ctx, executionTask)
 
 	props := platform.ParseProperties(executionTask)
 

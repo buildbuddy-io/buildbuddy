@@ -361,7 +361,7 @@ Estimated RAM on the executor that is currently allocated for task execution, in
 
 ### **`buildbuddy_remote_execution_assigned_milli_cpu`** (Gauge)
 
-Estimated CPU time on the executor that is currently allocated for task execution, in Kubernetes milliCPU.
+Estimated CPU time on the executor that is currently allocated for task execution, in **milliCPU** (CPU-milliseconds per second).
 
 #### Examples
 
@@ -378,6 +378,27 @@ avg(
   ) * 1000 * 0.6)
 )
 ```
+
+### **`buildbuddy_remote_execution_memory_usage_bytes`** (Gauge)
+
+Current total task memory usage in **bytes**.
+
+This only accounts for tasks which are actively executing. To see memory usage of pooled runners, sum with runner pool memory usage.
+
+#### Examples
+
+```promql
+# Total approximate memory usage of active and pooled runners,
+# grouped by executor pod.
+sum by (pod_name) (
+  buildbuddy_remote_execution_memory_usage_bytes
+  + buildbuddy_remote_execution_runner_pool_memory_usage_bytes
+)
+```
+
+### **`buildbuddy_remote_execution_used_milli_cpu`** (Counter)
+
+Approximate CPU usage of executed tasks, in **CPU-milliseconds**.
 
 ### **`buildbuddy_remote_execution_file_download_count`** (Histogram)
 

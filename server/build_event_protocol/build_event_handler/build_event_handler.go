@@ -695,7 +695,6 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
-		isFirstEventWithOptions := !e.hasReceivedEventWithOptions
 		e.hasReceivedEventWithOptions = true
 		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
@@ -735,63 +734,49 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			ti.LastChunkId = eventlog.EmptyId
 		}
 
-		if isFirstEventWithOptions {
-			created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, ti)
-			if err != nil {
-				return err
+		created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, ti)
+		if err != nil {
+			return err
+		}
+		if !created {
+			// We failed to retry an existing invocation
+			log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			e.isVoid = true
+			return nil
+		}
+		e.attempt = ti.Attempt
+		chunkFileSizeBytes := *chunkFileSizeBytes
+		if chunkFileSizeBytes == 0 {
+			chunkFileSizeBytes = defaultChunkFileSizeBytes
+		}
+		e.pw = protofile.NewBufferedProtoWriter(
+			e.env.GetBlobstore(),
+			GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
+			chunkFileSizeBytes,
+		)
+		if *enableChunkedEventLogs {
+			numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
+			if numLinesToRetain != 0 {
+				// the number of lines curses can overwrite is 3 + the ui_actions shown:
+				// 1 for the progress tracker, 1 for each action, and 2 blank lines.
+				// 0 indicates that curses is not being used.
+				numLinesToRetain += 3
 			}
-			if !created {
-				// We failed to retry an existing invocation
-				log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
-				e.isVoid = true
-				return nil
-			}
-			e.attempt = ti.Attempt
-			chunkFileSizeBytes := *chunkFileSizeBytes
-			if chunkFileSizeBytes == 0 {
-				chunkFileSizeBytes = defaultChunkFileSizeBytes
-			}
-			e.pw = protofile.NewBufferedProtoWriter(
+			e.logWriter = eventlog.NewEventLogWriter(
+				e.ctx,
 				e.env.GetBlobstore(),
-				GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
-				chunkFileSizeBytes,
+				e.env.GetKeyValStore(),
+				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
+				numLinesToRetain,
 			)
-			if *enableChunkedEventLogs {
-				numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
-				if numLinesToRetain != 0 {
-					// the number of lines curses can overwrite is 3 + the ui_actions shown:
-					// 1 for the progress tracker, 1 for each action, and 2 blank lines.
-					// 0 indicates that curses is not being used.
-					numLinesToRetain += 3
-				}
-				e.logWriter = eventlog.NewEventLogWriter(
-					e.ctx,
-					e.env.GetBlobstore(),
-					e.env.GetKeyValStore(),
-					eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
-					numLinesToRetain,
-				)
-			}
-			// Since this is the first event with options and we just parsed the API key,
-			// now is a good time to record invocation usage for the group. Check that
-			// this is the first attempt of this invocation, to guarantee that we
-			// don't increment the usage on invocation retries.
-			if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
-				if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
-					log.Warningf("Failed to record invocation usage: %s", err)
-				}
-			}
-		} else {
-			if e.logWriter != nil {
-				ti.LastChunkId = e.logWriter.GetLastChunkId(e.ctx)
-			}
-			updated, err := e.env.GetInvocationDB().UpdateInvocation(e.ctx, ti)
-			if err != nil {
-				return err
-			}
-			if !updated {
-				e.isVoid = true
-				return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
+		}
+		// Since this is the first event with options and we just parsed the API key,
+		// now is a good time to record invocation usage for the group. Check that
+		// this is the first attempt of this invocation, to guarantee that we
+		// don't increment the usage on invocation retries.
+		if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
+			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
+				log.Warningf("Failed to record invocation usage: %s", err)
 			}
 		}
 	} else if !e.hasReceivedEventWithOptions {
@@ -980,12 +965,12 @@ func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
 func getNumActionsFromOptions(event *build_event_stream.BuildEvent) int {
 	options, err := extractOptions(event)
 	if err != nil {
-		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		log.Warningf("Could not extract options for ui_actions_shown, defaulting to %d: %d", defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	optionsList, err := shlex.Split(options)
 	if err != nil {
-		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		log.Warningf("Could not shlex split options '%s' for ui_actions_shown, defaulting to %d: %v", options, defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")
