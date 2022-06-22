@@ -34,13 +34,10 @@ message QuotaKey {
   string ip_address = 2;
 }
 
-message QuotaGroup {
-  string quota_key = 1;
-  string bucket_name = 2;
-}
-
 message AssignedBucket {
 	Bucket bucket = 1;
+
+	// A list of quota_key that assigned to the specified bucket.
 	repeated string quota_key = 2;
 }
 
