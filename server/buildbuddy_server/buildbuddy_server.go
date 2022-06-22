@@ -860,7 +860,7 @@ func (s *BuildBuddyServer) RemoveNamespace(ctx context.Context, req *qpb.RemoveN
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) ModifyBucket(ctx context.Context, req *qpb.ModifyBucketRequest) (*qpb.ModifyBucketResponse, error) {
+func (s *BuildBuddyServer) ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }
 

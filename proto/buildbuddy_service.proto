@@ -112,8 +112,8 @@ service BuildBuddyService {
   rpc RemoveNamespace(quota.RemoveNamespaceRequest)
       returns (quota.RemoveNamespaceResponse);
 
-  rpc ModifyBucket(quota.ModifyBucketRequest)
-      returns (quota.ModifyBucketResponse);
+  rpc ModifyNamespace(quota.ModifyNamespaceRequest)
+      returns (quota.ModifyNamespaceResponse);
 
   rpc ApplyBucket(quota.ApplyBucketRequest) returns (quota.ApplyBucketResponse);
 }

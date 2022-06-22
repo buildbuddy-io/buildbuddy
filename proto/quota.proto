@@ -60,7 +60,7 @@ message RemoveNamespaceResponse {
   context.ResponseContext response_context = 1;
 }
 
-message ModifyBucketRequest {
+message ModifyNamespaceRequest {
   context.RequestContext request_context = 1;
   string namespace = 2;
 
@@ -76,7 +76,7 @@ message ModifyBucketRequest {
   string remove_bucket = 5;
 }
 
-message ModifyBucketResponse {
+message ModifyNamespaceResponse {
   context.ResponseContext response_context = 1;
 }
 
@@ -86,9 +86,9 @@ message ApplyBucketRequest {
   QuotaKey key = 2;
   string namespace = 3;
 
-  // When new_bucket_name is empty, will apply default bucket for the specified
+  // When bucket_name is empty, will apply default bucket for the specified
   // key.
-  string new_bucket_name = 4;
+  string bucket_name = 4;
 }
 
 message ApplyBucketResponse {
