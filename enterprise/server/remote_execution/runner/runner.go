@@ -52,6 +52,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
@@ -755,13 +756,21 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 			{Name: "workload-isolation-type", Value: string(containerType)},
 		},
 	}
-	task := &repb.ExecutionTask{
+	execTask := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"echo", "'warmup'"},
 			Platform:  plat,
 		},
 	}
-	platProps := platform.ParseProperties(task)
+	task := &interfaces.ScheduledTask{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Note: this will use the default task size estimates and not
+			// adaptive task sizing, which requires the app.
+			TaskSize: tasksize.Estimate(execTask),
+		},
+		ExecutionTask: execTask,
+	}
+	platProps := platform.ParseProperties(execTask)
 	c, err := p.newContainer(ctx, platProps, task)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
@@ -818,8 +827,9 @@ func (p *pool) Warmup(ctx context.Context) {
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
+func (p *pool) Get(ctx context.Context, st *interfaces.ScheduledTask) (interfaces.Runner, error) {
 	executorProps := platform.GetExecutorProperties()
+	task := st.ExecutionTask
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
@@ -879,7 +889,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, task)
+	ctr, err := p.newContainer(ctx, props, st)
 	if err != nil {
 		return nil, err
 	}
@@ -943,7 +953,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ExecutionTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *interfaces.ScheduledTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -968,7 +978,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		}
 		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
 	case platform.FirecrackerContainerType:
-		sizeEstimate := tasksize.Estimate(task)
+		sizeEstimate := task.SchedulingMetadata.GetTaskSize()
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			DockerClient:           p.dockerClient,
