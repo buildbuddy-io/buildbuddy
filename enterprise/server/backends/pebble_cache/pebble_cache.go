@@ -17,6 +17,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cespare/xxhash/v2"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/vfs"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
@@ -37,6 +39,7 @@ import (
 var (
 	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	migrateFromDiskDir  = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
 	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 )
@@ -104,6 +107,19 @@ func Register(env environment.Env) error {
 		log.Warning("A cache has already been registered, skipping registering pebble_cache.")
 		return nil
 	}
+	migrateDir := ""
+	if *migrateFromDiskDir != "" {
+		// Ensure a pebble DB doesn't already exist if we are migrating.
+		desc, err := pebble.Peek(*rootDirectory, vfs.Default)
+		if err != nil {
+			return err
+		}
+		if desc.Exists {
+			log.Warningf("Pebble DB at %q already exists, cannot migrate from disk dir: %q", *rootDirectory, *migrateFromDiskDir)
+		} else {
+			migrateDir = *migrateFromDiskDir
+		}
+	}
 	opts := &Options{
 		RootDirectory:       *rootDirectory,
 		Partitions:          *partitions,
@@ -114,6 +130,11 @@ func Register(env environment.Env) error {
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
 		return status.InternalErrorf("Error configuring pebble cache: %s", err)
+	}
+	if migrateDir != "" {
+		if err := c.MigrateFromDiskDir(migrateDir); err != nil {
+			return err
+		}
 	}
 	env.SetCache(c)
 	c.Start()
@@ -204,6 +225,47 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	return pc, nil
+}
+
+func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
+	ch := disk_cache.ScanDiskDirectory(diskDir)
+	batch := p.db.NewBatch()
+
+	inserted := 0
+	start := time.Now()
+	for fileMetadata := range ch {
+		protoBytes, err := proto.Marshal(fileMetadata)
+		if err != nil {
+			return err
+		}
+		fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+		if err != nil {
+			return err
+		}
+
+		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
+			return err
+		}
+		p.updateAtime(fileMetadataKey)
+		inserted += 1
+
+		if inserted%10000 == 0 {
+			if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
+				return err
+			}
+			batch = p.db.NewBatch()
+		}
+	}
+	if batch.Count() > 0 {
+		if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
+			return err
+		}
+	}
+	if err := p.db.Flush(); err != nil {
+		return err
+	}
+	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
+	return nil
 }
 
 func (p *PebbleCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
