@@ -756,22 +756,22 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 			{Name: "workload-isolation-type", Value: string(containerType)},
 		},
 	}
-	execTask := &repb.ExecutionTask{
+	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"echo", "'warmup'"},
 			Platform:  plat,
 		},
 	}
-	platProps := platform.ParseProperties(execTask)
-	task := &interfaces.ScheduledTask{
+	platProps := platform.ParseProperties(task)
+	st := &interfaces.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
-			// adaptive task sizing, which requires the app.
-			TaskSize: tasksize.Estimate(execTask),
+			// measurement-based task sizing, which requires the app.
+			TaskSize: tasksize.Estimate(task),
 		},
-		ExecutionTask: execTask,
+		ExecutionTask: task,
 	}
-	c, err := p.newContainer(ctx, platProps, task)
+	c, err := p.newContainer(ctx, platProps, st)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
 		return err
