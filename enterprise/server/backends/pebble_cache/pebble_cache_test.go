@@ -3,11 +3,13 @@ package pebble_cache_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -410,4 +412,122 @@ func TestLRU(t *testing.T) {
 
 	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
 	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
+}
+
+func TestMigrationFromDiskV1(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1e9)
+	diskDir := testfs.MakeTempDir(t)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: diskDir}, maxSizeBytes)
+	require.Nil(t, err)
+
+	setKeys := make(map[*digest.ResourceName][]byte, 0)
+	for i := 0; i < 1000; i++ {
+		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+		c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
+		require.Nil(t, err)
+
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
+	}
+
+	pebbleDir := testfs.MakeTempDir(t)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: pebbleDir, MaxSizeBytes: maxSizeBytes})
+	require.Nil(t, err)
+	err = pc.MigrateFromDiskDir(diskDir)
+	require.Nil(t, err)
+
+	pc.Start()
+	defer pc.Stop()
+
+	for rn, buf := range setKeys {
+		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, rn.GetInstanceName())
+		require.Nil(t, err)
+
+		gotBuf, err := c.Get(ctx, rn.GetDigest())
+		require.Nil(t, err)
+
+		require.Equal(t, buf, gotBuf)
+	}
+}
+
+func TestMigrationFromDiskV2(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+
+	maxSizeBytes := int64(1e9)
+	diskDir := testfs.MakeTempDir(t)
+
+	diskConfig := &disk_cache.Options{
+		RootDirectory: diskDir,
+		UseV2Layout:   true,
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           "FOO",
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: "FOO",
+			},
+		},
+	}
+
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.Nil(t, err)
+
+	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+
+	setKeys := make(map[*digest.ResourceName][]byte, 0)
+	for i := 0; i < 1000; i++ {
+		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+		require.Nil(t, err)
+
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
+	}
+
+	pebbleDir := testfs.MakeTempDir(t)
+	pebbleConfig := &pebble_cache.Options{
+		RootDirectory:     pebbleDir,
+		MaxSizeBytes:      maxSizeBytes,
+		Partitions:        diskConfig.Partitions,
+		PartitionMappings: diskConfig.PartitionMappings,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, pebbleConfig)
+	require.Nil(t, err)
+	err = pc.MigrateFromDiskDir(diskDir)
+	require.Nil(t, err)
+
+	pc.Start()
+	defer pc.Stop()
+
+	for rn, buf := range setKeys {
+		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, rn.GetInstanceName())
+		require.Nil(t, err)
+
+		gotBuf, err := c.Get(ctx, rn.GetDigest())
+		require.Nil(t, err, err)
+
+		require.Equal(t, buf, gotBuf)
+	}
 }

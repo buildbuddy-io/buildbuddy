@@ -72,7 +72,11 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 }
 
 func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
-	return disk.FileReader(ctx, filepath.Join(fileDir, f.GetFilename()), offset, limit)
+	fp := f.GetFilename()
+	if !filepath.IsAbs(fp) {
+		fp = filepath.Join(fileDir, f.GetFilename())
+	}
+	return disk.FileReader(ctx, fp, offset, limit)
 }
 
 func FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {

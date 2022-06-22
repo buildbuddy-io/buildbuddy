@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/raft/filestore",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/backends/disk_cache",
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
@@ -20,6 +21,7 @@ go_library(
         "//server/util/status",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble//vfs",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
@@ -28,9 +30,11 @@ go_library(
 go_test(
     name = "pebble_cache_test",
     srcs = ["pebble_cache_test.go"],
+    shard_count = 8,
     deps = [
         ":pebble_cache",
         "//proto:remote_execution_go_proto",
+        "//server/backends/disk_cache",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
