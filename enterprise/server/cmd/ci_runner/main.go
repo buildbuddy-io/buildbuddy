@@ -235,7 +235,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 
 	options := []string{}
 	if *besBackend != "" {
-		options = append(options, fmt.Sprintf("--bes_backend=%s'", *besBackend))
+		options = append(options, fmt.Sprintf("--bes_backend='%s'", *besBackend))
 	}
 	if r.apiKey != "" {
 		options = append(options, fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey))
