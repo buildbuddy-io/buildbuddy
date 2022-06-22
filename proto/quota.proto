@@ -35,10 +35,10 @@ message QuotaKey {
 }
 
 message AssignedBucket {
-	Bucket bucket = 1;
+  Bucket bucket = 1;
 
-	// A list of quota_key that assigned to the specified bucket.
-	repeated string quota_key = 2;
+  // A list of quota_key that assigned to the specified bucket.
+  repeated string quota_key = 2;
 }
 
 // Namespace indicates a single resource to be protected by quota manager, like
