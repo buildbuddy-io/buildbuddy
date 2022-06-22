@@ -452,13 +452,9 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 // stringMapToCounts converts a Redis hashmap containing usage counts to
 // tables.UsageCounts.
 func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
-	hInt64 := make(map[string]int64, len(h))
-	for k, v := range h {
-		count, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid usage count in Redis hash: %q => %q", k, v)
-		}
-		hInt64[k] = count
+	hInt64, err := redisutil.Int64Values(h)
+	if err != nil {
+		return nil, err
 	}
 	return &tables.UsageCounts{
 		Invocations:                hInt64["invocations"],

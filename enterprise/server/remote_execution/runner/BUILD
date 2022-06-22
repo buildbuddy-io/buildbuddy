@@ -24,6 +24,7 @@ go_library(
         "//proto:acl_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto:user_id_go_proto",
         "//proto:vfs_go_proto",
         "//proto:worker_go_proto",
