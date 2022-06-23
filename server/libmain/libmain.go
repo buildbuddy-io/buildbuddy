@@ -67,6 +67,8 @@ var (
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
 
+	exitWhenReady = flag.Bool("exit_when_ready", false, "If set, the app will exit as soon as it becomes ready (useful for migrations)")
+
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
 		"/compare/",
@@ -378,6 +380,11 @@ func StartAndRunServices(env environment.Env) {
 		go func() {
 			server.ListenAndServe()
 		}()
+	}
+
+	if *exitWhenReady {
+		env.GetHealthChecker().Shutdown()
+		os.Exit(0)
 	}
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
