@@ -262,17 +262,9 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			md := executeResponse.GetResult().GetExecutionMetadata()
 			// Backwards-compatible fill of the execution with the ExecutionSummary for
 			// now. The ExecutionSummary will be removed completely in the future.
-			if (md == nil || md.GetIoStats() == nil || md.GetUsageStats() == nil || md.GetEstimatedTaskSize() == nil) && executeResponse.GetMessage() != "" {
-				if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
-					summary := &espb.ExecutionSummary{}
-					if err := proto.Unmarshal(data, summary); err == nil {
-						md = summary.GetExecutedActionMetadata()
-						if md != nil {
-							md.IoStats = summary.GetIoStats()
-							md.UsageStats = summary.GetUsageStats()
-							md.EstimatedTaskSize = summary.GetEstimatedTaskSize()
-						}
-					}
+			if md == nil || md.GetIoStats() == nil || md.GetUsageStats() == nil || md.GetEstimatedTaskSize() == nil {
+				if decodedMetadata, err := decodeMetadataFromExecutionSummary(executeResponse); err == nil {
+					md = decodedMetadata
 				}
 			}
 			fillExecutionFromActionMetadata(md, execution)
