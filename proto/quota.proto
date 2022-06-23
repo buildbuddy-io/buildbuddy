@@ -53,6 +53,8 @@ message Namespace {
 
 message RemoveNamespaceRequest {
   context.RequestContext request_context = 1;
+  // The namespace to remove. All buckets that constitute the namespace will be
+  // removed as well as any quota groups associated with those buckets.
   string namespace = 2;
 }
 
