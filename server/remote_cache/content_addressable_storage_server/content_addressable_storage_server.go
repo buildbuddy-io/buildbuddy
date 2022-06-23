@@ -598,8 +598,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
-					log.Debugf("Successfully read tree cache")
-					return treeCache.GetChildren(), nil
+					if isComplete(treeCache) {
+						return treeCache.GetChildren(), nil
+					} else {
+						log.Warningf("Ignoring incomplete treeCache entry")
+					}
 				}
 			}
 		}
@@ -636,21 +639,21 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if *enableTreeCaching {
+		if level > minTreeCacheLevel && len(allDescendents) > minTreeCacheDescendents && *enableTreeCaching {
 			treeCache := &repb.TreeCache{
 				Children: allDescendents,
 			}
-			if !isComplete(treeCache) {
-				log.Fatalf("TREE CACHE IS NOT COMPLETE")
+			if isComplete(treeCache) {
+				buf, err := proto.Marshal(treeCache)
+				if err != nil {
+					return nil, err
+				}
+				if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
+					log.Warningf("Error setting treeCache blob: %s", err)
+				}
+			} else {
+				log.Warningf("Not caching incomplete tree cache")
 			}
-			buf, err := proto.Marshal(treeCache)
-			if err != nil {
-				return nil, err
-			}
-			if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
-				log.Warningf("Error setting treeCache blob: %s", err)
-			}
-			log.Debugf("Successfully wrote tree cache")
 		}
 		return allDescendents, nil
 	}
