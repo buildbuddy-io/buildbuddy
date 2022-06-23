@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"flag"
 	"math"
 	"strings"
 	"time"
@@ -9,10 +10,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
+)
+
+var (
+	quotaManagerEnabled = flag.Bool("app.quota_manager_enabled", false, "If set, quota manager will be enabled")
 )
 
 const (
@@ -37,59 +44,64 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 		return nil, status.FailedPreconditionError("quota manager is not configured")
 	}
 	ctx := env.GetServerContext()
-	db := env.GetDBHandle().DB(ctx)
-	bucketRows, err := db.Raw(`SELECT * FROM QuotaBuckets`).Rows()
-	if err != nil {
-		return nil, status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
-	}
-	defer bucketRows.Close()
-
 	config := make(map[string]*namespaceConfig)
-	for bucketRows.Next() {
-		var tb tables.QuotaBucket
-		if err := db.ScanRows(bucketRows, &tb); err != nil {
-			return nil, status.InternalErrorf("failed to scan QuotaBuckets: %s", err)
+	err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("fetch_quota_config"), func(tx *db.DB) error {
+		bucketRows, err := tx.Raw(`SELECT * FROM QuotaBuckets`).Rows()
+		if err != nil {
+			return status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
 		}
-		if err := validateBucket(&tb); err != nil {
-			return nil, status.InternalErrorf("invalid bucket: %v", tb)
-		}
-		ns := config[tb.Namespace]
-		if ns == nil {
-			ns = &namespaceConfig{
-				bucketsByName:         make(map[string]*tables.QuotaBucket),
-				quotaKeysByBucketName: make(map[string][]string),
+		defer bucketRows.Close()
+
+		for bucketRows.Next() {
+			var tb tables.QuotaBucket
+			if err := tx.ScanRows(bucketRows, &tb); err != nil {
+				return status.InternalErrorf("failed to scan QuotaBuckets: %s", err)
 			}
-			config[tb.Namespace] = ns
+			if err = validateBucket(&tb); err != nil {
+				return status.InternalErrorf("invalid bucket: %v", tb)
+			}
+			ns := config[tb.Namespace]
+			if ns == nil {
+				ns = &namespaceConfig{
+					bucketsByName:         make(map[string]*tables.QuotaBucket),
+					quotaKeysByBucketName: make(map[string][]string),
+				}
+				config[tb.Namespace] = ns
+			}
+			ns.bucketsByName[tb.Name] = &tb
 		}
-		ns.bucketsByName[tb.Name] = &tb
-	}
 
-	groupRows, err := db.Raw(`SELECT * FROM QuotaGroups`).Rows()
+		groupRows, err := tx.Raw(`SELECT * FROM QuotaGroups`).Rows()
+		if err != nil {
+			return status.InternalErrorf("failed to read table QuotaGroups: %s", err)
+		}
+		defer groupRows.Close()
+
+		for groupRows.Next() {
+			var tg tables.QuotaGroup
+			if err := tx.ScanRows(groupRows, &tg); err != nil {
+				return status.InternalErrorf("failed to scan QuotaGroups: %s", err)
+			}
+			ns := config[tg.Namespace]
+			if ns == nil {
+				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
+			}
+			if _, ok := ns.bucketsByName[tg.BucketName]; !ok {
+				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
+			}
+			if tg.BucketName == defaultBucketName {
+				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
+			}
+			if keys := ns.quotaKeysByBucketName[tg.BucketName]; keys == nil {
+				ns.quotaKeysByBucketName[tg.BucketName] = []string{tg.QuotaKey}
+			} else {
+				ns.quotaKeysByBucketName[tg.BucketName] = append(keys, tg.QuotaKey)
+			}
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, status.InternalErrorf("failed to read table QuotaGroups: %s", err)
-	}
-	defer groupRows.Close()
-
-	for groupRows.Next() {
-		var tg tables.QuotaGroup
-		if err := db.ScanRows(groupRows, &tg); err != nil {
-			return nil, status.InternalErrorf("failed to scan QuotaGroups: %s", err)
-		}
-		ns := config[tg.Namespace]
-		if ns == nil {
-			return nil, status.InternalErrorf("namespace %q doesn't exist", tg.Namespace)
-		}
-		if _, ok := ns.bucketsByName[tg.BucketName]; !ok {
-			return nil, status.InternalErrorf("namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
-		}
-		if tg.BucketName == defaultBucketName {
-			log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
-		}
-		if keys := ns.quotaKeysByBucketName[tg.BucketName]; keys == nil {
-			ns.quotaKeysByBucketName[tg.BucketName] = []string{tg.QuotaKey}
-		} else {
-			ns.quotaKeysByBucketName[tg.BucketName] = append(keys, tg.QuotaKey)
-		}
+		return nil, err
 	}
 	return config, nil
 }
@@ -282,6 +294,9 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 }
 
 func Register(env environment.Env) error {
+	if !*quotaManagerEnabled {
+		return nil
+	}
 	qm, err := NewQuotaManager(env)
 	if err != nil {
 		return err

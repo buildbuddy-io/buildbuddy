@@ -9,6 +9,8 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/alert",
+        "//server/util/db",
         "//server/util/log",
         "//server/util/status",
         "@com_github_throttled_throttled_v2//:throttled",
