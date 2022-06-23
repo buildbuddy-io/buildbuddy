@@ -103,9 +103,8 @@ func Register(env environment.Env) error {
 	if *rootDirectory == "" {
 		return nil
 	}
-	if env.GetCache() != nil {
-		log.Warning("A cache has already been registered, skipping registering pebble_cache.")
-		return nil
+	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
+		return err
 	}
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
@@ -187,6 +186,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
+	if err := disk.EnsureDirectoryExists(opts.RootDirectory); err != nil {
+		return nil, err
+	}
 	ensureDefaultPartitionExists(opts)
 
 	c := pebble.NewCache(*blockCacheSizeBytes)
@@ -254,6 +256,9 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 				return err
 			}
 			batch = p.db.NewBatch()
+		}
+		if inserted%1e6 == 0 {
+			log.Printf("Pebble Cache: migration progress [%d files in %s]...", inserted, time.Since(start))
 		}
 	}
 	if batch.Count() > 0 {
