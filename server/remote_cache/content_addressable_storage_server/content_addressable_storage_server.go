@@ -602,7 +602,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
-					if isComplete(treeCache) {
+					if isComplete(treeCache.GetChildren()) {
 						return treeCache.GetChildren(), nil
 					} else {
 						log.Warningf("Ignoring incomplete treeCache entry")
@@ -647,7 +647,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			treeCache := &repb.TreeCache{
 				Children: allDescendents,
 			}
-			if isComplete(treeCache) {
+			if isComplete(treeCache.GetChildren()) {
 				buf, err := proto.Marshal(treeCache)
 				if err != nil {
 					return nil, err
@@ -682,12 +682,17 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	return nil
 }
 
-func isComplete(treeCache *repb.TreeCache) bool {
-	allDigests := make(map[string]struct{}, len(treeCache.GetChildren()))
-	for _, child := range treeCache.Children {
+func isComplete(children []*repb.DirectoryWithDigest) bool {
+	allDigests := make(map[string]struct{}, len(children))
+	for _, child := range children {
 		allDigests[child.GetDigest().GetHash()] = struct{}{}
 	}
-	for _, child := range treeCache.Children {
+	for _, child := range children {
+		dir := child.Directory
+		if len(dir.Directories) == 0 && len(dir.Files) == 0 && len(dir.Symlinks) == 0 {
+			log.Warningf("corrupted tree: empty dir: %+v, digest: %q", dir, child.GetDigest().GetHash())
+			return false
+		}
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
 				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
