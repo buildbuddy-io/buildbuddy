@@ -38,6 +38,7 @@ import (
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
@@ -849,6 +850,22 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
 	return scorecard.GetCacheScoreCard(ctx, s.env, req)
+}
+
+func (s *BuildBuddyServer) GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 type bsLookup struct {
