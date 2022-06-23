@@ -686,7 +686,7 @@ func isComplete(treeCache *repb.TreeCache) bool {
 	for _, child := range treeCache.Children {
 		for _, dirNode := range child.GetDirectory().GetDirectories() {
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
-				log.Printf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
 		}
