@@ -500,6 +500,10 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 		if err := proto.Unmarshal(blob, subDir); err != nil {
 			return nil, err
 		}
+		if len(subDir.Directories) == 0 && len(subDir.Files) == 0 && len(subDir.Symlinks) == 0 {
+			log.Warningf("Found empty directory for digest: %s blob: [%+v]", d.GetHash(), blob)
+			return nil, status.NotFoundErrorf("Found empty directory for digest %s.", d.GetHash())
+		}
 		children = append(children, &repb.DirectoryWithDigest{Directory: subDir, Digest: d})
 	}
 	return children, nil
