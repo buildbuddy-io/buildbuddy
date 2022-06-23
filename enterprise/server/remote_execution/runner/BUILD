@@ -60,6 +60,7 @@ go_test(
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
         "//proto:worker_go_proto",
+        "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
