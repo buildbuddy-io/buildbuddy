@@ -64,8 +64,9 @@ const (
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 0.8
 
-	// The expiration for all task-sizing keys stored in Redis.
-	redisKeyExpiration = 5 * 24 * time.Hour
+	// The expiration for task usage measurements stored in Redis.
+	sizeMeasurementExpiration = 5 * 24 * time.Hour
+
 	// Redis key prefix used for holding current task size estimates.
 	redisKeyPrefix = "taskSize"
 
@@ -92,17 +93,14 @@ type taskSizer struct {
 }
 
 func NewSizer(env environment.Env) (*taskSizer, error) {
-	var rdb redis.UniversalClient
+	ts := &taskSizer{env: env}
 	if *useMeasuredSizes {
-		rdb = env.GetRemoteExecutionRedisClient()
-		if rdb == nil {
+		if env.GetRemoteExecutionRedisClient() == nil {
 			return nil, status.FailedPreconditionError("missing Redis client configuration")
 		}
+		ts.rdb = env.GetRemoteExecutionRedisClient()
 	}
-	return &taskSizer{
-		env: env,
-		rdb: rdb,
-	}, nil
+	return ts, nil
 }
 
 func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
@@ -116,6 +114,8 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 		return defaultSize
 	}
 	if recordedSize == nil {
+		// TODO: return a value indicating "unsized" here, and instead let the
+		// executor run this task once to estimate the size.
 		return defaultSize
 	}
 	return &scpb.TaskSize{
@@ -156,7 +156,7 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb
 	if err != nil {
 		return err
 	}
-	s.rdb.Set(ctx, key, string(b), redisKeyExpiration)
+	s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration)
 	return err
 }
 
