@@ -96,6 +96,8 @@ type Env interface {
 	GetUsageTracker() interfaces.UsageTracker
 	SetUsageTracker(interfaces.UsageTracker)
 	GetXcodeLocator() interfaces.XcodeLocator
+	SetQuotaManager(interfaces.QuotaManager)
+	GetQuotaManager() interfaces.QuotaManager
 	// GetFileResolver returns an FS that can be used to read server-side
 	// resources that aren't intended to be directly served to end users. It first
 	// consults the bundle and falls back to runfiles.

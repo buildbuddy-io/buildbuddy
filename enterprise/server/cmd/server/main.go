@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
+	"github.com/buildbuddy-io/buildbuddy/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
@@ -185,6 +186,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := usage.RegisterTracker(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := quota.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

@@ -83,6 +83,7 @@ type RealEnv struct {
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
 	sslService                       interfaces.SSLService
+	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
 	casServer                        repb.ContentAddressableStorageServer
 	byteStreamServer                 bspb.ByteStreamServer
@@ -414,6 +415,15 @@ func (r *RealEnv) GetSSLService() interfaces.SSLService {
 func (r *RealEnv) SetSSLService(sslService interfaces.SSLService) {
 	r.sslService = sslService
 }
+
+func (r *RealEnv) GetQuotaManager() interfaces.QuotaManager {
+	return r.quotaManager
+}
+
+func (r *RealEnv) SetQuotaManager(quotaManager interfaces.QuotaManager) {
+	r.quotaManager = quotaManager
+}
+
 func (r *RealEnv) GetBuildEventServer() pepb.PublishBuildEventServer {
 	return r.buildEventServer
 }
