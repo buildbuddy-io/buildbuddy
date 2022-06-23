@@ -675,46 +675,6 @@ func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest
 	return rootDigest, dirMap, nil
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
-	var dirs []*repb.Directory
-	nextPageToken := ""
-	for {
-		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:   r.GetDigest(),
-			InstanceName: r.GetInstanceName(),
-			PageToken:    nextPageToken,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for {
-			rsp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			nextPageToken = rsp.GetNextPageToken()
-			for _, child := range rsp.GetDirectories() {
-				dirs = append(dirs, child)
-			}
-		}
-		if nextPageToken == "" {
-			break
-		}
-	}
-
-	if len(dirs) == 0 {
-		return &repb.Tree{Root: &repb.Directory{}}, nil
-	}
-
-	return &repb.Tree{
-		Root:     dirs[0],
-		Children: dirs[1:],
-	}, nil
-}
-
 type DownloadTreeOpts struct {
 	// NonrootWritable specifies whether directories should be made writable
 	// by users other than root. Does not affect file permissions.
