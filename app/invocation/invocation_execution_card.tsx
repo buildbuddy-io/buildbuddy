@@ -175,13 +175,25 @@ export default class ExecutionCardComponent extends React.Component<Props, State
       case "upload-duration":
         return this.uploadDuration(first) - this.uploadDuration(second);
       case "files-downloaded":
-        return +first?.ioStats?.fileDownloadCount - +second?.ioStats?.fileDownloadCount;
+        return (
+          +first?.executedActionMetadata?.ioStats?.fileDownloadCount -
+          +second?.executedActionMetadata?.ioStats?.fileDownloadCount
+        );
       case "files-uploaded":
-        return +first?.ioStats?.fileUploadCount - +second?.ioStats?.fileUploadCount;
+        return (
+          +first?.executedActionMetadata?.ioStats?.fileUploadCount -
+          +second?.executedActionMetadata?.ioStats?.fileUploadCount
+        );
       case "file-size-downloaded":
-        return +first?.ioStats?.fileDownloadSizeBytes - +second?.ioStats?.fileDownloadSizeBytes;
+        return (
+          +first?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes -
+          +second?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes
+        );
       case "file-size-uploaded":
-        return +first?.ioStats?.fileUploadSizeBytes - +second?.ioStats?.fileUploadSizeBytes;
+        return (
+          +first?.executedActionMetadata?.ioStats?.fileUploadSizeBytes -
+          +second?.executedActionMetadata?.ioStats?.fileUploadSizeBytes
+        );
       case "queue-start":
         return this.subtractTimestamp(
           first?.executedActionMetadata?.queuedTimestamp,
@@ -380,14 +392,14 @@ export default class ExecutionCardComponent extends React.Component<Props, State
                             <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
                             <div>
                               File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                              {format.bytes(execution?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                              {execution?.ioStats?.fileDownloadCount} files)
+                              {format.bytes(execution?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                              {execution?.executedActionMetadata?.ioStats?.fileDownloadCount} files)
                             </div>
                             <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
                             <div>
                               File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                              {format.bytes(execution?.ioStats?.fileUploadSizeBytes)} across{" "}
-                              {execution?.ioStats?.fileUploadCount} files)
+                              {format.bytes(execution?.executedActionMetadata?.ioStats?.fileUploadSizeBytes)} across{" "}
+                              {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
                             </div>
                           </div>
                         </div>

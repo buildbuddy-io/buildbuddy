@@ -15,7 +15,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
@@ -124,18 +123,17 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	}
 }
 
-func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error {
+func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
 	if !*useMeasuredSizes {
 		return nil
 	}
 	// If we are missing CPU/memory stats, do nothing. This is expected in some
 	// cases, for example if a task completed too quickly to get a sample of its
 	// CPU/mem usage.
-	stats := summary.GetUsageStats()
+	stats := md.GetUsageStats()
 	if stats.GetCpuNanos() == 0 || stats.GetPeakMemoryBytes() == 0 {
 		return nil
 	}
-	md := summary.GetExecutedActionMetadata()
 	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
 	// If execution duration is missing or invalid, we won't be able to compute
 	// milli-CPU usage.

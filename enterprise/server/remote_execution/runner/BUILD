@@ -21,7 +21,6 @@ go_library(
         "//enterprise/server/tasksize",
         "//enterprise/server/util/vfs_server",
         "//proto:acl_go_proto",
-        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:user_id_go_proto",
         "//proto:vfs_go_proto",

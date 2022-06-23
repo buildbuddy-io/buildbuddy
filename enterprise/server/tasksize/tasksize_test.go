@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -145,20 +144,18 @@ func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
 		"initial CPU estimate should be the default estimate")
 
 	execStart := time.Now()
-	summary := &espb.ExecutionSummary{
-		UsageStats: &espb.UsageStats{
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
 			// Intentionally using weird numbers here to make sure we aren't
 			// just returning the default estimates.
 			CpuNanos:        7.13 * 1e9,
 			PeakMemoryBytes: 917 * 1e6,
 		},
-		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
-			ExecutionStartTimestamp: timestamppb.New(execStart),
-			// Set the completed timestamp so that the exec duration is 2 seconds.
-			ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
-		},
+		ExecutionStartTimestamp: timestamppb.New(execStart),
+		// Set the completed timestamp so that the exec duration is 2 seconds.
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetCommand(), summary)
+	err = sizer.Update(ctx, task.GetCommand(), md)
 
 	require.NoError(t, err)
 

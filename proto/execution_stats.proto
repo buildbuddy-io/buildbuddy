@@ -8,15 +8,6 @@ import "proto/scheduler.proto";
 
 package execution_stats;
 
-// Compute usage sampled throughout a task's execution.
-message UsageStats {
-  // Maximum amount of memory used throughout the task's execution.
-  int64 peak_memory_bytes = 1;
-
-  // Total number of CPU-nanoseconds consumed by the task.
-  int64 cpu_nanos = 2;
-}
-
 // Proto representation of the rusage struct used in the Linux/BSD getrusage()
 // system call.
 message Rusage {
@@ -60,36 +51,16 @@ message Rusage {
   int64 involuntary_context_switches = 13;
 }
 
-message IOStats {
-  // The number of files downloaded in this tree.
-  int64 file_download_count = 1;
-
-  // The total size of downloaded data.
-  int64 file_download_size_bytes = 2;
-
-  // The time taken to download the tree.
-  int64 file_download_duration_usec = 3;
-
-  // The number of files uploaded in this tree.
-  int64 file_upload_count = 4;
-
-  // The total size of uploaded data.
-  int64 file_upload_size_bytes = 5;
-
-  // The time taken to upload the tree.
-  int64 file_upload_duration_usec = 6;
-}
-
-// TODO(http://go/b/1451): remove this and move stats to ExecutedActionMetadata.
-// Next tag: 12
+// TODO(http://go/b/1451): remove this; stats have been moved to
+// ExecutedActionMetadata. Next tag: 12
 message ExecutionSummary {
   reserved 1, 3, 4, 5, 6, 7, 9;
 
   // Any io_stats that were collected during this execution.
-  IOStats io_stats = 2;
+  build.bazel.remote.execution.v2.IOStats io_stats = 2;
 
   // Any compute stats (CPU/memory) that were collected during this execution.
-  UsageStats usage_stats = 10;
+  build.bazel.remote.execution.v2.UsageStats usage_stats = 10;
 
   // Estimated task size that was used for scheduling purposes.
   scheduler.TaskSize estimated_task_size = 11;
@@ -101,6 +72,7 @@ message ExecutionSummary {
 
 // Next Tag: 12
 message Execution {
+  reserved 4, 10;
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
   // execute.
   build.bazel.remote.execution.v2.Digest action_digest = 1;
@@ -117,12 +89,6 @@ message Execution {
 
   // The Status of this execution (if it has finished).
   google.rpc.Status status = 3;
-
-  // Any IO stats that were collected during this execution.
-  IOStats io_stats = 4;
-
-  // Any compute stats (CPU/memory) that were collected during this execution.
-  UsageStats usage_stats = 10;
 
   // Estimated task size that was used for scheduling purposes.
   scheduler.TaskSize task_size = 11;

@@ -22,6 +22,7 @@ import "google/longrunning/operations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
+import "proto/scheduler.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
 option go_package = "remote_execution";
@@ -897,6 +898,15 @@ message ExecutedActionMetadata {
 
   // The unique ID of the executor instance that ran this action.
   string executor_id = 1000;
+
+  // Any io_stats that were collected during this execution.
+  IOStats io_stats = 1001;
+
+  // Any compute stats (CPU/memory) that were collected during this execution.
+  UsageStats usage_stats = 1002;
+
+  // Estimated task size that was used for scheduling purposes.
+  scheduler.TaskSize estimated_task_size = 1003;
 }
 
 // An ActionResult represents the result of an
@@ -1753,6 +1763,12 @@ message TreeToken {
   repeated SizedDirectory sized_directories = 1;
 }
 
+/******************************************************************************/
+/*                                                                            */
+/*                BEGIN BUILDBUDDY-SPECIFIC PROTO DECLARATIONS                */
+/*                                                                            */
+/******************************************************************************/
+
 // Next tag: 9
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
@@ -1769,4 +1785,33 @@ message ExecutionTask {
 message ExecutorDetails {
   // Unique ID of the host this executor is running on.
   string executor_host_id = 1;
+}
+
+message IOStats {
+  // The number of files downloaded in this tree.
+  int64 file_download_count = 1;
+
+  // The total size of downloaded data.
+  int64 file_download_size_bytes = 2;
+
+  // The time taken to download the tree.
+  int64 file_download_duration_usec = 3;
+
+  // The number of files uploaded in this tree.
+  int64 file_upload_count = 4;
+
+  // The total size of uploaded data.
+  int64 file_upload_size_bytes = 5;
+
+  // The time taken to upload the tree.
+  int64 file_upload_duration_usec = 6;
+}
+
+// Compute usage sampled throughout a task's execution.
+message UsageStats {
+  // Maximum amount of memory used throughout the task's execution.
+  int64 peak_memory_bytes = 1;
+
+  // Total number of CPU-nanoseconds consumed by the task.
+  int64 cpu_nanos = 2;
 }
