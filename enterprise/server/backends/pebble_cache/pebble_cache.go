@@ -40,6 +40,7 @@ var (
 	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
 	migrateFromDiskDir  = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
+	forceAllowMigration = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 )
@@ -109,11 +110,12 @@ func Register(env environment.Env) error {
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
 		// Ensure a pebble DB doesn't already exist if we are migrating.
+		// But allow anyway if forceAllowMigration was set.
 		desc, err := pebble.Peek(*rootDirectory, vfs.Default)
 		if err != nil {
 			return err
 		}
-		if desc.Exists {
+		if desc.Exists && !*forceAllowMigration {
 			log.Warningf("Pebble DB at %q already exists, cannot migrate from disk dir: %q", *rootDirectory, *migrateFromDiskDir)
 		} else {
 			migrateDir = *migrateFromDiskDir
