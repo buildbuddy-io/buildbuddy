@@ -13,7 +13,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//server/cmd/buildbuddy:buildbuddy_lib",
-        "//server/util/flagutil",
+        "//server/util/flagutil/yaml",
     ],
 )
 

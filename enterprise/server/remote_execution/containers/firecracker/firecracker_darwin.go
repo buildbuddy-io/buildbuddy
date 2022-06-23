@@ -5,7 +5,6 @@ package firecracker
 
 import (
 	"context"
-	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -30,7 +29,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
 	return &interfaces.CommandResult{}
 }
 

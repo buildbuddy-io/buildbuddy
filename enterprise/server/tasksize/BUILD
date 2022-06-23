@@ -10,9 +10,12 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/platform",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//server/environment",
         "//server/util/log",
+        "//server/util/status",
     ],
 )
 

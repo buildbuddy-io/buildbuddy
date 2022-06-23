@@ -4,10 +4,22 @@ import "google/rpc/status.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
+import "proto/scheduler.proto";
 
 package execution_stats;
 
-message ExecutionStats {
+// Compute usage sampled throughout a task's execution.
+message UsageStats {
+  // Maximum amount of memory used throughout the task's execution.
+  int64 peak_memory_bytes = 1;
+
+  // Total number of CPU-nanoseconds consumed by the task.
+  int64 cpu_nanos = 2;
+}
+
+// Proto representation of the rusage struct used in the Linux/BSD getrusage()
+// system call.
+message Rusage {
   // ru_utime: Amount of CPU time in seconds spent in userspace.
   int64 user_cpu_time_usec = 1;
 
@@ -68,19 +80,26 @@ message IOStats {
   int64 file_upload_duration_usec = 6;
 }
 
-// Next tag: 10
+// TODO(http://go/b/1451): remove this and move stats to ExecutedActionMetadata.
+// Next tag: 12
 message ExecutionSummary {
   reserved 1, 3, 4, 5, 6, 7, 9;
 
   // Any io_stats that were collected during this execution.
   IOStats io_stats = 2;
 
+  // Any compute stats (CPU/memory) that were collected during this execution.
+  UsageStats usage_stats = 10;
+
+  // Estimated task size that was used for scheduling purposes.
+  scheduler.TaskSize estimated_task_size = 11;
+
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata
       executed_action_metadata = 8;
 }
 
-// Next Tag: 10
+// Next Tag: 12
 message Execution {
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
   // execute.
@@ -101,6 +120,12 @@ message Execution {
 
   // Any IO stats that were collected during this execution.
   IOStats io_stats = 4;
+
+  // Any compute stats (CPU/memory) that were collected during this execution.
+  UsageStats usage_stats = 10;
+
+  // Estimated task size that was used for scheduling purposes.
+  scheduler.TaskSize task_size = 11;
 
   // Execution stage timings.
   build.bazel.remote.execution.v2.ExecutedActionMetadata

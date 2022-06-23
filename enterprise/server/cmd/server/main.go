@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
@@ -51,6 +52,7 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -151,7 +153,7 @@ func main() {
 	version.Print()
 
 	flag.Parse()
-	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
@@ -191,6 +193,9 @@ func main() {
 	}
 	if err := task_router.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if err := tasksize.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
 	}
 
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {

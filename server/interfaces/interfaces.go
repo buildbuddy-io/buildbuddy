@@ -532,6 +532,23 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// TaskSizer estimates task resource usage for scheduling purposes.
+type TaskSizer interface {
+	// Estimate returns the resource usage for a task.
+	Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+
+	// Update updates future resource usage estimates based on a command's
+	// recorded execution stats.
+	Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error
+}
+
+// ScheduledTask represents an execution task along with its scheduling metadata
+// computed by the execution service.
+type ScheduledTask struct {
+	ExecutionTask      *repb.ExecutionTask
+	SchedulingMetadata *scpb.SchedulingMetadata
+}
+
 // Runner represents an isolated execution environment.
 //
 // Runners are assigned a single task when they are retrieved from a Pool,
@@ -641,6 +658,10 @@ type CommandResult struct {
 	// * -2 (NoExitCode) if the exit code could not be determined because it returned
 	//   an error other than exec.ExitError. This case typically means it failed to start.
 	ExitCode int
+
+	// UsageStats holds the command's measured resource usage. It may be nil if
+	// resource measurement is not implemented by the command's isolation type.
+	UsageStats *espb.UsageStats
 }
 
 type Subscriber interface {

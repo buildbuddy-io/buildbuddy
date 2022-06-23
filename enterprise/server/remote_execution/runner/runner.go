@@ -39,7 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -56,6 +56,7 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	dockerclient "github.com/docker/docker/client"
 )
 
@@ -66,8 +67,8 @@ var (
 	dockerNetHost           = flag.Bool("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
-	dockerDevices           = flagutil.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-	dockerVolumes           = flagutil.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
+	dockerDevices           = flagtypes.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
+	dockerVolumes           = flagtypes.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
@@ -79,6 +80,7 @@ var (
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
+	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 )
 
 const (
@@ -201,6 +203,7 @@ type commandRunner struct {
 	// Stdout handle to read persistent WorkResponses from.
 	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
 	stdoutReader *bufio.Reader
+	stderr       lockingbuffer.LockingBuffer
 	// Stops the persistent worker associated with this runner. If this is nil,
 	// there is no persistent worker associated.
 	stopPersistentWorker func() error
@@ -367,7 +370,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, nil, nil)
+	return r.Container.Exec(ctx, command, &container.ExecOpts{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -481,7 +484,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=stdin*/, nil /*=stdout*/)
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &container.ExecOpts{})
 	return res.Error
 }
 
@@ -503,6 +506,7 @@ type pool struct {
 	podID          string
 	buildRoot      string
 	dockerClient   *dockerclient.Client
+	podmanProvider *podman.Provider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -544,12 +548,20 @@ func NewPool(env environment.Env) (*pool, error) {
 		log.Info("Using docker for execution")
 	}
 
+	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	podmanProvider, err := podman.NewProvider(env, imageCacheAuth, *rootDirectory)
+	if err != nil {
+		return nil, err
+	}
+
 	p := &pool{
 		env:            env,
-		imageCacheAuth: container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
 		podID:          podID,
 		dockerClient:   dockerClient,
+		podmanProvider: podmanProvider,
 		buildRoot:      *rootDirectory,
+		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
 	}
 	p.setLimits()
@@ -946,15 +958,16 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		)
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
-			ForceRoot: props.DockerForceRoot,
-			User:      props.DockerUser,
-			Network:   props.DockerNetwork,
-			CapAdd:    *dockerCapAdd,
-			Devices:   *dockerDevices,
-			Volumes:   *dockerVolumes,
-			Runtime:   *podmanRuntime,
+			ForceRoot:   props.DockerForceRoot,
+			User:        props.DockerUser,
+			Network:     props.DockerNetwork,
+			CapAdd:      *dockerCapAdd,
+			Devices:     *dockerDevices,
+			Volumes:     *dockerVolumes,
+			Runtime:     *podmanRuntime,
+			EnableStats: *podmanEnableStats,
 		}
-		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
+		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
 	case platform.FirecrackerContainerType:
 		sizeEstimate := tasksize.Estimate(task)
 		opts := firecracker.ContainerOpts{
@@ -1339,14 +1352,23 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 
 	go func() {
 		defer close(workerTerminated)
-		res := r.Container.Exec(ctx, command, stdinReader, stdoutWriter)
-		stdinWriter.Close()
-		stdoutReader.Close()
+		defer stdinReader.Close()
+		defer stdoutWriter.Close()
+
+		opts := &container.ExecOpts{
+			Stdin:  stdinReader,
+			Stdout: stdoutWriter,
+			Stderr: &r.stderr,
+		}
+		res := r.Container.Exec(ctx, command, opts)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
 	}()
 }
 
 func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	// Clear any stderr that might be associated with a previous request.
+	r.stderr.Reset()
+
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -1389,7 +1411,9 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	// Encode the work requests
 	err = r.marshalWorkRequest(requestProto, r.stdinWriter)
 	if err != nil {
-		result.Error = status.WrapError(err, "marshaling work request")
+		result.Error = status.UnavailableErrorf(
+			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
+			err, r.workerStderrDebugString())
 		return result
 	}
 
@@ -1397,7 +1421,9 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	responseProto := &wkpb.WorkResponse{}
 	err = r.unmarshalWorkResponse(responseProto, r.stdoutReader)
 	if err != nil {
-		result.Error = status.WrapError(err, "unmarshaling work response")
+		result.Error = status.UnavailableErrorf(
+			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
+			err, r.workerStderrDebugString())
 		return result
 	}
 
@@ -1406,6 +1432,15 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	result.ExitCode = int(responseProto.ExitCode)
 	r.doNotReuse = false
 	return result
+}
+
+func (r *commandRunner) workerStderrDebugString() string {
+	stderr, _ := r.stderr.ReadAll()
+	str := string(stderr)
+	if str == "" {
+		return "<empty>"
+	}
+	return str
 }
 
 func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {

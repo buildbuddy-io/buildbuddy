@@ -111,15 +111,14 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 func (d *InvocationDB) UpdateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	updated := false
 	var err error
-	retryOptions := &retry.Options{InitialBackoff: time.Second, Multiplier: 2.0, MaxRetries: 5}
-	for i, r := 1, retry.New(ctx, retryOptions); r.Next(); i++ {
+	for r := retry.DefaultWithContext(ctx); r.Next(); {
 		err = d.h.TransactionWithOptions(ctx, db.Opts().WithQueryName("update_invocation"), func(tx *db.DB) error {
 			result := tx.Where("`invocation_id` = ? AND `attempt` = ?", ti.InvocationID, ti.Attempt).Updates(ti)
 			updated = result.RowsAffected > 0
 			return result.Error
 		})
 		if d.h.IsDeadlockError(err) {
-			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, i, retryOptions.MaxRetries)
+			log.Warningf("Encountered deadlock when attempting to update invocation table for invocation %s, attempt %d of %d", ti.InvocationID, r.AttemptNumber(), r.MaxAttempts())
 			continue
 		}
 		break

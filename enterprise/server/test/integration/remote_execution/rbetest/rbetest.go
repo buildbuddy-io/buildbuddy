@@ -289,6 +289,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	router, err := task_router.New(env)
 	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
+	err = tasksize.Register(env)
+	require.NoError(t, err, "could not set up TaskSizer")
 	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
 	env.SetRemoteExecutionService(executionServer)
