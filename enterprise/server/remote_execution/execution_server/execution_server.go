@@ -258,8 +258,24 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		execution.CachedResult = executeResponse.GetCachedResult()
 
 		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetResult().GetExecutionMetadata() != nil {
-			fillExecutionFromActionMetadata(executeResponse.GetResult().GetExecutionMetadata(), execution)
+		if stage == repb.ExecutionStage_COMPLETED {
+			md := executeResponse.GetResult().GetExecutionMetadata()
+			// Backwards-compatible fill of the execution with the ExecutionSummary for
+			// now. The ExecutionSummary will be removed completely in the future.
+			if md == nil && executeResponse.GetMessage() != "" {
+				if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
+					summary := &espb.ExecutionSummary{}
+					if err := proto.Unmarshal(data, summary); err == nil {
+						md = summary.GetExecutedActionMetadata()
+						if md != nil {
+							md.IoStats = summary.GetIoStats()
+							md.UsageStats = summary.GetUsageStats()
+							md.EstimatedTaskSize = summary.GetEstimatedTaskSize()
+						}
+					}
+				}
+			}
+			fillExecutionFromActionMetadata(md, execution)
 		}
 	}
 
