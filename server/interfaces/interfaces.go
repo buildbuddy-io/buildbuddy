@@ -532,6 +532,23 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// TaskSizer estimates task resource usage for scheduling purposes.
+type TaskSizer interface {
+	// Estimate returns the resource usage for a task.
+	Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+
+	// Update updates future resource usage estimates based on a command's
+	// recorded execution stats.
+	Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
+}
+
+// ScheduledTask represents an execution task along with its scheduling metadata
+// computed by the execution service.
+type ScheduledTask struct {
+	ExecutionTask      *repb.ExecutionTask
+	SchedulingMetadata *scpb.SchedulingMetadata
+}
+
 // Runner represents an isolated execution environment.
 //
 // Runners are assigned a single task when they are retrieved from a Pool,
@@ -548,7 +565,7 @@ type Runner interface {
 	// to the runner.
 	//
 	// It populates the download stat fields in the given IOStats.
-	DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error
+	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
 
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context) *CommandResult
@@ -557,7 +574,7 @@ type Runner interface {
 	// the runner, as well as the result of the run.
 	//
 	// It populates the upload stat fields in the given IOStats.
-	UploadOutputs(ctx context.Context, ioStats *espb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
 }
 
 // Pool is responsible for assigning tasks to runners.
@@ -598,6 +615,11 @@ type RunnerPool interface {
 	// Shutdown removes all runners from the pool.
 	Shutdown(ctx context.Context) error
 
+	// Wait waits for all background cleanup jobs to complete. This is intended to
+	// be called during shutdown, after all tasks have finished executing (to ensure
+	// that no new cleanup jobs will be needed after this returns).
+	Wait()
+
 	// Returns the build root directory for this pool.
 	GetBuildRoot() string
 }
@@ -636,6 +658,10 @@ type CommandResult struct {
 	// * -2 (NoExitCode) if the exit code could not be determined because it returned
 	//   an error other than exec.ExitError. This case typically means it failed to start.
 	ExitCode int
+
+	// UsageStats holds the command's measured resource usage. It may be nil if
+	// resource measurement is not implemented by the command's isolation type.
+	UsageStats *repb.UsageStats
 }
 
 type Subscriber interface {

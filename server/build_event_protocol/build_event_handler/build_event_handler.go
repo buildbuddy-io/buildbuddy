@@ -128,6 +128,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
 		collector:      b.env.GetMetricsCollector(),
+		apiTargetMap:   make(api_common.TargetMap),
 
 		hasReceivedEventWithOptions: false,
 		eventsBeforeOptions:         make([]*inpb.InvocationEvent, 0),
@@ -472,6 +473,7 @@ type EventChannel struct {
 	targetTracker  *target_tracker.TargetTracker
 	statsRecorder  *statsRecorder
 	collector      interfaces.MetricsCollector
+	apiTargetMap   api_common.TargetMap
 
 	eventsBeforeOptions         []*inpb.InvocationEvent
 	hasReceivedEventWithOptions bool
@@ -577,6 +579,8 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
 	}
+
+	e.flushAPIFacets(iid)
 
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
@@ -691,7 +695,6 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
-		isFirstEventWithOptions := !e.hasReceivedEventWithOptions
 		e.hasReceivedEventWithOptions = true
 		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
@@ -731,63 +734,49 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			ti.LastChunkId = eventlog.EmptyId
 		}
 
-		if isFirstEventWithOptions {
-			created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, ti)
-			if err != nil {
-				return err
+		created, err := e.env.GetInvocationDB().CreateInvocation(e.ctx, ti)
+		if err != nil {
+			return err
+		}
+		if !created {
+			// We failed to retry an existing invocation
+			log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			e.isVoid = true
+			return nil
+		}
+		e.attempt = ti.Attempt
+		chunkFileSizeBytes := *chunkFileSizeBytes
+		if chunkFileSizeBytes == 0 {
+			chunkFileSizeBytes = defaultChunkFileSizeBytes
+		}
+		e.pw = protofile.NewBufferedProtoWriter(
+			e.env.GetBlobstore(),
+			GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
+			chunkFileSizeBytes,
+		)
+		if *enableChunkedEventLogs {
+			numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
+			if numLinesToRetain != 0 {
+				// the number of lines curses can overwrite is 3 + the ui_actions shown:
+				// 1 for the progress tracker, 1 for each action, and 2 blank lines.
+				// 0 indicates that curses is not being used.
+				numLinesToRetain += 3
 			}
-			if !created {
-				// We failed to retry an existing invocation
-				log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
-				e.isVoid = true
-				return nil
-			}
-			e.attempt = ti.Attempt
-			chunkFileSizeBytes := *chunkFileSizeBytes
-			if chunkFileSizeBytes == 0 {
-				chunkFileSizeBytes = defaultChunkFileSizeBytes
-			}
-			e.pw = protofile.NewBufferedProtoWriter(
+			e.logWriter = eventlog.NewEventLogWriter(
+				e.ctx,
 				e.env.GetBlobstore(),
-				GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
-				chunkFileSizeBytes,
+				e.env.GetKeyValStore(),
+				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
+				numLinesToRetain,
 			)
-			if *enableChunkedEventLogs {
-				numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
-				if numLinesToRetain != 0 {
-					// the number of lines curses can overwrite is 3 + the ui_actions shown:
-					// 1 for the progress tracker, 1 for each action, and 2 blank lines.
-					// 0 indicates that curses is not being used.
-					numLinesToRetain += 3
-				}
-				e.logWriter = eventlog.NewEventLogWriter(
-					e.ctx,
-					e.env.GetBlobstore(),
-					e.env.GetKeyValStore(),
-					eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
-					numLinesToRetain,
-				)
-			}
-			// Since this is the first event with options and we just parsed the API key,
-			// now is a good time to record invocation usage for the group. Check that
-			// this is the first attempt of this invocation, to guarantee that we
-			// don't increment the usage on invocation retries.
-			if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
-				if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
-					log.Warningf("Failed to record invocation usage: %s", err)
-				}
-			}
-		} else {
-			if e.logWriter != nil {
-				ti.LastChunkId = e.logWriter.GetLastChunkId(e.ctx)
-			}
-			updated, err := e.env.GetInvocationDB().UpdateInvocation(e.ctx, ti)
-			if err != nil {
-				return err
-			}
-			if !updated {
-				e.isVoid = true
-				return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
+		}
+		// Since this is the first event with options and we just parsed the API key,
+		// now is a good time to record invocation usage for the group. Check that
+		// this is the first attempt of this invocation, to guarantee that we
+		// don't increment the usage on invocation retries.
+		if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
+			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
+				log.Warningf("Failed to record invocation usage: %s", err)
 			}
 		}
 	} else if !e.hasReceivedEventWithOptions {
@@ -867,10 +856,43 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 
 const apiFacetsExpiration = 1 * time.Hour
 
-func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
-	if e.collector == nil || !api_config.CacheEnabled() {
+func (e *EventChannel) flushAPIFacets(iid string) error {
+	auth := e.env.GetAuthenticator()
+	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
 		return nil
 	}
+
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if userInfo == nil || err != nil {
+		return nil
+	}
+
+	for label, target := range e.apiTargetMap {
+		b, err := proto.Marshal(target)
+		if err != nil {
+			return err
+		}
+		key := api_common.TargetLabelKey(userInfo.GetGroupID(), iid, label)
+		if err := e.collector.Set(e.ctx, key, string(b), apiFacetsExpiration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
+	auth := e.env.GetAuthenticator()
+	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
+		return nil
+	}
+
+	userInfo, err := auth.AuthenticatedUser(e.ctx)
+	if userInfo == nil || err != nil {
+		return nil
+	}
+
+	e.apiTargetMap.ProcessEvent(iid, event)
+
 	action := &apipb.Action{
 		Id: &apipb.Action_Id{
 			InvocationId: iid,
@@ -887,7 +909,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 	if err != nil {
 		return err
 	}
-	key := api_common.ActionsKey(iid)
+	key := api_common.ActionLabelKey(userInfo.GetGroupID(), iid, action.GetTargetLabel())
 	if err := e.collector.ListAppend(e.ctx, key, string(b)); err != nil {
 		return err
 	}
@@ -943,12 +965,12 @@ func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
 func getNumActionsFromOptions(event *build_event_stream.BuildEvent) int {
 	options, err := extractOptions(event)
 	if err != nil {
-		log.Warningf("Could not extract options for ui_actions_show, defaulting to %d: %d", defaultActionsShown, err)
+		log.Warningf("Could not extract options for ui_actions_shown, defaulting to %d: %d", defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	optionsList, err := shlex.Split(options)
 	if err != nil {
-		log.Warningf("Could not shlex split options for ui_actions_show, defaulting to %d: %v", defaultActionsShown, err)
+		log.Warningf("Could not shlex split options '%s' for ui_actions_shown, defaulting to %d: %v", options, defaultActionsShown, err)
 		return defaultActionsShown
 	}
 	actionsShownValues := getOptionValues(optionsList, "ui_actions_shown")

@@ -286,7 +286,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
+func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -459,7 +459,7 @@ func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	mustAddWithoutEviction(t, ctx, pool, r4)
 }
 
-func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
+func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -483,9 +483,9 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	err = pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
-	require.Equal(t, 0, pool.ActiveRunnerCount())
+	require.Equal(t, 1, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
+	require.NoError(t, err, "runner should not have been removed on shutdown")
 }
 
 func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
@@ -520,13 +520,12 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
 	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
-	return &repb.ExecutionTask{
+	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{
 				workerPath,
 				"--protocol=" + protocol,
 				"--response_base64=" + encodedResponse(t, protocol, resp),
-				arg,
 			},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
@@ -537,6 +536,10 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 			},
 		},
 	}
+	if arg != "" {
+		task.Command.Arguments = append(task.Command.Arguments, arg)
+	}
+	return task
 }
 
 func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {
@@ -643,18 +646,36 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 	require.Error(t, res.Error)
 }
 
-func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
+func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	// Persistent runner with unknown flagfile
+	// Persistent worker with unknown flagfile
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile", "", &wkpb.WorkResponse{}))
 	require.NoError(t, err)
 	res := r.Run(context.Background())
 	require.Error(t, res.Error)
 
-	// Make sure that after trying to recycle doesn't put the worker back in the pool.
+	// Make sure that after the error, trying to recycle doesn't put the worker
+	// back in the pool.
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Persistent worker with runner that crashes
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "--fail_with_stderr=TestStderrMessage", "", &wkpb.WorkResponse{}))
+	require.NoError(t, err)
+	res := r.Run(context.Background())
+	require.Error(t, res.Error)
+	assert.Contains(t, res.Error.Error(), "persistent worker stderr:", res.Error.Error())
+	assert.Contains(t, res.Error.Error(), "TestStderrMessage")
+
 	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }

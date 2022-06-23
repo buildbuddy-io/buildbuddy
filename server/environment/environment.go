@@ -75,6 +75,8 @@ type Env interface {
 	SetSchedulerService(interfaces.SchedulerService)
 	GetTaskRouter() interfaces.TaskRouter
 	SetTaskRouter(interfaces.TaskRouter)
+	GetTaskSizer() interfaces.TaskSizer
+	SetTaskSizer(interfaces.TaskSizer)
 	GetDefaultRedisClient() redis.UniversalClient
 	SetDefaultRedisClient(redis.UniversalClient)
 	GetRemoteExecutionRedisClient() redis.UniversalClient

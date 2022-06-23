@@ -8,9 +8,8 @@ go_library(
     deps = [
         "//proto:trace_go_proto",
         "//server/environment",
-        "//server/util/flagutil",
+        "//server/util/flagutil/types",
         "//server/util/log",
-        "//server/util/random",
         "//server/util/status",
         "@io_opentelemetry_go_contrib_detectors_gcp//:gcp",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",

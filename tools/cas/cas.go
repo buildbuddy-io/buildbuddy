@@ -66,6 +66,7 @@ func main() {
 	}
 	bsClient := bspb.NewByteStreamClient(conn)
 	acClient := repb.NewActionCacheClient(conn)
+	casClient := repb.NewContentAddressableStorageClient(conn)
 
 	ctx := context.Background()
 	if *apiKey != "" {
@@ -98,6 +99,17 @@ func main() {
 			}
 		}
 		out, _ := prototext.Marshal(ar)
+		fmt.Println(string(out))
+		return
+	}
+
+	// Handle Trees (these are stored in the CAS)
+	if *blobType == "Tree" {
+		inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, casClient, ind)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		out, _ := prototext.Marshal(inputTree)
 		fmt.Println(string(out))
 		return
 	}

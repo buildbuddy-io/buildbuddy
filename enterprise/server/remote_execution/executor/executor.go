@@ -22,11 +22,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
-
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -141,7 +140,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfaces.ScheduledTask, stream operation.StreamLike) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
@@ -155,6 +154,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	stage := &stagedGauge{}
 	defer stage.End()
 
+	task := st.ExecutionTask
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
@@ -177,6 +177,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		QueuedTimestamp:      task.QueuedTimestamp,
 		WorkerStartTimestamp: timestamppb.Now(),
 		ExecutorId:           s.id,
+		IoStats:              &repb.IOStats{},
+		EstimatedTaskSize:    st.SchedulingMetadata.GetTaskSize(),
 	}
 
 	if !req.GetSkipCacheLookup() {
@@ -196,22 +198,21 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
-	stage.Set("pull_image")
-	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(err)
-	}
-
 	finishedCleanly := false
 	defer func() {
 		ctx := context.Background()
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
+	stage.Set("pull_image")
+	if err := r.PrepareForTask(ctx); err != nil {
+		return finishWithErrFn(err)
+	}
+
 	md.InputFetchStartTimestamp = timestamppb.Now()
 
 	stage.Set("input_fetch")
-	ioStats := &espb.IOStats{}
-	if err := r.DownloadInputs(ctx, ioStats); err != nil {
+	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
 		return finishWithErrFn(err)
 	}
 
@@ -266,6 +267,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 		log.Warningf("Command execution returned error: %s", cmdResult.Error)
 	}
 
+	md.UsageStats = cmdResult.UsageStats
+
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
 	// for debugging.
@@ -280,7 +283,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
 	stage.Set("output_upload")
-	if err := r.UploadOutputs(ctx, ioStats, actionResult, cmdResult); err != nil {
+	if err := r.UploadOutputs(ctx, md.IoStats, actionResult, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
@@ -304,12 +307,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
 		metrics.ExitCodeLabel: fmt.Sprintf("%d", actionResult.ExitCode),
 	}).Inc()
-	metrics.FileDownloadCount.Observe(float64(ioStats.FileDownloadCount))
-	metrics.FileDownloadSizeBytes.Observe(float64(ioStats.FileDownloadSizeBytes))
-	metrics.FileDownloadDurationUsec.Observe(float64(ioStats.FileDownloadDurationUsec))
-	metrics.FileUploadCount.Observe(float64(ioStats.FileUploadCount))
-	metrics.FileUploadSizeBytes.Observe(float64(ioStats.FileUploadSizeBytes))
-	metrics.FileUploadDurationUsec.Observe(float64(ioStats.FileUploadDurationUsec))
+	metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
+	metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
+	metrics.FileDownloadDurationUsec.Observe(float64(md.IoStats.FileDownloadDurationUsec))
+	metrics.FileUploadCount.Observe(float64(md.IoStats.FileUploadCount))
+	metrics.FileUploadSizeBytes.Observe(float64(md.IoStats.FileUploadSizeBytes))
+	metrics.FileUploadDurationUsec.Observe(float64(md.IoStats.FileUploadDurationUsec))
 
 	groupID := interfaces.AuthAnonymousUser
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
@@ -323,11 +326,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 	observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 
-	execSummary := &espb.ExecutionSummary{
-		IoStats:                ioStats,
-		ExecutedActionMetadata: md,
-	}
-
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
@@ -335,7 +333,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
-	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {
+	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)); err != nil {
 		log.Errorf("Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}

@@ -469,10 +469,11 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 	// TODO(bduffany): track this as a contains() request, or find a way to
 	// track it as part of the read
 
-	readRange := aws.String(fmt.Sprintf("%d-", offset))
+	// This range follows the format specified here: https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
+	readRange := aws.String(fmt.Sprintf("bytes=%d-", offset))
 	if limit != 0 {
 		// range bounds are inclusive
-		readRange = aws.String(fmt.Sprintf("%d-%d", offset, offset+limit-1))
+		readRange = aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+limit-1))
 	}
 
 	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{

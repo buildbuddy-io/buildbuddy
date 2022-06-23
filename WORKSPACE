@@ -105,9 +105,9 @@ yarn_install(
 
 http_archive(
     name = "io_bazel_rules_docker",
-    sha256 = "85ffff62a4c22a74dbd98d05da6cf40f497344b3dbf1e1ab0a37ab2a1a6ca014",
-    strip_prefix = "rules_docker-0.23.0",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.23.0/rules_docker-v0.23.0.tar.gz"],
+    sha256 = "27d53c1d646fc9537a70427ad7b034734d08a9c38924cc6357cc973fed300820",
+    strip_prefix = "rules_docker-0.24.0",
+    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.24.0/rules_docker-v0.24.0.tar.gz"],
 )
 
 load(
@@ -220,7 +220,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:0d7168393f3b5182e0b4573b181498ba592ab18d14f35e299c2375ead522254a",
+    digest = "sha256:34e96e21516698913035a62ef1ce484d91184de8a44209a33c7e134547e20dee",
     registry = "gcr.io",
     repository = "distroless/base-debian11",
 )
@@ -228,7 +228,7 @@ container_pull(
 # Base image that can be used to build images that are capable of running the Bazel binary.
 container_pull(
     name = "bazel_image_base",
-    digest = "sha256:629d4fdc17eec821242d45497abcb88cc0442c47fd5748baa79d88dde7da3e2d",
+    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
     registry = "gcr.io",
     repository = "distroless/java11-debian11",
 )

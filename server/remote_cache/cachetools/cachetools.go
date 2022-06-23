@@ -565,3 +565,43 @@ func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName s
 func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
+
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
+	var dirs []*repb.Directory
+	nextPageToken := ""
+	for {
+		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+			RootDigest:   r.GetDigest(),
+			InstanceName: r.GetInstanceName(),
+			PageToken:    nextPageToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for {
+			rsp, err := stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			nextPageToken = rsp.GetNextPageToken()
+			for _, child := range rsp.GetDirectories() {
+				dirs = append(dirs, child)
+			}
+		}
+		if nextPageToken == "" {
+			break
+		}
+	}
+
+	if len(dirs) == 0 {
+		return &repb.Tree{Root: &repb.Directory{}}, nil
+	}
+
+	return &repb.Tree{
+		Root:     dirs[0],
+		Children: dirs[1:],
+	}, nil
+}

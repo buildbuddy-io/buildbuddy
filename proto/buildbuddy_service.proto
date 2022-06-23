@@ -14,6 +14,7 @@ import "proto/workflow.proto";
 import "proto/scheduler.proto";
 import "proto/usage.proto";
 import "proto/github.proto";
+import "proto/quota.proto";
 
 package buildbuddy.service;
 
@@ -103,4 +104,16 @@ service BuildBuddyService {
 
   // Usage API
   rpc GetUsage(usage.GetUsageRequest) returns (usage.GetUsageResponse);
+
+  // Quota API
+  rpc GetNamespace(quota.GetNamespaceRequest)
+      returns (quota.GetNamespaceResponse);
+
+  rpc RemoveNamespace(quota.RemoveNamespaceRequest)
+      returns (quota.RemoveNamespaceResponse);
+
+  rpc ModifyNamespace(quota.ModifyNamespaceRequest)
+      returns (quota.ModifyNamespaceResponse);
+
+  rpc ApplyBucket(quota.ApplyBucketRequest) returns (quota.ApplyBucketResponse);
 }

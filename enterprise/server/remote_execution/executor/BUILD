@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/remote_execution/operation",
-        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
