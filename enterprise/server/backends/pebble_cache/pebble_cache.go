@@ -104,7 +104,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
-                return err
+		return err
 	}
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
@@ -187,7 +187,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	if err := disk.EnsureDirectoryExists(opts.RootDirectory); err != nil {
-                return nil, err
+		return nil, err
 	}
 	ensureDefaultPartitionExists(opts)
 
