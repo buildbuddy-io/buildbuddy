@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -178,6 +177,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 		QueuedTimestamp:      task.QueuedTimestamp,
 		WorkerStartTimestamp: timestamppb.Now(),
 		ExecutorId:           s.id,
+		IoStats:              &repb.IOStats{},
+		EstimatedTaskSize:    st.SchedulingMetadata.GetTaskSize(),
 	}
 
 	if !req.GetSkipCacheLookup() {
@@ -211,8 +212,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	md.InputFetchStartTimestamp = timestamppb.Now()
 
 	stage.Set("input_fetch")
-	ioStats := &espb.IOStats{}
-	if err := r.DownloadInputs(ctx, ioStats); err != nil {
+	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
 		return finishWithErrFn(err)
 	}
 
@@ -267,6 +267,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 		log.Warningf("Command execution returned error: %s", cmdResult.Error)
 	}
 
+	md.UsageStats = cmdResult.UsageStats
+
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
 	// for debugging.
@@ -281,7 +283,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
 	stage.Set("output_upload")
-	if err := r.UploadOutputs(ctx, ioStats, actionResult, cmdResult); err != nil {
+	if err := r.UploadOutputs(ctx, md.IoStats, actionResult, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
@@ -305,12 +307,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
 		metrics.ExitCodeLabel: fmt.Sprintf("%d", actionResult.ExitCode),
 	}).Inc()
-	metrics.FileDownloadCount.Observe(float64(ioStats.FileDownloadCount))
-	metrics.FileDownloadSizeBytes.Observe(float64(ioStats.FileDownloadSizeBytes))
-	metrics.FileDownloadDurationUsec.Observe(float64(ioStats.FileDownloadDurationUsec))
-	metrics.FileUploadCount.Observe(float64(ioStats.FileUploadCount))
-	metrics.FileUploadSizeBytes.Observe(float64(ioStats.FileUploadSizeBytes))
-	metrics.FileUploadDurationUsec.Observe(float64(ioStats.FileUploadDurationUsec))
+	metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
+	metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
+	metrics.FileDownloadDurationUsec.Observe(float64(md.IoStats.FileDownloadDurationUsec))
+	metrics.FileUploadCount.Observe(float64(md.IoStats.FileUploadCount))
+	metrics.FileUploadSizeBytes.Observe(float64(md.IoStats.FileUploadSizeBytes))
+	metrics.FileUploadDurationUsec.Observe(float64(md.IoStats.FileUploadDurationUsec))
 
 	groupID := interfaces.AuthAnonymousUser
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
@@ -324,13 +326,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 	observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 
-	execSummary := &espb.ExecutionSummary{
-		IoStats:                ioStats,
-		UsageStats:             cmdResult.UsageStats,
-		EstimatedTaskSize:      st.SchedulingMetadata.GetTaskSize(),
-		ExecutedActionMetadata: md,
-	}
-
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
@@ -338,7 +333,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 	}
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
-	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, execSummary, cmdResult.Error)); err != nil {
+	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)); err != nil {
 		log.Errorf("Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}

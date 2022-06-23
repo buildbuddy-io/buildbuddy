@@ -10,7 +10,6 @@ go_library(
     ],
     deps = [
         "//enterprise/server/remote_execution/platform",
-        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
@@ -29,7 +28,6 @@ go_test(
         ":tasksize",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/testutil/testredis",
-        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

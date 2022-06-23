@@ -135,18 +135,6 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 		},
 		ExitCode: in.ExitCode,
 		Stage:    repb.ExecutionStage_Value(in.Stage),
-		IoStats: &espb.IOStats{
-			FileDownloadCount:        in.FileDownloadCount,
-			FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
-			FileDownloadDurationUsec: in.FileDownloadDurationUsec,
-			FileUploadCount:          in.FileUploadCount,
-			FileUploadSizeBytes:      in.FileUploadSizeBytes,
-			FileUploadDurationUsec:   in.FileUploadDurationUsec,
-		},
-		UsageStats: &espb.UsageStats{
-			CpuNanos:        in.CPUNanos,
-			PeakMemoryBytes: in.PeakMemoryBytes,
-		},
 		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
 			Worker:                         in.Worker,
 			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
@@ -158,6 +146,18 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
 			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
 			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
+			IoStats: &repb.IOStats{
+				FileDownloadCount:        in.FileDownloadCount,
+				FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
+				FileDownloadDurationUsec: in.FileDownloadDurationUsec,
+				FileUploadCount:          in.FileUploadCount,
+				FileUploadSizeBytes:      in.FileUploadSizeBytes,
+				FileUploadDurationUsec:   in.FileUploadDurationUsec,
+			},
+			UsageStats: &repb.UsageStats{
+				CpuNanos:        in.CPUNanos,
+				PeakMemoryBytes: in.PeakMemoryBytes,
+			},
 		},
 		CommandSnippet: in.CommandSnippet,
 	}

@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	quotaManagerEnabled = flag.Bool("app.quota_manager_enabled", false, "If set, quota manager will be enabled")
+	quotaManagerEnabled = flag.Bool("app.enable_quota_management", false, "If set, quota management will be enabled")
 )
 
 const (

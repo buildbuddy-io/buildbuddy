@@ -539,7 +539,7 @@ type TaskSizer interface {
 
 	// Update updates future resource usage estimates based on a command's
 	// recorded execution stats.
-	Update(ctx context.Context, cmd *repb.Command, summary *espb.ExecutionSummary) error
+	Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
@@ -565,7 +565,7 @@ type Runner interface {
 	// to the runner.
 	//
 	// It populates the download stat fields in the given IOStats.
-	DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error
+	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
 
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context) *CommandResult
@@ -574,7 +574,7 @@ type Runner interface {
 	// the runner, as well as the result of the run.
 	//
 	// It populates the upload stat fields in the given IOStats.
-	UploadOutputs(ctx context.Context, ioStats *espb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
 }
 
 // Pool is responsible for assigning tasks to runners.
@@ -661,7 +661,7 @@ type CommandResult struct {
 
 	// UsageStats holds the command's measured resource usage. It may be nil if
 	// resource measurement is not implemented by the command's isolation type.
-	UsageStats *espb.UsageStats
+	UsageStats *repb.UsageStats
 }
 
 type Subscriber interface {

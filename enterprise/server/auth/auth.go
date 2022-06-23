@@ -298,13 +298,13 @@ func (a *oidcAuthenticator) exchange(ctx context.Context, code string, opts ...o
 }
 
 func (a *oidcAuthenticator) verifyTokenAndExtractUser(ctx context.Context, jwt string, checkExpiry bool) (*userToken, error) {
-	conf := a.oidcConfig
+	conf := *a.oidcConfig // copy
 	conf.SkipExpiryCheck = !checkExpiry
 	provider, err := a.provider()
 	if err != nil {
 		return nil, err
 	}
-	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
+	validToken, err := provider.Verifier(&conf).Verify(ctx, jwt)
 	if err != nil {
 		return nil, err
 	}
