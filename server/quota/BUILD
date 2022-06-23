@@ -15,10 +15,7 @@ go_library(
         "//server/util/status",
         "@com_github_throttled_throttled_v2//:throttled",
         "@com_github_throttled_throttled_v2//store/goredisstore.v8:goredisstore_v8",
-<<<<<<< HEAD
         "@org_golang_google_grpc//metadata",
-=======
->>>>>>> master
     ],
 )
 
