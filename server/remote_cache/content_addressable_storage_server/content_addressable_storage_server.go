@@ -500,6 +500,10 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 		if err := proto.Unmarshal(blob, subDir); err != nil {
 			return nil, err
 		}
+		if len(subDir.Directories) == 0 && len(subDir.Files) == 0 && len(subDir.Symlinks) == 0 {
+			log.Warningf("Found empty directory for digest: %s blob: [%+v]", d.GetHash(), blob)
+			return nil, status.NotFoundErrorf("Found empty directory for digest %s.", d.GetHash())
+		}
 		children = append(children, &repb.DirectoryWithDigest{Directory: subDir, Digest: d})
 	}
 	return children, nil
@@ -598,7 +602,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
-					return treeCache.GetChildren(), nil
+					if isComplete(treeCache) {
+						return treeCache.GetChildren(), nil
+					} else {
+						log.Warningf("Ignoring incomplete treeCache entry")
+					}
 				}
 			}
 		}
@@ -639,12 +647,16 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			treeCache := &repb.TreeCache{
 				Children: allDescendents,
 			}
-			buf, err := proto.Marshal(treeCache)
-			if err != nil {
-				return nil, err
-			}
-			if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
-				log.Warningf("Error setting treeCache blob: %s", err)
+			if isComplete(treeCache) {
+				buf, err := proto.Marshal(treeCache)
+				if err != nil {
+					return nil, err
+				}
+				if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
+					log.Warningf("Error setting treeCache blob: %s", err)
+				}
+			} else {
+				log.Warningf("Not caching incomplete tree cache")
 			}
 		}
 		return allDescendents, nil
@@ -668,4 +680,20 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return stream.Send(rsp)
 	}
 	return nil
+}
+
+func isComplete(treeCache *repb.TreeCache) bool {
+	allDigests := make(map[string]struct{}, len(treeCache.GetChildren()))
+	for _, child := range treeCache.Children {
+		allDigests[child.GetDigest().GetHash()] = struct{}{}
+	}
+	for _, child := range treeCache.Children {
+		for _, dirNode := range child.GetDirectory().GetDirectories() {
+			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
+				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				return false
+			}
+		}
+	}
+	return true
 }
