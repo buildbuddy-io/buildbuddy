@@ -86,12 +86,15 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 			ns := config[tg.Namespace]
 			if ns == nil {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
+				continue
 			}
 			if _, ok := ns.bucketsByName[tg.BucketName]; !ok {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
+				continue
 			}
 			if tg.BucketName == defaultBucketName {
 				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
+				continue
 			}
 			if keys := ns.quotaKeysByBucketName[tg.BucketName]; keys == nil {
 				ns.quotaKeysByBucketName[tg.BucketName] = []string{tg.QuotaKey}
