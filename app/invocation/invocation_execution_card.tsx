@@ -181,7 +181,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
         );
       case "files-uploaded":
         return (
-          +first?.executedActionMetadata.ioStats?.fileUploadCount -
+          +first?.executedActionMetadata?.ioStats?.fileUploadCount -
           +second?.executedActionMetadata?.ioStats?.fileUploadCount
         );
       case "file-size-downloaded":
