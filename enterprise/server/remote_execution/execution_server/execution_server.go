@@ -258,12 +258,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		execution.CachedResult = executeResponse.GetCachedResult()
 
 		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetMessage() != "" {
-			if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
-				summary := &espb.ExecutionSummary{}
-				if err := proto.Unmarshal(data, summary); err == nil {
-					fillExecutionFromSummary(summary, execution)
-				}
+		if stage == repb.ExecutionStage_COMPLETED {
+			summary, _ := decodeExecutionSummary(executeResponse)
+			if summary != nil {
+				fillExecutionFromSummary(summary, execution)
 			}
 		}
 	}
@@ -866,6 +864,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
 	}
 
+	sizer := s.env.GetTaskSizer()
+	summary, _ := decodeExecutionSummary(executeResponse)
+	if sizer != nil && summary != nil {
+		if err := sizer.Update(ctx, cmd, summary); err != nil {
+			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+	}
+
 	return s.updateUsage(ctx, cmd, executeResponse)
 }
 
@@ -949,4 +955,19 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	}
 	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
 	return nil
+}
+
+func decodeExecutionSummary(resp *repb.ExecuteResponse) (*espb.ExecutionSummary, error) {
+	if resp.GetMessage() == "" {
+		return nil, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(resp.GetMessage())
+	if err != nil {
+		return nil, err
+	}
+	summary := &espb.ExecutionSummary{}
+	if err := proto.Unmarshal(data, summary); err != nil {
+		return nil, err
+	}
+	return summary, nil
 }
