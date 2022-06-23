@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -62,6 +61,11 @@ func fillExecutionFromSummary(summary *espb.ExecutionSummary, execution *tables.
 	execution.FileUploadCount = summary.GetIoStats().GetFileUploadCount()
 	execution.FileUploadSizeBytes = summary.GetIoStats().GetFileUploadSizeBytes()
 	execution.FileUploadDurationUsec = summary.GetIoStats().GetFileUploadDurationUsec()
+	// Task sizing
+	execution.EstimatedMilliCPU = summary.GetEstimatedTaskSize().GetEstimatedMilliCpu()
+	execution.EstimatedMemoryBytes = summary.GetEstimatedTaskSize().GetEstimatedMemoryBytes()
+	execution.PeakMemoryBytes = summary.GetUsageStats().GetPeakMemoryBytes()
+	execution.CPUNanos = summary.GetUsageStats().GetCpuNanos()
 	// ExecutedActionMetadata
 	execution.Worker = summary.GetExecutedActionMetadata().GetWorker()
 	execution.QueuedTimestampUsec = summary.GetExecutedActionMetadata().GetQueuedTimestamp().AsTime().UnixMicro()
@@ -131,7 +135,7 @@ func Register(env environment.Env) error {
 	// remote execution.
 	executionServer, err := NewExecutionServer(env)
 	if err != nil {
-		log.Fatalf("Error initializing ExecutionServer: %s", err)
+		return status.FailedPreconditionErrorf("Error initializing ExecutionServer: %s", err)
 	}
 	env.SetRemoteExecutionService(executionServer)
 	return nil
@@ -211,9 +215,16 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		ExecutionID:  executionID,
 		Type:         int8(linkType),
 	}
-	return s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+	err := s.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
 		return tx.Create(link).Error
 	})
+	// This probably means there were duplicate actions in a single invocation
+	// that were merged. Not an error.
+	if err != nil && s.env.GetDBHandle().IsDuplicateKeyError(err) {
+		log.CtxWarningf(ctx, "Duplicate execution link while inserting execution %q invocation ID %q link type %d", executionID, invocationID, linkType)
+		return nil
+	}
+	return err
 }
 
 func trimStatus(statusMessage string) string {
@@ -241,25 +252,23 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			if err == nil {
 				execution.SerializedStatusDetails = serializedDetails
 			} else {
-				log.Errorf("Error marshalling status details: %s", err.Error())
+				log.CtxErrorf(ctx, "Error marshalling status details: %s", err.Error())
 			}
 		}
 		execution.CachedResult = executeResponse.GetCachedResult()
 
 		// Update stats if the operation has been completed.
-		if stage == repb.ExecutionStage_COMPLETED && executeResponse.GetMessage() != "" {
-			if data, err := base64.StdEncoding.DecodeString(executeResponse.GetMessage()); err == nil {
-				summary := &espb.ExecutionSummary{}
-				if err := proto.Unmarshal(data, summary); err == nil {
-					fillExecutionFromSummary(summary, execution)
-				}
+		if stage == repb.ExecutionStage_COMPLETED {
+			summary, _ := decodeExecutionSummary(executeResponse)
+			if summary != nil {
+				fillExecutionFromSummary(summary, execution)
 			}
 		}
 	}
 
 	if *enableActionMerging && stage == repb.ExecutionStage_COMPLETED {
 		if err := s.deletePendingExecution(ctx, executionID); err != nil {
-			log.Warningf("could not delete pending execution %q: %s", executionID, err)
+			log.CtxWarningf(ctx, "could not delete pending execution %q: %s", executionID, err)
 		}
 	}
 
@@ -324,16 +333,20 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if scheduler == nil {
 		return "", status.FailedPreconditionErrorf("No scheduler service configured")
 	}
+	sizer := s.env.GetTaskSizer()
+	if sizer == nil {
+		return "", status.FailedPreconditionError("No task sizer configured")
+	}
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
-		log.Errorf("Error fetching action: %s", err.Error())
+		log.CtxErrorf(ctx, "Error fetching action: %s", err.Error())
 		return "", err
 	}
 	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName())
 	command := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
-		log.Errorf("Error fetching command: %s", err.Error())
+		log.CtxErrorf(ctx, "Error fetching command: %s", err.Error())
 		return "", err
 	}
 
@@ -379,7 +392,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := tasksize.Estimate(executionTask)
+	taskSize := sizer.Estimate(ctx, executionTask)
 
 	props := platform.ParseProperties(executionTask)
 
@@ -420,7 +433,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if err := s.recordPendingExecution(ctx, executionID, r); err != nil {
-		log.Warningf("could not recording pending execution %q: %s", executionID, err)
+		log.CtxWarningf(ctx, "could not recording pending execution %q: %s", executionID, err)
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
@@ -461,7 +474,7 @@ func (s *ExecutionServer) findPendingExecution(ctx context.Context, adResource *
 		return "", err
 	}
 	if !ok {
-		log.Warningf("Pending execution %q does not exist in the scheduler", executionID)
+		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", executionID)
 		return "", nil
 	}
 	return executionID, nil
@@ -490,10 +503,10 @@ func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionI
 		return err
 	}
 	if err := s.rdb.Del(ctx, pendingExecutionKey).Err(); err != nil {
-		log.Warningf("could not delete pending execution key %q: %s", pendingExecutionKey, err)
+		log.CtxWarningf(ctx, "could not delete pending execution key %q: %s", pendingExecutionKey, err)
 	}
 	if err := s.rdb.Del(ctx, pendingExecutionDigestKey).Err(); err != nil {
-		log.Warningf("could not delete pending execution digest key %q: %s", pendingExecutionDigestKey, err)
+		log.CtxWarningf(ctx, "could not delete pending execution digest key %q: %s", pendingExecutionDigestKey, err)
 	}
 	return nil
 }
@@ -528,10 +541,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			// one.
 			ee, err := s.findPendingExecution(ctx, adInstanceDigest)
 			if err != nil {
-				log.Warningf("could not check for existing execution: %s", err)
+				log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 			}
 			if ee != "" {
-				log.Infof("Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
+				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 				if err := s.insertInvocationLink(ctx, ee, invocationID, linkTypeMergedExecution); err != nil {
@@ -544,14 +557,14 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Create a new execution unless we found an existing identical action we
 	// can wait on.
 	if executionID == "" {
-		log.Infof("Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
+		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
-			log.Errorf("Error dispatching execution %q: %s", executionID, err.Error())
+			log.CtxErrorf(ctx, "Error dispatching execution %q: %s", executionID, err.Error())
 			return err
 		}
 		executionID = newExecutionID
-		log.Infof("Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
+		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{
@@ -577,30 +590,30 @@ type InProgressExecution struct {
 	opName       string
 }
 
-func (e *InProgressExecution) processSerializedOpUpdate(serializedOp string) (done bool, err error) {
+func (e *InProgressExecution) processSerializedOpUpdate(ctx context.Context, serializedOp string) (done bool, err error) {
 	op, err := operation.Decode(serializedOp)
 	if err != nil {
-		log.Warningf("Could not decode operation update for %q: %v", e.opName, err)
+		log.CtxWarningf(ctx, "Could not decode operation update for %q: %v", e.opName, err)
 		// Continue to process further updates.
 		return false, nil
 	}
-	return e.processOpUpdate(op)
+	return e.processOpUpdate(ctx, op)
 }
 
-func (e *InProgressExecution) processOpUpdate(op *longrunning.Operation) (done bool, err error) {
+func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
-	log.Debugf("WaitExecution: %q in stage: %s", e.opName, stage)
+	log.CtxDebugf(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 	if stage < e.lastStage {
 		return false, nil
 	}
 	e.lastStage = stage
 	err = e.clientStream.Send(op)
 	if err == io.EOF {
-		log.Warningf("Caller hung up on operation: %q.", e.opName)
+		log.CtxWarningf(ctx, "Caller hung up on operation: %q.", e.opName)
 		return true, nil // If the caller hung-up, bail out.
 	}
 	if err != nil {
-		log.Warningf("Error sending operation to caller: %q: %s", e.opName, err.Error())
+		log.CtxWarningf(ctx, "Error sending operation to caller: %q: %s", e.opName, err.Error())
 		return true, err // If some other err happened, bail out.
 	}
 	if stage == repb.ExecutionStage_COMPLETED {
@@ -609,7 +622,7 @@ func (e *InProgressExecution) processOpUpdate(op *longrunning.Operation) (done b
 	executeResponse := operation.ExtractExecuteResponse(op)
 	if executeResponse != nil {
 		if executeResponse.GetStatus().GetCode() != 0 {
-			log.Warningf("WaitExecution: %q errored, returning %+v", e.opName, executeResponse.GetStatus())
+			log.CtxWarningf(ctx, "WaitExecution: %q errored, returning %+v", e.opName, executeResponse.GetStatus())
 			return true, gstatus.ErrorProto(executeResponse.GetStatus())
 		}
 	}
@@ -633,7 +646,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 }
 
 func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	log.Debugf("WaitExecution called for: %q", req.GetName())
+	log.CtxDebugf(stream.Context(), "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
@@ -641,7 +654,7 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 
 	actionResource, err := digest.ParseUploadResourceName(req.GetName())
 	if err != nil {
-		log.Errorf("Could not extract digest from %q: %s", req.GetName(), err)
+		log.CtxErrorf(ctx, "Could not extract digest from %q: %s", req.GetName(), err)
 		return err
 	}
 
@@ -670,7 +683,7 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		stateChangeFn := operation.GetStateChangeFunc(stream, req.GetName(), actionResource)
 		err = stateChangeFn(repb.ExecutionStage_UNKNOWN, operation.InProgressExecuteResponse())
 		if err != nil && err != io.EOF {
-			log.Warningf("Could not send initial update: %s", err)
+			log.CtxWarningf(stream.Context(), "Could not send initial update: %s", err)
 		}
 	}
 
@@ -699,9 +712,9 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 		} else {
 			data = msg.Data
 		}
-		done, err := e.processSerializedOpUpdate(data)
+		done, err := e.processSerializedOpUpdate(ctx, data)
 		if done {
-			log.Debugf("WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
+			log.CtxDebugf(ctx, "WaitExecution %q: progress loop exited: err: %v, done: %t", req.GetName(), err, done)
 			return err
 		}
 	}
@@ -725,7 +738,7 @@ func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func()) {
 func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string, reason error) error {
 	r, err := digest.ParseDownloadResourceName(taskID)
 	if err != nil {
-		log.Warningf("Could not parse taskID: %s", err)
+		log.CtxWarningf(ctx, "Could not parse taskID: %s", err)
 		return err
 	}
 	op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, taskID, r, reason)
@@ -737,12 +750,12 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		return err
 	}
 	if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-		log.Warningf("MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
+		log.CtxWarningf(ctx, "MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
 
 	if err := s.updateExecution(ctx, taskID, operation.ExtractStage(op), op); err != nil {
-		log.Warningf("MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
+		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
 	}
 	return nil
@@ -769,7 +782,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		defer mu.Unlock()
 		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
 			if err := s.updateExecution(ctx, taskID, stage, lastOp); err != nil {
-				log.Warningf("PublishOperation: FlushWrite: error updating execution: %q: %s", taskID, err.Error())
+				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %q: %s", taskID, err.Error())
 				return
 			}
 			lastWrite = time.Now()
@@ -782,7 +795,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
 		if err != nil {
-			log.Errorf("PublishOperation: recv err: %s", err.Error())
+			log.CtxErrorf(ctx, "PublishOperation: recv err: %s", err.Error())
 			return err
 		}
 
@@ -792,14 +805,14 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		stage = operation.ExtractStage(op)
 		mu.Unlock()
 
-		log.Debugf("PublishOperation: operation %q stage: %s", taskID, stage)
+		log.CtxDebugf(ctx, "PublishOperation: operation %q stage: %s", taskID, stage)
 
 		if stage == repb.ExecutionStage_COMPLETED {
 			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
 				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
 					// Errors updating the router or recording usage are non-fatal.
-					log.Error(err.Error())
+					log.CtxErrorf(ctx, "Could not update task router: %s", err)
 				}
 			}
 		}
@@ -808,8 +821,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if err != nil {
 			return err
 		}
-		if err := s.streamPubSub.Publish(stream.Context(), s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
-			log.Warningf("Error publishing task %q on stream pubsub: %s", taskID, err)
+		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
+			log.CtxWarningf(ctx, "Error publishing task %q on stream pubsub: %s", taskID, err)
 			return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 		}
 
@@ -819,7 +832,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				defer mu.Unlock()
 
 				if err := s.updateExecution(ctx, taskID, stage, op); err != nil {
-					log.Errorf("PublishOperation: error updating execution: %q: %s", taskID, err.Error())
+					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %q: %s", taskID, err.Error())
 					return err
 				}
 				lastWrite = time.Now()
@@ -849,6 +862,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	if router != nil && !executeResponse.GetCachedResult() {
 		nodeID := executeResponse.GetResult().GetExecutionMetadata().GetExecutorId()
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), nodeID)
+	}
+
+	sizer := s.env.GetTaskSizer()
+	summary, _ := decodeExecutionSummary(executeResponse)
+	if sizer != nil && summary != nil {
+		if err := sizer.Update(ctx, cmd, summary); err != nil {
+			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
 	}
 
 	return s.updateUsage(ctx, cmd, executeResponse)
@@ -928,10 +949,25 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 		if err == nil && cancelled {
 			err = s.MarkExecutionFailed(ctx, e.ExecutionID, status.CanceledError("invocation cancelled"))
 			if err != nil {
-				log.Warningf("Could not mark execution %q as cancelled: %s", e.ExecutionID, err)
+				log.CtxWarningf(ctx, "Could not mark execution %q as cancelled: %s", e.ExecutionID, err)
 			}
 		}
 	}
-	log.Infof("Cancelled %d executions for invocation %s", numCancelled, invocationID)
+	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
 	return nil
+}
+
+func decodeExecutionSummary(resp *repb.ExecuteResponse) (*espb.ExecutionSummary, error) {
+	if resp.GetMessage() == "" {
+		return nil, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(resp.GetMessage())
+	if err != nil {
+		return nil, err
+	}
+	summary := &espb.ExecutionSummary{}
+	if err := proto.Unmarshal(data, summary); err != nil {
+		return nil, err
+	}
+	return summary, nil
 }

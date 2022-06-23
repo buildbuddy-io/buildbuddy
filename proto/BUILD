@@ -87,6 +87,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":remote_execution_proto",
+        ":scheduler_proto",
         "@com_google_protobuf//:duration_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
@@ -111,6 +112,15 @@ proto_library(
 proto_library(
     name = "pagination_proto",
     srcs = [":pagination.proto"],
+)
+
+proto_library(
+    name = "quota_proto",
+    srcs = [":quota.proto"],
+    deps = [
+        ":context_proto",
+        "@com_google_protobuf//:duration_proto",
+    ],
 )
 
 proto_library(
@@ -318,6 +328,7 @@ proto_library(
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
+        ":quota_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
@@ -394,6 +405,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -463,6 +475,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":remote_execution_go_proto",
+        ":scheduler_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
@@ -516,6 +529,15 @@ go_proto_library(
         ":command_line_go_proto",
         ":failure_details_go_proto",
         ":invocation_policy_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "quota_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/quota",
+    proto = ":quota_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -664,6 +686,7 @@ go_proto_library(
         ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":quota_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",

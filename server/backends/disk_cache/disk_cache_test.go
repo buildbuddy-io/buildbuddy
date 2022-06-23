@@ -21,7 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -767,4 +769,248 @@ func TestV2LayoutMigration(t *testing.T) {
 	err = disk_cache.MigrateToV2Layout(rootDir)
 	require.NoError(t, err)
 	testfs.AssertExactFileContents(t, rootDir, expectedContents)
+}
+
+func TestScanDiskDirectoryV1(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := testfs.MakeTempDir(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te := getTestEnv(t, testUsers)
+
+	diskConfig := &disk_cache.Options{
+		RootDirectory: rootDir,
+		UseV2Layout:   false,
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: 10_000_000,
+			},
+			{
+				ID:           "FOO",
+				MaxSizeBytes: 10_000_000,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: "FOO",
+			},
+		},
+	}
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.NoError(t, err)
+
+	tests := []struct {
+		remoteInstanceName string
+		cacheType          interfaces.CacheType
+		apiKey             string
+		expectedPartition  string
+	}{
+		{
+			remoteInstanceName: "",
+			cacheType:          interfaces.CASCacheType,
+			apiKey:             "",
+			expectedPartition:  "default",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.ActionCacheType,
+			apiKey:             "",
+			expectedPartition:  "default",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.CASCacheType,
+			apiKey:             testAPIKey,
+			expectedPartition:  "FOO",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.ActionCacheType,
+			apiKey:             testAPIKey,
+			expectedPartition:  "FOO",
+		},
+	}
+
+	expectedFileRecords := make([]*rfpb.FileRecord, 0)
+
+	for _, test := range tests {
+		var ctx context.Context
+		var err error
+		if test.apiKey != "" {
+			ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		} else {
+			ctx, err = prefix.AttachUserPrefixToContext(context.Background(), te)
+		}
+		if err != nil {
+			t.Fatalf("error attaching context: %s", err)
+		}
+
+		ic, err := dc.WithIsolation(ctx, test.cacheType, test.remoteInstanceName)
+		if err != nil {
+			t.Fatalf("error isolating cache: %s", err)
+		}
+
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		err = ic.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		isolation := &rfpb.Isolation{}
+		switch test.cacheType {
+		case interfaces.CASCacheType:
+			isolation.CacheType = rfpb.Isolation_CAS_CACHE
+		case interfaces.ActionCacheType:
+			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
+		default:
+			t.Fatalf("Unknown cache type: %+v", test.cacheType)
+		}
+		isolation.RemoteInstanceName = test.remoteInstanceName
+		isolation.PartitionId = test.expectedPartition
+		fr := &rfpb.FileRecord{
+			Digest:    d,
+			Isolation: isolation,
+		}
+		expectedFileRecords = append(expectedFileRecords, fr)
+	}
+
+	fmChan := disk_cache.ScanDiskDirectory(rootDir)
+	for fm := range fmChan {
+		found := false
+		for _, fr := range expectedFileRecords {
+			if proto.Equal(fr, fm.GetFileRecord()) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("FileMetadata: %+v was not in expected: %+v", fm, expectedFileRecords)
+		}
+	}
+}
+
+func TestScanDiskDirectoryV2(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := testfs.MakeTempDir(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te := getTestEnv(t, testUsers)
+
+	diskConfig := &disk_cache.Options{
+		RootDirectory: rootDir,
+		UseV2Layout:   true,
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: 10_000_000,
+			},
+			{
+				ID:           "FOO",
+				MaxSizeBytes: 10_000_000,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: "FOO",
+			},
+		},
+	}
+	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
+	require.NoError(t, err)
+
+	tests := []struct {
+		remoteInstanceName string
+		cacheType          interfaces.CacheType
+		apiKey             string
+		expectedPartition  string
+	}{
+		{
+			remoteInstanceName: "",
+			cacheType:          interfaces.CASCacheType,
+			apiKey:             "",
+			expectedPartition:  "default",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.ActionCacheType,
+			apiKey:             "",
+			expectedPartition:  "default",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.CASCacheType,
+			apiKey:             testAPIKey,
+			expectedPartition:  "FOO",
+		},
+		{
+			remoteInstanceName: "prefix",
+			cacheType:          interfaces.ActionCacheType,
+			apiKey:             testAPIKey,
+			expectedPartition:  "FOO",
+		},
+	}
+
+	expectedFileRecords := make([]*rfpb.FileRecord, 0)
+
+	for _, test := range tests {
+		var ctx context.Context
+		var err error
+		if test.apiKey != "" {
+			ctx = te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
+		} else {
+			ctx, err = prefix.AttachUserPrefixToContext(context.Background(), te)
+		}
+		if err != nil {
+			t.Fatalf("error attaching context: %s", err)
+		}
+
+		ic, err := dc.WithIsolation(ctx, test.cacheType, test.remoteInstanceName)
+		if err != nil {
+			t.Fatalf("error isolating cache: %s", err)
+		}
+
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		err = ic.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		isolation := &rfpb.Isolation{}
+		switch test.cacheType {
+		case interfaces.CASCacheType:
+			isolation.CacheType = rfpb.Isolation_CAS_CACHE
+		case interfaces.ActionCacheType:
+			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
+		default:
+			t.Fatalf("Unknown cache type: %+v", test.cacheType)
+		}
+		isolation.RemoteInstanceName = test.remoteInstanceName
+		isolation.PartitionId = test.expectedPartition
+		fr := &rfpb.FileRecord{
+			Digest:    d,
+			Isolation: isolation,
+		}
+		expectedFileRecords = append(expectedFileRecords, fr)
+	}
+
+	fmChan := disk_cache.ScanDiskDirectory(rootDir)
+	for fm := range fmChan {
+		found := false
+		for _, fr := range expectedFileRecords {
+			if proto.Equal(fr, fm.GetFileRecord()) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("FileMetadata: %+v was not in expected: %+v", fm, expectedFileRecords)
+		}
+	}
 }

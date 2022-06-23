@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
@@ -41,6 +42,7 @@ var (
 	defaultPoolName              = flag.String("remote_execution.default_pool_name", "", "The default executor pool to use if one is not specified.")
 	sharedExecutorPoolGroupID    = flag.String("remote_execution.shared_executor_pool_group_id", "", "Group ID that owns the shared executor pool.")
 	requireExecutorAuthorization = flag.Bool("remote_execution.require_executor_authorization", false, "If true, executors connecting to this server must provide a valid executor API key.")
+	removeStaleExecutors         = flag.Bool("remote_execution.remove_stale_executors", false, "If true, executors are removed if they are not heard from for a prolonged amount of time.")
 )
 
 const (
@@ -59,6 +61,10 @@ const (
 	// request to enqueue work is recieved and the set of execution nodes
 	// was fetched more than this duration ago, they will be re-fetched.
 	maxAllowedExecutionNodesStaleness = 10 * time.Second
+
+	// An executor is removed if it does not refresh its registration within
+	// this amount of time.
+	executorMaxRegistrationStaleness = 10 * time.Minute
 
 	// The maximum number of times a task may be re-enqueued.
 	maxTaskAttemptCount = 5
@@ -249,17 +255,17 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
 			} else if req.GetShuttingDownRequest() != nil {
-				log.Infof("Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
+				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
 				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
 					if err := h.scheduler.reEnqueueTask(ctx, taskID, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
-						log.Warningf("Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
 					}
 				}
 			} else {
 				out, _ := prototext.Marshal(req)
-				log.Warningf("Invalid message from executor:\n%q", string(out))
+				log.CtxWarningf(ctx, "Invalid message from executor:\n%q", string(out))
 				return status.InternalErrorf("message from executor did not contain any data")
 			}
 		case <-checkCredentialsTicker.C:
@@ -267,7 +273,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				if status.IsPermissionDeniedError(err) || status.IsUnauthenticatedError(err) {
 					return err
 				}
-				log.Warningf("could not revalidate executor registration: %h", err)
+				log.CtxWarningf(ctx, "could not revalidate executor registration: %h", err)
 			}
 		}
 	}
@@ -278,7 +284,7 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 	defer h.mu.Unlock()
 	ch := h.replies[response.GetTaskId()]
 	if ch == nil {
-		log.Warningf("Got task reservation response for unknown task %q", response.GetTaskId())
+		log.CtxWarningf(h.stream.Context(), "Got task reservation response for unknown task %q", response.GetTaskId())
 		return
 	}
 
@@ -293,7 +299,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
 	if !ok {
-		log.Errorf("could not clone reservation request")
+		log.CtxErrorf(ctx, "could not clone reservation request")
 		return nil, status.InternalError("could not clone reservation request")
 	}
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
@@ -305,7 +311,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	case <-ctx.Done():
 		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case <-timeout.C:
-		log.Warningf("Could not enqueue task reservation %q on to work stream within timeout", req.GetTaskId())
+		log.CtxWarningf(ctx, "Could not enqueue task reservation %q on to work stream within timeout", req.GetTaskId())
 		return nil, status.DeadlineExceededErrorf("could not enqueue task reservation %q on to stream", req.GetTaskId())
 	}
 	if !timeout.Stop() {
@@ -330,7 +336,7 @@ func (h *executorHandle) startTaskReservationStreamer() {
 				h.replies[req.proto.GetTaskId()] = req.response
 				h.mu.Unlock()
 				if err := h.stream.Send(&msg); err != nil {
-					log.Warningf("Error sending task reservation response: %s", err)
+					log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
 					return
 				}
 			case <-h.stream.Context().Done():
@@ -440,6 +446,15 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 		if err != nil {
 			return nil, err
 		}
+
+		if *removeStaleExecutors && time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
+			log.Infof("Removing stale executor %q from pool %+v", id, np.key)
+			if err := np.rdb.HDel(ctx, np.key.redisPoolKey(), id).Err(); err != nil {
+				log.Warningf("could not remove stale executor: %s", err)
+			}
+			continue
+		}
+
 		executors = append(executors, &executionNode{
 			executorID:            id,
 			schedulerHostPort:     node.GetSchedulerHostPort(),
@@ -570,14 +585,14 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
 		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
-			log.Warningf("Error trimming unclaimed tasks: %s", err)
+			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
 		}
 	}
 
 	// Also trim any stale tasks from the set. The data is stored in score order so this is a cheap operation.
 	cutoff := time.Now().Add(-unclaimedTaskMaxAge).Unix()
 	if err := np.rdb.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
-		log.Warningf("Error deleting old unclaimed tasks: %s", err)
+		log.CtxWarningf(ctx, "Error deleting old unclaimed tasks: %s", err)
 	}
 
 	return nil
@@ -820,10 +835,10 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *e
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
 		if !pool.RemoveConnectedExecutor(node.GetExecutorId()) {
-			log.Warningf("Executor %q not in pool %+v", node.GetExecutorId(), nodePoolKey)
+			log.CtxWarningf(ctx, "Executor %q not in pool %+v", node.GetExecutorId(), nodePoolKey)
 		}
 	} else {
-		log.Warningf("Tried to remove executor %q for unknown pool %+v", node.GetExecutorId(), nodePoolKey)
+		log.CtxWarningf(ctx, "Tried to remove executor %q for unknown pool %+v", node.GetExecutorId(), nodePoolKey)
 	}
 
 	// Don't use the stream context since we want to do cleanup when stream context is cancelled.
@@ -831,10 +846,10 @@ func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *e
 	defer cancel()
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	if err := s.deleteNode(ctx, node, nodePoolKey); err != nil {
-		log.Warningf("Scheduler: could not unregister node %q: %s", addr, err)
+		log.CtxWarningf(ctx, "Scheduler: could not unregister node %q: %s", addr, err)
 		return
 	}
-	log.Infof("Scheduler: unregistered worker node: %q", addr)
+	log.CtxInfof(ctx, "Scheduler: unregistered worker node: %q", addr)
 }
 
 func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNode, poolKey nodePoolKey) error {
@@ -861,11 +876,11 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		return nil
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
-	log.Infof("Scheduler: registered executor %q (host ID %q, addr %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, poolKey)
+	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, poolKey)
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
-			log.Warningf("Failed to assign work to new node: %s", err.Error())
+			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
 	}()
 	return nil
@@ -900,6 +915,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		SchedulerHostPort: s.ownHostPort,
 		GroupId:           groupID,
 		Acl:               acl,
+		LastPingTime:      timestamppb.Now(),
 	}
 	b, err := proto.Marshal(r)
 	if err != nil {
@@ -1040,7 +1056,7 @@ func (s *SchedulerServer) readTasks(ctx context.Context, taskIDs []string) ([]*p
 		task, err := s.readTask(ctx, taskID)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
-				log.Errorf("error reading task from redis: %v", err)
+				log.CtxErrorf(ctx, "error reading task from redis: %v", err)
 			}
 			continue
 		}
@@ -1181,22 +1197,22 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if !claimed {
 			return
 		}
-		log.Warningf("LeaseTask %q exited event-loop with task still claimed. Will ReEnqueue!", taskID)
+		log.CtxWarningf(ctx, "LeaseTask %q exited event-loop with task still claimed. Will ReEnqueue!", taskID)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 		defer cancel()
 		if _, err := s.ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{TaskId: taskID}); err != nil {
-			log.Errorf("LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
+			log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task but failed with err: %s", taskID, err.Error())
 		} // Success case will be logged by ReEnqueueTask flow.
 	}()
 
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			log.Warningf("LeaseTask %q got EOF: %s", taskID, err)
+			log.CtxWarningf(ctx, "LeaseTask %q got EOF: %s", taskID, err)
 			break
 		}
 		if err != nil {
-			log.Warningf("LeaseTask %q recv with err: %s", taskID, err)
+			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
 			break
 		}
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
@@ -1209,7 +1225,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		taskID = req.GetTaskId()
 		if time.Since(lastCheckin) > (leaseInterval + leaseGracePeriod) {
-			log.Warningf("LeaseTask %q client went away after %s", taskID, time.Since(lastCheckin))
+			log.CtxWarningf(ctx, "LeaseTask %q client went away after %s", taskID, time.Since(lastCheckin))
 			break
 		}
 		rsp := &scpb.LeaseTaskResponse{
@@ -1223,11 +1239,11 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			claimed = true
 			task, err := s.readTask(ctx, req.GetTaskId())
 			if err != nil {
-				log.Errorf("LeaseTask %q error reading task %s", taskID, err.Error())
+				log.CtxErrorf(ctx, "LeaseTask %q error reading task %s", taskID, err.Error())
 				return err
 			}
 
-			log.Infof("LeaseTask task %q successfully claimed by executor %q", taskID, executorID)
+			log.CtxInfof(ctx, "LeaseTask task %q successfully claimed by executor %q", taskID, executorID)
 
 			key := nodePoolKey{
 				os:      task.metadata.GetOs(),
@@ -1239,7 +1255,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			if ok {
 				err := nodePool.RemoveUnclaimedTask(ctx, taskID)
 				if err != nil {
-					log.Warningf("Could not remove task from unclaimed list: %s", err)
+					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
 
@@ -1264,9 +1280,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			err := s.deleteClaimedTask(ctx, taskID)
 			if err == nil {
 				claimed = false
-				log.Infof("LeaseTask task %q successfully finalized by %q", taskID, executorID)
+				log.CtxInfof(ctx, "LeaseTask task %q successfully finalized by %q", taskID, executorID)
 			} else {
-				log.Warningf("Could not delete claimed task %q: %s", taskID, err)
+				log.CtxWarningf(ctx, "Could not delete claimed task %q: %s", taskID, err)
 			}
 		} else if req.GetRelease() && claimed {
 			// Release removes the claim on the task without deleting the task.
@@ -1274,9 +1290,9 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			err := s.unclaimTask(ctx, taskID)
 			if err == nil {
 				claimed = false
-				log.Infof("LeaseTask task %q successfully released by %q", taskID, executorID)
+				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
 			} else {
-				log.Warningf("Could not release lease for task %q: %s", taskID, err)
+				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
 		}
 
@@ -1317,7 +1333,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
-	log.Infof("Enqueue task reservations for task %q with pool key %+v.", enqueueRequest.GetTaskId(), key)
+	log.CtxInfof(ctx, "Enqueue task reservations for task %q with pool key %+v.", enqueueRequest.GetTaskId(), key)
 
 	nodeBalancer := s.getOrCreatePool(key)
 	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
@@ -1330,7 +1346,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	if !opts.scheduleOnConnectedExecutors {
 		err = nodeBalancer.AddUnclaimedTask(ctx, enqueueRequest.GetTaskId())
 		if err != nil {
-			log.Warningf("Could not add task to unclaimed task list: %s", err)
+			log.CtxWarningf(ctx, "Could not add task to unclaimed task list: %s", err)
 		}
 	}
 
@@ -1340,7 +1356,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	startTime := time.Now()
 	var successfulReservations []string
 	defer func() {
-		log.Infof("Enqueue task reservations for task %q took %s. Reservations: [%s]",
+		log.CtxInfof(ctx, "Enqueue task reservations for task %q took %s. Reservations: [%s]",
 			enqueueRequest.GetTaskId(), time.Now().Sub(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
@@ -1368,7 +1384,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			return status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")
 		}
 		if attempts > 100 {
-			log.Warningf("Attempted to send probe %d times for task %q with pool key %+v. This should not happen.", attempts, enqueueRequest.GetTaskId(), key)
+			log.CtxWarningf(ctx, "Attempted to send probe %d times for task %q with pool key %+v. This should not happen.", attempts, enqueueRequest.GetTaskId(), key)
 		}
 		if sampleIndex == 0 {
 			if preferredNode != nil {
@@ -1400,7 +1416,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		enqueueStart := time.Now()
 		if opts.scheduleOnConnectedExecutors {
 			if node.handle == nil {
-				log.Errorf("nil handle for a local executor %q", node.GetExecutorID())
+				log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorID())
 				continue
 			}
 			_, err := node.handle.EnqueueTaskReservation(ctx, enqueueRequest)
@@ -1409,20 +1425,20 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			}
 		} else {
 			if node.schedulerHostPort == "" {
-				log.Errorf("node %q has no scheduler host:port set", node.GetExecutorID())
+				log.CtxErrorf(ctx, "node %q has no scheduler host:port set", node.GetExecutorID())
 				continue
 			}
 
 			schedulerClient, err := s.schedulerClientCache.get(node.schedulerHostPort)
 			if err != nil {
-				log.Warningf("Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
+				log.CtxWarningf(ctx, "Could not get SchedulerClient for %q: %s", node.schedulerHostPort, err)
 				continue
 			}
 			rpcCtx, cancel := context.WithTimeout(ctx, schedulerEnqueueTaskReservationTimeout)
 			_, err = schedulerClient.EnqueueTaskReservation(rpcCtx, enqueueRequest)
 			cancel()
 			if err != nil {
-				log.Warningf("EnqueueTaskReservation to %q failed: %s", node.schedulerHostPort, err)
+				log.CtxWarningf(ctx, "EnqueueTaskReservation to %q failed: %s", node.schedulerHostPort, err)
 				time.Sleep(schedulerEnqueueTaskReservationFailureSleep)
 				continue
 			}
@@ -1508,12 +1524,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 			msg += " Last failure: " + reason
 		}
 		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(msg)); err != nil {
-			log.Warningf("Could not mark execution failed for task %q: %s", taskID, err)
+			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
 		}
 		return status.ResourceExhaustedErrorf(msg)
 	}
 	_ = s.unclaimTask(ctx, taskID) // ignore error -- it's fine if it's already unclaimed.
-	log.Debugf("ReEnqueueTask RPC for task %q", taskID)
+	log.CtxDebugf(ctx, "ReEnqueueTask RPC for task %q", taskID)
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
 		TaskId:             taskID,
 		TaskSize:           task.metadata.GetTaskSize(),
@@ -1526,13 +1542,13 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
 		return err
 	}
-	log.Debugf("ReEnqueueTask succeeded for task %q", taskID)
+	log.CtxDebugf(ctx, "ReEnqueueTask succeeded for task %q", taskID)
 	return nil
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask, req.GetReason()); err != nil {
-		log.Errorf("ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
+		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err
 	}
 	return &scpb.ReEnqueueTaskResponse{}, nil

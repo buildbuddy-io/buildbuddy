@@ -22,11 +22,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -141,7 +141,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.ExecutionTask, stream operation.StreamLike) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfaces.ScheduledTask, stream operation.StreamLike) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
@@ -155,6 +155,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	stage := &stagedGauge{}
 	defer stage.End()
 
+	task := st.ExecutionTask
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
@@ -196,16 +197,16 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
-	stage.Set("pull_image")
-	if err := r.PrepareForTask(ctx); err != nil {
-		return finishWithErrFn(err)
-	}
-
 	finishedCleanly := false
 	defer func() {
 		ctx := context.Background()
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
+
+	stage.Set("pull_image")
+	if err := r.PrepareForTask(ctx); err != nil {
+		return finishWithErrFn(err)
+	}
 
 	md.InputFetchStartTimestamp = timestamppb.Now()
 
@@ -325,6 +326,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, task *repb.E
 
 	execSummary := &espb.ExecutionSummary{
 		IoStats:                ioStats,
+		UsageStats:             cmdResult.UsageStats,
+		EstimatedTaskSize:      st.SchedulingMetadata.GetTaskSize(),
 		ExecutedActionMetadata: md,
 	}
 
