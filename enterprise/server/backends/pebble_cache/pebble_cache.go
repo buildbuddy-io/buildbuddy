@@ -450,17 +450,26 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	file, err := constants.FileKey(fileRecord)
-	if err != nil {
-		return err
+
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	// First, lookup the FileMetadata. If it's not found, we don't have the file.
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
 	}
-	filePath := filepath.Join(p.blobDir(), string(file))
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+	}
+	fp := filestore.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
 
 	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
-	return disk.DeleteFile(ctx, filePath)
+	return disk.DeleteFile(ctx, fp)
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
@@ -664,11 +673,7 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		}
 		seen[string(iter.Key())] = struct{}{}
 
-		file, err := constants.FileKey(fileMetadata.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		filePath := filepath.Join(e.blobDir, string(file))
+		filePath := filestore.FilePath(e.blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 		fileMetadataKey := make([]byte, len(iter.Key()))
 		copy(fileMetadataKey, iter.Key())
 
@@ -753,6 +758,7 @@ func (e *partitionEvictor) evict(count int) error {
 			if err := e.deleteFile(sample); err != nil {
 				continue
 			}
+			log.Debugf("Evictor deleted file %q", sample.filePath)
 			evicted += 1
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
 			break

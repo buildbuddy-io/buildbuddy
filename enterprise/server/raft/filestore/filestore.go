@@ -71,11 +71,16 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 	}
 }
 
-func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+func FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
 	fp := f.GetFilename()
 	if !filepath.IsAbs(fp) {
 		fp = filepath.Join(fileDir, f.GetFilename())
 	}
+	return fp
+}
+
+func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+	fp := FilePath(fileDir, f)
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
