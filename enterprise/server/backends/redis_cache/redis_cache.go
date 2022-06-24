@@ -55,7 +55,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() == nil {
-		return status.FailedPreconditionErrorf("Redis layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+		return status.FailedPreconditionErrorf("Redis requires a base cache but one was not configured: please also enable a base cache")
 	}
 	rc, err := redisutil.NewClientWithOpts(opts, env.GetHealthChecker(), "cache_redis")
 	if err != nil {
