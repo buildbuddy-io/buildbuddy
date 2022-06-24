@@ -26,7 +26,6 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
-        "//server/util/lru",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
