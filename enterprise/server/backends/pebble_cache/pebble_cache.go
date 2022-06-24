@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -20,13 +21,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cespare/xxhash/v2"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
@@ -92,6 +96,7 @@ type PebbleCache struct {
 	db        *pebble.DB
 	isolation *rfpb.Isolation
 
+	statusMu *sync.Mutex
 	atimes   *sync.Map
 	quitChan chan struct{}
 	eg       *errgroup.Group
@@ -209,6 +214,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		db:       db,
 		quitChan: make(chan struct{}),
 		eg:       &errgroup.Group{},
+		statusMu: &sync.Mutex{},
 		atimes:   &sync.Map{},
 		evictors: make([]*partitionEvictor, len(opts.Partitions)),
 		isolation: &rfpb.Isolation{
@@ -231,6 +237,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := disk.EnsureDirectoryExists(pc.blobDir()); err != nil {
 		return nil, err
 	}
+	statusz.AddSection("pebble_cache", "On disk LRU cache", pc)
 	return pc, nil
 }
 
@@ -276,6 +283,20 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	}
 	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
 	return nil
+}
+
+func (p *PebbleCache) Statusz(ctx context.Context) string {
+	p.statusMu.Lock()
+	evictors := p.evictors
+	p.statusMu.Unlock()
+
+	buf := "<pre>"
+	buf += p.db.Metrics().String()
+	buf += "</pre>"
+	for _, e := range evictors {
+		buf += e.Statusz(ctx)
+	}
+	return buf
 }
 
 func (p *PebbleCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
@@ -352,6 +373,18 @@ func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
 		return true
 	}
 	return false
+}
+
+func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
+	}
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return nil, status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+	}
+	return fileMetadata, nil
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
@@ -458,14 +491,11 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return err
 	}
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
-	}
+
 	fp := filestore.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
 
 	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
@@ -489,13 +519,9 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	}
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
-	}
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return nil, status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return nil, err
 	}
 	if p.isolation.GetCacheType() == rfpb.Isolation_ACTION_CACHE {
 		// for AC items, we need to examine the remote_instance_name as
@@ -532,6 +558,15 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
+
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+	alreadyExists := hasFileMetadata(iter, fileMetadataKey)
+	if alreadyExists {
+		metrics.DiskCacheDuplicateWrites.Inc()
+		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
+	}
+
 	wcm, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
 	if err != nil {
 		return nil, err
@@ -587,6 +622,21 @@ type partitionEvictor struct {
 	totalCount     int64
 	casCount       int64
 	acCount        int64
+	lastRun        time.Time
+}
+
+func (e *partitionEvictor) Statusz(ctx context.Context) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	buf := "<br>"
+	buf += fmt.Sprintf("<div>Partition %q</div>", e.part.ID)
+	buf += fmt.Sprintf("<div>Blob directory: %s</div>", e.blobDir)
+
+	maxAllowedSize := int64(janitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+	percentFull := float64(e.totalSizeBytes) / float64(maxAllowedSize) * 100.0
+	buf += fmt.Sprintf("<div>Capacity: %d / %d (%2.2f%% full)</div>", e.totalSizeBytes, maxAllowedSize, percentFull)
+	buf += fmt.Sprintf("<div>GC Last run: %s</div>", e.lastRun.Format("Jan 02, 2006 15:04:05 MST"))
+	return buf
 }
 
 func (e *partitionEvictor) partitionLimits() ([]byte, []byte) {
@@ -703,7 +753,14 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 		return err
 	}
 	e.atimes.Delete(xxhash.Sum64(sample.fileMetadataKey))
-	return disk.DeleteFile(context.TODO(), sample.filePath)
+	if err := disk.DeleteFile(context.TODO(), sample.filePath); err != nil {
+		return err
+	}
+
+	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
+	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID}).Set(ageUsec)
+	log.Debugf("Evictor deleted file %q", sample.filePath)
+	return nil
 }
 
 func (e *partitionEvictor) resampleK(k int) error {
@@ -761,7 +818,6 @@ func (e *partitionEvictor) evict(count int) error {
 			if err := e.deleteFile(sample); err != nil {
 				continue
 			}
-			log.Debugf("Evictor deleted file %q", sample.filePath)
 			evicted += 1
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
 			break
@@ -779,13 +835,13 @@ func (e *partitionEvictor) evict(count int) error {
 	return nil
 }
 
-func (e *partitionEvictor) computeSize() error {
+func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	iter := e.iter()
 	defer iter.Close()
 
 	casPrefix := []byte(e.part.ID + "/cas/")
 	acPrefix := []byte(e.part.ID + "/ac/")
-	totalCount := int64(0)
+
 	casCount := int64(0)
 	acCount := int64(0)
 	blobSizeBytes := int64(0)
@@ -794,11 +850,10 @@ func (e *partitionEvictor) computeSize() error {
 
 	for iter.Next() {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return err
+			return 0, 0, 0, err
 		}
 		blobSizeBytes += fileMetadata.GetFileRecord().GetDigest().GetSizeBytes()
 		metadataSizeBytes += int64(len(iter.Value()))
-		totalCount += 1
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casPrefix) {
@@ -810,30 +865,42 @@ func (e *partitionEvictor) computeSize() error {
 		}
 	}
 
-	e.totalCount = totalCount
-	e.totalSizeBytes = blobSizeBytes // + metadataSizeBytes
-	e.casCount = casCount
-	e.acCount = acCount
-	return nil
+	return blobSizeBytes, casCount, acCount, nil
 }
 
 func (e *partitionEvictor) ttl() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	maxAllowedSize := int64(janitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+	e.mu.Unlock()
+
 	for {
-		if err := e.computeSize(); err != nil {
+		totalSizeBytes, casCount, acCount, err := e.computeSize()
+		if err != nil {
 			return err
 		}
-		if e.totalSizeBytes < maxAllowedSize {
+
+		e.mu.Lock()
+		e.totalSizeBytes = totalSizeBytes
+		e.totalCount = casCount + acCount
+		e.casCount = casCount
+		e.acCount = acCount
+		e.mu.Unlock()
+
+		if totalSizeBytes < int64(float64(maxAllowedSize)*.90) {
 			break
 		}
 
-		numToEvict := int(.001 * float64(e.totalCount))
+		numToEvict := int(.001 * float64(casCount+acCount))
 		if numToEvict == 0 {
 			numToEvict = 1
 		}
-		if err := e.evict(numToEvict); err != nil {
+
+		e.mu.Lock()
+		err = e.evict(numToEvict)
+		e.lastRun = time.Now()
+		e.mu.Unlock()
+
+		if err != nil {
 			return err
 		}
 	}
