@@ -67,6 +67,7 @@ const (
 	enableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
 
@@ -142,6 +143,13 @@ type Properties struct {
 	WorkflowID               string
 	HostedBazelAffinityKey   string
 	UseSelfHostedExecutors   bool
+	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
+	// it is enabled via flag, and instead uses the default / platform based
+	// sizing. Intended for debugging purposes only and should not generally
+	// be used.
+	// TODO(bduffany): remove this once measured task sizing is battle-tested
+	// and this is no longer needed for debugging
+	DisableMeasuredTaskSize bool
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
@@ -205,6 +213,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
+		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              stringListProp(m, envOverridesPropertyName),
 	}

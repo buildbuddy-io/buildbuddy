@@ -107,6 +107,12 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	if !*useMeasuredSizes {
 		return defaultSize
 	}
+	props := platform.ParseProperties(task)
+	// TODO(bduffany): Remove or hide behind a dev-only flag once measured task sizing
+	// is battle-tested.
+	if props.DisableMeasuredTaskSize {
+		return defaultSize
+	}
 	recordedSize, err := s.lastRecordedSize(ctx, task)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
