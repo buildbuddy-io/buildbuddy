@@ -71,11 +71,11 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		return status.FailedPreconditionError("A cache has already been registered, cannot register s3_cache.")
+		log.Warningf("Overriding configured cache with s3_cache.")
 	}
 	s3Cache, err := NewS3Cache()
 	if err != nil {
-		log.Warningf("Overriding configured cache with s3_cache.")
+		return status.InternalErrorf("Error configuring S3 cache: %s", err)
 	}
 	env.SetCache(s3Cache)
 	return nil
