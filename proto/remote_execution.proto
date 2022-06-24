@@ -24,8 +24,6 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/scheduler.proto";
 
-import "proto/scheduler.proto";
-
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
 option go_package = "remote_execution";
 option java_multiple_files = true;
