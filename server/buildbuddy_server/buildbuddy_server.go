@@ -868,7 +868,7 @@ func (s *BuildBuddyServer) RemoveNamespace(ctx context.Context, req *qpb.RemoveN
 
 func (s *BuildBuddyServer) ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error) {
 	if qm := s.env.GetQuotaManager(); qm != nil {
-		return qm.ModifyBucket(ctx, req)
+		return qm.ModifyNamespace(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
