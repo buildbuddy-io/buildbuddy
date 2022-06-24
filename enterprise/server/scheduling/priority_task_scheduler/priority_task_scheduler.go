@@ -289,7 +289,7 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	return ctx
 }
 
-func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *interfaces.ScheduledTask) (retry bool, err error) {
+func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
 	}
@@ -415,7 +415,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
-		scheduledTask := &interfaces.ScheduledTask{
+		scheduledTask := &repb.ScheduledTask{
 			ExecutionTask:      execTask,
 			SchedulingMetadata: reservation.GetSchedulingMetadata(),
 		}

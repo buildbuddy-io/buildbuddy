@@ -70,6 +70,9 @@ func Register(env environment.Env) error {
 	if *bucket == "" {
 		return nil
 	}
+	if env.GetCache() != nil {
+		return status.FailedPreconditionError("A cache has already been registered, cannot register s3_cache.")
+	}
 	s3Cache, err := NewS3Cache()
 	if err != nil {
 		status.InternalErrorf("Error configuring S3 cache: %s", err)

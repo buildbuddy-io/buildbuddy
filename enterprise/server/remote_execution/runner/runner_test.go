@@ -57,8 +57,8 @@ type RunnerPoolOptions struct {
 	MaxRunnerMemoryUsageBytes int64
 }
 
-func newTask() *repb.ExecutionTask {
-	return &repb.ExecutionTask{
+func newTask() *repb.ScheduledTask {
+	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"pwd"},
 			Platform: &repb.Platform{
@@ -68,19 +68,22 @@ func newTask() *repb.ExecutionTask {
 			},
 		},
 	}
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
-func newWorkflowTask() *repb.ExecutionTask {
+func newWorkflowTask() *repb.ScheduledTask {
 	t := newTask()
-	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+	plat := t.ExecutionTask.Command.Platform
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{
 		Name: "workflow-id", Value: "WF123",
 	})
 	return t
 }
 
-func newTaskWithAffinityKey(key string) *repb.ExecutionTask {
+func newTaskWithAffinityKey(key string) *repb.ScheduledTask {
 	t := newTask()
-	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+	plat := t.ExecutionTask.Command.Platform
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{
 		Name: platform.HostedBazelAffinityKeyPropertyName, Value: key,
 	})
 	return t
@@ -134,7 +137,7 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	return p
 }
 
-func get(ctx context.Context, p *pool, task *repb.ExecutionTask) (*commandRunner, error) {
+func get(ctx context.Context, p *pool, task *repb.ScheduledTask) (*commandRunner, error) {
 	r, err := p.Get(ctx, task)
 	if err != nil {
 		return nil, err
@@ -142,7 +145,7 @@ func get(ctx context.Context, p *pool, task *repb.ExecutionTask) (*commandRunner
 	return r.(*commandRunner), nil
 }
 
-func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialActiveCount := pool.ActiveRunnerCount()
 	r, err := get(ctx, pool, task)
 	require.NoError(t, err)
@@ -192,7 +195,7 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *comma
 	)
 }
 
-func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -201,7 +204,7 @@ func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *re
 	return r
 }
 
-func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -249,9 +252,9 @@ func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
-	task1.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
+	task1.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
 	task2 := newTask()
-	task2.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/2"}
+	task2.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/2"}
 
 	r1 := mustGetNewRunner(t, ctx, pool, task1)
 
@@ -267,13 +270,13 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
-	task1.Command.Platform.Properties = append(
-		task1.Command.Platform.Properties,
+	task1.ExecutionTask.Command.Platform.Properties = append(
+		task1.ExecutionTask.Command.Platform.Properties,
 		&repb.Platform_Property{Name: "workflow-id", Value: "WF1"},
 	)
 	task2 := newTask()
-	task2.Command.Platform.Properties = append(
-		task1.Command.Platform.Properties,
+	task2.ExecutionTask.Command.Platform.Properties = append(
+		task1.ExecutionTask.Command.Platform.Properties,
 		&repb.Platform_Property{Name: "workflow-id", Value: "WF2"},
 	)
 
@@ -465,7 +468,7 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
 	task := newTask()
-	task.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
+	task.ExecutionTask.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
 	r, err := get(ctx, pool, task)
 
 	require.NoError(t, err)
@@ -518,7 +521,7 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
+func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
 	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
@@ -539,7 +542,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 	if arg != "" {
 		task.Command.Arguments = append(task.Command.Arguments, arg)
 	}
-	return task
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
 func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {

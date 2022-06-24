@@ -50,7 +50,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() == nil {
-		return status.FailedPreconditionErrorf("Memcache layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+		return status.FailedPreconditionErrorf("Memcache requires a base cache but one was not configured: please also enable a base cache")
 	}
 	log.Infof("Enabling memcache layer with targets: %s", *memcacheTargets)
 	mc := NewCache(*memcacheTargets...)

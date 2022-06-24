@@ -1782,6 +1782,13 @@ message ExecutionTask {
   RequestMetadata request_metadata = 9;
 }
 
+// ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
+// as the computed scheduling metadata.
+message ScheduledTask {
+  ExecutionTask execution_task = 1;
+  scheduler.SchedulingMetadata scheduling_metadata = 2;
+}
+
 message ExecutorDetails {
   // Unique ID of the host this executor is running on.
   string executor_host_id = 1;
