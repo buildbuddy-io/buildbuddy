@@ -161,7 +161,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		return status.FailedPreconditionError("A cache has already been registered, cannot register disk_cache.")
+		log.Warningf("Overriding configured cache with disk_cache.")
 	}
 	dc := &Options{
 		RootDirectory:     *rootDirectory,
