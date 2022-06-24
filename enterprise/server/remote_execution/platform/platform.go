@@ -147,6 +147,8 @@ type Properties struct {
 	// it is enabled via flag, and instead uses the default / platform based
 	// sizing. Intended for debugging purposes only and should not generally
 	// be used.
+	// TODO(bduffany): remove this once measured task sizing is battle-tested
+	// and this is no longer needed for debugging
 	DisableMeasuredTaskSize bool
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
