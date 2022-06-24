@@ -1248,7 +1248,7 @@ func NewTestRunnerPool(t testing.TB, env environment.Env, runInterceptor RunInte
 	return &testRunnerPool{realPool, runInterceptor}
 }
 
-func (p *testRunnerPool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
+func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
 	realRunner, err := p.RunnerPool.Get(ctx, task)
 	if err != nil {
 		return nil, err

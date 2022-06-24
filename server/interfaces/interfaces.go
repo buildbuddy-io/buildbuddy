@@ -597,7 +597,7 @@ type RunnerPool interface {
 	//
 	// The returned runner is ready to execute tasks, and the caller is
 	// responsible for walking the runner through the task lifecycle.
-	Get(ctx context.Context, task *repb.ExecutionTask) (Runner, error)
+	Get(ctx context.Context, task *repb.ScheduledTask) (Runner, error)
 
 	// TryRecycle attempts to add the runner to the pool for use by subsequent
 	// tasks.

@@ -140,7 +140,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	return !isClientBazel(task)
 }
 
-func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfaces.ScheduledTask, stream operation.StreamLike) (retry bool, err error) {
+func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream operation.StreamLike) (retry bool, err error) {
 	// From here on in we use these liberally, so check that they are setup properly
 	// in the environment.
 	if s.env.GetActionCacheClient() == nil || s.env.GetByteStreamClient() == nil || s.env.GetContentAddressableStorageClient() == nil {
@@ -178,7 +178,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 		WorkerStartTimestamp: timestamppb.Now(),
 		ExecutorId:           s.id,
 		IoStats:              &repb.IOStats{},
-		EstimatedTaskSize:    st.SchedulingMetadata.GetTaskSize(),
+		EstimatedTaskSize:    st.GetSchedulingMetadata().GetTaskSize(),
 	}
 
 	if !req.GetSkipCacheLookup() {
@@ -194,7 +194,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *interfac
 		}
 	}
 
-	r, err := s.runnerPool.Get(ctx, task)
+	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
