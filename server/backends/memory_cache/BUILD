@@ -11,7 +11,6 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/util/log",
         "//server/util/lru",
         "//server/util/prefix",
         "//server/util/status",

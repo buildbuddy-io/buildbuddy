@@ -104,6 +104,9 @@ func Register(env environment.Env) error {
 	if *rootDirectory == "" {
 		return nil
 	}
+	if env.GetCache() != nil {
+		return status.FailedPreconditionError("A cache has already been registered, cannot register pebble_cache.")
+	}
 	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
 		return err
 	}

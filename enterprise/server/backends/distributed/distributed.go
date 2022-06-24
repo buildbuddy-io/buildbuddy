@@ -97,6 +97,9 @@ func Register(env environment.Env) error {
 	if *listenAddr == "" {
 		return nil
 	}
+	if env.GetCache() == nil {
+		return status.FailedPreconditionErrorf("Distributed Cache requires a base cache; but one was not configured; please also enable a disk/pebble/memory cache")
+	}
 	dcConfig := CacheConfig{
 		ListenAddr:        *listenAddr,
 		GroupName:         *groupName,

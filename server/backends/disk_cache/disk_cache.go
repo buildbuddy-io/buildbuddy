@@ -52,7 +52,7 @@ const (
 )
 
 var (
-	rootDirectory     = flag.String("cache.disk.root_directory", "/tmp/buildbuddy_cache", "The root directory to store all blobs in, if using disk based storage.")
+	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
 	partitions        = flagtypes.Slice("cache.disk.partitions", []disk.Partition{}, "")
 	partitionMappings = flagtypes.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
@@ -161,8 +161,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		log.Warning("A cache has already been registered, skipping registering disk_cache.")
-		return nil
+		return status.FailedPreconditionError("A cache has already been registered, cannot register disk_cache.")
 	}
 	dc := &Options{
 		RootDirectory:     *rootDirectory,
