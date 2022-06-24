@@ -177,8 +177,8 @@ func validateOpts(opts *Options) error {
 
 func ensureDefaultPartitionExists(opts *Options) {
 	foundDefaultPartition := false
-	for _, pm := range opts.PartitionMappings {
-		if pm.PartitionID == defaultPartitionID {
+	for _, part := range opts.Partitions {
+		if part.ID == defaultPartitionID {
 			foundDefaultPartition = true
 		}
 	}
@@ -223,19 +223,19 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		},
 	}
 	for i, part := range opts.Partitions {
+		blobDir := pc.partitionBlobDir(part.ID)
+		if err := disk.EnsureDirectoryExists(blobDir); err != nil {
+			return nil, err
+		}
 		pc.evictors[i] = &partitionEvictor{
 			mu:         &sync.Mutex{},
 			part:       part,
-			blobDir:    pc.blobDir(),
+			blobDir:    blobDir,
 			samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
 			reader:     db,
 			writer:     db,
 			atimes:     pc.atimes,
 		}
-	}
-
-	if err := disk.EnsureDirectoryExists(pc.blobDir()); err != nil {
-		return nil, err
 	}
 	statusz.AddSection("pebble_cache", "On disk LRU cache", pc)
 	return pc, nil
@@ -351,11 +351,15 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb
 	}, nil
 }
 
+func (p *PebbleCache) partitionBlobDir(partID string) string {
+	partDir := partitionDirectoryPrefix + partID
+	return filepath.Join(p.opts.RootDirectory, "blobs", partDir)
+}
+
 // blobDir returns a directory path under the root directory, specific to the
 // configured partition, where blobs can be stored.
 func (p *PebbleCache) blobDir() string {
-	partDir := partitionDirectoryPrefix + p.isolation.GetPartitionId()
-	return filepath.Join(p.opts.RootDirectory, "blobs", partDir)
+	return p.partitionBlobDir(p.isolation.GetPartitionId())
 }
 
 func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
