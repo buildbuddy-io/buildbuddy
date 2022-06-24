@@ -49,7 +49,7 @@ func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interface
 
 func (c *ComposableCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	outerExists, err := c.outer.Contains(ctx, d)
-	if err != nil && outerExists {
+	if err == nil && outerExists {
 		return outerExists, nil
 	}
 
