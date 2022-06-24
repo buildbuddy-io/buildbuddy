@@ -24,6 +24,8 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/scheduler.proto";
 
+import "proto/scheduler.proto";
+
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
 option go_package = "remote_execution";
 option java_multiple_files = true;
@@ -1780,6 +1782,13 @@ message ExecutionTask {
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
   RequestMetadata request_metadata = 9;
+}
+
+// ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
+// as the computed scheduling metadata.
+message ScheduledTask {
+  ExecutionTask execution_task = 1;
+  scheduler.SchedulingMetadata scheduling_metadata = 2;
 }
 
 message ExecutorDetails {

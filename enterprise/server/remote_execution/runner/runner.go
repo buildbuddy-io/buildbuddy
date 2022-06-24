@@ -763,7 +763,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 	}
 	platProps := platform.ParseProperties(task)
-	st := &interfaces.ScheduledTask{
+	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
 			// measurement-based task sizing, which requires the app.
@@ -827,7 +827,7 @@ func (p *pool) Warmup(ctx context.Context) {
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *pool) Get(ctx context.Context, st *interfaces.ScheduledTask) (interfaces.Runner, error) {
+func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	executorProps := platform.GetExecutorProperties()
 	task := st.ExecutionTask
 	props := platform.ParseProperties(task)
@@ -953,7 +953,7 @@ func (p *pool) Get(ctx context.Context, st *interfaces.ScheduledTask) (interface
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *interfaces.ScheduledTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -978,7 +978,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		}
 		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
 	case platform.FirecrackerContainerType:
-		sizeEstimate := task.SchedulingMetadata.GetTaskSize()
+		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			DockerClient:           p.dockerClient,

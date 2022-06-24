@@ -58,7 +58,7 @@ type RunnerPoolOptions struct {
 	MaxRunnerMemoryUsageBytes int64
 }
 
-func newTask() *interfaces.ScheduledTask {
+func newTask() *repb.ScheduledTask {
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"pwd"},
@@ -69,10 +69,10 @@ func newTask() *interfaces.ScheduledTask {
 			},
 		},
 	}
-	return &interfaces.ScheduledTask{ExecutionTask: task}
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
-func newWorkflowTask() *interfaces.ScheduledTask {
+func newWorkflowTask() *repb.ScheduledTask {
 	t := newTask()
 	plat := t.ExecutionTask.Command.Platform
 	plat.Properties = append(plat.Properties, &repb.Platform_Property{
@@ -81,7 +81,7 @@ func newWorkflowTask() *interfaces.ScheduledTask {
 	return t
 }
 
-func newTaskWithAffinityKey(key string) *interfaces.ScheduledTask {
+func newTaskWithAffinityKey(key string) *repb.ScheduledTask {
 	t := newTask()
 	plat := t.ExecutionTask.Command.Platform
 	plat.Properties = append(plat.Properties, &repb.Platform_Property{
@@ -138,7 +138,7 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	return p
 }
 
-func get(ctx context.Context, p *pool, task *interfaces.ScheduledTask) (*commandRunner, error) {
+func get(ctx context.Context, p *pool, task *repb.ScheduledTask) (*commandRunner, error) {
 	r, err := p.Get(ctx, task)
 	if err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func get(ctx context.Context, p *pool, task *interfaces.ScheduledTask) (*command
 	return r.(*commandRunner), nil
 }
 
-func mustGet(t *testing.T, ctx context.Context, pool *pool, task *interfaces.ScheduledTask) *commandRunner {
+func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialActiveCount := pool.ActiveRunnerCount()
 	r, err := get(ctx, pool, task)
 	require.NoError(t, err)
@@ -196,7 +196,7 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *comma
 	)
 }
 
-func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *interfaces.ScheduledTask) *commandRunner {
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -205,7 +205,7 @@ func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *in
 	return r
 }
 
-func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *interfaces.ScheduledTask) *commandRunner {
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -522,7 +522,7 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *interfaces.ScheduledTask {
+func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
 	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
@@ -543,7 +543,7 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 	if arg != "" {
 		task.Command.Arguments = append(task.Command.Arguments, arg)
 	}
-	return &interfaces.ScheduledTask{ExecutionTask: task}
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
 func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {
