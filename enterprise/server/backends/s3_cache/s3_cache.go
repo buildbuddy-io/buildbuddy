@@ -75,7 +75,7 @@ func Register(env environment.Env) error {
 	}
 	s3Cache, err := NewS3Cache()
 	if err != nil {
-		status.InternalErrorf("Error configuring S3 cache: %s", err)
+		log.Warningf("Overriding configured cache with s3_cache.")
 	}
 	env.SetCache(s3Cache)
 	return nil
