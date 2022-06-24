@@ -405,6 +405,15 @@ func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, isolation, d)
 }
+
+func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		// No prefix necessary -- it's already set on the local cache.
+		return c.local.Metadata(ctx, d)
+	}
+	return c.cacheProxy.RemoteMetadata(ctx, peer, isolation, d)
+}
+
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
@@ -563,6 +572,33 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		ps.MarkPeerAsFailed(peer)
 	}
 	return false, nil
+}
+
+func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	ps := c.readPeers(d)
+	backfill := func() {
+		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
+			c.log.Debugf("Error backfilling peers: %s", err)
+		}
+	}
+
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		md, err := c.remoteMetadata(ctx, peer, c.isolation, d)
+		if err == nil {
+			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
+			backfill()
+			return md, nil
+		}
+		if status.IsNotFoundError(err) {
+			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
+			continue
+		}
+
+		// Got an error -- mark this peer as failed and try the next one.
+		ps.MarkPeerAsFailed(peer)
+	}
+
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q, peerset: %v", d.GetHash(), ps)
 }
 
 func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

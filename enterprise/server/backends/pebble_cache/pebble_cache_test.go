@@ -191,6 +191,38 @@ func TestGetSet(t *testing.T) {
 	}
 }
 
+func TestMetadata(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+	for _, testSize := range testSizes {
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+		// Set() the bytes in the cache.
+		err := pc.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		// Metadata should return true size of the blob, regardless of queried size.
+		md, err := pc.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		if err != nil {
+			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		}
+		require.Equal(t, testSize, md.SizeBytes)
+	}
+}
+
 func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 	m := make(map[*repb.Digest][]byte)
 	for _, size := range sizes {

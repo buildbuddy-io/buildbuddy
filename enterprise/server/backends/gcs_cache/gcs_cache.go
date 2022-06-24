@@ -319,10 +319,10 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 	return true
 }
 
-func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (g *GCSCache) contains(ctx context.Context, d *repb.Digest) (bool, int64, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	finalErr := error(nil)
 	numAttempts := 0
@@ -335,9 +335,13 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		numAttempts++
 		finalErr = err
 		if err == storage.ErrObjectNotExist {
-			return false, nil
+			return false, 0, nil
 		} else if err == nil {
-			return g.bumpTTLIfStale(ctx, k, attrs.Created), nil
+			bumped := g.bumpTTLIfStale(ctx, k, attrs.Created)
+			if bumped {
+				return true, attrs.Size, nil
+			}
+			return false, 0, nil
 		} else if isRetryableGCSError(err) {
 			log.Printf("Retrying GCS exists, err: %s", err.Error())
 			continue
@@ -345,7 +349,23 @@ func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 		break
 	}
 	cache_metrics.RecordSetRetries(cacheLabels, numAttempts-1)
-	return false, finalErr
+	return false, 0, finalErr
+}
+
+func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+	exists, _, err := g.contains(ctx, d)
+	return exists, err
+}
+
+func (g *GCSCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	exists, size, err := g.contains(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+	return &interfaces.CacheMetadata{SizeBytes: size}, nil
 }
 
 func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

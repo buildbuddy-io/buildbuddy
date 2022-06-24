@@ -83,6 +83,39 @@ func TestGetSet(t *testing.T) {
 	}
 }
 
+func TestMetadata(t *testing.T) {
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+	for _, testSize := range testSizes {
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+		// Set() the bytes in the cache.
+		err := c.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		// Metadata should return true size of the blob, regardless of queried size.
+		md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		if err != nil {
+			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		}
+		require.Equal(t, testSize, md.SizeBytes)
+	}
+}
+
 func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 	m := make(map[*repb.Digest][]byte)
 	for _, size := range sizes {

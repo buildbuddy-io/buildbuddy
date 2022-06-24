@@ -32,6 +32,7 @@ message Isolation {
 message FileRecord {
   Isolation isolation = 1;
   build.bazel.remote.execution.v2.Digest digest = 2;
+  int64 size_bytes = 3;
 }
 
 message StorageMetadata {
