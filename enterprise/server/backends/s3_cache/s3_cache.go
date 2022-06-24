@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -71,11 +71,11 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		return status.FailedPreconditionError("A cache has already been registered, cannot register s3_cache.")
+		log.Warningf("Overriding configured cache with s3_cache.")
 	}
 	s3Cache, err := NewS3Cache()
 	if err != nil {
-		status.InternalErrorf("Error configuring S3 cache: %s", err)
+		return status.InternalErrorf("Error configuring S3 cache: %s", err)
 	}
 	env.SetCache(s3Cache)
 	return nil

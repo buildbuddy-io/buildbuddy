@@ -5,7 +5,6 @@ import (
 	"flag"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -54,7 +54,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		return status.FailedPreconditionError("A cache has already been registered, cannot register gcs_cache.")
+		log.Warningf("Overriding configured cache with gcs_cache.")
 	}
 	opts := make([]option.ClientOption, 0)
 	if *credentialsFile != "" {
