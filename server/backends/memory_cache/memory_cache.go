@@ -42,8 +42,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		log.Warning("A cache has already been registered, skipping registering memory_cache.")
-		return nil
+		log.Warningf("Overriding configured cache with memory_cache.")
 	}
 	maxSizeBytes := cache_config.MaxSizeBytes()
 	if maxSizeBytes == 0 {

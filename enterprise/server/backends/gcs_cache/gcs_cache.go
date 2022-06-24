@@ -53,6 +53,9 @@ func Register(env environment.Env) error {
 	if *bucket == "" {
 		return nil
 	}
+	if env.GetCache() != nil {
+		return status.FailedPreconditionError("A cache has already been registered, cannot register gcs_cache.")
+	}
 	opts := make([]option.ClientOption, 0)
 	if *credentialsFile != "" {
 		opts = append(opts, option.WithCredentialsFile(*credentialsFile))
