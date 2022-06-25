@@ -41,12 +41,13 @@ import (
 )
 
 var (
-	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
-	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
-	migrateFromDiskDir  = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
-	forceAllowMigration = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
-	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
-	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+	rootDirectory             = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
+	blockCacheSizeBytes       = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
+	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
+	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
+	partitions                = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
+	partitionMappings         = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 )
 
 // TODO:
@@ -117,6 +118,14 @@ func Register(env environment.Env) error {
 	}
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
+		if *clearCacheBeforeMigration {
+			if err := os.RemoveAll(*rootDirectory); err != nil {
+				return err
+			}
+			if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
+				return err
+			}
+		}
 		// Ensure a pebble DB doesn't already exist if we are migrating.
 		// But allow anyway if forceAllowMigration was set.
 		desc, err := pebble.Peek(*rootDirectory, vfs.Default)
