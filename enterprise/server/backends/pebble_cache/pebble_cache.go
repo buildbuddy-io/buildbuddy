@@ -971,7 +971,7 @@ func (e *partitionEvictor) evict(count int) error {
 	return nil
 }
 
-func (e *partitionEvictor) ttl() error {
+func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 	e.mu.Lock()
 	maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
 	e.mu.Unlock()
@@ -983,6 +983,13 @@ func (e *partitionEvictor) ttl() error {
 		e.mu.Unlock()
 
 		if sizeBytes < int64(float64(maxAllowedSize)*.90) {
+			break
+		}
+
+		select {
+		case <-quitChan:
+			return nil
+		default:
 			break
 		}
 
@@ -1009,7 +1016,7 @@ func (e *partitionEvictor) run(quitChan chan struct{}) error {
 		case <-quitChan:
 			return nil
 		case <-time.After(JanitorCheckPeriod):
-			if err := e.ttl(); err != nil {
+			if err := e.ttl(quitChan); err != nil {
 				return err
 			}
 		}
