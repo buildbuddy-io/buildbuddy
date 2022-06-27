@@ -331,7 +331,7 @@ func TestLRU(t *testing.T) {
 
 	numDigests := 1000
 	digestSize := 100
-	maxSizeBytes := int64(numDigests * digestSize)
+	maxSizeBytes := int64(float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold)) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
