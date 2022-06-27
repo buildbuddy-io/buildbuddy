@@ -10,9 +10,9 @@ import ExecutorConfig from '../bazel-bin/enterprise/server/cmd/executor/yaml_doc
 
 Provided below are working, documented YAML configs for each Buildbuddy binary
 containing every option that that binary accepts, each set to the default value
-for that option. Any option can be specified on the command line by joining the
-names of the nesting structures, if any, and the option name with a `.`
-separating each element.
+for that option. Any option that can be specified in the YAML config can also be
+passed on the command line. For nested options, be sure to write out the full
+YAML path, with a `.` separating each part.
 
 For example:
 ```yaml
