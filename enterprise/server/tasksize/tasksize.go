@@ -103,29 +103,33 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 }
 
 func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
-	defaultSize := Estimate(task)
+	initialEstimate := Estimate(task)
 	if !*useMeasuredSizes {
-		return defaultSize
+		return initialEstimate
 	}
 	props := platform.ParseProperties(task)
+	if props.EstimatedComputeUnits != 0 {
+		return initialEstimate
+	}
 	// TODO(bduffany): Remove or hide behind a dev-only flag once measured task sizing
 	// is battle-tested.
 	if props.DisableMeasuredTaskSize {
-		return defaultSize
+		return initialEstimate
 	}
 	recordedSize, err := s.lastRecordedSize(ctx, task)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
-		return defaultSize
+		return initialEstimate
 	}
 	if recordedSize == nil {
 		// TODO: return a value indicating "unsized" here, and instead let the
 		// executor run this task once to estimate the size.
-		return defaultSize
+		return initialEstimate
 	}
 	return &scpb.TaskSize{
-		EstimatedMemoryBytes: int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
-		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
+		EstimatedMemoryBytes:   int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
+		EstimatedMilliCpu:      recordedSize.EstimatedMilliCpu,
+		EstimatedFreeDiskBytes: initialEstimate.EstimatedFreeDiskBytes,
 	}
 }
 
@@ -251,7 +255,8 @@ func testSize(testSize string) (int64, int64) {
 	return int64(mb * 1e6), int64(cpu)
 }
 
-// Estimate returns the default task size estimate for a task. It does not use
+// Estimate returns the default task size estimate for a task. It respects hints
+// from the task such as test size and estimated compute units, but does not use
 // information about historical task executions.
 func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	props := platform.ParseProperties(task)
