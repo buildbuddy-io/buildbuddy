@@ -192,7 +192,7 @@ func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid stri
 		result.Error = wrapDockerErr(err, "failed to get docker container logs")
 		return
 	}
-	err = copyOutputs(logs, result)
+	err = copyOutputs(logs, result, &container.ExecOpts{})
 	if closeErr := logs.Close(); closeErr != nil {
 		log.Warningf("Failed to close docker logs: %s", closeErr)
 	}
@@ -289,10 +289,18 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	}
 }
 
-func copyOutputs(reader io.Reader, result *interfaces.CommandResult) error {
+func copyOutputs(reader io.Reader, result *interfaces.CommandResult, opts *container.ExecOpts) error {
 	var stdoutBuf, stderrBuf bytes.Buffer
-
 	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
+	// Note: stdout and stderr aren't buffered in the command result when
+	// providing an explicit writer.
+	if opts.Stdout != nil {
+		stdout = opts.Stdout
+	}
+	if opts.Stderr != nil {
+		stderr = opts.Stderr
+	}
+
 	if *commandutil.DebugStreamCommandOutputs {
 		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
 	}
@@ -436,17 +444,17 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {
-		res = r.exec(ctx, command, stdin, stdout)
+		res = r.exec(ctx, command, opts)
 		return res.Error
 	})
 	return res
 }
 
-func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -462,7 +470,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		WorkingDir:   r.workDir,
 		AttachStdout: true,
 		AttachStderr: true,
-		AttachStdin:  stdin != nil,
+		AttachStdin:  opts.Stdin != nil,
 		User:         u,
 	}
 	exec, err := r.client.ContainerExecCreate(ctx, r.id, cfg)
@@ -476,18 +484,13 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		return result
 	}
 
-	if stdin != nil {
-		go io.Copy(attachResp.Conn, stdin)
-	}
-
-	var responseReader io.Reader
-	responseReader = attachResp.Reader
-	if stdout != nil {
-		r, w := io.Pipe()
-		defer w.Close()
-		responseReader = io.TeeReader(responseReader, w)
-		// TODO(siggisim): Pipe stderr to the action result's stdout.
-		go stdcopy.StdCopy(stdout, ioutil.Discard, r)
+	if opts.Stdin != nil {
+		go func() {
+			// Ignoring errors from the copy here since they're most likely due to the
+			// process being intentionally terminated.
+			io.Copy(attachResp.Conn, opts.Stdin)
+			attachResp.CloseWrite()
+		}()
 	}
 
 	// note: Close() doesn't return an error, and can be safely called more than once.
@@ -498,7 +501,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		<-ctx.Done()
 		attachResp.Close()
 	}()
-	if err := copyOutputs(responseReader, result); err != nil {
+	if err := copyOutputs(attachResp.Reader, result, opts); err != nil {
 		// If we timed out, ignore the "closed connection" error from copying
 		// outputs
 		if ctx.Err() == context.DeadlineExceeded {

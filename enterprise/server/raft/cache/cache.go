@@ -26,10 +26,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -38,15 +36,20 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
 
 var (
 	rootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
 	listenAddr    = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
-	join          = flagutil.Slice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	join          = flagtypes.Slice("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	httpPort      = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
+)
+
+const (
+	DefaultPartitionID = "default"
 )
 
 type Config struct {
@@ -62,6 +65,9 @@ type Config struct {
 
 	// GRPC API Config
 	GRPCPort int
+
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
 }
 
 type RaftCache struct {
@@ -265,7 +271,29 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
+func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
+	auth := rc.env.GetAuthenticator()
+	if auth == nil {
+		return DefaultPartitionID, nil
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return DefaultPartitionID, nil
+	}
+	for _, pm := range rc.conf.PartitionMappings {
+		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return pm.PartitionID, nil
+		}
+	}
+	return DefaultPartitionID, nil
+}
+
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
 	case interfaces.CASCacheType:
@@ -276,6 +304,7 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.Cac
 		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
 	}
 	newIsolation.RemoteInstanceName = remoteInstanceName
+	newIsolation.PartitionId = partID
 
 	clone := *rc
 	clone.isolation = newIsolation
@@ -288,13 +317,8 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.
 	if err != nil {
 		return nil, err
 	}
-	userPrefix, err := prefix.UserPrefixFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	return &rfpb.FileRecord{
-		GroupId:   strings.TrimSuffix(userPrefix, "/"),
 		Isolation: rc.isolation,
 		Digest:    d,
 	}, nil

@@ -1,8 +1,11 @@
 package podman_test
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
+	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -87,7 +90,7 @@ func TestHelloWorldExec(t *testing.T) {
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
 
-	result := podman.Exec(ctx, cmd, nil, nil)
+	result := podman.Exec(ctx, cmd, &container.ExecOpts{})
 	assert.NoError(t, result.Error)
 
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -97,6 +100,50 @@ func TestHelloWorldExec(t *testing.T) {
 	)
 	assert.Empty(t, string(result.Stderr), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
+
+	err = podman.Remove(ctx)
+	assert.NoError(t, err)
+}
+
+func TestExecStdio(t *testing.T) {
+	ctx := context.Background()
+	rootDir := makeTempDirWithWorldTxt(t)
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			if ! [ $(cat) = "TestInput" ]; then
+				echo "ERROR: missing expected TestInput on stdin"
+				exit 1
+			fi
+
+			echo TestOutput
+			echo TestError >&2
+		`},
+	}
+	// Need to give enough time to download the Docker image.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	podman := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/busybox", rootDir, &podman.PodmanOptions{})
+
+	err := podman.Create(ctx, "/work")
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	res := podman.Exec(ctx, cmd, &container.ExecOpts{
+		Stdin:  strings.NewReader("TestInput\n"),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	assert.NoError(t, res.Error)
+	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout opt should be respected")
+	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
+	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
+	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
 
 	err = podman.Remove(ctx)
 	assert.NoError(t, err)
@@ -303,4 +350,45 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
+
+func TestPodmanRun_RecordsStats(t *testing.T) {
+	// Note: This test requires root. Under cgroup v2, root is not required, but
+	// some devs' machines are running Ubuntu 20.04 currently, which only has
+	// cgroup v1 enabled (enabling cgroup v2 requires modifying kernel boot
+	// params).
+	u, err := user.Current()
+	require.NoError(t, err)
+	if u.Uid != "0" {
+		t.Skip("Test requires root")
+	}
+	// podman needs iptables which is in /usr/sbin.
+	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			for i in $(seq 100); do
+				sleep 0.001
+			done
+		`},
+	}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := podman.NewPodmanCommandContainer(env, cacheAuth, "docker.io/library/ubuntu:20.04", rootDir, &podman.PodmanOptions{
+		EnableStats: true,
+	})
+
+	res := c.Run(ctx, cmd, workDir, container.PullCredentials{})
+	require.NoError(t, res.Error)
+	t.Log(string(res.Stderr))
+	require.Equal(t, res.ExitCode, 0)
+
+	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
+	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
+	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
 }

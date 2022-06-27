@@ -2,7 +2,6 @@ package container_test
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
@@ -38,7 +37,7 @@ func (c *FakeContainer) PullImage(ctx context.Context, creds container.PullCrede
 	return nil
 }
 func (c *FakeContainer) Create(context.Context, string) error { return nil }
-func (c *FakeContainer) Exec(context.Context, *repb.Command, io.Reader, io.Writer) *interfaces.CommandResult {
+func (c *FakeContainer) Exec(context.Context, *repb.Command, *container.ExecOpts) *interfaces.CommandResult {
 	return nil
 }
 func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }

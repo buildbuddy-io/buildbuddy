@@ -15,12 +15,19 @@ import (
 )
 
 var (
+	persistentWorker = flag.Bool("persistent_worker", false, "Persistent worker flag.")
+
 	protocol       = flag.String("protocol", "proto", "Serialization protocol: 'json' or 'proto'.")
 	responseBase64 = flag.String("response_base64", "", "Base64-encoded response to return for every request. Includes varint length prefix (for proto responses).")
+	failWithStderr = flag.String("fail_with_stderr", "", "If non-empty, the worker will crash upon receiving the first request, printing the given message to stderr.")
 )
 
 func main() {
 	flag.Parse()
+
+	if !*persistentWorker {
+		panic("Expected --persistent_worker flag, but was not set.")
+	}
 
 	resBytes, err := base64.StdEncoding.DecodeString(*responseBase64)
 	if err != nil {
@@ -48,6 +55,13 @@ func main() {
 				panic(err)
 			}
 		}
+
+		if *failWithStderr != "" {
+			log.Infof("[worker] --fail_with_stderr was set; failing now and exiting.")
+			os.Stderr.Write([]byte(*failWithStderr + "\n"))
+			os.Exit(1)
+		}
+
 		log.Info("[worker] Got request! Sending response...")
 
 		_, err = os.Stdout.Write(resBytes)

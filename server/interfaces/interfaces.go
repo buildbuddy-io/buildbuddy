@@ -23,6 +23,7 @@ import (
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -259,6 +260,7 @@ type DBHandle interface {
 	SelectForUpdateModifier() string
 	SetNowFunc(now func() time.Time)
 	IsDuplicateKeyError(err error) bool
+	IsDeadlockError(err error) bool
 }
 
 type InvocationDB interface {
@@ -531,6 +533,23 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
+// TaskSizer estimates task resource usage for scheduling purposes.
+type TaskSizer interface {
+	// Estimate returns the resource usage for a task.
+	Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+
+	// Update updates future resource usage estimates based on a command's
+	// recorded execution stats.
+	Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
+}
+
+// ScheduledTask represents an execution task along with its scheduling metadata
+// computed by the execution service.
+type ScheduledTask struct {
+	ExecutionTask      *repb.ExecutionTask
+	SchedulingMetadata *scpb.SchedulingMetadata
+}
+
 // Runner represents an isolated execution environment.
 //
 // Runners are assigned a single task when they are retrieved from a Pool,
@@ -547,7 +566,7 @@ type Runner interface {
 	// to the runner.
 	//
 	// It populates the download stat fields in the given IOStats.
-	DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error
+	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
 
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context) *CommandResult
@@ -556,7 +575,7 @@ type Runner interface {
 	// the runner, as well as the result of the run.
 	//
 	// It populates the upload stat fields in the given IOStats.
-	UploadOutputs(ctx context.Context, ioStats *espb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
 }
 
 // Pool is responsible for assigning tasks to runners.
@@ -579,7 +598,7 @@ type RunnerPool interface {
 	//
 	// The returned runner is ready to execute tasks, and the caller is
 	// responsible for walking the runner through the task lifecycle.
-	Get(ctx context.Context, task *repb.ExecutionTask) (Runner, error)
+	Get(ctx context.Context, task *repb.ScheduledTask) (Runner, error)
 
 	// TryRecycle attempts to add the runner to the pool for use by subsequent
 	// tasks.
@@ -596,6 +615,11 @@ type RunnerPool interface {
 
 	// Shutdown removes all runners from the pool.
 	Shutdown(ctx context.Context) error
+
+	// Wait waits for all background cleanup jobs to complete. This is intended to
+	// be called during shutdown, after all tasks have finished executing (to ensure
+	// that no new cleanup jobs will be needed after this returns).
+	Wait()
 
 	// Returns the build root directory for this pool.
 	GetBuildRoot() string
@@ -635,6 +659,10 @@ type CommandResult struct {
 	// * -2 (NoExitCode) if the exit code could not be determined because it returned
 	//   an error other than exec.ExitError. This case typically means it failed to start.
 	ExitCode int
+
+	// UsageStats holds the command's measured resource usage. It may be nil if
+	// resource measurement is not implemented by the command's isolation type.
+	UsageStats *repb.UsageStats
 }
 
 type Subscriber interface {
@@ -791,4 +819,18 @@ type DistributedLock interface {
 
 	// Unlock releases the lock.
 	Unlock(ctx context.Context) error
+}
+
+// QuotaManager manages quota.
+type QuotaManager interface {
+	// Allow checks whether a user (identified from the ctx) has exceeded a rate
+	// limit inside the namespace.
+	// If the rate limit has not been exceeded, the underlying storage is updated
+	// by the supplied quantity.
+	Allow(ctx context.Context, namespace string, quantity int64) (bool, error)
+
+	GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error)
+	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
+	ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error)
+	ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error)
 }

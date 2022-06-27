@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -84,7 +83,7 @@ func NewRegexPath(expr string) sbxPath {
 }
 
 func runSimpleCommand(ctx context.Context, command []string) *interfaces.CommandResult {
-	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=stdin*/, nil /*=stdout*/)
+	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, &container.ExecOpts{})
 }
 
 func computeSandboxingSupported(ctx context.Context) bool {
@@ -277,7 +276,7 @@ func New(options *Options) container.CommandContainer {
 	}
 }
 
-func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, workDir string, opts *container.ExecOpts) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(sandbox) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -302,12 +301,12 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 
 	sandboxCmd := proto.Clone(command).(*repb.Command)
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
-	result = commandutil.Run(ctx, sandboxCmd, workDir, stdin, stdout)
+	result = commandutil.Run(ctx, sandboxCmd, workDir, opts)
 	return result
 }
 
 func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ container.PullCredentials) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, command, workDir, nil /*=stdin*/, nil /*=stdout*/)
+	return c.runCmdInSandbox(ctx, command, workDir, &container.ExecOpts{})
 }
 
 func (c *sandbox) Create(ctx context.Context, workDir string) error {
@@ -315,8 +314,8 @@ func (c *sandbox) Create(ctx context.Context, workDir string) error {
 	return nil
 }
 
-func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdin, stdout)
+func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, opts)
 }
 
 func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)                      { return false, nil }

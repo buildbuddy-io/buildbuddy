@@ -12,16 +12,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
-var memcacheTargets = flagutil.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flagtypes.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB
@@ -50,7 +50,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() == nil {
-		return status.FailedPreconditionErrorf("Memcache layer requires a base cache; but one was not configured; please also enable a gcs/s3/disk cache")
+		return status.FailedPreconditionErrorf("Memcache requires a base cache but one was not configured: please also enable a base cache")
 	}
 	log.Infof("Enabling memcache layer with targets: %s", *memcacheTargets)
 	mc := NewCache(*memcacheTargets...)

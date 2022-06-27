@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -31,8 +30,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 const (
@@ -51,9 +52,9 @@ const (
 )
 
 var (
-	rootDirectory     = flag.String("cache.disk.root_directory", "/tmp/buildbuddy_cache", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        = flagutil.Slice("cache.disk.partitions", []disk.Partition{}, "")
-	partitionMappings = flagutil.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
+	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	partitions        = flagtypes.Slice("cache.disk.partitions", []disk.Partition{}, "")
+	partitionMappings = flagtypes.Slice("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
@@ -160,8 +161,7 @@ func Register(env environment.Env) error {
 		return nil
 	}
 	if env.GetCache() != nil {
-		log.Warning("A cache has already been registered, skipping registering disk_cache.")
-		return nil
+		log.Warningf("Overriding configured cache with disk_cache.")
 	}
 	dc := &Options{
 		RootDirectory:     *rootDirectory,
@@ -577,6 +577,147 @@ func (p *partition) initializeCache() error {
 	return nil
 }
 
+func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType interfaces.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
+	p := strings.TrimPrefix(fullPath, rootDir+"/")
+	parts := strings.Split(p, "/")
+
+	parseError := func() error {
+		return status.FailedPreconditionErrorf("file %q did not match expected format.", fullPath)
+	}
+
+	// pull group off the front
+	if len(parts) > 0 {
+		userPrefix = parts[0]
+		parts = parts[1:]
+	} else {
+		err = parseError()
+		return
+	}
+
+	// pull digest off the end
+	if len(parts) > 0 {
+		db, decodeErr := hex.DecodeString(parts[len(parts)-1])
+		if decodeErr != nil {
+			err = parseError()
+			return
+		}
+		digestBytes = db
+		parts = parts[:len(parts)-1]
+	} else {
+		err = parseError()
+		return
+	}
+
+	// If this is a v2-formatted path, remove the hash prefix dir
+	if useV2Layout {
+		if len(parts) > 0 {
+			prefixPart := parts[len(parts)-1]
+			if len(prefixPart) != HashPrefixDirPrefixLen {
+				err = parseError()
+				return
+			}
+			parts = parts[:len(parts)-1]
+		} else {
+			err = parseError()
+			return
+		}
+	}
+
+	// If this is an /ac/ directory, this was an actionCache item
+	// otherwise it was a CAS item.
+	if len(parts) > 0 && parts[len(parts)-1] == "ac" {
+		cacheType = interfaces.ActionCacheType
+		parts = parts[:len(parts)-1]
+	} else {
+		cacheType = interfaces.CASCacheType
+	}
+
+	if len(parts) > 0 {
+		remoteInstanceName = strings.Join(parts, "/")
+	}
+	return
+}
+
+func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
+	scanned := make(chan *rfpb.FileMetadata, 10)
+	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil // keep going
+		}
+		rootDir := scanDir
+		relPath, err := filepath.Rel(rootDir, path)
+		if err != nil {
+			return status.InternalErrorf("Could not compute %q relative to %q", path, rootDir)
+		}
+		useV2Layout := strings.HasPrefix(relPath, V2Dir)
+		if useV2Layout {
+			rootDir = rootDir + "/" + V2Dir
+			relPath = strings.TrimPrefix(relPath, V2Dir+"/")
+		}
+
+		partID := DefaultPartitionID
+		if strings.HasPrefix(relPath, PartitionDirectoryPrefix) {
+			relPathDirs := strings.SplitN(relPath, string(filepath.Separator), 2)
+			partID = strings.TrimPrefix(relPathDirs[0], PartitionDirectoryPrefix)
+			rootDir = rootDir + "/" + relPathDirs[0]
+		}
+		info, err := d.Info()
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if info.Size() == 0 {
+			log.Debugf("Skipping 0 length file: %q", path)
+			return nil
+		}
+		cacheType, _, remoteInstanceName, digestBytes, err := parseFilePath(rootDir, path, useV2Layout)
+		if err != nil {
+			log.Debugf("Skipping unparsable file: %s", err)
+			return nil
+		}
+
+		isolation := &rfpb.Isolation{}
+		switch cacheType {
+		case interfaces.CASCacheType:
+			isolation.CacheType = rfpb.Isolation_CAS_CACHE
+		case interfaces.ActionCacheType:
+			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
+		default:
+			return status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
+		}
+		isolation.RemoteInstanceName = remoteInstanceName
+		isolation.PartitionId = partID
+		fm := &rfpb.FileMetadata{
+			FileRecord: &rfpb.FileRecord{
+				Isolation: isolation,
+				Digest: &repb.Digest{
+					Hash:      hex.EncodeToString(digestBytes),
+					SizeBytes: info.Size(),
+				},
+			},
+			StorageMetadata: &rfpb.StorageMetadata{
+				FileMetadata: &rfpb.StorageMetadata_FileMetadata{
+					Filename: path,
+				},
+			},
+		}
+		scanned <- fm
+		return nil
+	}
+	go func() {
+		if err := filepath.WalkDir(scanDir, walkFn); err != nil {
+			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
+		}
+		close(scanned)
+	}()
+	return scanned
+}
+
 type fileKey struct {
 	part               *partition
 	cacheType          interfaces.CacheType
@@ -588,58 +729,16 @@ type fileKey struct {
 func (fk *fileKey) FromPartitionAndPath(part *partition, fullPath string) error {
 	fk.part = part
 
-	p := strings.TrimPrefix(fullPath, fk.part.rootDir+"/")
-	parts := strings.Split(p, "/")
-
-	parseError := func() error {
-		return status.FailedPreconditionErrorf("file %q did not match expected format.", fullPath)
+	cacheType, userPrefix, remoteInstanceName, digestBytes, err := parseFilePath(fk.part.rootDir, fullPath, fk.part.useV2Layout)
+	if err != nil {
+		return err
 	}
 
-	// pull group off the front
-	if len(parts) > 0 {
-		fk.userPrefix = fk.part.internString(parts[0])
-		parts = parts[1:]
-	} else {
-		return parseError()
-	}
+	fk.userPrefix = fk.part.internString(userPrefix)
+	fk.digestBytes = digestBytes
+	fk.cacheType = cacheType
+	fk.remoteInstanceName = fk.part.internString(remoteInstanceName)
 
-	// pull digest off the end
-	if len(parts) > 0 {
-		digestBytes, err := hex.DecodeString(parts[len(parts)-1])
-		if err != nil {
-			return parseError()
-		}
-		fk.digestBytes = digestBytes
-		parts = parts[:len(parts)-1]
-	} else {
-		return parseError()
-	}
-
-	// If this is a v2-formatted path, remove the hash prefix dir
-	if fk.part.useV2Layout {
-		if len(parts) > 0 {
-			prefixPart := parts[len(parts)-1]
-			if len(prefixPart) != HashPrefixDirPrefixLen {
-				return parseError()
-			}
-			parts = parts[:len(parts)-1]
-		} else {
-			return parseError()
-		}
-	}
-
-	// If this is an /ac/ directory, this was an actionCache item
-	// otherwise it was a CAS item.
-	if len(parts) > 0 && parts[len(parts)-1] == "ac" {
-		fk.cacheType = interfaces.ActionCacheType
-		parts = parts[:len(parts)-1]
-	} else {
-		fk.cacheType = interfaces.CASCacheType
-	}
-
-	if len(parts) > 0 {
-		fk.remoteInstanceName = fk.part.internString(strings.Join(parts, "/"))
-	}
 	return nil
 }
 

@@ -23,9 +23,9 @@ func TestPebbleWriteCloser(t *testing.T) {
 	wb := db.NewIndexedBatch()
 
 	wc, err := filestore.PebbleWriter(wb, &rfpb.FileRecord{
-		GroupId: "major",
 		Isolation: &rfpb.Isolation{
-			CacheType: rfpb.Isolation_CAS_CACHE,
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: "major",
 		},
 		Digest: &repb.Digest{
 			Hash:      "key/alert",
@@ -164,9 +164,9 @@ func TestPebbleReadWrite(t *testing.T) {
 	defer wb.Close()
 
 	fr := &rfpb.FileRecord{
-		GroupId: "major",
 		Isolation: &rfpb.Isolation{
-			CacheType: rfpb.Isolation_CAS_CACHE,
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: "major",
 		},
 		Digest: &repb.Digest{
 			Hash:      "key/alert",

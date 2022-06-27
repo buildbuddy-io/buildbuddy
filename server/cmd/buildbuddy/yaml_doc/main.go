@@ -6,7 +6,7 @@ import (
 	"os"
 
 	_ "github.com/buildbuddy-io/buildbuddy/server/cmd/buildbuddy"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 const flagName = "yaml_documented_defaults_out_file"
@@ -14,13 +14,13 @@ const flagName = "yaml_documented_defaults_out_file"
 var yamlDefaultsOutFile = flag.String(flagName, "buildbuddy_server_documented_defaults.yaml", "Path to a file to write the default YAML config (with docs) to.")
 
 func init() {
-	flagutil.IgnoreFlagForYAML(flagName)
+	flagyaml.IgnoreFlagForYAML(flagName)
 }
 
 func main() {
 	flag.Parse()
 
-	b, err := flagutil.SplitDocumentedYAMLFromFlags()
+	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
 	if err != nil {
 		log.Fatalf("Encountered error generating documented default YAML file: %s", err)
 	}

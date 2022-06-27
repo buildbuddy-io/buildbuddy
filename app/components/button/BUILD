@@ -12,6 +12,7 @@ ts_library(
     ]),
     deps = [
         "//app/components/checkbox",
+        "//app/components/link",
         "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",

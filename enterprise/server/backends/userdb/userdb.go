@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -574,7 +573,7 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 			Name:    "Organization",
 		},
 	}
-	if api.Enabled() {
+	if api_config.APIEnabled() {
 		c.apiKeyValue = api_config.Key()
 	}
 	if *orgName != "" {

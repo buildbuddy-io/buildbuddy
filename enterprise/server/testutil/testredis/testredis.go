@@ -106,8 +106,12 @@ func (h *Handle) Restart() {
 	waitUntilHealthy(h.t, h.Target)
 }
 
+func (h *Handle) Client() redis.UniversalClient {
+	return redis.NewClient(redisutil.TargetToOptions(h.Target))
+}
+
 func (h *Handle) KeyCount(pattern string) int {
-	keys, err := redis.NewClient(redisutil.TargetToOptions(h.Target)).Keys(context.Background(), pattern).Result()
+	keys, err := h.Client().Keys(context.Background(), pattern).Result()
 	require.NoError(h.t, err)
 	return len(keys)
 }

@@ -6,15 +6,15 @@ import shlex
 import subprocess
 import sys
 
-GENERATED_FILE_NAME = "prometheus-metrics.md"
+INPUT_METRICS_PATH = "server/metrics/metrics.go"
+OUTPUT_PATH = "docs/prometheus-metrics.md"
+PRETTIER_TOOL_PATH = "tools/prettier/prettier.sh"
 
-FILE_HEADER = """<!--
-{
-  "name": "Prometheus Metrics",
-  "category": "5fcfd1ede5ded705a0bf5fd0",
-  "priority": 1000
-}
--->
+FILE_HEADER = """---
+id: prometheus-metrics
+title: Prometheus Metrics
+sidebar_label: Prometheus Metrics
+---
 
 <!--
 
@@ -25,8 +25,6 @@ GENERATED FILE - DO NOT EDIT
 Run `python3 server/metrics/generate_docs.py` to re-generate.
 
 -->
-
-# BuildBuddy metrics
 
 BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
 [four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
@@ -39,7 +37,7 @@ like [Grafana](https://grafana.com).
 
 def fatal(msg: str, line_index=None):
     line_marker = "" if line_index is None else f" (Line {line_index+1})"
-    sys.stderr.write(f"ERROR{line_marker}: {msg}")
+    sys.stderr.write(f"ERROR{line_marker}: {msg}\n")
     sys.stderr.flush()
     sys.exit(1)
 
@@ -99,7 +97,7 @@ class DocsGenerator(object):
                         line_index=line_index,
                     )
                 self.label_constant_comments.append(m.group(1))
-            m = re.match(r'(\w+Label) = "(.*)"', line)
+            m = re.match(r'(\w+) = "(.*)"', line)
             if m:
                 self.label_constants[m.group(1)] = {
                     "value": m.group(2),
@@ -156,7 +154,8 @@ class DocsGenerator(object):
                     )
                 self.add_metric_label(line_index, m.group(1))
                 return
-            m = re.match(r"\w+Label", line)
+
+            m = re.match(r"\w+", line)
             if m:
                 label_constant_token = m.group()
                 const = self.label_constants[label_constant_token]
@@ -176,9 +175,6 @@ class DocsGenerator(object):
         # Insert markdown if applicable.
         if line.startswith("///"):
             if line == "///":
-                if self.state == "PROMQL":
-                    self.promql_lines.append("")
-                    return
                 self.output_lines.append("")
                 return
             m = re.match("^///\s(.*)", line)
@@ -188,21 +184,6 @@ class DocsGenerator(object):
                     line_index=line_index,
                 )
 
-            if self.state == "PROMQL":
-                if line.startswith("/// ```"):
-                    # End promql syntax highlighting
-                    self.output_lines.append(syntax_highlight_promql(self.promql_lines))
-                    self.promql_lines = []
-                    self.state = None
-                    return
-                # Accumulate promql code
-                self.promql_lines.append(m.group(1))
-                return
-            # Most markdown syntax highlighting libs don't support promql;
-            # use pygmentize to colorize promql.
-            if line.startswith("/// ```promql"):
-                self.state = "PROMQL"
-                return
             self.output_lines.append(m.group(1))
             return
 
@@ -257,29 +238,19 @@ class DocsGenerator(object):
         self.metric[name] = value
 
 
-def syntax_highlight_promql(lines):
-    proc = subprocess.run(
-        shlex.split(
-            "pygmentize -l promql -f html -P style=monokai -P noclasses -P lineseparator='<br>' -P wrapcode",
-        ),
-        input="\n".join(lines).encode("utf-8"),
-        capture_output=True,
-    )
-    return proc.stdout.decode("utf-8")
-
-
 def main():
+    if not os.path.exists("WORKSPACE"):
+        fatal("Must be run from workspace root.")
     if len(sys.argv) >= 2 and sys.argv[1] in ["-w", "--watch"]:
         subprocess.run(
             f'''nodemon --watch '{sys.path[0]}/metrics.go' --watch '{sys.argv[0]}' --exec "python3 '{sys.argv[0]}'"''',
             shell=True,
         )
         sys.exit(0)
-    os.chdir(sys.path[0])
-    lines = DocsGenerator("./metrics.go").parse()
-    docs_path = f"../../docs/{GENERATED_FILE_NAME}"
-    with open(docs_path, "w") as f:
+    lines = DocsGenerator(INPUT_METRICS_PATH).parse()
+    with open(OUTPUT_PATH, "w") as f:
         f.write("\n".join(lines))
+    subprocess.run([PRETTIER_TOOL_PATH, '--write'], check=True)
 
 
 if __name__ == "__main__":

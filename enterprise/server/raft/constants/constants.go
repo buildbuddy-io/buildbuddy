@@ -1,8 +1,10 @@
 package constants
 
 import (
+	"hash/crc32"
 	"math"
 	"path/filepath"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -95,67 +97,88 @@ var (
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
 )
 
-func fileRecordSegments(r *rfpb.FileRecord) ([4]string, error) {
-	var segments [4]string
-	if r.GetGroupId() == "" {
-		return segments, status.FailedPreconditionError("Empty group ID not allowed in filerecord.")
+// returns partitionID, isolation, hash or
+// returns partitionID, isolation, remote_instance_name, hahs
+func fileRecordSegments(r *rfpb.FileRecord) (partID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
+	if r.GetIsolation().GetPartitionId() == "" {
+		err = status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
+		return
 	}
-	segments[0] = r.GetGroupId()
+	partID = r.GetIsolation().GetPartitionId()
 
 	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
-		segments[1] = "cas"
+		isolation = "cas"
 	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
-		segments[1] = "ac"
+		isolation = "ac"
+		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
+			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))
+		}
 	} else {
-		return segments, status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+		err = status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+		return
 	}
-	if len(r.GetDigest().GetHash()) > 4 {
-		segments[2] = r.GetDigest().GetHash()[:4]
-	} else {
-		return segments, status.FailedPreconditionError("Malformed digest; too short.")
+	if len(r.GetDigest().GetHash()) <= 4 {
+		err = status.FailedPreconditionError("Malformed digest; too short.")
+		return
 	}
-	segments[3] = r.GetDigest().GetHash()
-	return segments, nil
+	digestHash = r.GetDigest().GetHash()
+	return
 }
 
+// FileKey is the partial path where a file will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/root/dir/blobs/foo/bar".
 func FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {groupID}/{ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
-	//   //   GR123456/ac/abcd/abcd12345asdasdasd123123123asdasdasd
-	//   //   GR123456/cas/abcd/abcd12345asdasdasd123123123asdasdasd
-	s, err := fileRecordSegments(r)
+	//   //   PART123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
 	}
-	return []byte(filepath.Join(s[0], s[1], s[2], s[3])), nil
+
+	return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 }
 
+// FileDataKey is the partial key name where a file will be written if it is
+// stored entirely in pebble.
+// For example, given a fileRecord with FileKey: "tiny/file", the filestore will
+// write the file under pebble keys like:
+//   - tiny/file-0
+//   - tiny/file-1
+//   - tiny/file-2
 func FileDataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// File Data keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}-
 	//   // for example:
-	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd-
-	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd-
-	s, err := fileRecordSegments(r)
+	//   //   PART123/ac/44321/abcd12345asdasdasd123123123asdasdasd-
+	//   //   PART123/cas/abcd12345asdasdasd123123123asdasdasd-
+	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
 	}
-	return []byte(filepath.Join(s[0], s[1], s[3]) + "-"), nil
+	return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash) + "-"), nil
 }
 
+// FileMetadataKey is the partial key name where a file's metadata will be
+// written in pebble.
+// For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
+// write the file's metadata under pebble key like:
+//   - baz/bap
 func FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// Metadata keys look like this:
 	//   // {groupID}/{ac|cas}/{hash}
 	//   // for example:
-	//   //   GR123456/ac/abcd12345asdasdasd123123123asdasdasd
-	//   //   GR123456/cas/abcd12345asdasdasd123123123asdasdasd
-	s, err := fileRecordSegments(r)
+	//   //   PART123456/ac/44321/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123456/cas/abcd12345asdasdasd123123123asdasdasd
+	partID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
 	}
-	return []byte(filepath.Join(s[0], s[1], s[3])), nil
+	return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash)), nil
 }

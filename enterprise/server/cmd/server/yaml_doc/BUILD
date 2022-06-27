@@ -13,7 +13,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/cmd/server:server_lib",
-        "//server/util/flagutil",
+        "//server/util/flagutil/yaml",
     ],
 )
 

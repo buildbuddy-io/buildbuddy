@@ -15,6 +15,7 @@ go_library(
         "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:quota_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:target_go_proto",

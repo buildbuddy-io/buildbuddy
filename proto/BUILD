@@ -87,6 +87,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":remote_execution_proto",
+        ":scheduler_proto",
         "@com_google_protobuf//:duration_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
@@ -111,6 +112,15 @@ proto_library(
 proto_library(
     name = "pagination_proto",
     srcs = [":pagination.proto"],
+)
+
+proto_library(
+    name = "quota_proto",
+    srcs = [":quota.proto"],
+    deps = [
+        ":context_proto",
+        "@com_google_protobuf//:duration_proto",
+    ],
 )
 
 proto_library(
@@ -318,6 +328,7 @@ proto_library(
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
+        ":quota_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
@@ -338,6 +349,12 @@ proto_library(
 )
 
 proto_library(
+    name = "registry_proto",
+    srcs = ["registry.proto"],
+    deps = [":remote_execution_proto"],
+)
+
+proto_library(
     name = "remote_asset_proto",
     srcs = ["remote_asset.proto"],
     deps = [
@@ -355,6 +372,7 @@ proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -388,6 +406,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -457,6 +476,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":remote_execution_go_proto",
+        ":scheduler_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
@@ -510,6 +530,15 @@ go_proto_library(
         ":command_line_go_proto",
         ":failure_details_go_proto",
         ":invocation_policy_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "quota_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/quota",
+    proto = ":quota_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 
@@ -658,6 +687,7 @@ go_proto_library(
         ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
+        ":quota_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",
@@ -678,6 +708,14 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/sidecar",
     proto = ":sidecar_proto",
+)
+
+go_proto_library(
+    name = "registry_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/registry",
+    proto = ":registry_proto",
+    deps = [":remote_execution_go_proto"],
 )
 
 go_proto_library(
@@ -765,6 +803,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     proto = ":remote_execution_proto",
     deps = [
+        ":scheduler_go_proto",
         ":semver_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
         "@go_googleapis//google/longrunning:longrunning_go_proto",

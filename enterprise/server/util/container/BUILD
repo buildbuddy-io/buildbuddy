@@ -12,6 +12,6 @@ go_library(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_docker_docker//client:go_default_library",
+        "@com_github_docker_docker//client",
     ],
 )

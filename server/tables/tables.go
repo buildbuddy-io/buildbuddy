@@ -148,6 +148,7 @@ type Invocation struct {
 	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
 	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
+	BazelExitCode                    string
 }
 
 func (i *Invocation) TableName() string {
@@ -357,6 +358,14 @@ type Execution struct {
 	FileUploadSizeBytes      int64
 	FileUploadDurationUsec   int64
 
+	// UsageStats
+	PeakMemoryBytes int64
+	CPUNanos        int64
+
+	// Task sizing
+	EstimatedMemoryBytes int64
+	EstimatedMilliCPU    int64
+
 	// ExecutedActionMetadata (in addition to Worker above)
 	Perms                              int `gorm:"index:executions_perms"`
 	QueuedTimestampUsec                int64
@@ -543,6 +552,44 @@ type Usage struct {
 
 func (*Usage) TableName() string {
 	return "Usages"
+}
+
+type QuotaBucket struct {
+	Model
+	// The namespace indicates a single resource to be protected from abusive
+	// usage.
+	Namespace string `gorm:"primarykey"`
+
+	// The name of the bucket, like "default", "banned", or "restricted".
+	Name string `gorm:"primarykey"`
+
+	// The maximum sustained rate of requests
+	NumRequests        int64
+	PeriodDurationUsec int64
+
+	// The number of requests that will be allowed to exceed the rate in a single
+	// burst and must be non-negative.
+	MaxBurst int64
+}
+
+func (*QuotaBucket) TableName() string {
+	return "QuotaBuckets"
+}
+
+// QuotaGroup defines the relationship between a QuotaBucket to a QuotaKey. For,
+// example, user:X is in bucket:restricted.
+type QuotaGroup struct {
+	Model
+	Namespace string `gorm:"primarykey"`
+	// GroupID or IP address (for anon clients). Used to count quota for a single
+	// user.
+	QuotaKey string `gorm:"primarykey"`
+
+	BucketName string
+}
+
+func (*QuotaGroup) TableName() string {
+	return "QuotaGroups"
 }
 
 type PostAutoMigrateLogic func() error
@@ -945,4 +992,6 @@ func init() {
 	registerTable("TS", &TargetStatus{})
 	registerTable("WF", &Workflow{})
 	registerTable("UA", &Usage{})
+	registerTable("QB", &QuotaBucket{})
+	registerTable("QG", &QuotaGroup{})
 }

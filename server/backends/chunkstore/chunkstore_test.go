@@ -423,4 +423,29 @@ func TestWriter(t *testing.T) {
 		t.Fatalf("Map contents are incorrect for multi-chunk file after wait for flush:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
 	}
 
+	testTail := []byte("zxcvbnm")
+
+	w = c.Writer(mtx, "bar", &ChunkstoreWriterOptions{WriteTimeoutDuration: flushTime})
+	w.WriteWithTail(mtx, test_string, testTail)
+	w.GetLastChunkIndex(mtx) // Test to ensure this does not wipe out volatile tail
+	test_map["bar_0000"] = test_string[0:5]
+
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file before wait for flush:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	test_map["bar_0001"] = test_string[5:]
+
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file after wait for flush:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
+	}
+
+	w.Close(mtx)
+	test_map["bar_0002"] = testTail[:5]
+	test_map["bar_0003"] = testTail[5:]
+
+	if !cmp.Equal(m.GetBlobMap(), test_map) {
+		t.Fatalf("Map contents are incorrect for multi-chunk file after close, which should flush the tail:\n\n%v\n\nshould be:\n\n%v", m.GetBlobMap(), test_map)
+	}
 }

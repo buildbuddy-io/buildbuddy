@@ -11,7 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -98,7 +97,7 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 // ExecuteResponseWithCachedResult returns an ExecuteResponse for an action
 // result served from cache.
 func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteResponse {
-	return ExecuteResponseWithResult(ar, nil /*=summary*/, nil /*=err*/)
+	return ExecuteResponseWithResult(ar, nil /*=err*/)
 }
 
 // ExecuteResponseWithResult returns an ExecuteResponse for an action result
@@ -106,21 +105,16 @@ func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteRespons
 // execution, and the error is any pertinent error encountered during execution.
 // If a non-nil error is provided, an action result (incomplete or partial) may
 // still be provided, and clients are expected to handle this case properly.
-func ExecuteResponseWithResult(ar *repb.ActionResult, summary *espb.ExecutionSummary, err error) *repb.ExecuteResponse {
+func ExecuteResponseWithResult(ar *repb.ActionResult, err error) *repb.ExecuteResponse {
 	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
 	if ar != nil {
 		rsp.Result = ar
-	}
-	if summary != nil {
-		if serialized, err := proto.Marshal(summary); err == nil {
-			rsp.Message = base64.StdEncoding.EncodeToString(serialized)
-		}
 	}
 	return rsp
 }
 
 func InProgressExecuteResponse() *repb.ExecuteResponse {
-	return ExecuteResponseWithResult(nil /*=result*/, nil /*=summary*/, nil /*=error*/)
+	return ExecuteResponseWithResult(nil /*=result*/, nil /*=error*/)
 }
 
 func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {

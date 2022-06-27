@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/api",
         "//proto:api_key_go_proto",
         "//proto:group_go_proto",
         "//proto:telemetry_go_proto",

@@ -26,12 +26,12 @@ message Isolation {
   }
   CacheType cache_type = 1;
   string remote_instance_name = 2;
+  string partition_id = 3;
 }
 
 message FileRecord {
-  string group_id = 1;
-  Isolation isolation = 2;
-  build.bazel.remote.execution.v2.Digest digest = 3;
+  Isolation isolation = 1;
+  build.bazel.remote.execution.v2.Digest digest = 2;
 }
 
 message StorageMetadata {

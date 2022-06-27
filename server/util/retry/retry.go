@@ -12,7 +12,7 @@ type Options struct {
 	InitialBackoff time.Duration // How long to wait after the first request
 	MaxBackoff     time.Duration // Max amount of time to wait for a single request
 	Multiplier     float64       // Next backoff is this * previous backoff
-	MaxRetries     int           // Max number of retries; 0 is inf
+	MaxRetries     int           // Max number of retries; 0 is based on time
 }
 
 type Retry struct {
@@ -20,13 +20,28 @@ type Retry struct {
 	ctx  context.Context
 
 	currentAttempt int
+	maxAttempts    int
 	isReset        bool
 }
 
 func New(ctx context.Context, opts *Options) *Retry {
+	maxAttempts := opts.MaxRetries
+	if maxAttempts <= 0 {
+		// always try at least once
+		maxAttempts = 1
+		if opts.Multiplier > 1 && opts.MaxBackoff > opts.InitialBackoff {
+			maxAttempts = 1 + int(math.Ceil(
+				math.Log(
+					float64(opts.MaxBackoff)/float64(opts.InitialBackoff),
+				)/math.Log(opts.Multiplier),
+			))
+		}
+	}
+
 	r := &Retry{
-		ctx:  ctx,
-		opts: opts,
+		ctx:         ctx,
+		opts:        opts,
+		maxAttempts: maxAttempts,
 	}
 	r.Reset()
 	return r
@@ -40,17 +55,15 @@ func New(ctx context.Context, opts *Options) *Retry {
 //   doSomething()
 // }
 func DefaultWithContext(ctx context.Context) *Retry {
-	r := &Retry{
-		ctx: ctx,
-		opts: &Options{
+	return New(
+		ctx,
+		&Options{
 			InitialBackoff: 50 * time.Millisecond,
 			MaxBackoff:     3 * time.Second,
 			Multiplier:     2,
 			MaxRetries:     0, // unlimited, time based max by default.
 		},
-	}
-	r.Reset()
-	return r
+	)
 }
 
 func (r *Retry) Reset() {
@@ -74,7 +87,7 @@ func (r *Retry) Next() bool {
 	}
 
 	// If we're out of retries, exit.
-	if r.opts.MaxRetries > 0 && r.currentAttempt == r.opts.MaxRetries {
+	if r.currentAttempt >= r.maxAttempts {
 		return false
 	}
 
@@ -85,4 +98,12 @@ func (r *Retry) Next() bool {
 	case <-r.ctx.Done():
 		return false
 	}
+}
+
+func (r *Retry) AttemptNumber() int {
+	return r.currentAttempt + 1
+}
+
+func (r *Retry) MaxAttempts() int {
+	return r.maxAttempts
 }

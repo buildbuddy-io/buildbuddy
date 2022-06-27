@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/trace.proto";
@@ -238,4 +239,5 @@ message RegisteredExecutionNode {
   string scheduler_host_port = 2;
   string group_id = 3;
   acl.ACL acl = 4;
+  google.protobuf.Timestamp last_ping_time = 5;
 }

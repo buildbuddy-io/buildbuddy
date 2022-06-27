@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 var (
@@ -27,7 +27,7 @@ var (
 	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	defaultImage         = flag.String("executor.default_image", "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0", "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
-	extraEnvVars         = flagutil.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
+	extraEnvVars         = flagtypes.Slice("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
 )
 
 const (
@@ -67,6 +67,7 @@ const (
 	enableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
+	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
 
@@ -142,6 +143,13 @@ type Properties struct {
 	WorkflowID               string
 	HostedBazelAffinityKey   string
 	UseSelfHostedExecutors   bool
+	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
+	// it is enabled via flag, and instead uses the default / platform based
+	// sizing. Intended for debugging purposes only and should not generally
+	// be used.
+	// TODO(bduffany): remove this once measured task sizing is battle-tested
+	// and this is no longer needed for debugging
+	DisableMeasuredTaskSize bool
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
@@ -205,6 +213,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
+		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              stringListProp(m, envOverridesPropertyName),
 	}

@@ -5,5 +5,5 @@ go_library(
     srcs = ["build_buddy_url.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/flagutil"],
+    deps = ["//server/util/flagutil/types"],
 )

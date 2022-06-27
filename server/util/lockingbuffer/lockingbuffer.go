@@ -36,6 +36,12 @@ func (lb *LockingBuffer) Read(p []byte) (int, error) {
 	return lb.buffer.Read(p)
 }
 
+func (lb *LockingBuffer) Reset() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.buffer.Reset()
+}
+
 // ReadAll provides a thread-safe alternative to io.ReadAll for lockingbuffer.
 func (lb *LockingBuffer) ReadAll() ([]byte, error) {
 	lb.mu.Lock()

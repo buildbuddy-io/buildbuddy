@@ -195,6 +195,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           testSummaryEvent={this.state.model.testSummaryMap.get(targetLabel)}
           actionEvents={actionEvents}
           user={this.props.user}
+          repo={this.state.model.getGithubRepo()}
           targetLabel={targetLabel}
           dark={!this.props.preferences.lightTerminalEnabled}
         />

@@ -289,6 +289,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	router, err := task_router.New(env)
 	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
+	err = tasksize.Register(env)
+	require.NoError(t, err, "could not set up TaskSizer")
 	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
 	env.SetRemoteExecutionService(executionServer)
@@ -777,7 +779,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	if err != nil {
 		assert.FailNowf(r.t, fmt.Sprintf("could not create executor %q", options.Name), err.Error())
 	}
-	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, &options.priorityTaskSchedulerOptions)
+	taskScheduler := priority_task_scheduler.NewPriorityTaskScheduler(env, exec, runnerPool, &options.priorityTaskSchedulerOptions)
 	taskScheduler.Start()
 
 	executorPort := testport.FindFree(r.t)
@@ -1246,7 +1248,7 @@ func NewTestRunnerPool(t testing.TB, env environment.Env, runInterceptor RunInte
 	return &testRunnerPool{realPool, runInterceptor}
 }
 
-func (p *testRunnerPool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
+func (p *testRunnerPool) Get(ctx context.Context, task *repb.ScheduledTask) (interfaces.Runner, error) {
 	realRunner, err := p.RunnerPool.Get(ctx, task)
 	if err != nil {
 		return nil, err

@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -42,6 +41,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -113,7 +113,7 @@ var (
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchDigests       = flagutil.Slice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	patchDigests       = flagtypes.Slice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
@@ -235,7 +235,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 
 	options := []string{}
 	if *besBackend != "" {
-		options = append(options, fmt.Sprintf("--bes_backend=%s'", *besBackend))
+		options = append(options, fmt.Sprintf("--bes_backend='%s'", *besBackend))
 	}
 	if r.apiKey != "" {
 		options = append(options, fmt.Sprintf("--remote_header='x-buildbuddy-api-key=%s'", r.apiKey))
@@ -760,7 +760,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Transparently set the invocation ID from the one we computed ahead of
 		// time. The UI is expecting this invocation ID so that it can render a
 		// BuildBuddy invocation URL for each bazel_command that is executed.
-		args = append(args, fmt.Sprintf("--invocation_id=%s", iid))
+		args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
 
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
@@ -772,7 +772,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 			defer os.RemoveAll(tmpDir)
 			runScript = filepath.Join(tmpDir, "run.sh")
-			args = append(args, "--script_path="+runScript)
+			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
 		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter)
@@ -1100,9 +1100,28 @@ func bazelArgs(cmd string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		tokens = append(tokens, extras...)
+		tokens = appendBazelSubcommandArgs(tokens, extras...)
 	}
 	return append(startupFlags, tokens...), nil
+}
+
+// appendBazelSubcommandArgs appends bazel arguments to a bazel command,
+// *before* the arg separator ("--") if it exists, so that the arguments apply
+// to the bazel subcommand ("build", "run", etc.) and not the binary being run
+// (in the "bazel run" case).
+func appendBazelSubcommandArgs(args []string, argsToAppend ...string) []string {
+	splitIndex := len(args)
+	for i, arg := range args {
+		if arg == "--" {
+			splitIndex = i
+			break
+		}
+	}
+	out := make([]string, 0, len(args)+len(argsToAppend))
+	out = append(out, args[:splitIndex]...)
+	out = append(out, argsToAppend...)
+	out = append(out, args[splitIndex:]...)
+	return out
 }
 
 func ensureHomeDir() error {

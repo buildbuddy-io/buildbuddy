@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -70,9 +70,12 @@ func Register(env environment.Env) error {
 	if *bucket == "" {
 		return nil
 	}
+	if env.GetCache() != nil {
+		log.Warningf("Overriding configured cache with s3_cache.")
+	}
 	s3Cache, err := NewS3Cache()
 	if err != nil {
-		status.InternalErrorf("Error configuring S3 cache: %s", err)
+		return status.InternalErrorf("Error configuring S3 cache: %s", err)
 	}
 	env.SetCache(s3Cache)
 	return nil
@@ -469,10 +472,11 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 	// TODO(bduffany): track this as a contains() request, or find a way to
 	// track it as part of the read
 
-	readRange := aws.String(fmt.Sprintf("%d-", offset))
+	// This range follows the format specified here: https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
+	readRange := aws.String(fmt.Sprintf("bytes=%d-", offset))
 	if limit != 0 {
 		// range bounds are inclusive
-		readRange = aws.String(fmt.Sprintf("%d-%d", offset, offset+limit-1))
+		readRange = aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+limit-1))
 	}
 
 	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{

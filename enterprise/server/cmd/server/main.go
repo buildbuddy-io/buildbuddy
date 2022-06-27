@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/bitbucket"
@@ -35,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
+	"github.com/buildbuddy-io/buildbuddy/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
@@ -50,6 +53,7 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -150,7 +154,7 @@ func main() {
 	version.Print()
 
 	flag.Parse()
-	if err := flagutil.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
@@ -168,6 +172,9 @@ func main() {
 	if err := s3_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
+	if err := pebble_cache.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
@@ -182,11 +189,18 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := quota.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	if err := redis_client.RegisterRemoteExecutionRedisClient(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := task_router.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if err := tasksize.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
 	}
 
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {

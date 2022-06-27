@@ -249,6 +249,12 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		// Don't store executor requests in the scorecard for now.
 		return nil
 	}
+	if h.requestMetadata.GetActionId() == "" && h.requestMetadata.GetActionMnemonic() == "" && h.requestMetadata.GetTargetId() == "" {
+		// If all of this metadata is missing then we'll wind up rendering empty
+		// columns in the UI. This situation is most likely due to older executor versions
+		// which aren't setting their host ID, so ignore these for now as well.
+		return nil
+	}
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation

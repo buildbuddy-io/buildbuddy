@@ -66,7 +66,7 @@ type BEValues struct {
 	sawWorkspaceStatusEvent bool
 	sawBuildMetadataEvent   bool
 	buildStartTime          time.Time
-	buildFinished           bool
+	exitCode                *string
 }
 
 func NewBEValues(invocationID string) *BEValues {
@@ -146,7 +146,14 @@ func (v *BEValues) BuildMetadataIsLoaded() bool {
 }
 
 func (v *BEValues) BuildFinished() bool {
-	return v.buildFinished
+	return v.exitCode != nil
+}
+
+func (v *BEValues) BuildExitCode() string {
+	if v.exitCode == nil {
+		return ""
+	}
+	return *v.exitCode
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
@@ -248,7 +255,8 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 }
 
 func (v *BEValues) handleFinishedEvent(finished *build_event_stream.BuildFinished) {
-	v.buildFinished = true
+	v.exitCode = new(string)
+	*v.exitCode = finished.ExitCode.GetName()
 }
 
 func patternFromEvent(event *build_event_stream.BuildEvent) string {

@@ -76,11 +76,11 @@ jobs:
         # NOTE: Only run prettier on files that differ from master, since
         # prettier can be slow.
         run: |
-          npm install --global prettier@2.2.1
+          yarn global add prettier@2.2.1
           git merge-base HEAD origin/master |
             xargs git diff --name-only --diff-filter=AMRCT |
             grep -P '(README|\.(js|jsx|ts|tsx|html|css|yaml|yml|json|md))$' |
-            ( xargs --no-run-if-empty --delimiter='\n' "$(npm bin --global)/prettier" --check 1>/dev/null || true ) &> prettier-errors.txt
+            ( xargs --no-run-if-empty --delimiter='\n' "$(yarn global bin)/prettier" --check 1>/dev/null || true ) &> prettier-errors.txt
           echo "prettier errors:"
           cat prettier-errors.txt
 

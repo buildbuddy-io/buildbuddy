@@ -1,10 +1,12 @@
 package docker_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,7 +127,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	// the docker container.
 	isContainerRunning = true
 
-	res := c.Exec(ctx, cmd, nil, nil)
+	res := c.Exec(ctx, cmd, &container.ExecOpts{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -144,7 +146,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	assert.Greater(t, stats.MemoryUsageBytes, int64(0))
 
 	// Try executing the same command again after unpausing.
-	res = c.Exec(ctx, cmd, nil, nil)
+	res = c.Exec(ctx, cmd, &container.ExecOpts{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -252,7 +254,7 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	res := c.Exec(ctx, cmd, nil /*=stdin*/, nil /*=stdout*/)
+	res := c.Exec(ctx, cmd, &container.ExecOpts{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -270,6 +272,57 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(
 		t, "output\n", output,
 		"if timed out, should be able to read debug output files")
+}
+
+func TestDockerExec_Stdio(t *testing.T) {
+	socket := "/var/run/docker.sock"
+	dc, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithHost(fmt.Sprintf("unix://%s", socket)),
+		dockerclient.WithAPIVersionNegotiation(),
+	)
+	require.NoError(t, err)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cfg := &docker.DockerOptions{Socket: socket, InheritUserIDs: true}
+	ctx := context.Background()
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			if ! [ $(cat) = "TestInput" ]; then
+				echo "ERROR: missing expected TestInput on stdin"
+				exit 1
+			fi
+
+			echo TestOutput
+			echo TestError >&2
+		`},
+	}
+	env := testenv.GetTestEnv(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c := docker.NewDockerContainer(env, cacheAuth, dc, "docker.io/library/busybox", rootDir, cfg)
+	err = container.PullImageIfNecessary(
+		ctx, env, cacheAuth, c, container.PullCredentials{},
+		"docker.io/library/busybox",
+	)
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	res := c.Exec(ctx, cmd, &container.ExecOpts{
+		Stdin:  strings.NewReader("TestInput\n"),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	assert.NoError(t, res.Error)
+	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout opt should be respected")
+	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
+	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
+	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
+
+	err = c.Remove(ctx)
+	assert.NoError(t, err)
 }
 
 func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {

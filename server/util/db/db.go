@@ -569,3 +569,12 @@ func (h *DBHandle) IsDuplicateKeyError(err error) bool {
 	}
 	return false
 }
+
+func (h *DBHandle) IsDeadlockError(err error) bool {
+	var mysqlErr *gomysql.MySQLError
+	// Defined at https://dev.mysql.com/doc/mysql-errors/8.0/en/server-error-reference.html#error_er_lock_deadlock
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1213 {
+		return true
+	}
+	return false
+}

@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "proto/context.proto";
+
+package quota;
+
+message Rate {
+  // Should be positive.
+  int64 num_requests = 1;
+
+  // Should be positive.
+  google.protobuf.Duration period = 2;
+}
+
+message Bucket {
+  // The name of the bucket. Required.
+  string name = 1;
+
+  // The maximum number of requests can be used in a time period. Required.
+  Rate max_rate = 2;
+
+  // The number of requests that will be allowed to exceed the rate in a single
+  // burst. Should be non-negative. Required.
+  int64 max_burst = 3;
+}
+
+// QuotaKey is used to count quota for a single "user". Only one of the fields
+// should be set.
+message QuotaKey {
+  string group_id = 1;
+
+  // IP address is used for anonymous clients.
+  string ip_address = 2;
+}
+
+message AssignedBucket {
+  Bucket bucket = 1;
+
+  // A list of quota_key that assigned to the specified bucket.
+  repeated string quota_keys = 2;
+}
+
+// Namespace indicates a single resource to be protected by quota manager, like
+// "/rpc/GetTargets".
+message Namespace {
+  // The name of the namespace
+  string name = 1;
+
+  // All the buckets in the namespace
+  repeated AssignedBucket assigned_buckets = 2;
+}
+
+message RemoveNamespaceRequest {
+  context.RequestContext request_context = 1;
+  // The namespace to remove. All buckets that constitute the namespace will be
+  // removed as well as any quota groups associated with those buckets.
+  string namespace = 2;
+}
+
+message RemoveNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message ModifyNamespaceRequest {
+  context.RequestContext request_context = 1;
+  string namespace = 2;
+
+  // One of the following fields should be set.
+
+  // Pre-requisite: the name of the bucket doesn't exist.
+  Bucket add_bucket = 3;
+
+  // Pre-requisite: the name of the bucket exists.
+  Bucket update_bucket = 4;
+
+  // the name of the bucket to remove
+  string remove_bucket = 5;
+}
+
+message ModifyNamespaceResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message ApplyBucketRequest {
+  context.RequestContext request_context = 1;
+
+  QuotaKey key = 2;
+  string namespace = 3;
+
+  // When bucket_name is empty, will apply default bucket for the specified
+  // key.
+  string bucket_name = 4;
+}
+
+message ApplyBucketResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetNamespaceRequest {
+  context.RequestContext request_context = 1;
+  // When namespace is not set, return all namespaces.
+  string namespace = 2;
+}
+
+message GetNamespaceResponse {
+  context.ResponseContext request_context = 1;
+  repeated Namespace namespaces = 2;
+}

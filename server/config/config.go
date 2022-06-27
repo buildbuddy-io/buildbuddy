@@ -3,7 +3,7 @@ package config
 import (
 	"flag"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 const pathFlagName = "config_file"
@@ -13,7 +13,7 @@ var configPath = flag.String(pathFlagName, "/config.yaml", "The path to a buildb
 func init() {
 	// As this flag determines the YAML file we read the config from, it can't
 	// meaningfully be specified in the YAML config file.
-	flagutil.IgnoreFlagForYAML(pathFlagName)
+	flagyaml.IgnoreFlagForYAML(pathFlagName)
 }
 
 func Path() string {

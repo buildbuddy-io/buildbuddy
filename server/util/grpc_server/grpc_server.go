@@ -12,21 +12,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
-	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 )
 
@@ -39,8 +36,10 @@ var (
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 )
 
-func RegisterGRPCServer(env environment.Env) error {
-	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil)
+type RegisterServices func(server *grpc.Server, env environment.Env)
+
+func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
+	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
 	if err != nil {
 		return err
 	}
@@ -54,7 +53,7 @@ func RegisterGRPCServer(env environment.Env) error {
 	return nil
 }
 
-func RegisterGRPCSServer(env environment.Env) error {
+func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) error {
 	if !env.GetSSLService().IsEnabled() {
 		return nil
 	}
@@ -62,7 +61,7 @@ func RegisterGRPCSServer(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds))
+	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func RegisterGRPCSServer(env environment.Env) error {
 	return nil
 }
 
-func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption) (*grpc.Server, error) {
+func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
 
@@ -82,9 +81,9 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	grpcOptions := CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Printf("gRPCS listening on http://%s", hostAndPort)
+		log.Infof("gRPCS listening on %s", hostAndPort)
 	} else {
-		log.Printf("gRPC listening on http://%s", hostAndPort)
+		log.Infof("gRPC listening on %s", hostAndPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -95,50 +94,18 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 
 	// Support prometheus grpc metrics.
 	grpc_prometheus.Register(grpcServer)
-	// Enable prometheus latency metrics too.
-	grpc_prometheus.EnableHandlingTimeHistogram()
 
-	// Start Build-Event-Protocol and Remote-Cache services.
-	pepb.RegisterPublishBuildEventServer(grpcServer, env.GetBuildEventServer())
-
-	if casServer := env.GetCASServer(); casServer != nil {
-		// Register to handle content addressable storage (CAS) messages.
-		repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
-	}
-	if bsServer := env.GetByteStreamServer(); bsServer != nil {
-		// Register to handle bytestream (upload and download) messages.
-		bspb.RegisterByteStreamServer(grpcServer, bsServer)
-	}
-	if acServer := env.GetActionCacheServer(); acServer != nil {
-		// Register to handle action cache (upload and download) messages.
-		repb.RegisterActionCacheServer(grpcServer, acServer)
-	}
-	if pushServer := env.GetPushServer(); pushServer != nil {
-		rapb.RegisterPushServer(grpcServer, pushServer)
-	}
-	if fetchServer := env.GetFetchServer(); fetchServer != nil {
-		rapb.RegisterFetchServer(grpcServer, fetchServer)
-	}
-	if rexec := env.GetRemoteExecutionService(); rexec != nil {
-		repb.RegisterExecutionServer(grpcServer, rexec)
-	}
-	if scheduler := env.GetSchedulerService(); scheduler != nil {
-		scpb.RegisterSchedulerServer(grpcServer, scheduler)
-	}
-	repb.RegisterCapabilitiesServer(grpcServer, env.GetCapabilitiesServer())
-
-	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
-
-	// Register API Server as a gRPC service.
-	if api := env.GetAPIService(); api != nil {
-		apipb.RegisterApiServiceServer(grpcServer, api)
-	}
+	// DISABLED in prod: enabling these causes unnecessary allocations
+	// that substantially (50%+ QPS) impact performance.
+	// grpc_prometheus.EnableHandlingTimeHistogram()
 
 	// Register health check service.
 	hlpb.RegisterHealthServer(grpcServer, env.GetHealthChecker())
 
+	regServices(grpcServer, env)
+
 	go func() {
-		grpcServer.Serve(lis)
+		_ = grpcServer.Serve(lis)
 	}()
 	env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(grpcServer))
 	return grpcServer, nil
@@ -178,10 +145,35 @@ func GRPCShutdownFunc(grpcServer *grpc.Server) func(ctx context.Context) error {
 	}
 }
 
+func propagateInvocationIDToSpan(ctx context.Context) {
+	invocationId := bazel_request.GetInvocationID(ctx)
+	if invocationId == "" {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("invocation_id", invocationId))
+}
+
+func propagateInvocationIDToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+		propagateInvocationIDToSpan(ctx)
+		return handler(ctx, req)
+	}
+}
+
+func propagateInvocationIDToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		propagateInvocationIDToSpan(stream.Context())
+		return handler(srv, stream)
+	}
+}
+
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		filters.GetUnaryInterceptor(env),
 		filters.GetStreamInterceptor(env),
+		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(), propagateInvocationIDToSpanUnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(), propagateInvocationIDToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),

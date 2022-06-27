@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -35,10 +34,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -50,11 +51,12 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	dockerclient "github.com/docker/docker/client"
 )
 
@@ -65,8 +67,8 @@ var (
 	dockerNetHost           = flag.Bool("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
-	dockerDevices           = flagutil.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
-	dockerVolumes           = flagutil.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
+	dockerDevices           = flagtypes.Slice("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
+	dockerVolumes           = flagtypes.Slice("executor.docker_volumes", []string{}, "Additional --volume arguments to be passed to docker or podman.")
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
@@ -77,6 +79,8 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
+	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
+	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 )
 
 const (
@@ -98,6 +102,9 @@ const (
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
 	runnerRecycleTimeout = 30 * time.Second
+	// How long to spend waiting for a persistent worker process to terminate
+	// after we send the shutdown signal before giving up.
+	persistentWorkerShutdownTimeout = 10 * time.Second
 
 	// Memory usage estimate multiplier for pooled runners, relative to the
 	// default memory estimate for execution tasks.
@@ -148,6 +155,10 @@ func k8sPodID() (string, error) {
 	return "", nil
 }
 
+func ContextBasedShutdownEnabled() bool {
+	return *contextBasedShutdown
+}
+
 // state indicates the current state of a commandRunner.
 type state int
 
@@ -184,16 +195,27 @@ type commandRunner struct {
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
+	// TODO(bduffany): encapsulate persistent worker fields in their own struct
+	// in a separate package.
+
 	// Stdin handle to send persistent WorkRequests to.
 	stdinWriter io.Writer
 	// Stdout handle to read persistent WorkResponses from.
 	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
 	stdoutReader *bufio.Reader
+	stderr       lockingbuffer.LockingBuffer
+	// Stops the persistent worker associated with this runner. If this is nil,
+	// there is no persistent worker associated.
+	stopPersistentWorker func() error
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
 
 	// Decoder used when reading streamed JSON values from stdout.
 	jsonDecoder *json.Decoder
+
+	// A function that is invoked after the runner is removed. Controlled by the
+	// runner pool.
+	removeCallback func()
 
 	// Cached resource usage values from the last time the runner was added to
 	// the pool.
@@ -233,12 +255,12 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 	return nil
 }
 
-func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *espb.IOStats) error {
+func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 	)
-	inputTree, err := dirtools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
+	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return err
 	}
@@ -348,10 +370,10 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, nil, nil)
+	return r.Container.Exec(ctx, command, &container.ExecOpts{})
 }
 
-func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *espb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
+func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
 	txInfo, err := r.Workspace.UploadOutputs(ctx, actionResult, cmdResult)
 	if err != nil {
 		return err
@@ -385,6 +407,10 @@ func (r *commandRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *commandRunner) Remove(ctx context.Context) error {
+	if r.removeCallback != nil {
+		defer r.removeCallback()
+	}
+
 	r.p.mu.RLock()
 	s := r.state
 	r.p.mu.RUnlock()
@@ -399,6 +425,11 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 		}
 		if err := r.Container.Remove(ctx); err != nil {
 			errs = append(errs, err)
+		}
+		if r.stopPersistentWorker != nil {
+			if err := r.stopPersistentWorker(); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if r.VFS != nil {
@@ -453,7 +484,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=stdin*/, nil /*=stdout*/)
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &container.ExecOpts{})
 	return res.Error
 }
 
@@ -475,10 +506,14 @@ type pool struct {
 	podID          string
 	buildRoot      string
 	dockerClient   *dockerclient.Client
+	podmanProvider *podman.Provider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
 	maxRunnerDiskUsageBytes   int64
+
+	// pendingRemovals keeps track of which runners are pending removal.
+	pendingRemovals sync.WaitGroup
 
 	mu             sync.RWMutex // protects(isShuttingDown), protects(runners)
 	isShuttingDown bool
@@ -513,12 +548,20 @@ func NewPool(env environment.Env) (*pool, error) {
 		log.Info("Using docker for execution")
 	}
 
+	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+
+	podmanProvider, err := podman.NewProvider(env, imageCacheAuth, *rootDirectory)
+	if err != nil {
+		return nil, err
+	}
+
 	p := &pool{
 		env:            env,
-		imageCacheAuth: container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}),
 		podID:          podID,
 		dockerClient:   dockerClient,
+		podmanProvider: podmanProvider,
 		buildRoot:      *rootDirectory,
+		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
 	}
 	p.setLimits()
@@ -720,7 +763,15 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 	}
 	platProps := platform.ParseProperties(task)
-	c, err := p.newContainer(ctx, platProps, task)
+	st := &repb.ScheduledTask{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			// Note: this will use the default task size estimates and not
+			// measurement-based task sizing, which requires the app.
+			TaskSize: tasksize.Estimate(task),
+		},
+		ExecutionTask: task,
+	}
+	c, err := p.newContainer(ctx, platProps, st)
 	if err != nil {
 		log.Errorf("Error warming up %q: %s", containerType, err)
 		return err
@@ -776,8 +827,9 @@ func (p *pool) Warmup(ctx context.Context) {
 //
 // The returned runner is considered "active" and will be killed if the
 // executor is shut down.
-func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Runner, error) {
+func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runner, error) {
 	executorProps := platform.GetExecutorProperties()
+	task := st.ExecutionTask
 	props := platform.ParseProperties(task)
 	// TODO: This mutates the task; find a cleaner way to do this.
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
@@ -837,7 +889,7 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 	if err != nil {
 		return nil, err
 	}
-	ctr, err := p.newContainer(ctx, props, task)
+	ctr, err := p.newContainer(ctx, props, st)
 	if err != nil {
 		return nil, err
 	}
@@ -892,10 +944,16 @@ func (p *pool) Get(ctx context.Context, task *repb.ExecutionTask) (interfaces.Ru
 		return nil, status.UnavailableErrorf("Could not get a new task runner because the executor is shutting down.")
 	}
 	p.runners = append(p.runners, r)
+	if *contextBasedShutdown {
+		p.pendingRemovals.Add(1)
+		r.removeCallback = func() {
+			p.pendingRemovals.Done()
+		}
+	}
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ExecutionTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -909,17 +967,18 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		)
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
-			ForceRoot: props.DockerForceRoot,
-			User:      props.DockerUser,
-			Network:   props.DockerNetwork,
-			CapAdd:    *dockerCapAdd,
-			Devices:   *dockerDevices,
-			Volumes:   *dockerVolumes,
-			Runtime:   *podmanRuntime,
+			ForceRoot:   props.DockerForceRoot,
+			User:        props.DockerUser,
+			Network:     props.DockerNetwork,
+			CapAdd:      *dockerCapAdd,
+			Devices:     *dockerDevices,
+			Volumes:     *dockerVolumes,
+			Runtime:     *podmanRuntime,
+			EnableStats: *podmanEnableStats,
 		}
-		ctr = podman.NewPodmanCommandContainer(p.env, p.imageCacheAuth, props.ContainerImage, p.buildRoot, opts)
+		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
 	case platform.FirecrackerContainerType:
-		sizeEstimate := tasksize.Estimate(task)
+		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
 			DockerClient:           p.dockerClient,
@@ -1079,12 +1138,29 @@ func (p *pool) pausedRunnerMemoryUsageBytes() int64 {
 func (p *pool) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.isShuttingDown = true
-	runners := p.runners
-	p.runners = nil
+	var runnersToRemove []*commandRunner
+	if *contextBasedShutdown {
+		// Remove only paused runners, since active runners should be removed only
+		// after their currently assigned task is canceled due to the shutdown
+		// grace period expiring.
+		var pausedRunners, activeRunners []*commandRunner
+		for _, r := range p.runners {
+			if r.state == paused {
+				pausedRunners = append(pausedRunners, r)
+			} else {
+				activeRunners = append(activeRunners, r)
+			}
+		}
+		runnersToRemove = pausedRunners
+		p.runners = activeRunners
+	} else {
+		runnersToRemove = p.runners
+		p.runners = nil
+	}
 	p.mu.Unlock()
 
 	removeResults := make(chan error)
-	for _, r := range runners {
+	for _, r := range runnersToRemove {
 		// Remove runners in parallel, since each deletion is blocked on uploads
 		// to finish (if applicable). A single runner that takes a long time to
 		// upload its outputs should not block other runners from working on
@@ -1095,7 +1171,7 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		}()
 	}
 	errs := make([]error, 0)
-	for range runners {
+	for range runnersToRemove {
 		if err := <-removeResults; err != nil {
 			errs = append(errs, err)
 		}
@@ -1104,6 +1180,12 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		return status.InternalErrorf("failed to shut down runner pool: %s", errSlice(errs))
 	}
 	return nil
+}
+
+func (p *pool) Wait() {
+	if *contextBasedShutdown {
+		p.pendingRemovals.Wait()
+	}
 }
 
 func (p *pool) remove(r *commandRunner) {
@@ -1152,8 +1234,6 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		log.Errorf("Failed to clean workspace: %s", err)
 		return
 	}
-	// This call happens after we send the final stream event back to the
-	// client, so background context is appropriate.
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
 			log.Debug(err.Error())
@@ -1249,7 +1329,55 @@ func (r *commandRunner) supportsPersistentWorkers(ctx context.Context, command *
 	return len(flagFiles) > 0
 }
 
+func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
+	// Note: Using the server context since this worker will stick around for
+	// other tasks.
+	ctx, cancel := context.WithCancel(r.env.GetServerContext())
+	workerTerminated := make(chan struct{})
+	r.stopPersistentWorker = func() error {
+		// Canceling the worker context should terminate the worker process.
+		cancel()
+		// Wait for the worker to terminate. This is needed since canceling the
+		// context doesn't block until the worker is killed. This helps ensure that
+		// the worker is killed if we are shutting down. The shutdown case is also
+		// why we use ExtendContextForFinalization here.
+		ctx, cancel := background.ExtendContextForFinalization(r.env.GetServerContext(), persistentWorkerShutdownTimeout)
+		defer cancel()
+		select {
+		case <-workerTerminated:
+			return nil
+		case <-ctx.Done():
+			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
+		}
+	}
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	r.stdinWriter = stdinWriter
+	r.stdoutReader = bufio.NewReader(stdoutReader)
+	r.jsonDecoder = json.NewDecoder(r.stdoutReader)
+
+	command = proto.Clone(command).(*repb.Command)
+	command.Arguments = append(workerArgs, "--persistent_worker")
+
+	go func() {
+		defer close(workerTerminated)
+		defer stdinReader.Close()
+		defer stdoutWriter.Close()
+
+		opts := &container.ExecOpts{
+			Stdin:  stdinReader,
+			Stdout: stdoutWriter,
+			Stderr: &r.stderr,
+		}
+		res := r.Container.Exec(ctx, command, opts)
+		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
+	}()
+}
+
 func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	// Clear any stderr that might be associated with a previous request.
+	r.stderr.Reset()
+
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -1257,31 +1385,12 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 
 	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
 
-	execContext, cancel := context.WithCancel(ctx)
 	// If it's our first rodeo, create the persistent worker.
-	if r.stdinWriter == nil || r.stdoutReader == nil {
-		stdinReader, stdinWriter := io.Pipe()
-		stdoutReader, stdoutWriter := io.Pipe()
-		r.stdinWriter = stdinWriter
-		r.stdoutReader = bufio.NewReader(stdoutReader)
-		r.jsonDecoder = json.NewDecoder(r.stdoutReader)
-
-		command.Arguments = append(workerArgs, "--persistent_worker")
-
-		go func() {
-			res := r.Container.Exec(execContext, command, stdinReader, stdoutWriter)
-			stdinWriter.Close()
-			stdoutReader.Close()
-			log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-		}()
+	if r.stopPersistentWorker == nil {
+		r.startPersistentWorker(command, workerArgs, flagFiles)
 	}
 
 	r.doNotReuse = true
-	defer func() {
-		if r.doNotReuse {
-			cancel()
-		}
-	}()
 
 	// We've got a worker - now let's build a work request.
 	requestProto := &wkpb.WorkRequest{
@@ -1311,7 +1420,9 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	// Encode the work requests
 	err = r.marshalWorkRequest(requestProto, r.stdinWriter)
 	if err != nil {
-		result.Error = status.WrapError(err, "marshaling work request")
+		result.Error = status.UnavailableErrorf(
+			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
+			err, r.workerStderrDebugString())
 		return result
 	}
 
@@ -1319,7 +1430,9 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	responseProto := &wkpb.WorkResponse{}
 	err = r.unmarshalWorkResponse(responseProto, r.stdoutReader)
 	if err != nil {
-		result.Error = status.WrapError(err, "unmarshaling work response")
+		result.Error = status.UnavailableErrorf(
+			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
+			err, r.workerStderrDebugString())
 		return result
 	}
 
@@ -1328,6 +1441,15 @@ func (r *commandRunner) sendPersistentWorkRequest(ctx context.Context, command *
 	result.ExitCode = int(responseProto.ExitCode)
 	r.doNotReuse = false
 	return result
+}
+
+func (r *commandRunner) workerStderrDebugString() string {
+	stderr, _ := r.stderr.ReadAll()
+	str := string(stderr)
+	if str == "" {
+		return "<empty>"
+	}
+	return str
 }
 
 func (r *commandRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {

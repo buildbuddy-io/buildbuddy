@@ -393,9 +393,9 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
-		GroupId: groupID,
 		Isolation: &rfpb.Isolation{
-			CacheType: rfpb.Isolation_CAS_CACHE,
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: groupID,
 		},
 		Digest: d,
 	}

@@ -2,7 +2,6 @@ package bare
 
 import (
 	"context"
-	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -22,7 +21,7 @@ func NewBareCommandContainer() container.CommandContainer {
 }
 
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
-	return commandutil.Run(ctx, command, workDir, nil, nil)
+	return commandutil.Run(ctx, command, workDir, &container.ExecOpts{})
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -30,8 +29,8 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
-	return commandutil.Run(ctx, cmd, c.WorkDir, stdin, stdout)
+func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+	return commandutil.Run(ctx, cmd, c.WorkDir, opts)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

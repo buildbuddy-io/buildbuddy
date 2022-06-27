@@ -1,11 +1,26 @@
 package tasksize
 
 import (
+	"context"
+	"crypto/sha256"
+	"flag"
+	"fmt"
+	"time"
+
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/go-redis/redis/v8"
+	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+)
+
+var (
+	useMeasuredSizes = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
 )
 
 const (
@@ -47,7 +62,173 @@ const (
 
 	// The fraction of an executor's allocatable resources to make available for task sizing.
 	MaxResourceCapacityRatio = 0.8
+
+	// The expiration for task usage measurements stored in Redis.
+	sizeMeasurementExpiration = 5 * 24 * time.Hour
+
+	// Redis key prefix used for holding current task size estimates.
+	redisKeyPrefix = "taskSize"
+
+	// When using measured task sizes, multiply the last measured peak memory
+	// usage by this much in order to determine effective the memory estimate.
+	// This allows some wiggle room for new tasks to use more memory than the
+	// previously recorded task.
+	measuredSizeMemoryMultiplier = 1.10
 )
+
+// Register registers the task sizer with the env.
+func Register(env environment.Env) error {
+	sizer, err := NewSizer(env)
+	if err != nil {
+		return err
+	}
+	env.SetTaskSizer(sizer)
+	return nil
+}
+
+type taskSizer struct {
+	env environment.Env
+	rdb redis.UniversalClient
+}
+
+func NewSizer(env environment.Env) (*taskSizer, error) {
+	ts := &taskSizer{env: env}
+	if *useMeasuredSizes {
+		if env.GetRemoteExecutionRedisClient() == nil {
+			return nil, status.FailedPreconditionError("missing Redis client configuration")
+		}
+		ts.rdb = env.GetRemoteExecutionRedisClient()
+	}
+	return ts, nil
+}
+
+func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+	initialEstimate := Estimate(task)
+	if !*useMeasuredSizes {
+		return initialEstimate
+	}
+	props := platform.ParseProperties(task)
+	if props.EstimatedComputeUnits != 0 {
+		return initialEstimate
+	}
+	// TODO(bduffany): Remove or hide behind a dev-only flag once measured task sizing
+	// is battle-tested.
+	if props.DisableMeasuredTaskSize {
+		return initialEstimate
+	}
+	recordedSize, err := s.lastRecordedSize(ctx, task)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
+		return initialEstimate
+	}
+	if recordedSize == nil {
+		// TODO: return a value indicating "unsized" here, and instead let the
+		// executor run this task once to estimate the size.
+		return initialEstimate
+	}
+	return &scpb.TaskSize{
+		EstimatedMemoryBytes:   int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
+		EstimatedMilliCpu:      recordedSize.EstimatedMilliCpu,
+		EstimatedFreeDiskBytes: initialEstimate.EstimatedFreeDiskBytes,
+	}
+}
+
+func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
+	if !*useMeasuredSizes {
+		return nil
+	}
+	// If we are missing CPU/memory stats, do nothing. This is expected in some
+	// cases, for example if a task completed too quickly to get a sample of its
+	// CPU/mem usage.
+	stats := md.GetUsageStats()
+	if stats.GetCpuNanos() == 0 || stats.GetPeakMemoryBytes() == 0 {
+		return nil
+	}
+	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
+	// If execution duration is missing or invalid, we won't be able to compute
+	// milli-CPU usage.
+	if execDuration <= 0 {
+		return status.InvalidArgumentErrorf("execution duration is missing or invalid")
+	}
+	// Compute milliCPU as CPU-milliseconds used per second of execution time.
+	milliCPU := int64((float64(stats.GetCpuNanos()) / 1e6) / execDuration.Seconds())
+	key, err := s.taskSizeKey(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	size := &scpb.TaskSize{
+		EstimatedMilliCpu:    milliCPU,
+		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
+	}
+	b, err := proto.Marshal(size)
+	if err != nil {
+		return err
+	}
+	s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration)
+	return err
+}
+
+func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
+	key, err := s.taskSizeKey(ctx, task.GetCommand())
+	if err != nil {
+		return nil, err
+	}
+	serializedSize, err := s.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	size := &scpb.TaskSize{}
+	if err := proto.Unmarshal([]byte(serializedSize), size); err != nil {
+		return nil, err
+	}
+	if size.EstimatedMemoryBytes == 0 || size.EstimatedMilliCpu == 0 {
+		return nil, status.InternalError("found invalid task size stored in Redis")
+	}
+	return size, nil
+}
+
+func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string, error) {
+	// Get group ID (task sizing is segmented by group)
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		if !perms.IsAnonymousUserError(err) || !s.env.GetAuthenticator().AnonymousUsageEnabled() {
+			return "", err
+		}
+	}
+	groupKey := "ANON"
+	if u != nil {
+		groupKey = u.GetGroupID()
+	}
+	// For now, associate stats with the exact command, including the full
+	// command line, env vars, and platform.
+	// Note: This doesn't account for platform overrides for now
+	// (--remote_header=x-buildbuddy-platform.NAME=VALUE).
+	cmdKey, err := commandKey(cmd)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s/%s", redisKeyPrefix, groupKey, cmdKey), nil
+}
+
+func commandKey(cmd *repb.Command) (string, error) {
+	// Include the command executable name in the key for easier debugging.
+	// Truncate so that the keys cannot get too big.
+	arg0 := "?"
+	if len(cmd.Arguments) > 0 {
+		arg0 = cmd.Arguments[0]
+		if len(arg0) > 64 {
+			arg0 = arg0[:64] + "..."
+		}
+	}
+	b, err := proto.Marshal(cmd)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%x", arg0, sha256.Sum256(b)), nil
+}
 
 func testSize(testSize string) (int64, int64) {
 	mb := 0
@@ -74,6 +255,9 @@ func testSize(testSize string) (int64, int64) {
 	return int64(mb * 1e6), int64(cpu)
 }
 
+// Estimate returns the default task size estimate for a task. It respects hints
+// from the task such as test size and estimated compute units, but does not use
+// information about historical task executions.
 func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	props := platform.ParseProperties(task)
 

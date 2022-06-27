@@ -1,0 +1,1012 @@
+package main
+
+import (
+	"archive/tar"
+	"bytes"
+	"context"
+	"encoding/base32"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/dsingleflight"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/match"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/google/go-containerregistry/pkg/v1/types"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
+	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+)
+
+const (
+	rangeHeaderBytesPrefix = "bytes="
+
+	registryInstanceName = "registry_artifacts"
+)
+
+var (
+	// Encoding used to pass the repo domain + image name between podman and
+	// the stargz store. base32 to make it a valid image name.
+	imageNameEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+
+	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
+	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
+
+	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	serverType = flag.String("server_type", "registry-server", "The server type to match on health checks")
+
+	casBackend = flag.String("registry.cas_backend", "", "")
+)
+
+// isEmptyLayer checks whether the given layer does not contain any files.
+func isEmptyLayer(layer v1.Layer) (bool, error) {
+	d, err := layer.Digest()
+	if err != nil {
+		return false, status.UnknownErrorf("could not get layer digest: %s", err)
+	}
+
+	size, err := layer.Size()
+	if err != nil {
+		return false, status.UnknownErrorf("could not determine layer size for layer %q: %s", d, err)
+	}
+	// An empty tar.gz archive contains an "end of file" record, so it's not 0
+	// bytes.
+	if size > 100 {
+		return false, nil
+	}
+	lr, err := layer.Uncompressed()
+	if err != nil {
+		return false, status.UnknownErrorf("could not create uncompressed reader for layer %q: %s", d, err)
+	}
+	defer lr.Close()
+	r := tar.NewReader(lr)
+	// If the archive is empty, r.Next should immediately return an EOF error
+	// to indicate there are no files contained inside.
+	_, err = r.Next()
+	if err == io.EOF {
+		return true, nil
+	}
+	if err != nil {
+		return false, status.UnknownErrorf("error reading tar layer %q: %s", d, err)
+	}
+	return false, nil
+}
+
+type convertedLayer struct {
+	v1.Layer
+	casDigest *repb.Digest
+}
+
+// convertLayer converts the layer to estargz format. May return nil if the
+// layer should be skipped.
+func (r *registry) convertLayer(ctx context.Context, l v1.Layer) (*convertedLayer, error) {
+	// Lovely hack.
+	// podman + stargzstore does not properly handle duplicate layers
+	// in the same image. You would think this wouldn't happen in
+	// practice, but it seems that some image generation libraries
+	// can include multiple empty layers (why???) causing container
+	// mounting to fail.
+	// To get around this, we don't include any empty layers in the
+	// converted image.
+	emptyLayer, err := isEmptyLayer(l)
+	if err != nil {
+		return nil, err
+	}
+	if emptyLayer {
+		return nil, nil
+	}
+
+	newLayer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
+		layerReader, err := l.Uncompressed()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not create uncompressed reader: %s", err)
+		}
+		return layerReader, nil
+	}, tarball.WithEstargz)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not create tarball layer reader: %s", err)
+	}
+
+	newLayerDigest, err := newLayer.Digest()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get digest for converted layer: %s", err)
+	}
+	newLayerSize, err := newLayer.Size()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get size for converted layer: %s", err)
+	}
+
+	newLayerReader, err := newLayer.Compressed()
+	if err != nil {
+		return nil, err
+	}
+
+	rn := digest.NewResourceName(&repb.Digest{Hash: newLayerDigest.Hex, SizeBytes: newLayerSize}, registryInstanceName)
+	casDigest, err := cachetools.UploadFromReader(ctx, r.bsClient, rn, newLayerReader)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not upload converted layer %q: %s", newLayerDigest, err)
+	}
+
+	return &convertedLayer{
+		Layer:     newLayer,
+		casDigest: casDigest,
+	}, nil
+}
+
+// dedupeConvertImage waits for an existing conversion or starts a new one if no
+// conversion is in progress for the given image.
+func (r *registry) dedupeConvertImage(ctx context.Context, img v1.Image) (*protoManifest, error) {
+	d, err := img.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	workKey := fmt.Sprintf("registry-convert-image-%s", d.String())
+	vBytes, err := r.workDeduper.Do(ctx, workKey, func() ([]byte, error) {
+		r, err := r.convertImage(ctx, img)
+		if err != nil {
+			return nil, err
+		}
+		p, err := proto.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		return p, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	var v regpb.Manifest
+	if err := proto.Unmarshal(vBytes, &v); err != nil {
+		return nil, err
+	}
+	return &protoManifest{&v}, nil
+}
+
+type convertedImage struct {
+	v1.Image
+	casDependencies []*repb.Digest
+}
+
+func (ci *convertedImage) CASDependencies() []*repb.Digest {
+	return ci.casDependencies
+}
+
+type protoManifest struct {
+	*regpb.Manifest
+}
+
+func (p *protoManifest) MediaType() (types.MediaType, error) {
+	return types.MediaType(p.Manifest.ContentType), nil
+}
+
+func (p *protoManifest) Digest() (v1.Hash, error) {
+	return v1.NewHash(p.Manifest.Digest)
+}
+
+func (p *protoManifest) Size() (int64, error) {
+	return 0, status.UnimplementedError("not implemented")
+}
+
+func (p *protoManifest) CASDependencies() []*repb.Digest {
+	return p.Manifest.CasDependencies
+}
+
+func (r *registry) convertImage(ctx context.Context, img v1.Image) (*protoManifest, error) {
+	manifest, err := img.Manifest()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get image manifest: %s", err)
+	}
+	cnf, err := img.ConfigFile()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get image config; %s", err)
+	}
+
+	// This field will be populated with new layers as we do the conversion.
+	// We need to clear this to remove references to the old layers.
+	cnf.RootFS.DiffIDs = nil
+
+	newImg, err := mutate.ConfigFile(empty.Image, cnf)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not add config to image: %s", err)
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	var mu sync.Mutex
+	convertedLayers := make([]*convertedLayer, len(manifest.Layers))
+
+	for layerIdx, layerDesc := range manifest.Layers {
+		layerIdx := layerIdx
+		layerDesc := layerDesc
+
+		eg.Go(func() error {
+			l, err := img.LayerByDigest(layerDesc.Digest)
+			if err != nil {
+				return status.UnknownErrorf("could not lookup layer %q: %s", layerDesc.Digest, err)
+			}
+
+			newLayer, err := r.convertLayer(egCtx, l)
+			if err != nil {
+				return status.UnknownErrorf("could not convert layer %q: %s", layerDesc.Digest, err)
+			}
+			if newLayer == nil {
+				return nil
+			}
+
+			mu.Lock()
+			convertedLayers[layerIdx] = newLayer
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	var casDependencies []*repb.Digest
+	for _, l := range convertedLayers {
+		// Layer should be omitted.
+		if l == nil {
+			continue
+		}
+		newImg, err = mutate.AppendLayers(newImg, l)
+		if err != nil {
+			return nil, err
+		}
+		casDependencies = append(casDependencies, l.casDigest)
+	}
+
+	newConfigBytes, err := newImg.RawConfigFile()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get new config file: %s", err)
+	}
+	configCASDigest, err := cachetools.UploadBlob(ctx, r.bsClient, registryInstanceName, bytes.NewReader(newConfigBytes))
+	if err != nil {
+		return nil, status.UnknownErrorf("could not upload converted image config %s", err)
+	}
+	casDependencies = append(casDependencies, configCASDigest)
+
+	ci := &convertedImage{
+		Image:           newImg,
+		casDependencies: casDependencies,
+	}
+	mfProto, err := manifestProto(ci)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.writeManifest(ctx, img, mfProto); err != nil {
+		return nil, status.UnknownErrorf("could not write converted manifest: %s", err)
+	}
+	return &protoManifest{mfProto}, nil
+}
+
+// dedupeConvertImageIndex waits for an existing conversion or starts a new one
+// if no conversion is in progress for the given image index.
+func (r *registry) dedupeConvertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (*protoManifest, error) {
+	d, err := imgIdx.Digest()
+	if err != nil {
+		return nil, err
+	}
+	workKey := fmt.Sprintf("registry-convert-imageidx-%s", d.String())
+	vBytes, err := r.workDeduper.Do(ctx, workKey, func() ([]byte, error) {
+		p, err := r.convertImageIndex(ctx, imgIdx)
+		if err != nil {
+			return nil, err
+		}
+		b, err := proto.Marshal(p.Manifest)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var v regpb.Manifest
+	if err := proto.Unmarshal(vBytes, &v); err != nil {
+		return nil, err
+	}
+	return &protoManifest{&v}, nil
+}
+
+type convertedImageIndex struct {
+	v1.ImageIndex
+	casDependencies []*repb.Digest
+}
+
+func (cii *convertedImageIndex) CASDependencies() []*repb.Digest {
+	return cii.casDependencies
+}
+
+func (r *registry) convertImageIndex(ctx context.Context, imgIdx v1.ImageIndex) (*protoManifest, error) {
+	manifest, err := imgIdx.IndexManifest()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not retrieve image index manifest: %s", err)
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	var mu sync.Mutex
+	var convertedIndices []mutate.IndexAddendum
+	var casDependencies []*repb.Digest
+	for _, m := range manifest.Manifests {
+		m := m
+		img, err := imgIdx.Image(m.Digest)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not construct image ref for manifest digest %q: %s", m.Digest, err)
+		}
+		eg.Go(func() error {
+			newImg, err := r.dedupeConvertImage(egCtx, img)
+			if err != nil {
+				return status.UnknownErrorf("could not convert image %q: %s", m.Digest, err)
+			}
+			mu.Lock()
+			convertedIndices = append(convertedIndices, mutate.IndexAddendum{
+				Add: newImg,
+				// The manifest properties are not copied automatically, so we need
+				// to copy at least the platform properties for the image index
+				// to be usable.
+				Descriptor: v1.Descriptor{
+					Platform: m.Platform,
+				},
+			})
+			casDependencies = append(casDependencies, newImg.CASDependencies()...)
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	newIdx := mutate.AppendManifests(v1.ImageIndex(empty.Index), convertedIndices...)
+
+	cii := &convertedImageIndex{
+		ImageIndex:      newIdx,
+		casDependencies: casDependencies,
+	}
+	mfProto, err := manifestProto(cii)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.writeManifest(ctx, imgIdx, mfProto); err != nil {
+		return nil, status.UnknownErrorf("could not write converted manifest: %s", err)
+	}
+	return &protoManifest{mfProto}, nil
+}
+
+func blobKey(digest string) string {
+	return "estargz-manifest-" + digest
+}
+
+func manifestProto(manifest manifestLike) (*regpb.Manifest, error) {
+	manifestBytes, err := manifest.RawManifest()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get manifest: %s", err)
+	}
+	manifestMediaType, err := manifest.MediaType()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get media type: %s", err)
+	}
+
+	manifestDigest, err := manifest.Digest()
+	if err != nil {
+		return nil, status.UnknownErrorf("could not get digest: %s", err)
+	}
+
+	return &regpb.Manifest{
+		Digest:          manifestDigest.String(),
+		Data:            manifestBytes,
+		ContentType:     string(manifestMediaType),
+		CasDependencies: manifest.CASDependencies(),
+	}, nil
+}
+
+func (r *registry) writeManifest(ctx context.Context, oldManifest partial.Describable, newManifest *regpb.Manifest) error {
+	oldDigest, err := oldManifest.Digest()
+	if err != nil {
+		return status.UnknownErrorf("could not get digest for old manifest: %s", err)
+	}
+	newDigest := newManifest.GetDigest()
+
+	mfProtoBytes, err := proto.Marshal(newManifest)
+	if err != nil {
+		return status.UnknownErrorf("could not marshal proto for manifest: %s", err)
+	}
+
+	// Store the manifest both at the "old" digest and the new digest.
+	// If a client requests image by tag, we will retrieve the original digest
+	// from the remote and use that for the lookup.
+	// Client can also request the manifest by digest in which case it will do
+	// so by the new/converted digest.
+	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(oldDigest.String()), mfProtoBytes); err != nil {
+		return status.UnknownErrorf("could not write manifest: %s", err)
+	}
+	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(newDigest), mfProtoBytes); err != nil {
+		return status.UnknownErrorf("could not write manifest: %s", err)
+	}
+	return nil
+}
+
+func (r *registry) convert(ctx context.Context, remoteDesc *remote.Descriptor) (*regpb.Manifest, error) {
+	log.CtxInfof(ctx, "Converting %q", remoteDesc.Ref)
+
+	start := time.Now()
+
+	var mfProto *regpb.Manifest
+	switch remoteDesc.MediaType {
+	// This is an "image index", a meta-manifest that contains a list of
+	// {platform props, manifest hash} properties to allow client to decide
+	// which manifest they want to use based on platform.
+	case types.OCIImageIndex, types.DockerManifestList:
+		imgIdx, err := remoteDesc.ImageIndex()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image index from descriptor: %s", err)
+		}
+		newImgIdx, err := r.dedupeConvertImageIndex(ctx, imgIdx)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not convert image index: %s", err)
+		}
+		mfProto = newImgIdx.Manifest
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		img, err := remoteDesc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		}
+		newImg, err := r.dedupeConvertImage(ctx, img)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not convert image: %s", err)
+		}
+		mfProto = newImg.Manifest
+	default:
+		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
+	}
+
+	log.CtxInfof(ctx, "Conversion for %q took %s", remoteDesc.Ref, time.Now().Sub(start))
+	return mfProto, nil
+}
+
+func (r *registry) getCachedManifest(ctx context.Context, digest string) (*regpb.Manifest, error) {
+	mfBytes, err := r.manifestStore.ReadBlob(ctx, blobKey(digest))
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	mfProto := &regpb.Manifest{}
+	if err := proto.Unmarshal(mfBytes, mfProto); err != nil {
+		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", digest, err)
+	}
+
+	rsp, err := r.casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName: registryInstanceName,
+		BlobDigests:  mfProto.CasDependencies,
+	})
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not check blob existence in CAS: %s", err)
+	}
+	// If any of the CAS dependencies are missing then pretend we don't have a
+	// manifest so that we trigger a new conversion and repopulate the data in
+	// the CAS.
+	if len(rsp.GetMissingBlobDigests()) > 0 {
+		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", digest)
+		return nil, nil
+	}
+	return mfProto, nil
+}
+
+func (r *registry) getOptimizedManifest(ctx context.Context, imageName, refName string) (*regpb.Manifest, error) {
+	// If the ref contains ":" then it's a digest (e.g. sha256:52f4...),
+	// otherwise it's a tag reference.
+	var nameRef string
+	var byDigest bool
+	if strings.Contains(refName, ":") {
+		nameRef = fmt.Sprintf("%s@%s", imageName, refName)
+		byDigest = true
+	} else {
+		// If this is a tag reference, we'll check upstream to determine where
+		// this tag currently points to.
+		nameRef = fmt.Sprintf("%s:%s", imageName, refName)
+		byDigest = false
+	}
+
+	ref, err := ctrname.ParseReference(nameRef)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid reference %q", nameRef)
+	}
+
+	var remoteDesc *remote.Descriptor
+	if byDigest {
+		// If the manifest/image index exists in the store, it means we have
+		// already converted it to estargz, and we can serve the converted
+		// manifest.
+		manifest, err := r.getCachedManifest(ctx, refName)
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", nameRef, err)
+		}
+		if manifest != nil {
+			return manifest, nil
+		}
+		desc, err := remote.Get(ref, remote.WithContext(ctx))
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not fetch remote manifest %q: %s", nameRef, err)
+		}
+		remoteDesc = desc
+	} else {
+		// Check where this tag points to and see if it's already cached.
+		desc, err := remote.Get(ref, remote.WithContext(ctx))
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not fetch remote manifest %q: %s", nameRef, err)
+		}
+		manifest, err := r.getCachedManifest(ctx, desc.Digest.String())
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", nameRef, err)
+		}
+		if manifest != nil {
+			return manifest, nil
+		}
+		remoteDesc = desc
+	}
+
+	return r.convert(ctx, remoteDesc)
+}
+
+func (r *registry) handleManifestRequest(w http.ResponseWriter, req *http.Request, imageName, refName string) {
+	ctx := req.Context()
+	realName, err := imageNameEncoding.DecodeString(strings.ToUpper(imageName))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not decode image image name %q: %s", imageName, err), http.StatusBadRequest)
+		return
+	}
+	imageName = string(realName)
+
+	manifest, err := r.getOptimizedManifest(req.Context(), imageName, refName)
+	if err != nil {
+		log.CtxWarningf(ctx, "could not get optimized manifest: %s", err)
+		http.Error(w, fmt.Sprintf("could not get optimized manifest: %s", err), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-type", manifest.ContentType)
+	if _, err := w.Write(manifest.Data); err != nil {
+		log.CtxWarningf(ctx, "error serving cached manifest: %s", err)
+	}
+}
+
+type byteRange struct {
+	start, end int64
+}
+
+func parseRangeHeader(val string) ([]byteRange, error) {
+	// Format of the header value is bytes=1-10[, 10-20]
+	if !strings.HasPrefix(val, rangeHeaderBytesPrefix) {
+		return nil, status.FailedPreconditionErrorf("range header %q does not have valid prefix", val)
+	}
+	val = strings.TrimPrefix(val, rangeHeaderBytesPrefix)
+	ranges := strings.Split(val, ", ")
+	var parsedRanges []byteRange
+	for _, r := range ranges {
+		rParts := strings.Split(r, "-")
+		if len(rParts) != 2 {
+			return nil, status.FailedPreconditionErrorf("range header %q not valid, invalid range %q", val, r)
+		}
+		start, err := strconv.ParseInt(rParts[0], 10, 64)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid start: %s", val, r, err)
+		}
+		end, err := strconv.ParseInt(rParts[1], 10, 64)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid end: %s", val, r, err)
+		}
+		if end < start {
+			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid bounds", val, r)
+		}
+		parsedRanges = append(parsedRanges, byteRange{start: start, end: end})
+	}
+	return parsedRanges, nil
+}
+
+func blobResourceName(h v1.Hash) *digest.ResourceName {
+	d := &repb.Digest{
+		Hash: h.Hex,
+		// We don't actually know the blob size.
+		// Set this to a large size as a hint to the BS server that we expect it
+		// to be large. The server uses this to determine the buffer size.
+		SizeBytes: 1024 * 1024 * 4,
+	}
+	return digest.NewResourceName(d, registryInstanceName)
+}
+
+// TODO(vadim): extend CAS API to allow us to query blob size
+func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
+	if v, ok := r.blobSizeLRU.Get(h.String()); ok {
+		return v.(int64), nil
+	}
+
+	out := io.Discard
+	rn := blobResourceName(h)
+	n, err := cachetools.GetBlobChunk(ctx, r.bsClient, rn, &cachetools.StreamBlobOpts{Offset: 0, Limit: 0}, out)
+	if err != nil {
+		return 0, err
+	}
+
+	r.blobSizeLRU.Add(h.String(), n)
+
+	return n, nil
+}
+
+func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, name, refName string) {
+	ctx := req.Context()
+	h, err := v1.NewHash(refName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
+		return
+	}
+
+	blobSize, err := r.getBlobSize(req.Context(), h)
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "could not determine blob size: %s", err)
+		}
+		http.Error(w, fmt.Sprintf("could not determine blob size: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.FormatInt(blobSize, 10))
+
+	// If this is a HEAD request, and we have already figured out the blob
+	// length then we are done.
+	if req.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	opts := &cachetools.StreamBlobOpts{
+		Offset: 0,
+		Limit:  0,
+	}
+	if r := req.Header.Get("Range"); r != "" {
+		log.CtxInfof(ctx, "%s %q %s", req.Method, req.RequestURI, r)
+		parsedRanges, err := parseRangeHeader(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(parsedRanges) != 1 {
+			http.Error(w, "multipart range requests not supported", http.StatusBadRequest)
+			return
+		}
+		parsedRange := parsedRanges[0]
+		start := parsedRange.start
+		end := parsedRange.end
+		size := parsedRange.end - parsedRange.start + 1
+
+		opts.Offset = start
+		opts.Limit = size
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, blobSize))
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		w.WriteHeader(http.StatusPartialContent)
+	}
+	rn := blobResourceName(h)
+	_, err = cachetools.GetBlobChunk(req.Context(), r.bsClient, rn, opts, w)
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
+		}
+		return
+	}
+}
+
+// covers both manifests and image indexes ("meta manifests")
+type manifestLike interface {
+	mutate.Appendable
+	partial.WithRawManifest
+	partial.Describable
+	CASDependencies() []*repb.Digest
+}
+
+// TODO(vadim): investigate high memory usage during conversion
+type registry struct {
+	casClient     repb.ContentAddressableStorageClient
+	bsClient      bspb.ByteStreamClient
+	manifestStore interfaces.Blobstore
+	blobSizeLRU   interfaces.LRU
+
+	workDeduper *dsingleflight.Coordinator
+}
+
+// checkAccess whether the supplied credentials are sufficient to retrieve
+// the provided img.
+func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, img v1.Image, authenticator authn.Authenticator) error {
+	// Check if we have access to all the layers.
+	layers, err := img.Layers()
+	if err != nil {
+		return status.UnknownErrorf("could not get layers for image: %s", err)
+	}
+	eg, egCtx := errgroup.WithContext(ctx)
+	remoteOpts := []remote.Option{remote.WithContext(egCtx)}
+	if authenticator != nil {
+		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
+	}
+	for _, layerInfo := range layers {
+		layerInfo := layerInfo
+		eg.Go(func() error {
+			d, err := layerInfo.Digest()
+			if err != nil {
+				return err
+			}
+			layerRef := imgRef.Context().Digest(d.String())
+			l, err := remote.Layer(layerRef, remoteOpts...)
+			if err != nil {
+				return err
+			}
+			// This issues a HEAD request for the layer.
+			_, err = l.Size()
+			return err
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return status.PermissionDeniedErrorf("could not retrieve image layer from remote: %s", err)
+		}
+		return status.UnavailableErrorf("could not retrieve image layer from remote: %s", err)
+	}
+
+	return nil
+}
+
+// targetImageFromDescriptor returns the image instance described by the remote
+// descriptor. If the remote descriptor is a manifest, then the manifest is
+// returned directly. If the remote descriptor is an image index, a single
+// manifest is selected from the index using the provided platform options.
+func (r *registry) targetImageFromDescriptor(remoteDesc *remote.Descriptor, platform *regpb.Platform) (v1.Image, error) {
+	switch remoteDesc.MediaType {
+	// This is an "image index", a meta-manifest that contains a list of
+	// {platform props, manifest hash} properties to allow client to decide
+	// which manifest they want to use based on platform.
+	case types.OCIImageIndex, types.DockerManifestList:
+		imgIdx, err := remoteDesc.ImageIndex()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image index from descriptor: %s", err)
+		}
+		imgs, err := partial.FindImages(imgIdx, match.Platforms(v1.Platform{
+			Architecture: platform.GetArch(),
+			OS:           platform.GetOs(),
+			Variant:      platform.GetVariant(),
+		}))
+		if err != nil {
+			return nil, status.UnavailableErrorf("could not search image index: %s", err)
+		}
+		if len(imgs) == 0 {
+			return nil, status.NotFoundErrorf("could not find suitable image in image index")
+		}
+		if len(imgs) > 1 {
+			return nil, status.NotFoundErrorf("found multiple matching images in image index")
+		}
+		return imgs[0], nil
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		img, err := remoteDesc.Image()
+		if err != nil {
+			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
+		}
+		return img, nil
+	default:
+		return nil, status.UnknownErrorf("descriptor has unknown media type %q", remoteDesc.MediaType)
+	}
+}
+
+func (r *registry) GetOptimizedImage(ctx context.Context, req *regpb.GetOptimizedImageRequest) (*regpb.GetOptimizedImageResponse, error) {
+	log.CtxInfof(ctx, "GetOptimizedImage %q", req.GetImage())
+	imageRef, err := ctrname.ParseReference(req.GetImage())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid image %q", req.GetImage())
+	}
+
+	var authenticator authn.Authenticator
+	remoteOpts := []remote.Option{remote.WithContext(ctx)}
+	if req.GetImageCredentials().GetUsername() != "" || req.GetImageCredentials().GetPassword() != "" {
+		authenticator := &authn.Basic{
+			Username: req.GetImageCredentials().GetUsername(),
+			Password: req.GetImageCredentials().GetPassword(),
+		}
+		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
+	}
+
+	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
+	if err != nil {
+		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
+			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+		}
+		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+	}
+
+	remoteImg, err := r.targetImageFromDescriptor(remoteDesc, req.GetPlatform())
+	if err != nil {
+		return nil, err
+	}
+
+	// Check whether the supplied credentials are sufficient to access the
+	// remote image.
+	if err := r.checkAccess(ctx, imageRef, remoteImg, authenticator); err != nil {
+		return nil, err
+	}
+
+	// If we got here then it means the credentials are valid for the remote
+	// repo. Now we can return the optimized image ref to the client.
+
+	manifest, err := r.getCachedManifest(ctx, remoteDesc.Digest.String())
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
+	}
+	if manifest != nil {
+		log.CtxInfof(ctx, "Using cached manifest information")
+	} else {
+		convertedManifest, err := r.convert(ctx, remoteDesc)
+		if err != nil {
+			return nil, status.UnknownErrorf("could not convert image: %s", err)
+		}
+		manifest = convertedManifest
+	}
+
+	encodedImageName := strings.ToLower(imageNameEncoding.EncodeToString([]byte(imageRef.Context().Name())))
+
+	return &regpb.GetOptimizedImageResponse{
+		OptimizedImage: fmt.Sprintf("%s@%s", encodedImageName, manifest.Digest),
+	}, nil
+}
+
+func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	log.CtxInfof(ctx, "%s %q", req.Method, req.RequestURI)
+	// Clients issue a GET /v2/ request to verify that this is a registry
+	// endpoint.
+	if req.RequestURI == "/v2/" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// Request for a manifest or image index.
+	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
+		r.handleManifestRequest(w, req, m[1], m[2])
+		return
+	}
+	// Request for a blob (full layer or layer chunk).
+	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
+		r.handleBlobRequest(w, req, m[1], m[2])
+		return
+	}
+	http.NotFound(w, req)
+}
+
+func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env environment.Env) {
+	mux := http.NewServeMux()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.handleRegistryRequest(w, req)
+	})
+	mux.Handle("/v2/", filters.RequestID(handler))
+	mux.Handle("/readyz", hc.ReadinessHandler())
+	mux.Handle("/healthz", hc.LivenessHandler())
+
+	regRegistryServices := func(server *grpc.Server, env environment.Env) {
+		regpb.RegisterRegistryServer(server, r)
+	}
+
+	if err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
+		log.Fatalf("Could not setup GRPC server: %s", err)
+	}
+	if err := grpc_server.RegisterGRPCSServer(env, regRegistryServices); err != nil {
+		log.Fatalf("Could not setup GRPCS server: %s", err)
+	}
+
+	log.Infof("Starting HTTP server on port %d", *port)
+	srv := &http.Server{
+		Handler: mux,
+	}
+	hc.RegisterShutdownFunction(func(ctx context.Context) error {
+		log.Infof("Shutting down server...")
+		return srv.Shutdown(ctx)
+	})
+
+	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
+	if err != nil {
+		log.Fatalf("could not listen on port %d: %s", *port, err)
+	}
+
+	_ = srv.Serve(lis)
+
+}
+
+func main() {
+	flag.Parse()
+
+	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
+		log.Fatalf("Error loading config from file: %s", err)
+	}
+
+	if err := log.Configure(); err != nil {
+		fmt.Printf("Error configuring logging: %s", err)
+		os.Exit(1)
+	}
+
+	healthChecker := healthcheck.NewHealthChecker(*serverType)
+	env := real_environment.NewRealEnv(healthChecker)
+
+	bs, err := blobstore.GetConfiguredBlobstore(env)
+	if err != nil {
+		log.Fatalf("could not configure blobstore: %s", err)
+	}
+
+	if err := ssl.Register(env); err != nil {
+		log.Fatalf("could not configure SSL: %s", err)
+	}
+
+	conn, err := grpc_client.DialTarget(*casBackend)
+	if err != nil {
+		log.Fatalf("could not connect to cas: %s", err)
+	}
+	casClient := repb.NewContentAddressableStorageClient(conn)
+	bsClient := bspb.NewByteStreamClient(conn)
+
+	blobSizeLRU, err := lru.NewLRU(&lru.Config{
+		MaxSize: 100_000,
+		SizeFn:  func(value interface{}) int64 { return 1 },
+	})
+	if err != nil {
+		log.Fatalf("could not initialize blob size LRU: %s", err)
+	}
+
+	if err := redis_client.RegisterDefault(env); err != nil {
+		log.Fatalf("could not initialize redis client: %s", err)
+	}
+
+	r := &registry{
+		casClient:     casClient,
+		bsClient:      bsClient,
+		manifestStore: bs,
+		blobSizeLRU:   blobSizeLRU,
+		workDeduper:   dsingleflight.New(env.GetDefaultRedisClient()),
+	}
+	r.Start(env.GetServerContext(), healthChecker, env)
+}

@@ -11,7 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 const (
@@ -30,7 +31,11 @@ const (
 )
 
 var (
-	containerRegistries     = flagutil.Slice("executor.container_registries", []ContainerRegistry{}, "")
+	// Metrics is a shared metrics object to handle proper prometheus metrics
+	// accounting across container instances.
+	Metrics = NewContainerMetrics()
+
+	containerRegistries     = flagtypes.Slice("executor.container_registries", []ContainerRegistry{}, "")
 	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 )
 
@@ -46,13 +51,60 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
-// Stats holds represents a container's held resources.
+// Stats represents a container's resource usage.
 type Stats struct {
+	// MemoryUsageBytes is the most recent memory usage value sampled from the
+	// container, in bytes.
 	MemoryUsageBytes int64
+	// CPUNanos is the total CPU usage used by a task, in CPU-nanoseconds.
+	CPUNanos int64
+	// PeakMemoryUsageBytes is the highest memory usage sampled during the
+	// execution of a task, in bytes.
+	PeakMemoryUsageBytes int64
+}
 
-	// TODO: add CPU usage once we have a reliable way to measure it.
-	// CPU only applies to bare execution, since Docker containers
-	// are frozen when not in use, reducing their CPU usage to 0.
+func (s *Stats) ToProto() *repb.UsageStats {
+	return &repb.UsageStats{
+		CpuNanos:        s.CPUNanos,
+		PeakMemoryBytes: s.PeakMemoryUsageBytes,
+	}
+}
+
+// ContainerMetrics handles Prometheus metrics accounting for CommandContainer
+// instances.
+type ContainerMetrics struct {
+	mu          sync.Mutex
+	memoryUsage map[CommandContainer]int64
+}
+
+func NewContainerMetrics() *ContainerMetrics {
+	return &ContainerMetrics{
+		memoryUsage: make(map[CommandContainer]int64),
+	}
+}
+
+// AddCPUNanos records incremental CPU usage for a container.
+func (m *ContainerMetrics) AddCPUNanos(cpuNanos int64) {
+	const millisPerNanos = 1 / 1e6
+	metrics.RemoteExecutionUsedMilliCPU.Add(float64(cpuNanos) * millisPerNanos)
+}
+
+// SetContainerMemoryUsageBytes sets the current memory usage for the container.
+// Once the container is no longer using memory, the container's memory usage
+// *must* be set to 0 via this method to avoid a memory leak.
+func (m *ContainerMetrics) SetContainerMemoryUsageBytes(c CommandContainer, usageBytes int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if usageBytes == 0 {
+		delete(m.memoryUsage, c)
+	} else {
+		m.memoryUsage[c] = usageBytes
+	}
+	var total int64
+	for _, v := range m.memoryUsage {
+		total += v
+	}
+	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(total))
 }
 
 type FileSystemLayout struct {
@@ -88,11 +140,12 @@ type CommandContainer interface {
 	Create(ctx context.Context, workingDir string) error
 	// Exec runs a command inside a container, with the same working dir set when
 	// creating the container.
-	// If stdin is non-nil, the contents of stdin reader will be piped to the stdin of
-	// the executed process.
-	// If stdout is non-nil, the stdout of the executed process will be written to the
-	// stdout writer.
-	Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult
+	//
+	// If stdin is non-nil, the contents of stdin reader will be piped to the
+	// stdin of the executed process. If stdout is non-nil, the stdout of the
+	// executed process will be written to the stdout writer rather than being
+	// written to the command result's stdout field (same for stderr).
+	Exec(ctx context.Context, command *repb.Command, opts *ExecOpts) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -103,6 +156,16 @@ type CommandContainer interface {
 
 	// Stats returns the current resource usage of this container.
 	Stats(ctx context.Context) (*Stats, error)
+}
+
+// ExecOpts specifies options for executing a task.
+type ExecOpts struct {
+	// Stdin is an optional stdin source for the executed process.
+	Stdin io.Reader
+	// Stdout is an optional stdout sink for the executed process.
+	Stdout io.Writer
+	// Stderr is an optional stderr sink for the executed process.
+	Stderr io.Writer
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it
@@ -294,10 +357,10 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 	return t.Delegate.Create(ctx, workingDir)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, stdin io.Reader, stdout io.Writer) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *ExecOpts) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
-	return t.Delegate.Exec(ctx, command, stdin, stdout)
+	return t.Delegate.Exec(ctx, command, opts)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {

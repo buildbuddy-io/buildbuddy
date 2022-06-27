@@ -140,6 +140,45 @@ func TestTransientInternalError_Retried(t *testing.T) {
 	assert.Equal(t, 2, tasksStarted(t))
 }
 
+func TestTransientAbortedError_Retried(t *testing.T) {
+	env := rbetest.NewRBETestEnv(t)
+	env.AddBuildBuddyServer()
+	const errMsg = "error injected by test"
+	errResult := commandutil.ErrorResult(status.AbortedError(errMsg))
+	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		RunInterceptor: rbetest.ReturnForFirstAttempt(errResult),
+	})
+	// observe initial count so that we can get the diff at the end of the test
+	_ = tasksStarted(t)
+	ctx := context.Background()
+
+	res := runRemoteShellActionViaBazel(t, ctx, env, "exit 0")
+
+	require.NoError(t, res.Error)
+	assert.NotContains(t, res.Stderr, errMsg)
+	// 1 failed attempt due to transient error + 1 successful attempt
+	assert.Equal(t, 2, tasksStarted(t))
+}
+
+func TestDeadlineExceededError_NotRetried(t *testing.T) {
+	env := rbetest.NewRBETestEnv(t)
+	env.AddBuildBuddyServer()
+	const errMsg = "error injected by test"
+	errResult := commandutil.ErrorResult(status.DeadlineExceededError(errMsg))
+	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
+		RunInterceptor: rbetest.AlwaysReturn(errResult),
+	})
+	// observe initial count so that we can get the diff at the end of the test
+	_ = tasksStarted(t)
+	ctx := context.Background()
+
+	res := runRemoteShellActionViaBazel(t, ctx, env, "exit 0")
+
+	require.Error(t, res.Error)
+	assert.Contains(t, res.Stderr, "failed due to timeout")
+	assert.Equal(t, 1, tasksStarted(t))
+}
+
 func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
 	env := rbetest.NewRBETestEnv(t)
 	env.AddBuildBuddyServer()

@@ -56,6 +56,19 @@ ts_library(
 )
 
 ts_library(
+    name = "git",
+    srcs = ["git.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "git_test",
+    srcs = ["git_test.ts"],
+    deps = [
+        ":git",
+    ],
+)
+
+ts_library(
     name = "time_delta",
     srcs = ["time_delta.ts"],
     deps = [

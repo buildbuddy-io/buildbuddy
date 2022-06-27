@@ -96,6 +96,9 @@ message Invocation {
 
   // The number of times this invocation has been attempted
   uint64 attempt = 25;
+
+  // The exit code of the bazel command
+  string bazel_exit_code = 26;
 }
 
 message InvocationEvent {

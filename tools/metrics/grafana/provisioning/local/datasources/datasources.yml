@@ -9,3 +9,5 @@ datasources:
     url: http://host.docker.internal:9100
     version: 1
     editable: false
+    jsonData:
+      timeInterval: 1s

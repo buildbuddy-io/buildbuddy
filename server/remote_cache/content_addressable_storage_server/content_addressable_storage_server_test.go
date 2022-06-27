@@ -129,7 +129,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	{
 		iid, err := uuid.NewRandom()
 		require.NoError(t, err)
-		rmd := &repb.RequestMetadata{ToolInvocationId: iid.String()}
+		rmd := &repb.RequestMetadata{ToolInvocationId: iid.String(), ActionMnemonic: "GoCompile"}
 		ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 		require.NoError(t, err)
 		batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
@@ -163,7 +163,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	// Use a new invocation context to get a new cache scorecard.
 	iid, err := uuid.NewRandom()
 	require.NoError(t, err)
-	rmd := &repb.RequestMetadata{ToolInvocationId: iid.String()}
+	rmd := &repb.RequestMetadata{ToolInvocationId: iid.String(), ActionMnemonic: "GoCompile"}
 	ctx, err = bazel_request.WithRequestMetadata(ctx, rmd)
 	require.NoError(t, err)
 	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{

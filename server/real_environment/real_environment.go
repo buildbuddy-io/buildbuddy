@@ -37,6 +37,7 @@ func (cc *executionClientConfig) DisableStreaming() bool {
 type RealEnv struct {
 	schedulerService                 interfaces.SchedulerService
 	taskRouter                       interfaces.TaskRouter
+	taskSizer                        interfaces.TaskSizer
 	healthChecker                    interfaces.HealthChecker
 	serverContext                    context.Context
 	workflowService                  interfaces.WorkflowService
@@ -82,6 +83,7 @@ type RealEnv struct {
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
 	sslService                       interfaces.SSLService
+	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
 	casServer                        repb.ContentAddressableStorageServer
 	byteStreamServer                 bspb.ByteStreamServer
@@ -295,6 +297,12 @@ func (r *RealEnv) SetTaskRouter(tr interfaces.TaskRouter) {
 func (r *RealEnv) GetTaskRouter() interfaces.TaskRouter {
 	return r.taskRouter
 }
+func (r *RealEnv) GetTaskSizer() interfaces.TaskSizer {
+	return r.taskSizer
+}
+func (r *RealEnv) SetTaskSizer(val interfaces.TaskSizer) {
+	r.taskSizer = val
+}
 func (r *RealEnv) SetMetricsCollector(c interfaces.MetricsCollector) {
 	r.metricsCollector = c
 }
@@ -407,6 +415,15 @@ func (r *RealEnv) GetSSLService() interfaces.SSLService {
 func (r *RealEnv) SetSSLService(sslService interfaces.SSLService) {
 	r.sslService = sslService
 }
+
+func (r *RealEnv) GetQuotaManager() interfaces.QuotaManager {
+	return r.quotaManager
+}
+
+func (r *RealEnv) SetQuotaManager(quotaManager interfaces.QuotaManager) {
+	r.quotaManager = quotaManager
+}
+
 func (r *RealEnv) GetBuildEventServer() pepb.PublishBuildEventServer {
 	return r.buildEventServer
 }

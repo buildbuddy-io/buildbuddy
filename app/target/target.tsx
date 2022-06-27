@@ -7,16 +7,18 @@ import ActionCardComponent from "./action_card";
 import router from "../router/router";
 import format from "../format/format";
 import { User } from "../auth/auth_service";
-import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy } from "lucide-react";
+import { Hash, Target, Box, SkipForward, CheckCircle, XCircle, HelpCircle, Clock, Copy, History } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
+import { OutlinedLinkButton } from "../components/button/link_button";
 
 interface Props {
   invocationId: string;
   user?: User;
+  repo?: string;
   targetLabel: string;
   hash: string;
 
@@ -167,7 +169,19 @@ export default class TargetComponent extends React.Component<Props> {
     alert_service.success("Label copied to clipboard!");
   }
 
+  getTargetHistoryURL() {
+    // Test history doesn't work without a repo selected.
+    if (!this.props.repo) return "";
+
+    const search = new URLSearchParams({
+      filter: this.props.targetLabel,
+      repo: this.props.repo,
+    });
+    return `/tests/?${search}`;
+  }
+
   render() {
+    let historyURL = this.getTargetHistoryURL();
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
     let files = this.props.files || [];
@@ -175,7 +189,7 @@ export default class TargetComponent extends React.Component<Props> {
       files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
     }
     return (
-      <div>
+      <div className="target-page">
         <div className="shelf">
           <div className="container">
             <div className="breadcrumbs">
@@ -200,6 +214,12 @@ export default class TargetComponent extends React.Component<Props> {
                 <Copy className="copy-icon" onClick={this.handleCopyClicked.bind(this, this.props.targetLabel)} />
               </div>
               <div className="subtitle">{this.getTime()}</div>
+              {historyURL && (
+                <OutlinedLinkButton href={historyURL} className="target-history-button">
+                  <History className="icon" />
+                  <span>Target history</span>
+                </OutlinedLinkButton>
+              )}
             </div>
             <div className="details">
               <div className="detail">

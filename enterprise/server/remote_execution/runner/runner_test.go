@@ -57,8 +57,8 @@ type RunnerPoolOptions struct {
 	MaxRunnerMemoryUsageBytes int64
 }
 
-func newTask() *repb.ExecutionTask {
-	return &repb.ExecutionTask{
+func newTask() *repb.ScheduledTask {
+	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{"pwd"},
 			Platform: &repb.Platform{
@@ -68,19 +68,22 @@ func newTask() *repb.ExecutionTask {
 			},
 		},
 	}
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
-func newWorkflowTask() *repb.ExecutionTask {
+func newWorkflowTask() *repb.ScheduledTask {
 	t := newTask()
-	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+	plat := t.ExecutionTask.Command.Platform
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{
 		Name: "workflow-id", Value: "WF123",
 	})
 	return t
 }
 
-func newTaskWithAffinityKey(key string) *repb.ExecutionTask {
+func newTaskWithAffinityKey(key string) *repb.ScheduledTask {
 	t := newTask()
-	t.Command.Platform.Properties = append(t.Command.Platform.Properties, &repb.Platform_Property{
+	plat := t.ExecutionTask.Command.Platform
+	plat.Properties = append(plat.Properties, &repb.Platform_Property{
 		Name: platform.HostedBazelAffinityKeyPropertyName, Value: key,
 	})
 	return t
@@ -134,7 +137,7 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	return p
 }
 
-func get(ctx context.Context, p *pool, task *repb.ExecutionTask) (*commandRunner, error) {
+func get(ctx context.Context, p *pool, task *repb.ScheduledTask) (*commandRunner, error) {
 	r, err := p.Get(ctx, task)
 	if err != nil {
 		return nil, err
@@ -142,7 +145,7 @@ func get(ctx context.Context, p *pool, task *repb.ExecutionTask) (*commandRunner
 	return r.(*commandRunner), nil
 }
 
-func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGet(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialActiveCount := pool.ActiveRunnerCount()
 	r, err := get(ctx, pool, task)
 	require.NoError(t, err)
@@ -192,7 +195,7 @@ func mustAddWithEviction(t *testing.T, ctx context.Context, pool *pool, r *comma
 	)
 }
 
-func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -201,7 +204,7 @@ func mustGetPausedRunner(t *testing.T, ctx context.Context, pool *pool, task *re
 	return r
 }
 
-func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ExecutionTask) *commandRunner {
+func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.ScheduledTask) *commandRunner {
 	initialPausedCount := pool.PausedRunnerCount()
 	initialCount := pool.RunnerCount()
 	r := mustGet(t, ctx, pool, task)
@@ -249,9 +252,9 @@ func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
-	task1.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
+	task1.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
 	task2 := newTask()
-	task2.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/2"}
+	task2.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/2"}
 
 	r1 := mustGetNewRunner(t, ctx, pool, task1)
 
@@ -267,13 +270,13 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	task1 := newTask()
-	task1.Command.Platform.Properties = append(
-		task1.Command.Platform.Properties,
+	task1.ExecutionTask.Command.Platform.Properties = append(
+		task1.ExecutionTask.Command.Platform.Properties,
 		&repb.Platform_Property{Name: "workflow-id", Value: "WF1"},
 	)
 	task2 := newTask()
-	task2.Command.Platform.Properties = append(
-		task1.Command.Platform.Properties,
+	task2.ExecutionTask.Command.Platform.Properties = append(
+		task1.ExecutionTask.Command.Platform.Properties,
 		&repb.Platform_Property{Name: "workflow-id", Value: "WF2"},
 	)
 
@@ -286,7 +289,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func TestRunnerPool_Shutdown_RemovesAllRunners(t *testing.T) {
+func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
@@ -459,13 +462,13 @@ func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
 	mustAddWithoutEviction(t, ctx, pool, r4)
 }
 
-func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
+func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
 	task := newTask()
-	task.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
+	task.ExecutionTask.Command.Arguments = []string{"sh", "-c", "touch foo.txt && sleep infinity"}
 	r, err := get(ctx, pool, task)
 
 	require.NoError(t, err)
@@ -483,9 +486,9 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_RemovedOnShutdown(t *testing.T) {
 	err = pool.Shutdown(context.Background())
 
 	require.NoError(t, err)
-	require.Equal(t, 0, pool.ActiveRunnerCount())
+	require.Equal(t, 1, pool.ActiveRunnerCount())
 	_, err = os.Stat(path.Join(r.Workspace.Path(), "foo.txt"))
-	require.True(t, os.IsNotExist(err), "runner should have been removed on shutdown")
+	require.NoError(t, err, "runner should not have been removed on shutdown")
 }
 
 func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
@@ -518,15 +521,14 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	assert.NotSame(t, r1, r2)
 }
 
-func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ExecutionTask {
+func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
 	workerPath := testfs.RunfilePath(t, "enterprise/server/remote_execution/runner/testworker/testworker_/testworker")
-	return &repb.ExecutionTask{
+	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			Arguments: []string{
 				workerPath,
 				"--protocol=" + protocol,
 				"--response_base64=" + encodedResponse(t, protocol, resp),
-				arg,
 			},
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
@@ -537,6 +539,10 @@ func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb
 			},
 		},
 	}
+	if arg != "" {
+		task.Command.Arguments = append(task.Command.Arguments, arg)
+	}
+	return &repb.ScheduledTask{ExecutionTask: task}
 }
 
 func encodedResponse(t *testing.T, protocol string, resp *wkpb.WorkResponse) string {
@@ -576,35 +582,54 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		pool := newRunnerPool(t, env, noLimitsCfg)
 		ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
+		// Note: in each test step below, we use a fresh context and cancel it
+		// after the step is done, to ensure that the worker sticks around across task
+		// contexts
+
 		// Make a new persistent worker
-		r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res := r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 1, pool.PausedRunnerCount())
+		})()
 
 		// Reuse the persistent worker
-		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res = r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 1, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 1, pool.PausedRunnerCount())
+		})()
 
 		// Try a persistent worker with a new key
-		r, err = pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
-		require.NoError(t, err)
-		res = r.Run(context.Background())
-		require.NoError(t, res.Error)
-		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, []byte(resp.Output), res.Stderr)
-		pool.TryRecycle(ctx, r, true)
-		assert.Equal(t, 2, pool.PausedRunnerCount())
+		(func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			require.NoError(t, res.Error)
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			pool.TryRecycle(ctx, r, true)
+			assert.Equal(t, 2, pool.PausedRunnerCount())
+		})()
 	}
 }
 
@@ -624,18 +649,36 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 	require.Error(t, res.Error)
 }
 
-func TestRunnerPool_PersistentWorker_Failure(t *testing.T) {
+func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, noLimitsCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), "US1")
 
-	// Persistent runner with unknown flagfile
+	// Persistent worker with unknown flagfile
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile", "", &wkpb.WorkResponse{}))
 	require.NoError(t, err)
 	res := r.Run(context.Background())
 	require.Error(t, res.Error)
 
-	// Make sure that after trying to recycle doesn't put the worker back in the pool.
+	// Make sure that after the error, trying to recycle doesn't put the worker
+	// back in the pool.
+	pool.TryRecycle(ctx, r, true)
+	assert.Equal(t, 0, pool.PausedRunnerCount())
+}
+
+func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.T) {
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg)
+	ctx := withAuthenticatedUser(t, context.Background(), "US1")
+
+	// Persistent worker with runner that crashes
+	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "--fail_with_stderr=TestStderrMessage", "", &wkpb.WorkResponse{}))
+	require.NoError(t, err)
+	res := r.Run(context.Background())
+	require.Error(t, res.Error)
+	assert.Contains(t, res.Error.Error(), "persistent worker stderr:", res.Error.Error())
+	assert.Contains(t, res.Error.Error(), "TestStderrMessage")
+
 	pool.TryRecycle(ctx, r, true)
 	assert.Equal(t, 0, pool.PausedRunnerCount())
 }
