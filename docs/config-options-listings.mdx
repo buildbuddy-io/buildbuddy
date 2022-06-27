@@ -25,6 +25,29 @@ becomes:
 buildbuddy -storage.disk.root_directory="/tmp/buildbuddy"
 ```
 
+For specifying lists of structures using flags on the command line, use the JSON
+representation of the list you wish to concatenate to the end or the element you
+wish to append:
+
+For example:
+```yaml
+cache:
+    disk:
+        partitions: [] # type: []disk.Partition
+        - id: "1GB"
+          max_size_bytes: 1073741824
+        - id: "2GB":
+          max_size_bytes: 2147483648
+```
+becomes:
+```sh
+buildbuddy -cache.disk.partitions='{"id": "1GB", "max_size_bytes": 1073741824}' -cache.disk.partitions='{"id": "2GB", "max_size_bytes": 2147483648}'
+```
+or
+```sh
+buildbuddy -cache.disk.partitions='[{"id": "1GB", "max_size_bytes": 1073741824}, {"id": "2GB", "max_size_bytes": 2147483648}]'
+```
+
 ### Buildbuddy Server (FOSS)
 
 <FreeServerConfig />
