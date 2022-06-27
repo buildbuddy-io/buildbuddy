@@ -136,12 +136,7 @@ func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
 	}
 	ts := sizer.Estimate(ctx, task)
 
-	assert.Equal(
-		t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes,
-		"initial mem estimate should be the default estimate")
-	assert.Equal(
-		t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu,
-		"initial CPU estimate should be the default estimate")
+	assert.True(t, tasksize.IsUnsized(ts), "task should be unsized initially")
 
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
