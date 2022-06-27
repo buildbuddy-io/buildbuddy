@@ -59,14 +59,26 @@ message TaskSize {
 }
 
 message SchedulingMetadata {
+  // The amount of resources required for the associated task.
+  //
+  // If unset, then the task is considered "unsized," meaning it needs to be
+  // executed once so that its size can be determined. Executors will only be
+  // assigned unsized tasks if they have set `accept_unsized_tasks` in their
+  // node registration. The scheduler does not enforce a minimum resource
+  // requirement for unsized tasks, meaning that any executor may execute an
+  // unsized task. Executors should allocate 100% of available resources to an
+  // unsized task.
   TaskSize task_size = 1;
+
   string os = 2;
   string arch = 3;
   string pool = 4;
+
   // Group ID that owns the executors on which the task is to be executed.
   // May be different from the Group ID of the user that issued the Execute
   // request.
   string executor_group_id = 5;
+
   // Group ID of the user that issued the Execute request.
   string task_group_id = 6;
 }
@@ -212,6 +224,10 @@ message ExecutionNode {
   //
   // Ex. "8BiY6U0F"
   string executor_host_id = 10;
+
+  // Whether this executor can be used to execute "unsized" tasks (see
+  // definition in SchedulingMetadata).
+  bool accept_unsized_tasks = 11;
 }
 
 message GetExecutionNodesRequest {
