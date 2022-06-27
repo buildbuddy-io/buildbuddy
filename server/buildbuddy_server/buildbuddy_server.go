@@ -853,18 +853,30 @@ func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetC
 }
 
 func (s *BuildBuddyServer) GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error) {
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		return qm.GetNamespace(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error) {
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		return qm.RemoveNamespace(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error) {
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		return qm.ModifyNamespace(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error) {
+	if qm := s.env.GetQuotaManager(); qm != nil {
+		return qm.ApplyBucket(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
