@@ -368,6 +368,33 @@ func (en *executionNode) GetExecutorID() string {
 	return en.executorID
 }
 
+// FillTaskSizeLimits returns the request with the task size adjusted to account
+// for unsized tasks if applicable. Unsized tasks are granted a generous
+// resource limit so that we can take an initial measurement and see how many
+// resources are actually used, but capped to the resource limits of this
+// execution node.
+func (en *executionNode) FillTaskSizeLimits(req *scpb.EnqueueTaskReservationRequest) *scpb.EnqueueTaskReservationRequest {
+	if req.TaskSize == nil || !tasksize.IsUnsized(req.TaskSize) {
+		return req
+	}
+	req = proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
+
+	// TODO(bduffany): Incorporate knowledge of OOM-retry count here. If an
+	// unsized task hit an OOM error, we should request even more memory than
+	// our default limits on the second attempt.
+	ts := req.TaskSize
+	executorMemLimit := int64(float64(en.assignableMemoryBytes) * tasksize.MaxResourceCapacityRatio)
+	executorCPULimit := int64(float64(en.assignableMilliCpu) * tasksize.MaxResourceCapacityRatio)
+	ts.EstimatedMemoryBytes = minInt64(executorMemLimit, tasksize.UnsizedTaskMemoryBytes)
+	ts.EstimatedMilliCpu = minInt64(executorCPULimit, tasksize.UnsizedTaskMilliCPU)
+
+	req.TaskSize = ts
+	if req.SchedulingMetadata != nil {
+		req.SchedulingMetadata.TaskSize = ts
+	}
+	return req
+}
+
 // TODO(bduffany): Expand interfaces.ExecutionNode interface to include all
 // executionNode functionality, then use interfaces.ExecutionNode everywhere.
 
@@ -499,6 +526,12 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	}
 	if len(np.nodes) == 0 {
 		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
+	}
+	// If the task is unsized, any node can execute the task, since we cap
+	// unsized task limits so that they can always fit on any registered
+	// executor.
+	if tasksize.IsUnsized(taskSize) {
+		return len(np.nodes), nil
 	}
 
 	fitCount := 0
@@ -1316,6 +1349,13 @@ func minInt(i, j int) int {
 	return j
 }
 
+func minInt64(i, j int64) int64 {
+	if i < j {
+		return i
+	}
+	return j
+}
+
 type enqueueTaskReservationOpts struct {
 	numReplicas int
 	maxAttempts int
@@ -1393,6 +1433,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				// (in subsequent loop iterations) if the preferred node probe fails.
 				preferredNode = nil
 			} else {
+				// TODO(http://go/b/1467): Probe only nodes that can fit the
+				// task.
 				nodes = nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
@@ -1419,7 +1461,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorID())
 				continue
 			}
-			_, err := node.handle.EnqueueTaskReservation(ctx, enqueueRequest)
+			resizedRequest := node.FillTaskSizeLimits(enqueueRequest)
+			_, err := node.handle.EnqueueTaskReservation(ctx, resizedRequest)
 			if err != nil {
 				continue
 			}

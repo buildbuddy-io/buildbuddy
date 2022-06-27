@@ -38,6 +38,12 @@ const (
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
+	// Unsized task estimates (when using measured task sizes and task sizes
+	// have not yet been measured, these estimates are used).
+
+	UnsizedTaskMemoryBytes = int64(5600e6)
+	UnsizedTaskMilliCPU    = int64(4000)
+
 	// Additional resources needed depending on task characteristics
 
 	// FirecrackerAdditionalMemEstimateBytes represents the overhead incurred by
@@ -121,10 +127,12 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
 		return initialEstimate
 	}
+	// If we don't have a size measurement, run the task "unsized" so that
+	// an executor can try to run it once in order to determine its actual size.
 	if recordedSize == nil {
-		// TODO: return a value indicating "unsized" here, and instead let the
-		// executor run this task once to estimate the size.
-		return initialEstimate
+		size := Unsized()
+		size.EstimatedFreeDiskBytes = initialEstimate.EstimatedFreeDiskBytes
+		return size
 	}
 	return &scpb.TaskSize{
 		EstimatedMemoryBytes:   int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
@@ -228,6 +236,19 @@ func commandKey(cmd *repb.Command) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s/%x", arg0, sha256.Sum256(b)), nil
+}
+
+// Unsized returns a TaskSize indicating that the size is not yet known.
+func Unsized() *scpb.TaskSize {
+	return &scpb.TaskSize{
+		EstimatedMemoryBytes: -1,
+		EstimatedMilliCpu:    -1,
+	}
+}
+
+// IsUnsized returns whether the TaskSize represents an unknown task size.
+func IsUnsized(s *scpb.TaskSize) bool {
+	return s.GetEstimatedMemoryBytes() == -1
 }
 
 func testSize(testSize string) (int64, int64) {
