@@ -14,13 +14,13 @@ import (
 )
 
 type PubSub struct {
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
 // NewPubSub creates a PubSub client based on the built-in Redis pubsub commands.
 // Note that this mechanism is "lossy" in the sense that published messages are lost if there are no listeners.
 // See NewListPubSub for a Redis list-based implementation that retains messages even if there are no subscribers.
-func NewPubSub(redisClient *redis.Client) *PubSub {
+func NewPubSub(redisClient redis.UniversalClient) *PubSub {
 	return &PubSub{
 		rdb: redisClient,
 	}
@@ -73,7 +73,7 @@ const (
 )
 
 type ListPubSub struct {
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
 // NewListPubSub creates a PubSub client based on a Redis-list.
@@ -82,7 +82,7 @@ type ListPubSub struct {
 //
 // CAUTION: Only a single consumer will receive a given published message.
 // Think carefully about whether you may have multiple concurrent consumers and the behavior you expect.
-func NewListPubSub(redisClient *redis.Client) interfaces.PubSub {
+func NewListPubSub(redisClient redis.UniversalClient) interfaces.PubSub {
 	return &ListPubSub{
 		rdb: redisClient,
 	}
