@@ -154,10 +154,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	found, err := c.rdb.Expire(ctx, key, ttl).Result()
 	timer.ObserveContains(err)
-	if err != nil {
-		return false, err
-	}
-	return found, nil
+	return found, err
 }
 
 func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
