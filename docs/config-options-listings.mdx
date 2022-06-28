@@ -1,6 +1,6 @@
 ---
 id: config-options-listings
-title: Listings For All Buildbuddy Options
+title: Listings For All BuildBuddy Options
 sidebar_label: Options Listings
 ---
 
@@ -8,7 +8,7 @@ import FreeServerConfig from '../bazel-bin/server/cmd/buildbuddy/yaml_doc/buildb
 import EnterpriseServerConfig from '../bazel-bin/enterprise/server/cmd/server/yaml_doc/buildbuddy_enterprise_server_documented_defaults.mdx'
 import ExecutorConfig from '../bazel-bin/enterprise/server/cmd/executor/yaml_doc/buildbuddy_executor_documented_defaults.mdx'
 
-Provided below are working, documented YAML configs for each Buildbuddy binary
+Provided below are working, documented YAML configs for each BuildBuddy binary
 containing every option that that binary accepts, each set to the default value
 for that option. Any option that can be specified in the YAML config can also be
 passed on the command line. For nested options, be sure to write out the full
@@ -48,14 +48,14 @@ or
 buildbuddy -cache.disk.partitions='[{"id": "1GB", "max_size_bytes": 1073741824}, {"id": "2GB", "max_size_bytes": 2147483648}]'
 ```
 
-### Buildbuddy Server (FOSS)
+### BuildBuddy Server (FOSS)
 
 <FreeServerConfig />
 
-### Buildbuddy Server (Enterprise)
+### BuildBuddy Server (Enterprise)
 
 <EnterpriseServerConfig />
 
-### Buildbuddy Executor
+### BuildBuddy Executor
 
 <ExecutorConfig />
