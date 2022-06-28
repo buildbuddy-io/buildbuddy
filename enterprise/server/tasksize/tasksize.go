@@ -68,12 +68,6 @@ const (
 
 	// Redis key prefix used for holding current task size estimates.
 	redisKeyPrefix = "taskSize"
-
-	// When using measured task sizes, multiply the last measured peak memory
-	// usage by this much in order to determine effective the memory estimate.
-	// This allows some wiggle room for new tasks to use more memory than the
-	// previously recorded task.
-	measuredSizeMemoryMultiplier = 1.10
 )
 
 // Register registers the task sizer with the env.
@@ -116,6 +110,11 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	if props.DisableMeasuredTaskSize {
 		return initialEstimate
 	}
+	// Don't use measured task sizes for Firecracker tasks for now, since task
+	// sizes are used as hard limits on allowed resources.
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		return initialEstimate
+	}
 	recordedSize, err := s.lastRecordedSize(ctx, task)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
@@ -127,7 +126,7 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 		return initialEstimate
 	}
 	return &scpb.TaskSize{
-		EstimatedMemoryBytes:   int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
+		EstimatedMemoryBytes:   recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:      recordedSize.EstimatedMilliCpu,
 		EstimatedFreeDiskBytes: initialEstimate.EstimatedFreeDiskBytes,
 	}
