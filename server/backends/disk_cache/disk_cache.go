@@ -717,6 +717,7 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 					Filename: path,
 				},
 			},
+			SizeBytes: info.Size(),
 		}
 		scanned <- fm
 		return nil
