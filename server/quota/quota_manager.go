@@ -45,8 +45,8 @@ type assignedBucket struct {
 }
 
 type namespaceConfig struct {
-	name                  string
-	assignedBucketsByName map[string]*assignedBucket
+	name            string
+	assignedBuckets map[string]*assignedBucket
 }
 
 func bucketToProto(from *tables.QuotaBucket) *qpb.Bucket {
@@ -76,7 +76,7 @@ func namespaceConfigToProto(from *namespaceConfig) *qpb.Namespace {
 	res := &qpb.Namespace{
 		Name: from.name,
 	}
-	for _, fromAssignedBucket := range from.assignedBucketsByName {
+	for _, fromAssignedBucket := range from.assignedBuckets {
 		assignedBucket := &qpb.AssignedBucket{
 			Bucket:    bucketToProto(fromAssignedBucket.bucket),
 			QuotaKeys: fromAssignedBucket.quotaKeys,
@@ -110,12 +110,12 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 			ns := config[tb.Namespace]
 			if ns == nil {
 				ns = &namespaceConfig{
-					name:                  tb.Namespace,
-					assignedBucketsByName: make(map[string]*assignedBucket),
+					name:            tb.Namespace,
+					assignedBuckets: make(map[string]*assignedBucket),
 				}
 				config[tb.Namespace] = ns
 			}
-			ns.assignedBucketsByName[tb.Name] = &assignedBucket{
+			ns.assignedBuckets[tb.Name] = &assignedBucket{
 				bucket: &tb,
 			}
 		}
@@ -136,7 +136,7 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
 				continue
 			}
-			assignedBucket, ok := ns.assignedBucketsByName[tg.BucketName]
+			assignedBucket, ok := ns.assignedBuckets[tg.BucketName]
 			if !ok {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
 				continue
@@ -264,7 +264,7 @@ func newQuotaManager(env environment.Env, bucketCreator bucketCreatorFn) (*Quota
 }
 
 func (qm *QuotaManager) createNamespace(env environment.Env, name string, config *namespaceConfig) (*namespace, error) {
-	defaultAssignedBucket := config.assignedBucketsByName[defaultBucketName]
+	defaultAssignedBucket := config.assignedBuckets[defaultBucketName]
 	if defaultAssignedBucket == nil {
 		return nil, status.InvalidArgumentErrorf("default quota bucket is unset in namespace: %q", name)
 	}
@@ -281,7 +281,7 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 		bucketsByKey:  make(map[string]Bucket),
 	}
 
-	for _, assignedBucket := range config.assignedBucketsByName {
+	for _, assignedBucket := range config.assignedBuckets {
 		bucket, err := qm.bucketCreator(env, assignedBucket.bucket)
 		if err != nil {
 			return nil, err
