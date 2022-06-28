@@ -126,7 +126,7 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 		return initialEstimate
 	}
 	return &scpb.TaskSize{
-		EstimatedMemoryBytes:   int64(float64(recordedSize.EstimatedMemoryBytes) * measuredSizeMemoryMultiplier),
+		EstimatedMemoryBytes:   recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:      recordedSize.EstimatedMilliCpu,
 		EstimatedFreeDiskBytes: initialEstimate.EstimatedFreeDiskBytes,
 	}
