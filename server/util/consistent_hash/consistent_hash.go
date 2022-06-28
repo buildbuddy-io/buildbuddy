@@ -104,19 +104,20 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	}
 	originalIndex := c.ring[c.keys[idx]]
 
-	seen := make(map[string]struct{}, len(c.items))
-	seen[c.items[originalIndex]] = struct{}{}
+	replicas := make([]string, 0, len(c.items))
+	replicas = append(replicas, c.items[originalIndex])
+
 	c.lookupReplicas(idx, func(replicaIndex uint8) bool {
 		replica := c.items[replicaIndex]
-		if _, ok := seen[replica]; !ok {
-			seen[replica] = struct{}{}
+		for _, r := range replicas {
+			if r == replica {
+				return false
+			}
 		}
-		return len(seen) == len(c.items)
-	})
-	replicas := make([]string, 0, len(seen))
-	for replica := range seen {
 		replicas = append(replicas, replica)
-	}
+		return len(replicas) == len(c.items)
+	})
+
 	return replicas
 
 }
