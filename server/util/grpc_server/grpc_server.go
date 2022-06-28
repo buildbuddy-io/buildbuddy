@@ -97,8 +97,6 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 	// Support prometheus grpc metrics.
 	grpc_prometheus.Register(grpcServer)
 
-	// DISABLED in prod: enabling these causes unnecessary allocations
-	// that substantially (50%+ QPS) impact performance.
 	if *enablePrometheusHistograms {
 		grpc_prometheus.EnableHandlingTimeHistogram()
 	}
