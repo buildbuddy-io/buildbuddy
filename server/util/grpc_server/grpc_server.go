@@ -35,7 +35,7 @@ var (
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
-	prometheusHistogramsEnabled = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
+	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 )
 
 type RegisterServices func(server *grpc.Server, env environment.Env)
@@ -99,7 +99,7 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 
 	// DISABLED in prod: enabling these causes unnecessary allocations
 	// that substantially (50%+ QPS) impact performance.
-	if *prometheusHistogramsEnabled {
+	if *enablePrometheusHistograms {
 		grpc_prometheus.EnableHandlingTimeHistogram()
 	}
 
