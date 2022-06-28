@@ -18,9 +18,7 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Build Website
-        run: |
-          cd website
-          yarn install && yarn build
+        run: bazel build //website:website
 
       - name: Deploy Website 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
