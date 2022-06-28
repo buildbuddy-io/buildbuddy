@@ -559,7 +559,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
-	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetFileRecord().GetDigest().GetSizeBytes()}
+	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetSizeBytes()}
 	return disk.DeleteFile(ctx, fp)
 }
 
@@ -664,7 +664,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			p.updateAtime(fileMetadataKey)
-			p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, fileRecord.GetDigest().GetSizeBytes()}
+			p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten}
 		}
 		return err
 	}}
@@ -699,7 +699,7 @@ func (p *PebbleCache) TestingWaitForGC() error {
 
 type evictionPoolEntry struct {
 	timestamp       int64
-	fileRecord      *rfpb.FileRecord
+	fileMetadata    *rfpb.FileMetadata
 	fileMetadataKey []byte
 	filePath        string
 }
@@ -898,7 +898,7 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		copy(fileMetadataKey, iter.Key())
 
 		sample := &evictionPoolEntry{
-			fileRecord:      fileMetadata.GetFileRecord(),
+			fileMetadata:    fileMetadata,
 			filePath:        filePath,
 			fileMetadataKey: fileMetadataKey,
 		}
@@ -926,7 +926,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
 	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID}).Set(ageUsec)
-	e.updateSize(sample.fileMetadataKey, -1*sample.fileRecord.GetDigest().GetSizeBytes())
+	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetSizeBytes())
 	return nil
 }
 
@@ -973,11 +973,7 @@ func (e *partitionEvictor) evict(count int) error {
 			return err
 		}
 		for i, sample := range e.samplePool {
-			fileMetadataKey, err := constants.FileMetadataKey(sample.fileRecord)
-			if err != nil {
-				return err
-			}
-			_, closer, err := e.reader.Get(fileMetadataKey)
+			_, closer, err := e.reader.Get(sample.fileMetadataKey)
 			if err == pebble.ErrNotFound {
 				continue
 			}
