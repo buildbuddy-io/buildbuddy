@@ -18,7 +18,11 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Build Website
-        run: bazel build //website:website
+        run: |
+          bazel build //website:website
+          mkdir website/build
+          cd website/build
+          tar -xf ../../bazel-bin/website/website.tar
 
       - name: Deploy Website 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
