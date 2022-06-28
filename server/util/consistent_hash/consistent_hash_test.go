@@ -88,6 +88,7 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 		b.Fatal(err)
 	}
 
+	b.ReportAllocs()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		k, err := random.RandomString(64)
