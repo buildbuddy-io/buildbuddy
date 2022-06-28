@@ -56,6 +56,14 @@ func (c *ComposableCache) Contains(ctx context.Context, d *repb.Digest) (bool, e
 	return c.inner.Contains(ctx, d)
 }
 
+func (c *ComposableCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	md, err := c.outer.Metadata(ctx, d)
+	if err == nil {
+		return md, nil
+	}
+	return c.inner.Metadata(ctx, d)
+}
+
 func (c *ComposableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	missing, err := c.outer.FindMissing(ctx, digests)
 	if err != nil {

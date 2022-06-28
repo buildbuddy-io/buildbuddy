@@ -212,6 +212,25 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	return rsp, nil
 }
 
+func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.MetadataResponse, error) {
+	ctx, err := c.readWriteContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := c.getCache(ctx, req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	d := digestFromKey(req.GetKey())
+	md, err := cache.Metadata(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return &dcpb.MetadataResponse{
+		SizeBytes: md.SizeBytes,
+	}, nil
+}
+
 // IsolationToString returns a compact representation of the Isolation proto suitable for logging.
 func IsolationToString(isolation *dcpb.Isolation) string {
 	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
@@ -372,6 +391,23 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, isolation 
 		return false, err
 	}
 	return len(missing) == 0, nil
+}
+
+func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	req := &dcpb.MetadataRequest{
+		Isolation: isolation,
+		Key:       digestToKey(d),
+	}
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+
+	md, err := client.Metadata(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &interfaces.CacheMetadata{SizeBytes: md.GetSizeBytes()}, nil
 }
 
 func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {

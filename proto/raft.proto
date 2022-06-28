@@ -60,6 +60,8 @@ message StorageMetadata {
 message FileMetadata {
   FileRecord file_record = 1;
   StorageMetadata storage_metadata = 2;
+  // Uncompressed size of the stored data.
+  int64 size_bytes = 3;
 }
 
 message FileWriteRequest {

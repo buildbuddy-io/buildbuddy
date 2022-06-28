@@ -127,6 +127,22 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, err
 }
 
+func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	key, err := c.key(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := c.mcGet(key)
+	if err != nil {
+		return nil, err
+	}
+	if err == memcache.ErrCacheMiss {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+	return &interfaces.CacheMetadata{SizeBytes: int64(len(data))}, nil
+}
+
 func update(old, new map[string]bool) {
 	for k, v := range new {
 		old[k] = v

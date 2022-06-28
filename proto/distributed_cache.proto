@@ -54,6 +54,15 @@ message FindMissingResponse {
   repeated Key missing = 1;
 }
 
+message MetadataRequest {
+  Isolation isolation = 1;
+  Key key = 2;
+}
+
+message MetadataResponse {
+  int64 size_bytes = 1;
+}
+
 message KV {
   Key key = 1;
   bytes value = 2;
@@ -76,6 +85,7 @@ message HeartbeatRequest {
 message HeartbeatResponse {}
 
 service DistributedCache {
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);

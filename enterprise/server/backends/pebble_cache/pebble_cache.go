@@ -453,6 +453,26 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	return found, nil
 }
 
+func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	fileRecord, err := p.makeFileRecord(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	md, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return nil, err
+	}
+	p.updateAtime(fileMetadataKey)
+	return &interfaces.CacheMetadata{SizeBytes: md.GetSizeBytes()}, nil
+}
+
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -587,16 +607,26 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	return rc, err
 }
 
-type funcCloser struct {
+type writeCloser struct {
 	filestore.WriteCloserMetadata
-	closeFn func() error
+	closeFn      func(n int64) error
+	bytesWritten int64
 }
 
-func (dc *funcCloser) Close() error {
+func (dc *writeCloser) Close() error {
 	if err := dc.WriteCloserMetadata.Close(); err != nil {
 		return err
 	}
-	return dc.closeFn()
+	return dc.closeFn(dc.bytesWritten)
+}
+
+func (dc *writeCloser) Write(p []byte) (int, error) {
+	n, err := dc.WriteCloserMetadata.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	dc.bytesWritten += int64(n)
+	return n, nil
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
@@ -621,10 +651,11 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
-	dc := &funcCloser{wcm, func() error {
+	dc := &writeCloser{WriteCloserMetadata: wcm, closeFn: func(bytesWritten int64) error {
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: wcm.Metadata(),
+			SizeBytes:       bytesWritten,
 		}
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {

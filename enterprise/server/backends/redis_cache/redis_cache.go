@@ -157,6 +157,25 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return found, err
 }
 
+func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	key, err := c.key(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	found, err := c.rdb.Expire(ctx, key, ttl).Result()
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+	blobLen, err := c.rdb.StrLen(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	return &interfaces.CacheMetadata{SizeBytes: blobLen}, nil
+}
+
 func update(old, new map[string]bool) {
 	for k, v := range new {
 		old[k] = v

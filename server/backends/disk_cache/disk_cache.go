@@ -281,7 +281,19 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	contains, _, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	return contains, err
+}
+
+func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	contains, sizeBytes, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	if err != nil {
+		return nil, err
+	}
+	if !contains {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+	return &interfaces.CacheMetadata{SizeBytes: sizeBytes}, nil
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -781,28 +793,28 @@ func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, rem
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(key *fileKey) bool {
+func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
 	if p.diskIsMapped {
-		return false
+		return false, 0
 	}
 	info, err := os.Stat(key.FullPath())
 	if err == nil {
 		if info.Size() == 0 {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
-			return false
+			return false, 0
 		}
 		record := p.makeRecordFromFileInfo(key, info)
 		p.fileChannel <- record
 		p.lru.Add(record.FullPath(), record)
-		return true
+		return true, record.sizeBytes
 	}
-	return false
+	return false, 0
 }
 
-func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
+func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, int64, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	// Bazel does frequent "contains" checks, so we want to make this fast.
 	// We could check the disk and see if the file exists, because it's
@@ -819,45 +831,22 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// if necessary and applicable.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	ok := p.lru.Contains(k.FullPath())
-
-	if !ok && !p.diskIsMapped {
+	v, ok := p.lru.Get(k.FullPath())
+	if ok {
+		vr, ok := v.(*fileRecord)
+		if !ok {
+			return false, 0, status.InternalErrorf("not a *fileRecord")
+		}
+		return true, vr.sizeBytes, nil
+	}
+	if !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		ok = p.addFileToLRUIfExists(k)
+		ok, sizeBytes := p.addFileToLRUIfExists(k)
+		return ok, sizeBytes, nil
 	}
-	return ok, nil
-}
-
-func (p *partition) containsMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) (map[*repb.Digest]bool, error) {
-	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest]bool, len(digests))
-	eg, ctx := errgroup.WithContext(ctx)
-
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
-			eg.Go(func() error {
-				exists, err := p.contains(ctx, cacheType, remoteInstanceName, d)
-				// NotFoundError is never returned from contains above, so
-				// we don't check for it.
-				if err != nil {
-					return err
-				}
-				lock.Lock()
-				foundMap[d] = exists
-				lock.Unlock()
-				return nil
-			})
-		}
-		fetchFn(d)
-	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	return foundMap, nil
+	return false, 0, nil
 }
 
 func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -868,7 +857,7 @@ func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheT
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := p.contains(ctx, cacheType, remoteInstanceName, d)
+				exists, _, err := p.contains(ctx, cacheType, remoteInstanceName, d)
 				// NotFoundError is never returned from contains above, so
 				// we don't check for it.
 				if err != nil {

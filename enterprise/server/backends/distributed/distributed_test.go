@@ -529,6 +529,62 @@ func TestContainsMulti(t *testing.T) {
 	}
 }
 
+func TestMetadata(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000,
+	}
+	for i, testSize := range testSizes {
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+		// Set() the bytes in the cache.
+		err := distributedCaches[i%3].Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+
+		for _, dc := range distributedCaches {
+			// Metadata should return true size of the blob, regardless of queried size.
+			md, err := dc.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+			if err != nil {
+				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+			}
+			require.Equal(t, testSize, md.SizeBytes)
+		}
+	}
+}
+
 func TestFindMissing(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)

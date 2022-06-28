@@ -214,6 +214,11 @@ func (t CacheType) Prefix() string {
 	}
 }
 
+type CacheMetadata struct {
+	// Size of the cache contents (uncompressed).
+	SizeBytes int64
+}
+
 // Similar to a blobstore, a cache allows for reading and writing data, but
 // additionally it is responsible for deleting data that is past TTL to keep to
 // a manageable size.
@@ -226,6 +231,7 @@ type Cache interface {
 
 	// Normal cache-like operations.
 	Contains(ctx context.Context, d *repb.Digest) (bool, error)
+	Metadata(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
