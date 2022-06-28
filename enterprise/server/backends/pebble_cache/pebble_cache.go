@@ -779,7 +779,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetFileRecord().GetDigest().GetSizeBytes()
+		blobSizeBytes += fileMetadata.GetSizeBytes()
 		metadataSizeBytes += int64(len(iter.Value()))
 
 		// identify and count CAS vs AC files.
