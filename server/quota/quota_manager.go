@@ -39,10 +39,14 @@ const (
 	redisQuotaKeyPrefix = "quota"
 )
 
+type assignedBucket struct {
+	bucket    *tables.QuotaBucket
+	quotaKeys []string
+}
+
 type namespaceConfig struct {
-	name                  string
-	bucketsByName         map[string]*tables.QuotaBucket
-	quotaKeysByBucketName map[string][]string
+	name            string
+	assignedBuckets map[string]*assignedBucket
 }
 
 func bucketToProto(from *tables.QuotaBucket) *qpb.Bucket {
@@ -72,10 +76,10 @@ func namespaceConfigToProto(from *namespaceConfig) *qpb.Namespace {
 	res := &qpb.Namespace{
 		Name: from.name,
 	}
-	for _, fromBucket := range from.bucketsByName {
+	for _, fromAssignedBucket := range from.assignedBuckets {
 		assignedBucket := &qpb.AssignedBucket{
-			Bucket:    bucketToProto(fromBucket),
-			QuotaKeys: from.quotaKeysByBucketName[fromBucket.Name],
+			Bucket:    bucketToProto(fromAssignedBucket.bucket),
+			QuotaKeys: fromAssignedBucket.quotaKeys,
 		}
 		res.AssignedBuckets = append(res.GetAssignedBuckets(), assignedBucket)
 	}
@@ -100,19 +104,20 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 			if err := tx.ScanRows(bucketRows, &tb); err != nil {
 				return status.InternalErrorf("failed to scan QuotaBuckets: %s", err)
 			}
-			ns := config[tb.Namespace]
-			if ns == nil {
-				ns = &namespaceConfig{
-					name:                  tb.Namespace,
-					bucketsByName:         make(map[string]*tables.QuotaBucket),
-					quotaKeysByBucketName: make(map[string][]string),
-				}
-				config[tb.Namespace] = ns
-			}
 			if err := validateBucket(bucketToProto(&tb)); err != nil {
 				return status.InternalErrorf("invalid bucket: %v", tb)
 			}
-			ns.bucketsByName[tb.Name] = &tb
+			ns := config[tb.Namespace]
+			if ns == nil {
+				ns = &namespaceConfig{
+					name:            tb.Namespace,
+					assignedBuckets: make(map[string]*assignedBucket),
+				}
+				config[tb.Namespace] = ns
+			}
+			ns.assignedBuckets[tb.Name] = &assignedBucket{
+				bucket: &tb,
+			}
 		}
 
 		groupRows, err := tx.Raw(`SELECT * FROM QuotaGroups`).Rows()
@@ -131,7 +136,8 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q doesn't exist", tg.Namespace)
 				continue
 			}
-			if _, ok := ns.bucketsByName[tg.BucketName]; !ok {
+			assignedBucket, ok := ns.assignedBuckets[tg.BucketName]
+			if !ok {
 				alert.UnexpectedEvent("invalid_quota_config", "namespace %q bucket name %q doesn't exist", tg.Namespace, tg.BucketName)
 				continue
 			}
@@ -139,11 +145,7 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 				log.Warningf("Doesn't need to create QuotaGroup for default bucket in namespace %q", tg.Namespace)
 				continue
 			}
-			if keys := ns.quotaKeysByBucketName[tg.BucketName]; keys == nil {
-				ns.quotaKeysByBucketName[tg.BucketName] = []string{tg.QuotaKey}
-			} else {
-				ns.quotaKeysByBucketName[tg.BucketName] = append(keys, tg.QuotaKey)
-			}
+			assignedBucket.quotaKeys = append(assignedBucket.quotaKeys, tg.QuotaKey)
 		}
 		return nil
 	})
@@ -262,12 +264,12 @@ func newQuotaManager(env environment.Env, bucketCreator bucketCreatorFn) (*Quota
 }
 
 func (qm *QuotaManager) createNamespace(env environment.Env, name string, config *namespaceConfig) (*namespace, error) {
-	defaultBucketConfig := config.bucketsByName[defaultBucketName]
-	if defaultBucketConfig == nil {
+	defaultAssignedBucket := config.assignedBuckets[defaultBucketName]
+	if defaultAssignedBucket == nil {
 		return nil, status.InvalidArgumentErrorf("default quota bucket is unset in namespace: %q", name)
 	}
 
-	defaultBucket, err := qm.bucketCreator(env, defaultBucketConfig)
+	defaultBucket, err := qm.bucketCreator(env, defaultAssignedBucket.bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -279,14 +281,13 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 		bucketsByKey:  make(map[string]Bucket),
 	}
 
-	for _, bc := range config.bucketsByName {
-		bucket, err := qm.bucketCreator(env, bc)
+	for _, assignedBucket := range config.assignedBuckets {
+		bucket, err := qm.bucketCreator(env, assignedBucket.bucket)
 		if err != nil {
 			return nil, err
 		}
 
-		keys := config.quotaKeysByBucketName[bc.Name]
-		for _, key := range keys {
+		for _, key := range assignedBucket.quotaKeys {
 			ns.bucketsByKey[key] = bucket
 		}
 	}
