@@ -20,7 +20,8 @@ jobs:
       - name: Build Website
         run: |
           bazel build //website:website
-          mkdir website/build
+          rm -rf website/build
+          mkdir -p website/build
           cd website/build
           tar -xf ../../bazel-bin/website/website.tar
           touch .nojekyll
