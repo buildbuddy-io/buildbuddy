@@ -256,10 +256,10 @@ func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(2.6e9),
+		t, res.UsageStats.GetCpuNanos(), int64(2e9),
 		"expected around 3s of CPU usage")
 	require.LessOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(3.4e9),
+		t, res.UsageStats.GetCpuNanos(), int64(4e9),
 		"expected around 3s of CPU usage")
 }
 
@@ -294,10 +294,10 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
 	require.GreaterOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(3.6e9),
+		t, res.UsageStats.GetCpuNanos(), int64(3e9),
 		"expected around 4s of CPU usage")
 	require.LessOrEqual(
-		t, res.UsageStats.GetCpuNanos(), int64(4.4e9),
+		t, res.UsageStats.GetCpuNanos(), int64(5e9),
 		"expected around 4s of CPU usage")
 	require.GreaterOrEqual(
 		t, res.UsageStats.GetPeakMemoryBytes(), int64(1500e6),
