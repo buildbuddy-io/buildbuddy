@@ -844,7 +844,9 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 
 	rsp := make(map[*repb.Digest][]byte, len(digests))
 	for _, d := range digests {
-		rsp[d] = gotMap[d.GetHash()]
+		if buf, ok := gotMap[d.GetHash()]; ok {
+			rsp[d] = buf
+		}
 	}
 	return rsp, nil
 }
