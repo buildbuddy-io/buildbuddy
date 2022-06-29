@@ -105,7 +105,28 @@ func (m *MemoryCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	m.lock.Lock()
 	contains := m.l.Contains(k)
 	m.lock.Unlock()
+
 	return contains, nil
+}
+
+func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	k, err := m.key(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	m.lock.Lock()
+	v, contains := m.l.Get(k)
+	m.lock.Unlock()
+
+	if !contains {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+
+	vb, ok := v.([]byte)
+	if !ok {
+		return nil, status.InternalErrorf("not a []byte")
+	}
+	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
 }
 
 func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

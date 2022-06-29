@@ -3,6 +3,7 @@ package byte_stream_server
 import (
 	"context"
 	"crypto/sha256"
+	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -29,6 +30,10 @@ import (
 const (
 	// Keep under the limit of ~4MB (save 256KB).
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+)
+
+var (
+	enableQueryWriteStatusCacheCheck = flag.Bool("cache.enable_query_write_status_cache_check", false, "If enabled, QueryWriteStatus ByteStream RPC will check whether digest is present in the cache.")
 )
 
 type ByteStreamServer struct {
@@ -400,11 +405,51 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // resource name, the sequence of returned `committed_size` values will be
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	// For now, just tell the client that the entire write failed and let
-	// them retry it.
+	if !*enableQueryWriteStatusCacheCheck {
+		// If the data has not been committed to the cache, then just tell the
+		//client that we don't have anything and let them retry it.
+		return &bspb.QueryWriteStatusResponse{
+			CommittedSize: 0,
+			Complete:      false,
+		}, nil
+	}
+
+	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
+	if err != nil {
+		// If we can't parse the resource name, then tell the client we
+		// don't know anything about the write and let them retry it.
+		return &bspb.QueryWriteStatusResponse{
+			CommittedSize: 0,
+			Complete:      false,
+		}, nil
+	}
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := s.getCache(ctx, rn.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+
+	md, err := cache.Metadata(ctx, rn.GetDigest())
+	if err != nil {
+		// If the data has not been committed to the cache, then just tell the
+		// client that we don't have anything and let them retry it.
+		if status.IsNotFoundError(err) {
+			return &bspb.QueryWriteStatusResponse{
+				CommittedSize: 0,
+				Complete:      false,
+			}, nil
+		}
+		return nil, err
+	}
+
 	return &bspb.QueryWriteStatusResponse{
-		CommittedSize: 0,
-		Complete:      false,
+		CommittedSize: md.SizeBytes,
+		Complete:      true,
 	}, nil
 }
 

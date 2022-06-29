@@ -19,7 +19,6 @@ type ConsistentHash struct {
 	numReplicas int
 	mu          sync.RWMutex
 	replicaMu   sync.RWMutex
-	replicaSets map[uint32][]string
 }
 
 func NewConsistentHash() *ConsistentHash {
@@ -28,7 +27,6 @@ func NewConsistentHash() *ConsistentHash {
 		keys:        make([]int, 0),
 		ring:        make(map[int]uint8, 0),
 		items:       make([]string, 0),
-		replicaSets: make(map[uint32][]string, 0),
 	}
 }
 
@@ -50,7 +48,6 @@ func (c *ConsistentHash) Set(items ...string) error {
 	defer c.mu.Unlock()
 	c.keys = make([]int, 0)
 	c.ring = make(map[int]uint8, 0)
-	c.replicaSets = make(map[uint32][]string, 0)
 
 	c.items = items
 	sort.Strings(c.items)
@@ -80,13 +77,15 @@ func (c *ConsistentHash) Get(key string) string {
 	if idx == len(c.keys) {
 		idx = 0
 	}
-	return c.items[c.ring[c.keys[idx]]]
+	r := c.items[c.ring[c.keys[idx]]]
+	return r
 }
 
-func (c *ConsistentHash) lookupReplicas(idx int, fn func(replicaIndex uint8)) {
-	for offset := 1; offset < len(c.keys); offset += 1 {
+func (c *ConsistentHash) lookupReplicas(idx int, fn func(replicaIndex uint8) bool) {
+	done := false
+	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
 		newIdx := (idx + offset) % len(c.keys)
-		fn(c.ring[c.keys[newIdx]])
+		done = fn(c.ring[c.keys[newIdx]])
 	}
 }
 
@@ -103,49 +102,24 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 	if idx == len(c.keys) {
 		idx = 0
 	}
-
-	// first, attempt to lookup the replicaset in our local cache, by
-	// computing a hash of the replicas in the set, and checking if this set
-	// has been returned before. If it has -- return that set.
 	originalIndex := c.ring[c.keys[idx]]
-	inputBuf := make([]byte, len(c.keys))
-	inputBuf[0] = originalIndex
-	inputIdx := 1
-	c.lookupReplicas(idx, func(replicaIndex uint8) {
-		inputBuf[inputIdx] = replicaIndex
-		inputIdx += 1
-	})
-	replicasKey := crc32.ChecksumIEEE(inputBuf)
 
-	c.replicaMu.RLock()
-	replicas, ok := c.replicaSets[replicasKey]
-	c.replicaMu.RUnlock()
-	if ok {
-		return replicas
-	}
-
-	// if no replicaset was found under the hash key, we'll go ahead and
-	// allocate a new replica set and cache it, then return it.
-	seen := make(map[uint8]struct{}, len(c.keys))
-	seen[originalIndex] = struct{}{}
-
-	replicas = make([]string, 0, len(c.keys))
+	replicas := make([]string, 0, len(c.items))
 	replicas = append(replicas, c.items[originalIndex])
 
-	c.lookupReplicas(idx, func(replicaIndex uint8) {
-		if _, ok := seen[replicaIndex]; !ok {
-			replicas = append(replicas, c.items[replicaIndex])
-			seen[replicaIndex] = struct{}{}
+	c.lookupReplicas(idx, func(replicaIndex uint8) bool {
+		replica := c.items[replicaIndex]
+		for _, r := range replicas {
+			if r == replica {
+				return false
+			}
 		}
+		replicas = append(replicas, replica)
+		return len(replicas) == len(c.items)
 	})
 
-	c.replicaMu.Lock()
-	if _, ok := c.replicaSets[replicasKey]; !ok {
-		c.replicaSets[replicasKey] = replicas
-	}
-	c.replicaMu.Unlock()
-
 	return replicas
+
 }
 
 // GetNReplicas returns the N "items" responsible for the specified key, in

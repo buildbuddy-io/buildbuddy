@@ -405,17 +405,28 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 }
 
 func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := s3c.key(ctx, d)
-	if err != nil {
-		return false, err
-	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	c, err := s3c.contains(ctx, k)
+	c, _, err := s3c.contains(ctx, d)
 	timer.ObserveContains(err)
 	return c, err
 }
 
-func (s3c *S3Cache) contains(ctx context.Context, key string) (bool, error) {
+func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	ok, size, err := s3c.contains(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
+	return &interfaces.CacheMetadata{SizeBytes: size}, nil
+}
+
+func (s3c *S3Cache) contains(ctx context.Context, d *repb.Digest) (bool, int64, error) {
+	key, err := s3c.key(ctx, d)
+	if err != nil {
+		return false, 0, err
+	}
 	params := &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
 		Key:    aws.String(key),
@@ -426,11 +437,15 @@ func (s3c *S3Cache) contains(ctx context.Context, key string) (bool, error) {
 	head, err := s3c.s3.HeadObjectWithContext(ctx, params)
 	if err != nil {
 		if isNotFoundErr(err) {
-			return false, nil
+			return false, 0, nil
 		}
-		return false, err
+		return false, 0, err
 	}
-	return s3c.bumpTTLIfStale(ctx, key, *head.LastModified), nil
+	bumped := s3c.bumpTTLIfStale(ctx, key, *head.LastModified)
+	if bumped {
+		return true, *head.ContentLength, nil
+	}
+	return false, 0, nil
 }
 
 func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

@@ -162,8 +162,8 @@ func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
 	ts = sizer.Estimate(ctx, task)
 
 	assert.Equal(
-		t, int64(917*1e6*1.10), ts.EstimatedMemoryBytes,
-		"subsequent mem estimate should equal recorded peak mem usage times a small multiplier")
+		t, int64(917*1e6), ts.EstimatedMemoryBytes,
+		"subsequent mem estimate should equal recorded peak mem usage")
 	assert.Equal(
 		t, int64(7.13/2*1000), ts.EstimatedMilliCpu,
 		"subsequent milliCPU estimate should equal recorded milliCPU")

@@ -394,6 +394,10 @@ func (rc *RaftCache) Contains(ctx context.Context, d *repb.Digest) (bool, error)
 	return len(missing) == 0, nil
 }
 
+func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
 func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	reqs := make(map[uint64]*rfpb.FindMissingRequest)
 	for _, d := range digests {

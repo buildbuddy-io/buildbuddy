@@ -32,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -659,22 +658,23 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 	return digest.NewResourceName(d, registryInstanceName)
 }
 
-// TODO(vadim): extend CAS API to allow us to query blob size
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
-	if v, ok := r.blobSizeLRU.Get(h.String()); ok {
-		return v.(int64), nil
-	}
-
-	out := io.Discard
 	rn := blobResourceName(h)
-	n, err := cachetools.GetBlobChunk(ctx, r.bsClient, rn, &cachetools.StreamBlobOpts{Offset: 0, Limit: 0}, out)
+	us, err := rn.UploadString()
 	if err != nil {
 		return 0, err
 	}
 
-	r.blobSizeLRU.Add(h.String(), n)
+	rsp, err := r.bsClient.QueryWriteStatus(ctx, &bspb.QueryWriteStatusRequest{ResourceName: us})
+	if err != nil {
+		return 0, err
+	}
 
-	return n, nil
+	if !rsp.GetComplete() {
+		return 0, status.UnavailableErrorf("blob %s is not available in cache", h)
+	}
+
+	return rsp.GetCommittedSize(), nil
 }
 
 func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, name, refName string) {
@@ -752,7 +752,6 @@ type registry struct {
 	casClient     repb.ContentAddressableStorageClient
 	bsClient      bspb.ByteStreamClient
 	manifestStore interfaces.Blobstore
-	blobSizeLRU   interfaces.LRU
 
 	workDeduper *dsingleflight.Coordinator
 }
@@ -989,14 +988,6 @@ func main() {
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 
-	blobSizeLRU, err := lru.NewLRU(&lru.Config{
-		MaxSize: 100_000,
-		SizeFn:  func(value interface{}) int64 { return 1 },
-	})
-	if err != nil {
-		log.Fatalf("could not initialize blob size LRU: %s", err)
-	}
-
 	if err := redis_client.RegisterDefault(env); err != nil {
 		log.Fatalf("could not initialize redis client: %s", err)
 	}
@@ -1005,7 +996,6 @@ func main() {
 		casClient:     casClient,
 		bsClient:      bsClient,
 		manifestStore: bs,
-		blobSizeLRU:   blobSizeLRU,
 		workDeduper:   dsingleflight.New(env.GetDefaultRedisClient()),
 	}
 	r.Start(env.GetServerContext(), healthChecker, env)
