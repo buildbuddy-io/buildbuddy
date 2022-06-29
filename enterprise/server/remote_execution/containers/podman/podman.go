@@ -136,6 +136,13 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 
 	imageStreamingEnabled := *imageStreamingRegistryHTTPTarget != "" && *imageStreamingRegistryGRPCTarget != ""
 	if imageStreamingEnabled {
+		storeConf := `
+no_background_fetch = true
+`
+		if _, err := disk.WriteFile(env.GetServerContext(), "/etc/stargz-store/config.toml", []byte(storeConf)); err != nil {
+			return nil, status.UnavailableErrorf("could not write stargzstore config: %s", err)
+		}
+
 		log.Infof("Starting stargz store")
 		cmd := exec.CommandContext(env.GetServerContext(), "stargz-store", "/var/lib/stargz-store/store")
 		logWriter := log.Writer("[stargzstore] ")
