@@ -83,7 +83,7 @@ func NewRegexPath(expr string) sbxPath {
 }
 
 func runSimpleCommand(ctx context.Context, command []string) *interfaces.CommandResult {
-	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, &container.ExecOpts{})
+	return commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, &commandutil.RunOpts{})
 }
 
 func computeSandboxingSupported(ctx context.Context) bool {
@@ -301,7 +301,7 @@ func (c *sandbox) runCmdInSandbox(ctx context.Context, command *repb.Command, wo
 
 	sandboxCmd := proto.Clone(command).(*repb.Command)
 	sandboxCmd.Arguments = append([]string{sandboxExecBinary, "-f", sandboxConfigPath}, command.Arguments...)
-	result = commandutil.Run(ctx, sandboxCmd, workDir, opts)
+	result = commandutil.Run(ctx, sandboxCmd, workDir, &commandutil.RunOpts{ExecOpts: opts})
 	return result
 }
 

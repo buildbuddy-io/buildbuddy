@@ -53,10 +53,12 @@ func TestRun_Stdio(t *testing.T) {
 		echo TestError >&2
 	`}}
 	var stdout, stderr bytes.Buffer
-	res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
-		Stdin:  strings.NewReader("TestInput\n"),
-		Stdout: &stdout,
-		Stderr: &stderr,
+	res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{
+		ExecOpts: &container.ExecOpts{
+			Stdin:  strings.NewReader("TestInput\n"),
+			Stdout: &stdout,
+			Stderr: &stderr,
+		},
 	})
 
 	assert.NoError(t, res.Error)
@@ -81,9 +83,11 @@ func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
 		defer inr.Close()
 		defer outw.Close()
 
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
-			Stdin:  inr,
-			Stdout: outw,
+		res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{
+			ExecOpts: &container.ExecOpts{
+				Stdin:  inr,
+				Stdout: outw,
+			},
 		})
 		assert.Empty(t, res.Stdout)
 	}()
@@ -143,7 +147,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 
 	{
 		cmd := &repb.Command{Arguments: []string{"./command_not_found_in_working_dir"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+		res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -153,7 +157,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	}
 	{
 		cmd := &repb.Command{Arguments: []string{"command_not_found_in_PATH"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+		res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -169,7 +173,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	testfs.WriteAllFileContents(t, wd, map[string]string{"non_executable_file": ""})
 
 	cmd := &repb.Command{Arguments: []string{"./non_executable_file"}}
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &commandutil.RunOpts{})
 
 	assert.Error(t, res.Error)
 	assert.True(
@@ -190,7 +194,7 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &commandutil.RunOpts{})
 
 	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -211,14 +215,55 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &commandutil.RunOpts{})
 
 	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
 	assert.Equal(t, "stderr\n", string(res.Stderr))
 }
 
+func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{
+		"python3", "-c", `
+import time
+arr = b'1' * int(1e9)
+time.sleep(1)
+`,
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{EnableStats: true})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(t, res.UsageStats.PeakMemoryBytes, int64(1e9))
+	require.LessOrEqual(t, res.UsageStats.PeakMemoryBytes, int64(1.1e9))
+}
+
+func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{
+		"python3", "-c", `
+import time
+end = time.time() + 3
+while time.time() < end:
+    pass
+`,
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{EnableStats: true})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(t, res.UsageStats.GetCpuNanos(), int64(2.6e9), "expecting around 3s of CPU usage")
+	require.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(3.4e9), "expecting around 3s of CPU usage")
+}
+
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+	return commandutil.Run(ctx, cmd, ".", &commandutil.RunOpts{})
 }

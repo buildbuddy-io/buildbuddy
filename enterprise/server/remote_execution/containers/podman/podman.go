@@ -779,7 +779,7 @@ func runPodman(ctx context.Context, subCommand string, opts *container.ExecOpts,
 	}
 
 	command = append(command, args...)
-	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, opts)
+	result := commandutil.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, &commandutil.RunOpts{ExecOpts: opts})
 	return result
 }
 
