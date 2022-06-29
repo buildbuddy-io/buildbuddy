@@ -29,6 +29,14 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
+
+	// Parameters for stats polling. The poll interval starts out at
+	// statsInitialPollInterval and is multiplied by statsPollBackoff after each
+	// attempt, up to statsMaxPollInterval.
+
+	statsInitialPollInterval = 25 * time.Millisecond
+	statsPollBackoff         = 1.25
+	statsMaxPollInterval     = 1000 * time.Millisecond
 )
 
 var (
@@ -194,26 +202,24 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunWith
 	return <-statsCh, nil
 }
 
-func collectStats(pid int, done <-chan struct{}) *container.Stats {
+func collectStats(pid int, processTerminated <-chan struct{}) *container.Stats {
 	ts := NewTreeStats(pid)
 	// Most processes are short-lived so we need a fast poll rate if we want
 	// to increase the probability of getting at least one sample. But
 	// polling is expensive: a 50ms poll rate consumes around 10% of a CPU
 	// on Linux (and it's even worse on macOS). So we take a hybrid approach
 	// here: start off polling fast but slow down over time.
-	pollInterval := 25 * time.Millisecond
-	const pollBackoff = 1.25
-	const maxPollInterval = 1000 * time.Millisecond
+	pollInterval := statsInitialPollInterval
 	for {
 		select {
-		case <-done:
+		case <-processTerminated:
 			return ts.Total()
 		case <-time.After(pollInterval):
 			ts.Update() // ignore error
 		}
-		pollInterval = time.Duration(float64(pollInterval) * pollBackoff)
-		if pollInterval > maxPollInterval {
-			pollInterval = maxPollInterval
+		pollInterval = time.Duration(float64(pollInterval) * statsPollBackoff)
+		if pollInterval > statsMaxPollInterval {
+			pollInterval = statsMaxPollInterval
 		}
 	}
 }
@@ -317,9 +323,9 @@ func (t *TreeStats) Update() error {
 	return nil
 }
 
-// Total returns a ProcStat with PeakMemoryBytes set to match the peak total
-// memory observed, and CPUNanos to match the total CPU usage observed across
-// all processes in the tree.
+// Total returns stats with PeakMemoryBytes set to match the peak total memory
+// observed, and CPUNanos to match the total CPU usage observed across all
+// processes in the tree.
 func (t *TreeStats) Total() *container.Stats {
 	totalCPUNanos := int64(0)
 	for _, cpuNanos := range t.CPUNanosByPid {
