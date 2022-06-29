@@ -282,45 +282,55 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	ch := disk_cache.ScanDiskDirectory(diskDir)
-	batch := p.db.NewBatch()
 
-	inserted := 0
-	start := time.Now()
-	for fileMetadata := range ch {
-		protoBytes, err := proto.Marshal(fileMetadata)
-		if err != nil {
-			return err
-		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
-		if err != nil {
-			return err
-		}
+	eg := &errgroup.Group{}
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			batch := p.db.NewBatch()
+			inserted := 0
+			start := time.Now()
+			for fileMetadata := range ch {
+				protoBytes, err := proto.Marshal(fileMetadata)
+				if err != nil {
+					return err
+				}
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
 
-		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-			return err
-		}
-		p.updateAtime(fileMetadataKey)
-		inserted += 1
+				if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
+					return err
+				}
+				p.updateAtime(fileMetadataKey)
+				inserted += 1
 
-		if inserted%10000 == 0 {
-			if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-				return err
+				if inserted%10000 == 0 {
+					if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+						return err
+					}
+					batch = p.db.NewBatch()
+				}
+				if inserted%1e6 == 0 {
+					log.Printf("Pebble Cache: migration progress [%d files in %s]...", inserted, time.Since(start))
+				}
 			}
-			batch = p.db.NewBatch()
-		}
-		if inserted%1e6 == 0 {
-			log.Printf("Pebble Cache: migration progress [%d files in %s]...", inserted, time.Since(start))
-		}
+			if batch.Count() > 0 {
+				if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
+					return err
+				}
+			}
+			log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
+			return nil
+		})
 	}
-	if batch.Count() > 0 {
-		if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-			return err
-		}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
+
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
 	return nil
 }
 

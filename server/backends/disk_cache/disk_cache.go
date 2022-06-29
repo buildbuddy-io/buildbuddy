@@ -651,7 +651,7 @@ func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType interf
 }
 
 func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
-	scanned := make(chan *rfpb.FileMetadata, 10)
+	scanned := make(chan *rfpb.FileMetadata, 100)
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
