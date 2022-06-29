@@ -310,22 +310,22 @@ func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testi
 // Returns a python script that consumes 1 CPU core continuously for the given
 // duration.
 func useCPUPythonScript(dur time.Duration) string {
-	return `
+	return fmt.Sprintf(`
 import time
-end = time.time() + ` + fmt.Sprintf("%f", dur.Seconds()) + `
+end = time.time() + %f
 while time.time() < end:
     pass
-`
+`, dur.Seconds())
 }
 
 // Returns a python script that uses the given amount of resident memory and
 // holds onto that memory for the given duration.
 func useMemPythonScript(memBytes int64, dur time.Duration) string {
-	return `
+	return fmt.Sprintf(`
 import time
-arr = b'1' * ` + fmt.Sprintf("%d", memBytes) + `
-time.sleep(` + fmt.Sprintf("%f", dur.Seconds()) + `)
-`
+arr = b'1' * %d
+time.sleep(%f)
+`, memBytes, dur.Seconds())
 }
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
