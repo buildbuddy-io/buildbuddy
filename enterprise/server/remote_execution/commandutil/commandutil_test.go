@@ -3,6 +3,7 @@ package commandutil_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -224,11 +225,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 
 func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{
-		"python3", "-c", `
-import time
-arr = b'1' * int(1e9)
-time.sleep(1)
-`,
+		"python3", "-c", useMemPythonScript(1e9, 2*time.Second),
 	}}
 
 	ctx := context.Background()
@@ -238,18 +235,17 @@ time.sleep(1)
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
-	require.GreaterOrEqual(t, res.UsageStats.PeakMemoryBytes, int64(1e9))
-	require.LessOrEqual(t, res.UsageStats.PeakMemoryBytes, int64(1.1e9))
+	require.GreaterOrEqual(
+		t, res.UsageStats.PeakMemoryBytes, int64(1e9),
+		"expected at least 1GB of memory usage")
+	require.LessOrEqual(
+		t, res.UsageStats.PeakMemoryBytes, int64(1.1e9),
+		"expected not much more than 1GB of memory usage")
 }
 
 func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{
-		"python3", "-c", `
-import time
-end = time.time() + 3
-while time.time() < end:
-    pass
-`,
+		"python3", "-c", useCPUPythonScript(3 * time.Second),
 	}}
 
 	ctx := context.Background()
@@ -259,8 +255,77 @@ while time.time() < end:
 
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
-	require.GreaterOrEqual(t, res.UsageStats.GetCpuNanos(), int64(2.6e9), "expecting around 3s of CPU usage")
-	require.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(3.4e9), "expecting around 3s of CPU usage")
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(2.6e9),
+		"expected around 3s of CPU usage")
+	require.LessOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(3.4e9),
+		"expected around 3s of CPU usage")
+}
+
+func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testing.T) {
+	workDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"cpu1.py": useCPUPythonScript(3 * time.Second),
+		"cpu2.py": useCPUPythonScript(1 * time.Second),
+		"mem1.py": useMemPythonScript(1e9, 3*time.Second),
+		"mem2.py": useMemPythonScript(500e6, 2*time.Second),
+	})
+	// Run 3 python processes concurrently, staggering them a bit to  make sure
+	// we measure over time. Wrap some with 'sh -c' to test that we can handle
+	// grandchildren as well.
+	cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+		python3 ./cpu1.py &
+		sleep 0.1
+		sh -c 'python3 ./mem1.py' &
+		sleep 0.1
+		sh -c 'python3 ./cpu2.py' &
+		sleep 0.1
+		python3 ./mem2.py &
+		wait
+		`,
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, workDir, &commandutil.RunOpts{EnableStats: true})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(3.6e9),
+		"expected around 4s of CPU usage")
+	require.LessOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(4.4e9),
+		"expected around 4s of CPU usage")
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(1500e6),
+		"expected at least 1.5GB peak memory")
+	require.LessOrEqual(
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(1700e6),
+		"expected not much more than 1.5GB peak memory")
+}
+
+// Returns a python script that consumes 1 CPU core continuously for the given
+// duration.
+func useCPUPythonScript(dur time.Duration) string {
+	return `
+import time
+end = time.time() + ` + fmt.Sprintf("%f", dur.Seconds()) + `
+while time.time() < end:
+    pass
+`
+}
+
+// Returns a python script that uses the given amount of resident memory and
+// holds onto that memory for the given duration.
+func useMemPythonScript(memBytes int64, dur time.Duration) string {
+	return `
+import time
+arr = b'1' * ` + fmt.Sprintf("%d", memBytes) + `
+time.sleep(` + fmt.Sprintf("%f", dur.Seconds()) + `)
+`
 }
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
