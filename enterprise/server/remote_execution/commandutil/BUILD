@@ -12,7 +12,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_mitchellh_go_ps//:go-ps",
-        "@com_github_shirou_gopsutil//process",
+        "@com_github_shirou_gopsutil_v3//process",
     ],
 )
 

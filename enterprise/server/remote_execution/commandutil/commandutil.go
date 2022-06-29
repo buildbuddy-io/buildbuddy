@@ -18,7 +18,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
-	procutil "github.com/shirou/gopsutil/process"
+	procutil "github.com/shirou/gopsutil/v3/process"
 )
 
 const (
