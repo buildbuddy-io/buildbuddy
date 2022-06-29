@@ -23,6 +23,7 @@ jobs:
           mkdir website/build
           cd website/build
           tar -xf ../../bazel-bin/website/website.tar
+          touch .nojekyll
 
       - name: Deploy Website 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
