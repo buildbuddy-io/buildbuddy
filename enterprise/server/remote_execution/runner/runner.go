@@ -384,6 +384,10 @@ func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats
 	return nil
 }
 
+func (r *commandRunner) GetIsolationType() string {
+	return r.PlatformProperties.WorkloadIsolationType
+}
+
 // shutdown runs any manual cleanup required to clean up processes before
 // removing a runner from the pool. This has no effect for isolation types
 // that fully isolate all processes started by the runner and remove them
