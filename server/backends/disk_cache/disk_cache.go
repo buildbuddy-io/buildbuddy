@@ -1021,7 +1021,7 @@ func (p *partition) liveAdd(fr *fileRecord) {
 }
 
 func (p *partition) liveRemove(fr *fileRecord) {
-	if p.addChan == nil {
+	if p.removeChan == nil {
 		return
 	}
 	if fm, err := p.makeFileMetadata(fr); err != nil {
