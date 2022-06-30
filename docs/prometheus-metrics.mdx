@@ -1,0 +1,16 @@
+---
+id: prometheus-metrics
+title: Prometheus Metrics
+sidebar_label: Prometheus Metrics
+---
+
+import Metrics from "../bazel-bin/server/metrics/docs.mdx";
+
+BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
+[four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
+latency, traffic, errors, and saturation.
+
+To view these metrics in a live-updating dashboard, we recommend using a tool
+like [Grafana](https://grafana.com).
+
+<Metrics />

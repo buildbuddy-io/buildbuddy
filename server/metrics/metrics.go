@@ -6,13 +6,10 @@ import (
 )
 
 // Note: the doc generator script (`generate_docs.py`) in this directory
-// generates documentation from this file.
+// generates documentation from this file at build time.
 //
 // The doc generator treats comments starting with 3 slashes as markdown docs,
 // as well as the 'Help' field for each metric.
-//
-// Run `python3 generate_docs.py --watch` to interactively generate the
-// docs as you edit this file.
 
 const (
 	// Label constants.
