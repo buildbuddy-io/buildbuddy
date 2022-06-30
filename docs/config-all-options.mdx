@@ -1,7 +1,7 @@
 ---
-id: config-options-listings
-title: Listings For All BuildBuddy Options
-sidebar_label: Options Listings
+id: config-all-options
+title: All Options
+sidebar_label: All Options
 ---
 
 import FreeServerConfig from '../bazel-bin/server/cmd/buildbuddy/yaml_doc/buildbuddy_server_documented_defaults.mdx'
@@ -42,7 +42,7 @@ We see that `cache.disk.partitions` is configured as a list of `disk.Partition`.
 ```yaml
 cache:
     disk:
-        partitions: [] # type: []disk.Partition
+        partitions:
         - id: "1GB"
           max_size_bytes: 1073741824
         - id: "2GB":
