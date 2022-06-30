@@ -172,6 +172,7 @@ func Register(env environment.Env) error {
 		}
 		adds, removes := dc.LiveUpdatesChan()
 		c.ProcessLiveUpdates(adds, removes)
+		log.Printf("Pebble Cache: mirroring active disk cache")
 
 		// Return early if we're mirroring the disk cache; we don't
 		// want to override the disk cache we're mirroring in the env.
@@ -348,28 +349,31 @@ func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchE
 }
 
 func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata) error {
-	p.eg.Go(func() error {
-		return p.batchProcessCh(adds, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-			protoBytes, err := proto.Marshal(fileMetadata)
-			if err != nil {
-				return err
-			}
-			fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	for i := 0; i < 3; i++ {
+		p.eg.Go(func() error {
+			return p.batchProcessCh(adds, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				protoBytes, err := proto.Marshal(fileMetadata)
+				if err != nil {
+					return err
+				}
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+			})
 		})
-	})
-	p.eg.Go(func() error {
-		return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-			fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
+		p.eg.Go(func() error {
+			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
+			})
 		})
-	})
+	}
+
 	return nil
 }
 
