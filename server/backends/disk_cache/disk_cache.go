@@ -616,7 +616,6 @@ func (p *partition) initializeCache() error {
 		<-finishedFileChannel
 		for _, record := range inFlightRecords {
 			p.lruAdd(record)
-			p.liveAdd(record)
 		}
 		inFlightRecords = nil
 		log.Infof("DiskCache partition %q: loaded %d files in %s", p.id, len(records), time.Since(start))
