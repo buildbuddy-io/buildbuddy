@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/quota",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/backends/pubsub",
         "//proto:quota_go_proto",
         "//server/environment",
         "//server/interfaces",
@@ -30,6 +31,7 @@ go_test(
         "//proto:quota_go_proto",
         "//server/environment",
         "//server/tables",
+        "//server/testutil/pubsub",
         "//server/testutil/testenv",
         "//server/util/query_builder",
         "@com_github_google_go_cmp//cmp",

@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/google/go-cmp/cmp"
@@ -24,8 +25,8 @@ type testBucket struct {
 	config *tables.QuotaBucket
 }
 
-func (tb *testBucket) Config() *tables.QuotaBucket {
-	return tb.config
+func (tb *testBucket) Config() tables.QuotaBucket {
+	return *tb.config
 }
 
 func (tb *testBucket) Allow(ctx context.Context, key string, quantity int64) (bool, error) {
@@ -85,7 +86,7 @@ func fetchAllQuotaGroups(t *testing.T, env *testenv.TestEnv, ctx context.Context
 	return res
 }
 
-func TestQuotaManagerFindRateLimiter(t *testing.T) {
+func TestQuotaManagerFindBucket(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
 
@@ -117,26 +118,26 @@ func TestQuotaManagerFindRateLimiter(t *testing.T) {
 	result = db.Create(quotaGroup)
 	require.NoError(t, result.Error)
 
-	qm, err := newQuotaManager(env, createTestBucket)
+	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
 
 	testCases := []struct {
 		name       string
 		quotaKey   string
 		namespace  string
-		wantConfig *tables.QuotaBucket
+		wantConfig tables.QuotaBucket
 	}{
 		{
 			name:       "restricted bucket",
 			quotaKey:   "GR123456",
 			namespace:  "remote_execution",
-			wantConfig: buckets[1],
+			wantConfig: *buckets[1],
 		},
 		{
 			name:       "default bucket",
 			quotaKey:   "GR0000",
 			namespace:  "remote_execution",
-			wantConfig: buckets[0],
+			wantConfig: *buckets[0],
 		},
 	}
 
@@ -181,7 +182,7 @@ func TestGetNamespace(t *testing.T) {
 	result = db.Create(quotaGroup)
 	require.NoError(t, result.Error)
 
-	qm, err := newQuotaManager(env, createTestBucket)
+	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
 
 	resp, err := qm.GetNamespace(ctx, &qpb.GetNamespaceRequest{})
@@ -310,7 +311,7 @@ func TestModifyNamespace_AddBucket(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		qm, err := newQuotaManager(env, createTestBucket)
+		qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 		require.NoError(t, err)
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := qm.ModifyNamespace(ctx, tc.req)
@@ -343,10 +344,10 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 	result := db.Create(&bucket)
 	require.NoError(t, result.Error)
 	testCases := []struct {
-		name        string
-		req         *qpb.ModifyNamespaceRequest
-		wantError   bool
-		wantBuckets []*tables.QuotaBucket
+		name       string
+		req        *qpb.ModifyNamespaceRequest
+		wantError  bool
+		wantBucket *tables.QuotaBucket
 	}{
 		{
 			name: "modify a non-existent bucket",
@@ -362,14 +363,12 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 				},
 			},
 			wantError: true,
-			wantBuckets: []*tables.QuotaBucket{
-				{
-					Namespace:          "remote_execution",
-					Name:               "default",
-					NumRequests:        100,
-					PeriodDurationUsec: int64(time.Second / time.Microsecond),
-					MaxBurst:           105,
-				},
+			wantBucket: &tables.QuotaBucket{
+				Namespace:          "remote_execution",
+				Name:               "default",
+				NumRequests:        100,
+				PeriodDurationUsec: int64(time.Second / time.Microsecond),
+				MaxBurst:           105,
 			},
 		},
 		{
@@ -386,19 +385,17 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 				},
 			},
 			wantError: false,
-			wantBuckets: []*tables.QuotaBucket{
-				{
-					Namespace:          "remote_execution",
-					Name:               "default",
-					NumRequests:        105,
-					PeriodDurationUsec: int64(time.Second / time.Microsecond),
-					MaxBurst:           10,
-				},
+			wantBucket: &tables.QuotaBucket{
+				Namespace:          "remote_execution",
+				Name:               "default",
+				NumRequests:        105,
+				PeriodDurationUsec: int64(time.Second / time.Microsecond),
+				MaxBurst:           10,
 			},
 		},
 	}
 	for _, tc := range testCases {
-		qm, err := newQuotaManager(env, createTestBucket)
+		qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 		require.NoError(t, err)
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := qm.ModifyNamespace(ctx, tc.req)
@@ -411,7 +408,12 @@ func TestModifyNamespace_UpdateBucket(t *testing.T) {
 			require.NoError(t, result.Error)
 			// use sortProtos to ignore orders
 			sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
-			assert.Empty(t, cmp.Diff(tc.wantBuckets, got, protocmp.Transform(), sortProtos))
+			assert.Empty(t, cmp.Diff([]*tables.QuotaBucket{tc.wantBucket}, got, protocmp.Transform(), sortProtos))
+			time.Sleep(500 * time.Millisecond)
+			b := qm.findBucket("remote_execution", "GR123456")
+			config := b.Config()
+			config.Model = tables.Model{}
+			assert.Empty(t, cmp.Diff(config, *tc.wantBucket, protocmp.Transform()))
 		})
 	}
 }
@@ -503,7 +505,7 @@ func TestModifyNamespace_RemoveBucket(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		qm, err := newQuotaManager(env, createTestBucket)
+		qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 		require.NoError(t, err)
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := qm.ModifyNamespace(ctx, tc.req)
@@ -582,7 +584,7 @@ func TestRemoveNamespace(t *testing.T) {
 	result = db.Create(&quotaGroups)
 	require.NoError(t, result.Error)
 
-	qm, err := newQuotaManager(env, createTestBucket)
+	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
 
 	_, err = qm.RemoveNamespace(ctx, &qpb.RemoveNamespaceRequest{
@@ -769,7 +771,7 @@ func TestQuotaManagerApplyBucket(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		qm, err := newQuotaManager(env, createTestBucket)
+		qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 		require.NoError(t, err)
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := qm.ApplyBucket(ctx, tc.req)
