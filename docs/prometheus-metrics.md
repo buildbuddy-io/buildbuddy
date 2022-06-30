@@ -72,7 +72,7 @@ Number of [build events](https://docs.bazel.build/versions/master/build-event-pr
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 
 #### Examples
 
@@ -232,9 +232,12 @@ sum(buildbuddy_remote_cache_duplicate_writes_bytes)
 
 Number of actions executed remotely.
 
+This only includes actions which reached the execution phase. If an action fails before execution (for example, if it fails authentication) then this metric is not incremented.
+
 #### Labels
 
 - **exit_code**: Process exit code of an executed action.
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code) in human-readable format, such as "OK" or "NotFound".
 
 #### Examples
 
@@ -486,7 +489,7 @@ Number of files read from the blobstore.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
 ### **`buildbuddy_blobstore_read_size_bytes`** (Histogram)
@@ -516,7 +519,7 @@ Number of files written to the blobstore.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
 ```promql
@@ -546,7 +549,7 @@ Number of files deleted from the blobstore.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **blobstore_type**: `gcs` (Google Cloud Storage), `aws_s3`, or `disk`.
 
 ### **`buildbuddy_blobstore_delete_duration_usec`** (Histogram)
@@ -760,7 +763,7 @@ The time spent handling each build event in **microseconds**.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 
 ### Webhooks
 
@@ -797,7 +800,7 @@ Number of cache get requests.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
@@ -835,7 +838,7 @@ This is incremented once for each started stream, **not** for each chunk in the 
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
@@ -872,7 +875,7 @@ Number of cache set requests.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
@@ -919,7 +922,7 @@ This is incremented once for each started stream, **not** for each chunk in the 
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
@@ -962,7 +965,7 @@ Number of deletes from the cache.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 
@@ -981,7 +984,7 @@ Number of `contains(key)` requests made to the cache.
 
 #### Labels
 
-- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+- **status**: Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code). This is a numeric value; any non-zero code indicates an error.
 - **tier**: Cache tier: `memory` or `cloud`. This label can be used to write Prometheus queries that don't break if the cache backend is swapped out for a different backend.
 - **backend**: Cache backend: `gcs` (Google Cloud Storage), `aws_s3`, or `redis`.
 

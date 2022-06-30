@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -305,7 +306,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
-		metrics.ExitCodeLabel: fmt.Sprintf("%d", actionResult.ExitCode),
+		metrics.ExitCodeLabel:            fmt.Sprintf("%d", actionResult.ExitCode),
+		metrics.StatusHumanReadableLabel: gstatus.Code(cmdResult.Error).String(),
 	}).Inc()
 	metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
 	metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
