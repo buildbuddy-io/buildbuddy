@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"flag"
+	"fmt"
 	"math"
 	"net"
 	"strings"
@@ -178,6 +179,7 @@ func validateBucket(bucket *qpb.Bucket) error {
 }
 
 type Bucket interface {
+	// Config returns a copy of the QuotaBucket. Used for testing.
 	Config() tables.QuotaBucket
 	Allow(ctx context.Context, key string, quantity int64) (bool, error)
 }
@@ -585,7 +587,7 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 }
 
 func (qm *QuotaManager) notifyListeners() {
-	err := qm.ps.Publish(qm.env.GetServerContext(), pubSubChannelName, "updated")
+	err := qm.ps.Publish(qm.env.GetServerContext(), pubSubChannelName, fmt.Sprintf("updated-%d", time.Now().UnixNano()))
 	if err != nil {
 		alert.UnexpectedEvent("quota-cannot-notify", "quota manager failed to publish: %s", err)
 	}
