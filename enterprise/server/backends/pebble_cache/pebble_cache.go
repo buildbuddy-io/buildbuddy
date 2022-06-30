@@ -41,13 +41,16 @@ import (
 )
 
 var (
-	rootDirectory             = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
-	blockCacheSizeBytes       = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
+	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
+	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+
+	// TODO(tylerw): remove most of these flags post-migration.
 	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
-	partitions                = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
-	partitionMappings         = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.pebble.mirror_active_disk_cache", "cache.disk.enable_live_updates")
 )
 
 // TODO:
@@ -118,22 +121,16 @@ func Register(env environment.Env) error {
 	if *rootDirectory == "" {
 		return nil
 	}
-	if env.GetCache() != nil {
-		log.Warningf("Overriding configured cache with pebble_cache.")
+	if *clearCacheBeforeMigration {
+		if err := os.RemoveAll(*rootDirectory); err != nil {
+			return err
+		}
 	}
 	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
 		return err
 	}
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
-		if *clearCacheBeforeMigration {
-			if err := os.RemoveAll(*rootDirectory); err != nil {
-				return err
-			}
-			if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
-				return err
-			}
-		}
 		// Ensure a pebble DB doesn't already exist if we are migrating.
 		// But allow anyway if forceAllowMigration was set.
 		desc, err := pebble.Peek(*rootDirectory, vfs.Default)
@@ -162,11 +159,30 @@ func Register(env environment.Env) error {
 			return err
 		}
 	}
-	env.SetCache(c)
 	c.Start()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return c.Stop()
 	})
+
+	if *mirrorActiveDiskCache {
+		dci := env.GetCache()
+		dc, ok := dci.(*disk_cache.DiskCache)
+		if !ok {
+			return status.FailedPreconditionError("Cannot mirror disk cache: none was set")
+		}
+		adds, removes := dc.LiveUpdatesChan()
+		c.ProcessLiveUpdates(adds, removes)
+		log.Printf("Pebble Cache: mirroring active disk cache")
+
+		// Return early if we're mirroring the disk cache; we don't
+		// want to override the disk cache we're mirroring in the env.
+		return nil
+	}
+
+	if env.GetCache() != nil {
+		log.Warningf("Overriding configured cache with pebble_cache.")
+	}
+	env.SetCache(c)
 	return nil
 }
 
@@ -282,11 +298,10 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	ch := disk_cache.ScanDiskDirectory(diskDir)
-	batch := p.db.NewBatch()
 
-	inserted := 0
 	start := time.Now()
-	for fileMetadata := range ch {
+	inserted := 0
+	err := p.batchProcessCh(ch, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
 		protoBytes, err := proto.Marshal(fileMetadata)
 		if err != nil {
 			return err
@@ -295,32 +310,72 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 		if err != nil {
 			return err
 		}
-
-		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-			return err
-		}
-		p.updateAtime(fileMetadataKey)
 		inserted += 1
-
-		if inserted%10000 == 0 {
-			if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-				return err
-			}
-			batch = p.db.NewBatch()
-		}
-		if inserted%1e6 == 0 {
-			log.Printf("Pebble Cache: migration progress [%d files in %s]...", inserted, time.Since(start))
-		}
-	}
-	if batch.Count() > 0 {
-		if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-			return err
-		}
+		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	})
+	if err != nil {
+		return err
 	}
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
 	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
+	return nil
+}
+
+type batchEditFn func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error
+
+func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchEditFn) error {
+	batch := p.db.NewBatch()
+	delta := 0
+	for fileMetadata := range ch {
+		delta += 1
+		if err := editFn(batch, fileMetadata); err != nil {
+			log.Warningf("Error editing batch: %s", err)
+			continue
+		}
+		if batch.Count() > 100000 {
+			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+				log.Warningf("Error comitting batch: %s", err)
+				continue
+			}
+			batch = p.db.NewBatch()
+		}
+	}
+	if batch.Count() > 0 {
+		if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+			log.Warningf("Error comitting batch: %s", err)
+		}
+	}
+	return nil
+}
+
+func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata) error {
+	for i := 0; i < 3; i++ {
+		p.eg.Go(func() error {
+			return p.batchProcessCh(adds, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				protoBytes, err := proto.Marshal(fileMetadata)
+				if err != nil {
+					return err
+				}
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+			})
+		})
+		p.eg.Go(func() error {
+			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
+			})
+		})
+	}
+
 	return nil
 }
 
