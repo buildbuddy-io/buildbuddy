@@ -331,18 +331,20 @@ func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchE
 	for fileMetadata := range ch {
 		delta += 1
 		if err := editFn(batch, fileMetadata); err != nil {
-			return err
+			log.Warningf("Error editing batch: %s", err)
+			continue
 		}
-		if delta%100000 == 0 {
+		if batch.Count() > 100000 {
 			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-				return err
+				log.Warningf("Error comitting batch: %s", err)
+				continue
 			}
 			batch = p.db.NewBatch()
 		}
 	}
 	if batch.Count() > 0 {
 		if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-			return err
+			log.Warningf("Error comitting batch: %s", err)
 		}
 	}
 	return nil
