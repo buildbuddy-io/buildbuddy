@@ -11,6 +11,7 @@ SRCS = glob([
     "yarn.lock",
     "sidebars.js",
     "//server/cmd/buildbuddy/yaml_doc:generate_mdx",
+    "//server/metrics:generate_mdx",
     "//enterprise/server/cmd/server/yaml_doc:generate_mdx",
     "//enterprise/server/cmd/executor/yaml_doc:generate_mdx",
 ]
