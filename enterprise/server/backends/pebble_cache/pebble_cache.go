@@ -901,6 +901,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	}
 
 	// Start scanning the AC.
+	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
 	for i := 0; i < 10; i++ {
 		kr := append(e.acPrefix, []byte(fmt.Sprintf("%d", i))...)
 		start, end := keyRange(kr)
@@ -908,6 +909,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	}
 
 	// Start scanning the CAS.
+	// CAS keys look like /partitionID/cas/digesthash(sha-256)
 	for i := 0; i < 16; i++ {
 		kr := append(e.casPrefix, []byte(fmt.Sprintf("%x", i))...)
 		start, end := keyRange(kr)
