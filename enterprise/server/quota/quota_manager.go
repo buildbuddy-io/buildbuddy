@@ -37,15 +37,12 @@ const (
 	// you also need to update the QuotaBucket and QuotaGroup table.
 	defaultBucketName = "default"
 
-	// The prefix we use to all quota-related redis entries.
+	// The prefix we use for all quota-related redis entries.
 	redisQuotaKeyPrefix = "quota"
 
 	// The channel name where quota manager publishes and subscribes the messages
 	// when there is an update.
-	pubSubChannelName = "quota"
-
-	// How often we will check the updates to the quota config.
-	checkUpdatePeriod = 30 * time.Minute
+	pubSubChannelName = "quota-change-notifications"
 )
 
 type assignedBucket struct {
@@ -411,7 +408,7 @@ func (qm *QuotaManager) RemoveNamespace(ctx context.Context, req *qpb.RemoveName
 	if err != nil {
 		return nil, err
 	}
-	qm.notifyUpdates()
+	qm.notifyListeners()
 	return &qpb.RemoveNamespaceResponse{}, nil
 }
 
@@ -480,7 +477,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 		return nil, err
 	}
 
-	qm.notifyUpdates()
+	qm.notifyListeners()
 
 	return &qpb.ApplyBucketResponse{}, nil
 }
@@ -496,23 +493,23 @@ func (qm *QuotaManager) ModifyNamespace(ctx context.Context, req *qpb.ModifyName
 
 	if req.GetAddBucket() != nil {
 		if err := qm.addBucket(ctx, req.GetNamespace(), req.GetAddBucket()); err != nil {
-			return &qpb.ModifyNamespaceResponse{}, err
+			return nil, err
 		}
 	}
 
 	if req.GetUpdateBucket() != nil {
 		if err := qm.updateBucket(ctx, req.GetNamespace(), req.GetUpdateBucket()); err != nil {
-			return &qpb.ModifyNamespaceResponse{}, err
+			return nil, err
 		}
 	}
 
 	if req.GetRemoveBucket() != "" {
 		if err := qm.removeBucket(ctx, req.GetNamespace(), req.GetRemoveBucket()); err != nil {
-			return &qpb.ModifyNamespaceResponse{}, err
+			return nil, err
 		}
 	}
 
-	qm.notifyUpdates()
+	qm.notifyListeners()
 
 	return &qpb.ModifyNamespaceResponse{}, nil
 }
@@ -523,11 +520,7 @@ func (qm *QuotaManager) addBucket(ctx context.Context, namespace string, bucket 
 	}
 	row := bucketToRow(namespace, bucket)
 
-	err := qm.env.GetDBHandle().DB(ctx).Create(&row).Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return qm.env.GetDBHandle().DB(ctx).Create(&row).Error
 }
 
 func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, bucket *qpb.Bucket) error {
@@ -543,7 +536,7 @@ func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, buck
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return status.InvalidArgumentErrorf("bucket %s doesn't exist", bucket.GetName())
+		return status.InvalidArgumentErrorf("bucket %q doesn't exist", bucket.GetName())
 	}
 	return nil
 }
@@ -559,7 +552,6 @@ func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, buck
 }
 
 func (qm *QuotaManager) reloadNamespaces() (map[string]*namespace, error) {
-	log.Info("reload namespacs")
 	config, err := fetchConfigFromDB(qm.env)
 	if err != nil {
 		return nil, err
@@ -584,7 +576,7 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 		<-pubsubChan
 		namespaces, err := qm.reloadNamespaces()
 		if err != nil {
-			log.Errorf("failed to reload namespaces: %s", err)
+			alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
 		}
 		qm.mu.Lock()
 		qm.namespaces = namespaces
@@ -592,9 +584,9 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	}
 }
 
-func (qm *QuotaManager) notifyUpdates() {
+func (qm *QuotaManager) notifyListeners() {
 	err := qm.ps.Publish(qm.env.GetServerContext(), pubSubChannelName, "updated")
 	if err != nil {
-		log.Warningf("QuotaManager: error publishing: %s", err)
+		alert.UnexpectedEvent("quota-cannot-notify", "quota manager failed to publish: %s", err)
 	}
 }
