@@ -884,7 +884,6 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	totalAcCount := int64(0)
 
 	goScanRange := func(start, end []byte) {
-		log.Printf("Scanning from %q to %q", start, end)
 		eg.Go(func() error {
 			blobSizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
 			if err != nil {
