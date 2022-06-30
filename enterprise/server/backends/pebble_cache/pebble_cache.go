@@ -332,7 +332,7 @@ func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchE
 		if err := editFn(batch, fileMetadata); err != nil {
 			return err
 		}
-		if delta%10000 == 0 {
+		if delta%100000 == 0 {
 			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
 				return err
 			}
