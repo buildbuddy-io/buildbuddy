@@ -256,25 +256,46 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			PartitionId: defaultPartitionID,
 		},
 	}
+
+	peMu := sync.Mutex{}
+	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
-		blobDir := pc.partitionBlobDir(part.ID)
-		if err := disk.EnsureDirectoryExists(blobDir); err != nil {
-			return nil, err
-		}
-		pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes)
-		if err != nil {
-			return nil, err
-		}
-		pc.evictors[i] = pe
+		i := i
+		part := part
+		eg.Go(func() error {
+			blobDir := pc.partitionBlobDir(part.ID)
+			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
+				return err
+			}
+			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes)
+			if err != nil {
+				return err
+			}
+			peMu.Lock()
+			pc.evictors[i] = pe
+			peMu.Unlock()
+			return nil
+		})
 	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	statusz.AddSection("pebble_cache", "On disk LRU cache", pc)
 	return pc, nil
 }
 
+func keyRange(key []byte) ([]byte, []byte) {
+	start := make([]byte, len(key))
+	end := make([]byte, len(key))
+	copy(start, key)
+	copy(end, key)
+	return append(start, constants.MinByte), append(end, constants.MaxByte)
+}
+
 func partitionLimits(partID string) ([]byte, []byte) {
-	start := append([]byte(partID), constants.MinByte)
-	end := append([]byte(partID), constants.MaxByte)
-	return start, end
+	key := []byte(partID + "/")
+	return keyRange(key)
 }
 
 func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
@@ -789,6 +810,7 @@ func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, ati
 		atimes:     atimes,
 	}
 	start := time.Now()
+	log.Printf("Pebble Cache: Initializing cache partition %q...", part.ID)
 	sizeBytes, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
@@ -820,9 +842,12 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 	e.sizeBytes += deltaSize
 }
 
-func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
-	iter := e.iter()
-	defer iter.Close()
+func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
+	iter := e.reader.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	iter.SeekGE(start)
 
 	casCount := int64(0)
 	acCount := int64(0)
@@ -848,6 +873,51 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	}
 
 	return blobSizeBytes, casCount, acCount, nil
+}
+
+func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
+	mu := sync.Mutex{}
+	eg := errgroup.Group{}
+
+	totalBlobSizeBytes := int64(0)
+	totalCasCount := int64(0)
+	totalAcCount := int64(0)
+
+	goScanRange := func(start, end []byte) {
+		log.Printf("Scanning from %q to %q", start, end)
+		eg.Go(func() error {
+			blobSizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
+			if err != nil {
+				return err
+			}
+
+			mu.Lock()
+			totalBlobSizeBytes += blobSizeBytes
+			totalCasCount += casCount
+			totalAcCount += acCount
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	// Start scanning the AC.
+	for i := 0; i < 10; i++ {
+		kr := append(e.acPrefix, []byte(fmt.Sprintf("%d", i))...)
+		start, end := keyRange(kr)
+		goScanRange(start, end)
+	}
+
+	// Start scanning the CAS.
+	for i := 0; i < 16; i++ {
+		kr := append(e.casPrefix, []byte(fmt.Sprintf("%x", i))...)
+		start, end := keyRange(kr)
+		goScanRange(start, end)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return 0, 0, 0, err
+	}
+	return totalBlobSizeBytes, totalCasCount, totalAcCount, nil
 }
 
 func (e *partitionEvictor) Statusz(ctx context.Context) string {
