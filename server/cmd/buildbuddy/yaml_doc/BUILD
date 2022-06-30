@@ -18,8 +18,21 @@ go_library(
 )
 
 genrule(
-    name = "generate",
+    name = "generate_yaml",
     outs = ["buildbuddy_server_documented_defaults.yaml"],
     cmd = "./$(location :yaml_doc) -yaml_documented_defaults_out_file=\"$@\"",
     tools = [":yaml_doc"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "generate_mdx",
+    srcs = [":generate_yaml"],
+    outs = ["buildbuddy_server_documented_defaults.mdx"],
+    cmd = """
+        echo "\\`\\`\\`yaml" >> "$@" &&
+        cat $(location :generate_yaml) >> "$@" &&
+        echo "\\`\\`\\`" >> "$@"
+    """,
+    visibility = ["//visibility:public"],
 )
