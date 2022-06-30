@@ -574,7 +574,7 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	subscriber := qm.ps.Subscribe(ctx, pubSubChannelName)
 	defer subscriber.Close()
 	pubsubChan := subscriber.Chan()
-	for _ = range pubsubChan {
+	for range pubsubChan {
 		namespaces, err := qm.reloadNamespaces()
 		if err != nil {
 			alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
