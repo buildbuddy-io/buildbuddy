@@ -620,6 +620,24 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 	return nil
 }
 
+func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, fileMetadataKey []byte) error {
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	// First, lookup the FileMetadata. If it's not found, we don't have the file.
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return err
+	}
+
+	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+		return err
+	}
+	p.clearAtime(fileMetadataKey)
+	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetSizeBytes()}
+	return nil
+}
+
 func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) error {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -679,6 +697,11 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
+	} else if status.IsNotFoundError(err) {
+		log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
+		if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
+			log.Warningf("Error deleting metadata: %s", err)
+		}
 	}
 	return rc, err
 }
