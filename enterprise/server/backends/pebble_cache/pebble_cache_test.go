@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
-func getAnonContext(t *testing.T, env environment.Env) context.Context {
+func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
@@ -561,5 +562,54 @@ func TestMigrationFromDiskV2(t *testing.T) {
 		require.Nil(t, err, err)
 
 		require.Equal(t, buf, gotBuf)
+	}
+}
+
+func BenchmarkGetMulti(b *testing.B) {
+	te := testenv.GetTestEnv(b)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(b, te)
+
+	maxSizeBytes := int64(100_000_000)
+	rootDir := testfs.MakeTempDir(b)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		b.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	digestKeys := make([]*repb.Digest, 0, 100000)
+	for i := 0; i < 100; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
+		digestKeys = append(digestKeys, d)
+		if err := pc.Set(ctx, d, buf); err != nil {
+			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+	}
+
+	randomDigests := func(n int) []*repb.Digest {
+		r := make([]*repb.Digest, 0, n)
+		offset := rand.Intn(len(digestKeys))
+		for i := 0; i < n; i++ {
+			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
+		}
+		return r
+	}
+
+	b.ReportAllocs()
+	b.StopTimer()
+	for n := 0; n < b.N; n++ {
+		keys := randomDigests(100)
+
+		b.StartTimer()
+		m, err := pc.GetMulti(ctx, keys)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StopTimer()
+		if len(m) != len(keys) {
+			b.Fatalf("Response was incomplete, asked for %d, got %d", len(keys), len(m))
+		}
 	}
 }
