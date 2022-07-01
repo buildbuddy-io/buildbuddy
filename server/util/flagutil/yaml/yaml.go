@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"reflect"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -32,6 +33,28 @@ var (
 	}
 
 	AppendTypeToLineComment = &appendTypeToLineComment{}
+
+	WordWrapForNDots = []*regexp.Regexp{
+		regexp.MustCompile("(([^\n]{1,76})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,72})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,68})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,64})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,60})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,56})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,52})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,48})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,44})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,40})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,36})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,32})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,28})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,24})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,20})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,16})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,12})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,8})((\\s+)|$))"),
+		regexp.MustCompile("(([^\n]{1,4})((\\s+)|$))"),
+	}
 )
 
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
@@ -85,6 +108,25 @@ func GetYAMLTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	return nil, status.UnimplementedErrorf("Unsupported flag type: %T", value)
 }
 
+// GetYAMLTypeString returns the string to use to represent the type to the
+// user in the YAML documentation.
+func GetYAMLTypeString(yamlValue any) string {
+	if v, ok := yamlValue.(YAMLTypeStringable); ok {
+		return v.YAMLTypeString()
+	}
+	value := reflect.ValueOf(yamlValue)
+	if value.CanAddr() {
+		if v, ok := value.Addr().Interface().(YAMLTypeStringable); ok {
+			return v.YAMLTypeString()
+		}
+	}
+	t := value.Type()
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.String()
+}
+
 type HeadComment string
 
 func (h *HeadComment) Transform(in any, n *yaml.Node) { n.HeadComment = string(*h) }
@@ -112,14 +154,11 @@ func NewFootComment(s string) *FootComment { return (*FootComment)(&s) }
 type appendTypeToLineComment struct{}
 
 func (f *appendTypeToLineComment) Transform(in any, n *yaml.Node) {
-	typeString := fmt.Sprintf("%T", in)
-	if v, ok := in.(YAMLTypeStringable); ok {
-		typeString = v.YAMLTypeString()
-	}
+	typeString := GetYAMLTypeString(in)
 	if n.LineComment != "" {
 		n.LineComment += " "
 	}
-	n.LineComment += "type: " + typeString
+	n.LineComment += "(type: " + typeString + ")"
 }
 
 func (f *appendTypeToLineComment) Passthrough() bool { return true }
@@ -132,6 +171,31 @@ func filterPassthrough(opts []common.DocumentNodeOption) []common.DocumentNodeOp
 		}
 	}
 	return ptOpts
+}
+
+// NewDocumentedMarshalerWithOptions wraps a value such that it can be encoded
+// by YAML, documented with DocumentNode (applying the passed
+// DocumentNodeOptions), and then marshaled into documented  YAML.
+func NewDocumentedMarshalerWithOptions(in any, opts ...common.DocumentNodeOption) *DocumentedMarshalerWithOptions {
+	return &DocumentedMarshalerWithOptions{in: in, opts: opts}
+}
+
+// DocumentedMarshalerWithOptions produces a documented node with predefined
+// options `opts` from `in` when marshaled to YAML.
+type DocumentedMarshalerWithOptions struct {
+	in   any
+	opts []common.DocumentNodeOption
+}
+
+func (d *DocumentedMarshalerWithOptions) MarshalYAML() (any, error) {
+	return d.in, nil
+}
+
+func (d *DocumentedMarshalerWithOptions) DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error {
+	concatOpts := []common.DocumentNodeOption{}
+	concatOpts = append(concatOpts, d.opts...)
+	concatOpts = append(concatOpts, opts...)
+	return DocumentNode(d.in, n, concatOpts...)
 }
 
 // DocumentedNode returns a yaml.Node representing the input value with
@@ -202,7 +266,7 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 				}
 			}
 			if len(n.Content) == 0 {
-				exampleNode, err := DocumentedNode(reflect.MakeSlice(t, 1, 1).Interface(), filterPassthrough(opts)...)
+				exampleNode, err := DocumentedNode(reflect.MakeSlice(t, 1, 1).Interface(), append(filterPassthrough(opts), AppendTypeToLineComment)...)
 				if err != nil {
 					return err
 				}
@@ -211,7 +275,7 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 					if err != nil {
 						return err
 					}
-					n.FootComment = fmt.Sprintf("e.g.,\n%s", string(example))
+					n.FootComment = fmt.Sprintf("For example:\n%s", string(example))
 				}
 			}
 		case reflect.Map:
@@ -225,6 +289,11 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 				); err != nil {
 					return err
 				}
+				// TODO: For now, YAML v3 value Node Head Comments are placed below Foot
+				// Comments, so we transfer them to the key Node. When this is fixed, we
+				// can remove this code.
+				n.Content[2*i].HeadComment = n.Content[2*i+1].HeadComment
+				n.Content[2*i+1].HeadComment = ""
 			}
 		}
 	}
@@ -234,9 +303,10 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 	return nil
 }
 
-// GenerateDocumentedYAMLNodeFromFlag produces a documented yaml.Node which
-// represents the value contained in the flag.
-func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
+// GenerateDocumentedMarshalerFromFlag produces a DocumentedMarshalerWithOptions
+// that represents the value contained in the flag which documents its name,
+// type, and usage as a HeadComment.
+func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (*DocumentedMarshalerWithOptions, error) {
 	t, err := GetYAMLTypeForFlagValue(flg.Value)
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags when processing flag %s: %s", flg.Name, err)
@@ -250,7 +320,13 @@ func GenerateDocumentedYAMLNodeFromFlag(flg *flag.Flag) (*yaml.Node, error) {
 	if !value.CanConvert(t) {
 		return nil, status.FailedPreconditionErrorf("Cannot convert value %v of type %s into type %v for flag %s.", value.Interface(), value.Type(), t, flg.Name)
 	}
-	return DocumentedNode(value.Convert(t).Interface(), NewLineComment(flg.Usage), AppendTypeToLineComment)
+	yamlValue := value.Convert(t).Interface()
+	headComment := flg.Name + " (" + GetYAMLTypeString(yamlValue) + ")"
+	if flg.Usage != "" {
+		headComment = headComment + ": " + flg.Usage
+	}
+	headComment = string(WordWrapForNDots[strings.Count(flg.Name, ".")].ReplaceAll([]byte(headComment), []byte("$1\n")))
+	return NewDocumentedMarshalerWithOptions(yamlValue, NewHeadComment(headComment)), nil
 }
 
 // SplitDocumentedYAMLFromFlags produces marshaled YAML representing the flags,
@@ -263,14 +339,18 @@ func SplitDocumentedYAMLFromFlags() ([]byte, error) {
 		return nil, err
 	}
 	um, err := GenerateYAMLMapWithValuesFromFlags(
-		GenerateDocumentedYAMLNodeFromFlag,
+		GenerateDocumentedMarshalerFromFlag,
 		func(flg *flag.Flag) bool { return !strings.Contains(flg.Name, ".") },
 		IgnoreFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	ub, err := yaml.Marshal(um)
+	un, err := DocumentedNode(um)
+	if err != nil {
+		return nil, err
+	}
+	ub, err := yaml.Marshal(un)
 	if err != nil {
 		return nil, err
 	}
@@ -282,14 +362,18 @@ func SplitDocumentedYAMLFromFlags() ([]byte, error) {
 		return nil, err
 	}
 	sm, err := GenerateYAMLMapWithValuesFromFlags(
-		GenerateDocumentedYAMLNodeFromFlag,
+		GenerateDocumentedMarshalerFromFlag,
 		func(flg *flag.Flag) bool { return strings.Contains(flg.Name, ".") },
 		IgnoreFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	sb, err := yaml.Marshal(sm)
+	sn, err := DocumentedNode(sm)
+	if err != nil {
+		return nil, err
+	}
+	sb, err := yaml.Marshal(sn)
 	if err != nil {
 		return nil, err
 	}
