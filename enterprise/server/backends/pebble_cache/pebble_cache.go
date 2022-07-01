@@ -679,6 +679,11 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
+	} else if status.IsNotFoundError(err) {
+		log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
+		if err := p.deleteRecord(ctx, fileMetadataKey); err != nil {
+			log.Warningf("Error deleting metadata: %s", err)
+		}
 	}
 	return rc, err
 }
