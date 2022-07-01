@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
 )
+
+const spacesPerYAMLIndentLevel = 4
 
 var (
 	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
@@ -34,28 +37,16 @@ var (
 
 	AppendTypeToLineComment = &appendTypeToLineComment{}
 
-	WordWrapForNDots = []*regexp.Regexp{
-		regexp.MustCompile("(([^\n]{1,76})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,72})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,68})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,64})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,60})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,56})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,52})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,48})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,44})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,40})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,36})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,32})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,28})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,24})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,20})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,16})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,12})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,8})((\\s+)|$))"),
-		regexp.MustCompile("(([^\n]{1,4})((\\s+)|$))"),
-	}
+	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
 )
+
+func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int) []*regexp.Regexp {
+	s := make([]*regexp.Regexp, 0, (targetLineLength-minWrapLength)/spacesPerYAMLIndentLevel+1)
+	for wrapLength := targetLineLength; wrapLength >= minWrapLength; wrapLength -= spacesPerYAMLIndentLevel {
+		s = append(s, regexp.MustCompile("(([^\n]{"+strconv.Itoa(minWrapLength)+","+strconv.Itoa(wrapLength)+"})((\\s+)|$))"))
+	}
+	return s
+}
 
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
@@ -325,7 +316,7 @@ func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (*DocumentedMarshalerWi
 	if flg.Usage != "" {
 		headComment = headComment + ": " + flg.Usage
 	}
-	headComment = string(WordWrapForNDots[strings.Count(flg.Name, ".")].ReplaceAll([]byte(headComment), []byte("$1\n")))
+	headComment = string(WordWrapForIndentationLevel[strings.Count(flg.Name, ".")].ReplaceAll([]byte(headComment), []byte("$1\n")))
 	return NewDocumentedMarshalerWithOptions(yamlValue, NewHeadComment(headComment)), nil
 }
 
