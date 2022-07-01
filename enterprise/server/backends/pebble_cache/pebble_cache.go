@@ -498,14 +498,21 @@ func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
 	return false
 }
 
-func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
+		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
 	}
-	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return nil, status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+	}
+	return nil
+}
+
+func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+		return nil, err
 	}
 	return fileMetadata, nil
 }
@@ -587,15 +594,48 @@ func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
+
+	sort.Slice(digests, func(i, j int) bool {
+		return digests[i].GetHash() < digests[j].GetHash()
+	})
+
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	blobDir := p.blobDir()
+	buf := &bytes.Buffer{}
+	fileMetadata := &rfpb.FileMetadata{}
 	for _, d := range digests {
-		data, err := p.Get(ctx, d)
-		if status.IsNotFoundError(err) {
-			continue
-		}
+		fileRecord, err := p.makeFileRecord(ctx, d)
 		if err != nil {
 			return nil, err
 		}
-		foundMap[d] = data
+		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+			continue
+		}
+		rc, err := filestore.FileReader(ctx, blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata(), 0, 0)
+		if err != nil {
+			if status.IsNotFoundError(err) || os.IsNotExist(err) {
+				log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
+				if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
+					log.Warningf("Error deleting metadata: %s", err)
+				}
+			}
+			continue
+		}
+		p.updateAtime(fileMetadataKey)
+		if _, err := io.Copy(buf, rc); err != nil {
+			continue
+		}
+		if err := rc.Close(); err != nil {
+			continue
+		}
+		foundMap[d] = buf.Bytes()
+		buf.Reset()
 	}
 	return foundMap, nil
 }
