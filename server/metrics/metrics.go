@@ -94,6 +94,10 @@ const (
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
+	/// Effective workload isolation type used for an executed task, such as
+	/// "docker", "podman", "firecracker", or "none".
+	IsolationTypeLabel = "isolation"
+
 	/// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
@@ -368,6 +372,7 @@ var (
 	}, []string{
 		ExitCodeLabel,
 		StatusHumanReadableLabel,
+		IsolationTypeLabel,
 	})
 
 	/// #### Examples

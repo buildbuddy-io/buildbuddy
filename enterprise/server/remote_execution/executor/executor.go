@@ -308,6 +308,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	metrics.RemoteExecutionCount.With(prometheus.Labels{
 		metrics.ExitCodeLabel:            fmt.Sprintf("%d", actionResult.ExitCode),
 		metrics.StatusHumanReadableLabel: gstatus.Code(cmdResult.Error).String(),
+		metrics.IsolationTypeLabel:       r.GetIsolationType(),
 	}).Inc()
 	metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
 	metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
