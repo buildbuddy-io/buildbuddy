@@ -628,10 +628,10 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			continue
 		}
 		p.updateAtime(fileMetadataKey)
-		if _, err := io.Copy(buf, rc); err != nil {
-			continue
-		}
-		if err := rc.Close(); err != nil {
+
+		_, copyErr := io.Copy(buf, rc)
+		closeErr := rc.Close()
+		if copyErr != nil || closeErr != nil {
 			continue
 		}
 		foundMap[d] = buf.Bytes()
