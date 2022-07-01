@@ -634,7 +634,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if copyErr != nil || closeErr != nil {
 			continue
 		}
-		foundMap[d] = buf.Bytes()
+		foundMap[d] = append([]byte{}, buf.Bytes()...)
 		buf.Reset()
 	}
 	return foundMap, nil
