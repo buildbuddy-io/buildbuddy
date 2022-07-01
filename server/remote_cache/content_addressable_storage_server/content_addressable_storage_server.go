@@ -494,7 +494,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 	for _, d := range subdirDigests {
 		blob, ok := rspMap[d]
 		if !ok {
-			return nil, status.NotFoundErrorf("Digest %s not found in cache.", d.GetHash())
+			return nil, digest.MissingDigestError(d)
 		}
 		subDir := &repb.Directory{}
 		if err := proto.Unmarshal(blob, subDir); err != nil {
