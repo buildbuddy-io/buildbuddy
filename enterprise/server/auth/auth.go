@@ -316,8 +316,10 @@ func (a *oidcAuthenticator) checkAccessToken(ctx context.Context, jwt, accessTok
 	if err != nil {
 		return err
 	}
-	conf := a.oidcConfig
-	validToken, err := provider.Verifier(conf).Verify(ctx, jwt)
+	conf := *a.oidcConfig // copy
+	// We're only checking the access token here, not checking for jwt expiry.
+	conf.SkipExpiryCheck = true
+	validToken, err := provider.Verifier(&conf).Verify(ctx, jwt)
 	if err != nil {
 		return err
 	}
