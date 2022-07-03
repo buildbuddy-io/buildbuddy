@@ -851,13 +851,14 @@ type partitionEvictor struct {
 	writer  pebble.Writer
 	atimes  *sync.Map
 
-	casPrefix  []byte
-	acPrefix   []byte
-	samplePool []*evictionPoolEntry
-	sizeBytes  int64
-	casCount   int64
-	acCount    int64
-	lastRun    time.Time
+	casPrefix   []byte
+	acPrefix    []byte
+	samplePool  []*evictionPoolEntry
+	sizeBytes   int64
+	casCount    int64
+	acCount     int64
+	lastRun     time.Time
+	lastEvicted *evictionPoolEntry
 }
 
 func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, atimes *sync.Map) (*partitionEvictor, error) {
@@ -935,26 +936,26 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		}
 	}
 
-	return blobSizeBytes, casCount, acCount, nil
+	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
 }
 
 func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	mu := sync.Mutex{}
 	eg := errgroup.Group{}
 
-	totalBlobSizeBytes := int64(0)
+	totalSizeBytes := int64(0)
 	totalCasCount := int64(0)
 	totalAcCount := int64(0)
 
 	goScanRange := func(start, end []byte) {
 		eg.Go(func() error {
-			blobSizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
+			sizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
 			if err != nil {
 				return err
 			}
 
 			mu.Lock()
-			totalBlobSizeBytes += blobSizeBytes
+			totalSizeBytes += sizeBytes
 			totalCasCount += casCount
 			totalAcCount += acCount
 			mu.Unlock()
@@ -964,8 +965,8 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 
 	// Start scanning the AC.
 	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
-	for i := 0; i < 10; i++ {
-		kr := append(e.acPrefix, []byte(fmt.Sprintf("%d", i))...)
+	for i := 0; i < 100; i++ {
+		kr := append(e.acPrefix, []byte(fmt.Sprintf("%.2d", i))...)
 		start, end := keyRange(kr)
 		goScanRange(start, end)
 	}
@@ -981,7 +982,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	if err := eg.Wait(); err != nil {
 		return 0, 0, 0, err
 	}
-	return totalBlobSizeBytes, totalCasCount, totalAcCount, nil
+	return totalSizeBytes, totalCasCount, totalAcCount, nil
 }
 
 func (e *partitionEvictor) Statusz(ctx context.Context) string {
@@ -996,6 +997,12 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
 	buf += fmt.Sprintf("Usage: %d / %d (%2.2f%% full)\n", e.sizeBytes, maxAllowedSize, percentFull)
 	buf += fmt.Sprintf("GC Last run: %s\n", e.lastRun.Format("Jan 02, 2006 15:04:05 MST"))
+	lastEvictedStr := "nil"
+	if e.lastEvicted != nil {
+		age := time.Since(time.Unix(0, e.lastEvicted.timestamp))
+		lastEvictedStr = fmt.Sprintf("%q age: %s", e.lastEvicted.fileMetadataKey, age)
+	}
+	buf += fmt.Sprintf("Last evicted item: %s\n", lastEvictedStr)
 	buf += "</pre>"
 	return buf
 }
@@ -1152,14 +1159,15 @@ func (e *partitionEvictor) resampleK(k int) error {
 	return nil
 }
 
-func (e *partitionEvictor) evict(count int) error {
+func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 	evicted := 0
+	var lastEvicted *evictionPoolEntry
 	for evicted < count {
 		lastCount := evicted
 
 		// Resample every time we evict a key
 		if err := e.resampleK(1); err != nil {
-			return err
+			return nil, err
 		}
 		for i, sample := range e.samplePool {
 			_, closer, err := e.reader.Get(sample.fileMetadataKey)
@@ -1171,6 +1179,7 @@ func (e *partitionEvictor) evict(count int) error {
 				continue
 			}
 			evicted += 1
+			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
 			break
 		}
@@ -1180,11 +1189,11 @@ func (e *partitionEvictor) evict(count int) error {
 		if lastCount == evicted {
 			e.samplePool = e.samplePool[:0]
 			if err := e.resampleK(samplePoolSize); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return lastEvicted, nil
 }
 
 func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
@@ -1214,13 +1223,14 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 			numToEvict = 1
 		}
 
-		err := e.evict(numToEvict)
+		lastEvicted, err := e.evict(numToEvict)
 		if err != nil {
 			return err
 		}
 
 		e.mu.Lock()
 		e.lastRun = time.Now()
+		e.lastEvicted = lastEvicted
 		e.mu.Unlock()
 	}
 	return nil
