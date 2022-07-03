@@ -482,7 +482,15 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
-	p.atimes.Store(xxhash.Sum64(fileMetadataKey), time.Now().UnixNano())
+	nowNanos := time.Now().UnixNano()
+
+	fmkHash := xxhash.Sum64(fileMetadataKey)
+	if a, ok := p.atimes.Load(fmkHash); ok {
+		lastAccessNanos := a.(int64)
+		usecSinceLastAccess := float64((nowNanos - lastAccessNanos) / 1000)
+		metrics.DiskCacheUsecSinceLastAccess.Observe(usecSinceLastAccess)
+	}
+	p.atimes.Store(fmkHash, nowNanos)
 }
 
 func (p *PebbleCache) clearAtime(fileMetadataKey []byte) {

@@ -341,6 +341,14 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	})
 
+	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_usec_since_last_access",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Time since last digest access, in **microseconds**.",
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
