@@ -17,3 +17,20 @@ export function truncateDecimals(value: number, decimalPlaces: number) {
   const decimalShift = Math.pow(10, decimalPlaces);
   return Math.round(value * decimalShift) / decimalShift;
 }
+
+/**
+ * mod operator that produces only positive numbers when given a positive
+ * modulus, making it more sane than `%` for use cases like circular list
+ * indexing.
+ *
+ * Examples:
+ * ```
+ * mod(8, 9)   // returns 8
+ * mod(9, 9)   // returns 0
+ * mod(10, 9)  // returns 1
+ * mod(-1, 9)  // returns 8
+ * ```
+ */
+export function mod(value: number, modulus: number) {
+  return ((value % modulus) + modulus) % modulus;
+}

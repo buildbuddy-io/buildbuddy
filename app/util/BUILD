@@ -69,6 +69,15 @@ ts_jasmine_node_test(
 )
 
 ts_library(
+    name = "scroller",
+    srcs = ["scroller.ts"],
+    deps = [
+        ":animated_value",
+        ":animation_loop",
+    ],
+)
+
+ts_library(
     name = "time_delta",
     srcs = ["time_delta.ts"],
     deps = [
