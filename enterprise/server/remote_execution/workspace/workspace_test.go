@@ -67,6 +67,23 @@ func actualFilePaths(t *testing.T, ws *workspace.Workspace) map[string]struct{} 
 	return paths
 }
 
+func TestWorkspaceRemove_ReadOnlyTree_DeletesEntireTree(t *testing.T) {
+	ws := newWorkspace(t, &workspace.Opts{})
+	writeEmptyFiles(t, ws, []string{
+		"READONLY",
+		"dir/READONLY",
+	})
+	err := os.Chmod(filepath.Join(ws.Path(), "READONLY"), 0400)
+	require.NoError(t, err)
+	err = os.Chmod(filepath.Join(ws.Path(), "dir/READONLY"), 0400)
+	require.NoError(t, err)
+	err = os.Chmod(filepath.Join(ws.Path(), "dir"), 0400)
+	require.NoError(t, err)
+
+	err = ws.Remove()
+	require.NoError(t, err)
+}
+
 func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 	filePaths := []string{
 		"some_output_directory/DELETEME",
