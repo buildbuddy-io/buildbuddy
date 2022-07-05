@@ -43,7 +43,7 @@ import (
 var (
 	rootDirectory          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytes    = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
-	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", 1000, "Files smaller than this may be inlined directly into pebble")
+	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", 1024, "Files smaller than this may be inlined directly into pebble")
 	partitions             = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappings      = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
@@ -54,10 +54,6 @@ var (
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.pebble.mirror_active_disk_cache", "cache.disk.enable_live_updates")
 )
 
-// TODO:
-//  - add a pacer that deletes files as new ones are written when the cache is
-//    above a certain size
-//  - add a flag that ingests a disk cache
 const (
 	// cutoffThreshold is the point above which a janitor thread will run
 	// and delete the oldest items from the cache.
