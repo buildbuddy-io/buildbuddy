@@ -847,7 +847,6 @@ func (p *PebbleCache) TestingWaitForGC() error {
 		if done == len(evictors) {
 			break
 		}
-		time.Sleep(time.Second)
 	}
 	return nil
 }
