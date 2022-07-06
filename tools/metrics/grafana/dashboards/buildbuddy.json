@@ -8627,7 +8627,7 @@
       "type": "row"
     }
   ],
-  "refresh": "1s",
+  "refresh": "1m",
   "schemaVersion": 33,
   "style": "dark",
   "tags": [],
