@@ -13,10 +13,12 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
     ],
 )

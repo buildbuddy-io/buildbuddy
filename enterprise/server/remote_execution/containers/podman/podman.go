@@ -572,7 +572,7 @@ func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFun
 		if !c.options.EnableStats {
 			return
 		}
-		defer container.Metrics.SetContainerMemoryUsageBytes(c, 0)
+		defer container.Metrics.Unregister(c)
 		var last *container.Stats
 		var lastErr error
 
@@ -602,16 +602,7 @@ func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFun
 					lastErr = err
 					continue
 				}
-
-				var cpuUsageDiffNanos int64
-				if last == nil {
-					cpuUsageDiffNanos = stats.CPUNanos
-				} else {
-					cpuUsageDiffNanos = stats.CPUNanos - last.CPUNanos
-				}
-				container.Metrics.AddCPUNanos(cpuUsageDiffNanos)
-				container.Metrics.SetContainerMemoryUsageBytes(c, stats.MemoryUsageBytes)
-
+				container.Metrics.Observe(c, stats)
 				last = stats
 			}
 		}
