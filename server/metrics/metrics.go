@@ -121,6 +121,12 @@ const (
 
 	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
+
+	// The full name of the grpc method: /<service>/<method>
+	GRPCFullMethodLabel = "grpc_full_method"
+
+	// The key used for quota accounting. It's either a group ID or an ip address.
+	QuotaKey = "quota_key"
 )
 
 const (
@@ -1308,5 +1314,15 @@ var (
 		Help:      "Counter for unexpected events.",
 	}, []string{
 		EventName,
+	})
+
+	RPCsHandledTotalByQuotaKey = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "quota",
+		Name:      "rpcs_handled_total_by_quota_key",
+		Help:      "Total number of RPCs completed on the server by quota_key, regardless of success or failure.",
+	}, []string{
+		GRPCFullMethodLabel,
+		QuotaKey,
 	})
 )
