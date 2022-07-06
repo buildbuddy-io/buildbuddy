@@ -14,10 +14,10 @@ go_library(
         "//server/util/alert",
         "//server/util/db",
         "//server/util/log",
+        "//server/util/quota",
         "//server/util/status",
         "@com_github_throttled_throttled_v2//:throttled",
         "@com_github_throttled_throttled_v2//store/goredisstore.v8:goredisstore_v8",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

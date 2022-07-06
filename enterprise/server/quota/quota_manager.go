@@ -17,10 +17,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
@@ -321,41 +321,8 @@ func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
 	return ns.defaultBucket
 }
 
-func (qm *QuotaManager) getGroupID(ctx context.Context) string {
-	if a := qm.env.GetAuthenticator(); a != nil {
-		user, err := a.AuthenticatedUser(ctx)
-		if err != nil {
-			return interfaces.AuthAnonymousUser
-		}
-		return user.GetGroupID()
-	}
-	return ""
-}
-
-func getIP(ctx context.Context) string {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	vals := md.Get("X-Forwarded-For")
-
-	if len(vals) == 0 {
-		return ""
-	}
-	ips := strings.Split(vals[0], ",")
-	return ips[0]
-}
-
-func (qm *QuotaManager) getKey(ctx context.Context) string {
-	if groupID := qm.getGroupID(ctx); groupID != "" {
-		return groupID
-	}
-	return getIP(ctx)
-}
-
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
-	key := qm.getKey(ctx)
+	key := quota.GetKey(ctx, qm.env)
 	if key == "" {
 		log.Warningf("Key is empty.")
 		return true, nil
