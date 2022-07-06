@@ -475,11 +475,12 @@ type EventChannel struct {
 	collector      interfaces.MetricsCollector
 	apiTargetMap   api_common.TargetMap
 
-	eventsBeforeOptions         []*inpb.InvocationEvent
-	hasReceivedEventWithOptions bool
-	logWriter                   *eventlog.EventLogWriter
-	onClose                     func()
-	attempt                     uint64
+	eventsBeforeOptions           []*inpb.InvocationEvent
+	hasReceivedEventWithOptions   bool
+	hasDroppedEventsBeforeOptions bool
+	logWriter                     *eventlog.EventLogWriter
+	onClose                       func()
+	attempt                       uint64
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -782,7 +783,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	} else if !e.hasReceivedEventWithOptions {
 		e.eventsBeforeOptions = append(e.eventsBeforeOptions, invocationEvent)
 		if len(e.eventsBeforeOptions) > 100 {
-			log.Warningf("We got over 100 build events before an event with options for invocation %s, dropping %+v", iid, e.eventsBeforeOptions[0])
+			if !e.hasDroppedEventsBeforeOptions {
+				e.hasDroppedEventsBeforeOptions = true
+				log.Warningf("We got over 100 build events before an event with options for invocation %s. Beginning to drop events. Earliest dropped event: %+v", iid, e.eventsBeforeOptions[0])
+			}
 			e.eventsBeforeOptions = e.eventsBeforeOptions[1:]
 		}
 		return nil
