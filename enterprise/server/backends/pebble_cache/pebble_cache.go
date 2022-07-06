@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cespare/xxhash/v2"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/bloom"
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -224,6 +225,17 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
+// defaultPebbleOptions returns default pebble config options.
+func defaultPebbleOptions() *pebble.Options {
+	return &pebble.Options{
+		Levels: []pebble.LevelOptions{{
+			BlockSize:      64 << 10, // 32 KB
+			FilterPolicy:   bloom.FilterPolicy(10),
+			IndexBlockSize: 512 << 10, // 256 KB
+		}},
+	}
+}
+
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := validateOpts(opts); err != nil {
@@ -234,10 +246,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	ensureDefaultPartitionExists(opts)
 
-	c := pebble.NewCache(*blockCacheSizeBytes)
-	defer c.Unref()
+	pebbleOptions := defaultPebbleOptions()
+	if *blockCacheSizeBytes > 0 {
+		c := pebble.NewCache(*blockCacheSizeBytes)
+		defer c.Unref()
+		pebbleOptions.Cache = c
+	}
 
-	db, err := pebble.Open(opts.RootDirectory, &pebble.Options{Cache: c})
+	db, err := pebble.Open(opts.RootDirectory, pebbleOptions)
 	if err != nil {
 		return nil, err
 	}
