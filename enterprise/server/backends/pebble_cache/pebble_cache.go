@@ -487,7 +487,7 @@ func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
 	fmkHash := xxhash.Sum64(fileMetadataKey)
 	if a, ok := p.atimes.Load(fmkHash); ok {
 		lastAccessNanos := a.(int64)
-		durSinceLastAccess := time.Duration(nowNanos - lastAccessNanos) * time.Nanosecond
+		durSinceLastAccess := time.Duration(nowNanos-lastAccessNanos) * time.Nanosecond
 		metrics.DiskCacheSecondsSinceLastAccess.Observe(durSinceLastAccess.Seconds())
 	}
 	p.atimes.Store(fmkHash, nowNanos)
