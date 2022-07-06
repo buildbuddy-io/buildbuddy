@@ -565,6 +565,59 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	}
 }
 
+func TestStartupScan(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	digests := make([]*repb.Digest, 0)
+	for i := 0; i < 1000; i++ {
+		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
+		require.Nil(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		digests = append(digests, d)
+
+		err = pc.Set(ctx, d, buf)
+		require.Nil(t, err)
+	}
+	log.Printf("Wrote %d digests", len(digests))
+	log.Printf("Statusz: %s", pc.Statusz(ctx))
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	pc2, err := pebble_cache.NewPebbleCache(te, options)
+	require.Nil(t, err, err)
+
+	pc2.Start()
+	defer pc2.Stop()
+	for i, d := range digests {
+		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+		c, err := pc2.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
+		require.Nil(t, err)
+		rbuf, err := c.Get(ctx, d)
+		if err != nil {
+			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+		}
+
+		// Compute a digest for the bytes returned.
+		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		if d.GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		}
+	}
+}
+
 func BenchmarkGetMulti(b *testing.B) {
 	te := testenv.GetTestEnv(b)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
