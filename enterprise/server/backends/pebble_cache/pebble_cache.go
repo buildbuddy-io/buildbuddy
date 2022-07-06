@@ -972,11 +972,11 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	}
 
 	acPrefixRange := func(start, end []byte) ([]byte, []byte) {
-		left := make([]byte, 0)
+		left := make([]byte, 0, len(e.acPrefix)+len(start))
 		left = append(left, e.acPrefix...)
 		left = append(left, start...)
 
-		right := make([]byte, 0)
+		right := make([]byte, 0, len(e.acPrefix)+len(end))
 		right = append(right, e.acPrefix...)
 		right = append(right, end...)
 		return left, right
@@ -984,10 +984,13 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 
 	// Start scanning the AC.
 	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
+	// Start scanning at 10 because crc32s do not begin with 0.
 	for i := 10; i < 99; i++ {
 		left, right := acPrefixRange([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i+1)))
 		goScanRange(left, right)
 	}
+	// Additionally scan from 99-> max byte to ensure we cover the full
+	// range.
 	left, right := acPrefixRange([]byte("99"), []byte{constants.MaxByte})
 	goScanRange(left, right)
 
