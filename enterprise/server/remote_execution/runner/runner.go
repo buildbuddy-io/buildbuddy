@@ -692,6 +692,12 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 			}
 		}
 
+		if p.pausedRunnerCount() >= p.maxRunnerCount {
+			log.Infof("Evicting runner (pool max count %d exceeded).", p.maxRunnerCount)
+		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+			log.Infof("Evicting runner (max memory %d exceeded).", p.maxRunnerMemoryUsageBytes)
+		}
+
 		r := p.runners[evictIndex]
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
@@ -1240,7 +1246,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	}
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
-			log.Debug(err.Error())
+			log.Infof("Failed to recycle runner: %s", err)
 		} else {
 			// If not a resource limit exceeded error, probably it was an error
 			// removing the directory contents or a docker daemon error.
@@ -1285,6 +1291,9 @@ func (p *pool) setLimits() {
 	p.maxRunnerCount = count
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
+	log.Infof(
+		"Configured runner pool: max count=%d, max memory (per-runner, bytes)=%d, max disk (per-runner, bytes)=%d",
+		p.maxRunnerCount, p.maxRunnerMemoryUsageBytes, p.maxRunnerDiskUsageBytes)
 }
 
 type labeledError struct {
