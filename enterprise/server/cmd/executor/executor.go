@@ -73,6 +73,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	var err error
 	if useLocal {
 		log.Infof("Using local cache!")
+		log.Warningf("Using an executor with a local cache is DEPRECATED! Please set executor.app_target instead.")
 		dialOptions := grpc_client.CommonGRPCClientOptions()
 		dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
 		dialOptions = append(dialOptions, grpc.WithInsecure())
