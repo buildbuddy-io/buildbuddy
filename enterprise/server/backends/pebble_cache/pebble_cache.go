@@ -484,8 +484,8 @@ func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
 	fmkHash := xxhash.Sum64(fileMetadataKey)
 	if a, ok := p.atimes.Load(fmkHash); ok {
 		lastAccessNanos := a.(int64)
-		usecSinceLastAccess := float64((nowNanos - lastAccessNanos) / 1000)
-		metrics.DiskCacheUsecSinceLastAccess.Observe(usecSinceLastAccess)
+		durSinceLastAccess := time.Duration(nowNanos-lastAccessNanos) * time.Nanosecond
+		metrics.DiskCacheSecondsSinceLastAccess.Observe(durSinceLastAccess.Seconds())
 	}
 	p.atimes.Store(fmkHash, nowNanos)
 }
@@ -815,6 +815,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		if err == nil {
 			p.updateAtime(fileMetadataKey)
 			p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten}
+			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 		return err
 	}}
@@ -921,7 +922,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		LowerBound: start,
 		UpperBound: end,
 	})
-	iter.SeekGE(start)
+	iter.SeekLT(start)
 
 	casCount := int64(0)
 	acCount := int64(0)
@@ -973,13 +974,28 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		})
 	}
 
+	acPrefixRange := func(start, end []byte) ([]byte, []byte) {
+		left := make([]byte, 0, len(e.acPrefix)+len(start))
+		left = append(left, e.acPrefix...)
+		left = append(left, start...)
+
+		right := make([]byte, 0, len(e.acPrefix)+len(end))
+		right = append(right, e.acPrefix...)
+		right = append(right, end...)
+		return left, right
+	}
+
 	// Start scanning the AC.
 	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
-	for i := 0; i < 100; i++ {
-		kr := append(e.acPrefix, []byte(fmt.Sprintf("%.2d", i))...)
-		start, end := keyRange(kr)
-		goScanRange(start, end)
+	// Start scanning at 10 because crc32s do not begin with 0.
+	for i := 10; i < 99; i++ {
+		left, right := acPrefixRange([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i+1)))
+		goScanRange(left, right)
 	}
+	// Additionally scan from 99-> max byte to ensure we cover the full
+	// range.
+	left, right := acPrefixRange([]byte("99"), []byte{constants.MaxByte})
+	goScanRange(left, right)
 
 	// Start scanning the CAS.
 	// CAS keys look like /partitionID/cas/digesthash(sha-256)
@@ -1296,5 +1312,11 @@ func (p *PebbleCache) Stop() error {
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	return p.db.Flush()
+	if err := p.db.Flush(); err != nil {
+		return err
+	}
+
+	// TODO(tylerw) re-enable this once shutdown race is debugged.
+	// return p.db.Close()
+	return nil
 }
