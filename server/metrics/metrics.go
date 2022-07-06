@@ -355,6 +355,14 @@ var (
 		Help:      "Time since last digest access, in **microseconds**.",
 	})
 
+	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_added_file_size_bytes",
+		Help:      "Size of artifacts added to the file cache, in **bytes**.",
+		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
