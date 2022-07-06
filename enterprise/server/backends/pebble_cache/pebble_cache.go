@@ -42,10 +42,11 @@ import (
 )
 
 var (
-	rootDirectory       = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
-	blockCacheSizeBytes = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
-	partitions          = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
-	partitionMappings   = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+	rootDirectory          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
+	blockCacheSizeBytes    = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", 1024, "Files smaller than this may be inlined directly into pebble")
+	partitions             = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
+	partitionMappings      = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
 	// TODO(tylerw): remove most of these flags post-migration.
 	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
@@ -54,10 +55,6 @@ var (
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.pebble.mirror_active_disk_cache", "cache.disk.enable_live_updates")
 )
 
-// TODO:
-//  - add a pacer that deletes files as new ones are written when the cache is
-//    above a certain size
-//  - add a flag that ingests a disk cache
 const (
 	// cutoffThreshold is the point above which a janitor thread will run
 	// and delete the oldest items from the cache.
@@ -641,7 +638,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
-		rc, err := filestore.FileReader(ctx, blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata(), 0, 0)
+		rc, err := filestore.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
 				log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
@@ -758,7 +755,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 			return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
 		}
 	}
-	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
+	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
@@ -810,9 +807,15 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
 	}
 
-	wcm, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
-	if err != nil {
-		return nil, err
+	var wcm filestore.WriteCloserMetadata
+	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
+		wcm = filestore.InlineWriter(ctx, d.GetSizeBytes())
+	} else {
+		fw, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		wcm = fw
 	}
 	dc := &writeCloser{WriteCloserMetadata: wcm, closeFn: func(bytesWritten int64) error {
 		md := &rfpb.FileMetadata{
@@ -865,7 +868,6 @@ type evictionPoolEntry struct {
 	timestamp       int64
 	fileMetadata    *rfpb.FileMetadata
 	fileMetadataKey []byte
-	filePath        string
 }
 
 type partitionEvictor struct {
@@ -1096,11 +1098,19 @@ func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 		s.timestamp = a.(int64)
 		return nil
 	}
-	info, err := os.Stat(s.filePath)
-	if err != nil {
-		return err
+
+	md := s.fileMetadata.GetStorageMetadata()
+	switch {
+	case md.GetFileMetadata() != nil:
+		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
+		info, err := os.Stat(fp)
+		if err != nil {
+			return err
+		}
+		s.timestamp = getLastUse(info)
+	case md.GetInlineMetadata() != nil:
+		s.timestamp = md.GetInlineMetadata().GetCreatedAtNsec()
 	}
-	s.timestamp = getLastUse(info)
 	return nil
 }
 
@@ -1129,13 +1139,11 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		}
 		seen[string(iter.Key())] = struct{}{}
 
-		filePath := filestore.FilePath(e.blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 		fileMetadataKey := make([]byte, len(iter.Key()))
 		copy(fileMetadataKey, iter.Key())
 
 		sample := &evictionPoolEntry{
 			fileMetadata:    fileMetadata,
-			filePath:        filePath,
 			fileMetadataKey: fileMetadataKey,
 		}
 		if err := e.refreshAtime(sample); err != nil {
@@ -1156,8 +1164,18 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 		return err
 	}
 	e.atimes.Delete(xxhash.Sum64(sample.fileMetadataKey))
-	if err := disk.DeleteFile(context.TODO(), sample.filePath); err != nil {
-		return err
+
+	md := sample.fileMetadata.GetStorageMetadata()
+	switch {
+	case md.GetFileMetadata() != nil:
+		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
+		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
+			return err
+		}
+	case md.GetInlineMetadata() != nil:
+		break
+	default:
+		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", md)
 	}
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
@@ -1216,6 +1234,7 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 			}
 			closer.Close()
 			if err := e.deleteFile(sample); err != nil {
+				log.Errorf("Error evicting file: %s (ignoring)", err)
 				continue
 			}
 			evicted += 1
@@ -1312,5 +1331,8 @@ func (p *PebbleCache) Stop() error {
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	return p.db.Close()
+
+	// TODO(tylerw) re-enable this once shutdown race is debugged.
+	// return p.db.Close()
+	return nil
 }
