@@ -591,7 +591,7 @@ func TestStartupScan(t *testing.T) {
 		require.Nil(t, err)
 	}
 	log.Printf("Wrote %d digests", len(digests))
-	log.Printf("Statusz: %s", pc.Statusz(ctx))
+
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()
