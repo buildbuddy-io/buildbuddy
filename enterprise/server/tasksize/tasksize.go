@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -167,13 +168,16 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 		statusLabel = "missing_stats"
 		return status.InvalidArgumentErrorf("execution duration is missing or invalid")
 	}
-	// Compute milliCPU as CPU-milliseconds used per second of execution time.
-	milliCPU := int64((float64(stats.GetCpuNanos()) / 1e6) / execDuration.Seconds())
 	key, err := s.taskSizeKey(ctx, cmd)
 	if err != nil {
 		statusLabel = "error"
 		return err
 	}
+	// Compute milliCPU as CPU-milliseconds used per second of execution time.
+	// Run through Ceil() to prevent storing 0 values in case the CPU usage
+	// was greater than 0 but less than 1 CPU-millisecond.
+	milliCPUFloat := (float64(stats.GetCpuNanos()) / 1e6) / execDuration.Seconds()
+	milliCPU := int64(math.Ceil(milliCPUFloat))
 	size := &scpb.TaskSize{
 		EstimatedMilliCpu:    milliCPU,
 		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
