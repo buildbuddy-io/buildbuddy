@@ -224,13 +224,8 @@ func ensureDefaultPartitionExists(opts *Options) {
 
 // defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions() *pebble.Options {
-	return &pebble.Options{
-		Levels: []pebble.LevelOptions{{
-			BlockSize:      64 << 10, // 32 KB
-			FilterPolicy:   bloom.FilterPolicy(10),
-			IndexBlockSize: 512 << 10, // 256 KB
-		}},
-	}
+	// TODO: tune options here.
+	return &pebble.Options{}
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
