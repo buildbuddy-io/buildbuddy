@@ -9,10 +9,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -115,12 +117,20 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
 		return initialEstimate
 	}
+	statusLabel := "hit"
+	defer func() {
+		metrics.RemoteExecutionTaskSizeReadRequests.With(prometheus.Labels{
+			metrics.TaskSizeReadStatusLabel: statusLabel,
+		}).Inc()
+	}()
 	recordedSize, err := s.lastRecordedSize(ctx, task)
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
+		statusLabel = "error"
 		return initialEstimate
 	}
 	if recordedSize == nil {
+		statusLabel = "miss"
 		// TODO: return a value indicating "unsized" here, and instead let the
 		// executor run this task once to estimate the size.
 		return initialEstimate
@@ -136,23 +146,32 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	if !*useMeasuredSizes {
 		return nil
 	}
+	statusLabel := "ok"
+	defer func() {
+		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
+			metrics.TaskSizeWriteStatusLabel: statusLabel,
+		}).Inc()
+	}()
 	// If we are missing CPU/memory stats, do nothing. This is expected in some
 	// cases, for example if a task completed too quickly to get a sample of its
 	// CPU/mem usage.
 	stats := md.GetUsageStats()
 	if stats.GetCpuNanos() == 0 || stats.GetPeakMemoryBytes() == 0 {
+		statusLabel = "missing_stats"
 		return nil
 	}
 	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
 	// If execution duration is missing or invalid, we won't be able to compute
 	// milli-CPU usage.
 	if execDuration <= 0 {
+		statusLabel = "missing_stats"
 		return status.InvalidArgumentErrorf("execution duration is missing or invalid")
 	}
 	// Compute milliCPU as CPU-milliseconds used per second of execution time.
 	milliCPU := int64((float64(stats.GetCpuNanos()) / 1e6) / execDuration.Seconds())
 	key, err := s.taskSizeKey(ctx, cmd)
 	if err != nil {
+		statusLabel = "error"
 		return err
 	}
 	size := &scpb.TaskSize{
@@ -161,6 +180,7 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	}
 	b, err := proto.Marshal(size)
 	if err != nil {
+		statusLabel = "error"
 		return err
 	}
 	s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration)

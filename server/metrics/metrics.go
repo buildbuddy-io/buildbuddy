@@ -115,6 +115,12 @@ const (
 
 	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
 	FileCacheRequestStatusLabel = "status"
+
+	/// Status of the task size read request: `hit`, `miss`, or `error`.
+	TaskSizeReadStatusLabel = "status"
+
+	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
+	TaskSizeWriteStatusLabel = "status"
 )
 
 const (
@@ -424,6 +430,24 @@ var (
 	/// )
 	/// ```
 
+	RemoteExecutionTaskSizeReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_read_requests",
+		Help:      "Number of read requests to the task sizer, which estimates action resource usage based on historical execution stats.",
+	}, []string{
+		TaskSizeReadStatusLabel,
+	})
+
+	RemoteExecutionTaskSizeWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_write_requests",
+		Help:      "Number of write requests to the task sizer, which estimates action resource usage based on historical execution stats.",
+	}, []string{
+		TaskSizeWriteStatusLabel,
+	})
+
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -556,11 +580,25 @@ var (
 	/// )
 	/// ```
 
+	RemoteExecutionPeakMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "peak_memory_usage_bytes",
+		Help:      "Current total peak memory usage in **bytes**. This is the sum of the peak memory usage for all tasks currently executing. It is not a very useful metric on its own, and is mainly intended for comparison with `assigned_ram_bytes`.",
+	})
+
 	RemoteExecutionUsedMilliCPU = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "used_milli_cpu",
-		Help:      "Approximate CPU usage of executed tasks, in **CPU-milliseconds**.",
+		Help:      "Approximate cumulative CPU usage of executed tasks, in **CPU-milliseconds**.",
+	})
+
+	RemoteExecutionCPUUtilization = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "cpu_utilization_milli_cpu",
+		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
