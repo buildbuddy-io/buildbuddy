@@ -347,12 +347,12 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	})
 
-	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
+	DiskCacheSecondsSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_usec_since_last_access",
+		Name:      "disk_cache_seconds_since_last_access",
 		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Time since last digest access, in **microseconds**.",
+		Help:      "Time since last digest access, in **seconds**.",
 	})
 
 	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
