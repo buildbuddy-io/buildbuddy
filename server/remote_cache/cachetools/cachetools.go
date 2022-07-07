@@ -63,6 +63,12 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		return 0, err
 	}
 
+	bufSize := r.GetDigest().GetSizeBytes()
+	if bufSize > maxCompressionBufSize {
+		bufSize = maxCompressionBufSize
+	}
+	decodeBuf := make([]byte, 0, bufSize)
+
 	written := int64(0)
 	for {
 		rsp, err := stream.Recv()
@@ -72,7 +78,11 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		if err != nil {
 			return 0, err
 		}
-		n, err := out.Write(rsp.Data)
+		data := rsp.Data
+		if r.GetCompressor() == repb.Compressor_ZSTD {
+			data, err = compression.DecompressZstd(decodeBuf, data)
+		}
+		n, err := out.Write(data)
 		if err != nil {
 			return 0, err
 		}

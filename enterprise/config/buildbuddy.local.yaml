@@ -3,7 +3,7 @@ app:
   create_group_per_user: true
   add_user_to_domain_group: true
   code_editor_enabled: true
-  default_redis_target: "localhost:6379"
+  default_redis_target: "localhost:7777"
   enable_target_tracking: true
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
