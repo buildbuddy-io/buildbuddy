@@ -2766,8 +2766,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_klauspost_compress",
         importpath = "github.com/klauspost/compress",
-        sum = "h1:1kn4/7MepF/CHmYub99/nNX8az0IJjfSOU/jbnTVfqQ=",
-        version = "v1.15.4",
+        sum = "h1:7cgTQxJCU/vy+oP/E3B9RGbQTgbiVzIJWIKOLoAsPok=",
+        version = "v1.15.7",
     )
     go_repository(
         name = "com_github_klauspost_cpuid",
@@ -4335,6 +4335,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:TVEnxayobAdVkhQfrfes2IzOB6o+z4roRkPF52WA1u4=",
         version = "v1.2.1",
     )
+    go_repository(
+        name = "com_github_valyala_gozstd",
+        importpath = "github.com/valyala/gozstd",
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:com_github_valyala_gozstd.patch"],
+        sum = "h1:M4Ds4MIrw+pD+s6vYtuFZ8D3iEw9htzfdytOV3C3iQU=",
+        version = "v1.17.0",
+    )
+
     go_repository(
         name = "com_github_valyala_histogram",
         importpath = "github.com/valyala/histogram",

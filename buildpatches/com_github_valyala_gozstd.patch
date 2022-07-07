@@ -1,0 +1,86 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+index 7c07ce4..afa5153 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -1,5 +1,29 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ 
++cc_library(
++    name = "libzstd",
++    srcs = select({
++        "@io_bazel_rules_go//go/platform:android_amd64": ["libzstd_linux_amd64.a"],
++        "@io_bazel_rules_go//go/platform:android_arm": ["libzstd_linux_arm.a"],
++        "@io_bazel_rules_go//go/platform:android_arm64": ["libzstd_linux_arm64.a"],
++        "@io_bazel_rules_go//go/platform:darwin_amd64": ["libzstd_darwin_amd64.a"],
++        "@io_bazel_rules_go//go/platform:darwin_arm64": ["libzstd_darwin_arm64.a"],
++        "@io_bazel_rules_go//go/platform:freebsd_amd64": ["libzstd_freebsd_amd64.a"],
++        "@io_bazel_rules_go//go/platform:ios_amd64": ["libzstd_darwin_amd64.a"],
++        "@io_bazel_rules_go//go/platform:ios_arm64": ["libzstd_darwin_arm64.a"],
++        "@io_bazel_rules_go//go/platform:linux_amd64": ["libzstd_linux_amd64.a"],
++        "@io_bazel_rules_go//go/platform:linux_arm": ["libzstd_linux_arm.a"],
++        "@io_bazel_rules_go//go/platform:linux_arm64": ["libzstd_linux_arm64.a"],
++        "@io_bazel_rules_go//go/platform:windows_amd64": ["libzstd_windows_amd64.a"],
++        "//conditions:default": ["UNSUPPORTED_PLATFORM"],
++    }),
++    hdrs = [
++        "zdict.h",
++        "zstd.h",
++        "zstd_errors.h",
++    ],
++)
++
+ go_library(
+     name = "gozstd",
+     srcs = [
+@@ -16,50 +40,9 @@ go_library(
+         "reader.go",
+         "stream.go",
+         "writer.go",
+-        "zdict.h",
+-        "zstd.h",
+-        "zstd_errors.h",
+     ],
++    cdeps = [":libzstd"],
+     cgo = True,
+-    clinkopts = select({
+-        "@io_bazel_rules_go//go/platform:android_amd64": [
+-            "./libzstd_linux_amd64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:android_arm": [
+-            "./libzstd_linux_arm.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:android_arm64": [
+-            "./libzstd_linux_arm64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:darwin_amd64": [
+-            "./libzstd_darwin_amd64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:darwin_arm64": [
+-            "./libzstd_darwin_arm64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:freebsd_amd64": [
+-            "./libzstd_freebsd_amd64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:ios_amd64": [
+-            "./libzstd_darwin_amd64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:ios_arm64": [
+-            "./libzstd_darwin_arm64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:linux_amd64": [
+-            "./libzstd_linux_amd64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:linux_arm": [
+-            "./libzstd_linux_arm.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:linux_arm64": [
+-            "./libzstd_linux_arm64.a",
+-        ],
+-        "@io_bazel_rules_go//go/platform:windows_amd64": [
+-            "./libzstd_windows_amd64.a",
+-        ],
+-        "//conditions:default": [],
+-    }),
+     copts = ["-O3"],
+     importpath = "github.com/valyala/gozstd",
+     visibility = ["//visibility:public"],

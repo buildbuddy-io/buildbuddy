@@ -54,7 +54,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/jhump/protoreflect v1.8.2
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
-	github.com/klauspost/compress v1.15.4
+	github.com/klauspost/compress v1.15.7
 	github.com/lestrrat-go/jwx v1.2.11
 	github.com/lni/dragonboat/v3 v3.3.4
 	github.com/logrusorgru/aurora v2.0.3+incompatible
@@ -70,6 +70,7 @@ require (
 	github.com/stretchr/testify v1.7.1
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
+	github.com/valyala/gozstd v1.17.0
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	go.opentelemetry.io/contrib/detectors/gcp v1.2.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.31.0
