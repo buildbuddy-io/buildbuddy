@@ -476,8 +476,8 @@ type EventChannel struct {
 	apiTargetMap   api_common.TargetMap
 
 	eventsBeforeOptions           []*inpb.InvocationEvent
+	numDroppedEventsBeforeOptions uint64
 	hasReceivedEventWithOptions   bool
-	hasDroppedEventsBeforeOptions bool
 	logWriter                     *eventlog.EventLogWriter
 	onClose                       func()
 	attempt                       uint64
@@ -783,10 +783,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	} else if !e.hasReceivedEventWithOptions {
 		e.eventsBeforeOptions = append(e.eventsBeforeOptions, invocationEvent)
 		if len(e.eventsBeforeOptions) > 100 {
-			if !e.hasDroppedEventsBeforeOptions {
-				e.hasDroppedEventsBeforeOptions = true
-				log.Warningf("We got over 100 build events before an event with options for invocation %s. Beginning to drop events. Earliest dropped event: %+v", iid, e.eventsBeforeOptions[0])
-			}
+			e.numDroppedEventsBeforeOptions++
 			e.eventsBeforeOptions = e.eventsBeforeOptions[1:]
 		}
 		return nil
@@ -954,6 +951,10 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no build metadata written.", e.attempt, invocationID)
 	}
 	return nil
+}
+
+func (e *EventChannel) GetNumDroppedEvents() uint64 {
+	return e.numDroppedEventsBeforeOptions
 }
 
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
