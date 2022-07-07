@@ -250,7 +250,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	}
 	if sc := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); sc != nil {
 		scorecard.FillBESMetadata(sc, task.files)
-		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, sc); err != nil {
+		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, task.invocationJWT.attempt, sc); err != nil {
 			log.Errorf("Error writing scorecard blob: %s", err)
 		}
 	}
@@ -1045,7 +1045,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
 				scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
 			} else {
-				sc, err := scorecard.Read(ctx, env, iid)
+				sc, err := scorecard.Read(ctx, env, iid, ti.Attempt)
 				if err != nil {
 					log.Warningf("Failed to read scorecard for invocation %s: %s", iid, err)
 				} else {
