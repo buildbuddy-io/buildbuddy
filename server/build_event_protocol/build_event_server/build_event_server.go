@@ -120,6 +120,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
 	}
 
+	if channel != nil && channel.GetNumDroppedEvents() > 0 {
+		log.Warningf("We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
+			streamID.InvocationId, channel.GetNumDroppedEvents())
+	}
+
 	// Check that we have received all acks! If we haven't bail out since we
 	// don't want to ack *anything*. This forces the client to retransmit
 	// everything all at once, which means we don't need to worry about
