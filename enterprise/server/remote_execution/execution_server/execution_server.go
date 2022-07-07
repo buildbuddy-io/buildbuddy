@@ -262,7 +262,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			md := executeResponse.GetResult().GetExecutionMetadata()
 			// Backwards-compatible fill of the execution with the ExecutionSummary for
 			// now. The ExecutionSummary will be removed completely in the future.
-			if md == nil || md.GetIoStats() == nil || md.GetUsageStats() == nil || md.GetEstimatedTaskSize() == nil {
+			if statsUnset(md) {
 				if decodedMetadata, err := decodeMetadataFromExecutionSummary(executeResponse); err == nil {
 					md = decodedMetadata
 				}
@@ -959,6 +959,21 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 	}
 	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
 	return nil
+}
+
+func statsUnset(md *repb.ExecutedActionMetadata) bool {
+	return (md.GetIoStats().GetFileDownloadCount() == 0 &&
+		md.GetIoStats().GetFileDownloadSizeBytes() == 0 &&
+		md.GetIoStats().GetFileDownloadDurationUsec() == 0 &&
+		md.GetIoStats().GetFileUploadCount() == 0 &&
+		md.GetIoStats().GetFileUploadSizeBytes() == 0 &&
+		md.GetIoStats().GetFileUploadDurationUsec() == 0 &&
+		md.GetUsageStats().GetPeakMemoryBytes() == 0 &&
+		md.GetUsageStats().GetCpuNanos() == 0 &&
+		md.GetEstimatedTaskSize().GetEstimatedMemoryBytes() == 0 &&
+		md.GetEstimatedTaskSize().GetEstimatedMilliCpu() == 0 &&
+		md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes() == 0)
+
 }
 
 func decodeMetadataFromExecutionSummary(resp *repb.ExecuteResponse) (*repb.ExecutedActionMetadata, error) {

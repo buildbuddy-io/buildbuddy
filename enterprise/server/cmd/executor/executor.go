@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
@@ -72,6 +73,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	var err error
 	if useLocal {
 		log.Infof("Using local cache!")
+		log.Warningf("Using an executor with a local cache is DEPRECATED! Please set executor.app_target instead.")
 		dialOptions := grpc_client.CommonGRPCClientOptions()
 		dialOptions = append(dialOptions, grpc.WithContextDialer(bufDialer))
 		dialOptions = append(dialOptions, grpc.WithInsecure())
@@ -282,6 +284,7 @@ func main() {
 		repb.RegisterActionCacheServer(localServer, actionCacheServer)
 	}
 
+	container.Metrics.Start(rootContext)
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	http.Handle("/healthz", env.GetHealthChecker().LivenessHandler())

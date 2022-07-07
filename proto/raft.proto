@@ -52,6 +52,12 @@ message StorageMetadata {
   }
   PebbleMetadata pebble_metadata = 2;
 
+  message InlineMetadata {
+    bytes data = 1;
+    int64 created_at_nsec = 2;
+  }
+  InlineMetadata inline_metadata = 3;
+
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
   // contents of the the specified location.
