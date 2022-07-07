@@ -143,8 +143,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	defer x.reapMutex.RUnlock()
 
 	log.Debugf("Running command in VM: %q", cmd.String())
-	opts := &commandutil.RunWithCleanupOpts{}
-	_, err := commandutil.RunWithProcessTreeCleanup(ctx, cmd, opts)
+	_, err := commandutil.RunWithProcessTreeCleanup(ctx, cmd, false /*=enableStats*/)
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
 	rsp := &vmxpb.ExecResponse{}
 	rsp.ExitCode = int32(exitCode)

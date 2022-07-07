@@ -7,12 +7,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/util/procstats",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_mitchellh_go_ps//:go-ps",
-        "@com_github_shirou_gopsutil_v3//process",
     ],
 )
 

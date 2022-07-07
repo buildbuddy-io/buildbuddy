@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
-	procutil "github.com/shirou/gopsutil/v3/process"
 )
 
 const (
@@ -29,14 +29,6 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
-
-	// Parameters for stats polling. The poll interval starts out at
-	// statsInitialPollInterval and is multiplied by statsPollBackoff after each
-	// attempt, up to statsMaxPollInterval.
-
-	statsInitialPollInterval = 25 * time.Millisecond
-	statsPollBackoff         = 1.25
-	statsMaxPollInterval     = 1000 * time.Millisecond
 )
 
 var (
@@ -132,7 +124,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, opts *RunOp
 		if err != nil {
 			return err
 		}
-		stats, err = RunWithProcessTreeCleanup(ctx, cmd, &RunWithCleanupOpts{EnableStats: opts.EnableStats})
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, opts.EnableStats)
 		return err
 	})
 
@@ -147,13 +139,6 @@ func Run(ctx context.Context, command *repb.Command, workDir string, opts *RunOp
 	}
 }
 
-type RunWithCleanupOpts struct {
-	// EnableStats specifies whether to monitor the command while it is running
-	// and collect approximate usage stats. This is not turned on by default
-	// because it incurs some overhead.
-	EnableStats bool
-}
-
 // RunWithProcessTreeCleanup runs the given command, ensuring that child
 // processes are killed if the command times out.
 //
@@ -165,16 +150,12 @@ type RunWithCleanupOpts struct {
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunWithCleanupOpts) (*container.Stats, error) {
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, enableStats bool) (*container.Stats, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	pid := cmd.Process.Pid
 	processTerminated := make(chan struct{})
-	wait := func() error {
-		defer close(processTerminated)
-		return cmd.Wait()
-	}
 	// Cleanup goroutine: kill the process tree when the context is canceled.
 	go func() {
 		select {
@@ -190,38 +171,19 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunWith
 	// Monitor goroutine: periodically record process stats.
 	go func() {
 		defer close(statsCh)
-		if !opts.EnableStats {
+		if !enableStats {
 			return
 		}
-		statsCh <- collectStats(pid, processTerminated)
+		statsCh <- procstats.Monitor(pid, processTerminated)
 	}()
-
+	wait := func() error {
+		defer close(processTerminated)
+		return cmd.Wait()
+	}
 	if err := wait(); err != nil {
 		return nil, err
 	}
 	return <-statsCh, nil
-}
-
-func collectStats(pid int, processTerminated <-chan struct{}) *container.Stats {
-	ts := NewTreeStats(pid)
-	// Most processes are short-lived so we need a fast poll rate if we want
-	// to increase the probability of getting at least one sample. But
-	// polling is expensive: a 50ms poll rate consumes around 10% of a CPU
-	// on Linux (and it's even worse on macOS). So we take a hybrid approach
-	// here: start off polling fast but slow down over time.
-	pollInterval := statsInitialPollInterval
-	for {
-		select {
-		case <-processTerminated:
-			return ts.Total()
-		case <-time.After(pollInterval):
-			ts.Update() // ignore error
-		}
-		pollInterval = time.Duration(float64(pollInterval) * statsPollBackoff)
-		if pollInterval > statsMaxPollInterval {
-			pollInterval = statsMaxPollInterval
-		}
-	}
 }
 
 // KillProcessTree kills the given pid as well as any descendant processes.
@@ -280,126 +242,6 @@ func ChildPids(pid int) ([]int, error) {
 		out = append(out, proc.Pid())
 	}
 	return out, nil
-}
-
-// TreeStats records stats across the lifecycle of a process tree, accounting
-// for processes that may come and go while the process is running.
-type TreeStats struct {
-	// RootPid is the pid of the root process of the tree.
-	RootPid int
-
-	// PeakTotalMemoryBytes records the highest total memory across all
-	// processes in the tree, at any point during the process' lifetime.
-	PeakTotalMemoryBytes int64
-
-	// CPUNanosByPid records the most recent CPU stats for all pids observed in
-	// the tree at any point during process execution.
-	CPUNanosByPid map[int]int64
-}
-
-func NewTreeStats(rootPid int) *TreeStats {
-	return &TreeStats{
-		RootPid:       rootPid,
-		CPUNanosByPid: make(map[int]int64, 1),
-	}
-}
-
-// Update records stats for the current process tree.
-func (t *TreeStats) Update() error {
-	stats, err := statTree(t.RootPid)
-	if err != nil {
-		return err
-	}
-	totalMemBytes := int64(0)
-	for _, s := range stats {
-		totalMemBytes += s.MemoryUsageBytes
-	}
-	if totalMemBytes > t.PeakTotalMemoryBytes {
-		t.PeakTotalMemoryBytes = totalMemBytes
-	}
-	for pid, stat := range stats {
-		t.CPUNanosByPid[pid] = stat.CPUNanos
-	}
-	return nil
-}
-
-// Total returns stats with PeakMemoryBytes set to match the peak total memory
-// observed, and CPUNanos to match the total CPU usage observed across all
-// processes in the tree.
-func (t *TreeStats) Total() *container.Stats {
-	totalCPUNanos := int64(0)
-	for _, cpuNanos := range t.CPUNanosByPid {
-		totalCPUNanos += cpuNanos
-	}
-	return &container.Stats{
-		PeakMemoryUsageBytes: t.PeakTotalMemoryBytes,
-		CPUNanos:             totalCPUNanos,
-	}
-}
-
-func statTree(pid int) (map[int]*container.Stats, error) {
-	pids, err := pidsInTree(pid)
-	if err != nil {
-		return nil, err
-	}
-	stats := make(map[int]*container.Stats, len(pids))
-	for _, pid := range pids {
-		s, err := getProcessStats(pid)
-		if err != nil {
-			// If we fail to get stats, the process probably just exited between the
-			// time that we observed the PIDs and the tree, and the time we went to
-			// read stats for the pid.
-			continue
-		}
-		stats[pid] = s
-	}
-	return stats, nil
-}
-
-// pidsInTree returns all pids in the tree rooted at pid, including pid itself.
-func pidsInTree(pid int) ([]int, error) {
-	procs, err := ps.Processes()
-	if err != nil {
-		return nil, err
-	}
-	children := make(map[int][]int, len(procs))
-	for _, p := range procs {
-		ppid := p.PPid()
-		c := children[ppid]
-		c = append(c, p.Pid())
-		children[ppid] = c
-	}
-	pidsVisited := []int{}
-	pidsToExplore := []int{pid}
-	for len(pidsToExplore) > 0 {
-		pid := pidsToExplore[0]
-		pidsToExplore = pidsToExplore[1:]
-		pidsVisited = append(pidsVisited, pid)
-		pidsToExplore = append(pidsToExplore, children[pid]...)
-	}
-	return pidsVisited, nil
-}
-
-func getProcessStats(pid int) (*container.Stats, error) {
-	p, err := procutil.NewProcess(int32(pid))
-	if err != nil {
-		return nil, err
-	}
-	t, err := p.Times()
-	if err != nil {
-		return nil, err
-	}
-	m, err := p.MemoryInfo()
-	if err != nil {
-		return nil, err
-	}
-	// TODO(bduffany): Explore using PSS instead of RSS to avoid overcounting
-	// shared library memory usage.
-	stats := &container.Stats{
-		MemoryUsageBytes: int64(m.RSS),
-		CPUNanos:         int64((t.User + t.System) * 1e9),
-	}
-	return stats, nil
 }
 
 func ErrorResult(err error) *interfaces.CommandResult {
