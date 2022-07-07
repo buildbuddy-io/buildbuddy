@@ -127,6 +127,8 @@ const (
 
 const (
 	bbNamespace = "buildbuddy"
+
+	thirtyDaysDuration = 30 * 24 * time.Hour
 )
 
 var (
@@ -134,11 +136,7 @@ var (
 
 	// durationUsecBuckets is a reasonable bucket setting for microsecond-valued
 	// duration metrics (1 usec to 30 days).
-	durationUsecBuckets = exponentialBucketRange(1, 30*24*float64(time.Hour)/1e3, 2)
-
-	// durationSecBuckets is a reasonable bucket setting for second-valued
-	// duration metrics (1 usec to 30 days).
-	durationSecBuckets = exponentialBucketRange(1/1e6, 30*24*float64(time.Hour)/1e9, 2)
+	durationUsecBuckets = exponentialBucketRange(1, float64(thirtyDaysDuration.Microseconds()), 2)
 )
 
 var (
@@ -361,12 +359,11 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	})
 
-	DiskCacheSecondsSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
+	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_seconds_since_last_access",
-		Buckets:   durationSecBuckets,
-		Help:      "Time since last digest access, in **seconds**.",
+		Name:      "disk_cache_usec_since_last_access",
+		Help:      "Time since last digest access, in **microseconds**.",
 	})
 
 	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -1330,8 +1327,8 @@ var (
 // number of buckets.
 func exponentialBucketRange(min, max, factor float64) []float64 {
 	buckets := []float64{}
-	current := float64(min)
-	for current < float64(max) {
+	current := min
+	for current < max {
 		buckets = append(buckets, current)
 		current *= factor
 	}
