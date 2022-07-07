@@ -29,7 +29,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
 	return &interfaces.CommandResult{}
 }
 

@@ -127,7 +127,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	// the docker container.
 	isContainerRunning = true
 
-	res := c.Exec(ctx, cmd, &container.ExecOpts{})
+	res := c.Exec(ctx, cmd, &container.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -146,7 +146,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	assert.Greater(t, stats.MemoryUsageBytes, int64(0))
 
 	// Try executing the same command again after unpausing.
-	res = c.Exec(ctx, cmd, &container.ExecOpts{})
+	res = c.Exec(ctx, cmd, &container.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, res, expectedResult)
@@ -254,7 +254,7 @@ func TestDockerExec_Timeout_StdoutStderrStillVisible(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
-	res := c.Exec(ctx, cmd, &container.ExecOpts{})
+	res := c.Exec(ctx, cmd, &container.Stdio{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -309,7 +309,7 @@ func TestDockerExec_Stdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := c.Exec(ctx, cmd, &container.ExecOpts{
+	res := c.Exec(ctx, cmd, &container.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,

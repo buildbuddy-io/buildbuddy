@@ -53,7 +53,7 @@ func TestRun_Stdio(t *testing.T) {
 		echo TestError >&2
 	`}}
 	var stdout, stderr bytes.Buffer
-	res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
+	res := commandutil.Run(ctx, cmd, ".", &container.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -81,7 +81,7 @@ func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
 		defer inr.Close()
 		defer outw.Close()
 
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{
+		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{
 			Stdin:  inr,
 			Stdout: outw,
 		})
@@ -143,7 +143,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 
 	{
 		cmd := &repb.Command{Arguments: []string{"./command_not_found_in_working_dir"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -153,7 +153,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	}
 	{
 		cmd := &repb.Command{Arguments: []string{"command_not_found_in_PATH"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -169,7 +169,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	testfs.WriteAllFileContents(t, wd, map[string]string{"non_executable_file": ""})
 
 	cmd := &repb.Command{Arguments: []string{"./non_executable_file"}}
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
 
 	assert.Error(t, res.Error)
 	assert.True(
@@ -190,7 +190,7 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
 
 	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -211,7 +211,7 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.ExecOpts{})
+	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
 
 	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -220,5 +220,5 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", &container.ExecOpts{})
+	return commandutil.Run(ctx, cmd, ".", &container.Stdio{})
 }

@@ -1226,7 +1226,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 	}()
 
-	cmdResult := c.Exec(ctx, command, &container.ExecOpts{})
+	cmdResult := c.Exec(ctx, command, &container.Stdio{})
 	return cmdResult
 }
 
@@ -1398,9 +1398,9 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // the executed process.
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
-func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
 	// TODO(bduffany): Wire up stdin/stdout/stderr from ExecOpts
-	if opts.Stderr != nil || opts.Stdout != nil || opts.Stdin != nil {
+	if stdio.Stderr != nil || stdio.Stdout != nil || stdio.Stdin != nil {
 		return commandutil.ErrorResult(status.FailedPreconditionError("firecracker does not yet support remote persistent workers"))
 	}
 
