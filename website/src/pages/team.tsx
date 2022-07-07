@@ -63,7 +63,7 @@ const teamMembers = [
     image: "brentley.jpg",
   },
   {
-    name: "Margaret Lou",
+    name: "Maggie Lou",
     email: "maggie@buildbuddy.io",
     blurb: "Previously Software Engineer at Thumbtack. Studied Computer Science at Northwestern.",
     image: "maggie.jpeg",
