@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	enableUploadCompresssion = flag.Bool("executor.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
+	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
 )
 
 type StreamBlobOpts struct {
@@ -455,10 +455,6 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		})
 		return nil
 	}
-
-	if ul.unsentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
-		ul.flushCurrentBatch()
-	}
 	b, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -466,12 +462,17 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	if err := r.Close(); err != nil {
 		return err
 	}
+
+	additionalSize := len(b)
+	if ul.unsentBatchSize+additionalSize > gRPCMaxSize {
+		ul.flushCurrentBatch()
+	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest:     d,
 		Data:       b,
 		Compressor: compressor,
 	})
-	ul.unsentBatchSize += d.GetSizeBytes()
+	ul.unsentBatchSize += additionalSize
 	return nil
 }
 
