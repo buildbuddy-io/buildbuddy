@@ -21,11 +21,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -898,6 +900,9 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 }
 
 func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, error) {
+	healthChecker := healthcheck.NewHealthChecker("ci-runner")
+	env := real_environment.NewRealEnv(healthChecker)
+
 	fileDigestMap, dirs, err := collectRunfiles(runfilesDir)
 	if err != nil {
 		return nil, nil, err
@@ -906,8 +911,9 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	if err != nil {
 		return nil, nil, err
 	}
-	bsClient := bspb.NewByteStreamClient(conn)
-	casClient := repb.NewContentAddressableStorageClient(conn)
+	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 
 	backendURL, err := url.Parse(*cacheBackend)
 	if err != nil {
@@ -930,7 +936,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			},
 		})
 	}
-	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+	rsp, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		InstanceName: *remoteInstanceName,
 		BlobDigests:  digests,
 	})
@@ -940,11 +946,8 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	missingDigests := rsp.GetMissingBlobDigests()
 
 	eg, ctx := errgroup.WithContext(ctx)
+	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName)
 
-	u, err := cachetools.NewBatchCASUploader(ctx, bsClient, casClient, nil /*=fileCache*/, *remoteInstanceName)
-	if err != nil {
-		return nil, nil, err
-	}
 	for _, d := range missingDigests {
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
 		if !ok {
@@ -972,7 +975,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		placePath := placePath
 		realPath := realPath
 		eg.Go(func() error {
-			_, td, err := cachetools.UploadDirectoryToCAS(ctx, bsClient, casClient, nil, *remoteInstanceName, realPath)
+			_, td, err := cachetools.UploadDirectoryToCAS(ctx, env, *remoteInstanceName, realPath)
 			if err != nil {
 				return err
 			}

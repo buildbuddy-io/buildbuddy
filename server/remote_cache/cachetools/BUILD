@@ -7,9 +7,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/remote_cache/namespace",
+        "//server/util/bytebufferpool",
+        "//server/util/compression",
+        "//server/util/log",
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//codes",

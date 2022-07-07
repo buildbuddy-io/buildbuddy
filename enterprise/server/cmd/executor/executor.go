@@ -111,6 +111,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
+	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 }
 
 func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) environment.Env {
