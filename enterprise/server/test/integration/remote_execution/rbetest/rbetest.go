@@ -141,10 +141,21 @@ func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
 }
 
+type envLike struct {
+	*testenv.TestEnv
+	r *Env
+}
+
+func (el *envLike) GetByteStreamClient() bspb.ByteStreamClient {
+	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].byteStreamClient
+}
+
+func (el *envLike) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
+	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].casClient
+}
+
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
-	bsClient := r.GetByteStreamClient()
-	casClient := r.GetContentAddressableStorageClient()
-	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, bsClient, casClient, nil /*=fileCache*/, "" /*=instanceName*/, rootDir)
+	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, &envLike{r.testEnv, r}, "" /*=instanceName*/, rootDir)
 	if err != nil {
 		assert.FailNow(r.t, err.Error())
 	}
