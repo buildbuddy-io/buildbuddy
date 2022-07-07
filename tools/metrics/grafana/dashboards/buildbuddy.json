@@ -594,6 +594,119 @@
           }
         },
         {
+          "aliasColors": {
+            "Failure": "dark-red",
+            "failure": "red",
+            "success": "green"
+          },
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 9,
+            "x": 0,
+            "y": 11
+          },
+          "hiddenSeries": false,
+          "id": 1232,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "rightSide": true,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "8.3.2",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [
+            {
+              "$$hashKey": "object:201",
+              "alias": "SUCCESS",
+              "color": "#37872D"
+            },
+            {
+              "$$hashKey": "object:206",
+              "alias": "OK",
+              "color": "#1F60C4"
+            },
+            {
+              "$$hashKey": "object:211",
+              "alias": "REMOTE_ERROR",
+              "color": "#C4162A"
+            },
+            {
+              "$$hashKey": "object:231",
+              "alias": "Failed",
+              "color": "#FFB357"
+            }
+          ],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum by (bazel_exit_code) (rate(buildbuddy_invocation_count{region=\"${region}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{bazel_exit_code}}",
+              "queryType": "randomWalk",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Invocations per second (by bazel exit code)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:608",
+              "format": "ops",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:609",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
           "aliasColors": {},
           "bars": false,
           "dashLength": 10,
@@ -607,7 +720,7 @@
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
+            "x": 9,
             "y": 11
           },
           "hiddenSeries": false,

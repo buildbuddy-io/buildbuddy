@@ -192,7 +192,7 @@ func (r *dockerCommandContainer) copyContainerLogs(ctx context.Context, cid stri
 		result.Error = wrapDockerErr(err, "failed to get docker container logs")
 		return
 	}
-	err = copyOutputs(logs, result, &container.ExecOpts{})
+	err = copyOutputs(logs, result, &container.Stdio{})
 	if closeErr := logs.Close(); closeErr != nil {
 		log.Warningf("Failed to close docker logs: %s", closeErr)
 	}
@@ -289,16 +289,16 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	}
 }
 
-func copyOutputs(reader io.Reader, result *interfaces.CommandResult, opts *container.ExecOpts) error {
+func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *container.Stdio) error {
 	var stdoutBuf, stderrBuf bytes.Buffer
 	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
 	// Note: stdout and stderr aren't buffered in the command result when
 	// providing an explicit writer.
-	if opts.Stdout != nil {
-		stdout = opts.Stdout
+	if stdio.Stdout != nil {
+		stdout = stdio.Stdout
 	}
-	if opts.Stderr != nil {
-		stderr = opts.Stderr
+	if stdio.Stderr != nil {
+		stderr = stdio.Stderr
 	}
 
 	if *commandutil.DebugStreamCommandOutputs {
@@ -444,17 +444,17 @@ func (r *dockerCommandContainer) create(ctx context.Context, workDir string) err
 	return nil
 }
 
-func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Exec(ctx context.Context, command *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
 	var res *interfaces.CommandResult
 	// Ignore error from this function; it is returned as part of res.
 	commandutil.RetryIfTextFileBusy(func() error {
-		res = r.exec(ctx, command, opts)
+		res = r.exec(ctx, command, stdio)
 		return res.Error
 	})
 	return res
 }
 
-func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
+func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -470,7 +470,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		WorkingDir:   r.workDir,
 		AttachStdout: true,
 		AttachStderr: true,
-		AttachStdin:  opts.Stdin != nil,
+		AttachStdin:  stdio.Stdin != nil,
 		User:         u,
 	}
 	exec, err := r.client.ContainerExecCreate(ctx, r.id, cfg)
@@ -484,11 +484,11 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		return result
 	}
 
-	if opts.Stdin != nil {
+	if stdio.Stdin != nil {
 		go func() {
 			// Ignoring errors from the copy here since they're most likely due to the
 			// process being intentionally terminated.
-			io.Copy(attachResp.Conn, opts.Stdin)
+			io.Copy(attachResp.Conn, stdio.Stdin)
 			attachResp.CloseWrite()
 		}()
 	}
@@ -501,7 +501,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		<-ctx.Done()
 		attachResp.Close()
 	}()
-	if err := copyOutputs(attachResp.Reader, result, opts); err != nil {
+	if err := copyOutputs(attachResp.Reader, result, stdio); err != nil {
 		// If we timed out, ignore the "closed connection" error from copying
 		// outputs
 		if ctx.Err() == context.DeadlineExceeded {

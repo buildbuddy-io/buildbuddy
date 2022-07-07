@@ -237,6 +237,17 @@ type DeprecatedFlag struct {
 // via the NewPrimitiveFlag or NewPrimitiveFlagVar functions), the customary
 // name and usage parameters, and a migration plan, and defines a flag that will
 // notify users that it is deprecated when it is set.
+//
+// For example, if you wanted to deprecate a flag like this:
+// var foo = flag.String("foo", "foo default value", "Use the specified foo.")
+//
+// You would redefine the flag as deprecated like this:
+// var foo = DeprecatedVar[string](
+//   NewPrimitiveFlag("foo default value"),
+//   "foo",
+//   "help text for foo",
+//   "All of our foos were destroyed in a fire, please specify a bar instead.",
+// )
 func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
 	common.DefaultFlagSet.Var(&DeprecatedFlag{value, name, migrationPlan}, name, usage+" **DEPRECATED** "+migrationPlan)
 	return reflect.ValueOf(value).Convert(reflect.TypeOf((*T)(nil))).Interface().(*T)

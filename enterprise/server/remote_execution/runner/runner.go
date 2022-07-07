@@ -370,7 +370,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &container.ExecOpts{})
+	return r.Container.Exec(ctx, command, &container.Stdio{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -488,7 +488,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &container.ExecOpts{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &container.Stdio{})
 	return res.Error
 }
 
@@ -1377,12 +1377,12 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
-		opts := &container.ExecOpts{
+		stdio := &container.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,
 		}
-		res := r.Container.Exec(ctx, command, opts)
+		res := r.Container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
 	}()
 }
