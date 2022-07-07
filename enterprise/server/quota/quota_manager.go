@@ -322,9 +322,9 @@ func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
 }
 
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) (bool, error) {
-	key := quota.GetKey(ctx, qm.env)
-	if key == "" {
-		log.Warningf("Key is empty.")
+	key, err := quota.GetKey(ctx, qm.env)
+	if err != nil {
+		log.Warningf("Failed to get quota key: %s", err)
 		return true, nil
 	}
 	b := qm.findBucket(namespace, key)

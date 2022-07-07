@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -35,11 +36,15 @@ func getIP(ctx context.Context) string {
 	return ips[0]
 }
 
-// GetKey get the key for quota accounting from the context.
-// Use group_id if is available from the context, otherwise, use the ip address.
-func GetKey(ctx context.Context, env environment.Env) string {
+// GetKey gets the key for quota accounting from the context.
+// If available, group_id is used, otherwise the key falls back to the ip address.
+func GetKey(ctx context.Context, env environment.Env) (string, error) {
 	if groupID := getGroupID(ctx, env); groupID != "" {
-		return groupID
+		return groupID, nil
 	}
-	return getIP(ctx)
+	if ip := getIP(ctx); ip != "" {
+		return ip, nil
+	}
+	return "", status.InternalErrorf("quota key is empty")
+
 }

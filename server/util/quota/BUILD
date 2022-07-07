@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/interfaces",
+        "//server/util/status",
         "@org_golang_google_grpc//metadata",
     ],
 )
