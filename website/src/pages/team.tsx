@@ -62,6 +62,12 @@ const teamMembers = [
     blurb: "Previously Staff Software Engineer at Lyft & Target. Maintainer of Bazel's rules_apple and rules_swift.",
     image: "brentley.jpg",
   },
+  {
+    name: "Margaret Lou",
+    email: "maggie@buildbuddy.io",
+    blurb: "Previously Software Engineer at Thumbtack. Studied Computer Science at Northwestern.",
+    image: "maggie.jpeg",
+  },
 ];
 
 function Team() {
