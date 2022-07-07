@@ -29,12 +29,13 @@ import (
 )
 
 const (
-	uploadBufSizeBytes = 1000000 // 1MB
-	gRPCMaxSize        = int64(4000000)
+	uploadBufSizeBytes    = 1000000 // 1MB
+	gRPCMaxSize           = int64(4000000)
+	maxCompressionBufSize = int64(4000000)
 )
 
 var (
-	enableUploadCompresssion = flag.Bool("app.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
+	enableUploadCompresssion = flag.Bool("executor.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
 )
 
 type StreamBlobOpts struct {
@@ -403,7 +404,6 @@ func (ul *BatchCASUploader) supportsCompression() bool {
 			log.Debugf("Upload compression was enabled but remote server did not support compression")
 		}
 	})
-	log.Printf("supportsCompression() returning %t", ul.compress)
 	return ul.compress
 }
 
@@ -419,9 +419,12 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	ul.uploads[dk] = struct{}{}
 
 	rsc.Seek(0, 0)
-	bufSize := d.GetSizeBytes()
-
 	r := io.ReadCloser(rsc)
+
+	bufSize := d.GetSizeBytes()
+	if bufSize > maxCompressionBufSize {
+		bufSize = maxCompressionBufSize
+	}
 
 	compressor := repb.Compressor_IDENTITY
 	if ul.supportsCompression() {
@@ -443,7 +446,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 
 		byteStreamClient := ul.env.GetByteStreamClient()
 		if byteStreamClient == nil {
-			return status.InvalidArgumentError("Missing bytestream client")
+			return status.InvalidArgumentError("missing bytestream client")
 		}
 		ul.eg.Go(func() error {
 			defer r.Close()
@@ -453,7 +456,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		return nil
 	}
 
-	if ul.unsentBatchSize+bufSize > gRPCMaxSize {
+	if ul.unsentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
 		ul.flushCurrentBatch()
 	}
 	b, err := io.ReadAll(r)
@@ -516,7 +519,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 func (ul *BatchCASUploader) flushCurrentBatch() error {
 	casClient := ul.env.GetContentAddressableStorageClient()
 	if casClient == nil {
-		return status.InvalidArgumentError("Missing CAS client")
+		return status.InvalidArgumentError("missing CAS client")
 	}
 
 	req := ul.unsentBatchReq
