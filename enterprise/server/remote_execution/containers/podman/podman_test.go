@@ -90,7 +90,7 @@ func TestHelloWorldExec(t *testing.T) {
 	err := podman.Create(ctx, "/work")
 	require.NoError(t, err)
 
-	result := podman.Exec(ctx, cmd, &container.ExecOpts{})
+	result := podman.Exec(ctx, cmd, &container.Stdio{})
 	assert.NoError(t, result.Error)
 
 	assert.Regexp(t, "^(/usr)?/bin/podman\\s", result.CommandDebugString, "sanity check: command should be run bare")
@@ -133,7 +133,7 @@ func TestExecStdio(t *testing.T) {
 	require.NoError(t, err)
 
 	var stdout, stderr bytes.Buffer
-	res := podman.Exec(ctx, cmd, &container.ExecOpts{
+	res := podman.Exec(ctx, cmd, &container.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
