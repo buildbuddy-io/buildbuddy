@@ -463,7 +463,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		return err
 	}
 
-	additionalSize := len(b)
+	additionalSize := int64(len(b))
 	if ul.unsentBatchSize+additionalSize > gRPCMaxSize {
 		ul.flushCurrentBatch()
 	}
