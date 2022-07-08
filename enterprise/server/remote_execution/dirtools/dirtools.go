@@ -32,7 +32,7 @@ import (
 const gRPCMaxSize = int64(4000000)
 
 var (
-	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", false, "If true, enable compression of downloads from remote caches")
 )
 
 type TransferInfo struct {
@@ -508,17 +508,6 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		return err
 	}
 
-	var decodeBuf []byte
-	if ff.supportsCompression() {
-		maxRspSize := int64(0)
-		for _, fileResponse := range rsp.GetResponses() {
-			if fileResponse.GetDigest().GetSizeBytes() > maxRspSize {
-				maxRspSize = fileResponse.GetDigest().GetSizeBytes()
-			}
-		}
-		decodeBuf = make([]byte, 0, int(maxRspSize))
-	}
-
 	fileCache := ff.env.GetFileCache()
 	for _, fileResponse := range rsp.GetResponses() {
 		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
@@ -534,7 +523,10 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		}
 		data := fileResponse.GetData()
 		if fileResponse.GetCompressor() == repb.Compressor_ZSTD {
-			data, err = compression.DecompressZstd(decodeBuf, data)
+			data, err = compression.DecompressZstd(nil, data)
+			if err != nil {
+				return err
+			}
 		}
 
 		ptr := ptrs[0]

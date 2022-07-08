@@ -154,6 +154,10 @@ func (el *envLike) GetContentAddressableStorageClient() repb.ContentAddressableS
 	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].casClient
 }
 
+func (el *envLike) GetCapabilitiesClient() repb.CapabilitiesClient {
+	return el.r.buildBuddyServers[rand.Intn(len(el.r.buildBuddyServers))].capabilitiesClient
+}
+
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
 	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, &envLike{r.testEnv, r}, "" /*=instanceName*/, rootDir)
 	if err != nil {
@@ -290,6 +294,7 @@ type BuildBuddyServer struct {
 	schedulerClient         scpb.SchedulerClient
 	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
 	acClient                repb.ActionCacheClient
+	capabilitiesClient      repb.CapabilitiesClient
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -346,6 +351,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	server.schedulerClient = scpb.NewSchedulerClient(clientConn)
 	server.buildBuddyServiceClient = bbspb.NewBuildBuddyServiceClient(clientConn)
 	server.acClient = repb.NewActionCacheClient(clientConn)
+	server.capabilitiesClient = repb.NewCapabilitiesClient(clientConn)
 
 	return server
 }
@@ -776,6 +782,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	env.SetActionCacheClient(repb.NewActionCacheClient(localConn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(localConn))
 	env.SetByteStreamClient(bspb.NewByteStreamClient(localConn))
+	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(clientConn))
 
 	executorUUID, err := guuid.NewRandom()
 	require.NoError(r.t, err)
@@ -899,6 +906,7 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
 	env.SetByteStreamClient(r.GetByteStreamClient())
 	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
+	env.SetCapabilitiesClient(r.testEnv.GetCapabilitiesClient())
 	// TODO: Does the context need the user ID if the CommandResult was produced
 	// by an authenticated user?
 	if err := r.rbeClient.DownloadActionOutputs(context.Background(), env, res.CommandResult, tmpDir); err != nil {
