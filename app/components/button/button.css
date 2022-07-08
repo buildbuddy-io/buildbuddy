@@ -24,6 +24,10 @@
   color: #fff;
 }
 
+.filled-button:focus {
+  outline: 2px solid #1e88e5;
+}
+
 .filled-button.destructive {
   background-color: #b71c1c;
 }

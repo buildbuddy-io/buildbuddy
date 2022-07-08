@@ -18,8 +18,14 @@ export function timestampToDate(timestamp: google_timestamp.protobuf.ITimestamp)
 
 /** Converts a proto duration to a number of millis. */
 export function durationToMillis(duration: google_duration.protobuf.IDuration): number {
-  const seconds = Number(duration.seconds) + Number(duration.nanos) / 1e9;
+  const seconds = Number(duration.seconds || 0) + Number(duration.nanos || 0) / 1e9;
   return seconds * 1e3;
+}
+
+/** Converts a number of milliseconds to a proto duration. */
+export function millisToDuration(ms: number): google_duration.protobuf.IDuration {
+  const seconds = ms / 1e3;
+  return { seconds: Math.floor(seconds) as any, nanos: (seconds - Math.floor(seconds)) * 1e9 };
 }
 
 /**
