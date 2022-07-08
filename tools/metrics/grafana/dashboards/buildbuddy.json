@@ -8802,7 +8802,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "5s",
+  "refresh": "1m",
   "schemaVersion": 33,
   "style": "dark",
   "tags": [],
