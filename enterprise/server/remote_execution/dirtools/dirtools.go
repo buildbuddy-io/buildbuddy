@@ -624,6 +624,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 				})
 			}(req)
 			req = newRequest()
+			currentBatchRequestSize = 0
 		}
 
 		// Add the file to our current batch request and
