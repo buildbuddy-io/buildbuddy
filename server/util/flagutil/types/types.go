@@ -188,26 +188,31 @@ type FlagAlias struct {
 	name string
 }
 
-func Alias[T any](newName, name string) *T {
+// Alias defines a new name or names for the existing flag at the passed name
+// and returns a pointer to the data backing it. If no new names are passed,
+// Alias simply returns said pointer without creating any new alias flags.
+func Alias[T any](name string, newNames ...string) *T {
 	f := &FlagAlias{name: name}
 	var flg *flag.Flag
 	for aliaser, ok := common.IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(common.IsNameAliasing) {
 		if flg = common.DefaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
-			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, newName, aliaser.AliasedName())
+			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, strings.Join(newNames, ", "), aliaser.AliasedName())
 		}
 	}
 	addr := reflect.ValueOf(flg.Value)
 	if t, err := common.GetTypeForFlagValue(flg.Value); err == nil {
 		if !addr.CanConvert(t) {
-			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, newName, flg.Name, flg.Value, t)
+			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, t)
 		}
 		addr = addr.Convert(t)
 	}
 	value, ok := addr.Interface().(*T)
 	if !ok {
-		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, newName, flg.Name, flg.Value, (*T)(nil))
+		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, (*T)(nil))
 	}
-	common.DefaultFlagSet.Var(f, newName, "Alias for "+name)
+	for _, newName := range newNames {
+		common.DefaultFlagSet.Var(f, newName, "Alias for "+name)
+	}
 	return value
 }
 
