@@ -419,7 +419,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 		if err != nil {
 			return err
 		}
-		if row.Count == 0 {
+		if row.Count == 0 && req.GetBucketName() != defaultBucketName {
 			return status.FailedPreconditionErrorf("namespace(%q) and bucket_name(%q) doesn't exist", req.GetNamespace(), req.GetBucketName())
 		}
 
