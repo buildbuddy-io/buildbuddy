@@ -1,38 +1,11 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import re
 import shlex
 import subprocess
 import sys
-
-INPUT_METRICS_PATH = "server/metrics/metrics.go"
-OUTPUT_PATH = "docs/prometheus-metrics.md"
-PRETTIER_TOOL_PATH = "tools/prettier/prettier.sh"
-
-FILE_HEADER = """---
-id: prometheus-metrics
-title: Prometheus Metrics
-sidebar_label: Prometheus Metrics
----
-
-<!--
-
-============================
-GENERATED FILE - DO NOT EDIT
-============================
-
-Run `python3 server/metrics/generate_docs.py` to re-generate.
-
--->
-
-BuildBuddy exposes [Prometheus](https://prometheus.io) metrics that allow monitoring the
-[four golden signals](https://landing.google.com/sre/sre-book/chapters/monitoring-distributed-systems/):
-latency, traffic, errors, and saturation.
-
-To view these metrics in a live-updating dashboard, we recommend using a tool
-like [Grafana](https://grafana.com).
-"""
 
 
 def fatal(msg: str, line_index=None):
@@ -47,7 +20,7 @@ class DocsGenerator(object):
         self.metrics_go_path = metrics_go_path
 
         self.state = None
-        self.output_lines = [FILE_HEADER]
+        self.output_lines = []
 
         # Parsed LABEL_CONSTANTS section.
         # Maps label constant token name to {"comments": [...], "value": ...}
@@ -239,18 +212,16 @@ class DocsGenerator(object):
 
 
 def main():
-    if not os.path.exists("WORKSPACE"):
-        fatal("Must be run from workspace root.")
-    if len(sys.argv) >= 2 and sys.argv[1] in ["-w", "--watch"]:
-        subprocess.run(
-            f'''nodemon --watch '{sys.path[0]}/metrics.go' --watch '{sys.argv[0]}' --exec "python3 '{sys.argv[0]}'"''',
-            shell=True,
-        )
-        sys.exit(0)
-    lines = DocsGenerator(INPUT_METRICS_PATH).parse()
-    with open(OUTPUT_PATH, "w") as f:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input_path", help="Path to metrics.go", required=True)
+    parser.add_argument("--output_path", help="Path to generated markdown file", required=True)
+    parser.add_argument("--prettier_path", help="Path to prettier.", required=True)
+    args = parser.parse_args()
+
+    lines = DocsGenerator(args.input_path).parse()
+    with open(args.output_path, "w") as f:
         f.write("\n".join(lines))
-    subprocess.run([PRETTIER_TOOL_PATH, '--write'], check=True)
+    subprocess.run([args.prettier_path, '--parser=markdown', '--write'], check=True)
 
 
 if __name__ == "__main__":

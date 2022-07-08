@@ -371,7 +371,7 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
-	return r.Container.Exec(ctx, command, &container.ExecOpts{})
+	return r.Container.Exec(ctx, command, &container.Stdio{})
 }
 
 func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, actionResult *repb.ActionResult, cmdResult *interfaces.CommandResult) error {
@@ -383,6 +383,10 @@ func (r *commandRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats
 	ioStats.FileUploadDurationUsec = txInfo.TransferDuration.Microseconds()
 	ioStats.FileUploadSizeBytes = txInfo.BytesTransferred
 	return nil
+}
+
+func (r *commandRunner) GetIsolationType() string {
+	return r.PlatformProperties.WorkloadIsolationType
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
@@ -485,7 +489,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &commandutil.RunOpts{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), false /*=enableStats*/, &container.Stdio{})
 	return res.Error
 }
 
@@ -687,6 +691,12 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 				status.InternalError("could not find runner to evict; this should never happen"),
 				"evict_failed",
 			}
+		}
+
+		if p.pausedRunnerCount() >= p.maxRunnerCount {
+			log.Infof("Evicting runner (pool max count %d exceeded).", p.maxRunnerCount)
+		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+			log.Infof("Evicting runner (max memory %d exceeded).", p.maxRunnerMemoryUsageBytes)
 		}
 
 		r := p.runners[evictIndex]
@@ -1240,7 +1250,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	}
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
-			log.Debug(err.Error())
+			log.Infof("Failed to recycle runner: %s", err)
 		} else {
 			// If not a resource limit exceeded error, probably it was an error
 			// removing the directory contents or a docker daemon error.
@@ -1285,6 +1295,9 @@ func (p *pool) setLimits() {
 	p.maxRunnerCount = count
 	p.maxRunnerMemoryUsageBytes = mem
 	p.maxRunnerDiskUsageBytes = disk
+	log.Infof(
+		"Configured runner pool: max count=%d, max memory (per-runner, bytes)=%d, max disk (per-runner, bytes)=%d",
+		p.maxRunnerCount, p.maxRunnerMemoryUsageBytes, p.maxRunnerDiskUsageBytes)
 }
 
 type labeledError struct {
@@ -1368,12 +1381,12 @@ func (r *commandRunner) startPersistentWorker(command *repb.Command, workerArgs,
 		defer stdinReader.Close()
 		defer stdoutWriter.Close()
 
-		opts := &container.ExecOpts{
+		stdio := &container.Stdio{
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
 			Stderr: &r.stderr,
 		}
-		res := r.Container.Exec(ctx, command, opts)
+		res := r.Container.Exec(ctx, command, stdio)
 		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
 	}()
 }

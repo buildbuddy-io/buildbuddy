@@ -39,9 +39,9 @@ var (
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
-func constructExecCommand(command *repb.Command, workDir string, opts *container.ExecOpts) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
-	if opts == nil {
-		opts = &container.ExecOpts{}
+func constructExecCommand(command *repb.Command, workDir string, stdio *container.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+	if stdio == nil {
+		stdio = &container.Stdio{}
 	}
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
@@ -54,25 +54,25 @@ func constructExecCommand(command *repb.Command, workDir string, opts *container
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	if opts.Stdout != nil {
-		cmd.Stdout = opts.Stdout
+	if stdio.Stdout != nil {
+		cmd.Stdout = stdio.Stdout
 	}
 	cmd.Stderr = &stderr
-	if opts.Stderr != nil {
-		cmd.Stderr = opts.Stderr
+	if stdio.Stderr != nil {
+		cmd.Stderr = stdio.Stderr
 	}
 	// Note: We are using StdinPipe() instead of cmd.Stdin here, because the
 	// latter approach results in a bug where cmd.Wait() can hang indefinitely if
 	// the process doesn't consume its stdin. See
 	// https://go.dev/play/p/DpKaVrx8d8G
-	if opts.Stdin != nil {
+	if stdio.Stdin != nil {
 		inp, err := cmd.StdinPipe()
 		if err != nil {
 			return nil, nil, nil, status.InternalErrorf("failed to get stdin pipe: %s", err)
 		}
 		go func() {
 			defer inp.Close()
-			io.Copy(inp, opts.Stdin)
+			io.Copy(inp, stdio.Stdin)
 		}()
 	}
 	if *DebugStreamCommandOutputs {
@@ -102,17 +102,12 @@ func RetryIfTextFileBusy(fn func() error) error {
 	}
 }
 
-type RunOpts struct {
-	*container.ExecOpts
-	// EnableStats specifies whether to monitor the command while it is running
-	// and collect approximate usage stats. This is not turned on by default
-	// because it incurs some overhead.
-	EnableStats bool
-}
-
 // Run a command, retrying "text file busy" errors and killing the process tree
 // when the context is cancelled.
-func Run(ctx context.Context, command *repb.Command, workDir string, opts *RunOpts) *interfaces.CommandResult {
+//
+// Note: enableStats incurs some overhead throughout process execution, so only
+// use it if stats are needed.
+func Run(ctx context.Context, command *repb.Command, workDir string, enableStats bool, stdio *container.Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *container.Stats
@@ -120,11 +115,11 @@ func Run(ctx context.Context, command *repb.Command, workDir string, opts *RunOp
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, opts.ExecOpts)
+		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, stdio)
 		if err != nil {
 			return err
 		}
-		stats, err = RunWithProcessTreeCleanup(ctx, cmd, opts.EnableStats)
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, enableStats)
 		return err
 	})
 
@@ -145,11 +140,14 @@ func Run(ctx context.Context, command *repb.Command, workDir string, opts *RunOp
 // It is intended to be used with a command created via exec.Command(), not
 // exec.CommandContext(). Unlike exec.CommandContext.Run(), it kills the process
 // tree when the context is done, instead of just killing the top-level process.
-// This helps ensure that orphaned child processes aren't left running
-// after the command completes.
+// This helps ensure that orphaned child processes aren't left running after the
+// command completes.
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
+//
+// Note: enableStats incurs some overhead throughout process execution, so only
+// use it if stats are needed.
 func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, enableStats bool) (*container.Stats, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err

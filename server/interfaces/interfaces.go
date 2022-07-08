@@ -174,6 +174,7 @@ type SSLService interface {
 type BuildEventChannel interface {
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
+	GetNumDroppedEvents() uint64
 	Close()
 }
 
@@ -582,6 +583,10 @@ type Runner interface {
 	//
 	// It populates the upload stat fields in the given IOStats.
 	UploadOutputs(ctx context.Context, ioStats *repb.IOStats, ar *repb.ActionResult, cr *CommandResult) error
+
+	// GetIsolationType returns the runner's effective isolation type as a
+	// string, such as "none" or "podman".
+	GetIsolationType() string
 }
 
 // Pool is responsible for assigning tasks to runners.

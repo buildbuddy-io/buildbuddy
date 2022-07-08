@@ -16,6 +16,9 @@ func (c *nullEventChannel) FinalizeInvocation(iid string) error { return nil }
 func (c *nullEventChannel) HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error {
 	return nil
 }
+func (c *nullEventChannel) GetNumDroppedEvents() uint64 {
+	return 0
+}
 func (c *nullEventChannel) Close() {}
 
 type BuildEventHandler struct{}

@@ -188,26 +188,31 @@ type FlagAlias struct {
 	name string
 }
 
-func Alias[T any](newName, name string) *T {
+// Alias defines a new name or names for the existing flag at the passed name
+// and returns a pointer to the data backing it. If no new names are passed,
+// Alias simply returns said pointer without creating any new alias flags.
+func Alias[T any](name string, newNames ...string) *T {
 	f := &FlagAlias{name: name}
 	var flg *flag.Flag
 	for aliaser, ok := common.IsNameAliasing(f), true; ok; aliaser, ok = flg.Value.(common.IsNameAliasing) {
 		if flg = common.DefaultFlagSet.Lookup(aliaser.AliasedName()); flg == nil {
-			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, newName, aliaser.AliasedName())
+			log.Fatalf("Error aliasing flag %s as %s: flag %s does not exist.", name, strings.Join(newNames, ", "), aliaser.AliasedName())
 		}
 	}
 	addr := reflect.ValueOf(flg.Value)
 	if t, err := common.GetTypeForFlagValue(flg.Value); err == nil {
 		if !addr.CanConvert(t) {
-			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, newName, flg.Name, flg.Value, t)
+			log.Fatalf("Error aliasing flag %s as %s: Flag %s of type %T could not be converted to %s.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, t)
 		}
 		addr = addr.Convert(t)
 	}
 	value, ok := addr.Interface().(*T)
 	if !ok {
-		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, newName, flg.Name, flg.Value, (*T)(nil))
+		log.Fatalf("Error aliasing flag %s as %s: Failed to assert flag %s of type %T as type %T.", name, strings.Join(newNames, ", "), flg.Name, flg.Value, (*T)(nil))
 	}
-	common.DefaultFlagSet.Var(f, newName, "Alias for "+name)
+	for _, newName := range newNames {
+		common.DefaultFlagSet.Var(f, newName, "Alias for "+name)
+	}
 	return value
 }
 
@@ -237,6 +242,17 @@ type DeprecatedFlag struct {
 // via the NewPrimitiveFlag or NewPrimitiveFlagVar functions), the customary
 // name and usage parameters, and a migration plan, and defines a flag that will
 // notify users that it is deprecated when it is set.
+//
+// For example, if you wanted to deprecate a flag like this:
+// var foo = flag.String("foo", "foo default value", "Use the specified foo.")
+//
+// You would redefine the flag as deprecated like this:
+// var foo = DeprecatedVar[string](
+//   NewPrimitiveFlag("foo default value"),
+//   "foo",
+//   "help text for foo",
+//   "All of our foos were destroyed in a fire, please specify a bar instead.",
+// )
 func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
 	common.DefaultFlagSet.Var(&DeprecatedFlag{value, name, migrationPlan}, name, usage+" **DEPRECATED** "+migrationPlan)
 	return reflect.ValueOf(value).Convert(reflect.TypeOf((*T)(nil))).Interface().(*T)

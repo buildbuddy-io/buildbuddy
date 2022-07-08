@@ -41,19 +41,19 @@ import (
 )
 
 var (
-	rootDirectory             = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
-	blockCacheSizeBytes       = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	rootDirectory          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
+	blockCacheSizeBytes    = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
+	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", 1024, "Files smaller than this may be inlined directly into pebble")
+	partitions             = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
+	partitionMappings      = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+
+	// TODO(tylerw): remove most of these flags post-migration.
 	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
-	partitions                = flagtypes.Slice("cache.pebble.partitions", []disk.Partition{}, "")
-	partitionMappings         = flagtypes.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
+	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
 )
 
-// TODO:
-//  - add a pacer that deletes files as new ones are written when the cache is
-//    above a certain size
-//  - add a flag that ingests a disk cache
 const (
 	// cutoffThreshold is the point above which a janitor thread will run
 	// and delete the oldest items from the cache.
@@ -118,22 +118,16 @@ func Register(env environment.Env) error {
 	if *rootDirectory == "" {
 		return nil
 	}
-	if env.GetCache() != nil {
-		log.Warningf("Overriding configured cache with pebble_cache.")
+	if *clearCacheBeforeMigration {
+		if err := os.RemoveAll(*rootDirectory); err != nil {
+			return err
+		}
 	}
 	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
 		return err
 	}
 	migrateDir := ""
 	if *migrateFromDiskDir != "" {
-		if *clearCacheBeforeMigration {
-			if err := os.RemoveAll(*rootDirectory); err != nil {
-				return err
-			}
-			if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
-				return err
-			}
-		}
 		// Ensure a pebble DB doesn't already exist if we are migrating.
 		// But allow anyway if forceAllowMigration was set.
 		desc, err := pebble.Peek(*rootDirectory, vfs.Default)
@@ -162,11 +156,30 @@ func Register(env environment.Env) error {
 			return err
 		}
 	}
-	env.SetCache(c)
 	c.Start()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return c.Stop()
 	})
+
+	if *mirrorActiveDiskCache {
+		dci := env.GetCache()
+		dc, ok := dci.(*disk_cache.DiskCache)
+		if !ok {
+			return status.FailedPreconditionError("Cannot mirror disk cache: none was set")
+		}
+		adds, removes := dc.LiveUpdatesChan()
+		c.ProcessLiveUpdates(adds, removes)
+		log.Printf("Pebble Cache: mirroring active disk cache")
+
+		// Return early if we're mirroring the disk cache; we don't
+		// want to override the disk cache we're mirroring in the env.
+		return nil
+	}
+
+	if env.GetCache() != nil {
+		log.Warningf("Overriding configured cache with pebble_cache.")
+	}
+	env.SetCache(c)
 	return nil
 }
 
@@ -208,6 +221,12 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
+// defaultPebbleOptions returns default pebble config options.
+func defaultPebbleOptions() *pebble.Options {
+	// TODO: tune options here.
+	return &pebble.Options{}
+}
+
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := validateOpts(opts); err != nil {
@@ -218,10 +237,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	ensureDefaultPartitionExists(opts)
 
-	c := pebble.NewCache(*blockCacheSizeBytes)
-	defer c.Unref()
+	pebbleOptions := defaultPebbleOptions()
+	if *blockCacheSizeBytes > 0 {
+		c := pebble.NewCache(*blockCacheSizeBytes)
+		defer c.Unref()
+		pebbleOptions.Cache = c
+	}
 
-	db, err := pebble.Open(opts.RootDirectory, &pebble.Options{Cache: c})
+	db, err := pebble.Open(opts.RootDirectory, pebbleOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -240,25 +263,46 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			PartitionId: defaultPartitionID,
 		},
 	}
+
+	peMu := sync.Mutex{}
+	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
-		blobDir := pc.partitionBlobDir(part.ID)
-		if err := disk.EnsureDirectoryExists(blobDir); err != nil {
-			return nil, err
-		}
-		pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes)
-		if err != nil {
-			return nil, err
-		}
-		pc.evictors[i] = pe
+		i := i
+		part := part
+		eg.Go(func() error {
+			blobDir := pc.partitionBlobDir(part.ID)
+			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
+				return err
+			}
+			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes)
+			if err != nil {
+				return err
+			}
+			peMu.Lock()
+			pc.evictors[i] = pe
+			peMu.Unlock()
+			return nil
+		})
 	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	statusz.AddSection("pebble_cache", "On disk LRU cache", pc)
 	return pc, nil
 }
 
+func keyRange(key []byte) ([]byte, []byte) {
+	start := make([]byte, len(key))
+	end := make([]byte, len(key))
+	copy(start, key)
+	copy(end, key)
+	return append(start, constants.MinByte), append(end, constants.MaxByte)
+}
+
 func partitionLimits(partID string) ([]byte, []byte) {
-	start := append([]byte(partID), constants.MinByte)
-	end := append([]byte(partID), constants.MaxByte)
-	return start, end
+	key := []byte(partID + "/")
+	return keyRange(key)
 }
 
 func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
@@ -282,11 +326,10 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	ch := disk_cache.ScanDiskDirectory(diskDir)
-	batch := p.db.NewBatch()
 
-	inserted := 0
 	start := time.Now()
-	for fileMetadata := range ch {
+	inserted := 0
+	err := p.batchProcessCh(ch, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
 		protoBytes, err := proto.Marshal(fileMetadata)
 		if err != nil {
 			return err
@@ -295,32 +338,72 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 		if err != nil {
 			return err
 		}
-
-		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-			return err
-		}
-		p.updateAtime(fileMetadataKey)
 		inserted += 1
-
-		if inserted%10000 == 0 {
-			if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-				return err
-			}
-			batch = p.db.NewBatch()
-		}
-		if inserted%1e6 == 0 {
-			log.Printf("Pebble Cache: migration progress [%d files in %s]...", inserted, time.Since(start))
-		}
-	}
-	if batch.Count() > 0 {
-		if err := batch.Commit(&pebble.WriteOptions{Sync: false}); err != nil {
-			return err
-		}
+		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	})
+	if err != nil {
+		return err
 	}
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
 	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
+	return nil
+}
+
+type batchEditFn func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error
+
+func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchEditFn) error {
+	batch := p.db.NewBatch()
+	delta := 0
+	for fileMetadata := range ch {
+		delta += 1
+		if err := editFn(batch, fileMetadata); err != nil {
+			log.Warningf("Error editing batch: %s", err)
+			continue
+		}
+		if batch.Count() > 100000 {
+			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+				log.Warningf("Error comitting batch: %s", err)
+				continue
+			}
+			batch = p.db.NewBatch()
+		}
+	}
+	if batch.Count() > 0 {
+		if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+			log.Warningf("Error comitting batch: %s", err)
+		}
+	}
+	return nil
+}
+
+func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata) error {
+	for i := 0; i < 3; i++ {
+		p.eg.Go(func() error {
+			return p.batchProcessCh(adds, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				protoBytes, err := proto.Marshal(fileMetadata)
+				if err != nil {
+					return err
+				}
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+			})
+		})
+		p.eg.Go(func() error {
+			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
+			})
+		})
+	}
+
 	return nil
 }
 
@@ -406,7 +489,15 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
-	p.atimes.Store(xxhash.Sum64(fileMetadataKey), time.Now().UnixNano())
+	nowNanos := time.Now().UnixNano()
+
+	fmkHash := xxhash.Sum64(fileMetadataKey)
+	if a, ok := p.atimes.Load(fmkHash); ok {
+		lastAccessNanos := a.(int64)
+		durSinceLastAccess := time.Duration(nowNanos-lastAccessNanos) * time.Nanosecond
+		metrics.DiskCacheSecondsSinceLastAccess.Observe(durSinceLastAccess.Seconds())
+	}
+	p.atimes.Store(fmkHash, nowNanos)
 }
 
 func (p *PebbleCache) clearAtime(fileMetadataKey []byte) {
@@ -422,14 +513,21 @@ func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
 	return false
 }
 
-func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
+		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
 	}
-	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return nil, status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+	}
+	return nil
+}
+
+func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+		return nil, err
 	}
 	return fileMetadata, nil
 }
@@ -511,15 +609,48 @@ func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 
 func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
+
+	sort.Slice(digests, func(i, j int) bool {
+		return digests[i].GetHash() < digests[j].GetHash()
+	})
+
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	blobDir := p.blobDir()
+	buf := &bytes.Buffer{}
+	fileMetadata := &rfpb.FileMetadata{}
 	for _, d := range digests {
-		data, err := p.Get(ctx, d)
-		if status.IsNotFoundError(err) {
-			continue
-		}
+		fileRecord, err := p.makeFileRecord(ctx, d)
 		if err != nil {
 			return nil, err
 		}
-		foundMap[d] = data
+		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+			continue
+		}
+		rc, err := filestore.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+		if err != nil {
+			if status.IsNotFoundError(err) || os.IsNotExist(err) {
+				log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
+				if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
+					log.Warningf("Error deleting metadata: %s", err)
+				}
+			}
+			continue
+		}
+		p.updateAtime(fileMetadataKey)
+
+		_, copyErr := io.Copy(buf, rc)
+		closeErr := rc.Close()
+		if copyErr != nil || closeErr != nil {
+			continue
+		}
+		foundMap[d] = append([]byte{}, buf.Bytes()...)
+		buf.Reset()
 	}
 	return foundMap, nil
 }
@@ -541,6 +672,24 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 			return err
 		}
 	}
+	return nil
+}
+
+func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, fileMetadataKey []byte) error {
+	iter := p.db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	// First, lookup the FileMetadata. If it's not found, we don't have the file.
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return err
+	}
+
+	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+		return err
+	}
+	p.clearAtime(fileMetadataKey)
+	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetSizeBytes()}
 	return nil
 }
 
@@ -600,9 +749,14 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 			return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
 		}
 	}
-	rc, err := filestore.FileReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata(), offset, limit)
+	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
+	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
+		log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
+		if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
+			log.Warningf("Error deleting metadata: %s", err)
+		}
 	}
 	return rc, err
 }
@@ -647,9 +801,15 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
 	}
 
-	wcm, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
-	if err != nil {
-		return nil, err
+	var wcm filestore.WriteCloserMetadata
+	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
+		wcm = filestore.InlineWriter(ctx, d.GetSizeBytes())
+	} else {
+		fw, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		wcm = fw
 	}
 	dc := &writeCloser{WriteCloserMetadata: wcm, closeFn: func(bytesWritten int64) error {
 		md := &rfpb.FileMetadata{
@@ -665,6 +825,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		if err == nil {
 			p.updateAtime(fileMetadataKey)
 			p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten}
+			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 		return err
 	}}
@@ -701,7 +862,6 @@ type evictionPoolEntry struct {
 	timestamp       int64
 	fileMetadata    *rfpb.FileMetadata
 	fileMetadataKey []byte
-	filePath        string
 }
 
 type partitionEvictor struct {
@@ -712,13 +872,14 @@ type partitionEvictor struct {
 	writer  pebble.Writer
 	atimes  *sync.Map
 
-	casPrefix  []byte
-	acPrefix   []byte
-	samplePool []*evictionPoolEntry
-	sizeBytes  int64
-	casCount   int64
-	acCount    int64
-	lastRun    time.Time
+	casPrefix   []byte
+	acPrefix    []byte
+	samplePool  []*evictionPoolEntry
+	sizeBytes   int64
+	casCount    int64
+	acCount     int64
+	lastRun     time.Time
+	lastEvicted *evictionPoolEntry
 }
 
 func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, atimes *sync.Map) (*partitionEvictor, error) {
@@ -734,6 +895,7 @@ func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, ati
 		atimes:     atimes,
 	}
 	start := time.Now()
+	log.Printf("Pebble Cache: Initializing cache partition %q...", part.ID)
 	sizeBytes, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
@@ -765,9 +927,12 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 	e.sizeBytes += deltaSize
 }
 
-func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
-	iter := e.iter()
-	defer iter.Close()
+func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
+	iter := e.reader.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	iter.SeekLT(start)
 
 	casCount := int64(0)
 	acCount := int64(0)
@@ -792,7 +957,68 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	return blobSizeBytes, casCount, acCount, nil
+	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
+}
+
+func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
+	mu := sync.Mutex{}
+	eg := errgroup.Group{}
+
+	totalSizeBytes := int64(0)
+	totalCasCount := int64(0)
+	totalAcCount := int64(0)
+
+	goScanRange := func(start, end []byte) {
+		eg.Go(func() error {
+			sizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
+			if err != nil {
+				return err
+			}
+
+			mu.Lock()
+			totalSizeBytes += sizeBytes
+			totalCasCount += casCount
+			totalAcCount += acCount
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	acPrefixRange := func(start, end []byte) ([]byte, []byte) {
+		left := make([]byte, 0, len(e.acPrefix)+len(start))
+		left = append(left, e.acPrefix...)
+		left = append(left, start...)
+
+		right := make([]byte, 0, len(e.acPrefix)+len(end))
+		right = append(right, e.acPrefix...)
+		right = append(right, end...)
+		return left, right
+	}
+
+	// Start scanning the AC.
+	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
+	// Start scanning at 10 because crc32s do not begin with 0.
+	for i := 10; i < 99; i++ {
+		left, right := acPrefixRange([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i+1)))
+		goScanRange(left, right)
+	}
+	// Additionally scan from 99-> max byte to ensure we cover the full
+	// range.
+	left, right := acPrefixRange([]byte("99"), []byte{constants.MaxByte})
+	goScanRange(left, right)
+
+	// Start scanning the CAS.
+	// CAS keys look like /partitionID/cas/digesthash(sha-256)
+	for i := 0; i < 16; i++ {
+		kr := append(e.casPrefix, []byte(fmt.Sprintf("%x", i))...)
+		start, end := keyRange(kr)
+		goScanRange(start, end)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return 0, 0, 0, err
+	}
+	return totalSizeBytes, totalCasCount, totalAcCount, nil
 }
 
 func (e *partitionEvictor) Statusz(ctx context.Context) string {
@@ -807,6 +1033,12 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
 	buf += fmt.Sprintf("Usage: %d / %d (%2.2f%% full)\n", e.sizeBytes, maxAllowedSize, percentFull)
 	buf += fmt.Sprintf("GC Last run: %s\n", e.lastRun.Format("Jan 02, 2006 15:04:05 MST"))
+	lastEvictedStr := "nil"
+	if e.lastEvicted != nil {
+		age := time.Since(time.Unix(0, e.lastEvicted.timestamp))
+		lastEvictedStr = fmt.Sprintf("%q age: %s", e.lastEvicted.fileMetadataKey, age)
+	}
+	buf += fmt.Sprintf("Last evicted item: %s\n", lastEvictedStr)
 	buf += "</pre>"
 	return buf
 }
@@ -860,11 +1092,19 @@ func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 		s.timestamp = a.(int64)
 		return nil
 	}
-	info, err := os.Stat(s.filePath)
-	if err != nil {
-		return err
+
+	md := s.fileMetadata.GetStorageMetadata()
+	switch {
+	case md.GetFileMetadata() != nil:
+		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
+		info, err := os.Stat(fp)
+		if err != nil {
+			return err
+		}
+		s.timestamp = getLastUse(info)
+	case md.GetInlineMetadata() != nil:
+		s.timestamp = md.GetInlineMetadata().GetCreatedAtNsec()
 	}
-	s.timestamp = getLastUse(info)
 	return nil
 }
 
@@ -893,13 +1133,11 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		}
 		seen[string(iter.Key())] = struct{}{}
 
-		filePath := filestore.FilePath(e.blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 		fileMetadataKey := make([]byte, len(iter.Key()))
 		copy(fileMetadataKey, iter.Key())
 
 		sample := &evictionPoolEntry{
 			fileMetadata:    fileMetadata,
-			filePath:        filePath,
 			fileMetadataKey: fileMetadataKey,
 		}
 		if err := e.refreshAtime(sample); err != nil {
@@ -920,8 +1158,18 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 		return err
 	}
 	e.atimes.Delete(xxhash.Sum64(sample.fileMetadataKey))
-	if err := disk.DeleteFile(context.TODO(), sample.filePath); err != nil {
-		return err
+
+	md := sample.fileMetadata.GetStorageMetadata()
+	switch {
+	case md.GetFileMetadata() != nil:
+		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
+		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
+			return err
+		}
+	case md.GetInlineMetadata() != nil:
+		break
+	default:
+		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", md)
 	}
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
@@ -963,14 +1211,15 @@ func (e *partitionEvictor) resampleK(k int) error {
 	return nil
 }
 
-func (e *partitionEvictor) evict(count int) error {
+func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 	evicted := 0
+	var lastEvicted *evictionPoolEntry
 	for evicted < count {
 		lastCount := evicted
 
 		// Resample every time we evict a key
 		if err := e.resampleK(1); err != nil {
-			return err
+			return nil, err
 		}
 		for i, sample := range e.samplePool {
 			_, closer, err := e.reader.Get(sample.fileMetadataKey)
@@ -979,9 +1228,11 @@ func (e *partitionEvictor) evict(count int) error {
 			}
 			closer.Close()
 			if err := e.deleteFile(sample); err != nil {
+				log.Errorf("Error evicting file: %s (ignoring)", err)
 				continue
 			}
 			evicted += 1
+			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
 			break
 		}
@@ -991,11 +1242,11 @@ func (e *partitionEvictor) evict(count int) error {
 		if lastCount == evicted {
 			e.samplePool = e.samplePool[:0]
 			if err := e.resampleK(samplePoolSize); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return nil
+	return lastEvicted, nil
 }
 
 func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
@@ -1025,13 +1276,14 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 			numToEvict = 1
 		}
 
-		err := e.evict(numToEvict)
+		lastEvicted, err := e.evict(numToEvict)
 		if err != nil {
 			return err
 		}
 
 		e.mu.Lock()
 		e.lastRun = time.Now()
+		e.lastEvicted = lastEvicted
 		e.mu.Unlock()
 	}
 	return nil
@@ -1070,5 +1322,11 @@ func (p *PebbleCache) Stop() error {
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	return p.db.Flush()
+	if err := p.db.Flush(); err != nil {
+		return err
+	}
+
+	// TODO(tylerw) re-enable this once shutdown race is debugged.
+	// return p.db.Close()
+	return nil
 }

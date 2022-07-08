@@ -49,6 +49,7 @@ module.exports = {
       "config-api",
       "config-telemetry",
       "config-flags",
+      "config-all-options",
     ],
   },
 };

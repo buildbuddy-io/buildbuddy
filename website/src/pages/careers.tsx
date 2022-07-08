@@ -11,6 +11,8 @@ const careers = [
   { name: "Solutions Engineer" },
 ];
 
+const globalSpace = new RegExp(" ", "g");
+
 function Careers() {
   return (
     <Layout title="Careers">
@@ -21,7 +23,7 @@ function Careers() {
               <div className={common.title}>Current Openings</div>
               {careers.map((career) => (
                 <a
-                  href={`/jobs/${career.name.toLowerCase().replaceAll(" ", "-")}`}
+                  href={`/jobs/${career.name.toLowerCase().replace(globalSpace, "-")}`}
                   className={styles.job}
                   key={career.name}>
                   <div>

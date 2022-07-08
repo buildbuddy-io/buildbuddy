@@ -517,7 +517,9 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
 	}
-	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, iter, fileMetadata.GetStorageMetadata())
+	offset := req.GetOffset()
+	limit := req.GetLimit()
+	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
 		return err
 	}

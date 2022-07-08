@@ -3,7 +3,6 @@ package dirtools
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -24,7 +23,6 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	gstatus "google.golang.org/grpc/status"
 )
 
 const gRPCMaxSize = int64(4000000)
@@ -242,25 +240,8 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func batchUploadFiles(ctx context.Context, env environment.Env, req *repb.BatchUpdateBlobsRequest) error {
-	casClient := env.GetContentAddressableStorageClient()
-	rsp, err := casClient.BatchUpdateBlobs(ctx, req)
-	if err != nil {
-		return err
-	}
-	for _, fileResponse := range rsp.GetResponses() {
-		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
-			return gstatus.Error(codes.Code(fileResponse.GetStatus().GetCode()), fmt.Sprintf("Error uploading file: %v", fileResponse.GetDigest()))
-		}
-	}
-	return nil
-}
-
 func uploadFiles(ctx context.Context, env environment.Env, instanceName string, filesToUpload []*fileToUpload) error {
-	uploader, err := cachetools.NewBatchCASUploader(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), env.GetFileCache(), instanceName)
-	if err != nil {
-		return err
-	}
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName)
 	fc := env.GetFileCache()
 
 	for _, uploadableFile := range filesToUpload {

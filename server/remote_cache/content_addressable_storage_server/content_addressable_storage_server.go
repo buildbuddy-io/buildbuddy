@@ -47,7 +47,7 @@ const (
 
 var (
 	enableTreeCaching = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
-	treeCacheSeed     = flag.String("cache.tree_cache_seed", "treecache", "If set, hash this with digests before caching / reading from tree cache")
+	treeCacheSeed     = flag.String("cache.tree_cache_seed", "treecache-07012022", "If set, hash this with digests before caching / reading from tree cache")
 )
 
 type ContentAddressableStorageServer struct {
@@ -494,7 +494,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 	for _, d := range subdirDigests {
 		blob, ok := rspMap[d]
 		if !ok {
-			return nil, status.NotFoundErrorf("Digest %s not found in cache.", d.GetHash())
+			return nil, digest.MissingDigestError(d)
 		}
 		subDir := &repb.Directory{}
 		if err := proto.Unmarshal(blob, subDir); err != nil {

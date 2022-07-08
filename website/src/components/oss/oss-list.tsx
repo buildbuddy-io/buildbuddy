@@ -52,6 +52,8 @@ const repos = [
   { name: "samhowes/rules_tsql", description: "TSQL Rules for Bazel." },
 ];
 
+const globalSlash = new RegExp("/", "g");
+
 function Component(props) {
   return (
     <div className={styles.repos}>
@@ -60,7 +62,7 @@ function Component(props) {
           <Image
             alt={`${repo.name} Github Repository Powered By BuildBuddy`}
             className={styles.repoImage}
-            img={require(`../../../static/img/oss/${repo.name.replaceAll("/", "_")}.png`)}
+            img={require(`../../../static/img/oss/${repo.name.replace(globalSlash, "_")}.png`)}
             shouldAutoDownload={() => true}
             threshold={10000}
           />

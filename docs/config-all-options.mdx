@@ -1,0 +1,70 @@
+---
+id: config-all-options
+title: All Options
+sidebar_label: All Options
+---
+
+import FreeServerConfig from '../bazel-bin/server/cmd/buildbuddy/yaml_doc/buildbuddy_server_documented_defaults.mdx'
+import EnterpriseServerConfig from '../bazel-bin/enterprise/server/cmd/server/yaml_doc/buildbuddy_enterprise_server_documented_defaults.mdx'
+import ExecutorConfig from '../bazel-bin/enterprise/server/cmd/executor/yaml_doc/buildbuddy_executor_documented_defaults.mdx'
+
+Provided below are working, documented YAML configs for each BuildBuddy binary
+containing every option that that binary accepts, each set to the default value
+for that option. Any option that can be specified in the YAML config can also be
+passed on the command line. For nested options, be sure to write out the full
+YAML path, with a `.` separating each part.
+
+For example:
+```yaml
+storage:
+    disk:
+        root_directory: /tmp/buildbuddy
+```
+becomes:
+```sh
+buildbuddy -storage.disk.root_directory="/tmp/buildbuddy"
+```
+
+For specifying lists of structures using flags on the command line, use the JSON
+representation of the list you wish to concatenate to the end or the element you
+wish to append:
+
+For example, given the following schema:
+```yaml
+cache:
+    disk:
+        partitions: [] # type: []disk.Partition
+        # e.g.:
+        # - id: "" # type: string
+        #   max_size_bytes: 0 # type: int
+```
+We see that `cache.disk.partitions` is configured as a list of `disk.Partition`. In YAML, we'd normally configure it like this:
+```yaml
+cache:
+    disk:
+        partitions:
+        - id: "1GB"
+          max_size_bytes: 1073741824
+        - id: "2GB"
+          max_size_bytes: 2147483648
+```
+The flag equivalent of this example would be:
+```sh
+buildbuddy -cache.disk.partitions='{"id": "1GB", "max_size_bytes": 1073741824}' -cache.disk.partitions='{"id": "2GB", "max_size_bytes": 2147483648}'
+```
+or
+```sh
+buildbuddy -cache.disk.partitions='[{"id": "1GB", "max_size_bytes": 1073741824}, {"id": "2GB", "max_size_bytes": 2147483648}]'
+```
+
+### BuildBuddy Server (FOSS)
+
+<FreeServerConfig />
+
+### BuildBuddy Server (Enterprise)
+
+<EnterpriseServerConfig />
+
+### BuildBuddy Executor
+
+<ExecutorConfig />

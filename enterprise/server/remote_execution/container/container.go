@@ -28,6 +28,10 @@ const (
 	// Default TTL for tokens granting access to locally cached images, before
 	// re-authentication with the remote registry is required.
 	defaultImageCacheTokenTTL = 15 * time.Minute
+
+	// Time window over which to measure CPU usage when exporting the milliCPU
+	// used metric.
+	cpuUsageUpdateInterval = 1 * time.Second
 )
 
 var (
@@ -76,38 +80,83 @@ func (s *Stats) ToProto() *repb.UsageStats {
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
 // instances.
 type ContainerMetrics struct {
-	mu          sync.Mutex
-	memoryUsage map[CommandContainer]int64
+	mu sync.Mutex
+	// Latest stats observed, per-container.
+	latest map[CommandContainer]*Stats
+	// CPU usage for the current usage interval, per-container. This is cleared
+	// every time we update the CPU gauge.
+	intervalCPUNanos int64
 }
 
 func NewContainerMetrics() *ContainerMetrics {
 	return &ContainerMetrics{
-		memoryUsage: make(map[CommandContainer]int64),
+		latest: make(map[CommandContainer]*Stats),
 	}
 }
 
-// AddCPUNanos records incremental CPU usage for a container.
-func (m *ContainerMetrics) AddCPUNanos(cpuNanos int64) {
-	const millisPerNanos = 1 / 1e6
-	metrics.RemoteExecutionUsedMilliCPU.Add(float64(cpuNanos) * millisPerNanos)
+// Start kicks off a goroutine that periodically updates the CPU gauge.
+func (m *ContainerMetrics) Start(ctx context.Context) {
+	go func() {
+		for {
+			t := time.NewTicker(cpuUsageUpdateInterval)
+			defer t.Stop()
+			lastTick := time.Now()
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				tick := time.Now()
+				m.updateCPUMetric(tick.Sub(lastTick))
+				lastTick = tick
+			}
+		}
+	}()
 }
 
-// SetContainerMemoryUsageBytes sets the current memory usage for the container.
-// Once the container is no longer using memory, the container's memory usage
-// *must* be set to 0 via this method to avoid a memory leak.
-func (m *ContainerMetrics) SetContainerMemoryUsageBytes(c CommandContainer, usageBytes int64) {
+func (m *ContainerMetrics) updateCPUMetric(dt time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if usageBytes == 0 {
-		delete(m.memoryUsage, c)
+	milliCPU := (float64(m.intervalCPUNanos) / 1e6) / dt.Seconds()
+	metrics.RemoteExecutionCPUUtilization.Set(milliCPU)
+	m.intervalCPUNanos = 0
+}
+
+// Observe records the latest stats for the current container execution.
+func (m *ContainerMetrics) Observe(c CommandContainer, s *Stats) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s == nil {
+		delete(m.latest, c)
 	} else {
-		m.memoryUsage[c] = usageBytes
+		// Before recording CPU usage, sum the previous CPU usage so we know how
+		// much new usage has been incurred.
+		var prevCPUNanos int64
+		for _, stats := range m.latest {
+			prevCPUNanos += stats.CPUNanos
+		}
+		m.latest[c] = s
+		var cpuNanos int64
+		for _, stats := range m.latest {
+			cpuNanos += stats.CPUNanos
+		}
+		diffCPUNanos := cpuNanos - prevCPUNanos
+		metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
+		m.intervalCPUNanos += diffCPUNanos
 	}
-	var total int64
-	for _, v := range m.memoryUsage {
-		total += v
+	var totalMemBytes, totalPeakMemBytes int64
+	for _, stats := range m.latest {
+		totalMemBytes += stats.MemoryUsageBytes
+		totalPeakMemBytes += stats.PeakMemoryUsageBytes
 	}
-	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(total))
+	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(totalMemBytes))
+	metrics.RemoteExecutionPeakMemoryUsageBytes.Set(float64(totalPeakMemBytes))
+}
+
+// Unregister records that the given container has completed execution. It must
+// be called for each container whose stats are observed via ObserveStats,
+// otherwise a memory leak will occur.
+func (m *ContainerMetrics) Unregister(c CommandContainer) {
+	m.Observe(c, nil)
 }
 
 type FileSystemLayout struct {
@@ -148,7 +197,7 @@ type CommandContainer interface {
 	// stdin of the executed process. If stdout is non-nil, the stdout of the
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
-	Exec(ctx context.Context, command *repb.Command, opts *ExecOpts) *interfaces.CommandResult
+	Exec(ctx context.Context, command *repb.Command, stdio *Stdio) *interfaces.CommandResult
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
 	// Pause freezes a container so that it no longer consumes CPU resources.
@@ -161,8 +210,8 @@ type CommandContainer interface {
 	Stats(ctx context.Context) (*Stats, error)
 }
 
-// ExecOpts specifies options for executing a task.
-type ExecOpts struct {
+// Stdio specifies standard input / output readers for a command.
+type Stdio struct {
 	// Stdin is an optional stdin source for the executed process.
 	Stdin io.Reader
 	// Stdout is an optional stdout sink for the executed process.
@@ -360,7 +409,7 @@ func (t *TracedCommandContainer) Create(ctx context.Context, workingDir string) 
 	return t.Delegate.Create(ctx, workingDir)
 }
 
-func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *ExecOpts) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command, opts *Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.Delegate.Exec(ctx, command, opts)

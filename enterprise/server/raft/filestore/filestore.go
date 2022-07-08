@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
@@ -47,15 +48,49 @@ func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord
 	return FileWriter(ctx, fileDir, fileRecord)
 }
 
-func NewReader(ctx context.Context, fileDir string, iter *pebble.Iterator, md *rfpb.StorageMetadata) (io.ReadCloser, error) {
+func NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
 	switch {
 	case md.GetFileMetadata() != nil:
-		return FileReader(ctx, fileDir, md.GetFileMetadata(), 0, 0)
-	case md.GetPebbleMetadata() != nil:
-		return PebbleReader(iter, md.GetPebbleMetadata()), nil
+		return FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
+	case md.GetInlineMetadata() != nil:
+		return InlineReader(md.GetInlineMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
 	}
+}
+
+func InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
+	r := bytes.NewReader(f.GetData())
+	r.Seek(offset, 0)
+	length := int64(len(f.GetData()))
+	if limit != 0 && limit < length {
+		length = limit
+	}
+	if length > 0 {
+		return io.NopCloser(io.LimitReader(r, length)), nil
+	}
+	return io.NopCloser(r), nil
+}
+
+type inlineWriter struct {
+	*bytes.Buffer
+}
+
+func (iw *inlineWriter) Close() error {
+	return nil
+}
+
+func (iw *inlineWriter) Metadata() *rfpb.StorageMetadata {
+	return &rfpb.StorageMetadata{
+		InlineMetadata: &rfpb.StorageMetadata_InlineMetadata{
+			Data:          iw.Buffer.Bytes(),
+			CreatedAtNsec: time.Now().UnixNano(),
+		},
+	}
+}
+
+func InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata {
+	return &inlineWriter{bytes.NewBuffer(make([]byte, 0, sizeBytes))}
 }
 
 type fileChunker struct {

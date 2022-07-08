@@ -3,14 +3,20 @@ package cachetools
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -23,8 +29,13 @@ import (
 )
 
 const (
-	uploadBufSizeBytes = 1000000 // 1MB
-	gRPCMaxSize        = int64(4000000)
+	uploadBufSizeBytes    = 1000000 // 1MB
+	gRPCMaxSize           = int64(4000000)
+	maxCompressionBufSize = int64(4000000)
+)
+
+var (
+	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
 )
 
 type StreamBlobOpts struct {
@@ -317,67 +328,132 @@ func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName 
 	return uploadProtoToCache(ctx, cas, instanceName, in)
 }
 
+func SupportsCompression(ctx context.Context, capabilitiesClient repb.CapabilitiesClient) (bool, error) {
+	rsp, err := capabilitiesClient.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{})
+	if err != nil {
+		return false, err
+	}
+	supportsBytestreamCompression := false
+	for _, compressorValue := range rsp.GetCacheCapabilities().GetSupportedCompressors() {
+		if compressorValue == repb.Compressor_ZSTD {
+			supportsBytestreamCompression = true
+			break
+		}
+	}
+
+	supportsBatchUpdateCompression := false
+	for _, compressorValue := range rsp.GetCacheCapabilities().GetSupportedBatchUpdateCompressors() {
+		if compressorValue == repb.Compressor_ZSTD {
+			supportsBatchUpdateCompression = true
+			break
+		}
+	}
+	return supportsBytestreamCompression && supportsBatchUpdateCompression, nil
+}
+
 // BatchCASUploader uploads many files to CAS concurrently, batching small
 // uploads together and falling back to bytestream uploads for large files.
 type BatchCASUploader struct {
-	ctx              context.Context
-	fileCache        interfaces.FileCache
-	byteStreamClient bspb.ByteStreamClient
-	casClient        repb.ContentAddressableStorageClient
-	eg               *errgroup.Group
-	unsentBatchReq   *repb.BatchUpdateBlobsRequest
-	uploads          map[digest.Key]struct{}
-	instanceName     string
-	unsentBatchSize  int64
+	ctx             context.Context
+	env             environment.Env
+	once            *sync.Once
+	compress        bool
+	eg              *errgroup.Group
+	bufferPool      *bytebufferpool.Pool
+	unsentBatchReq  *repb.BatchUpdateBlobsRequest
+	uploads         map[digest.Key]struct{}
+	instanceName    string
+	unsentBatchSize int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string) (*BatchCASUploader, error) {
-	if bsClient == nil {
-		return nil, status.InvalidArgumentError("Missing bytestream client")
-	}
-	if casClient == nil {
-		return nil, status.InvalidArgumentError("Missing CAS client")
-	}
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
-		ctx:              ctx,
-		fileCache:        fileCache,
-		eg:               eg,
-		byteStreamClient: bsClient,
-		casClient:        casClient,
-		unsentBatchReq:   &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
-		unsentBatchSize:  0,
-		instanceName:     instanceName,
-		uploads:          make(map[digest.Key]struct{}),
-	}, nil
+		ctx:             ctx,
+		env:             env,
+		once:            &sync.Once{},
+		compress:        false,
+		eg:              eg,
+		bufferPool:      bytebufferpool.New(uploadBufSizeBytes),
+		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
+		unsentBatchSize: 0,
+		instanceName:    instanceName,
+		uploads:         make(map[digest.Key]struct{}),
+	}
+}
+
+func (ul *BatchCASUploader) supportsCompression() bool {
+	ul.once.Do(func() {
+		if !*enableUploadCompresssion {
+			return
+		}
+		capabilitiesClient := ul.env.GetCapabilitiesClient()
+		if capabilitiesClient == nil {
+			log.Warningf("Upload compression was enabled but no capabilities client found. Cannot verify cache server capabilities")
+			return
+		}
+		enabled, err := SupportsCompression(ul.ctx, capabilitiesClient)
+		if err != nil {
+			log.Errorf("Error determinining if cache server supports compression: %s", err)
+		}
+		if enabled {
+			ul.compress = true
+		} else {
+			log.Debugf("Upload compression was enabled but remote server did not support compression")
+		}
+	})
+	return ul.compress
 }
 
 // Upload adds the given content to the current batch or begins a streaming
 // upload if it exceeds the maximum batch size. It closes r when it is no
 // longer needed.
-func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
+func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error {
 	// De-dupe uploads by digest.
 	dk := digest.NewKey(d)
 	if _, ok := ul.uploads[dk]; ok {
-		return r.Close()
+		return rsc.Close()
 	}
 	ul.uploads[dk] = struct{}{}
 
-	r.Seek(0, 0)
+	rsc.Seek(0, 0)
+	r := io.ReadCloser(rsc)
+
+	bufSize := d.GetSizeBytes()
+	if bufSize > maxCompressionBufSize {
+		bufSize = maxCompressionBufSize
+	}
+
+	compressor := repb.Compressor_IDENTITY
+	if ul.supportsCompression() {
+		compressor = repb.Compressor_ZSTD
+		rbuf := ul.bufferPool.Get(bufSize)
+		defer ul.bufferPool.Put(rbuf)
+		cbuf := ul.bufferPool.Get(bufSize)
+		defer ul.bufferPool.Put(cbuf)
+		cr, err := compression.NewZstdChunkingCompressor(r, rbuf, cbuf)
+		if err != nil {
+			return err
+		}
+		r = cr
+	}
 
 	if d.GetSizeBytes() > gRPCMaxSize {
+		resourceName := digest.NewResourceName(d, ul.instanceName)
+		resourceName.SetCompressor(compressor)
+
+		byteStreamClient := ul.env.GetByteStreamClient()
+		if byteStreamClient == nil {
+			return status.InvalidArgumentError("missing bytestream client")
+		}
 		ul.eg.Go(func() error {
 			defer r.Close()
-			_, err := UploadFromReader(ul.ctx, ul.byteStreamClient, digest.NewResourceName(d, ul.instanceName), r)
+			_, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
 			return err
 		})
 		return nil
-	}
-
-	if ul.unsentBatchSize+d.GetSizeBytes() > gRPCMaxSize {
-		ul.flushCurrentBatch()
 	}
 	b, err := io.ReadAll(r)
 	if err != nil {
@@ -386,11 +462,17 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, r io.ReadSeekCloser) error {
 	if err := r.Close(); err != nil {
 		return err
 	}
+
+	additionalSize := int64(len(b))
+	if ul.unsentBatchSize+additionalSize > gRPCMaxSize {
+		ul.flushCurrentBatch()
+	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
-		Digest: d,
-		Data:   b,
+		Digest:     d,
+		Data:       b,
+		Compressor: compressor,
 	})
-	ul.unsentBatchSize += d.GetSizeBytes()
+	ul.unsentBatchSize += additionalSize
 	return nil
 }
 
@@ -424,8 +506,8 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	}
 
 	// Add output files to the filecache.
-	if ul.fileCache != nil {
-		ul.fileCache.AddFile(&repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path)
+	if ul.env.GetFileCache() != nil {
+		ul.env.GetFileCache().AddFile(&repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path)
 	}
 
 	// Note: uploader.Upload will close the file.
@@ -435,12 +517,17 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	return d, nil
 }
 
-func (ul *BatchCASUploader) flushCurrentBatch() {
+func (ul *BatchCASUploader) flushCurrentBatch() error {
+	casClient := ul.env.GetContentAddressableStorageClient()
+	if casClient == nil {
+		return status.InvalidArgumentError("missing CAS client")
+	}
+
 	req := ul.unsentBatchReq
 	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{InstanceName: ul.instanceName}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
-		rsp, err := ul.casClient.BatchUpdateBlobs(ul.ctx, req)
+		rsp, err := casClient.BatchUpdateBlobs(ul.ctx, req)
 		if err != nil {
 			return err
 		}
@@ -451,11 +538,14 @@ func (ul *BatchCASUploader) flushCurrentBatch() {
 		}
 		return nil
 	})
+	return nil
 }
 
 func (ul *BatchCASUploader) Wait() error {
 	if len(ul.unsentBatchReq.GetRequests()) > 0 {
-		ul.flushCurrentBatch()
+		if err := ul.flushCurrentBatch(); err != nil {
+			return err
+		}
 	}
 	return ul.eg.Wait()
 }
@@ -472,11 +562,8 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
-func UploadDirectoryToCAS(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul, err := NewBatchCASUploader(ctx, bsClient, casClient, fileCache, instanceName)
-	if err != nil {
-		return nil, nil, err
-	}
+func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
+	ul := NewBatchCASUploader(ctx, env, instanceName)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)

@@ -28,8 +28,7 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 }
 
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
-	opts := &commandutil.RunOpts{EnableStats: c.opts.EnableStats}
-	return commandutil.Run(ctx, command, workDir, opts)
+	return commandutil.Run(ctx, command, workDir, c.opts.EnableStats, &container.Stdio{})
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -37,12 +36,8 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 	return nil
 }
 
-func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, opts *container.ExecOpts) *interfaces.CommandResult {
-	runOpts := &commandutil.RunOpts{
-		ExecOpts:    opts,
-		EnableStats: c.opts.EnableStats,
-	}
-	return commandutil.Run(ctx, cmd, c.WorkDir, runOpts)
+func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
+	return commandutil.Run(ctx, cmd, c.WorkDir, c.opts.EnableStats, stdio)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

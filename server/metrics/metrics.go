@@ -6,21 +6,25 @@ import (
 )
 
 // Note: the doc generator script (`generate_docs.py`) in this directory
-// generates documentation from this file.
+// generates documentation from this file at build time.
 //
 // The doc generator treats comments starting with 3 slashes as markdown docs,
 // as well as the 'Help' field for each metric.
-//
-// Run `python3 generate_docs.py --watch` to interactively generate the
-// docs as you edit this file.
 
 const (
 	// Label constants.
 	// Commonly used labels can be added here, and their documentation will be
 	// displayed in the metrics where they are used.
 
+	// TODO(bduffany): Migrate StatusLabel usages to StatusHumanReadableLabel
+
 	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code).
+	/// This is a numeric value; any non-zero code indicates an error.
 	StatusLabel = "status"
+
+	/// Status code as defined by [grpc/codes](https://godoc.org/google.golang.org/grpc/codes#Code)
+	/// in human-readable format, such as "OK" or "NotFound".
+	StatusHumanReadableLabel = "status"
 
 	/// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
@@ -90,6 +94,10 @@ const (
 	/// Reason for a runner not being added to the runner pool.
 	RunnerPoolFailedRecycleReason = "reason"
 
+	/// Effective workload isolation type used for an executed task, such as
+	/// "docker", "podman", "firecracker", or "none".
+	IsolationTypeLabel = "isolation"
+
 	/// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
@@ -107,6 +115,12 @@ const (
 
 	/// Status of the file cache request: `hit` if found in cache, `miss` otherwise.
 	FileCacheRequestStatusLabel = "status"
+
+	/// Status of the task size read request: `hit`, `miss`, or `error`.
+	TaskSizeReadStatusLabel = "status"
+
+	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
+	TaskSizeWriteStatusLabel = "status"
 )
 
 const (
@@ -333,6 +347,22 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	})
 
+	DiskCacheSecondsSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_seconds_since_last_access",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Time since last digest access, in **seconds**.",
+	})
+
+	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_added_file_size_bytes",
+		Help:      "Size of artifacts added to the file cache, in **bytes**.",
+		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
@@ -360,9 +390,11 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "count",
-		Help:      "Number of actions executed remotely.",
+		Help:      "Number of actions executed remotely. This only includes actions which reached the execution phase. If an action fails before execution (for example, if it fails authentication) then this metric is not incremented.",
 	}, []string{
 		ExitCodeLabel,
+		StatusHumanReadableLabel,
+		IsolationTypeLabel,
 	})
 
 	/// #### Examples
@@ -405,6 +437,24 @@ var (
 	///   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
 	/// )
 	/// ```
+
+	RemoteExecutionTaskSizeReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_read_requests",
+		Help:      "Number of read requests to the task sizer, which estimates action resource usage based on historical execution stats.",
+	}, []string{
+		TaskSizeReadStatusLabel,
+	})
+
+	RemoteExecutionTaskSizeWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_write_requests",
+		Help:      "Number of write requests to the task sizer, which estimates action resource usage based on historical execution stats.",
+	}, []string{
+		TaskSizeWriteStatusLabel,
+	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
@@ -538,11 +588,25 @@ var (
 	/// )
 	/// ```
 
+	RemoteExecutionPeakMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "peak_memory_usage_bytes",
+		Help:      "Current total peak memory usage in **bytes**. This is the sum of the peak memory usage for all tasks currently executing. It is not a very useful metric on its own, and is mainly intended for comparison with `assigned_ram_bytes`.",
+	})
+
 	RemoteExecutionUsedMilliCPU = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "used_milli_cpu",
-		Help:      "Approximate CPU usage of executed tasks, in **CPU-milliseconds**.",
+		Help:      "Approximate cumulative CPU usage of executed tasks, in **CPU-milliseconds**.",
+	})
+
+	RemoteExecutionCPUUtilization = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "cpu_utilization_milli_cpu",
+		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{

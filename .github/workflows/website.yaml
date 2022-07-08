@@ -7,6 +7,7 @@ on:
     paths:
       - "docs/**"
       - "website/**"
+      - "server/metrics/**"
 
 jobs:
   build:
@@ -19,8 +20,12 @@ jobs:
 
       - name: Build Website
         run: |
-          cd website
-          yarn install && yarn build
+          bazel build //website:website
+          rm -rf website/build
+          mkdir -p website/build
+          cd website/build
+          tar -xf ../../bazel-bin/website/website.tar
+          touch .nojekyll
 
       - name: Deploy Website 🚀
         uses: JamesIves/github-pages-deploy-action@4.1.0
