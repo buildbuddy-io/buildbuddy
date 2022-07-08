@@ -2,12 +2,15 @@ package filters
 
 import (
 	"context"
+	"flag"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -26,6 +29,8 @@ const (
 var (
 	headerContextKeys map[string]string
 	once              sync.Once
+
+	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", true, "If enabled, grpc metrics by group ID will be recorded")
 )
 
 func init() {
@@ -194,6 +199,30 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
+func recordRequestMetricsUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		r, err := handler(ctx, req)
+		if *enableGRPCMetricsByGroupID {
+			if key, err := quota.GetKey(ctx, env); err == nil {
+				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key).Inc()
+			}
+		}
+		return r, err
+	}
+}
+
+func recordRequestMetricsStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		err := handler(srv, stream)
+		if *enableGRPCMetricsByGroupID {
+			if key, err := quota.GetKey(stream.Context(), env); err == nil {
+				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key).Inc()
+			}
+		}
+		return err
+	}
+}
+
 // copyHeadersStreamInterceptor is a server interceptor that copies certain
 // headers present in the grpc metadata into the context.
 func copyHeadersStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -221,6 +250,7 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
+		recordRequestMetricsUnaryServerInterceptor(env),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
@@ -232,6 +262,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		requestIDStreamServerInterceptor(),
+		recordRequestMetricsStreamServerInterceptor(env),
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),
