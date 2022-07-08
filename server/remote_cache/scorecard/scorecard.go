@@ -2,6 +2,7 @@ package scorecard
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -32,7 +33,7 @@ var (
 // GetCacheScoreCard returns a list of detailed, per-request cache stats.
 func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
 	// Authorize access to the requested invocation
-	_, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
+	invocation, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 		return nil, status.InvalidArgumentError("invalid page token")
 	}
 
-	scorecard, err := Read(ctx, env, req.InvocationId)
+	scorecard, err := Read(ctx, env, req.InvocationId, invocation.Attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -259,9 +260,16 @@ func sortResults(results []*capb.ScoreCard_Result, opts *sortOpts) {
 	})
 }
 
-func blobName(invocationID string) string {
+func blobName(invocationID string, invocationAttempt uint64) string {
 	// WARNING: Things will break if this is changed, because we use this name
 	// to lookup data from historical invocations.
+	blobFileName := "scorecard.pb"
+	return filepath.Join(invocationID, fmt.Sprint(invocationAttempt), blobFileName)
+}
+
+// blobNameDeprecated returns a deprecated cache scorecard file name
+// This may be needed to lookup data from historical invocations that used the deprecated naming
+func blobNameDeprecated(invocationID string) string {
 	blobFileName := invocationID + "-scorecard.pb"
 	return filepath.Join(invocationID, blobFileName)
 }
@@ -316,12 +324,19 @@ func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
 }
 
 // Read reads the invocation cache scorecard from the configured blobstore.
-func Read(ctx context.Context, env environment.Env, invocationID string) (*capb.ScoreCard, error) {
+func Read(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64) (*capb.ScoreCard, error) {
 	blobStore := env.GetBlobstore()
-	buf, err := blobStore.ReadBlob(ctx, blobName(invocationID))
-	if err != nil {
+	buf, err := blobStore.ReadBlob(ctx, blobName(invocationID, invocationAttempt))
+	if err != nil && status.IsNotFoundError(err) {
+		// Try reading from deprecated file name for older files that were written before the naming changed
+		buf, err = blobStore.ReadBlob(ctx, blobNameDeprecated(invocationID))
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
+
 	sc := &capb.ScoreCard{}
 	if err := proto.Unmarshal(buf, sc); err != nil {
 		return nil, err
@@ -330,12 +345,12 @@ func Read(ctx context.Context, env environment.Env, invocationID string) (*capb.
 }
 
 // Write writes the invocation cache scorecard to the configured blobstore.
-func Write(ctx context.Context, env environment.Env, invocationID string, scoreCard *capb.ScoreCard) error {
+func Write(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64, scoreCard *capb.ScoreCard) error {
 	scoreCardBuf, err := proto.Marshal(scoreCard)
 	if err != nil {
 		return err
 	}
 	blobStore := env.GetBlobstore()
-	_, err = blobStore.WriteBlob(ctx, blobName(invocationID), scoreCardBuf)
+	_, err = blobStore.WriteBlob(ctx, blobName(invocationID, invocationAttempt), scoreCardBuf)
 	return err
 }
