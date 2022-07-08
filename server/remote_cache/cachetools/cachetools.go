@@ -139,24 +139,32 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, err
 	}
 
+	var rc io.ReadCloser = io.NopCloser(in)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		rbuf := make([]byte, 0, uploadBufSizeBytes)
+		cbuf := make([]byte, 0, uploadBufSizeBytes)
+		reader, err := compression.NewZstdChunkingCompressor(in, rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
+		if err != nil {
+			return nil, status.InternalErrorf("Failed to compress blob: %s", err)
+		}
+		rc = reader
+	}
+	defer rc.Close()
+
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
 	for {
-		n, err := in.Read(buf)
+		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
 		readDone := err == io.EOF
 
 		req := &bspb.WriteRequest{
+			Data:         buf[:n],
 			ResourceName: resourceName,
 			WriteOffset:  bytesUploaded,
 			FinishWrite:  readDone,
-		}
-		if r.GetCompressor() == repb.Compressor_ZSTD {
-			req.Data = compression.CompressZstd(nil, buf[:n])
-		} else {
-			req.Data = buf[:n]
 		}
 		if err := stream.Send(req); err != nil {
 			if err == io.EOF {
