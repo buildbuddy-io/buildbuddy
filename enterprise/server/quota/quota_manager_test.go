@@ -185,39 +185,59 @@ func TestGetNamespace(t *testing.T) {
 	qm, err := newQuotaManager(env, pubsub.NewTestPubSub(), createTestBucket)
 	require.NoError(t, err)
 
-	resp, err := qm.GetNamespace(ctx, &qpb.GetNamespaceRequest{})
-	require.NoError(t, err)
-	// use sortProtos to ignore orders
-	sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
-	assert.Empty(t, cmp.Diff([]*qpb.Namespace{
+	testCases := []struct {
+		name string
+		req  *qpb.GetNamespaceRequest
+	}{
 		{
-			Name: "remote_execution",
-			AssignedBuckets: []*qpb.AssignedBucket{
-				{
-					Bucket: &qpb.Bucket{
-						Name: "default",
-						MaxRate: &qpb.Rate{
-							NumRequests: 100,
-							Period:      durationpb.New(time.Second),
-						},
-						MaxBurst: 105,
-					},
-				},
-				{
-
-					Bucket: &qpb.Bucket{
-						Name: "restricted",
-						MaxRate: &qpb.Rate{
-							NumRequests: 10,
-							Period:      durationpb.New(time.Second),
-						},
-						MaxBurst: 12,
-					},
-					QuotaKeys: []string{"GR123456"},
-				},
+			name: "get all namespaces",
+			req:  &qpb.GetNamespaceRequest{},
+		},
+		{
+			name: "get one namespace",
+			req: &qpb.GetNamespaceRequest{
+				Namespace: "remote_execution",
 			},
 		},
-	}, resp.GetNamespaces(), protocmp.Transform(), sortProtos))
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			resp, err := qm.GetNamespace(ctx, tc.req)
+			require.NoError(t, err)
+			// use sortProtos to ignore orders
+			sortProtos := cmpopts.SortSlices(func(m1, m2 protocmp.Message) bool { return m1.String() < m2.String() })
+			assert.Empty(t, cmp.Diff([]*qpb.Namespace{
+				{
+					Name: "remote_execution",
+					AssignedBuckets: []*qpb.AssignedBucket{
+						{
+							Bucket: &qpb.Bucket{
+								Name: "default",
+								MaxRate: &qpb.Rate{
+									NumRequests: 100,
+									Period:      durationpb.New(time.Second),
+								},
+								MaxBurst: 105,
+							},
+						},
+						{
+
+							Bucket: &qpb.Bucket{
+								Name: "restricted",
+								MaxRate: &qpb.Rate{
+									NumRequests: 10,
+									Period:      durationpb.New(time.Second),
+								},
+								MaxBurst: 12,
+							},
+							QuotaKeys: []string{"GR123456"},
+						},
+					},
+				},
+			}, resp.GetNamespaces(), protocmp.Transform(), sortProtos))
+		})
+	}
 }
 
 func TestModifyNamespace_AddBucket(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/throttled/throttled/v2"
@@ -93,14 +94,23 @@ func namespaceConfigToProto(from *namespaceConfig) *qpb.Namespace {
 	return res
 }
 
-func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error) {
+func fetchAllConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error) {
+	return fetchConfigFromDB(env, "")
+}
+
+func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*namespaceConfig, error) {
 	if env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("quota manager is not configured")
 	}
 	ctx := env.GetServerContext()
 	config := make(map[string]*namespaceConfig)
 	err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("fetch_quota_config"), func(tx *db.DB) error {
-		bucketRows, err := tx.Raw(`SELECT * FROM QuotaBuckets`).Rows()
+		q := query_builder.NewQuery(`SELECT * FROM QuotaBuckets`)
+		if namespace != "" {
+			q = q.AddWhereClause(`namespace = ?`, namespace)
+		}
+		queryStr, args := q.Build()
+		bucketRows, err := tx.Raw(queryStr, args...).Rows()
 		if err != nil {
 			return status.InternalErrorf("failed to read table QuotaBuckets: %s", err)
 		}
@@ -127,7 +137,12 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 			}
 		}
 
-		groupRows, err := tx.Raw(`SELECT * FROM QuotaGroups`).Rows()
+		groupQuery := query_builder.NewQuery(`SELECT * FROM QuotaGroups`)
+		if namespace != "" {
+			groupQuery = groupQuery.AddWhereClause(`namespace = ?`, namespace)
+		}
+		groupQueryStr, groupArgs := groupQuery.Build()
+		groupRows, err := tx.Raw(groupQueryStr, groupArgs...).Rows()
 		if err != nil {
 			return status.InternalErrorf("failed to read table QuotaGroups: %s", err)
 		}
@@ -351,7 +366,7 @@ func Register(env environment.Env) error {
 }
 
 func (qm *QuotaManager) GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error) {
-	configs, err := fetchConfigFromDB(qm.env)
+	configs, err := fetchConfigFromDB(qm.env, req.GetNamespace())
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +538,7 @@ func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, buck
 }
 
 func (qm *QuotaManager) reloadNamespaces() (map[string]*namespace, error) {
-	config, err := fetchConfigFromDB(qm.env)
+	config, err := fetchAllConfigFromDB(qm.env)
 	if err != nil {
 		return nil, err
 	}
