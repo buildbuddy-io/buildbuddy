@@ -163,6 +163,9 @@ func fetchConfigFromDB(env environment.Env) (map[string]*namespaceConfig, error)
 }
 
 func validateBucket(bucket *qpb.Bucket) error {
+	if bucket.GetName() == "" {
+		return status.InvalidArgumentError("bucket.name cannot be empty")
+	}
 	if num := bucket.GetMaxRate().GetNumRequests(); num <= 0 || num > math.MaxInt {
 		return status.InvalidArgumentErrorf("bucket.max_rate.num_requests(%d) must be positive and less than %d", num, math.MaxInt)
 	}
@@ -272,21 +275,18 @@ func newQuotaManager(env environment.Env, ps interfaces.PubSub, bucketCreator bu
 }
 
 func (qm *QuotaManager) createNamespace(env environment.Env, name string, config *namespaceConfig) (*namespace, error) {
-	defaultAssignedBucket := config.assignedBuckets[defaultBucketName]
-	if defaultAssignedBucket == nil {
-		return nil, status.InvalidArgumentErrorf("default quota bucket is unset in namespace: %q", name)
-	}
-
-	defaultBucket, err := qm.bucketCreator(env, defaultAssignedBucket.bucket)
-	if err != nil {
-		return nil, err
-	}
-
 	ns := &namespace{
-		name:          name,
-		config:        config,
-		defaultBucket: defaultBucket,
-		bucketsByKey:  make(map[string]Bucket),
+		name:         name,
+		config:       config,
+		bucketsByKey: make(map[string]Bucket),
+	}
+	defaultAssignedBucket := config.assignedBuckets[defaultBucketName]
+	if defaultAssignedBucket != nil {
+		defaultBucket, err := qm.bucketCreator(env, defaultAssignedBucket.bucket)
+		if err != nil {
+			return nil, err
+		}
+		ns.defaultBucket = defaultBucket
 	}
 
 	for _, assignedBucket := range config.assignedBuckets {
@@ -304,7 +304,8 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 
 // findBucket finds the bucket given a namespace and key. If the key is found in
 // bucketsByKey map, return the corresponding bucket. Otherwise, return the
-// default bucket. Returns nil if the namespace is not found.
+// default bucket. Returns nil if the namespace is not found or the default bucket
+// is not defined.
 func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
 	qm.mu.Lock()
 	ns, ok := qm.namespaces[namespace]
@@ -329,7 +330,8 @@ func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity in
 	}
 	b := qm.findBucket(namespace, key)
 	if b == nil {
-		log.Warningf("Quota bucket for namespace %q and key %q not found", namespace, key)
+		// The bucket is not found, b/c either the namespace or the default bucket
+		// is not defined.
 		return true, nil
 	}
 	return b.Allow(ctx, key, quantity)
@@ -417,7 +419,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 		if err != nil {
 			return err
 		}
-		if row.Count == 0 {
+		if row.Count == 0 && req.GetBucketName() != defaultBucketName {
 			return status.FailedPreconditionErrorf("namespace(%q) and bucket_name(%q) doesn't exist", req.GetNamespace(), req.GetBucketName())
 		}
 

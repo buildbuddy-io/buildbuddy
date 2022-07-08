@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/metrics",
         "//server/role_filter",
         "//server/util/log",
+        "//server/util/quota",
         "//server/util/request_context",
         "//server/util/uuid",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
