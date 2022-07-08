@@ -324,9 +324,7 @@ func FillBESMetadata(sc *capb.ScoreCard, files map[string]*bespb.File) {
 }
 
 // Read reads the invocation cache scorecard from the configured blobstore.
-func Read(
-	ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64,
-) (*capb.ScoreCard, error) {
+func Read(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64) (*capb.ScoreCard, error) {
 	blobStore := env.GetBlobstore()
 	buf, err := blobStore.ReadBlob(ctx, blobName(invocationID, invocationAttempt))
 	if err != nil && status.IsNotFoundError(err) {
@@ -347,13 +345,7 @@ func Read(
 }
 
 // Write writes the invocation cache scorecard to the configured blobstore.
-func Write(
-	ctx context.Context,
-	env environment.Env,
-	invocationID string,
-	invocationAttempt uint64,
-	scoreCard *capb.ScoreCard,
-) error {
+func Write(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64, scoreCard *capb.ScoreCard) error {
 	scoreCardBuf, err := proto.Marshal(scoreCard)
 	if err != nil {
 		return err
