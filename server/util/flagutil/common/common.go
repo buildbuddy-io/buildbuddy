@@ -70,8 +70,8 @@ type SetValueForFlagNameHooked interface {
 	SetValueForFlagNameHook()
 }
 
-// GetTypeForFlagValue returns the (pointer) Type this flag aliases; this is the same
-// type returned when defining the flag initially.
+// GetTypeForFlagValue returns the (pointer) Type this flag Value aliases; this
+// is the same type returned when defining the flag initially.
 func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	if v, ok := value.(WrappingValue); ok {
 		return GetTypeForFlagValue(v.WrappedValue())
@@ -82,6 +82,24 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 		return v.AliasedType(), nil
 	}
 	return nil, status.UnimplementedErrorf("Unsupported flag type : %T", value)
+}
+
+// ConvertFlagValue returns the data this flag Value contains, converted to the
+// same type as is returned when defining the flag initially.
+func ConvertFlagValue(value flag.Value) (any, error) {
+	addr := reflect.ValueOf(value)
+	for v, ok := value.(WrappingValue); ok; v, ok = v.WrappedValue().(WrappingValue) {
+		addr = reflect.ValueOf(v.WrappedValue())
+	}
+	t, err := GetTypeForFlagValue(value)
+	if err != nil {
+		return nil, err
+	}
+	if !addr.CanConvert(t) {
+		return nil, status.InternalErrorf("Flag of type %T could not be converted to %s.", value, t)
+	}
+	addr = addr.Convert(t)
+	return addr.Interface(), nil
 }
 
 // SetValueForFlagName sets the value for a flag by name. setFlags is the set of
@@ -163,43 +181,34 @@ func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newVa
 // a given flag name.
 func GetDereferencedValue[T any](name string) (T, error) {
 	flg := DefaultFlagSet.Lookup(name)
-	zeroT := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	if flg == nil {
-		return *zeroT, status.NotFoundErrorf("Undefined flag: %s", name)
+		return *Zero[T](), status.NotFoundErrorf("Undefined flag: %s", name)
 	}
 	return getDereferencedValueFrom[T](flg.Value, flg.Name)
 }
 
 func getDereferencedValueFrom[T any](value flag.Value, name string) (T, error) {
-	zeroT := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 	if v, ok := value.(IsNameAliasing); ok {
 		return GetDereferencedValue[T](v.AliasedName())
 	}
-	// Unwrap any wrapper values (e.g. DeprecatedFlag)
-	if v, ok := value.(WrappingValue); ok {
-		return getDereferencedValueFrom[T](v.WrappedValue(), name)
+	converted, err := ConvertFlagValue(value)
+	if err != nil {
+		return *Zero[T](), status.InternalErrorf("Error dereferencing flag %s: %v", name, err)
 	}
 	t := reflect.TypeOf((*T)(nil))
-	addr := reflect.ValueOf(value)
 	if t == reflect.TypeOf((*any)(nil)) {
-		var err error
-		t, err = GetTypeForFlagValue(value)
-		if err != nil {
-			return *zeroT, status.InternalErrorf("Error dereferencing flag %s to unspecified type: %s.", name, err)
-		}
-		if !addr.CanConvert(t) {
-			return *zeroT, status.InvalidArgumentErrorf("Flag %s of type %T could not be converted to %s.", name, value, t)
-		}
-		return addr.Convert(t).Elem().Interface().(T), nil
+		return reflect.ValueOf(converted).Elem().Interface().(T), nil
 	}
-	if !addr.CanConvert(t) {
-		return *zeroT, status.InvalidArgumentErrorf("Flag %s of type %T could not be converted to %s.", name, value, t)
-	}
-	v, ok := addr.Convert(t).Interface().(*T)
+	v, ok := converted.(*T)
 	if !ok {
-		return *zeroT, status.InternalErrorf("Failed to assert flag %s of type %T as type %s.", name, value, t)
+		return *Zero[T](), status.InternalErrorf("Failed to assert flag %s of type %T as type %s.", name, converted, t)
 	}
 	return *v, nil
+}
+
+// Zero returns a pointer to a zero-value of the provided type.
+func Zero[T any]() *T {
+	return reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 }
 
 // AddTestFlagTypeForTesting adds a type correspondence to the internal

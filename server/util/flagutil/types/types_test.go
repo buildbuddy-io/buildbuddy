@@ -175,7 +175,7 @@ func TestFlagAlias(t *testing.T) {
 	flags.Lookup("string_alias_alias").Value.Set("meow")
 	assert.Equal(t, *s, "meow")
 
-	asf := flags.Lookup("string_alias").Value.(*FlagAlias)
+	asf := flags.Lookup("string_alias").Value.(*FlagAlias[string])
 	assert.Equal(t, "meow", asf.String())
 	assert.Equal(t, "string", asf.AliasedName())
 	asfType, err := common.GetTypeForFlagValue(asf)
@@ -185,7 +185,7 @@ func TestFlagAlias(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfYAMLType)
 
-	aasf := flags.Lookup("string_alias").Value.(*FlagAlias)
+	aasf := flags.Lookup("string_alias").Value.(*FlagAlias[string])
 	assert.Equal(t, "meow", aasf.String())
 	assert.Equal(t, "string", aasf.AliasedName())
 	aasfType, err := common.GetTypeForFlagValue(asf)
@@ -431,7 +431,7 @@ deprecated_string_slice:
 	require.NoError(t, err)
 	assert.Equal(t, testStringSlice, []string{"hi", "hello", "hey"})
 
-	d := any(&DeprecatedFlag{})
+	d := any(&DeprecatedFlag[struct{}]{})
 	_, ok := d.(common.WrappingValue)
 	assert.True(t, ok)
 	_, ok = d.(common.SetValueForFlagNameHooked)
