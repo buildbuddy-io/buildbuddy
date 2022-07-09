@@ -43,6 +43,12 @@ type StreamBlobOpts struct {
 	Limit  int64
 }
 
+type nopCloser struct {
+	io.Writer
+}
+
+func (nopCloser) Close() error { return nil }
+
 func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
 	if bsClient == nil {
 		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
@@ -50,6 +56,7 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		return 0, nil
 	}
+
 	req := &bspb.ReadRequest{
 		ResourceName: r.DownloadString(),
 		ReadOffset:   opts.Offset,
@@ -63,16 +70,28 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		return 0, err
 	}
 
+	var wc io.WriteCloser = nopCloser{out}
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		decompressor, err := compression.NewZstdDecompressor(out)
+		if err != nil {
+			return 0, err
+		}
+		wc = decompressor
+	}
+
 	written := int64(0)
 	for {
 		rsp, err := stream.Recv()
 		if err == io.EOF {
+			if err := wc.Close(); err != nil {
+				return 0, err
+			}
 			break
 		}
 		if err != nil {
 			return 0, err
 		}
-		n, err := out.Write(rsp.Data)
+		n, err := wc.Write(rsp.Data)
 		if err != nil {
 			return 0, err
 		}
@@ -120,19 +139,31 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		return nil, err
 	}
 
+	var rc io.ReadCloser = io.NopCloser(in)
+	if r.GetCompressor() == repb.Compressor_ZSTD {
+		rbuf := make([]byte, 0, uploadBufSizeBytes)
+		cbuf := make([]byte, 0, uploadBufSizeBytes)
+		reader, err := compression.NewZstdChunkingCompressor(in, rbuf[:uploadBufSizeBytes], cbuf[:uploadBufSizeBytes])
+		if err != nil {
+			return nil, status.InternalErrorf("Failed to compress blob: %s", err)
+		}
+		rc = reader
+	}
+	defer rc.Close()
+
 	buf := make([]byte, uploadBufSizeBytes)
 	bytesUploaded := int64(0)
 	for {
-		n, err := in.Read(buf)
+		n, err := rc.Read(buf)
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
 		readDone := err == io.EOF
 
 		req := &bspb.WriteRequest{
+			Data:         buf[:n],
 			ResourceName: resourceName,
 			WriteOffset:  bytesUploaded,
-			Data:         buf[:n],
 			FinishWrite:  readDone,
 		}
 		if err := stream.Send(req); err != nil {
@@ -141,7 +172,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			}
 			return nil, err
 		}
-		bytesUploaded += int64(n)
+		bytesUploaded += int64(len(req.Data))
 		if readDone {
 			break
 		}
@@ -421,23 +452,9 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	rsc.Seek(0, 0)
 	r := io.ReadCloser(rsc)
 
-	bufSize := d.GetSizeBytes()
-	if bufSize > maxCompressionBufSize {
-		bufSize = maxCompressionBufSize
-	}
-
 	compressor := repb.Compressor_IDENTITY
 	if ul.supportsCompression() {
 		compressor = repb.Compressor_ZSTD
-		rbuf := ul.bufferPool.Get(bufSize)
-		defer ul.bufferPool.Put(rbuf)
-		cbuf := ul.bufferPool.Get(bufSize)
-		defer ul.bufferPool.Put(cbuf)
-		cr, err := compression.NewZstdChunkingCompressor(r, rbuf, cbuf)
-		if err != nil {
-			return err
-		}
-		r = cr
 	}
 
 	if d.GetSizeBytes() > gRPCMaxSize {
@@ -463,6 +480,9 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		return err
 	}
 
+	if compressor == repb.Compressor_ZSTD {
+		b = compression.CompressZstd(nil, b)
+	}
 	additionalSize := int64(len(b))
 	if ul.unsentBatchSize+additionalSize > gRPCMaxSize {
 		ul.flushCurrentBatch()

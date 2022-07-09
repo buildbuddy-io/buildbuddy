@@ -18,9 +18,12 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -407,7 +410,9 @@ func bytestreamURIToResourceName(uri string) (*digest.ResourceName, error) {
 
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+	bsClient := env.GetByteStreamClient()
+
 	var mainLocalArtifacts []string
 	download := func(f *bespb.File) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
@@ -450,7 +455,7 @@ func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, casCli
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, err
 		}
-		if _, err := dirtools.DownloadTree(ctx, bsClient, casClient, nil, rn.GetInstanceName(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
 			return nil, err
 		}
 	}
@@ -469,6 +474,9 @@ func downloadOutputs(ctx context.Context, bsClient bspb.ByteStreamClient, casCli
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
+	healthChecker := healthcheck.NewHealthChecker("ci-runner")
+	env := real_environment.NewRealEnv(healthChecker)
+
 	conn, err := grpc_client.DialTarget(opts.Server)
 	if err != nil {
 		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
@@ -572,8 +580,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
-		bsClient := bspb.NewByteStreamClient(conn)
-		casClient := repb.NewContentAddressableStorageClient(conn)
+		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
 		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
@@ -581,7 +589,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return 0, err
 		}
 		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-		outputs, err := downloadOutputs(ctx, bsClient, casClient, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+		outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 		if err != nil {
 			return 0, err
 		}

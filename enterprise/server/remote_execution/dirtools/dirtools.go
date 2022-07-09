@@ -3,19 +3,23 @@ package dirtools
 import (
 	"bytes"
 	"context"
+	"flag"
 	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -26,6 +30,10 @@ import (
 )
 
 const gRPCMaxSize = int64(4000000)
+
+var (
+	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", false, "If true, enable compression of downloads from remote caches")
+)
 
 type TransferInfo struct {
 	FileCount        int64
@@ -447,34 +455,60 @@ type FileMap map[digest.Key][]*FilePointer
 
 type BatchFileFetcher struct {
 	ctx          context.Context
+	env          environment.Env
 	instanceName string
-	fileCache    interfaces.FileCache // OPTIONAL
-	bsClient     bspb.ByteStreamClient
-	casClient    repb.ContentAddressableStorageClient // OPTIONAL
+	once         *sync.Once
+	compress     bool
 }
 
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, instanceName string, fileCache interfaces.FileCache, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient) *BatchFileFetcher {
+func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string) *BatchFileFetcher {
 	return &BatchFileFetcher{
 		ctx:          ctx,
+		env:          env,
 		instanceName: instanceName,
-		fileCache:    fileCache,
-		bsClient:     bsClient,
-		casClient:    casClient,
+		once:         &sync.Once{},
+		compress:     false,
 	}
 }
 
+func (ff *BatchFileFetcher) supportsCompression() bool {
+	ff.once.Do(func() {
+		if !*enableDownloadCompresssion {
+			return
+		}
+		capabilitiesClient := ff.env.GetCapabilitiesClient()
+		if capabilitiesClient == nil {
+			log.Warningf("Download compression was enabled but no capabilities client found. Cannot verify cache server capabilities")
+			return
+		}
+		enabled, err := cachetools.SupportsCompression(ff.ctx, capabilitiesClient)
+		if err != nil {
+			log.Errorf("Error determinining if cache server supports compression: %s", err)
+		}
+		if enabled {
+			ff.compress = true
+		} else {
+			log.Debugf("Download compression was enabled but remote server did not support compression")
+		}
+	})
+	return ff.compress
+}
+
 func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.BatchReadBlobsRequest, filesToFetch FileMap, opts *DownloadTreeOpts) error {
-	if ff.casClient == nil {
+	casClient := ff.env.GetContentAddressableStorageClient()
+	if casClient == nil {
 		return status.FailedPreconditionErrorf("cannot batch download files when casClient is not set")
 	}
 
-	var rsp, err = ff.casClient.BatchReadBlobs(ctx, req)
+	rsp, err := casClient.BatchReadBlobs(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	fileCache := ff.env.GetFileCache()
 	for _, fileResponse := range rsp.GetResponses() {
 		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
 			return digest.MissingDigestError(fileResponse.GetDigest())
@@ -487,12 +521,20 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		if len(ptrs) == 0 {
 			continue
 		}
+		data := fileResponse.GetData()
+		if fileResponse.GetCompressor() == repb.Compressor_ZSTD {
+			data, err = compression.DecompressZstd(nil, data)
+			if err != nil {
+				return err
+			}
+		}
+
 		ptr := ptrs[0]
-		if err := writeFile(ptr, fileResponse.GetData()); err != nil {
+		if err := writeFile(ptr, data); err != nil {
 			return err
 		}
-		if ff.fileCache != nil {
-			ff.fileCache.AddFile(ptr.FileNode, ptr.FullPath)
+		if fileCache != nil {
+			fileCache.AddFile(ptr.FileNode, ptr.FullPath)
 		}
 		// Only need to write the first file explicitly; the rest of the files can
 		// be fast-copied from the first.
@@ -506,12 +548,21 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 }
 
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
-	req := &repb.BatchReadBlobsRequest{
-		InstanceName: ff.instanceName,
+	newRequest := func() *repb.BatchReadBlobsRequest {
+		r := &repb.BatchReadBlobsRequest{
+			InstanceName: ff.instanceName,
+		}
+		if ff.supportsCompression() {
+			r.AcceptableCompressors = append(r.AcceptableCompressors, repb.Compressor_ZSTD)
+		}
+		return r
 	}
+	req := newRequest()
+
 	currentBatchRequestSize := int64(0)
 	eg, ctx := errgroup.WithContext(ff.ctx)
 
+	fileCache := ff.env.GetFileCache()
 	// Note: filesToFetch is keyed by digest, so all files in `filePointers` have
 	// the digest represented by dk.
 	for dk, filePointers := range filesToFetch {
@@ -531,8 +582,8 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		numFilesLinked := 0
 		for _, fp := range filePointers {
 			d := fp.FileNode.GetDigest()
-			if ff.fileCache != nil {
-				linked, err := linkFileFromFileCache(d, fp, ff.fileCache, opts)
+			if fileCache != nil {
+				linked, err := linkFileFromFileCache(d, fp, fileCache, opts)
 				if err != nil {
 					return err
 				}
@@ -554,7 +605,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// fit in the batch call, so we'll have to bytestream
 		// it.
 		size := d.GetSizeBytes()
-		if size > gRPCMaxSize || ff.casClient == nil {
+		if size > gRPCMaxSize || ff.env.GetContentAddressableStorageClient() == nil {
 			func(d *repb.Digest, fps []*FilePointer) {
 				eg.Go(func() error {
 					return ff.bytestreamReadFiles(ctx, ff.instanceName, d, fps, opts)
@@ -572,9 +623,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 					return ff.batchDownloadFiles(ctx, req, filesToFetch, opts)
 				})
 			}(req)
-			req = &repb.BatchReadBlobsRequest{
-				InstanceName: ff.instanceName,
-			}
+			req = newRequest()
 			currentBatchRequestSize = 0
 		}
 
@@ -596,6 +645,11 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
 func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
+	bsClient := ff.env.GetByteStreamClient()
+	if bsClient == nil {
+		return status.FailedPreconditionErrorf("cannot bytestream read files when bsClient is not set")
+	}
+
 	if len(fps) == 0 {
 		return nil
 	}
@@ -608,14 +662,19 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, ff.bsClient, digest.NewResourceName(fp.FileNode.Digest, instanceName), f); err != nil {
+	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName)
+	if ff.supportsCompression() {
+		resourceName.SetCompressor(repb.Compressor_ZSTD)
+	}
+	if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
 		return err
 	}
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if ff.fileCache != nil {
-		ff.fileCache.AddFile(fp.FileNode, fp.FullPath)
+	fileCache := ff.env.GetFileCache()
+	if fileCache != nil {
+		fileCache.AddFile(fp.FileNode, fp.FullPath)
 	}
 
 	// The rest of the files in the list all have the same digest, so we can
@@ -669,7 +728,7 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-func DownloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -678,10 +737,6 @@ func DownloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient
 		return nil, err
 	}
 
-	return downloadTree(ctx, bsClient, casClient, fileCache, instanceName, rootDirectoryDigest, rootDir, dirMap, startTime, txInfo, opts)
-}
-
-func downloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient repb.ContentAddressableStorageClient, fileCache interfaces.FileCache, instanceName string, rootDirectoryDigest *repb.Digest, rootDir string, dirMap map[digest.Key]*repb.Directory, startTime time.Time, txInfo *TransferInfo, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	trackTransfersFn := func(relPath string, node *repb.FileNode) {}
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
 	if opts.TrackTransfers {
@@ -758,7 +813,7 @@ func downloadTree(ctx context.Context, bsClient bspb.ByteStreamClient, casClient
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, instanceName, fileCache, bsClient, casClient)
+	ff := NewBatchFileFetcher(ctx, env, instanceName)
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

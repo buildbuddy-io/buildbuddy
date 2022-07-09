@@ -939,6 +939,121 @@ func TestComplexActionIO(t *testing.T) {
 	assert.Empty(t, missing)
 }
 
+func TestComplexActionIOWithCompression(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	flags.Set(t, "cache.client.enable_upload_compression", true)
+	flags.Set(t, "cache.client.enable_download_compression", true)
+
+	tmpDir := testfs.MakeTempDir(t)
+	// Write a mix of small and large files, to ensure we can handle batching
+	// lots of small files that fit within the gRPC limit, as well as individual
+	// that exceed the gRPC limit.
+	smallSizes := []int{
+		1e2, 1e3, 1e4, 1e5, 1e6,
+		1e2, 1e3, 1e4, 1e5, 1e6,
+	}
+	largeSizes := []int{1e7}
+	// Write files to several different directories to ensure we handle directory
+	// creation properly.
+	dirLayout := map[string][]int{
+		"" /*root*/ : smallSizes,
+		"a":          smallSizes,
+		"b":          smallSizes,
+		"a/child":    smallSizes,
+		"b/child":    largeSizes,
+	}
+	outputFiles := []string{}
+	contents := map[string]string{}
+	for dir, sizes := range dirLayout {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
+			assert.FailNow(t, err.Error())
+		}
+		for i, size := range sizes {
+			relPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
+			content := testfs.WriteRandomString(t, tmpDir, relPath, size)
+			contents[relPath] = content
+			outputFiles = append(outputFiles, filepath.Join("out_files_dir", dir, fmt.Sprintf("file_%d.output", i)))
+		}
+	}
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"sh", "-c", strings.Join([]string{
+			`set -e`,
+			`input_paths=$(find . -type f)`,
+			// Mirror the input tree to out_files_dir, skipping the first byte so that
+			// the output digests are different. Note that we don't create directories
+			// here since the executor is responsible for creating parent dirs of
+			// output files.
+			`
+			for path in $input_paths; do
+				output_path="out_files_dir/$(echo "$path" | sed 's/.input/.output/')"
+				cat "$path" | tail -c +2 > "$output_path"
+			done
+			`,
+			// Mirror the input tree to out_dir, skipping the first 2 bytes this time.
+			// We *do* need to create parent dirs since the executor is only
+			// responsible for creating the top-level out_dir.
+			`
+			for path in $input_paths; do
+				output_path="out_dir/$(echo "$path" | sed 's/.input/.output/')"
+				mkdir -p out_dir/"$(dirname "$path")"
+				cat "$path" | tail -c +3 > "$output_path"
+			done
+			`,
+		}, "\n")},
+		Platform:          platform,
+		OutputDirectories: []string{"out_dir"},
+		OutputFiles:       outputFiles,
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+	require.Empty(t, res.Stderr)
+
+	outDir := rbe.DownloadOutputsToNewTempDir(res)
+
+	skippedBytes := map[string]int{
+		"out_files_dir": 1,
+		"out_dir":       2,
+	}
+	missing := []string{}
+	for parent, nSkippedBytes := range skippedBytes {
+		for dir, sizes := range dirLayout {
+			for i, _ := range sizes {
+				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
+				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
+				if testfs.Exists(t, outDir, outputRelPath) {
+					inputContents, ok := contents[inputRelPath]
+					require.Truef(t, ok, "sanity check: missing input contents of %s", inputRelPath)
+					expectedContents := inputContents[nSkippedBytes:]
+					actualContents := testfs.ReadFileAsString(t, outDir, outputRelPath)
+					// Not using assert.Equal here since the diff can be huge.
+					assert.Truef(
+						t, expectedContents == actualContents,
+						"contents of %s did not match (expected len: %d; actual len: %d)",
+						outputRelPath, len(expectedContents), len(actualContents),
+					)
+				} else {
+					missing = append(missing, outputRelPath)
+				}
+			}
+		}
+	}
+	assert.Empty(t, missing)
+}
+
 func TestUnregisterExecutor(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 

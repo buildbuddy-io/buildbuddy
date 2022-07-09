@@ -59,7 +59,7 @@ func TestDownloadTree(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), nil /*=fileCache*/, "", directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "", directory, tmpDir, &dirtools.DownloadTreeOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env.GetByteStreamClient(), env.GetContentAddressableStorageClient(), nil /*=fileCache*/, "foo", directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "foo", directory, tmpDir, &dirtools.DownloadTreeOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
