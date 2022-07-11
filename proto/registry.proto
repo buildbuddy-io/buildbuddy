@@ -65,3 +65,46 @@ service Registry {
   rpc GetOptimizedImage(GetOptimizedImageRequest)
       returns (GetOptimizedImageResponse);
 }
+
+message ConvertImageRequest {
+  // The target image, including repo (e.g. docker.io/busybox:latest or
+  // docker.io/busybox@sha256:foo)
+  string image = 1;
+  // Optional credentials for accessing the target image.
+  Credentials credentials = 2;
+}
+
+message ConvertImageResponse {
+  // Manifest of the converted image.
+  Manifest manifest = 1;
+}
+
+message ConvertLayerRequest {
+  // The target image, including repo (e.g. docker.io/busybox:latest or
+  // docker.io/busybox@sha256:foo)
+  string image = 1;
+  // Optional credentials for accessing the target image.
+  Credentials credentials = 2;
+  // The OCI digest (sha256:foo) of the layer to convert.
+  string layer_digest = 3;
+}
+
+message ConvertLayerResponse {
+  // Whether the layer should not be included in the converted image.
+  bool skip = 1;
+  // The CAS digest of the converted layer.
+  build.bazel.remote.execution.v2.Digest cas_digest = 2;
+  // The OCI digest (sha256:foo) of the converted layer.
+  string digest = 3;
+  // The diff ID (OCI digest of the uncompressed data) of the converted layer.
+  string diff_id = 4;
+  // The compressed size of the converted layer.
+  int64 size = 5;
+  // The media type of the converted layer.
+  string media_type = 6;
+}
+
+service ImageConverter {
+  rpc ConvertImage(ConvertImageRequest) returns (ConvertImageResponse);
+  rpc ConvertLayer(ConvertLayerRequest) returns (ConvertLayerResponse);
+}
