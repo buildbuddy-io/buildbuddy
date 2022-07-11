@@ -259,7 +259,7 @@ type bucketCreatorFn func(environment.Env, *tables.QuotaBucket) (Bucket, error)
 type QuotaManager struct {
 	env           environment.Env
 	namespaces    map[string]*namespace
-	mu            *sync.Mutex
+	mu            *sync.RWMutex
 	bucketCreator bucketCreatorFn
 	ps            interfaces.PubSub
 }
@@ -272,7 +272,7 @@ func newQuotaManager(env environment.Env, ps interfaces.PubSub, bucketCreator bu
 	qm := &QuotaManager{
 		env:           env,
 		namespaces:    make(map[string]*namespace),
-		mu:            &sync.Mutex{},
+		mu:            &sync.RWMutex{},
 		bucketCreator: bucketCreator,
 		ps:            ps,
 	}
@@ -322,11 +322,10 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 // default bucket. Returns nil if the namespace is not found or the default bucket
 // is not defined.
 func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
-	qm.mu.Lock()
+	qm.mu.RLock()
 	ns, ok := qm.namespaces[namespace]
-	qm.mu.Unlock()
+	qm.mu.RUnlock()
 	if !ok {
-		log.Warningf("namespace %q not found", namespace)
 		return nil
 	}
 
