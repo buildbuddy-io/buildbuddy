@@ -516,10 +516,10 @@ func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
 func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
+		return status.NotFoundErrorf("record %q not found", fileMetadataKey)
 	}
 	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
+		return status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
 	}
 	return nil
 }
@@ -530,6 +530,18 @@ func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fi
 		return nil, err
 	}
 	return fileMetadata, nil
+}
+
+func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) {
+	if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
+		return
+	}
+	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
+		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", fileMetadataKey, fileMetadata, err)
+		if err := p.deleteMetadataOnly(fileMetadataKey); err != nil {
+			log.Warningf("Error deleting metadata: %s", err)
+		}
+	}
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
@@ -634,12 +646,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		}
 		rc, err := filestore.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
-			if status.IsNotFoundError(err) || os.IsNotExist(err) {
-				log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
-				if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
-					log.Warningf("Error deleting metadata: %s", err)
-				}
-			}
+			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			continue
 		}
 		p.updateAtime(fileMetadataKey)
@@ -675,7 +682,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 	return nil
 }
 
-func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, fileMetadataKey []byte) error {
+func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
@@ -742,21 +749,12 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	if err != nil {
 		return nil, err
 	}
-	if p.isolation.GetCacheType() == rfpb.Isolation_ACTION_CACHE {
-		// for AC items, we need to examine the remote_instance_name as
-		// well and make sure there is a match.
-		if fileMetadata.GetFileRecord().GetIsolation().GetRemoteInstanceName() != p.isolation.GetRemoteInstanceName() {
-			return nil, status.NotFoundErrorf("file %q not found", fileMetadataKey)
-		}
-	}
+
 	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
-		log.Warningf("File %q was found in metadata (%+v) but not on disk.", fileMetadataKey, fileMetadata)
-		if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
-			log.Warningf("Error deleting metadata: %s", err)
-		}
+		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
 	return rc, err
 }
@@ -1231,6 +1229,7 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 				log.Errorf("Error evicting file: %s (ignoring)", err)
 				continue
 			}
+			log.Debugf("Evictor %q deletd file: %q", e.part.ID, sample.fileMetadataKey)
 			evicted += 1
 			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
