@@ -12,26 +12,27 @@ const BITS_PER_BYTE = 8;
 
 export default class CacheCardComponent extends React.Component<Props> {
   render() {
-    const hasCacheStats = this.props.model.cacheStats.length &&
-        (+this.props.model.cacheStats[0]?.actionCacheHits != 0 ||
-            +this.props.model.cacheStats[0]?.actionCacheMisses != 0 ||
-            +this.props.model.cacheStats[0]?.totalDownloadSizeBytes != 0 ||
-            +this.props.model.cacheStats[0]?.totalUploadSizeBytes != 0);
+    const hasCacheStats =
+      this.props.model.cacheStats.length &&
+      (+this.props.model.cacheStats[0]?.actionCacheHits != 0 ||
+        +this.props.model.cacheStats[0]?.actionCacheMisses != 0 ||
+        +this.props.model.cacheStats[0]?.totalDownloadSizeBytes != 0 ||
+        +this.props.model.cacheStats[0]?.totalUploadSizeBytes != 0);
     return (
       <div className="card">
         <PieChartIcon className="icon" />
         <div className="content">
           <div className="title">Cache stats</div>
           {!hasCacheStats && (
-              <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>
+            <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>
           )}
           {this.props.model.cacheStats.length && (
-              <div className="details">
-                {hasCacheStats && this.props.model.isReadOnlyInvocation() && (
-                    <div className="cache-details">
-                      <AlertCircleIcon className="icon"/>
-                    This invocation was created with a read-only API key. No artifacts were written to the cache.
-                  </div>
+            <div className="details">
+              {hasCacheStats && this.props.model.isReadOnlyInvocation() && (
+                <div className="cache-details">
+                  <AlertCircleIcon className="icon" />
+                  This invocation was created with a read-only API key. No artifacts were written to the cache.
+                </div>
               )}
               {this.props.model.cacheStats.map((cacheStat) => {
                 let downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);

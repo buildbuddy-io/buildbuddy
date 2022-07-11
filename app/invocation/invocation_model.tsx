@@ -251,9 +251,11 @@ export default class InvocationModel {
   }
 
   isReadOnlyInvocation(): boolean {
-    const hasWriteCapability =  this.invocations.find(() => true)?.
-    createdWithCapabilities?.
-    some((existingCapability) => existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+    const hasWriteCapability = this.invocations
+      .find(() => true)
+      ?.createdWithCapabilities?.some(
+        (existingCapability) => existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY
+      );
     return !hasWriteCapability;
   }
 
