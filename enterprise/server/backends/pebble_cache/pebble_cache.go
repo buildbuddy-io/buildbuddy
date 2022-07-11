@@ -324,6 +324,39 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 	}
 }
 
+func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) {
+	iter := p.db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{constants.MinByte},
+		UpperBound: []byte{constants.MaxByte},
+	})
+	defer iter.Close()
+
+	iter.SeekGE([]byte{constants.MinByte})
+	fileMetadata := &rfpb.FileMetadata{}
+	blobDir := ""
+
+	for iter.Next() {
+		// Check if we're shutting down; exit if so.
+		select {
+		case <-quitChan:
+			break
+		default:
+		}
+
+		// Attempt a read -- if the file is unreadable; update the metadata.
+		fileMetadataKey := iter.Key()
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
+			continue
+		}
+		blobDir = p.partitionBlobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		_, err := filestore.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+		if err != nil {
+			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
+		}
+	}
+}
+
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	ch := disk_cache.ScanDiskDirectory(diskDir)
 
@@ -1311,6 +1344,10 @@ func (p *PebbleCache) Start() error {
 	}
 	p.eg.Go(func() error {
 		p.processSizeUpdates(p.quitChan)
+		return nil
+	})
+	p.eg.Go(func() error {
+		p.scanForBrokenFiles(p.quitChan)
 		return nil
 	})
 	return nil
