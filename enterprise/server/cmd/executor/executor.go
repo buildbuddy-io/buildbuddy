@@ -86,6 +86,8 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 	} else {
 		if cacheTarget == "" {
 			log.Fatalf("No cache target was set. Run a local cache or specify one in the config")
+		} else if cacheTarget == "grpcs://cloud.buildbuddy.io" {
+			log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
 		}
 		conn, err = grpc_client.DialTarget(cacheTarget)
 		if err != nil {

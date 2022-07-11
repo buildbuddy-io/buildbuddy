@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -109,6 +110,12 @@ func ExecuteResponseWithResult(ar *repb.ActionResult, err error) *repb.ExecuteRe
 	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
 	if ar != nil {
 		rsp.Result = ar
+	}
+	if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil && target == "grpcs://cloud.buildbuddy.io" {
+		if rsp.GetMessage() != "" {
+			rsp.Message = rsp.GetMessage() + "\n"
+		}
+		rsp.Message = rsp.GetMessage() + "This executor is using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance."
 	}
 	return rsp
 }
