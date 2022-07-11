@@ -1,7 +1,7 @@
 import React from "react";
 
-export type TextInputProps = Omit<JSX.IntrinsicElements["input"], "type"> & {
-  type?: "text" | "password";
+export type TextInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  type?: "text" | "password" | "number";
 };
 
 export const TextInput = React.forwardRef((props: TextInputProps, ref: React.Ref<HTMLInputElement>) => {

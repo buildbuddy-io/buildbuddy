@@ -880,6 +880,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "quota_ts_proto",
+    proto = ":quota_proto",
+)
+
+ts_proto_library(
     name = "scheduler_ts_proto",
     proto = ":scheduler_proto",
 )

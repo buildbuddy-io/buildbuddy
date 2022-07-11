@@ -1,0 +1,107 @@
+.quota-column-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.quota-namespaces,
+.quota-bucket {
+  max-width: 600px;
+}
+
+.quota .quota-breadcrumbs {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.quota .quota-breadcrumb {
+  display: flex;
+  gap: 8px;
+}
+
+.quota .quota-breadcrumb:not(:last-child)::after {
+  display: block;
+  content: "›";
+}
+
+.quota .create-new-button {
+  padding: 16px 32px;
+}
+
+.quota-namespaces .ns-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #eee;
+  overflow: hidden;
+}
+
+.quota-namespaces .ns-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.quota-namespaces .ns-item .name {
+  margin-right: auto;
+}
+
+.quota .bucket-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.quota .bucket-form .labeled-input {
+  display: flex;
+  flex-direction: column;
+}
+
+.quota input:not(.invalid) + .validation-message {
+  display: none;
+}
+
+.quota .validation-message {
+  color: #e53935;
+}
+
+.quota-namespace .bucket {
+  padding: 8px 16px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.quota-namespace .bucket-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 8px;
+}
+
+.quota-namespace .bucket-details {
+  margin-right: auto;
+}
+
+.quota-namespace .bucket-empty-message {
+  padding: 8px 0;
+}
+
+.quota-namespace .bucket-member-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.quota-namespace .bucket-member-key {
+  margin-right: auto;
+}
+
+.quota-namespace .bucket-empty-message {
+  color: #757575;
+}

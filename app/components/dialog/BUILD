@@ -6,11 +6,22 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "dialog",
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = ["dialog.tsx"],
     deps = [
+        "@npm//@types/react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "simple_modal_dialog",
+    srcs = ["simple_modal_dialog.tsx"],
+    deps = [
+        ":dialog",
+        "//app/components/button",
+        "//app/components/modal",
+        "//app/components/spinner",
         "@npm//@types/react",
         "@npm//react",
         "@npm//tslib",
