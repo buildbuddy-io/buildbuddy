@@ -38,7 +38,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
-	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
@@ -60,12 +60,12 @@ var (
 type imageConverter struct {
 	casClient            repb.ContentAddressableStorageClient
 	bsClient             bspb.ByteStreamClient
-	imageConverterClient regpb.ImageConverterClient
+	imageConverterClient rgpb.ImageConverterClient
 
 	deduper *dsingleflight.Coordinator
 }
 
-func getImage(ctx context.Context, image string, credentials *regpb.Credentials) (v1.Image, error) {
+func getImage(ctx context.Context, image string, credentials *rgpb.Credentials) (v1.Image, error) {
 	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", image)
@@ -102,7 +102,7 @@ func getImage(ctx context.Context, image string, credentials *regpb.Credentials)
 	}
 }
 
-func manifestProto(img v1.Image, casDependencies []*repb.Digest) (*regpb.Manifest, error) {
+func manifestProto(img v1.Image, casDependencies []*repb.Digest) (*rgpb.Manifest, error) {
 	manifestBytes, err := img.RawManifest()
 	if err != nil {
 		return nil, status.UnknownErrorf("could not get manifest: %s", err)
@@ -117,7 +117,7 @@ func manifestProto(img v1.Image, casDependencies []*repb.Digest) (*regpb.Manifes
 		return nil, status.UnknownErrorf("could not get digest: %s", err)
 	}
 
-	return &regpb.Manifest{
+	return &rgpb.Manifest{
 		Digest:          manifestDigest.String(),
 		Data:            manifestBytes,
 		ContentType:     string(manifestMediaType),
@@ -126,7 +126,7 @@ func manifestProto(img v1.Image, casDependencies []*repb.Digest) (*regpb.Manifes
 }
 
 type convertedLayer struct {
-	rsp *regpb.ConvertLayerResponse
+	rsp *rgpb.ConvertLayerResponse
 }
 
 func (c *convertedLayer) Digest() (v1.Hash, error) {
@@ -153,7 +153,7 @@ func (c *convertedLayer) MediaType() (types.MediaType, error) {
 	return types.MediaType(c.rsp.GetMediaType()), nil
 }
 
-func (c *imageConverter) convertImage(ctx context.Context, req *regpb.ConvertImageRequest) (*regpb.ConvertImageResponse, error) {
+func (c *imageConverter) convertImage(ctx context.Context, req *rgpb.ConvertImageRequest) (*rgpb.ConvertImageResponse, error) {
 	img, err := getImage(ctx, req.GetImage(), req.GetCredentials())
 	if err != nil {
 		return nil, err
@@ -180,14 +180,14 @@ func (c *imageConverter) convertImage(ctx context.Context, req *regpb.ConvertIma
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	var mu sync.Mutex
-	convertedLayers := make([]*regpb.ConvertLayerResponse, len(manifest.Layers))
+	convertedLayers := make([]*rgpb.ConvertLayerResponse, len(manifest.Layers))
 
 	for layerIdx, layerDesc := range manifest.Layers {
 		layerIdx := layerIdx
 		layerDesc := layerDesc
 
 		eg.Go(func() error {
-			newLayer, err := c.imageConverterClient.ConvertLayer(egCtx, &regpb.ConvertLayerRequest{
+			newLayer, err := c.imageConverterClient.ConvertLayer(egCtx, &rgpb.ConvertLayerRequest{
 				Image:       req.GetImage(),
 				Credentials: req.GetCredentials(),
 				LayerDigest: layerDesc.Digest.String(),
@@ -238,12 +238,12 @@ func (c *imageConverter) convertImage(ctx context.Context, req *regpb.ConvertIma
 		return nil, err
 	}
 
-	return &regpb.ConvertImageResponse{Manifest: mfProto}, nil
+	return &rgpb.ConvertImageResponse{Manifest: mfProto}, nil
 }
 
 // dedupeConvertImage waits for an existing conversion or starts a new one if no
 // conversion is in progress for the given image.
-func (c *imageConverter) dedupeConvertImage(ctx context.Context, req *regpb.ConvertImageRequest) (*regpb.ConvertImageResponse, error) {
+func (c *imageConverter) dedupeConvertImage(ctx context.Context, req *rgpb.ConvertImageRequest) (*rgpb.ConvertImageResponse, error) {
 	workKey := fmt.Sprintf("image-converter-image-%s", req.GetImage())
 	rspBytes, err := c.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		r, err := c.convertImage(ctx, req)
@@ -259,14 +259,14 @@ func (c *imageConverter) dedupeConvertImage(ctx context.Context, req *regpb.Conv
 	if err != nil {
 		return nil, err
 	}
-	var rsp regpb.ConvertImageResponse
+	var rsp rgpb.ConvertImageResponse
 	if err := proto.Unmarshal(rspBytes, &rsp); err != nil {
 		return nil, err
 	}
 	return &rsp, nil
 }
 
-func (c *imageConverter) ConvertImage(ctx context.Context, req *regpb.ConvertImageRequest) (*regpb.ConvertImageResponse, error) {
+func (c *imageConverter) ConvertImage(ctx context.Context, req *rgpb.ConvertImageRequest) (*rgpb.ConvertImageResponse, error) {
 	log.CtxInfof(ctx, "ConvertImage %s", req.GetImage())
 	return c.dedupeConvertImage(ctx, req)
 }
@@ -305,7 +305,7 @@ func isEmptyLayer(layer v1.Layer) (bool, error) {
 	return false, nil
 }
 
-func (c *imageConverter) convertLayer(ctx context.Context, req *regpb.ConvertLayerRequest) (*regpb.ConvertLayerResponse, error) {
+func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLayerRequest) (*rgpb.ConvertLayerResponse, error) {
 	layerDigest, err := v1.NewHash(req.GetLayerDigest())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid layer digest %q: %s", req.GetLayerDigest(), err)
@@ -334,7 +334,7 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *regpb.ConvertLay
 		return nil, err
 	}
 	if emptyLayer {
-		return &regpb.ConvertLayerResponse{Skip: true}, nil
+		return &rgpb.ConvertLayerResponse{Skip: true}, nil
 	}
 
 	newLayer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
@@ -375,7 +375,7 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *regpb.ConvertLay
 		return nil, status.UnknownErrorf("could not upload converted layer %q: %s", newLayerDigest, err)
 	}
 
-	return &regpb.ConvertLayerResponse{
+	return &rgpb.ConvertLayerResponse{
 		CasDigest: casDigest,
 		Digest:    newLayerDigest.String(),
 		DiffId:    newLayerDiffID.String(),
@@ -386,7 +386,7 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *regpb.ConvertLay
 
 // dedupeConvertLayer waits for an existing conversion or starts a new one if no
 // conversion is in progress for the given layer.
-func (c *imageConverter) dedupeConvertLayer(ctx context.Context, req *regpb.ConvertLayerRequest) (*regpb.ConvertLayerResponse, error) {
+func (c *imageConverter) dedupeConvertLayer(ctx context.Context, req *rgpb.ConvertLayerRequest) (*rgpb.ConvertLayerResponse, error) {
 	workKey := fmt.Sprintf("image-converter-layer-%s", req.GetLayerDigest())
 	rspBytes, err := c.deduper.Do(ctx, workKey, func() ([]byte, error) {
 		r, err := c.convertLayer(ctx, req)
@@ -402,14 +402,14 @@ func (c *imageConverter) dedupeConvertLayer(ctx context.Context, req *regpb.Conv
 	if err != nil {
 		return nil, err
 	}
-	var rsp regpb.ConvertLayerResponse
+	var rsp rgpb.ConvertLayerResponse
 	if err := proto.Unmarshal(rspBytes, &rsp); err != nil {
 		return nil, err
 	}
 	return &rsp, err
 }
 
-func (c *imageConverter) ConvertLayer(ctx context.Context, req *regpb.ConvertLayerRequest) (*regpb.ConvertLayerResponse, error) {
+func (c *imageConverter) ConvertLayer(ctx context.Context, req *rgpb.ConvertLayerRequest) (*rgpb.ConvertLayerResponse, error) {
 	log.CtxInfof(ctx, "ConvertLayer %s %s", req.GetImage(), req.GetLayerDigest())
 	return c.dedupeConvertLayer(ctx, req)
 }
@@ -420,7 +420,7 @@ func (c *imageConverter) Start(hc interfaces.HealthChecker, env environment.Env)
 	mux.Handle("/healthz", hc.LivenessHandler())
 
 	regRegistryServices := func(server *grpc.Server, env environment.Env) {
-		regpb.RegisterImageConverterServer(server, c)
+		rgpb.RegisterImageConverterServer(server, c)
 	}
 
 	if err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
@@ -477,7 +477,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not connect to image converter: %s", err)
 	}
-	imageConverterClient := regpb.NewImageConverterClient(convConn)
+	imageConverterClient := rgpb.NewImageConverterClient(convConn)
 
 	if err := redis_client.RegisterDefault(env); err != nil {
 		log.Fatalf("could not initialize redis client: %s", err)
