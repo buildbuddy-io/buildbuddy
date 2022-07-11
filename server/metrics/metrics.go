@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -131,6 +133,16 @@ const (
 
 const (
 	bbNamespace = "buildbuddy"
+
+	thirtyDaysDuration = 30 * 24 * time.Hour
+)
+
+var (
+	// Bucket constants.
+
+	// durationUsecBuckets is a reasonable bucket setting for microsecond-valued
+	// duration metrics (1 usec to 30 days).
+	durationUsecBuckets = exponentialBucketRange(1, float64(thirtyDaysDuration.Microseconds()), 2)
 )
 
 var (
@@ -165,7 +177,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The total duration of each invocation, in **microseconds**.",
 	}, []string{
 		InvocationStatusLabel,
@@ -214,7 +226,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "stats_recorder_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "How long it took to finalize an invocation's stats, in **microseconds**. This includes the time required to wait for all BuildBuddy apps to flush their local metrics to Redis (if applicable) and then record the metrics to the DB.",
 	})
 
@@ -229,7 +241,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "webhook_invocation_lookup_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "How long it took to lookup an invocation before posting to the webhook, in **microseconds**.",
 	})
 
@@ -244,7 +256,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "webhook_notify_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "How long it took to post an invocation proto to the webhook, in **microseconds**.",
 	})
 
@@ -284,7 +296,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "download_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Download duration for each file downloaded from the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
@@ -321,7 +333,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "upload_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Upload duration for each file uploaded to the remote cache, in **microseconds**.",
 	}, []string{
 		CacheTypeLabel,
@@ -353,12 +365,11 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	})
 
-	DiskCacheSecondsSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
+	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_seconds_since_last_access",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Time since last digest access, in **seconds**.",
+		Name:      "disk_cache_usec_since_last_access",
+		Help:      "Time since last digest access, in **microseconds**.",
 	})
 
 	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -421,7 +432,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "executed_action_metadata_durations_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
 		ExecutedActionStageLabel,
@@ -659,7 +670,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
 	})
 
@@ -768,7 +779,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "blobstore",
 		Name:      "read_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Duration per blobstore file read, in **microseconds**.",
 	}, []string{
 		BlobstoreTypeLabel,
@@ -803,7 +814,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "blobstore",
 		Name:      "write_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Duration per blobstore file write, in **microseconds**.",
 	}, []string{
 		BlobstoreTypeLabel,
@@ -823,7 +834,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "blobstore",
 		Name:      "delete_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Delete duration per blobstore file deletion, in **microseconds**.",
 	}, []string{
 		BlobstoreTypeLabel,
@@ -859,7 +870,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "sql",
 		Name:      "query_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "SQL query duration, in **microseconds**.",
 	}, []string{
 		SQLQueryTemplateLabel,
@@ -991,7 +1002,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "http",
 		Name:      "request_handler_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Time taken to handle each HTTP request in **microseconds**.",
 	}, []string{
 		HTTPRouteLabel,
@@ -1046,7 +1057,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "build_event_handler",
 		Name:      "duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The time spent handling each build event in **microseconds**.",
 	}, []string{
 		StatusLabel,
@@ -1097,7 +1108,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "get_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The time spent retrieving each entry from the cache, in **microseconds**. This is recorded only for successful gets.",
 	}, []string{
 		CacheTierLabel,
@@ -1134,7 +1145,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "read_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The total time spent for each read stream, in **microseconds**. This is recorded only for successful reads, and measures the entire read stream (not just individual chunks).",
 	}, []string{
 		CacheTierLabel,
@@ -1172,7 +1183,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "set_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The time spent writing each entry to the cache, in **microseconds**. This is recorded only for successful sets.",
 	}, []string{
 		CacheTierLabel,
@@ -1220,7 +1231,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "write_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "The time spent for each streamed write to the cache, in **microseconds**. This is recorded only on success, and measures the entire stream (not just individual chunks).",
 	}, []string{
 		CacheTierLabel,
@@ -1266,7 +1277,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "delete_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Duration of each cache deletion, in **microseconds**.",
 	}, []string{
 		CacheTierLabel,
@@ -1288,7 +1299,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "cache",
 		Name:      "contains_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Buckets:   durationUsecBuckets,
 		Help:      "Duration of each each `contains(key)` request, in **microseconds**.",
 	}, []string{
 		CacheTierLabel,
@@ -1326,3 +1337,16 @@ var (
 		QuotaKey,
 	})
 )
+
+// exponentialBucketRange returns prometheus.ExponentialBuckets specified in
+// terms of a min and max value, rather than needing to explicitly calculate the
+// number of buckets.
+func exponentialBucketRange(min, max, factor float64) []float64 {
+	buckets := []float64{}
+	current := min
+	for current < max {
+		buckets = append(buckets, current)
+		current *= factor
+	}
+	return buckets
+}
