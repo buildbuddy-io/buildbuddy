@@ -203,12 +203,20 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 
 func recordRequestMetricsUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		r, err := handler(ctx, req)
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(ctx, env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key).Inc()
+		allow := true
+		var err error
+		if qm := env.GetQuotaManager(); qm != nil {
+			allow, err = qm.Allow(ctx, info.FullMethod, 1)
+			if err != nil {
+				log.Warningf("Quota Manager failed: %s", err)
 			}
 		}
+		if *enableGRPCMetricsByGroupID {
+			if key, err := quota.GetKey(ctx, env); err == nil {
+				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+			}
+		}
+		r, err := handler(ctx, req)
 		return r, err
 	}
 }
