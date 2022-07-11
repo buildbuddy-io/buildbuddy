@@ -38,6 +38,11 @@ var (
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 )
 
+const (
+	defaultInitialWindowSize     = 1024 * 1024 * 16 // 16MB
+	defaultInitialConnWindowSize = 1024 * 1024 * 16 // 16MB
+)
+
 type RegisterServices func(server *grpc.Server, env environment.Env)
 
 func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
@@ -179,6 +184,8 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 		grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes),
+		grpc.InitialConnWindowSize(defaultInitialConnWindowSize),
+		grpc.InitialWindowSize(defaultInitialWindowSize),
 		// Set to avoid errors: Bandwidth exhausted HTTP/2 error code: ENHANCE_YOUR_CALM Received Goaway too_many_pings
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             10 * time.Second, // If a client pings more than once every 10 seconds, terminate the connection

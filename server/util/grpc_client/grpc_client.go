@@ -12,6 +12,11 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
+const (
+	defaultInitialWindowSize     = 1024 * 1024 * 16 // 16MB
+	defaultInitialConnWindowSize = 1024 * 1024 * 16 // 16MB
+)
+
 // DialTarget handles some of the logic around detecting the correct GRPC
 // connection type and applying relevant options when connecting.
 func DialTarget(target string) (*grpc.ClientConn, error) {
@@ -83,5 +88,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			// If true, client sends keepalive pings even with no active RPCs.
 			PermitWithoutStream: true,
 		}),
+		grpc.WithInitialConnWindowSize(defaultInitialConnWindowSize),
+		grpc.WithInitialWindowSize(defaultInitialWindowSize),
 	}
 }
