@@ -92,11 +92,16 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	var permissions *perms.UserGroupPerm
 	var caps []akpb.ApiKey_Capability
 	if auth := d.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil {
+		u, err := auth.AuthenticatedUser(ctx)
+		if err == nil {
 			if u.GetGroupID() != "" {
 				permissions = perms.GroupAuthPermissions(u.GetGroupID())
 			}
 			caps = u.GetCapabilities()
+		} else {
+			if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+				caps = capabilities.DefaultAuthenticatedUserCapabilities
+			}
 		}
 	}
 
