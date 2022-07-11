@@ -3,6 +3,7 @@ package filters
 import (
 	"context"
 	"flag"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -213,12 +215,20 @@ func recordRequestMetricsUnaryServerInterceptor(env environment.Env) grpc.UnaryS
 
 func recordRequestMetricsStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		err := handler(srv, stream)
-		if *enableGRPCMetricsByGroupID {
-			if key, err := quota.GetKey(stream.Context(), env); err == nil {
-				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key).Inc()
+		allow := true
+		var err error
+		if qm := env.GetQuotaManager(); qm != nil {
+			allow, err = qm.Allow(stream.Context(), info.FullMethod, 1)
+			if err != nil {
+				log.Warningf("Quota Manager failed: %s", err)
 			}
 		}
+		if *enableGRPCMetricsByGroupID {
+			if key, err := quota.GetKey(stream.Context(), env); err == nil {
+				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
+			}
+		}
+		err = handler(srv, stream)
 		return err
 	}
 }
