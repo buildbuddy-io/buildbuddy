@@ -105,9 +105,11 @@ func RetryIfTextFileBusy(fn func() error) error {
 // Run a command, retrying "text file busy" errors and killing the process tree
 // when the context is cancelled.
 //
-// Note: enableStats incurs some overhead throughout process execution, so only
-// use it if stats are needed.
-func Run(ctx context.Context, command *repb.Command, workDir string, enableStats bool, stdio *container.Stdio) *interfaces.CommandResult {
+// If statsListener is non-nil, stats will be enabled and the callback will be
+// invoked each time stats are measured. In addition, the last recorded stats
+// will be returned in CommandResult.Stats. Note that enabling stats incurs some
+// overhead, so a nil callback should be used if stats aren't needed.
+func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *container.Stats
@@ -119,7 +121,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, enableStats
 		if err != nil {
 			return err
 		}
-		stats, err = RunWithProcessTreeCleanup(ctx, cmd, enableStats)
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, statsListener)
 		return err
 	})
 
@@ -146,9 +148,11 @@ func Run(ctx context.Context, command *repb.Command, workDir string, enableStats
 // For an example command that can be passed to this func, see
 // constructExecCommand.
 //
-// Note: enableStats incurs some overhead throughout process execution, so only
-// use it if stats are needed.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, enableStats bool) (*container.Stats, error) {
+// If statsListener is non-nil, stats will be enabled and the callback will be
+// invoked each time stats are measured. In addition, the stats returned will
+// be non-nil. Note that enabling stats incurs some overhead, so a nil callback
+// should be used if stats aren't needed.
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener procstats.Listener) (*container.Stats, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -169,10 +173,10 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, enableStats b
 	// Monitor goroutine: periodically record process stats.
 	go func() {
 		defer close(statsCh)
-		if !enableStats {
+		if statsListener == nil {
 			return
 		}
-		statsCh <- procstats.Monitor(pid, processTerminated)
+		statsCh <- procstats.Monitor(pid, statsListener, processTerminated)
 	}()
 	wait := func() error {
 		defer close(processTerminated)

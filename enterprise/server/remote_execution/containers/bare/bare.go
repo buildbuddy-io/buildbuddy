@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -28,7 +29,7 @@ func NewBareCommandContainer(opts *Opts) container.CommandContainer {
 }
 
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
-	return commandutil.Run(ctx, command, workDir, c.opts.EnableStats, &container.Stdio{})
+	return c.exec(ctx, command, workDir, nil /*=stdio*/)
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -37,7 +38,18 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 }
 
 func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
-	return commandutil.Run(ctx, cmd, c.WorkDir, c.opts.EnableStats, stdio)
+	return c.exec(ctx, cmd, c.WorkDir, stdio)
+}
+
+func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+	var statsListener procstats.Listener
+	if c.opts.EnableStats {
+		defer container.Metrics.Unregister(c)
+		statsListener = func(stats *container.Stats) {
+			container.Metrics.Observe(c, stats)
+		}
+	}
+	return commandutil.Run(ctx, cmd, workDir, statsListener, stdio)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

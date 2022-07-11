@@ -18,12 +18,16 @@ const (
 	statsMaxPollInterval     = 1000 * time.Millisecond
 )
 
+// Listener is a function that is called whenever new container stats are
+// available. This can be used to live-update stats while a command is running.
+type Listener func(*container.Stats)
+
 // Monitor polls resource usage of a process tree rooted at the given pid. The
 // process identified by pid is expected to have been started before calling
 // this function. The caller must close the given channel when the process is
 // terminated. This function will unblock once the channel is closed, and it
 // will return any stats collected.
-func Monitor(pid int, processTerminated <-chan struct{}) *container.Stats {
+func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *container.Stats {
 	ts := NewTreeStats(pid)
 	// Most processes are short-lived so we need a fast poll rate if we want
 	// to increase the probability of getting at least one sample. But
@@ -37,6 +41,7 @@ func Monitor(pid int, processTerminated <-chan struct{}) *container.Stats {
 			return ts.Total()
 		case <-time.After(pollInterval):
 			ts.Update() // ignore error
+			listener(ts.Total())
 		}
 		pollInterval = time.Duration(float64(pollInterval) * statsPollBackoff)
 		if pollInterval > statsMaxPollInterval {
@@ -50,6 +55,10 @@ func Monitor(pid int, processTerminated <-chan struct{}) *container.Stats {
 type TreeStats struct {
 	// RootPid is the pid of the root process of the tree.
 	RootPid int
+
+	// CurrentTotalMemoryBytes holds the last observed total memory usage across
+	// all processes in the tree.
+	CurrentTotalMemoryBytes int64
 
 	// PeakTotalMemoryBytes records the highest total memory across all
 	// processes in the tree, at any point during the process' lifetime.
@@ -75,12 +84,12 @@ func (t *TreeStats) Update() error {
 	if err != nil {
 		return err
 	}
-	totalMemBytes := int64(0)
+	t.CurrentTotalMemoryBytes = 0
 	for _, s := range stats {
-		totalMemBytes += s.MemoryUsageBytes
+		t.CurrentTotalMemoryBytes += s.MemoryUsageBytes
 	}
-	if totalMemBytes > t.PeakTotalMemoryBytes {
-		t.PeakTotalMemoryBytes = totalMemBytes
+	if t.CurrentTotalMemoryBytes > t.PeakTotalMemoryBytes {
+		t.PeakTotalMemoryBytes = t.CurrentTotalMemoryBytes
 	}
 	for pid, stat := range stats {
 		t.CPUNanosByPid[pid] = stat.CPUNanos
@@ -97,6 +106,7 @@ func (t *TreeStats) Total() *container.Stats {
 		totalCPUNanos += cpuNanos
 	}
 	return &container.Stats{
+		MemoryUsageBytes:     t.CurrentTotalMemoryBytes,
 		PeakMemoryUsageBytes: t.PeakTotalMemoryBytes,
 		CPUNanos:             totalCPUNanos,
 	}
