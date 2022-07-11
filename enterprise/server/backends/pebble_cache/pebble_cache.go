@@ -327,7 +327,7 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) {
 	iter := p.db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{constants.MinByte},
-		UpperBound:  []byte{constants.MaxByte},
+		UpperBound: []byte{constants.MaxByte},
 	})
 	defer iter.Close()
 
