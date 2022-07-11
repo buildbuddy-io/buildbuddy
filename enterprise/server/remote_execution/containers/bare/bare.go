@@ -10,18 +10,25 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+type Opts struct {
+	// EnableStats specifies whether to collect stats while the command is
+	// in progress.
+	EnableStats bool
+}
+
 // bareCommandContainer executes commands directly, without any isolation
 // between containers.
 type bareCommandContainer struct {
+	opts    *Opts
 	WorkDir string
 }
 
-func NewBareCommandContainer() container.CommandContainer {
-	return &bareCommandContainer{}
+func NewBareCommandContainer(opts *Opts) container.CommandContainer {
+	return &bareCommandContainer{opts: opts}
 }
 
 func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds container.PullCredentials) *interfaces.CommandResult {
-	return commandutil.Run(ctx, command, workDir, &container.Stdio{})
+	return commandutil.Run(ctx, command, workDir, c.opts.EnableStats, &container.Stdio{})
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -30,7 +37,7 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 }
 
 func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
-	return commandutil.Run(ctx, cmd, c.WorkDir, stdio)
+	return commandutil.Run(ctx, cmd, c.WorkDir, c.opts.EnableStats, stdio)
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

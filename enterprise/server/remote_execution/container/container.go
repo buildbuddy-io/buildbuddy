@@ -68,6 +68,9 @@ type Stats struct {
 }
 
 func (s *Stats) ToProto() *repb.UsageStats {
+	if s == nil {
+		return nil
+	}
 	return &repb.UsageStats{
 		CpuNanos:        s.CPUNanos,
 		PeakMemoryBytes: s.PeakMemoryUsageBytes,

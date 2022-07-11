@@ -52,7 +52,7 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
-	bareContainer := bare.NewBareCommandContainer()
+	bareContainer := bare.NewBareCommandContainer(&bare.Opts{})
 	result := bareContainer.Run(ctx, cmd, tempDir, container.PullCredentials{})
 
 	if result.Error != nil {
