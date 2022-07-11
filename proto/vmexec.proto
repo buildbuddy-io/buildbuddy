@@ -4,12 +4,19 @@ package vmexec;
 
 import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
+import "proto/remote_execution.proto";
 
 // The exec service is run from inside a VM. The host uses this service to
 // execute commands as well as prepare the VM for command execution.
 service Exec {
   // Executes a command in the VM and returns the result of execution.
   rpc Exec(ExecRequest) returns (ExecResponse);
+
+  // Executes a command in the VM and streams back command progress.
+  // TODO(bduffany): Once this is implemented, rename this to Exec
+  // and delete the old Exec() function.
+  rpc ExecStreamed(stream ExecStreamedRequest)
+      returns (stream ExecStreamedResponse);
 
   // Prepares the VM for command execution after a fresh start or a resume.
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
@@ -42,17 +49,17 @@ message ExecRequest {
   // executable.
   repeated string arguments = 3;
 
-  // Optional. Ports are vsock ports where the host will read/write stdin,
-  // stdout, and stderr. If unset, or set to 0, input will be ignored and
-  // output will be buffered and returned in the ExecResponse.
-  int32 stdin_vsock_port = 4;
-  int32 stdout_vsock_port = 5;
-  int32 stderr_vsock_port = 6;
+  reserved 4, 5, 6;
 
   // An explicit timeout for the action. This is used instead of a request
   // context deadline so that we can return partial command outputs in the
   // ExecResponse.
   google.protobuf.Duration timeout = 7;
+
+  // Whether to open a pipe for stdin. This needs to be specified when starting
+  // the command, because commands can behave differently depending on whether
+  // or not stdin is attached.
+  bool open_stdin = 8;
 }
 
 message ExecResponse {
@@ -60,6 +67,52 @@ message ExecResponse {
   bytes stdout = 2;
   bytes stderr = 3;
   google.rpc.Status status = 4;
+}
+
+message ExecStreamedRequest {
+  // Only one of these fields should be set. oneof is not used due to awkward Go
+  // APIs.
+
+  // Begins command execution. When there is no stdin to be sent, clients
+  // should close their end of the stream after sending this message.
+  ExecRequest start = 1;
+
+  // Bytes to be written to stdin of the executed process. In order to use
+  // this field, `open_stdin` must be set in the initial start request,
+  // otherwise execution will be canceled and an INTERNAL error will be
+  // returned. Clients should close their end of the stream once there is no
+  // more input to be sent (this will close the stdin pipe).
+  bytes stdin = 2;
+}
+
+message ExecStreamedResponse {
+  // Only one of these fields should be set. oneof is not used due to awkward Go
+  // APIs.
+
+  // Overall result of the command's execution. This is not guaranteed to be
+  // the last message in the stream, so clients should continue to receive
+  // from the stream until it is closed, even after receiving this message.
+  // For example, the server may send this immediately when the process is
+  // closed, and send any remaining buffered stdout or stderr afterwards.
+  ExecResponse response = 1;
+
+  // Incremental bytes received from stdout of the executed process. This will
+  // be delivered in the same order in which it was received from the executed
+  // process' stdout stream. The relative ordering of stdout vs. stderr is not
+  // guaranteed.
+  bytes stdout = 2;
+
+  // Incremental bytes received from the stderr of the executed process. This
+  // will be delivered in the same order in which it was received from the
+  // executed process' stderr stream. The relative ordering of stdout vs.
+  // stderr is not guaranteed.
+  bytes stderr = 3;
+
+  // Latest sampled usage stats from the command being executed. This may be
+  // delivered multiple times, and is **not** guaranteed to be delivered at
+  // least once (for example, if the command completes execution too quickly
+  // to collect meaningful stats, this may not be delivered).
+  build.bazel.remote.execution.v2.UsageStats usage_stats = 4;
 }
 
 message InitializeRequest {

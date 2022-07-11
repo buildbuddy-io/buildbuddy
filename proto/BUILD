@@ -209,6 +209,7 @@ proto_library(
     name = "vmexec_proto",
     srcs = ["vmexec.proto"],
     deps = [
+        ":remote_execution_proto",
         "@com_google_protobuf//:duration_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
@@ -573,6 +574,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/vmexec",
     proto = ":vmexec_proto",
     deps = [
+        ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
