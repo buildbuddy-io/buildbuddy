@@ -14,6 +14,7 @@ go_library(
         "//server/util/alert",
         "//server/util/db",
         "//server/util/log",
+        "//server/util/query_builder",
         "//server/util/quota",
         "//server/util/status",
         "@com_github_throttled_throttled_v2//:throttled",
