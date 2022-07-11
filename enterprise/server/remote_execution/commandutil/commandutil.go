@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,6 +40,9 @@ var (
 )
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *container.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+	if stdio == nil {
+		stdio = &container.Stdio{}
+	}
 	executable, args := splitExecutableArgs(command.GetArguments())
 	// Note: we don't use CommandContext here because the default behavior of
 	// CommandContext is to kill just the top-level process when the context is
@@ -98,11 +102,15 @@ func RetryIfTextFileBusy(fn func() error) error {
 	}
 }
 
-// Run a command, retrying "text file busy" errors and killing the process group
+// Run a command, retrying "text file busy" errors and killing the process tree
 // when the context is cancelled.
-func Run(ctx context.Context, command *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+//
+// Note: enableStats incurs some overhead throughout process execution, so only
+// use it if stats are needed.
+func Run(ctx context.Context, command *repb.Command, workDir string, enableStats bool, stdio *container.Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
+	var stats *container.Stats
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
@@ -111,17 +119,18 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdio *cont
 		if err != nil {
 			return err
 		}
-		return RunWithProcessTreeCleanup(ctx, cmd)
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, enableStats)
+		return err
 	})
 
 	exitCode, err := ExitCode(ctx, cmd, err)
-
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
 		Error:              err,
 		Stdout:             stdoutBuf.Bytes(),
 		Stderr:             stderrBuf.Bytes(),
 		CommandDebugString: cmd.String(),
+		UsageStats:         stats.ToProto(),
 	}
 }
 
@@ -131,21 +140,24 @@ func Run(ctx context.Context, command *repb.Command, workDir string, stdio *cont
 // It is intended to be used with a command created via exec.Command(), not
 // exec.CommandContext(). Unlike exec.CommandContext.Run(), it kills the process
 // tree when the context is done, instead of just killing the top-level process.
-// This helps ensure that orphaned child processes aren't left running
-// after the command completes.
+// This helps ensure that orphaned child processes aren't left running after the
+// command completes.
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd) error {
+//
+// Note: enableStats incurs some overhead throughout process execution, so only
+// use it if stats are needed.
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, enableStats bool) (*container.Stats, error) {
 	if err := cmd.Start(); err != nil {
-		return err
+		return nil, err
 	}
 	pid := cmd.Process.Pid
-	done := make(chan struct{})
-	defer close(done)
+	processTerminated := make(chan struct{})
+	// Cleanup goroutine: kill the process tree when the context is canceled.
 	go func() {
 		select {
-		case <-done:
+		case <-processTerminated:
 			return
 		case <-ctx.Done():
 			if err := KillProcessTree(pid); err != nil {
@@ -153,8 +165,23 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd) error {
 			}
 		}
 	}()
-
-	return cmd.Wait()
+	statsCh := make(chan *container.Stats, 1)
+	// Monitor goroutine: periodically record process stats.
+	go func() {
+		defer close(statsCh)
+		if !enableStats {
+			return
+		}
+		statsCh <- procstats.Monitor(pid, processTerminated)
+	}()
+	wait := func() error {
+		defer close(processTerminated)
+		return cmd.Wait()
+	}
+	if err := wait(); err != nil {
+		return nil, err
+	}
+	return <-statsCh, nil
 }
 
 // KillProcessTree kills the given pid as well as any descendant processes.

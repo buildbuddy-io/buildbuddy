@@ -81,6 +81,7 @@ var (
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
 )
 
 const (
@@ -488,7 +489,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), &container.Stdio{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), false /*=enableStats*/, &container.Stdio{})
 	return res.Error
 }
 
@@ -1013,7 +1014,10 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		}
 		ctr = sandbox.New(opts)
 	default:
-		ctr = bare.NewBareCommandContainer()
+		opts := &bare.Opts{
+			EnableStats: *bareEnableStats,
+		}
+		ctr = bare.NewBareCommandContainer(opts)
 	}
 	return container.NewTracedCommandContainer(ctr), nil
 }

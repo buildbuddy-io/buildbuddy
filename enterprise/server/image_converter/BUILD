@@ -3,23 +3,22 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
 go_library(
-    name = "registry_lib",
-    srcs = ["registry.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",
+    name = "image_converter_lib",
+    srcs = ["image_converter.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/image_converter",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/redis_client",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
-        "//server/backends/blobstore",
         "//server/config",
         "//server/environment",
-        "//server/http/filters",
         "//server/interfaces",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/ssl",
+        "//server/util/dsingleflight",
         "//server/util/flagutil/yaml",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
@@ -29,10 +28,11 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@com_github_google_go_containerregistry//pkg/v1/match",
-        "@com_github_google_go_containerregistry//pkg/v1/partial",
+        "@com_github_google_go_containerregistry//pkg/v1/empty",
+        "@com_github_google_go_containerregistry//pkg/v1/mutate",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
+        "@com_github_google_go_containerregistry//pkg/v1/tarball",
         "@com_github_google_go_containerregistry//pkg/v1/types",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
@@ -42,8 +42,8 @@ go_library(
 )
 
 go_binary(
-    name = "registry",
-    embed = [":registry_lib"],
+    name = "image_converter",
+    embed = [":image_converter_lib"],
     visibility = ["//visibility:public"],
 )
 
@@ -57,9 +57,9 @@ container_image(
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
 go_image(
-    name = "registry_image",
+    name = "image_converter_image",
     base = ":base_image",
-    binary = ":registry",
+    binary = ":image_converter",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

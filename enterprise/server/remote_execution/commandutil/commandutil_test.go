@@ -3,6 +3,7 @@ package commandutil_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -53,7 +54,7 @@ func TestRun_Stdio(t *testing.T) {
 		echo TestError >&2
 	`}}
 	var stdout, stderr bytes.Buffer
-	res := commandutil.Run(ctx, cmd, ".", &container.Stdio{
+	res := commandutil.Run(ctx, cmd, ".", false, &container.Stdio{
 		Stdin:  strings.NewReader("TestInput\n"),
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -81,7 +82,7 @@ func TestRun_Stdio_StdinNotConsumedByCommand(t *testing.T) {
 		defer inr.Close()
 		defer outw.Close()
 
-		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{
+		res := commandutil.Run(ctx, cmd, ".", false, &container.Stdio{
 			Stdin:  inr,
 			Stdout: outw,
 		})
@@ -143,7 +144,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 
 	{
 		cmd := &repb.Command{Arguments: []string{"./command_not_found_in_working_dir"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{})
+		res := commandutil.Run(ctx, cmd, ".", false, &container.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -153,7 +154,7 @@ func TestRun_CommandNotFound_ErrorResult(t *testing.T) {
 	}
 	{
 		cmd := &repb.Command{Arguments: []string{"command_not_found_in_PATH"}}
-		res := commandutil.Run(ctx, cmd, ".", &container.Stdio{})
+		res := commandutil.Run(ctx, cmd, ".", false, &container.Stdio{})
 
 		assert.Error(t, res.Error)
 		assert.True(
@@ -169,7 +170,7 @@ func TestRun_CommandNotExecutable_ErrorResult(t *testing.T) {
 	testfs.WriteAllFileContents(t, wd, map[string]string{"non_executable_file": ""})
 
 	cmd := &repb.Command{Arguments: []string{"./non_executable_file"}}
-	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, false, &container.Stdio{})
 
 	assert.Error(t, res.Error)
 	assert.True(
@@ -190,7 +191,7 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, false, &container.Stdio{})
 
 	require.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
@@ -211,14 +212,119 @@ func TestRun_SubprocessInOwnProcessGroup_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	res := commandutil.Run(ctx, cmd, wd, &container.Stdio{})
+	res := commandutil.Run(ctx, cmd, wd, false, &container.Stdio{})
 
 	assert.True(t, status.IsDeadlineExceededError(res.Error), "expected DeadlineExceeded but got: %s", res.Error)
 	assert.Equal(t, "stdout\n", string(res.Stdout))
 	assert.Equal(t, "stderr\n", string(res.Stderr))
 }
 
+func TestRun_EnableStats_RecordsMemoryStats(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{
+		"python3", "-c", useMemPythonScript(1e9, 2*time.Second),
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, ".", true, &container.Stdio{})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(
+		t, res.UsageStats.PeakMemoryBytes, int64(1e9),
+		"expected at least 1GB of memory usage")
+	require.LessOrEqual(
+		t, res.UsageStats.PeakMemoryBytes, int64(1.1e9),
+		"expected not much more than 1GB of memory usage")
+}
+
+func TestRun_EnableStats_RecordsCPUStats(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{
+		"python3", "-c", useCPUPythonScript(3 * time.Second),
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, ".", true, &container.Stdio{})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(2e9),
+		"expected around 3s of CPU usage")
+	require.LessOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(4e9),
+		"expected around 3s of CPU usage")
+}
+
+func TestRun_EnableStats_ComplexProcessTree_RecordsStatsFromAllChildren(t *testing.T) {
+	workDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"cpu1.py": useCPUPythonScript(3 * time.Second),
+		"cpu2.py": useCPUPythonScript(1 * time.Second),
+		"mem1.py": useMemPythonScript(1e9, 3*time.Second),
+		"mem2.py": useMemPythonScript(500e6, 2*time.Second),
+	})
+	// Run 3 python processes concurrently, staggering them a bit to  make sure
+	// we measure over time. Wrap some with 'sh -c' to test that we can handle
+	// grandchildren as well.
+	cmd := &repb.Command{Arguments: []string{"bash", "-c", `
+		python3 ./cpu1.py &
+		sleep 0.1
+		sh -c 'python3 ./mem1.py' &
+		sleep 0.1
+		sh -c 'python3 ./cpu2.py' &
+		sleep 0.1
+		python3 ./mem2.py &
+		wait
+		`,
+	}}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res := commandutil.Run(ctx, cmd, workDir, true, &container.Stdio{})
+
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(3e9),
+		"expected around 4s of CPU usage")
+	require.LessOrEqual(
+		t, res.UsageStats.GetCpuNanos(), int64(5e9),
+		"expected around 4s of CPU usage")
+	require.GreaterOrEqual(
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(1500e6),
+		"expected at least 1.5GB peak memory")
+	require.LessOrEqual(
+		t, res.UsageStats.GetPeakMemoryBytes(), int64(1700e6),
+		"expected not much more than 1.5GB peak memory")
+}
+
+// Returns a python script that consumes 1 CPU core continuously for the given
+// duration.
+func useCPUPythonScript(dur time.Duration) string {
+	return fmt.Sprintf(`
+import time
+end = time.time() + %f
+while time.time() < end:
+    pass
+`, dur.Seconds())
+}
+
+// Returns a python script that uses the given amount of resident memory and
+// holds onto that memory for the given duration.
+func useMemPythonScript(memBytes int64, dur time.Duration) string {
+	return fmt.Sprintf(`
+import time
+arr = b'1' * %d
+time.sleep(%f)
+`, memBytes, dur.Seconds())
+}
+
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
-	return commandutil.Run(ctx, cmd, ".", &container.Stdio{})
+	return commandutil.Run(ctx, cmd, ".", false, &container.Stdio{})
 }
