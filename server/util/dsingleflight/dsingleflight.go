@@ -82,7 +82,7 @@ func (c *Coordinator) doWork(ctx context.Context, workKey string, work Work) ([]
 		return nil, status.UnavailableErrorf("could not publish result: %s", err)
 	}
 
-	if err := c.rdb.Expire(ctx, resultKey, resultTTL); err != nil {
+	if err := c.rdb.Expire(ctx, resultKey, resultTTL).Err(); err != nil {
 		return nil, status.UnavailableErrorf("could not update result ttl: %s", err)
 	}
 
