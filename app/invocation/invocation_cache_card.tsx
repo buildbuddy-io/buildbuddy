@@ -14,10 +14,10 @@ export default class CacheCardComponent extends React.Component<Props> {
   render() {
     const hasCacheStats =
       this.props.model.cacheStats.length &&
-      (+this.props.model.cacheStats[0]?.actionCacheHits != 0 ||
-        +this.props.model.cacheStats[0]?.actionCacheMisses != 0 ||
-        +this.props.model.cacheStats[0]?.totalDownloadSizeBytes != 0 ||
-        +this.props.model.cacheStats[0]?.totalUploadSizeBytes != 0);
+      (+this.props.model.cacheStats[0]?.actionCacheHits !== 0 ||
+        +this.props.model.cacheStats[0]?.actionCacheMisses !== 0 ||
+        +this.props.model.cacheStats[0]?.totalDownloadSizeBytes !== 0 ||
+        +this.props.model.cacheStats[0]?.totalUploadSizeBytes !== 0);
     return (
       <div className="card">
         <PieChartIcon className="icon" />
@@ -28,7 +28,7 @@ export default class CacheCardComponent extends React.Component<Props> {
           )}
           {this.props.model.cacheStats.length && (
             <div className="details">
-              {hasCacheStats && this.props.model.isReadOnlyInvocation() && (
+              {hasCacheStats && !this.props.model.hasCacheWriteCapability() && (
                 <div className="cache-details">
                   <AlertCircleIcon className="icon" />
                   This invocation was created with a read-only API key. No artifacts were written to the cache.

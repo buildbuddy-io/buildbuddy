@@ -250,13 +250,12 @@ export default class InvocationModel {
     return this.invocations.find(() => true)?.acl?.groupId === "";
   }
 
-  isReadOnlyInvocation(): boolean {
-    const hasWriteCapability = this.invocations
+  hasCacheWriteCapability(): boolean {
+    return this.invocations
       .find(() => true)
       ?.createdWithCapabilities?.some(
         (existingCapability) => existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY
       );
-    return !hasWriteCapability;
   }
 
   getId() {
