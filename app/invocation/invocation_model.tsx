@@ -1,6 +1,7 @@
 import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
+import { api_key } from "../../proto/api_key_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
@@ -247,6 +248,13 @@ export default class InvocationModel {
 
   isAnonymousInvocation(): boolean {
     return this.invocations.find(() => true)?.acl?.groupId === "";
+  }
+
+  isReadOnlyInvocation(): boolean {
+    const hasWriteCapability =  this.invocations.find(() => true)?.
+    createdWithCapabilities?.
+    some((existingCapability) => existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+    return !hasWriteCapability;
   }
 
   getId() {

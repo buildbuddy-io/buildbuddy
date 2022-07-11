@@ -75,6 +75,8 @@ type UserInfo interface {
 	GetAllowedGroups() []string
 	// GetGroupMemberships returns the user's group memberships.
 	GetGroupMemberships() []*GroupMembership
+	// GetCapabilities returns the user's capabilities.
+	GetCapabilities() []akpb.ApiKey_Capability
 	// IsAdmin returns whether this user is a global administrator, meaning
 	// they can access data across groups. This is not to be confused with the
 	// concept of group admin, which grants full access only within a single

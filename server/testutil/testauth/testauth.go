@@ -57,6 +57,7 @@ func (c *TestUser) GetUserID() string                                  { return 
 func (c *TestUser) GetGroupID() string                                 { return c.GroupID }
 func (c *TestUser) GetAllowedGroups() []string                         { return c.AllowedGroups }
 func (c *TestUser) GetGroupMemberships() []*interfaces.GroupMembership { return c.GroupMemberships }
+func (c *TestUser) GetCapabilities() []akpb.ApiKey_Capability          { return c.Capabilities }
 func (c *TestUser) IsAdmin() bool                                      { return false }
 func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 	for _, cc := range c.Capabilities {

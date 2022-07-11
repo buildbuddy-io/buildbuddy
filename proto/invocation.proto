@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/acl.proto";
+import "proto/api_key.proto";
 import "proto/build_event_stream.proto";
 import "proto/cache.proto";
 import "proto/command_line.proto";
@@ -99,6 +100,9 @@ message Invocation {
 
   // The exit code of the bazel command
   string bazel_exit_code = 26;
+
+  // The capabilities of the user who created the invocation
+  repeated api_key.ApiKey.Capability created_with_capabilities = 27;
 }
 
 message InvocationEvent {

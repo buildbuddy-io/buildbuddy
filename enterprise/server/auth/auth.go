@@ -153,6 +153,10 @@ func (c *Claims) GetGroupMemberships() []*interfaces.GroupMembership {
 	return c.GroupMemberships
 }
 
+func (c *Claims) GetCapabilities() []akpb.ApiKey_Capability {
+	return c.Capabilities
+}
+
 func (c *Claims) IsAdmin() bool {
 	for _, groupID := range c.AllowedGroups {
 		if groupID == "admin" {
