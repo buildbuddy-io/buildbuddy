@@ -168,7 +168,7 @@ func (c *Claims) IsAdmin() bool {
 
 func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 	for _, cc := range c.Capabilities {
-		if cap & cc > 0 {
+		if cap&cc > 0 {
 			return true
 		}
 	}
