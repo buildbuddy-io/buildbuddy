@@ -253,6 +253,7 @@ export default class EnterpriseRootComponent extends React.Component {
                     <Suspense fallback={<div className="loading" />}>
                       <SettingsComponent
                         user={this.state.user}
+                        search={this.state.search}
                         preferences={this.state.preferences}
                         path={this.state.path}
                       />

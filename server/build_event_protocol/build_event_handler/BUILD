@@ -30,6 +30,7 @@ go_library(
         "//server/terminal",
         "//server/util/alert",
         "//server/util/background",
+        "//server/util/capabilities",
         "//server/util/git",
         "//server/util/log",
         "//server/util/perms",

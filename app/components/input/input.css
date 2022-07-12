@@ -17,3 +17,16 @@
 .text-input[readonly] {
   background: #eee;
 }
+
+.text-input.invalid {
+  border: 1px solid #e53935;
+}
+
+/* Hide up/down buttons on number inputs. */
+.text-input::-webkit-outer-spin-button,
+.text-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+.text-input[type="number"] {
+  -moz-appearance: textfield;
+}

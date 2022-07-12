@@ -260,6 +260,7 @@ proto_library(
     srcs = ["invocation.proto"],
     deps = [
         ":acl_proto",
+        ":api_key_proto",
         ":build_event_stream_proto",
         ":cache_proto",
         ":command_line_proto",
@@ -649,6 +650,7 @@ go_proto_library(
     proto = ":invocation_proto",
     deps = [
         ":acl_go_proto",
+        ":api_key_go_proto",
         ":build_event_stream_go_proto",
         ":cache_go_proto",
         ":command_line_go_proto",
@@ -877,6 +879,11 @@ ts_proto_library(
 ts_proto_library(
     name = "github_ts_proto",
     proto = ":github_proto",
+)
+
+ts_proto_library(
+    name = "quota_ts_proto",
+    proto = ":quota_proto",
 )
 
 ts_proto_library(

@@ -2,30 +2,26 @@ load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["settings.css"])
+exports_files(glob(["*.css"]))
 
 ts_library(
-    name = "settings",
+    name = "quota",
     srcs = glob(["*.tsx"]),
     deps = [
         "//app/alert",
-        "//app/auth",
-        "//app/auth:user",
-        "//app/capabilities",
         "//app/components/button",
-        "//app/components/dialog",
+        "//app/components/dialog:simple_modal_dialog",
+        "//app/components/input",
         "//app/components/link",
-        "//app/components/modal",
+        "//app/components/select",
         "//app/components/spinner",
         "//app/errors",
-        "//app/preferences",
+        "//app/format",
         "//app/router",
         "//app/service",
-        "//enterprise/app/api_keys",
-        "//enterprise/app/org",
-        "//enterprise/app/quota",
+        "//app/util:proto",
+        "//proto:quota_ts_proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )

@@ -8,11 +8,13 @@ import OrgMembersComponent from "../org/org_members";
 import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 import GitHubLink from "./github_link";
+import QuotaComponent from "../quota/quota";
 
 export interface SettingsProps {
   user: User;
   preferences: UserPreferences;
   path: string;
+  search: URLSearchParams;
 }
 
 enum TabId {
@@ -21,6 +23,7 @@ enum TabId {
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   PersonalPreferences = "personal/preferences",
+  ServerQuota = "server/quota",
 }
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
@@ -46,10 +49,17 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
       return this.getDefaultTabId();
     }
     const path = this.props.path.substring("/settings/".length);
-    if (!isTabId(path)) {
-      return this.getDefaultTabId();
+    if (isTabId(path)) {
+      return path;
     }
-    return path;
+    // If the path is nested under a tab, like "server/quota/edit/:namespace:", return the
+    // parent tab "server/quota"
+    for (const pathPrefix of Object.values(TabId)) {
+      if (path.startsWith(pathPrefix + "/")) {
+        return pathPrefix as TabId;
+      }
+    }
+    return this.getDefaultTabId();
   }
 
   render() {
@@ -98,6 +108,18 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   Preferences
                 </SettingsTab>
               </div>
+              {this.props.user.canCall("getNamespace") && capabilities.config.quotaManagementEnabled && (
+                <>
+                  <div className="settings-tab-group-header">
+                    <div className="settings-tab-group-title">Server settings</div>
+                  </div>
+                  <div className="settings-tab-group">
+                    <SettingsTab id={TabId.ServerQuota} activeTabId={activeTabId}>
+                      Quota
+                    </SettingsTab>
+                  </div>
+                </>
+              )}
             </div>
             <div className="settings-content">
               {activeTabId === "personal/preferences" && (
@@ -150,6 +172,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <ApiKeysComponent user={this.props.user} />
                     </>
                   )}
+                  {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
+                    <QuotaComponent path={this.props.path} search={this.props.search} />
+                  )}
                 </>
               )}
             </div>
@@ -168,7 +193,7 @@ type SettingsTabProps = {
 class SettingsTab extends React.Component<SettingsTabProps> {
   private handleClick(e: React.MouseEvent) {
     e.preventDefault();
-    if (this.props.activeTabId === this.props.id) {
+    if (this.props.activeTabId === this.props.id && window.location.pathname === this.props.id) {
       return;
     }
     router.navigateTo((e.target as HTMLAnchorElement).getAttribute("href"));

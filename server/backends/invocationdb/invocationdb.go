@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -17,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -88,9 +90,18 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 
 func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
 	var permissions *perms.UserGroupPerm
+	var caps []akpb.ApiKey_Capability
 	if auth := d.env.GetAuthenticator(); auth != nil {
-		if u, err := auth.AuthenticatedUser(ctx); err == nil && u.GetGroupID() != "" {
-			permissions = perms.GroupAuthPermissions(u.GetGroupID())
+		u, err := auth.AuthenticatedUser(ctx)
+		if err == nil {
+			if u.GetGroupID() != "" {
+				permissions = perms.GroupAuthPermissions(u.GetGroupID())
+			}
+			caps = u.GetCapabilities()
+		} else {
+			if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+				caps = capabilities.DefaultAuthenticatedUserCapabilities
+			}
 		}
 	}
 
@@ -103,6 +114,7 @@ func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocati
 	ti.UserID = permissions.UserID
 	ti.GroupID = permissions.GroupID
 	ti.Perms = ti.Perms | permissions.Perms
+	ti.CreatedWithCapabilities = capabilities.ToInt(caps)
 	return d.registerInvocationAttempt(ctx, ti)
 }
 

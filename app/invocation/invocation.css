@@ -477,6 +477,20 @@
   color: #888;
 }
 
+.cache-details {
+  color: #888;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.cache-details .icon {
+  opacity: 0.7;
+  margin-right: 6px;
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+}
+
 .cache-chart {
   display: flex;
   font-size: 16px;
