@@ -254,7 +254,9 @@ export default class InvocationModel {
     return this.invocations
       .find(() => true)
       ?.createdWithCapabilities?.some(
-        (existingCapability) => existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY
+        (existingCapability) =>
+          existingCapability == api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY ||
+          existingCapability == api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY
       );
   }
 

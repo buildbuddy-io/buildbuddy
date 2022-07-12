@@ -150,7 +150,8 @@
   user-select: none;
 }
 
-.api-keys-form input[type="checkbox"] {
+.api-keys-form input[type="checkbox"],
+.api-keys-form input[type="radio"] {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
