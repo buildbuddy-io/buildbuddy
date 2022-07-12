@@ -129,6 +129,9 @@ const (
 
 	// The key used for quota accounting. It's either a group ID or an ip address.
 	QuotaKey = "quota_key"
+
+	// Whether this request is allowed by quota manager.
+	QuotaAllowed = "quota_allowed"
 )
 
 const (
@@ -1335,6 +1338,7 @@ var (
 	}, []string{
 		GRPCFullMethodLabel,
 		QuotaKey,
+		QuotaAllowed,
 	})
 )
 
