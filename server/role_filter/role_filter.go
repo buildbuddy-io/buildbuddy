@@ -42,6 +42,7 @@ var (
 		// since API methods and BuildBuddyService methods may be the same.
 		"GetInvocation",
 		"GetLog",
+		"DeleteFile",
 		"GetTarget",
 		"GetAction",
 		"GetFile",

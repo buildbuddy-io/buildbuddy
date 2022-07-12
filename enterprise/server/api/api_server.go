@@ -315,6 +315,23 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 	})
 }
 
+func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
+	if _, err := s.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
+
+	parsedURL, err := url.Parse(req.GetUri())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+
+	log.Printf("==== %+v", parsedURL)
+
+	// TODO - Call cache delete if the API key has write permission
+
+	return &apipb.DeleteFileResponse{}, nil
+}
+
 // Handle streaming http GetFile request since protolet doesn't handle streaming rpcs yet.
 func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.checkPreconditions(r.Context()); err != nil {

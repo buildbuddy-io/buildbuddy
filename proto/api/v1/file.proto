@@ -21,3 +21,12 @@ message File {
   string hash = 3;
   int64 size_bytes = 4;
 }
+
+// Request object for DeleteFile
+message DeleteFileRequest {
+  // TODO - do we want to take a URI here? It might make more sense to take a digest + remote instance name
+  string uri = 1;
+}
+
+// Response object for DeleteFile
+message DeleteFileResponse {}
