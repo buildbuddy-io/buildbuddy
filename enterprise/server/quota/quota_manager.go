@@ -258,8 +258,7 @@ type bucketCreatorFn func(environment.Env, *tables.QuotaBucket) (Bucket, error)
 
 type QuotaManager struct {
 	env           environment.Env
-	namespaces    map[string]*namespace
-	mu            *sync.Mutex
+	namespaces    sync.Map // map of string namespace name -> *namespace
 	bucketCreator bucketCreatorFn
 	ps            interfaces.PubSub
 }
@@ -271,18 +270,14 @@ func NewQuotaManager(env environment.Env, ps interfaces.PubSub) (*QuotaManager, 
 func newQuotaManager(env environment.Env, ps interfaces.PubSub, bucketCreator bucketCreatorFn) (*QuotaManager, error) {
 	qm := &QuotaManager{
 		env:           env,
-		namespaces:    make(map[string]*namespace),
-		mu:            &sync.Mutex{},
+		namespaces:    sync.Map{},
 		bucketCreator: bucketCreator,
 		ps:            ps,
 	}
-	namespaces, err := qm.reloadNamespaces()
+	err := qm.reloadNamespaces()
 	if err != nil {
 		return nil, err
 	}
-	qm.mu.Lock()
-	qm.namespaces = namespaces
-	qm.mu.Unlock()
 
 	go qm.listenForUpdates(env.GetServerContext())
 
@@ -321,14 +316,12 @@ func (qm *QuotaManager) createNamespace(env environment.Env, name string, config
 // bucketsByKey map, return the corresponding bucket. Otherwise, return the
 // default bucket. Returns nil if the namespace is not found or the default bucket
 // is not defined.
-func (qm *QuotaManager) findBucket(namespace string, key string) Bucket {
-	qm.mu.Lock()
-	ns, ok := qm.namespaces[namespace]
-	qm.mu.Unlock()
+func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
+	nsInterface, ok := qm.namespaces.Load(nsName)
 	if !ok {
-		log.Warningf("namespace %q not found", namespace)
 		return nil
 	}
+	ns := nsInterface.(*namespace)
 
 	if b, ok := ns.bucketsByKey[key]; ok {
 		return b
@@ -537,21 +530,27 @@ func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, buck
 	})
 }
 
-func (qm *QuotaManager) reloadNamespaces() (map[string]*namespace, error) {
+func (qm *QuotaManager) reloadNamespaces() error {
 	config, err := fetchAllConfigFromDB(qm.env)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	namespaces := make(map[string]*namespace)
 	for nsName, nsConfig := range config {
 		ns, err := qm.createNamespace(qm.env, nsName, nsConfig)
 		if err != nil {
-			return nil, err
+			return err
 
 		}
-		namespaces[nsName] = ns
+		qm.namespaces.Store(nsName, ns)
 	}
-	return namespaces, nil
+	qm.namespaces.Range(func(k, v interface{}) bool {
+		nsName := k.(string)
+		if _, ok := config[nsName]; !ok {
+			qm.namespaces.Delete(nsName)
+		}
+		return true
+	})
+	return nil
 }
 
 func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
@@ -559,13 +558,10 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	defer subscriber.Close()
 	pubsubChan := subscriber.Chan()
 	for range pubsubChan {
-		namespaces, err := qm.reloadNamespaces()
+		err := qm.reloadNamespaces()
 		if err != nil {
 			alert.UnexpectedEvent("quota-cannot-reload", " quota manager failed to reload configs: %s", err)
 		}
-		qm.mu.Lock()
-		qm.namespaces = namespaces
-		qm.mu.Unlock()
 	}
 }
 
