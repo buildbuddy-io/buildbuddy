@@ -60,6 +60,17 @@ type FinishWithErrorFunc func(finalErr error) error
 
 func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
+		if stage == repb.ExecutionStage_COMPLETED {
+			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil && target == "grpcs://cloud.buildbuddy.io" {
+				if execResponse.GetMessage() != "" {
+					execResponse.Message = execResponse.GetMessage() + "\n"
+				}
+				execResponse.Message = (execResponse.GetMessage() +
+					"The build used the old BuildBuddy endpoint, cloud.buildbuddy.io. " +
+					"Migrate `executor.app_target` to remote.buildbuddy.io for " +
+					"improved performance.")
+			}
+		}
 		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
@@ -107,17 +118,10 @@ func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteRespons
 // If a non-nil error is provided, an action result (incomplete or partial) may
 // still be provided, and clients are expected to handle this case properly.
 func ExecuteResponseWithResult(ar *repb.ActionResult, err error) *repb.ExecuteResponse {
-	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
-	if ar != nil {
-		rsp.Result = ar
+	return &repb.ExecuteResponse{
+		Status: gstatus.Convert(err).Proto(),
+		Result: ar,
 	}
-	if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil && target == "grpcs://cloud.buildbuddy.io" {
-		if rsp.GetMessage() != "" {
-			rsp.Message = rsp.GetMessage() + "\n"
-		}
-		rsp.Message = rsp.GetMessage() + "This executor is using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance."
-	}
-	return rsp
 }
 
 func InProgressExecuteResponse() *repb.ExecuteResponse {
