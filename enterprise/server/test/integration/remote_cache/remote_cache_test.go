@@ -137,6 +137,45 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	)
 }
 
+func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.T) {
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+	app := buildbuddy_enterprise.Run(t)
+	webClient := buildbuddy_enterprise.LoginAsDefaultSelfAuthUser(t, app)
+	rsp := &akpb.CreateApiKeyResponse{}
+	// Create a new CAS-only key
+	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
+		RequestContext: webClient.RequestContext,
+		GroupId:        webClient.RequestContext.GroupId,
+		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+	}, rsp)
+	require.NoError(t, err)
+	readOnlyKey := rsp.ApiKey.Value
+	buildFlags := []string{"//:hello.txt", fmt.Sprintf("--remote_header=%s=%s", auth.APIKeyHeader, readOnlyKey)}
+	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
+
+	ctx := context.Background()
+	result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	assert.NotContains(
+		t, result.Stderr, "1 remote cache hit",
+		"sanity check: initial build shouldn't be cached",
+	)
+
+	// Clear the local cache so the remote cache will be queried.
+	testbazel.Clean(ctx, t, ws)
+
+	result = testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+
+	assert.NoError(t, result.Error)
+	assert.Contains(t, result.Stderr, "Build completed successfully")
+	assert.NotContains(
+		t, result.Stderr, "1 remote cache hit",
+		"second build should not be cached since the first build was done with a cas-only key",
+	)
+}
+
 func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig)
 	ctx := context.Background()

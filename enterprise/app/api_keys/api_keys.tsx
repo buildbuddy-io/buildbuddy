@@ -233,7 +233,26 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange: (name: string, value: any) => any,
     e: React.ChangeEvent<HTMLInputElement>
   ) {
-    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, !e.target.checked, onChange);
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, false, onChange);
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, false, onChange);
+  }
+
+  private onChangeCASOnly<T extends ApiKeyFields>(
+    request: T,
+    onChange: (name: string, value: any) => any,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, false, onChange);
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, true, onChange);
+  }
+
+  private onChangeReadWrite<T extends ApiKeyFields>(
+    request: T,
+    onChange: (name: string, value: any) => any,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY, true, onChange);
+    this.onChangeCapability(request, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY, false, onChange);
   }
 
   private onChangeVisibility<T extends ApiKeyFields>(
@@ -291,15 +310,40 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
               <div className="field-container">
                 <label className="checkbox-row">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    onChange={this.onChangeReadWrite.bind(this, request, onChange)}
+                    checked={isReadWrite(request)}
+                  />
+                  <span>
+                    Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
+                  </span>
+                </label>
+              </div>
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                    type="radio"
                     onChange={this.onChangeReadOnly.bind(this, request, onChange)}
                     checked={isReadOnly(request)}
                   />
                   <span>
-                    Read-only key <span className="field-description">(disable remote cache uploads)</span>
+                    Read-only key <span className="field-description">(disable all remote cache uploads)</span>
                   </span>
                 </label>
               </div>
+              <div className="field-container">
+                <label className="checkbox-row">
+                  <input
+                    type="radio"
+                    onChange={this.onChangeCASOnly.bind(this, request, onChange)}
+                    checked={isCASOnly(request)}
+                  />
+                  <span>
+                    CAS-only key <span className="field-description">(disable action cache uploads)</span>
+                  </span>
+                </label>
+              </div>
+
               {capabilities.executorKeyCreation && (
                 <div className="field-container">
                   <label className="checkbox-row">
@@ -474,8 +518,19 @@ function hasCapability<T extends ApiKeyFields>(apiKey: T | null, capability: api
   return Boolean(apiKey?.capability?.some((existingCapability) => existingCapability === capability));
 }
 
+function isReadWrite<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+}
+
+function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasCapability(apiKey, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY);
+}
+
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
-  return !hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY);
+  return (
+    !hasCapability(apiKey, api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY) &&
+    !hasCapability(apiKey, api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY)
+  );
 }
 
 function isVisibleToDevelopers<T extends ApiKeyFields>(apiKey: T | null) {
@@ -483,7 +538,13 @@ function isVisibleToDevelopers<T extends ApiKeyFields>(apiKey: T | null) {
 }
 
 function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
-  let capabilities = isReadOnly(apiKey) ? "Read-only" : "Read+Write";
+  let capabilities = "Read+Write";
+  if (isReadOnly(apiKey)) {
+    capabilities = "Read-only";
+  }
+  if (isCASOnly(apiKey)) {
+    capabilities = "CAS-only";
+  }
   if (hasCapability(apiKey, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)) {
     capabilities += "+Executor";
   }

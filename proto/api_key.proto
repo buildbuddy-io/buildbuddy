@@ -27,6 +27,8 @@ message ApiKey {
     CACHE_WRITE_CAPABILITY = 1;  // 2^0
     // Allows registering an executor with the scheduler.
     REGISTER_EXECUTOR_CAPABILITY = 2;  // 2^1
+    // Allows writing to the content-addressable store only.
+    CAS_WRITE_CAPABILITY = 4;  // 2^2
   }
 
   // Capabilities associated with this API key.
