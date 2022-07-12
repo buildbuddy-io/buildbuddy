@@ -1,7 +1,7 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import format from "../format/format";
-import { PieChart as PieChartIcon } from "lucide-react";
+import { PieChart as PieChartIcon, AlertCircle as AlertCircleIcon } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 interface Props {
@@ -12,21 +12,28 @@ const BITS_PER_BYTE = 8;
 
 export default class CacheCardComponent extends React.Component<Props> {
   render() {
+    const hasCacheStats =
+      this.props.model.cacheStats.length &&
+      (+this.props.model.cacheStats[0]?.actionCacheHits !== 0 ||
+        +this.props.model.cacheStats[0]?.actionCacheMisses !== 0 ||
+        +this.props.model.cacheStats[0]?.totalDownloadSizeBytes !== 0 ||
+        +this.props.model.cacheStats[0]?.totalUploadSizeBytes !== 0);
     return (
       <div className="card">
         <PieChartIcon className="icon" />
         <div className="content">
           <div className="title">Cache stats</div>
-          {!this.props.model.cacheStats.length ||
-            (this.props.model.cacheStats.length &&
-              +this.props.model.cacheStats[0]?.actionCacheHits == 0 &&
-              +this.props.model.cacheStats[0]?.actionCacheMisses == 0 &&
-              +this.props.model.cacheStats[0]?.totalDownloadSizeBytes == 0 &&
-              +this.props.model.cacheStats[0]?.totalUploadSizeBytes == 0 && (
-                <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>
-              ))}
+          {!hasCacheStats && (
+            <div className="no-cache-stats">Cache stats only available when using BuildBuddy cache.</div>
+          )}
           {this.props.model.cacheStats.length && (
             <div className="details">
+              {hasCacheStats && !this.props.model.hasCacheWriteCapability() && (
+                <div className="cache-details">
+                  <AlertCircleIcon className="icon" />
+                  This invocation was created with a read-only API key. No artifacts were written to the cache.
+                </div>
+              )}
               {this.props.model.cacheStats.map((cacheStat) => {
                 let downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
                 let uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);

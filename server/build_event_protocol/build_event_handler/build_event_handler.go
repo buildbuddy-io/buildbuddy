@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
@@ -1161,6 +1162,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	} else {
 		out.ReadPermission = inpb.InvocationPermission_GROUP
 	}
+	out.CreatedWithCapabilities = capabilities.FromInt(i.CreatedWithCapabilities)
 	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
 	out.CacheStats = &capb.CacheStats{
 		ActionCacheHits:                   i.ActionCacheHits,

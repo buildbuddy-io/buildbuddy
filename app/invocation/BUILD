@@ -38,6 +38,7 @@ ts_library(
         "//app/util:errors",
         "//app/util:proto",
         "//proto:acl_ts_proto",
+        "//proto:api_key_ts_proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:cache_ts_proto",
         "//proto:command_line_ts_proto",
