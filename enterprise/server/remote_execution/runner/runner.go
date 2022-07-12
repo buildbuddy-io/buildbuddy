@@ -489,7 +489,7 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	cleanupCmd := proto.Clone(r.task.GetCommand()).(*repb.Command)
 	cleanupCmd.Arguments = append(cleanupCmd.Arguments, "--shutdown_and_exit")
 
-	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), false /*=enableStats*/, &container.Stdio{})
+	res := commandutil.Run(ctx, cleanupCmd, r.Workspace.Path(), nil /*=statsListener*/, &container.Stdio{})
 	return res.Error
 }
 
