@@ -1821,4 +1821,9 @@ message UsageStats {
 
   // Total number of CPU-nanoseconds consumed by the task.
   int64 cpu_nanos = 2;
+
+  // Most recently recorded total memory usage of the task. This field is only
+  // used for real-time metrics and shouldn't be used as a "summary" metric for
+  // the task (peak_memory_bytes is a more useful summary metric).
+  int64 memory_bytes = 3;
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
 
 	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -334,9 +335,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	// Stop monitoring so that we can get stats.
 	stopMonitoring()
-	if stats := <-statsCh; stats != nil {
-		result.UsageStats = stats.ToProto()
-	}
+	result.UsageStats = <-statsCh
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
@@ -490,9 +489,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	// expecting a SIGKILL as a result.
 	res := runPodman(ctx, "exec", stdio, podmanRunArgs...)
 	stopMonitoring()
-	if stats := <-statsCh; stats != nil {
-		res.UsageStats = stats.ToProto()
-	}
+	res.UsageStats = <-statsCh
 	c.mu.Lock()
 	removed := c.removed
 	c.mu.Unlock()
@@ -564,16 +561,16 @@ func (c *podmanCommandContainer) cidFilePath() string {
 // channel should be received from at most once, *after* calling the returned
 // stop function. The received value can be nil if stats were not successfully
 // sampled at least once.
-func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFunc, chan *container.Stats) {
+func (c *podmanCommandContainer) monitor(ctx context.Context) (context.CancelFunc, chan *repb.UsageStats) {
 	ctx, cancel := context.WithCancel(ctx)
-	result := make(chan *container.Stats, 1)
+	result := make(chan *repb.UsageStats, 1)
 	go func() {
 		defer close(result)
 		if !c.options.EnableStats {
 			return
 		}
 		defer container.Metrics.Unregister(c)
-		var last *container.Stats
+		var last *repb.UsageStats
 		var lastErr error
 
 		start := time.Now()
@@ -718,7 +715,7 @@ func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 
 // readRawStats reads the raw stats from the cgroup fs. Note that this does not
 // work in rootless mode for cgroup v1.
-func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*container.Stats, error) {
+func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageStats, error) {
 	cid, err := c.getCID(ctx)
 	if err != nil {
 		return nil, err
@@ -734,15 +731,15 @@ func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*container.S
 	if err != nil {
 		return nil, err
 	}
-	return &container.Stats{
-		MemoryUsageBytes: memUsageBytes,
-		CPUNanos:         cpuNanos,
+	return &repb.UsageStats{
+		MemoryBytes: memUsageBytes,
+		CpuNanos:    cpuNanos,
 	}, nil
 }
 
-func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
+func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	if !c.options.EnableStats {
-		return &container.Stats{}, nil
+		return &repb.UsageStats{}, nil
 	}
 
 	current, err := c.readRawStats(ctx)
@@ -753,14 +750,14 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*container.Stats, e
 	c.stats.mu.Lock()
 	defer c.stats.mu.Unlock()
 
-	stats := *current // copy
-	stats.CPUNanos = stats.CPUNanos - c.stats.baselineCPUNanos
-	if current.MemoryUsageBytes > c.stats.peakMemoryUsageBytes {
-		c.stats.peakMemoryUsageBytes = current.MemoryUsageBytes
+	stats := proto.Clone(current).(*repb.UsageStats)
+	stats.CpuNanos = stats.CpuNanos - c.stats.baselineCPUNanos
+	if current.MemoryBytes > c.stats.peakMemoryUsageBytes {
+		c.stats.peakMemoryUsageBytes = current.MemoryBytes
 	}
-	stats.PeakMemoryUsageBytes = c.stats.peakMemoryUsageBytes
+	stats.PeakMemoryBytes = c.stats.peakMemoryUsageBytes
 	c.stats.last = current
-	return &stats, nil
+	return stats, nil
 }
 
 func runPodman(ctx context.Context, subCommand string, stdio *container.Stdio, args ...string) *interfaces.CommandResult {
@@ -882,7 +879,7 @@ func readInt64FromFile(path string) (int64, error) {
 type containerStats struct {
 	mu sync.Mutex
 	// last is the last recorded stats.
-	last *container.Stats
+	last *repb.UsageStats
 	// peakMemoryUsageBytes is the max memory usage from the last task execution.
 	// This is reset between tasks so that we can determine a task's peak memory
 	// usage when using a recycled runner.
@@ -902,7 +899,7 @@ func (s *containerStats) Reset() {
 	if s.last == nil {
 		s.baselineCPUNanos = 0
 	} else {
-		s.baselineCPUNanos = s.last.CPUNanos
+		s.baselineCPUNanos = s.last.CpuNanos
 	}
 	s.last = nil
 	s.peakMemoryUsageBytes = 0

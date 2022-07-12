@@ -55,34 +55,12 @@ type DockerDeviceMapping struct {
 	CgroupPermissions string `yaml:"cgroup_permissions" usage:"cgroup permissions that should be assigned to device."`
 }
 
-// Stats represents a container's resource usage.
-type Stats struct {
-	// MemoryUsageBytes is the most recent memory usage value sampled from the
-	// container, in bytes.
-	MemoryUsageBytes int64
-	// CPUNanos is the total CPU usage used by a task, in CPU-nanoseconds.
-	CPUNanos int64
-	// PeakMemoryUsageBytes is the highest memory usage sampled during the
-	// execution of a task, in bytes.
-	PeakMemoryUsageBytes int64
-}
-
-func (s *Stats) ToProto() *repb.UsageStats {
-	if s == nil {
-		return nil
-	}
-	return &repb.UsageStats{
-		CpuNanos:        s.CPUNanos,
-		PeakMemoryBytes: s.PeakMemoryUsageBytes,
-	}
-}
-
 // ContainerMetrics handles Prometheus metrics accounting for CommandContainer
 // instances.
 type ContainerMetrics struct {
 	mu sync.Mutex
 	// Latest stats observed, per-container.
-	latest map[CommandContainer]*Stats
+	latest map[CommandContainer]*repb.UsageStats
 	// CPU usage for the current usage interval, per-container. This is cleared
 	// every time we update the CPU gauge.
 	intervalCPUNanos int64
@@ -90,7 +68,7 @@ type ContainerMetrics struct {
 
 func NewContainerMetrics() *ContainerMetrics {
 	return &ContainerMetrics{
-		latest: make(map[CommandContainer]*Stats),
+		latest: make(map[CommandContainer]*repb.UsageStats),
 	}
 }
 
@@ -122,7 +100,7 @@ func (m *ContainerMetrics) updateCPUMetric(dt time.Duration) {
 }
 
 // Observe records the latest stats for the current container execution.
-func (m *ContainerMetrics) Observe(c CommandContainer, s *Stats) {
+func (m *ContainerMetrics) Observe(c CommandContainer, s *repb.UsageStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s == nil {
@@ -132,12 +110,12 @@ func (m *ContainerMetrics) Observe(c CommandContainer, s *Stats) {
 		// much new usage has been incurred.
 		var prevCPUNanos int64
 		for _, stats := range m.latest {
-			prevCPUNanos += stats.CPUNanos
+			prevCPUNanos += stats.CpuNanos
 		}
 		m.latest[c] = s
 		var cpuNanos int64
 		for _, stats := range m.latest {
-			cpuNanos += stats.CPUNanos
+			cpuNanos += stats.CpuNanos
 		}
 		diffCPUNanos := cpuNanos - prevCPUNanos
 		metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
@@ -145,8 +123,8 @@ func (m *ContainerMetrics) Observe(c CommandContainer, s *Stats) {
 	}
 	var totalMemBytes, totalPeakMemBytes int64
 	for _, stats := range m.latest {
-		totalMemBytes += stats.MemoryUsageBytes
-		totalPeakMemBytes += stats.PeakMemoryUsageBytes
+		totalMemBytes += stats.MemoryBytes
+		totalPeakMemBytes += stats.PeakMemoryBytes
 	}
 	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(totalMemBytes))
 	metrics.RemoteExecutionPeakMemoryUsageBytes.Set(float64(totalPeakMemBytes))
@@ -207,7 +185,7 @@ type CommandContainer interface {
 	Remove(ctx context.Context) error
 
 	// Stats returns the current resource usage of this container.
-	Stats(ctx context.Context) (*Stats, error)
+	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
 // Stdio specifies standard input / output readers for a command.
@@ -433,7 +411,7 @@ func (t *TracedCommandContainer) Remove(ctx context.Context) error {
 	return t.Delegate.Remove(ctx)
 }
 
-func (t *TracedCommandContainer) Stats(ctx context.Context) (*Stats, error) {
+func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 	return t.Delegate.Stats(ctx)

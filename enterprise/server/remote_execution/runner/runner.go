@@ -635,11 +635,11 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	// If memory usage stats are not implemented, fall back to the default task
 	// size estimate.
-	if stats.MemoryUsageBytes == 0 {
-		stats.MemoryUsageBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
+	if stats.MemoryBytes == 0 {
+		stats.MemoryBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 	}
 
-	if stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+	if stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
 		return &labeledError{
 			RunnerMaxMemoryExceeded,
 			"max_memory_exceeded",
@@ -677,7 +677,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 
 	for p.pausedRunnerCount() >= p.maxRunnerCount ||
-		p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+		p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
@@ -695,7 +695,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 
 		if p.pausedRunnerCount() >= p.maxRunnerCount {
 			log.Infof("Evicting runner (pool max count %d exceeded).", p.maxRunnerCount)
-		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryUsageBytes > p.maxRunnerMemoryUsageBytes {
+		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
 			log.Infof("Evicting runner (max memory %d exceeded).", p.maxRunnerMemoryUsageBytes)
 		}
 
@@ -717,7 +717,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 
 	// Cache resource usage values so we don't need to recompute them when
 	// updating metrics upon removal.
-	r.memoryUsageBytes = stats.MemoryUsageBytes
+	r.memoryUsageBytes = stats.MemoryBytes
 	r.diskUsageBytes = du
 
 	metrics.RunnerPoolDiskUsageBytes.Add(float64(r.diskUsageBytes))

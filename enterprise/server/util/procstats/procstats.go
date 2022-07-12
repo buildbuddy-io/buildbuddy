@@ -3,8 +3,7 @@ package procstats
 import (
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 	procutil "github.com/shirou/gopsutil/v3/process"
 )
@@ -20,14 +19,14 @@ const (
 
 // Listener is a function that is called whenever new container stats are
 // available. This can be used to live-update stats while a command is running.
-type Listener func(*container.Stats)
+type Listener func(*repb.UsageStats)
 
 // Monitor polls resource usage of a process tree rooted at the given pid. The
 // process identified by pid is expected to have been started before calling
 // this function. The caller must close the given channel when the process is
 // terminated. This function will unblock once the channel is closed, and it
 // will return any stats collected.
-func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *container.Stats {
+func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *repb.UsageStats {
 	ts := NewTreeStats(pid)
 	// Most processes are short-lived so we need a fast poll rate if we want
 	// to increase the probability of getting at least one sample. But
@@ -86,13 +85,13 @@ func (t *TreeStats) Update() error {
 	}
 	t.CurrentTotalMemoryBytes = 0
 	for _, s := range stats {
-		t.CurrentTotalMemoryBytes += s.MemoryUsageBytes
+		t.CurrentTotalMemoryBytes += s.MemoryBytes
 	}
 	if t.CurrentTotalMemoryBytes > t.PeakTotalMemoryBytes {
 		t.PeakTotalMemoryBytes = t.CurrentTotalMemoryBytes
 	}
 	for pid, stat := range stats {
-		t.CPUNanosByPid[pid] = stat.CPUNanos
+		t.CPUNanosByPid[pid] = stat.CpuNanos
 	}
 	return nil
 }
@@ -100,24 +99,24 @@ func (t *TreeStats) Update() error {
 // Total returns stats with PeakMemoryBytes set to match the peak total memory
 // observed, and CPUNanos to match the total CPU usage observed across all
 // processes in the tree.
-func (t *TreeStats) Total() *container.Stats {
+func (t *TreeStats) Total() *repb.UsageStats {
 	totalCPUNanos := int64(0)
 	for _, cpuNanos := range t.CPUNanosByPid {
 		totalCPUNanos += cpuNanos
 	}
-	return &container.Stats{
-		MemoryUsageBytes:     t.CurrentTotalMemoryBytes,
-		PeakMemoryUsageBytes: t.PeakTotalMemoryBytes,
-		CPUNanos:             totalCPUNanos,
+	return &repb.UsageStats{
+		PeakMemoryBytes: t.PeakTotalMemoryBytes,
+		CpuNanos:        totalCPUNanos,
+		MemoryBytes:     t.CurrentTotalMemoryBytes,
 	}
 }
 
-func statTree(pid int) (map[int]*container.Stats, error) {
+func statTree(pid int) (map[int]*repb.UsageStats, error) {
 	pids, err := pidsInTree(pid)
 	if err != nil {
 		return nil, err
 	}
-	stats := make(map[int]*container.Stats, len(pids))
+	stats := make(map[int]*repb.UsageStats, len(pids))
 	for _, pid := range pids {
 		s, err := getProcessStats(pid)
 		if err != nil {
@@ -155,7 +154,7 @@ func pidsInTree(pid int) ([]int, error) {
 	return pidsVisited, nil
 }
 
-func getProcessStats(pid int) (*container.Stats, error) {
+func getProcessStats(pid int) (*repb.UsageStats, error) {
 	p, err := procutil.NewProcess(int32(pid))
 	if err != nil {
 		return nil, err
@@ -170,9 +169,9 @@ func getProcessStats(pid int) (*container.Stats, error) {
 	}
 	// TODO(bduffany): Explore using PSS instead of RSS to avoid overcounting
 	// shared library memory usage.
-	stats := &container.Stats{
-		MemoryUsageBytes: int64(m.RSS),
-		CPUNanos:         int64((t.User + t.System) * 1e9),
+	stats := &repb.UsageStats{
+		MemoryBytes: int64(m.RSS),
+		CpuNanos:    int64((t.User + t.System) * 1e9),
 	}
 	return stats, nil
 }
