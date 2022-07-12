@@ -318,11 +318,7 @@ func (w *writeState) Commit() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 
-	canWriteAll, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
-	if err != nil {
-		return err
-	}
-	canWriteCAS, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CAS_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY | akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
 		return err
 	}
@@ -343,7 +339,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 
 			// If the API key is read-only, pretend the object already exists.
-			if !canWriteAll && !canWriteCAS {
+			if !canWrite {
 				return s.handleAlreadyExists(ctx, stream, req)
 			}
 			streamState, err = s.initStreamState(ctx, req)

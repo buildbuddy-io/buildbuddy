@@ -154,15 +154,11 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	canWriteAll, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY | akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
 		return nil, err
 	}
-	canWriteCAS, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CAS_WRITE_CAPABILITY)
-	if err != nil {
-		return nil, err
-	}
-	if !canWriteAll && !canWriteCAS {
+	if !canWrite {
 		// For read-only API keys, pretend the write succeeded.
 		for _, uploadRequest := range req.Requests {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
