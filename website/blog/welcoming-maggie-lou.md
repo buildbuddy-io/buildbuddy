@@ -10,7 +10,7 @@ image: /img/welcome_maggie.png
 tags: [company, team]
 ---
 
-To fulfill our mission of bringing the world's best developer tools to every company, we're expanding our team to keep up our evergrowing customer base. That's why we're excited to share today that [**Maggie Lou**](https://www.linkedin.com/in/maggie-lou-4a3bb110a/) is joining BuildBuddy's engineering team!
+To fulfill our mission of bringing the world's best developer tools to every company, we're expanding our team to keep up with our evergrowing customer base. That's why we're excited to share today that [**Maggie Lou**](https://www.linkedin.com/in/maggie-lou-4a3bb110a/) is joining BuildBuddy's engineering team!
 
 Maggie joins us from Thumbtack.
 
