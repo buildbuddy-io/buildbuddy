@@ -61,7 +61,7 @@ func (c *TestUser) GetCapabilities() []akpb.ApiKey_Capability          { return 
 func (c *TestUser) IsAdmin() bool                                      { return false }
 func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 	for _, cc := range c.Capabilities {
-		if cap == cc {
+		if cap & cc > 0 {
 			return true
 		}
 	}
