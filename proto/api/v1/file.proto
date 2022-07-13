@@ -26,8 +26,10 @@ message File {
 message DeleteFileRequest {
   // URI of file to delete.
   //
-  // CAS URI format: <instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
-  // Action cache URI format: <instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
+  // CAS URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
+  // Action cache URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
   //
   // Examples:
   // * CAS artifact:
