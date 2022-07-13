@@ -494,6 +494,35 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             <div className="metadata-detail">
                               {this.state.actionResult.executionMetadata.executorId}
                             </div>
+                            {this.state.actionResult.executionMetadata.usageStats && (
+                              <>
+                                <div className="metadata-title">Resource usage</div>
+                                <div>
+                                  <div>
+                                    Peak memory:{" "}
+                                    {format.bytes(this.state.actionResult.executionMetadata.usageStats.peakMemoryBytes)}
+                                  </div>
+                                  <div>MilliCPU: {computeMilliCpu(this.state.actionResult)}</div>
+                                </div>
+                              </>
+                            )}
+                            {this.state.actionResult.executionMetadata.estimatedTaskSize && (
+                              <>
+                                <div className="metadata-title">Estimated resource usage</div>
+                                <div>
+                                  <div>
+                                    Peak memory:{" "}
+                                    {format.bytes(
+                                      this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMemoryBytes
+                                    )}
+                                  </div>
+                                  <div>
+                                    MilliCPU:{" "}
+                                    {this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMilliCpu}
+                                  </div>
+                                </div>
+                              </>
+                            )}
                             <div className="metadata-title">Timeline</div>
                             {this.renderTimelines()}
                           </div>
@@ -574,6 +603,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
       </div>
     );
   }
+}
+
+function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): number {
+  const metadata = result?.executionMetadata;
+  if (!metadata) return 0;
+  const usage = metadata.usageStats;
+  if (!usage) return 0;
+
+  const execDurationSeconds = durationSeconds(metadata.executionStartTimestamp, metadata.executionCompletedTimestamp);
+  const cpuMillis = Number(usage.cpuNanos) / 1e6;
+  return Math.floor(cpuMillis / execDurationSeconds);
 }
 
 function durationSeconds(t1: any, t2: any): number {
