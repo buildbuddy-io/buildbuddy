@@ -465,6 +465,7 @@ var (
 		Help:      "Number of read requests to the task sizer, which estimates action resource usage based on historical execution stats.",
 	}, []string{
 		TaskSizeReadStatusLabel,
+		IsolationTypeLabel,
 	})
 
 	RemoteExecutionTaskSizeWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -474,6 +475,7 @@ var (
 		Help:      "Number of write requests to the task sizer, which estimates action resource usage based on historical execution stats.",
 	}, []string{
 		TaskSizeWriteStatusLabel,
+		IsolationTypeLabel,
 	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
