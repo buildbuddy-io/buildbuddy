@@ -39,6 +39,13 @@ go_download_sdk(
 )
 
 go_download_sdk(
+    name = "go_sdk_linux_arm64",
+    goarch = "arm64",
+    goos = "linux",
+    version = "1.18.1",
+)
+
+go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
