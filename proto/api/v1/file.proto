@@ -26,21 +26,21 @@ message File {
 message DeleteFileRequest {
   // URI of file to delete.
   //
-  // CAS URI format: bytestream://<instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
-  // Action cache URI format: actioncache://<instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
+  // CAS URI format: <instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
+  // Action cache URI format: <instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
   //
   // Examples:
   // * CAS artifact:
-  //   bytestream://cloud.buildbuddy.io/compressed-blobs/zstd/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //   compressed-blobs/zstd/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
   //
   // * CAS artifact with remote_instance_name
-  //   bytestream://cloud.buildbuddy.io/my_remote_instance_name/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //   my_remote_instance_name/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
   //
   // * Action cache artifact:
-  //   actioncache://cloud.buildbuddy.io/blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //   blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
   //
   // * Action cache artifact with remote_instance_name
-  //   actioncache://cloud.buildbuddy.io/my_remote_instance_name/blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //   my_remote_instance_name/blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
   string uri = 1;
 }
 
