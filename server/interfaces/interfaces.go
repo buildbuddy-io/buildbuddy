@@ -478,7 +478,7 @@ type WebhookData struct {
 }
 
 type SplashPrinter interface {
-	PrintSplashScreen(port, grpcPort int)
+	PrintSplashScreen(hostname string, port, grpcPort int)
 }
 
 type RemoteExecutionService interface {

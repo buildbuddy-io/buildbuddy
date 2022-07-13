@@ -1,31 +1,61 @@
 package splash
 
 import (
-	"log"
+	"fmt"
+	"math"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/logrusorgru/aurora"
 )
 
 type Printer struct{}
 
-func (p *Printer) PrintSplashScreen(port, gRPCPort int) {
-	// Print out a nice welcome message with getting started instructions.
-	log.Printf("")
-	log.Printf("╔════════════════════════════════════════════════════════════════════╗")
-	log.Printf("║                                                                    ║")
-	log.Printf("║   \u001b[37;1m\u001b[1mYour %s\u001b[37;1m\u001b[1m is up and running!\u001b[0m             ║", aurora.Underline(aurora.BrightWhite("BuildBuddy Enterprise Server")))
-	log.Printf("║                                                                    ║")
-	log.Printf("║   Need help? Email us anytime at support@buildbuddy.io             ║")
-	log.Printf("║   Thanks for using BuildBuddy!                                     ║")
-	log.Printf("║                                                                    ║")
-	log.Printf("║   Add the following lines to your \u001b[37;1m\u001b[1m.bazelrc\u001b[0m to start sending build  ║")
-	log.Printf("║   events to your local server:                                     ║")
-	log.Printf("║        \u001b[32;1mbuild --bes_results_url=http://localhost:%d/invocation/\u001b[0m   ║", port)
-	log.Printf("║        \u001b[32;1mbuild --bes_backend=grpc://localhost:%d\u001b[0m                   ║", gRPCPort)
-	log.Printf("║                                                                    ║")
-	log.Printf("║   You can now view Buildbuddy in the browser:                      ║")
-	log.Printf("║        \u001b[34;1mhttp://localhost:%d/\u001b[0m                                      ║", port)
-	log.Printf("║                                                                    ║")
-	log.Printf("╚════════════════════════════════════════════════════════════════════╝")
-	log.Printf("")
+// PrintSplashScreen prints out a nice welcome message with getting started
+// instructions.
+func (p *Printer) PrintSplashScreen(hostname string, port, gRPCPort int) {
+	grpcURL := &url.URL{Scheme: "grpc", Host: net.JoinHostPort(hostname, strconv.Itoa(gRPCPort))}
+	viewURL := &url.URL{Scheme: "http", Host: net.JoinHostPort(hostname, strconv.Itoa(port)), Path: "/"}
+	resultsURL := &url.URL{Scheme: "http", Host: net.JoinHostPort(hostname, strconv.Itoa(port)), Path: "/invocation/"}
+
+	linesColored := make(map[bool][]string)
+	for _, colored := range []bool{true, false} {
+		au := aurora.NewAurora(colored)
+		linesColored[colored] = []string{
+			au.Sprintf(au.Reset("")),
+			au.Sprintf(au.Reset("   Your %s is up and running!").Bold(), au.BrightWhite("BuildBuddy Enterprise Server").Bold().Underline()),
+			au.Sprintf(au.Reset("")),
+			au.Sprintf(au.Reset("   Need help? Email us anytime at support@buildbuddy.io")),
+			au.Sprintf(au.Reset("   Thanks for using BuildBuddy!")),
+			au.Sprintf(au.Reset("")),
+			au.Sprintf(au.Reset("   Add the following lines to your %s to start sending build"), au.Bold(".bazelrc")),
+			au.Sprintf(au.Reset("   events to your local server:")),
+			au.Sprintf(au.Reset("        build --bes_results_url=%s").BrightGreen().Bold(), resultsURL.String()),
+			au.Sprintf(au.Reset("        build --bes_backend=%s").BrightGreen().Bold(), grpcURL.String()),
+			au.Sprintf(au.Reset("")),
+			au.Sprintf(au.Reset("   You can now view Buildbuddy in the browser:")),
+			au.Sprintf(au.Reset("        %s").Blue().Bold(), viewURL.String()),
+			au.Sprintf(au.Reset("")),
+		}
+	}
+
+	maxLineLength := 0
+	for _, l := range linesColored[false] {
+		maxLineLength = int(math.Max(float64(maxLineLength), float64(len(l))))
+	}
+
+	paddedLineLength := maxLineLength + 2
+
+	log.Print("")
+	log.Print("╔" + strings.Repeat("═", paddedLineLength) + "╗")
+	for i := range linesColored[true] {
+		l := fmt.Sprintf("%-"+strconv.Itoa(paddedLineLength)+"s", linesColored[false][i])
+		l = linesColored[true][i] + l[len(linesColored[false][i]):]
+		log.Print("║" + l + "║")
+	}
+	log.Print("╚" + strings.Repeat("═", paddedLineLength) + "╝")
+	log.Print("")
 }
