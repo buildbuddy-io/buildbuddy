@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
@@ -107,6 +108,8 @@ type Env interface {
 	GetFileResolver() fs.FS
 	GetMux() interfaces.HttpServeMux
 	SetMux(interfaces.HttpServeMux)
+	GetInternalHTTPMux() interfaces.HttpServeMux
+	SetInternalHTTPMux(mux interfaces.HttpServeMux)
 	GetListenAddr() string
 	SetListenAddr(string)
 	GetBuildBuddyServer() interfaces.BuildBuddyServer
@@ -130,5 +133,11 @@ type Env interface {
 	GetGRPCServer() *grpc.Server
 	SetGRPCServer(*grpc.Server)
 	GetGRPCSServer() *grpc.Server
+	GetInternalGRPCServer() *grpc.Server
+	SetInternalGRPCServer(*grpc.Server)
+	GetInternalGRPCSServer() *grpc.Server
+	SetInternalGRPCSServer(*grpc.Server)
 	SetGRPCSServer(*grpc.Server)
+	GetRegistryServer() rgpb.RegistryServer
+	SetRegistryServer(r rgpb.RegistryServer)
 }

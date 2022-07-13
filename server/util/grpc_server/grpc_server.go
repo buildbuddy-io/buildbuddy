@@ -35,6 +35,9 @@ var (
 	gRPCPort  = flag.Int("grpc_port", 1985, "The port to listen for gRPC traffic on")
 	gRPCSPort = flag.Int("grpcs_port", 1986, "The port to listen for gRPCS traffic on")
 
+	internalGRPCPort  = flag.Int("internal_grpc_port", 1987, "The port to listen for internal gRPC traffic on")
+	internalGRPCSPort = flag.Int("internal_grpcs_port", 1988, "The port to listen for internal gRPCS traffic on")
+
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 )
 
@@ -68,6 +71,39 @@ func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) erro
 		return err
 	}
 	env.SetGRPCSServer(grpcsServer)
+	return nil
+}
+
+func RegisterInternalGRPCServer(env environment.Env, regServices RegisterServices) error {
+	if *internalGRPCPort == 0 {
+		return nil
+	}
+
+	grpcServer, err := NewGRPCServer(env, *internalGRPCPort, nil, regServices)
+	if err != nil {
+		return err
+	}
+	env.SetInternalGRPCServer(grpcServer)
+	return nil
+}
+
+func RegisterInternalGRPCSServer(env environment.Env, regServices RegisterServices) error {
+	if *internalGRPCSPort == 0 {
+		return nil
+	}
+
+	if !env.GetSSLService().IsEnabled() {
+		return nil
+	}
+	creds, err := env.GetSSLService().GetGRPCSTLSCreds()
+	if err != nil {
+		return status.InternalErrorf("Error getting SSL creds: %s", err)
+	}
+	grpcsServer, err := NewGRPCServer(env, *internalGRPCSPort, grpc.Creds(creds), regServices)
+	if err != nil {
+		return err
+	}
+	env.SetInternalGRPCSServer(grpcsServer)
 	return nil
 }
 

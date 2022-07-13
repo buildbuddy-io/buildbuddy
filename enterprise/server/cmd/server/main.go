@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -232,6 +233,10 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := remote_execution_redis_client.RegisterRemoteExecutionClient(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := registry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

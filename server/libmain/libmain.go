@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 
@@ -51,6 +52,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -59,10 +61,11 @@ import (
 )
 
 var (
-	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	sslPort        = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
-	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	listen           = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port             = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	sslPort          = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
+	internalHTTPPort = flag.Int("internal_http_port", 0, "The port to listen for internal HTTP traffic")
+	monitoringPort   = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
 
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
@@ -142,6 +145,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	}
 	realEnv := real_environment.NewRealEnv(healthChecker)
 	realEnv.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
+	realEnv.SetInternalHTTPMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 	configureFilesystemsOrDie(realEnv)
 
@@ -198,6 +202,12 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 
 	realEnv.SetRepoDownloader(repo_downloader.NewRepoDownloader())
 	return realEnv
+}
+
+func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
+	if registryServer := env.GetRegistryServer(); registryServer != nil {
+		rgpb.RegisterRegistryServer(grpcServer, registryServer)
+	}
 }
 
 func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
@@ -300,6 +310,12 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
+	if err := grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := grpc_server.RegisterInternalGRPCSServer(env, registerInternalGRPCServices); err != nil {
+		log.Fatalf("%v", err)
+	}
 	if err := grpc_server.RegisterGRPCServer(env, registerGRPCServices); err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -358,6 +374,26 @@ func StartAndRunServices(env environment.Env) {
 		err := server.Shutdown(ctx)
 		return err
 	})
+
+	if *internalHTTPPort != 0 {
+		lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *internalHTTPPort))
+		if err != nil {
+			log.Fatalf("could not listen on internal HTTP port: %s", err)
+		}
+
+		internalHTTPServer := &http.Server{
+			Handler: env.GetInternalHTTPMux(),
+		}
+
+		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			err := internalHTTPServer.Shutdown(ctx)
+			return err
+		})
+
+		go func() {
+			_ = internalHTTPServer.Serve(lis)
+		}()
+	}
 
 	if env.GetSSLService().IsEnabled() {
 		tlsConfig, sslHandler := env.GetSSLService().ConfigureTLS(server.Handler)

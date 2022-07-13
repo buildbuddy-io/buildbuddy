@@ -5,17 +5,16 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-
-	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type executionClientConfig struct {
@@ -80,6 +79,7 @@ type RealEnv struct {
 	webhooks                         []interfaces.Webhook
 	xcodeLocator                     interfaces.XcodeLocator
 	fileResolver                     fs.FS
+	internalHTTPMux                  interfaces.HttpServeMux
 	mux                              interfaces.HttpServeMux
 	listenAddr                       string
 	buildbuddyServer                 interfaces.BuildBuddyServer
@@ -92,8 +92,11 @@ type RealEnv struct {
 	pushServer                       rapb.PushServer
 	fetchServer                      rapb.FetchServer
 	capabilitiesServer               repb.CapabilitiesServer
+	internalGRPCServer               *grpc.Server
+	internalGRPCSServer              *grpc.Server
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
+	registryServer                   rgpb.RegistryServer
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -399,6 +402,14 @@ func (r *RealEnv) SetMux(mux interfaces.HttpServeMux) {
 	r.mux = mux
 }
 
+func (r *RealEnv) GetInternalHTTPMux() interfaces.HttpServeMux {
+	return r.internalHTTPMux
+}
+
+func (r *RealEnv) SetInternalHTTPMux(mux interfaces.HttpServeMux) {
+	r.internalHTTPMux = mux
+}
+
 func (r *RealEnv) GetListenAddr() string {
 	return r.listenAddr
 }
@@ -487,6 +498,22 @@ func (r *RealEnv) SetCapabilitiesServer(capabilitiesServer repb.CapabilitiesServ
 	r.capabilitiesServer = capabilitiesServer
 }
 
+func (r *RealEnv) GetInternalGRPCServer() *grpc.Server {
+	return r.internalGRPCServer
+}
+
+func (r *RealEnv) SetInternalGRPCServer(server *grpc.Server) {
+	r.internalGRPCServer = server
+}
+
+func (r *RealEnv) GetInternalGRPCSServer() *grpc.Server {
+	return r.internalGRPCSServer
+}
+
+func (r *RealEnv) SetInternalGRPCSServer(server *grpc.Server) {
+	r.internalGRPCSServer = server
+}
+
 func (r *RealEnv) GetGRPCServer() *grpc.Server {
 	return r.grpcServer
 }
@@ -501,4 +528,12 @@ func (r *RealEnv) GetGRPCSServer() *grpc.Server {
 
 func (r *RealEnv) SetGRPCSServer(grpcsServer *grpc.Server) {
 	r.grpcsServer = grpcsServer
+}
+
+func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
+	return r.registryServer
+}
+
+func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
+	r.registryServer = server
 }

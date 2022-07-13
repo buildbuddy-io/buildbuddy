@@ -1,31 +1,23 @@
-package main
+package registry
 
 import (
 	"context"
 	"encoding/base32"
 	"flag"
 	"fmt"
-	"net"
+	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -35,14 +27,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -59,10 +48,7 @@ var (
 	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
 	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
 
-	port       = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	serverType = flag.String("server_type", "registry-server", "The server type to match on health checks")
-
-	casBackend            = flag.String("registry.cas_backend", "", "gRPC endpoint of the CAS used to store converted artifacts")
+	enableRegistry        = flag.Bool("registry.enabled", false, "Whether to enable registry services")
 	imageConverterBackend = flag.String("registry.image_converter_backend", "", "gRPC endpoint of the image converter service")
 )
 
@@ -115,17 +101,18 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.
 		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", digest, err)
 	}
 
-	rsp, err := r.casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
-		InstanceName: registryInstanceName,
-		BlobDigests:  mfProto.CasDependencies,
-	})
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
+	if err != nil {
+		return nil, err
+	}
+	missing, err := c.FindMissing(ctx, mfProto.CasDependencies)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check blob existence in CAS: %s", err)
 	}
 	// If any of the CAS dependencies are missing then pretend we don't have a
 	// manifest so that we trigger a new conversion and repopulate the data in
 	// the CAS.
-	if len(rsp.GetMissingBlobDigests()) > 0 {
+	if len(missing) > 0 {
 		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", digest)
 		return nil, nil
 	}
@@ -151,8 +138,7 @@ func (r *registry) getOptimizedManifest(ctx context.Context, imageName, refName 
 	return manifest, nil
 }
 
-func (r *registry) handleManifestRequest(w http.ResponseWriter, req *http.Request, imageName, refName string) {
-	ctx := req.Context()
+func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
 	realName, err := imageNameEncoding.DecodeString(strings.ToUpper(imageName))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not decode image image name %q: %s", imageName, err), http.StatusBadRequest)
@@ -160,7 +146,7 @@ func (r *registry) handleManifestRequest(w http.ResponseWriter, req *http.Reques
 	}
 	imageName = string(realName)
 
-	manifest, err := r.getOptimizedManifest(req.Context(), imageName, refName)
+	manifest, err := r.getOptimizedManifest(ctx, imageName, refName)
 	if err != nil {
 		log.CtxWarningf(ctx, "could not get optimized manifest: %s", err)
 		http.Error(w, fmt.Sprintf("could not get optimized manifest: %s", err), http.StatusNotFound)
@@ -219,32 +205,26 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	rn := blobResourceName(h)
-	us, err := rn.UploadString()
+
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
 	if err != nil {
 		return 0, err
 	}
-
-	rsp, err := r.bsClient.QueryWriteStatus(ctx, &bspb.QueryWriteStatusRequest{ResourceName: us})
+	md, err := c.Metadata(ctx, rn.GetDigest())
 	if err != nil {
 		return 0, err
 	}
-
-	if !rsp.GetComplete() {
-		return 0, status.UnavailableErrorf("blob %s is not available in cache", h)
-	}
-
-	return rsp.GetCommittedSize(), nil
+	return md.SizeBytes, nil
 }
 
-func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, name, refName string) {
-	ctx := req.Context()
+func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, name, refName string) {
 	h, err := v1.NewHash(refName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
 		return
 	}
 
-	blobSize, err := r.getBlobSize(req.Context(), h)
+	blobSize, err := r.getBlobSize(ctx, h)
 	if err != nil {
 		if err != context.Canceled {
 			log.CtxWarningf(ctx, "could not determine blob size: %s", err)
@@ -289,7 +269,18 @@ func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, n
 		w.WriteHeader(http.StatusPartialContent)
 	}
 	rn := blobResourceName(h)
-	_, err = cachetools.GetBlobChunk(req.Context(), r.bsClient, rn, opts, w)
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
+		return
+	}
+	rc, err := c.Reader(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
+	}
+	defer rc.Close()
+
+	_, err = io.Copy(w, rc)
 	if err != nil {
 		if err != context.Canceled {
 			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
@@ -300,8 +291,8 @@ func (r *registry) handleBlobRequest(w http.ResponseWriter, req *http.Request, n
 
 // TODO(vadim): investigate high memory usage during conversion
 type registry struct {
-	casClient            repb.ContentAddressableStorageClient
-	bsClient             bspb.ByteStreamClient
+	env                  environment.Env
+	cache                interfaces.Cache
 	imageConverterClient rgpb.ImageConverterClient
 	manifestStore        interfaces.Blobstore
 }
@@ -448,6 +439,11 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimized
 
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
+		return
+	}
 	log.CtxInfof(ctx, "%s %q", req.Method, req.RequestURI)
 	// Clients issue a GET /v2/ request to verify that this is a registry
 	// endpoint.
@@ -457,102 +453,53 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	}
 	// Request for a manifest or image index.
 	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		r.handleManifestRequest(w, req, m[1], m[2])
+		r.handleManifestRequest(ctx, w, req, m[1], m[2])
 		return
 	}
 	// Request for a blob (full layer or layer chunk).
 	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		r.handleBlobRequest(w, req, m[1], m[2])
+		r.handleBlobRequest(ctx, w, req, m[1], m[2])
 		return
 	}
 	http.NotFound(w, req)
 }
 
-func (r *registry) Start(ctx context.Context, hc interfaces.HealthChecker, env environment.Env) {
-	mux := http.NewServeMux()
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		r.handleRegistryRequest(w, req)
-	})
-	mux.Handle("/v2/", filters.RequestID(handler))
-	mux.Handle("/readyz", hc.ReadinessHandler())
-	mux.Handle("/healthz", hc.LivenessHandler())
-
-	regRegistryServices := func(server *grpc.Server, env environment.Env) {
-		rgpb.RegisterRegistryServer(server, r)
+func Register(env environment.Env) error {
+	if !*enableRegistry {
+		return nil
 	}
 
-	if err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
-		log.Fatalf("Could not setup GRPC server: %s", err)
-	}
-	if err := grpc_server.RegisterGRPCSServer(env, regRegistryServices); err != nil {
-		log.Fatalf("Could not setup GRPCS server: %s", err)
-	}
-
-	log.Infof("Starting HTTP server on port %d", *port)
-	srv := &http.Server{
-		Handler: mux,
-	}
-	hc.RegisterShutdownFunction(func(ctx context.Context) error {
-		log.Infof("Shutting down server...")
-		return srv.Shutdown(ctx)
-	})
-
-	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
-	if err != nil {
-		log.Fatalf("could not listen on port %d: %s", *port, err)
-	}
-
-	_ = srv.Serve(lis)
-
-}
-
-func main() {
-	flag.Parse()
-
-	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
-		log.Fatalf("Error loading config from file: %s", err)
-	}
-
-	if err := log.Configure(); err != nil {
-		fmt.Printf("Error configuring logging: %s", err)
-		os.Exit(1)
-	}
-
-	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := real_environment.NewRealEnv(healthChecker)
-
-	bs, err := blobstore.GetConfiguredBlobstore(env)
-	if err != nil {
-		log.Fatalf("could not configure blobstore: %s", err)
-	}
-
-	if err := ssl.Register(env); err != nil {
-		log.Fatalf("could not configure SSL: %s", err)
-	}
-
-	conn, err := grpc_client.DialTarget(*casBackend)
-	if err != nil {
-		log.Fatalf("could not connect to cas: %s", err)
-	}
-	casClient := repb.NewContentAddressableStorageClient(conn)
-	bsClient := bspb.NewByteStreamClient(conn)
-
-	if err := redis_client.RegisterDefault(env); err != nil {
-		log.Fatalf("could not initialize redis client: %s", err)
+	if env.GetCache() == nil {
+		return status.FailedPreconditionError("Registry requires a configured cache")
 	}
 
 	convConn, err := grpc_client.DialTarget(*imageConverterBackend)
 	if err != nil {
-		log.Fatalf("could not connect to image converter: %s", err)
+		return status.UnavailableErrorf("could not connect to image converter: %s", err)
 	}
 	imageConverterClient := rgpb.NewImageConverterClient(convConn)
 
+	bs := env.GetBlobstore()
+	if bs == nil {
+		return status.FailedPreconditionError("Registry requires Blobstore")
+	}
+
+	mux := env.GetInternalHTTPMux()
+	if mux == nil {
+		return status.FailedPreconditionErrorf("Registry requires internal HTTP mux")
+	}
+
 	r := &registry{
-		casClient:            casClient,
-		bsClient:             bsClient,
+		env:                  env,
+		cache:                env.GetCache(),
 		imageConverterClient: imageConverterClient,
 		manifestStore:        bs,
 	}
-	r.Start(env.GetServerContext(), healthChecker, env)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.handleRegistryRequest(w, req)
+	})
+	mux.Handle("/v2/", handler)
+
+	env.SetRegistryServer(r)
+	return nil
 }
