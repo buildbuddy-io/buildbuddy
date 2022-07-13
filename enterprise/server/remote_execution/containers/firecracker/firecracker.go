@@ -1644,8 +1644,8 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 	return c.machine.Wait(ctx)
 }
 
-func (c *FirecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
-	return &container.Stats{}, nil
+func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
+	return &repb.UsageStats{}, nil
 }
 
 // parseFatalInitError looks for a fatal error logged by the init binary, and

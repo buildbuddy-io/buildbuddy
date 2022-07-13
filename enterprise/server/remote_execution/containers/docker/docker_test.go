@@ -143,7 +143,7 @@ func TestDockerLifecycleControl(t *testing.T) {
 	stats, err := c.Stats(ctx)
 
 	require.NoError(t, err)
-	assert.Greater(t, stats.MemoryUsageBytes, int64(0))
+	assert.Greater(t, stats.MemoryBytes, int64(0))
 
 	// Try executing the same command again after unpausing.
 	res = c.Exec(ctx, cmd, &container.Stdio{})

@@ -329,4 +329,4 @@ func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &container.Stdio{})
 }
 
-func nopStatsListener(*container.Stats) {}
+func nopStatsListener(*repb.UsageStats) {}

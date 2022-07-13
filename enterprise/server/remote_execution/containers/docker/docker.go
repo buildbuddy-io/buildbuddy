@@ -561,7 +561,7 @@ func (r *dockerCommandContainer) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (r *dockerCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
+func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	stats, err := r.client.ContainerStatsOneShot(ctx, r.id)
 	if err != nil {
 		return nil, err
@@ -579,9 +579,9 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*container.Stats, e
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, err
 	}
-	return &container.Stats{
+	return &repb.UsageStats{
 		// See formula here: https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
-		MemoryUsageBytes: response.MemoryStats.Usage - response.MemoryStats.Stats.Cache,
+		MemoryBytes: response.MemoryStats.Usage - response.MemoryStats.Stats.Cache,
 	}, nil
 }
 

@@ -23,6 +23,7 @@ go_library(
         "//server/util/random",
         "//server/util/retry",
         "//server/util/status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

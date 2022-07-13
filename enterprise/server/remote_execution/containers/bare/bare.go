@@ -45,7 +45,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
-		statsListener = func(stats *container.Stats) {
+		statsListener = func(stats *repb.UsageStats) {
 			container.Metrics.Observe(c, stats)
 		}
 	}
@@ -61,6 +61,6 @@ func (c *bareCommandContainer) Remove(ctx context.Context) error  { return nil }
 func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
 func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 
-func (c *bareCommandContainer) Stats(ctx context.Context) (*container.Stats, error) {
-	return &container.Stats{}, nil
+func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
+	return &repb.UsageStats{}, nil
 }

@@ -43,8 +43,8 @@ func (c *FakeContainer) Exec(context.Context, *repb.Command, *container.Stdio) *
 func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }
 func (c *FakeContainer) Pause(ctx context.Context) error   { return nil }
 func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
-func (c *FakeContainer) Stats(context.Context) (*container.Stats, error) {
-	return &container.Stats{}, nil
+func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
+	return &repb.UsageStats{}, nil
 }
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {

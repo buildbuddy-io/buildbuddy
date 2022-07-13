@@ -57,7 +57,7 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 	return status.UnimplementedError("Not yet implemented.")
 }
 
-func (c *FirecrackerContainer) Stats(ctx context.Context) (*container.Stats, error) {
+func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, status.UnimplementedError("Not yet implemented.")
 }
 

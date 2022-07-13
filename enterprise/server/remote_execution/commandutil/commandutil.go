@@ -112,7 +112,7 @@ func RetryIfTextFileBusy(fn func() error) error {
 func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
-	var stats *container.Stats
+	var stats *repb.UsageStats
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
@@ -132,7 +132,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 		Stdout:             stdoutBuf.Bytes(),
 		Stderr:             stderrBuf.Bytes(),
 		CommandDebugString: cmd.String(),
-		UsageStats:         stats.ToProto(),
+		UsageStats:         stats,
 	}
 }
 
@@ -152,7 +152,7 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 // invoked each time stats are measured. In addition, the stats returned will
 // be non-nil. Note that enabling stats incurs some overhead, so a nil callback
 // should be used if stats aren't needed.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener procstats.Listener) (*container.Stats, error) {
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener procstats.Listener) (*repb.UsageStats, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener
 			}
 		}
 	}()
-	statsCh := make(chan *container.Stats, 1)
+	statsCh := make(chan *repb.UsageStats, 1)
 	// Monitor goroutine: periodically record process stats.
 	go func() {
 		defer close(statsCh)
