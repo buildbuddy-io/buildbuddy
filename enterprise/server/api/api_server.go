@@ -340,8 +340,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, request *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
