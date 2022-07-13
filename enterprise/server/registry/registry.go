@@ -387,7 +387,7 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimized
 	var authenticator authn.Authenticator
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	if req.GetImageCredentials().GetUsername() != "" || req.GetImageCredentials().GetPassword() != "" {
-		authenticator := &authn.Basic{
+		authenticator = &authn.Basic{
 			Username: req.GetImageCredentials().GetUsername(),
 			Password: req.GetImageCredentials().GetPassword(),
 		}
