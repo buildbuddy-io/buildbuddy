@@ -47,4 +47,7 @@ service ApiService {
   // - Over gRPC returns a stream of bytes to be stitched together in order.
   // - Over HTTP this simply returns the requested file.
   rpc GetFile(GetFileRequest) returns (stream GetFileResponse);
+
+  // Delete the File with the given uri.
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
 }

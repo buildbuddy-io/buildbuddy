@@ -45,6 +45,7 @@ var (
 		"GetTarget",
 		"GetAction",
 		"GetFile",
+		"DeleteFile",
 	}
 
 	// DeveloperRPCs can be called only by developers or admins of the selected

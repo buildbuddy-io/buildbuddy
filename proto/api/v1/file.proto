@@ -21,3 +21,11 @@ message File {
   string hash = 3;
   int64 size_bytes = 4;
 }
+
+// Request object for DeleteFile
+message DeleteFileRequest {
+  string uri = 1;
+}
+
+// Response object for DeleteFile
+message DeleteFileResponse {}
