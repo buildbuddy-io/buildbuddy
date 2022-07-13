@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"encoding/base64"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -61,14 +62,16 @@ type FinishWithErrorFunc func(finalErr error) error
 func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
 		if stage == repb.ExecutionStage_COMPLETED {
-			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil && target == "grpcs://cloud.buildbuddy.io" {
-				if execResponse.GetMessage() != "" {
-					execResponse.Message = execResponse.GetMessage() + "\n"
+			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil {
+				if u, err := url.Parse(target); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
+					if execResponse.GetMessage() != "" {
+						execResponse.Message = execResponse.GetMessage() + "\n"
+					}
+					execResponse.Message = (execResponse.GetMessage() +
+						"The build used the old BuildBuddy endpoint, cloud.buildbuddy.io. " +
+						"Migrate `executor.app_target` to remote.buildbuddy.io for " +
+						"improved performance.")
 				}
-				execResponse.Message = (execResponse.GetMessage() +
-					"The build used the old BuildBuddy endpoint, cloud.buildbuddy.io. " +
-					"Migrate `executor.app_target` to remote.buildbuddy.io for " +
-					"improved performance.")
 			}
 		}
 		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
