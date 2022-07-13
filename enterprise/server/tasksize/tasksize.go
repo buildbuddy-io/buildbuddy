@@ -122,6 +122,7 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	defer func() {
 		metrics.RemoteExecutionTaskSizeReadRequests.With(prometheus.Labels{
 			metrics.TaskSizeReadStatusLabel: statusLabel,
+			metrics.IsolationTypeLabel:      props.WorkloadIsolationType,
 		}).Inc()
 	}()
 	recordedSize, err := s.lastRecordedSize(ctx, task)
@@ -149,8 +150,10 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	}
 	statusLabel := "ok"
 	defer func() {
+		props := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
 			metrics.TaskSizeWriteStatusLabel: statusLabel,
+			metrics.IsolationTypeLabel:       props.WorkloadIsolationType,
 		}).Inc()
 	}()
 	// If we are missing CPU/memory stats, do nothing. This is expected in some
