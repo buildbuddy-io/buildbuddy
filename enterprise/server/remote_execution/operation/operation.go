@@ -3,8 +3,10 @@ package operation
 import (
 	"context"
 	"encoding/base64"
+	"net/url"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/longrunning"
@@ -59,6 +61,19 @@ type FinishWithErrorFunc func(finalErr error) error
 
 func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName) StateChangeFunc {
 	return func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
+		if stage == repb.ExecutionStage_COMPLETED {
+			if target, err := flagutil.GetDereferencedValue[string]("executor.app_target"); err == nil {
+				if u, err := url.Parse(target); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
+					if execResponse.GetMessage() != "" {
+						execResponse.Message = execResponse.GetMessage() + "\n"
+					}
+					execResponse.Message = (execResponse.GetMessage() +
+						"The build used the old BuildBuddy endpoint, cloud.buildbuddy.io. " +
+						"Migrate `executor.app_target` to remote.buildbuddy.io for " +
+						"improved performance.")
+				}
+			}
+		}
 		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
@@ -106,11 +121,10 @@ func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteRespons
 // If a non-nil error is provided, an action result (incomplete or partial) may
 // still be provided, and clients are expected to handle this case properly.
 func ExecuteResponseWithResult(ar *repb.ActionResult, err error) *repb.ExecuteResponse {
-	rsp := &repb.ExecuteResponse{Status: gstatus.Convert(err).Proto()}
-	if ar != nil {
-		rsp.Result = ar
+	return &repb.ExecuteResponse{
+		Status: gstatus.Convert(err).Proto(),
+		Result: ar,
 	}
-	return rsp
 }
 
 func InProgressExecuteResponse() *repb.ExecuteResponse {
